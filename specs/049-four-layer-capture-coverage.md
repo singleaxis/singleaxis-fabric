@@ -1745,6 +1745,7 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.manifest.sequence_unit` | new | X07 | META: closed enum `exchange`, `record` | P1 | `sequence_unit` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.source_auth` | new | X47 | META: closed enum `bound`, `unbound` | P0-A | `source_auth` |  |
 | `fabric.manifest.spool_encrypted` | new | X34 | META: boolean | P0-A | `spool_encrypted` |  |
+| `fabric.manifest.spool_key_id` | new | X34 | META: `^kid-[0-9a-f]{8}$` | P0-A | `spool_key_id` | Attribute of the `fabric.capture_manifest` span; only with `spool_encrypted` true. The key's id, never the key. |
 | `fabric.manifest.uncaptured_classes` | new | X34 | META: array of closed enum (schema) | P1 | `uncaptured_classes` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.unsealed_prior_epoch_count` | new | X45 | META: integer ≥ 0 | P1 | `unsealed_prior_epoch_count` |  |
 | `fabric.manifest.unsealed_prior_epochs` | new | X45 | META: array (max 64) of decimal epoch strings | P1 | `unsealed_prior_epochs` |  |
@@ -2399,7 +2400,7 @@ the content writer or the network before it has run.
 
 - **Agent spool:** optional AES-256-GCM envelope with a customer-supplied
   key (never stored by Fabric), the construction of `byte_spool.py`;
-  manifest `spool_encrypted`.
+  manifest `spool_encrypted` and `spool_key_id` (the key's `kid-` id, never the key).
 - **Node directory backend:** the same envelope with a Node-side customer
   key. The S3 backend already requires SSE (`fabriccontentexporter/config.go:58`).
 - **Node content queue:** the `fabriccontent` persistent sending queue

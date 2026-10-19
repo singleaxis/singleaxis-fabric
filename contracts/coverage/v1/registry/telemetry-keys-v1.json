@@ -1543,6 +1543,22 @@
       }
     },
     {
+      "key": "fabric.manifest.spool_key_id",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: `^kid-[0-9a-f]{8}$`",
+      "phase": "P0-A",
+      "note": "Attribute of the `fabric.capture_manifest` span; only with `spool_encrypted` true. The key's id, never the key.",
+      "manifest_property": "spool_key_id",
+      "check": {
+        "type": "string",
+        "pattern": "^kid-[0-9a-f]{8}$",
+        "examples": [
+          "kid-5e6f7a8b"
+        ]
+      }
+    },
+    {
       "key": "fabric.manifest.uncaptured_classes",
       "change": "new",
       "field": "X34",

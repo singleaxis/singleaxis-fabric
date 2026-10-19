@@ -259,6 +259,10 @@
         "fabric.manifest.spool_encrypted": {
           "type": "boolean"
         },
+        "fabric.manifest.spool_key_id": {
+          "type": "string",
+          "pattern": "^kid-[0-9a-f]{8}$"
+        },
         "fabric.manifest.uncaptured_classes": {
           "type": "array",
           "uniqueItems": true,

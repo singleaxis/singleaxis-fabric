@@ -409,5 +409,6 @@
   "unsealed_prior_epochs": [],
   "unsealed_prior_epoch_count": 0,
   "source_auth": "bound",
-  "content_capture_reason": "missing_id_key"
+  "content_capture_reason": "missing_id_key",
+  "spool_key_id": "kid-5e6f7a8b"
 }

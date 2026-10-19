@@ -382,6 +382,7 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.manifest.sequence_unit": enum(["exchange", "record"], "validator"),
         "fabric.manifest.source_auth": enum(["bound", "unbound"], "validator"),
         "fabric.manifest.spool_encrypted": boolean,
+        "fabric.manifest.spool_key_id": string("^kid-[0-9a-f]{8}$", "kid-5e6f7a8b"),
         "fabric.manifest.uncaptured_classes": array(
             schema_enum("uncaptured_classes"),
             64,
@@ -682,6 +683,7 @@ def coverage_manifests(reg: dict[str, Any]) -> dict[str, Any]:
         content_capture="disabled",
         content_capture_reason="missing_id_key",
         spool_encrypted=True,
+        spool_key_id="kid-5e6f7a8b",
         source_auth="bound",
         capture_policy={
             "policy_id": "acme-capture",
@@ -772,6 +774,10 @@ def generate_coverage(w: Writer) -> None:
     put(
         "invalid/manifest-keyed-without-key-id.json",
         mutate(m0, lambda d: d.pop("key_id")),
+    )
+    put(
+        "invalid/manifest-spool-key-without-envelope.json",
+        mutate(prod, lambda d: d.update(spool_encrypted=False)),
     )
     put(
         "invalid/manifest-unsealed-count-short.json",
@@ -2337,6 +2343,7 @@ INVALID = {
         "invalid/manifest-enabled-without-policy.json": "coverage.manifest.content_capture",
         "invalid/manifest-field-not-supplied.json": "coverage.manifest.capture_point",
         "invalid/manifest-keyed-without-key-id.json": "coverage.manifest.pseudonym",
+        "invalid/manifest-spool-key-without-envelope.json": "coverage.schema",
         "invalid/manifest-step-clock-domain.json": "coverage.schema",
         "invalid/manifest-unknown-capture-point.json": "coverage.manifest.capture_point",
         "invalid/manifest-unsealed-count-short.json": "coverage.manifest.unsealed",
@@ -2482,6 +2489,7 @@ GO_BY_KEY = {
     "fabric.manifest.capture_points": "manifestPointPattern",
     "fabric.manifest.coverage_profile": "coverageProfilePattern",
     "fabric.manifest.key_id": "keyIDPattern",
+    "fabric.manifest.spool_key_id": "keyIDPattern",
     "fabric.manifest.role_table_version": "roleTableVersionPattern",
     "fabric.manifest.runtime.version": "runtimeVersionPattern",
     "fabric.manifest.unsealed_prior_epochs": "decimalEpochPattern",

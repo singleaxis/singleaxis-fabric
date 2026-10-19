@@ -427,6 +427,11 @@
     "spool_encrypted": {
       "type": "boolean"
     },
+    "spool_key_id": {
+      "description": "Spec 049 \u00a77.8: the kid- id of the customer key sealing the agent spool (never the key); present only when spool_encrypted is true.",
+      "type": "string",
+      "pattern": "^kid-[0-9a-f]{8}$"
+    },
     "unsealed_prior_epochs": {
       "type": "array",
       "maxItems": 64,
@@ -460,6 +465,20 @@
         "required": [
           "previous_manifest_sha256"
         ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "spool_key_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "spool_encrypted": {
+            "const": true
+          }
+        }
       }
     }
   ]
