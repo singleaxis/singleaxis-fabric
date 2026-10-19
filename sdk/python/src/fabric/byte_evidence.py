@@ -348,7 +348,6 @@ class ByteEvidenceRecorder:
         self._profile, self._gate_reason = content_gate(
             config.deployment_policy, id_key, config.store, config.review_store
         )
-        self._gate_logged = False
         if self._gate_reason is not None:
             self._log_gate()
         if self._spool is not None:
@@ -428,11 +427,10 @@ class ByteEvidenceRecorder:
 
         object_id = str(uuid.uuid4())
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
-        gated = self._gate_reason is not None  # 049 §7.3: content disabled, metadata only
+        # 049 §7.3: content disabled, metadata only (logged at construction, never here:
+        # nothing on the caller's path may wait on a log handler).
+        gated = self._gate_reason is not None
         enabled = role in self._config.roles and policy.mode != "omit" and not gated
-        if gated and not self._gate_logged:  # again at the first capture
-            self._gate_logged = True
-            self._log_gate()
         protected = None
         protector = self._config.content_protector
         # Customer redaction never runs on the caller's thread (spec 049 §7.1, §7.7): it
