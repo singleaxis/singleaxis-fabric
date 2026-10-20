@@ -130,3 +130,14 @@ def gated(data: bytes) -> bytes:
     while not (gate / "release").exists() and time.monotonic() < deadline:
         time.sleep(0.005)
     return b"safe"
+
+
+def spawn_sleeper(data: bytes) -> bytes:
+    """Starts an external tool that keeps running, records its pid at the path given as
+    input, then waits for it (Sol P0-A round 3 #5)."""
+    import subprocess  # noqa: PLC0415
+
+    tool = subprocess.Popen(["/bin/sleep", "3600"])  # noqa: S603
+    Path(data.decode()).write_text(str(tool.pid))
+    tool.wait()
+    return data

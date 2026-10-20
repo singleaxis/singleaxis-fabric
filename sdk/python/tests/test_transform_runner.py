@@ -391,3 +391,35 @@ def test_a_child_whose_parent_died_exits_within_its_bound(
         parent.wait(10.0)
         if pid and process_state(pid) not in ("", "Z"):
             os.kill(pid, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("stop", ["timeout", "close"])
+def test_stopping_a_child_stops_its_subprocesses(tmp_path: Path, stop: str) -> None:
+    """Sol P0-A round 3 #5: a timeout killed the interpreter only; the external tool its
+    redactor started kept running under PPID 1 after a successful ``close()``. Each
+    child leads its own process group, killed whole on timeout and on close."""
+    marker = tmp_path / "tool.pid"
+    runner = TransformRunner(T + "spawn_sleeper")
+    tool = 0
+    try:
+        if stop == "timeout":
+            assert runner.run(str(marker).encode(), 1.0) == ("timeout", None)
+        else:
+            thread = threading.Thread(target=runner.run, args=(str(marker).encode(), 30.0))
+            thread.start()
+            deadline = time.monotonic() + 10.0
+            while not marker.exists() or not marker.read_text():
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+        tool = int(marker.read_text())
+        assert runner.close()
+        if stop == "close":
+            thread.join(5.0)
+        deadline = time.monotonic() + 5.0
+        while process_state(tool) not in ("", "Z"):  # PID 1 may reap it later
+            assert time.monotonic() < deadline, "the redactor's subprocess is still running"
+            time.sleep(0.05)
+    finally:
+        runner.close()
+        if tool and process_state(tool) not in ("", "Z"):
+            os.kill(tool, signal.SIGKILL)

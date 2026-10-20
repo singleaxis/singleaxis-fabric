@@ -11,8 +11,8 @@ loaded by a dedicated child interpreter (:mod:`fabric._transform_child`, started
 with ``python -I``, never a fork of the application) and called with the bytes of one
 object over a pipe. The child never touches the spool, a store or the network.
 
-Each call waits at most its timeout; on timeout the child is killed (``SIGKILL``
-preempts anything) and the caller withholds the content (``protection_failed``). The
+Each call waits at most its timeout; on timeout the child is killed with its process
+group (``SIGKILL`` preempts anything; each child leads its own session) and the caller withholds the content (``protection_failed``). The
 caller's thread only waits on the pipe (``poll``), so it never holds the GIL meanwhile.
 Capacity is reserved before a call starts: busy children and killed children not yet
 reaped together stay within ``max_workers`` (a stale idle child is discarded before the
@@ -34,6 +34,7 @@ import logging
 import os
 import re
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -137,8 +138,13 @@ def _read(fd: int, size: int, deadline: float) -> bytes:
 
 
 def _stop(proc: subprocess.Popen[bytes], *, pipes: bool = True) -> None:
-    """Kill ``proc`` and close its pipes (never those a calling thread is waiting on: it
-    sees the end of input and closes them); reaping is :func:`_reaped`'s (never waits)."""
+    """Kill ``proc`` with its process group (it leads its own session, so the processes a
+    customer transformation started go too; Sol P0-A round 3 #5) and close its pipes
+    (never those a calling thread is waiting on: it sees the end of input and closes
+    them); reaping is :func:`_reaped`'s (never waits)."""
+    if proc.returncode is None:  # not reaped: the group id is still this child's own
+        with contextlib.suppress(OSError):  # already gone
+            os.killpg(proc.pid, signal.SIGKILL)
     with contextlib.suppress(OSError):  # already gone
         proc.kill()
     for pipe in (proc.stdin, proc.stdout) if pipes else ():
@@ -300,7 +306,7 @@ class TransformRunner:
             proc = subprocess.Popen(  # noqa: S603 - this interpreter, Fabric's own script
                 [sys.executable, "-I", _CHILD, str(death), repr(self._start_s)],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                close_fds=True, pass_fds=(death,), bufsize=0,
+                close_fds=True, pass_fds=(death,), start_new_session=True, bufsize=0,
             )  # fmt: skip
         except (OSError, ValueError, RuntimeError):
             return None
