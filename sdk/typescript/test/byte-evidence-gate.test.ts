@@ -133,3 +133,63 @@ describe("the explicit input's production gate", () => {
     ).toThrow("FABRIC_WIRE_ID_KEY");
   });
 });
+
+describe("the explicit input's identity without the id key", () => {
+  // Sol P0-A round 2 #3 (spec 049 §2.9 rule 5): production without FABRIC_WIRE_ID_KEY
+  // exports no caller-derived id: a random per-process source id, the generated run
+  // fallback, and generated ids for every other caller id (stable, so records join).
+  const canaries = [
+    "customer-alice",
+    "private-case-123",
+    "op-private-7",
+    "att-private-9",
+    "stream-private-1",
+  ];
+  const identity = {
+    ...options,
+    sourceId: "customer-alice",
+    runId: "private-case-123",
+    operationId: "op-private-7",
+    attemptId: "att-private-9",
+    streamId: "stream-private-1",
+    chunkIndex: 0,
+  };
+  it("replaces every caller id in production", async () => {
+    vi.stubEnv("FABRIC_WIRE_ID_KEY", "");
+    const recorder = new ByteEvidenceRecorder({
+      store: store(policy("production").tenant_id),
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy("production"),
+    });
+    const first = recorder.capture(SECRET, identity);
+    const second = recorder.capture(SECRET, { ...identity, sourceSequence: 2 });
+    await recorder.flush();
+    const text = JSON.stringify([first, second, recorder.drainSettled()]);
+    for (const canary of canaries) expect(text).not.toContain(canary);
+    expect(first.source_id).toMatch(/^s-[0-9a-f]{32}$/);
+    expect(first.run_id).toBe(`source:${first.source_id}:0`);
+    for (const key of ["source_id", "run_id", "operation_id", "attempt_id", "stream_id"] as const)
+      expect(second[key]).toBe(first[key]);
+    // the sequence check still applies to the caller's source
+    expect(() => recorder.capture(SECRET, identity)).toThrow("sourceSequence");
+    await recorder.close();
+  });
+  it.each([
+    ["local", undefined],
+    ["production", ID_KEY],
+  ] as const)("keeps the caller ids with a %s policy", async (profile, idKey) => {
+    vi.stubEnv("FABRIC_WIRE_ID_KEY", "");
+    const recorder = new ByteEvidenceRecorder({
+      store: store(policy(profile).tenant_id),
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy(profile),
+      idKey,
+    });
+    const descriptor = recorder.capture(SECRET, identity);
+    expect([descriptor.source_id, descriptor.run_id]).toEqual([
+      "customer-alice",
+      "private-case-123",
+    ]);
+    await recorder.close();
+  });
+});

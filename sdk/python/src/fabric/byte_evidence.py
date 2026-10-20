@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
-from ._sequence import check_id_key, id_key_from_env
+from ._sequence import GeneratedIds, check_id_key, id_key_from_env
 from ._transform_runner import TransformRunner
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
@@ -369,6 +369,10 @@ class ByteEvidenceRecorder:
         )
         if self._gate_reason is not None:
             self._log_gate()
+        # 049 §2.9 rule 5: production without the id key exports no caller-derived id.
+        self._generated_ids = (
+            GeneratedIds() if self._profile == "production" and id_key is None else None
+        )
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -409,6 +413,12 @@ class ByteEvidenceRecorder:
             for key, value in runner.stats().items():
                 totals[key] += value
         return totals
+
+    @property
+    def generated_ids(self) -> GeneratedIds | None:
+        """The generated ids replacing caller ids (049 §2.9 rule 5) in the production
+        profile without the id key, else ``None`` (caller ids are emitted as given)."""
+        return self._generated_ids
 
     @property
     def tenant_id(self) -> str:
@@ -454,6 +464,13 @@ class ByteEvidenceRecorder:
             chunk_index=chunk_index,
         )
 
+        if (ids := self._generated_ids) is not None:  # 049 §2.9 rule 5: no caller id leaves
+            source_id = ids.source()
+            run_id = ids.run(source_epoch) if run_id is not None else None
+            operation_id, attempt_id, stream_id = (
+                ids.other(value) if value is not None else None
+                for value in (operation_id, attempt_id, stream_id)
+            )
         object_id = str(uuid.uuid4())
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
         # 049 §7.3: content disabled, metadata only (logged at construction, never here:

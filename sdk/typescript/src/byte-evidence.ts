@@ -114,6 +114,38 @@ export function contentGate(
   return { profile: "production", reason: null };
 }
 
+let processSource: string | undefined;
+const MAX_GENERATED_IDS = 65536;
+
+/**
+ * Emitted ids when no value derived from a caller-supplied id may leave the process
+ * (spec 049 §2.9 rule 5: the production profile without the id key), in parity with
+ * Python `fabric._sequence.GeneratedIds`. The source id is random per process (`s-` + 32
+ * hex), a run id its generated source fallback (`source:<source>:<epoch>`), and any
+ * other caller id a random `g-` id generated on first sight and kept (bounded) so one
+ * recorder's records still join.
+ */
+class GeneratedIds {
+  readonly #ids = new Map<string, string>();
+
+  source(): string {
+    processSource ??= "s-" + randomUUID().replaceAll("-", "");
+    return processSource;
+  }
+
+  run(epoch: number): string {
+    return `source:${this.source()}:${epoch}`;
+  }
+
+  other(value: string): string {
+    const found = this.#ids.get(value);
+    if (found !== undefined) return found;
+    const generated = "g-" + randomUUID().replaceAll("-", "");
+    if (this.#ids.size < MAX_GENERATED_IDS) this.#ids.set(value, generated);
+    return generated;
+  }
+}
+
 export interface ByteEvidenceDescriptor {
   schema_version: "fabric.content-object/v2";
   object_id: string;
@@ -221,6 +253,8 @@ export class ByteEvidenceRecorder {
   private lostRecordCount = 0;
   private readonly profile: "local" | "production";
   private readonly gateReason: string | null;
+  /** Generated ids replacing caller ids (spec 049 §2.9 rule 5), when the gate needs it. */
+  private readonly generatedIds?: GeneratedIds;
   private readonly counts = {
     stored: 0,
     redacted: 0,
@@ -313,6 +347,8 @@ export class ByteEvidenceRecorder {
     const gate = contentGate(policy, idKey, config.store, config.reviewStore);
     this.profile = gate.profile;
     this.gateReason = gate.reason;
+    if (gate.profile === "production" && idKey === undefined)
+      this.generatedIds = new GeneratedIds();
     if (gate.reason !== null)
       console.warn(
         `fabric.byteEvidence: content capture disabled (${gate.reason}, ${gate.profile} ` +
@@ -373,6 +409,20 @@ export class ByteEvidenceRecorder {
     }
     const sourceRegistryFull = previous === undefined && this.highWater.size >= this.maxSources;
     if (!sourceRegistryFull) this.highWater.set(key, options.sourceSequence);
+    const ids = this.generatedIds;
+    if (ids !== undefined) {
+      // Spec 049 §2.9 rule 5: no value derived from a caller id leaves the process.
+      options = {
+        ...options,
+        sourceId: ids.source(),
+        ...(options.runId !== undefined ? { runId: ids.run(options.sourceEpoch) } : {}),
+        ...(options.operationId !== undefined
+          ? { operationId: ids.other(options.operationId) }
+          : {}),
+        ...(options.attemptId !== undefined ? { attemptId: ids.other(options.attemptId) } : {}),
+        ...(options.streamId !== undefined ? { streamId: ids.other(options.streamId) } : {}),
+      };
+    }
     const descriptor: ByteEvidenceDescriptor = {
       schema_version: "fabric.content-object/v2",
       object_id: randomUUID(),

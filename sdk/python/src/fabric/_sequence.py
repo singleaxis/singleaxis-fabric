@@ -266,9 +266,63 @@ def resolve_run_id(allocator: SourceAllocator, *, trace_id: int | None = None) -
     return encode_opaque_id(f"source:{allocator.source_id}:{allocator.epoch}")
 
 
+_PROCESS_SOURCE: list[str] = []  # this process's random source id, once generated
+_MAX_GENERATED_IDS = 65536
+
+
+def process_source_id() -> str:
+    """This process's random source id (049 §2.9 rule 5): ``s-`` + 32 random hex, the same
+    for every caller in the process, new in a forked child. Continuity across restarts is
+    lost by design: nothing derived from a host- or caller-supplied id."""
+    with _LOCK:
+        if not _PROCESS_SOURCE:
+            _PROCESS_SOURCE.append("s-" + uuid.uuid4().hex)
+        return _PROCESS_SOURCE[0]
+
+
+class GeneratedIds:
+    """Emitted ids when no value derived from a caller-supplied id may leave the process
+    (049 §2.9 rule 5: the production profile without ``FABRIC_WIRE_ID_KEY``). The source id
+    is :func:`process_source_id`; a run id is its generated source fallback
+    (``source:<source>:<epoch>``); any other caller id is a random ``g-`` id generated on
+    first sight and kept (at most 65536) so one recorder's records still join. A generated
+    value maps to itself, so ids may pass through more than one layer."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._ids: dict[str, str] = {}
+        self._generated: set[str] = set()
+
+    def source(self) -> str:
+        return process_source_id()
+
+    def run(self, epoch: int) -> str:
+        return encode_opaque_id(f"source:{process_source_id()}:{epoch}")
+
+    def keep(self, value: str) -> str:
+        """Mark a Fabric-generated id (a call id) as generated: it maps to itself."""
+        with self._lock:
+            if len(self._generated) < 2 * _MAX_GENERATED_IDS:
+                self._generated.add(value)
+        return value
+
+    def other(self, value: str) -> str:
+        with self._lock:
+            if value in self._generated:
+                return value
+            if (found := self._ids.get(value)) is not None:
+                return found
+            generated = "g-" + uuid.uuid4().hex
+            if len(self._ids) < _MAX_GENERATED_IDS:
+                self._ids[value] = generated
+                self._generated.add(generated)
+            return generated
+
+
 def _after_fork_in_child() -> None:
     global _LOCK  # noqa: PLW0603
     _LOCK = threading.Lock()  # another parent thread may have held it
+    _PROCESS_SOURCE.clear()  # a forked child is a new process: a new random source id
     for allocator in list(_LIVE):
         allocator._lock, allocator._next, allocator.epoch = threading.Lock(), 0, _new_epoch()
 

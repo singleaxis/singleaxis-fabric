@@ -111,6 +111,13 @@ class CallRecorder:
             raise ValueError("max_events must be a positive integer")
         self.recorder = recorder
         self.tenant_id = recorder.tenant_id
+        # 049 §2.9 rule 5 (production profile, no id key): generated ids replace every
+        # caller id, and the source spool (a journal keyed by the clear run id) is unused.
+        self._ids = recorder.generated_ids
+        if self._ids is not None:
+            self.run_id, self.source_id = self._ids.run(0), self._ids.source()
+            self.agent_id = self._ids.other(self.agent_id)
+            source_spool = recovery_resolver = None
         if source_spool is not None and (
             source_spool.tenant_id != self.tenant_id or source_spool.run_id != self.run_id
         ):
@@ -232,8 +239,20 @@ class CallRecorder:
             raise ValueError("kind must be model, tool, database or agent")
         boundary, input_role, output_role = _KINDS[kind]
         parent = self._current.get()
+        call_id = uuid.uuid4().hex
+        if (ids := self._ids) is not None:  # 049 §2.9 rule 5: generated, never the caller's
+            # Fabric's own ids map to themselves (a parent call id of this recorder too).
+            call_id = ids.keep(call_id)
+            parent_call_id, agent_id = (
+                ids.other(_identifier(value)) if value is not None else None
+                for value in (parent_call_id, agent_id)
+            )
+            operation_id, attempt_id = (
+                ids.other(_identifier(value)) if value is not None else ids.keep(uuid.uuid4().hex)
+                for value in (operation_id, attempt_id)
+            )
         fields = {
-            "call_id": uuid.uuid4().hex,
+            "call_id": call_id,
             "parent_call_id": _identifier(parent_call_id)
             if parent_call_id is not None
             else parent.fields["call_id"]
