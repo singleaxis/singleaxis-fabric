@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Explicit APIs](../explicit-apis.md). Kept for history only.
+
 # Authenticated local governed content
 
 The optional Python `fabric.governed_store` module is a customer-local backend for

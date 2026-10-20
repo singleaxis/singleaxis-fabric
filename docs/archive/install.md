@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Deployment](../deployment.md). Kept for history only.
+
 # Install a pinned Fabric recorder release
 
 Install one qualified version and promote the same bytes through development,
@@ -21,7 +24,7 @@ Installing Fabric does not certify a system or satisfy a regulation by itself.
 
 1. Select an exact release candidate or stable version.
 2. Read its changelog and `release-qualification.json`.
-3. Follow [Verify a Fabric release](verify-release.md).
+3. Follow [Verify a Fabric release](../verify-release.md).
 4. Record the release tag, commit, artifact hashes, OCI digests, verifier
    identity, review decision, and intended environment.
 5. Mirror approved artifacts into controlled registries when company policy
@@ -116,7 +119,7 @@ helm upgrade --install fabric ./fabric-VERSION.tgz \
 
 The CIDR above is documentation-only. Route through an approved egress gateway
 when the destination does not have a stable, reviewable network identity. See
-[Deployment](deployment.md) for required Secrets and invariants.
+[Deployment](../deployment.md) for required Secrets and invariants.
 
 ## Promotion record
 

@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Quickstart](../quickstart.md). Kept for history only.
+
 # Standalone evidence: capture, protect, deliver and read back
 
 Fabric records observable AI activity into customer-controlled destinations.
@@ -23,7 +26,7 @@ metadata readback. The default product is passive CAPTURE -> PROTECT -> DELIVER.
 Initialize capture once, wrap the existing shared final model/tool dispatch,
 propagate parent context at background handoffs, join producers, then close
 capture. No framework rewrite is required. For model calls made through httpx,
-the [wire-capture example](../examples/wire-capture/README.md) records the exact
+the [wire-capture example](../../examples/wire-capture/README.md) records the exact
 bytes with no wrapper at all. An outer provider wrapper
 cannot expose retries hidden inside a provider SDK. Supply the actual serialized
 request/response bytes; unsupported objects remain unsupported evidence while
@@ -120,10 +123,10 @@ with their observers. Fabric does not grant permission or enforce those decision
 
 ## Demonstrate the bounded local path
 
-Run the [wire-capture example](../examples/wire-capture/README.md) for an
+Run the [wire-capture example](../../examples/wire-capture/README.md) for an
 offline capture and `python -m fabric.reconstruct` verdict, and the
 [qualified call-run tests](qualified-call-run-testing.md) for the explicit
-evidence line. For the Compose path, use the [quickstart](quickstart.md) and
+evidence line. For the Compose path, use the [quickstart](../quickstart.md) and
 `make qualify`. These are local fixtures: production remains `NO_GO` until the
 declared customer scope, independent truth, storage controls and exact
 artifacts are qualified.

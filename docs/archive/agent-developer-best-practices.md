@@ -1,9 +1,12 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Explicit APIs](../explicit-apis.md). Kept for history only.
+
 # Agent developer integration practices
 
 Start with the smallest useful integration. Existing supported framework or
 OpenTelemetry spans can provide application context without a Fabric-specific
 wrapper everywhere. Start from the runnable
-[wire-capture example](../examples/wire-capture/README.md) rather than copying
+[wire-capture example](../../examples/wire-capture/README.md) rather than copying
 a large reference deployment into the application.
 
 ## Choose the evidence level

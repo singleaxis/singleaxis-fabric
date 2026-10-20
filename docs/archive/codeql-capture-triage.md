@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [the documentation index](../README.md). Kept for history only.
+
 # Capture PR CodeQL triage
 
 Status: security/maintainer acceptance open; production remains NO_GO.

@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Architecture](../architecture.md). Kept for history only.
+
 # OSS and commercial boundary
 
 The split follows the customer's trust boundary and can be explained in one
@@ -67,4 +70,4 @@ must continue to prove that none of those capabilities is compiled into Fabric
 Node, bundled in the Helm chart, exposed as a stable SDK API, included in
 public contract archives, or published as a recorder runtime artifact.
 
-The authoritative release scope is [spec 027](../specs/027-recorder-v1.md).
+The authoritative release scope is [spec 027](../../specs/027-recorder-v1.md).

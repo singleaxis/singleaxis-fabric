@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Limitations and roadmap](../limitations-and-roadmap.md). Kept for history only.
+
 # Recorder v1 qualification status
 
 This document distinguishes implemented runtime behavior from public contracts
@@ -56,7 +59,7 @@ reviewed: each opened descriptor is immediately registered with ExitStack's
 `os.close` callback, including exception paths. They are not suppressed.
 The findings-check rerun for this follow-up is pending; deployment remains NO-GO.
 
-[Spec 046](../specs/046-qualified-call-run-verification.md) preceded its code.
+[Spec 046](../../specs/046-qualified-call-run-verification.md) preceded its code.
 The optional combined verifier is now implemented: it rechecks raw signed
 independent feeds, compares every required original byte and physical attempt,
 checks the call graph against fresh sealed source records, authenticates source
@@ -148,7 +151,7 @@ rerun locally. Linux release/security checks for that correction are pending.
 
 ### Finite engineering completion batch — spec 046
 
-[Spec 046](../specs/046-qualified-call-run-verification.md) was written before
+[Spec 046](../../specs/046-qualified-call-run-verification.md) was written before
 the implementation. Remaining code in this batch: fresh sealed journal
 readback; exact-set, stage-specific receipt verification; authenticated
 independent-feed-to-capture reconciliation; source-binding and route-closure
@@ -166,7 +169,7 @@ live deployment gates remain NO_GO and must not be hidden by a positive
 synthetic offline verification result.
 
 This section supersedes older pending-security descriptions below, which are
-retained as dated test history. [Spec 044](../specs/044-production-evidence-closure.md)
+retained as dated test history. [Spec 044](../../specs/044-production-evidence-closure.md)
 was written before this implementation. Work is on PR #164, not the user's
 separate dirty checkout. The exact tested artifacts below have bounded test
 evidence; none is approved for a critical production deployment.
@@ -196,7 +199,7 @@ cleaner release story.
 
 ### Independent-feed checker — local artifact qualification
 
-[Spec 045](../specs/045-independent-evidence-feeds.md) preceded the optional
+[Spec 045](../../specs/045-independent-evidence-feeds.md) preceded the optional
 offline `fabric.independent_feed` implementation. It checks separately pinned
 native cursor bounds, exact operations/attempts/outcomes and required ordered
 byte roles; verifies an approved issuer's signature before object reads; then
@@ -375,7 +378,7 @@ stopped during a `proxy.golang.org` HTTP/2 download error before image
 construction or vulnerability scanning, so neither image result is credited.
 The history scanner identified one new static test token in this commit.
 Its source-proven fixture classification is recorded in
-[security triage](security-history-triage.md), with only its exact historical
+[security triage](../security-history-triage.md), with only its exact historical
 fingerprint added to the baseline (nine total). The fixture is now generated
 at test runtime. Full-history scanning and the independent new-credential
 rejection probe pass locally. A fresh committed CI run is required for all
@@ -501,7 +504,7 @@ failed only because the connector-contract test needed formatting; the
 formatting fix is pending a new CI run. The history-wide secret scan also
 remains red pending security-owner classification.
 
-[Spec 040](../specs/040-synthetic-agent-evidence-slice.md) records the phase-1
+[Spec 040](../../specs/040-synthetic-agent-evidence-slice.md) records the phase-1
 gap ledger, provisional scope and control/coverage matrix, and documents
 phases 2–8 before code changes. The declared test workflow is a non-sensitive
 Python 3.11 model → no-shell terminal/tool → file artifact → model flow using
@@ -886,9 +889,9 @@ metadata to AEEP OTLP logs for a controlled loopback Node; it is not an
 automatic production publisher. The schemas are not an implemented
 complete-evidence runtime and are not qualified as a production capture
 surface. Proof fields in fixtures are structural, not authenticated proof.
-Draft specs [037](../specs/037-bounded-enterprise-deployment-and-controls.md),
-[038](../specs/038-capture-boundary-and-loss-qualification.md), and
-[039](../specs/039-storage-release-and-shadow-pilot.md) define the
+Draft specs [037](../../specs/archive/037-bounded-enterprise-deployment-and-controls.md),
+[038](../../specs/archive/038-capture-boundary-and-loss-qualification.md), and
+[039](../../specs/archive/039-storage-release-and-shadow-pilot.md) define the
 customer-specific control matrix, capture/loss qualification,
 protected-storage proof, exact-artifact tests, and shadow-pilot
 reconciliation required for a critical-enterprise go decision. No such
@@ -1026,7 +1029,7 @@ metadata-only custom-call Node publication, asynchronous source-journal
 linkage, authorized masked-review resolution and exact-package/sink tests.
 The artifacts are uncommitted worktree builds, not a signed release candidate.
 
-[Spec 043](../specs/043-custom-agent-call-recording.md) was written before
+[Spec 043](../../specs/043-custom-agent-call-recording.md) was written before
 implementation. The following evidence was obtained locally on 2026-09-30,
 in the PR worktree based on `efcf36c` with the uncommitted spec-043 changes.
 These are locally tested SDK additions, not a clean tagged release or a
@@ -1179,7 +1182,7 @@ status, and nothing here upgrades it.
   `ByteBoundaryAdapter` with `kind="model"`) the tee defers; a
   Fabric-protected global tracer provider never carries wire spans; each
   spool owns its own directory. See
-  [Two capture lines](README.md#two-capture-lines).
+  [Two capture lines](../explicit-apis.md#using-the-explicit-apis-with-wire-capture).
 - **Not claimed.** Calls through `requests`, `aiohttp`, `boto3`, gRPC, other
   processes or unlisted endpoints; TypeScript capture; production deployment
   without the customer's own qualification.

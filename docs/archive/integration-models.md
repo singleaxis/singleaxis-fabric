@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Architecture](../architecture.md). Kept for history only.
+
 # Integrating agents with Fabric
 
 Fabric supports code-first agents, framework-managed agents, off-the-shelf
@@ -7,7 +10,7 @@ choose the least invasive model that produces the reconstruction evidence
 required, then record the residual blind spots.
 
 The authoritative machine-readable claims live in the
-[`Connect capability contract`](../contracts/connect/v1/README.md). Its
+[`Connect capability contract`](../../contracts/connect/v1/README.md). Its
 manifests distinguish what an integration observes, controls, authenticates,
 propagates, and exports.
 
@@ -20,8 +23,8 @@ propagates, and exports.
 | Gateway or proxy | Inline for LLM, MCP, HTTP, or tool traffic | Requests crossing known protocols; semantics may be inferred | Possible in a separately deployed external gateway, not the recorder | Local or bypass traffic is invisible |
 | OTLP receiver | Collector or gateway | Preserves telemetry an existing system already emitted | Telemetry acceptance/redaction/routing only | Cannot prevent an agent action that already occurred |
 | Vendor receiver | Collector plugin or managed integration | Fields and history exposed by the vendor API | Usually telemetry processing only | Vendor sampling, schema, API, and retention constrain replay |
-| auditd host connector | `audit` receiver in the Fabric Node ([spec 030](../specs/030-auditd-host-connector.md)) | Kernel-observed exec/connect/file-access records from the existing audit subsystem | None — read-only consumer | Requires audit rules + `CAP_AUDIT_READ`; no semantic/decision context; correlation is inferred provenance |
-| eBPF host emitter | `fabric-host-emitter` DaemonSet ([spec 031](../specs/031-ebpf-host-emitter.md)) | Process, socket, network-flow, and file metadata via CO-RE tracepoints | None — passive probe, no LSM/packet hooks | Cannot establish prompts, decisions, tools, or policy semantics; needs `CAP_BPF`+`CAP_PERFMON` and kernel >=5.8 with BTF |
+| auditd host connector | `audit` receiver in the Fabric Node ([spec 030](../../specs/030-auditd-host-connector.md)) | Kernel-observed exec/connect/file-access records from the existing audit subsystem | None — read-only consumer | Requires audit rules + `CAP_AUDIT_READ`; no semantic/decision context; correlation is inferred provenance |
+| eBPF host emitter | `fabric-host-emitter` DaemonSet ([spec 031](../../specs/031-ebpf-host-emitter.md)) | Process, socket, network-flow, and file metadata via CO-RE tracepoints | None — passive probe, no LSM/packet hooks | Cannot establish prompts, decisions, tools, or policy semantics; needs `CAP_BPF`+`CAP_PERFMON` and kernel >=5.8 with BTF |
 
 For an off-the-shelf agent, start with its supported audit export, OTLP output,
 webhooks, or API. Put a gateway in front of provider and tool endpoints where

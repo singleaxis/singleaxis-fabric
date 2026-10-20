@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Explicit APIs](../explicit-apis.md). Kept for history only.
+
 # Protected durable byte spool (Python)
 
 `fabric.byte_spool.DurableByteSpool` is an optional, customer-local POSIX spool

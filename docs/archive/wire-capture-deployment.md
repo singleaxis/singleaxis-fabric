@@ -1,8 +1,11 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Deployment](../deployment.md). Kept for history only.
+
 # Deploying LLM wire capture
 
 This guide is for an operator turning on LLM wire capture
-([spec 047](../specs/047-llm-wire-capture-and-reconstruction.md) with the
-delivery changes of [spec 048](../specs/048-node-content-delivery-and-agent-spool.md),
+([spec 047](../../specs/047-llm-wire-capture-and-reconstruction.md) with the
+delivery changes of [spec 048](../../specs/048-node-content-delivery-and-agent-spool.md),
 both draft) for a Python agent. Capture copies the exact request and
 response bytes of each model call and records one metadata-only span per
 call. Both go to a Fabric Node you run; the Node writes the bytes to a store
@@ -395,8 +398,8 @@ backend without `sse: AES256` or `sse: aws:kms`, whatever the launch path.
 
 | Deployment | Ingress authentication (4317, 4318 and 4319 alike) | Content store | Agent settings |
 |---|---|---|---|
-| Helm `shadow-production` ([deployment.md](deployment.md)) | TLS with a verified client certificate **and** the workload-scoped bearer token (`receiver.workloadAuthentication`, required by the profile); the chart puts the same `bearertokenauth/workload` authenticator on 4317, 4318 and 4319. NetworkPolicy admits only labelled agent namespaces to all three ports | `otel-collector.content.backend=s3` with `content.s3.sse` (`AES256`, the default, or `aws:kms` + key); the Node writes with its IRSA role. The file backend is refused in this profile, and `content.allowedTenants` must be exactly `[tenant.id]`. | `https://` endpoints, `OTEL_EXPORTER_OTLP_CERTIFICATE`, `..._CLIENT_CERTIFICATE`, `..._CLIENT_KEY`, and `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<workload token>` for both signals. Neither credential alone is accepted. |
-| Compose production overlay ([deploy/compose](../deploy/compose/README.md)) | Bearer token; ports bound to `127.0.0.1` unless every published receiver has TLS (preflight) | Opt-in (`FABRIC_CONTENT_BACKEND`; unset keeps the overlay telemetry only): `s3` (bucket, region and SSE on the Node; instance role or a credentials-file secret), or `file` (the `fabric-content` volume, no server-side encryption; preflight refuses it unless `FABRIC_CONTENT_REQUIRE_SSE=false`, as Helm's shadow-production profile refuses it) | `http://127.0.0.1:4318` and `:4319`, `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<token>`. Use `https://` and receiver TLS before leaving the host. |
+| Helm `shadow-production` ([deployment.md](../deployment.md)) | TLS with a verified client certificate **and** the workload-scoped bearer token (`receiver.workloadAuthentication`, required by the profile); the chart puts the same `bearertokenauth/workload` authenticator on 4317, 4318 and 4319. NetworkPolicy admits only labelled agent namespaces to all three ports | `otel-collector.content.backend=s3` with `content.s3.sse` (`AES256`, the default, or `aws:kms` + key); the Node writes with its IRSA role. The file backend is refused in this profile, and `content.allowedTenants` must be exactly `[tenant.id]`. | `https://` endpoints, `OTEL_EXPORTER_OTLP_CERTIFICATE`, `..._CLIENT_CERTIFICATE`, `..._CLIENT_KEY`, and `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<workload token>` for both signals. Neither credential alone is accepted. |
+| Compose production overlay ([deploy/compose](../../deploy/compose/README.md)) | Bearer token; ports bound to `127.0.0.1` unless every published receiver has TLS (preflight) | Opt-in (`FABRIC_CONTENT_BACKEND`; unset keeps the overlay telemetry only): `s3` (bucket, region and SSE on the Node; instance role or a credentials-file secret), or `file` (the `fabric-content` volume, no server-side encryption; preflight refuses it unless `FABRIC_CONTENT_REQUIRE_SSE=false`, as Helm's shadow-production profile refuses it) | `http://127.0.0.1:4318` and `:4319`, `OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer%20<token>`. Use `https://` and receiver TLS before leaving the host. |
 | Compose evaluation + local S3 store (`make up-s3-eval`) | None (loopback evaluation only) | Local S3-compatible bucket (SeaweedFS; MinIO until October 2026) with default SSE-S3, path-style addressing, Node-only writer keys, a GetObject-only reader and a no-delete bucket policy | `http://127.0.0.1:4318` and `:4319`, `FABRIC_TENANT_ID=evaluation` |
 
 **Helm.** Enable content with `otel-collector.content.enabled=true`,
@@ -593,7 +596,7 @@ spec:
 The agent's namespace (`monitored-agents` above) must carry the label the
 Node's NetworkPolicy admits
 (`kubectl label namespace monitored-agents fabric.singleaxis.ai/agent=true`,
-matched by the `--set-string` selector shown in [deployment.md](deployment.md)).
+matched by the `--set-string` selector shown in [deployment.md](../deployment.md)).
 
 *emptyDir or PVC for the spool.* An `emptyDir` lives as long as the Pod: it
 survives container restarts (a crashed agent's records are replayed when the
@@ -626,7 +629,7 @@ prefix, region and SSE.
 
 Wire capture coexists with the explicit evidence line (specs 035–046:
 `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`). See
-[Two capture lines](README.md#two-capture-lines) for the full comparison.
+[Two capture lines](../explicit-apis.md#using-the-explicit-apis-with-wire-capture) for the full comparison.
 
 - **Explicit wins.** Inside a live `CallRecorder` model call (or
   `ByteBoundaryAdapter(kind="model")`) the tee defers every exchange whose

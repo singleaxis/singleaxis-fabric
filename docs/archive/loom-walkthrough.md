@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Quickstart](../quickstart.md). Kept for history only.
+
 # Recorder v1 demo walkthrough
 
 This five-minute demo proves one narrow claim: an enterprise can passively

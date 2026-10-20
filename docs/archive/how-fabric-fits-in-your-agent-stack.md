@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Architecture](../architecture.md). Kept for history only.
+
 # How Fabric fits in an existing AI stack
 
 Fabric OSS is a passive recorder, not an agent framework and not an enterprise

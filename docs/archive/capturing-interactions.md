@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Explicit APIs](../explicit-apis.md). Kept for history only.
+
 # Capturing observable interactions
 
 Fabric records interactions exposed by your SDK calls, framework hooks,
@@ -68,8 +71,8 @@ are not interchangeable:
 | **Harness-owned offline transcripts** | The evaluation harness's own files | Never — no Fabric required | Development and offline eval; the harness owns privacy, access, and retention for those datasets |
 
 Governed content mode is specified in specs
-[028](../specs/028-governed-content-capture.md)–
-[034](../specs/034-eval-interoperability.md) (draft). It is off by default,
+[028](../../specs/028-governed-content-capture.md)–
+[034](../../specs/034-eval-interoperability.md) (draft). It is off by default,
 requires an explicitly configured customer store, and changes nothing about
 what crosses the protected boundary — only the reference and digest travel
 on telemetry. Metadata-only export supports structural review (calls,

@@ -14,7 +14,7 @@ fully offline. In a deployment the agent runs in **node mode** instead: it
 spools capture events to disk and delivers the bodies to the Fabric Node,
 which is the only writer of the content store (a directory or S3) and holds
 the only store credentials. See
-[Deploying LLM wire capture](../../docs/wire-capture-deployment.md).
+[Deployment](../../docs/deployment.md).
 
 ```bash
 # from the repository root

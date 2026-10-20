@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Privacy and security](../privacy-and-security.md). Kept for history only.
+
 # Recording actual data with customer privacy choices
 
 Spec 043 adds role-specific handling to the Python exact-byte recorder. The

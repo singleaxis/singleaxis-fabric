@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Qualified-run mode](../qualified-run-mode.md). Kept for history only.
+
 # Qualified custom-agent evidence testing
 
 This optional offline check combines the recorded timeline, protected original

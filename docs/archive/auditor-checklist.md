@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Privacy and security](../privacy-and-security.md). Kept for history only.
+
 # Recorder v1 auditor checklist
 
 Fabric OSS supplies evidence inputs for reconstruction. It does not decide

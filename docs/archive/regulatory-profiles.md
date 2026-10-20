@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Deployment](../deployment.md). Kept for history only.
+
 # Deployment postures, not regulatory profiles
 
 Recorder v1 ships two technical Helm postures:

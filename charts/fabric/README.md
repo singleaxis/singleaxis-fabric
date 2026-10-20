@@ -58,7 +58,7 @@ Fails closed at render time unless the recorder has:
   allowed tenants, an s3 backend with server-side encryption (the file
   backend is refused), an `https://` store endpoint when one is set, the
   same mTLS on port 4319 and explicit `networkPolicy.contentEgress` peers.
-  See [docs/deployment.md](../../docs/deployment.md#content-delivery-for-llm-wire-capture-optional).
+  See [docs/deployment.md](../../docs/deployment.md#helm-shadow-production).
 - the spec 049 P0-A production profile (`otel-collector.fabric.profile:
   production`, pinned). Every batch on the workload ingress, spans and
   content alike, is bound to `workloadAuthentication.tenantId` and

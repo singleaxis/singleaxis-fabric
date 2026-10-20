@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Limitations and roadmap](../limitations-and-roadmap.md). Kept for history only.
+
 # TypeScript recorder parity
 
 The Python and TypeScript packages share the recorder goal but need not expose

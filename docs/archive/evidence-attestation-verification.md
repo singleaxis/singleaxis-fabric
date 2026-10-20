@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Qualified-run mode](../qualified-run-mode.md). Kept for history only.
+
 # Authenticating offline evidence statements
 
 The optional Python verifier in spec 044 checks who signed an evidence
@@ -64,7 +67,7 @@ by the separately authorized owner of the deployment's route controls.
 ## Checking an independent operation and byte feed
 
 The optional `fabric.independent_feed.verify_independent_feed` checker follows
-[spec 045](../specs/045-independent-evidence-feeds.md). Supply an approved
+[spec 045](../../specs/045-independent-evidence-feeds.md). Supply an approved
 `IndependentFeedExpectation`, a signed canonical feed, the trusted public-key
 registry and a tenant/issuer-bound byte reader. The expectation must come from
 separate native checkpoints and operation records, not from Fabric's output or

@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Limitations and roadmap](../limitations-and-roadmap.md). Kept for history only.
+
 # Governed content capture — gap assessment and requirements matrix
 
 **Historical assessment, not current implementation status.** Evidence basis:

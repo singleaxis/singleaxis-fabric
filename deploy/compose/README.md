@@ -8,14 +8,15 @@ OTLP spans   (4317/4318) -> Fabric Node -> default-deny allowlist -> durable que
 wire content (4319)      -> Fabric Node -> fabriccontent (digest, tenant) -> durable queue -> content store
 ```
 
-It contains only two services:
+It contains two services (`make up-s3-eval` adds a local S3-compatible
+store and its one-shot setup job):
 
 - `fabric-node`: the current Collector-based recorder implementation;
 - `test-sink`: a controlled OTLP/HTTP destination that stores requests on a
   durable Docker volume and returns success only after fsync.
 
-There are no guardrails, prompt-time PII sidecars, judges, red-team runners,
-management services, or observability UI.
+It contains nothing but the recorder: no evaluation, management services or
+observability UI.
 
 ## LLM wire capture content (spec 048)
 
@@ -36,8 +37,8 @@ routes content into a telemetry pipeline or to the OTLP destination.
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
 
 The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
-production overlay is telemetry only and starts unchanged with an existing
-`.env` (no `FABRIC_TENANT_ID`, no port 4319).
+production overlay is telemetry only (no port 4319). It still needs
+`FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID` for the source binding.
 
 `make up-s3-eval` starts an S3-compatible evaluation store (SeaweedFS,
 Apache-2.0, pinned by digest; an SSE-S3 key from `FABRIC_S3_EVAL_SSE_KEK`;
@@ -103,6 +104,7 @@ Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
 
 - `GET http://localhost:8080/health`
 - `GET http://localhost:8080/count`
+- `GET http://localhost:8080/contains` (a telemetry-search oracle; loopback only)
 
 Run the restart/outage qualification:
 
@@ -155,7 +157,7 @@ openssl rand -base64 32 > secrets/content.key
 sudo chown "$(id -u)":65532 secrets/content.key && chmod 0440 secrets/content.key
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml [content overlays] up -d --wait
-make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 authenticated spans (queue metrics warn-only)
+make verify-prod    # checks health and 401 unauthenticated (spans, and content when enabled); its authenticated-span check posts a fixture with tenant "harness", which a source-bound Node refuses unless that is your tenant (queue metrics warn-only)
 make logs-prod
 ```
 
@@ -242,8 +244,8 @@ no user info, query or fragment (the value is never printed).
 `make verify-prod` checks that unauthenticated content is rejected, not that
 an authenticated upload reaches the store; after each deployment change run
 the content canary in
-[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md#5-verify-a-run). See
-[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md)
+[`docs/operations/README.md`](../../docs/operations/README.md#verify-a-deployment). See
+[`docs/deployment.md`](../../docs/deployment.md#minimal-iam-s3)
 for the minimal Node-writer and reader IAM.
 
 > **Token file format matters.** Write one token with `printf %s` and no
@@ -304,7 +306,7 @@ verified release identity. Static Compose checks are not Docker execution.
   export. `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
   the destination's final `https://` URL; a redirecting URL stalls delivery
   (watch `otelcol_exporter_send_failed_*`). See
-  [wire-capture-deployment.md §2](../../docs/wire-capture-deployment.md).
+  [privacy and security](../../docs/privacy-and-security.md#delivery-and-the-node).
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
 - This deployment configures a durable queue and retry to a client-selected

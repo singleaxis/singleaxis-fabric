@@ -1,11 +1,14 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Limitations and roadmap](../limitations-and-roadmap.md). Kept for history only.
+
 # Agent activity coverage and production qualification
 
 Status: gap assessment, not a certification or a claim of complete capture.
 
 The proposed interoperable logging/capture contract is
-[spec 035 — Agent Execution Evidence Profile](../specs/035-agent-execution-evidence-profile.md).
+[spec 035 — Agent Execution Evidence Profile](../../specs/035-agent-execution-evidence-profile.md).
 The sequenced contracts, adapter work, and release gates are specified in
-[spec 036 — Bounded agent evidence capture](../specs/036-evidence-capture-implementation-plan.md).
+[spec 036 — Bounded agent evidence capture](../../specs/036-evidence-capture-implementation-plan.md).
 
 Fabric OSS remains a passive **CAPTURE -> PROTECT -> DELIVER** recorder. A
 finite list of tool names cannot establish completeness: an agent can invoke

@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Deployment](../deployment.md). Kept for history only.
+
 # Delivering protected records
 
 Fabric Node has one qualified OTLP/HTTP destination. That destination may be a
@@ -60,7 +63,7 @@ kubectl --namespace fabric-system create secret generic fabric-node-export-auth 
 ```
 
 Install with an approved endpoint and egress route as described in
-[Deployment](deployment.md). Review references record operator assertions; they
+[Deployment](../deployment.md). Review references record operator assertions; they
 do not enable or verify storage encryption, per-record identity or durable
 readback. Incoming raw content remains denied; approved originals and masked
 derivatives belong in separately governed SDK content storage. If a backend requires a vendor-specific header,

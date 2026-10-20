@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Privacy and security](../privacy-and-security.md). Kept for history only.
+
 # Python managed span export: protection and limits
 
 `fabric.install_default_provider()` installs a Fabric-managed
@@ -106,9 +109,9 @@ flag. Only actual booleans are accepted, so the string `"false"` cannot become a
 truthy privacy bypass.
 
 `FABRIC_CAPTURE_LLM_CONTENT` never affects LLM wire capture
-([spec 047](../specs/047-llm-wire-capture-and-reconstruction.md)): wire stores
+([spec 047](../../specs/047-llm-wire-capture-and-reconstruction.md)): wire stores
 exact bytes off telemetry in the customer store and its spans carry only
 digests and references, whatever this flag says. Installing wire while the
 flag is set logs one warning saying so. A global provider protected by
 `install_default_provider` never carries wire spans; see
-[Two capture lines](README.md#two-capture-lines).
+[Two capture lines](../explicit-apis.md#using-the-explicit-apis-with-wire-capture).

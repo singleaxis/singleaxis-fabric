@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Explicit APIs](../explicit-apis.md). Kept for history only.
+
 # Governed content capture
 
 Fabric's default is **metadata-only**: spans and events carry calls,
@@ -53,7 +56,7 @@ resolves content from customer storage.
 
 A development harness can record and read its own local transcripts
 directly — see
-[examples/offline-transcript](../examples/offline-transcript/README.md).
+[examples/offline-transcript](../../examples/offline-transcript/README.md).
 Offline datasets still carry privacy, access, and retention
 responsibilities: the store enforces tenant namespacing and `0600`
 file modes, but retention and deletion are the operator's storage

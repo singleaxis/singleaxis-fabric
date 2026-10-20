@@ -1,3 +1,6 @@
+> **Archived; not part of recorder v1 documentation.** Superseded by
+> [Explicit APIs](../explicit-apis.md). Kept for history only.
+
 # Recording a custom agent
 
 SingleAxis observes the places where your agent makes calls. The call timeline
@@ -134,9 +137,9 @@ coverage gap. Follow-on route requirements are in spec 041. Fabric itself
 does not block the agent or enforce network restrictions.
 
 If the same process also runs zero-code LLM wire capture
-([spec 047](../specs/047-llm-wire-capture-and-reconstruction.md)), a model
+([spec 047](../../specs/047-llm-wire-capture-and-reconstruction.md)), a model
 call made through `CallRecorder(kind="model")` is recorded once, by this
 recorder: the wire tee defers inside the explicit call. Tool, database and
 agent calls do not suppress wire capture, so a model request made inside a
 tool is still wire-captured. Give each spool its own directory. See
-[Two capture lines](README.md#two-capture-lines).
+[Two capture lines](../explicit-apis.md#using-the-explicit-apis-with-wire-capture).
