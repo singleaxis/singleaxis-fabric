@@ -577,6 +577,16 @@ export class ByteEvidenceRecorder {
             this.counts.not_captured += 1;
             continue;
           }
+          if (bytes.byteLength > this.payloadMaxBytes) {
+            // The recorder's own cap, as before deferral (a supplied protector may allow
+            // more): dropped, nothing stored (Sol P0-A round 2 #4).
+            d.status = "dropped";
+            d.status_reason = "payload_too_large";
+            d.representation = "unavailable";
+            this.counts.pending -= 1;
+            this.counts.dropped += 1;
+            continue;
+          }
           item.bytes = bytes;
         }
         let succeeded = false;

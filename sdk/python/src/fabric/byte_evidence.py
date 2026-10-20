@@ -855,6 +855,12 @@ class ByteEvidenceRecorder:
             with self._condition:
                 self._withhold(object_id)
             return None
+        if len(protected.protected_bytes) > self._config.payload_max_bytes:
+            # The recorder's own cap, as before deferral (a supplied protector may allow
+            # more): dropped, nothing stored (Sol P0-A round 2 #4).
+            with self._condition:
+                self._fail_record(object_id, "payload_too_large", status="dropped")
+            return None
         return protected.protected_bytes
 
     def _fail_record(self, object_id: str, reason: str, *, status: str = "failed") -> None:

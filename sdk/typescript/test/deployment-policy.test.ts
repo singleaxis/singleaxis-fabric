@@ -466,3 +466,43 @@ it("bounds token output and keeps failing redactors from ever storing input", as
   expect(derivative.listObjectUris()).toEqual([]);
   await recorder.close();
 });
+
+it("rechecks the recorder payload cap after deferred redaction", async () => {
+  // Sol P0-A round 2 #4: a separately supplied protector may allow more than the
+  // recorder. The recorder's cap applies to the redacted bytes, as before deferral.
+  const policy = policyFor("redact");
+  const original = store(policy.tenant_id);
+  const derivative = store(policy.tenant_id);
+  const contentProtector = new ContentProtector(policy, {
+    redactors: { "terminal.stdout": MASK }, // "[redacted]": 10 bytes
+    payloadMaxBytes: 1024,
+  });
+  const recorder = new ByteEvidenceRecorder({
+    store: original,
+    reviewStore: derivative,
+    roles: new Set(["terminal.stdout"]),
+    deploymentPolicy: policy,
+    contentProtector,
+    payloadMaxBytes: 8,
+  });
+  const initial = recorder.capture(Buffer.from("raw"), {
+    role: "terminal.stdout",
+    boundary: "terminal",
+    sourceId: "sdk",
+    sourceEpoch: 0,
+    sourceSequence: 1,
+  });
+  await recorder.flush();
+  const settled = recorder.get(initial.object_id)!;
+  expect(settled).toMatchObject({
+    status: "dropped",
+    status_reason: "payload_too_large",
+    representation: "unavailable",
+  });
+  expect(settled.ref).toBeUndefined();
+  expect(settled.stored_sha256).toBeUndefined();
+  expect(derivative.listObjectUris()).toEqual([]);
+  expect(recorder.stats()).toMatchObject({ dropped: 1, pending: 0, redacted: 0 });
+  await recorder.close();
+  await contentProtector.close();
+});

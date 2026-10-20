@@ -560,3 +560,30 @@ def test_the_redactor_timeout_is_validated() -> None:
         with pytest.raises(ValueError, match="transform_timeout_s"):
             ContentProtector(policy_for("redact"), redactors={"terminal.stdout": lambda d: d},
                              transform_timeout_s=bad)  # type: ignore[arg-type]  # fmt: skip
+
+
+def test_deferred_redaction_rechecks_the_recorder_payload_cap(tmp_path: Path) -> None:
+    """Sol P0-A round 2 #4: a separately supplied protector may have a larger limit than
+    the recorder. The recorder's own cap applies to the redacted bytes after deferred
+    protection, as it did before deferral: over the cap the object is dropped
+    (``payload_too_large``) and nothing is stored."""
+    policy = policy_for("redact")
+    store = LocalFilesystemContentStore(str(tmp_path / "original"), tenant_id=policy.tenant_id)
+    review = LocalFilesystemContentStore(str(tmp_path / "review"), tenant_id=policy.tenant_id)
+    protector = ContentProtector(policy, redactors={"terminal.stdout": lambda _: b"R" * 64},
+                                 payload_max_bytes=1024)  # fmt: skip
+    recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
+        store=store, review_store=review, roles=frozenset({"terminal.stdout"}),
+        deployment_policy=policy, content_protector=protector, payload_max_bytes=8,
+    ))  # fmt: skip
+    try:
+        initial = recorder.capture(b"raw", role="terminal.stdout", boundary="terminal",
+                                   source_id="sdk", source_epoch=0, source_sequence=1)  # fmt: skip
+        assert recorder.flush(5.0)
+        settled = recorder.get(initial["object_id"])
+        assert settled is not None
+        assert (settled["status"], settled["status_reason"]) == ("dropped", "payload_too_large")
+        assert "ref" not in settled and "stored_sha256" not in settled
+        assert not [p for p in tmp_path.rglob("*") if p.is_file()]
+    finally:
+        assert recorder.close()
