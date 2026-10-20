@@ -372,6 +372,17 @@ expect_fail "production content requires the Node key" "requires content.encrypt
   "${umbrella_dir}" "${production_content[@]}" --set otel-collector.content.encryption.keySecret.name=
 expect_fail "production requires the bound source id" "requires receiver.workloadAuthentication.sourceId" \
   "${umbrella_dir}" "${production_args[@]}" --set otel-collector.receiver.workloadAuthentication.sourceId=
+# The binding must be the source id agents actually send: s-<32 hex> under
+# pseudonymous capture labels (the default); a clear label only with
+# fabric.guard.captureLabels=clear.
+for bad_source in agent-a S-C5AEDFD8A3EE415E277E335BF1517FF4 s-c5aedfd8a3ee415e277e335bf1517ff s-c5aedfd8a3ee415e277e335bf1517ff4x; do
+  expect_fail "pseudonymous production refuses sourceId ${bad_source}" "sourceId must be s-<32 lowercase hex>" \
+    "${umbrella_dir}" "${production_args[@]}" --set "otel-collector.receiver.workloadAuthentication.sourceId=${bad_source}"
+done
+clear_render="$(helm template ci "${umbrella_dir}" "${production_args[@]}" \
+  --set otel-collector.fabric.guard.captureLabels=clear \
+  --set otel-collector.receiver.workloadAuthentication.sourceId=agent-a)"
+expect_contains "clear capture labels accept a clear sourceId" "${clear_render}" 'source_id: "agent-a"'
 expect_fail "production pins the production profile" "profile shadow-production requires" \
   "${umbrella_dir}" "${production_args[@]}" --set otel-collector.fabric.profile=local
 expect_fail "the production profile needs an authenticated source" "rejects unauthenticated sources" \
