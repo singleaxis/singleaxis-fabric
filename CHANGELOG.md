@@ -118,6 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `failed` or a provider `error`) is a `truncated` gap (reason `stream_closed_early` or
   `transport_incomplete`), so `partial`, streamed or not. Before, a cut stream was
   graded complete and a cut JSON body `unverified` (D5).
+- Python byte-evidence and wire capture workers reap exited transformation children on
+  a 250 ms cadence, checked between jobs as well as when idle; steady capture traffic
+  for other roles no longer leaves them as zombies (Sol P0-A round 4 #2).
 - Python customer transformations: a transformation interpreter that exits by itself
   (idle expiry, a crash, its alarm) or whose recorder dies now takes its whole process
   group, so an external tool a transformation started never outlives it under PPID 1.
