@@ -7,6 +7,9 @@ owner: product-architecture
 depends_on: 027, 032, 033, 035, 036, 037, 038
 ---
 
+> **Archived:** replaced by [049](../049-four-layer-capture-coverage.md) §7.8 and its phase gates.
+> Kept for history; not a description of v0.8.
+
 # 039 — Storage, release and shadow-pilot qualification
 
 ## Decision

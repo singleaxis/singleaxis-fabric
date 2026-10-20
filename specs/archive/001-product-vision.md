@@ -7,10 +7,13 @@ owner: project-lead
 superseded_by: 027
 ---
 
+> **Archived:** superseded by [027](../027-recorder-v1.md).
+> Kept for history; not a description of v0.8.
+
 # 001 — Product Vision & Positioning
 
 > **Superseded. Do not implement recorder v1 from this document.**
-> [Spec 027](027-recorder-v1.md) replaces the inline-control-plane vision
+> [Spec 027](../027-recorder-v1.md) replaces the inline-control-plane vision
 > below with the passive recorder promise `CAPTURE -> PROTECT -> DELIVER`.
 > This file is retained only to explain earlier product direction; the
 > guardrail sidecars, policy gates, and escalation primitives it describes

@@ -26,9 +26,9 @@ remote SSH-side evidence, DB result capture, HTTP/browser body capture, binary
 artifact storage, run-level coverage reconciliation, or durable host-sensor
 source queues. In particular, a host process/connection record is not an
 agent transcript. The precise gap inventory is in
-[agent activity coverage](../docs/agent-activity-coverage.md); the governed
+[agent activity coverage](../docs/archive/agent-activity-coverage.md); the governed
 content qualification state is in
-[recorder-v1 qualification](../docs/recorder-v1-qualification-status.md).
+[recorder-v1 qualification](../docs/archive/recorder-v1-qualification-status.md).
 
 This spec does not replace recorder v1 or expand it to evaluation, findings,
 policy decisions, enforcement, or SingleAxis-managed storage. Dev/offline
@@ -341,8 +341,8 @@ customer-boundary review exist.
 ## Implementation ledger (2026-09-26)
 
 This dated ledger is historical, not the current source-support matrix. See
-[SDK support](../docs/sdk-support-matrix.md) and
-[qualification status](../docs/recorder-v1-qualification-status.md) for later
+[SDK support](../docs/archive/sdk-support-matrix.md) and
+[qualification status](../docs/archive/recorder-v1-qualification-status.md) for later
 Python durable byte-spool and audit logfile checkpoint additions.
 
 Work package 1 has a locally tested draft baseline. Closed schemas, exact-byte

@@ -212,7 +212,7 @@ the verdict is `unverified`, never `complete_for_declared_scope`.
 | Bounded queue, retries, loss records, heartbeats | DELIVER / Verify | Bounded handoff with explicit, sequenced loss. |
 | `python -m fabric.reconstruct` | Verify | Local offline verification. The verdict says whether the *record* has gaps. It never judges the agent's quality, correctness or policy compliance. |
 
-Spec [041](041-follow-on-evidence-adapter-scopes.md) says no adapter may
+Spec [041](archive/041-follow-on-evidence-adapter-scopes.md) says no adapter may
 install a global interceptor *by default*; the tee patches httpx/httpx2 only
 after explicit opt-in. This spec makes no coverage claim: a verdict covers
 only model calls made through httpx or httpx2 in an instrumented process.

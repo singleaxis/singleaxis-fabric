@@ -7,6 +7,9 @@ last_updated: 2026-09-26
 depends_on: 035, 036, 037, 038, 039, 040
 ---
 
+> **Archived:** replaced by phases P4/P5 of [049](../049-four-layer-capture-coverage.md).
+> Kept for history; not a description of v0.8.
+
 # 041 — Separately scoped observable routes
 
 The first synthetic slice in spec 040 covers none of the routes below.

@@ -8,12 +8,15 @@ depends_on: 027, 033, 035, 036
 related: 038, 039
 ---
 
+> **Archived:** replaced by the production profile of [049](../049-four-layer-capture-coverage.md).
+> Kept for history; not a description of v0.8.
+
 # 037 — Bounded enterprise evidence deployment and control applicability
 
 ## Decision and non-claim
 
 This is a **qualification profile**, not a claim that the repository is
-enterprise-ready or compliant today. The [AEEP plan](036-evidence-capture-implementation-plan.md)
+enterprise-ready or compliant today. The [AEEP plan](../036-evidence-capture-implementation-plan.md)
 is draft and its runtime is not implemented. Fabric OSS stays passive
 `CAPTURE -> PROTECT -> DELIVER`; customer systems and independent assessors
 own legal applicability, risk acceptance, evaluation, and governance. No

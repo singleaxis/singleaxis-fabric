@@ -7,10 +7,13 @@ owner: product-architecture
 superseded_by: 027
 ---
 
+> **Archived:** superseded by [027](../027-recorder-v1.md).
+> Kept for history; not a description of v0.8.
+
 # 025 — Product planes, packaging, and deployment model
 
 > **Superseded. Do not implement recorder v1 from this document.**
-> [Spec 027](027-recorder-v1.md) replaces its six-plane packaging model with
+> [Spec 027](../027-recorder-v1.md) replaces its six-plane packaging model with
 > the release boundary `CAPTURE -> PROTECT -> DELIVER`. This file is retained
 > only to explain earlier architectural decisions.
 
@@ -409,7 +412,7 @@ and tied to the exact source and workflow evidence.
 
 ## References
 
-- [Spec 023 — Generic interaction capture](023-generic-interaction-capture.md)
-- [Spec 027 — Recorder v1](027-recorder-v1.md)
-- [OSS / commercial boundary](../docs/oss-commercial-boundary.md)
-- [Building Fabric](../docs/building-fabric.md)
+- [Spec 023 — Generic interaction capture](../023-generic-interaction-capture.md)
+- [Spec 027 — Recorder v1](../027-recorder-v1.md)
+- [OSS / commercial boundary](../../docs/archive/oss-commercial-boundary.md)
+- [Building Fabric](../../docs/building-fabric.md)

@@ -8,6 +8,9 @@ depends_on: 035, 036, 037
 related: 039
 ---
 
+> **Archived:** replaced by the coverage statuses and phase gates of [049](../049-four-layer-capture-coverage.md).
+> Kept for history; not a description of v0.8.
+
 # 038 — Capture-boundary and source-loss qualification
 
 ## Decision
@@ -107,7 +110,7 @@ silent loss within the tested bound**, not unconditional zero loss.
 
 The audit receiver's logfile path now stores a bounded scrubbed replay batch
 and accepted cursor in a private, persistent `state_directory`
-([source](../components/otel-collector-fabric/receiver/auditreceiver/durable_logfile.go)).
+([source](../../components/otel-collector-fabric/receiver/auditreceiver/durable_logfile.go)).
 File/directory fsync, stable replay IDs, downstream-acceptance cursor commits,
 retained numeric rotation and bounded corruption/loss evidence are locally
 regression-tested. A crash after downstream acceptance can duplicate the same

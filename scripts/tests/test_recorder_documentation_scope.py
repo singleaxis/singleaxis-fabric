@@ -17,28 +17,28 @@ PRIMARY_DOCS = (
     "CONTRIBUTING.md",
     "SUPPORT.md",
     "sdk/README.md",
+    "sdk/python/README.md",
+    "sdk/typescript/README.md",
+    "components/otel-collector-fabric/README.md",
     "specs/000-overview.md",
     "specs/010-development-standards.md",
     "specs/027-recorder-v1.md",
     "docs/README.md",
-    "docs/architecture.md",
-    "docs/install.md",
     "docs/quickstart.md",
+    "docs/architecture.md",
     "docs/deployment.md",
-    "docs/integration-models.md",
-    "docs/capturing-interactions.md",
-    "docs/exporting-to-your-observability-backend.md",
-    "docs/enterprise-readiness.md",
-    "docs/auditor-checklist.md",
-    "docs/loom-walkthrough.md",
-    "docs/how-fabric-fits-in-your-agent-stack.md",
-    "docs/regulatory-profiles.md",
+    "docs/privacy-and-security.md",
+    "docs/operations/README.md",
     "docs/operations/dr.md",
+    "docs/reconstruct.md",
+    "docs/explicit-apis.md",
+    "docs/qualified-run-mode.md",
+    "docs/host-sensors.md",
+    "docs/limitations-and-roadmap.md",
+    "docs/genai-semantic-conventions.md",
     "docs/api-stability.md",
     "docs/building-fabric.md",
-    "docs/typescript-parity-backlog.md",
     "docs/verify-release.md",
-    "docs/recorder-v1-qualification-status.md",
 )
 
 # Secondary documentation surfaces scanned with the same stale-claim
@@ -127,7 +127,7 @@ def test_extended_recorder_docs_do_not_restore_legacy_product_claims() -> None:
 
 
 def test_downstream_design_docs_are_prominently_scoped() -> None:
-    superseded = (ROOT / "specs/025-product-planes-and-packaging.md").read_text(
+    superseded = (ROOT / "specs/archive/025-product-planes-and-packaging.md").read_text(
         encoding="utf-8"
     )
     assert "Superseded. Do not implement recorder v1" in superseded[:700]
