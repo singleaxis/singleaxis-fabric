@@ -91,6 +91,12 @@ spool = DurableByteSpool(root / "spool", tenant_id="tenant",
     retry_max_s=0.1, max_attempts=100)
 base = LocalFilesystemContentStore(str(root / "store"), tenant_id="tenant")
 ready = threading.Event()
+def die():
+    # kill(getpid()) is process-directed: with other threads alive, POSIX does
+    # not require delivery to THIS thread before kill() returns (macOS often
+    # returns). Park the caller so it can never run past the crash point.
+    os.kill(os.getpid(), signal.SIGKILL)
+    threading.Event().wait()
 class Store:
     tenant_id = "tenant"
     def evidence_ref_for(self, object_id):
@@ -101,7 +107,7 @@ class Store:
             raise ConnectionError("SPOOL_RAW_PRIVATE_CANARY_654321")
         result = base.put_bytes_object(descriptor, payload)
         if mode == "lost_ack":
-            os.kill(os.getpid(), signal.SIGKILL)
+            die()
         return result
 if mode in {"cleanup_before", "cleanup_after"}:
     real_replace = spool._replace
@@ -112,9 +118,9 @@ if mode in {"cleanup_before", "cleanup_after"}:
         value = json.loads(spool._cipher.decrypt(body[offset:offset+12], body[offset+12:], aad))
         if name.endswith(".spool") and value["state"] == "delivered":
             if mode == "cleanup_before":
-                os.kill(os.getpid(), signal.SIGKILL)
+                die()
             real_replace(name, body)
-            os.kill(os.getpid(), signal.SIGKILL)
+            die()
         real_replace(name, body)
     spool._replace = replace
 if mode in {"file_fsync", "directory_fsync"}:
@@ -123,7 +129,7 @@ if mode in {"file_fsync", "directory_fsync"}:
         if (mode == "file_fsync" and fd != spool._directory
             or mode == "directory_fsync" and fd == spool._directory):
             ready.wait()
-            os.kill(os.getpid(), signal.SIGKILL)
+            die()
         actual_fsync(fd)
     os.fsync = kill_at_sync
 if mode == "pre_fsync":
@@ -131,7 +137,7 @@ if mode == "pre_fsync":
     def before_fsync(name, body):
         if name.endswith(".spool"):
             ready.wait()
-            os.kill(os.getpid(), signal.SIGKILL)
+            die()
         original_replace(name, body)
     spool._replace = before_fsync
 recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
