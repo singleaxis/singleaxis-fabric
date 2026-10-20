@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   feeds and attestations bind the emitted ids. `ByteEvidenceRecorder.generated_ids` is
   renamed `emitted_ids`.
 
+### Fixed
+
+- `fabric.reconstruct`: a response the transport did not finish (`closed_early`,
+  `abandoned`, `error`) whose bytes do not prove their own end (a whole JSON document,
+  or a stream ending at `[DONE]`, `message_stop`, `response.completed`/`incomplete`/
+  `failed` or a provider `error`) is a `truncated` gap (reason `stream_closed_early` or
+  `transport_incomplete`), so `partial`, streamed or not. Before, a cut stream was
+  graded complete and a cut JSON body `unverified` (D5).
+
 ### Changed (breaking, Python customer transformations)
 
 - Python customer transformations (wire `Transformation`, `ContentProtector`
