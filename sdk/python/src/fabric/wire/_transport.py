@@ -272,6 +272,14 @@ class WireTee:
         response = job.response.captured_byte_length if job.response is not None else 0
         self.budget.release(job.request.captured_byte_length + response)
 
+    def lose_uninstrumented(self) -> None:
+        """A model call sent through a client this tee does not see (wire/_detect.py): it
+        takes a sequence, recorded as an ``uninstrumented_client`` loss."""
+        epoch, sequence, _ = self._allocate()
+        with contextlib.suppress(Exception):
+            self.loss.note_activity(self.allocator)
+        self.lose(epoch, sequence, "uninstrumented_client")
+
     def lose(self, epoch: int, sequence: int, reason: LossReason) -> None:
         self.internal_errors += reason == "internal_error"
         self.loss.record(self.allocator.source_id, epoch, reason, sequence)
@@ -311,7 +319,10 @@ class WireTee:
         pipeline = self.pipeline.stats()
         internal = self.internal_errors + pipeline["internal_errors"]
         sender = self.sender.stats() if self.sender is not None else {}
+        from . import _detect  # noqa: PLC0415
+
         return {**pipeline, **sender, "matched": self.matched, "internal_errors": internal,
+                "uninstrumented_calls": _detect.count(),
                 "inflight_bytes": self.budget.used,
                 "deferred_to_explicit": self.deferred_to_explicit}  # fmt: skip
 

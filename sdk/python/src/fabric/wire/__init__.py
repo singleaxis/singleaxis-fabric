@@ -162,6 +162,9 @@ class WireStats:
     transform_timeouts: int = 0
     transform_saturated: int = 0
     transform_abandoned: int = 0
+    # Model calls sent through a client wire capture does not tee (requests, urllib3): each
+    # is an ``uninstrumented_client`` loss (agent matrix D4).
+    uninstrumented_calls: int = 0
 
 
 class WireHandle:
@@ -201,7 +204,7 @@ class WireHandle:
         if self.gate is None:
             return {}
         sender = self._tee.sender
-        status = {"capture": "active", **self.gate.status(),
+        status = {"capture": "active", **self.gate.status(), **_client_status(self.config),
                   "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
         if sender is not None:  # 049 §7.8: never "encrypted" while plaintext records remain
             plaintext = sender.spool.plaintext_records()
@@ -260,9 +263,10 @@ class WireHandle:
                 _HANDLE = _transport._ACTIVE = None
                 if self._patched:
                     _transport.unpatch_httpx()
-                from . import _aiohttp  # noqa: PLC0415
+                from . import _aiohttp, _detect  # noqa: PLC0415
 
                 _aiohttp.unpatch_aiohttp()
+                _detect.unpatch_detectors()
         with contextlib.suppress(Exception):
             atexit.unregister(self._atexit_close)
             timeout = self.config.shutdown_timeout_s if timeout_s is None else timeout_s
@@ -393,12 +397,32 @@ def install(
 
 def _patch_clients(config: WireConfig) -> None:
     """The process-global tees the config enables: httpx/httpx2, aiohttp."""
-    from . import _aiohttp, _transport  # noqa: PLC0415
+    from . import _aiohttp, _detect, _transport  # noqa: PLC0415
 
     if config.patch_httpx:
         _transport.patch_httpx()
+        _detect.patch_detectors()  # the clients wire does not tee: their model calls count
     if config.patch_aiohttp:
         _aiohttp.patch_aiohttp()
+
+
+def _client_status(config: WireConfig) -> dict[str, Any]:
+    """The wire capture points' states and the HTTP clients a model call may have used
+    unseen (049 §2.8; until the capture manifest is built, status() declares them)."""
+    from . import _aiohttp, _detect, _transport  # noqa: PLC0415
+
+    flavors = {module for module, _ in _transport._PATCHED}
+    httpx_state = "active" if flavors else "failed" if config.patch_httpx else "disabled"
+    if _aiohttp.patched():
+        aiohttp_state = "active"
+    elif not config.patch_aiohttp:
+        aiohttp_state = "disabled"
+    else:
+        aiohttp_state = "failed" if _aiohttp.installed() else "installed_inactive"
+    patched = lambda name: name in flavors or (name == "aiohttp" and _aiohttp.patched())  # noqa: E731
+    unseen = {*_detect.seen(), *_detect.loaded_unpatched(patched)}
+    return {"capture_points": {"wire.py.httpx": httpx_state, "wire.py.aiohttp": aiohttp_state},
+            "uninstrumented_clients": sorted(unseen)}  # fmt: skip
 
 
 def _protection_from_env(config: WireConfig) -> WireConfig:

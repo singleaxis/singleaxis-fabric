@@ -28,7 +28,7 @@
         "kind": {"const": "loss"},
         "source": true,
         "emitted_at": true,
-        "reason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped"]},
+        "reason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client"]},
         "count": {"type": "integer", "minimum": 1},
         "first_sequence": {"type": "integer", "minimum": 0},
         "last_sequence": {"type": "integer", "minimum": 0}

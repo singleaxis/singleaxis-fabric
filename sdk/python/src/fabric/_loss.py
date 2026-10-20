@@ -26,7 +26,11 @@ from ._sequence import RunScope, SourceAllocator
 from ._version import __version__
 from .tracing import FABRIC_SDK_NAME, has_protected_route
 
-LossReason = Literal["queue_full", "internal_error", "shutdown", "span_dropped"]
+# uninstrumented_client: a model call sent through a client wire capture does not tee
+# (wire/_detect.py); it has a sequence and is recorded as lost.
+LossReason = Literal[
+    "queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client"
+]
 HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
 SPAN_LOSS, SPAN_HEARTBEAT = "fabric.capture_loss", "fabric.capture_heartbeat"
 _RUN_KINDS = ("run_start", "run_end")

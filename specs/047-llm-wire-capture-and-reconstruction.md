@@ -608,7 +608,10 @@ ref and `truncated` is true.
   **Loss records** (`fabric.capture_loss`): `{reason, count,
   first_sequence, last_sequence}` per `(source, epoch)`. Reasons:
   `queue_full`, `internal_error`, `shutdown`, `span_dropped` (sampled out,
-  or the private exporter reported failure). `record()` is O(1) and never
+  or the private exporter reported failure), `uninstrumented_client` (a
+  model call sent through a client wire capture does not tee, `requests` or
+  `urllib3`, seen by a zero-content detector: it takes a sequence and is
+  recorded lost, so the run is never complete; agent matrix D4). `record()` is O(1) and never
   raises; a 1 s emitter thread coalesces pending losses per
   `(source, epoch, reason)` into one range (min, max, count) and emits it.
   Loss and heartbeat records are exported through an always-on private
@@ -701,7 +704,7 @@ or body lengths are emitted.
 
 | Key | Value | On |
 |---|---|---|
-| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped` | loss |
+| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped`\|`uninstrumented_client` | loss |
 | `fabric.loss.count` | int ≥ 1 | loss |
 | `fabric.loss.first_sequence`, `fabric.loss.last_sequence` | int ≥ 0 | loss |
 | `fabric.heartbeat.last_sequence` | int ≥ -1 | heartbeat |

@@ -60,7 +60,9 @@ APIS = frozenset(
 )
 RESPONSE_STATES = frozenset({"complete", "closed_early", "error", "abandoned"})
 STORE_STATUSES = frozenset({"stored", "partial", "failed", "disabled"})
-LOSS_REASONS = frozenset({"queue_full", "internal_error", "shutdown", "span_dropped"})
+LOSS_REASONS = frozenset(
+    {"queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client"}
+)
 HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
 HEARTBEAT_KINDS: frozenset[str] = frozenset({"periodic", "run_start", "run_end", "final"})
 RUN_MARKER_KINDS: frozenset[str] = frozenset({"run_start", "run_end"})

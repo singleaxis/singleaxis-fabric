@@ -907,7 +907,7 @@ var (
 	)
 	captureResponseStates = toSet("complete", "closed_early", "error", "abandoned")
 	captureStoreStatuses  = toSet("stored", "partial", "failed", "disabled")
-	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped")
+	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client")
 	// captureHeartbeatKinds is the closed heartbeat vocabulary: periodic
 	// liveness, explicit run boundaries from fabric.wire.run(), the seal of
 	// one run segment (spec 049 §2.12 rule 4) and the final heartbeat a clean

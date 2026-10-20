@@ -486,7 +486,8 @@
                 "queue_full",
                 "internal_error",
                 "shutdown",
-                "span_dropped"
+                "span_dropped",
+                "uninstrumented_client"
               ]
             },
             "count": {
