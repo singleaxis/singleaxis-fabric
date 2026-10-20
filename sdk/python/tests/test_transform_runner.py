@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from fabric._transform_runner import TransformRunner, check_transform_ref
+from fabric._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 
 T = "tests.transforms:"
 
@@ -32,8 +33,8 @@ def _children() -> set[int]:
 
 def process_state(pid: int) -> str:
     """``ps`` state of ``pid`` (``Z`` a zombie), or ``""`` once it is gone."""
-    probe = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)],
-                           capture_output=True, text=True, check=False)  # fmt: skip
+    command = ["/bin/ps", "-o", "stat=", "-p", str(pid)]
+    probe = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
     return probe.stdout.strip()
 
 
@@ -372,7 +373,7 @@ def test_a_child_whose_parent_died_exits_within_its_bound(
     ``PR_SET_PDEATHSIG``."""
     code = _ORPHAN_PARENT.format(ignore_alarm=ignore_alarm, ref=ref, start_s=start_s,
                                  data=data, timeout_s=timeout_s)  # fmt: skip
-    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,
+    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,  # noqa: S603
                               cwd=Path(__file__).parent.parent)  # fmt: skip
     pid = 0
     try:
@@ -423,3 +424,62 @@ def test_stopping_a_child_stops_its_subprocesses(tmp_path: Path, stop: str) -> N
         runner.close()
         if tool and process_state(tool) not in ("", "Z"):
             os.kill(tool, signal.SIGKILL)
+
+
+_KEYS = {
+    "FABRIC_WIRE_ID_KEY": "canary-id-key-0001",
+    "FABRIC_TOKENIZATION_KEY": "canary-tokenization-key",
+    "FABRIC_WIRE_SPOOL_KEY_FILE": "/canary/spool.key",
+    "FABRIC_SYNTHETIC_CONTENT_KEY": "canary-content-key",
+}
+
+
+def test_the_child_gets_a_minimal_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol P0-A round 3: the child inherited the whole environment, so a synthetic key
+    held there was readable by customer code. It gets ``PATH``, locale variables and the
+    customer's explicit allowlist only; never a ``FABRIC_*KEY*`` variable."""
+    for name, value in {**_KEYS, "CUSTOMER_SECRET": "canary-secret",
+                        "CUSTOMER_ALLOWED": "allowed"}.items():  # fmt: skip
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("LC_CTYPE", "C.UTF-8")
+    for allowlist in ((), ("CUSTOMER_ALLOWED",)):
+        runner = TransformRunner(T + "environment", env_allowlist=allowlist)
+        try:
+            outcome, out = runner.run(b"", 5.0)
+            assert outcome == "ok" and out is not None
+        finally:
+            assert runner.close()
+        env = json.loads(out)
+        assert "canary" not in out.decode() and not any(k.startswith("FABRIC_") for k in env)
+        assert env["PATH"] == os.environ["PATH"] and env["LC_CTYPE"] == "C.UTF-8"
+        assert env.get("CUSTOMER_ALLOWED") == ("allowed" if allowlist else None)
+        assert "CUSTOMER_SECRET" not in env
+
+
+def test_the_environment_allowlist_never_names_a_key() -> None:
+    assert check_env_allowlist(["CUSTOMER_TOOL_HOME", "HOME"]) == ("CUSTOMER_TOOL_HOME", "HOME")
+    for bad in (*_KEYS, "fabric_x_key", "FABRIC_KEYS", "BAD-NAME", "", 3):
+        with pytest.raises(ValueError, match="transform_env_allowlist"):
+            check_env_allowlist([bad])
+    with pytest.raises(ValueError, match="transform_env_allowlist"):
+        check_env_allowlist("PATH")  # a bare string is not a list of names
+    with pytest.raises(ValueError, match="transform_env_allowlist"):
+        TransformRunner(T + "upper", env_allowlist=["FABRIC_WIRE_ID_KEY"])
+
+
+def test_every_config_refuses_a_key_in_the_environment_allowlist(tmp_path: Path) -> None:
+    from fabric import LocalFilesystemContentStore  # noqa: PLC0415
+    from fabric.byte_evidence import ByteEvidenceConfig  # noqa: PLC0415
+    from fabric.wire._config import WireConfig  # noqa: PLC0415
+
+    store = LocalFilesystemContentStore(str(tmp_path), tenant_id="tenant-a")
+    assert WireConfig(transform_env_allowlist=["HOME"]).transform_env_allowlist == ("HOME",)
+    config = ByteEvidenceConfig(store=store, roles=frozenset({"tool.call.result"}),
+                                transform_env_allowlist=["HOME"])  # fmt: skip
+    assert config.transform_env_allowlist == ("HOME",)
+    for name in _KEYS:
+        with pytest.raises(ValueError, match="transform_env_allowlist"):
+            WireConfig(transform_env_allowlist=(name,))
+        with pytest.raises(ValueError, match="transform_env_allowlist"):
+            ByteEvidenceConfig(store=store, roles=frozenset({"tool.call.result"}),
+                               transform_env_allowlist=(name,))  # fmt: skip

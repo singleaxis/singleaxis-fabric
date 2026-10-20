@@ -94,6 +94,7 @@ def protector_for(config: WireConfig, gate: ContentGate | None) -> Protector | N
         policy, max_body_bytes=config.max_body_bytes,
         max_retain_bytes=config.max_retain_bytes, part_min_bytes=config.part_min_bytes,
         transformations=config.transformations, tokenization_key=config.tokenization_key,
+        transform_env_allowlist=config.transform_env_allowlist,
     )  # fmt: skip
 
 

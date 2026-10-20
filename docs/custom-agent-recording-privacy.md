@@ -61,9 +61,12 @@ both directories may remain readable by the same operating-system account.
 
 Transformations execute **out of process**: each is loaded by its module reference
 in a dedicated child interpreter (a fresh `python -I`, never a fork of the
-application, started with the application's `sys.path` and environment) and called
-with the bytes of one object over a pipe. The child sees only those bytes, never the
-spool, a store, a key or the network; its stdout and stderr go to `/dev/null`. Raw
+application, started with the application's `sys.path`) and called with the bytes of
+one object over a pipe. The child sees only those bytes, never the spool, a store, a
+key or the network; its stdout and stderr go to `/dev/null`. Its environment is
+minimal: `PATH`, locale variables and the names listed in `transform_env_allowlist`
+(on `WireConfig` and `ByteEvidenceConfig`, or the `ContentProtector` keyword); a
+`FABRIC_*KEY*` name is refused, and such a variable is never passed. Raw
 memory is queued inside the approved capture boundary; it is not a durable spool.
 Queue length, individual payload length, transformation input and output, and
 retained descriptor count are bounded. A transform that raises, returns non-bytes,
@@ -74,13 +77,19 @@ begins. A later review-store write failure can leave a valid original and a fail
 review descriptor; this is reported, not rolled back.
 
 Each call is bounded by `timeout_s` (default 5 s): past it the child process is
-killed (`SIGKILL`), the object is withheld as `protection_failed`, and a new child
-serves the next call. Because the transformation never shares the application's
+killed (`SIGKILL`) with its process group, so subprocesses the transformation started
+go too, the object is withheld as `protection_failed`, and a new child serves the next
+call. A child never outlives the application beyond its bounds: it exits when the
+application process dies (a parent-death pipe, and `PR_SET_PDEATHSIG` on Linux), and
+an alarm with its default action, restored even when the application ignores
+`SIGALRM`, bounds its start-up and each call. Because the transformation never shares the application's
 interpreter, even one that holds the GIL (a catastrophic regular expression, a C
 extension) cannot stall the application's threads. Capacity is reserved before a
 call starts: at most two calls of one transformation are busy at once, and a call
 beyond that is withheld at once (counted as saturated), never queued. Idle children
-exit after 60 s; `recorder.close()` stops them, and the recorder's worker thread.
+exit after 60 s and are reaped by the recorder's worker without waiting for another
+call; `recorder.close()` stops them (including a child still starting), and the
+recorder's worker thread.
 Platforms without `poll` (Windows) withhold every transformation. There is no
 secure memory erasure or crash-safe recovery of queued content. Independent run
 records are needed to identify losses before persistence. The recorder does not

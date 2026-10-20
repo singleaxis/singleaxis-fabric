@@ -25,7 +25,7 @@ from typing import Any
 
 from .._roles import ROLES, admits, part_object_id
 from .._sequence import OPAQUE_ID_RE
-from .._transform_runner import TransformRunner, check_transform_ref
+from .._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 from ..deployment_policy import TOKEN_TRANSFORMATION, token_bytes
 from ._policy import CapturePolicy
 
@@ -218,17 +218,20 @@ class Protector:
         part_min_bytes: int = DEFAULT_PART_MIN_BYTES,
         transformations: Mapping[str, Transformation] | None = None,
         tokenization_key: bytes | None = None,
+        transform_env_allowlist: Sequence[str] = (),
     ) -> None:  # fmt: skip
         self.policy, self.max_body, self.max_retain = policy, max_body_bytes, max_retain_bytes
         self.part_min, self._transforms = part_min_bytes, dict(transformations or {})
         self._token_key = tokenization_key
         # One bounded runner per distinct transformation (049 §7.7 rule 4; Sol P0-A #6).
         runners: dict[Transformation, TransformRunner] = {}
+        env = check_env_allowlist(transform_env_allowlist)
         for transform in self._transforms.values():
             if transform not in runners:
                 runners[transform] = TransformRunner(
-                    transform.ref, "fabric-wire-transform", max_output_bytes=max_body_bytes
-                )
+                    transform.ref, "fabric-wire-transform", max_output_bytes=max_body_bytes,
+                    env_allowlist=env,
+                )  # fmt: skip
         self._runners = {role: runners[t] for role, t in self._transforms.items()}
         self._saturated_logged: set[int] = set()
 

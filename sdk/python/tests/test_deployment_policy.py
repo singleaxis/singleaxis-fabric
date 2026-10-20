@@ -569,3 +569,23 @@ def test_deferred_redaction_rechecks_the_recorder_payload_cap(tmp_path: Path) ->
         assert not [p for p in tmp_path.rglob("*") if p.is_file()]
     finally:
         assert recorder.close()
+
+
+def test_redactors_get_only_the_allowlisted_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol P0-A round 3: a redactor child gets ``transform_env_allowlist``, never a key."""
+    import json  # noqa: PLC0415
+
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", "canary-id-key-0001")
+    monkeypatch.setenv("CUSTOMER_ALLOWED", "allowed")
+    with pytest.raises(ValueError, match="transform_env_allowlist"):
+        ContentProtector(policy_for("redact"), redactors={"terminal.stdout": T + "environment"},
+                         transform_env_allowlist=["FABRIC_WIRE_ID_KEY"])  # fmt: skip
+    protector = ContentProtector(
+        policy_for("redact"), redactors={"terminal.stdout": T + "environment"},
+        transform_env_allowlist=["CUSTOMER_ALLOWED"],
+    )  # fmt: skip
+    try:
+        env = json.loads(protector.protect("terminal.stdout", SECRET).protected_bytes or b"")
+    finally:
+        assert protector.close()
+    assert env["CUSTOMER_ALLOWED"] == "allowed" and "FABRIC_WIRE_ID_KEY" not in env

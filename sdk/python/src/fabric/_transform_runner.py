@@ -9,11 +9,14 @@ meanwhile (Sol P0-A round 2 #2). So a transformation runs **out of process**, as
 TypeScript Worker runner does: it is a module reference (``"package.module:function"``)
 loaded by a dedicated child interpreter (:mod:`fabric._transform_child`, started fresh
 with ``python -I``, never a fork of the application) and called with the bytes of one
-object over a pipe. The child never touches the spool, a store or the network.
+object over a pipe. The child never touches the spool, a store or the network, and its
+environment is minimal: ``PATH``, locale variables and the customer's
+``transform_env_allowlist`` (never a ``FABRIC_*KEY*`` variable).
 
 Each call waits at most its timeout; on timeout the child is killed with its process
-group (``SIGKILL`` preempts anything; each child leads its own session) and the caller withholds the content (``protection_failed``). The
-caller's thread only waits on the pipe (``poll``), so it never holds the GIL meanwhile.
+group (``SIGKILL`` preempts anything; each child leads its own session) and the caller
+withholds the content (``protection_failed``). The caller's thread only waits on the pipe
+(``poll``), so it never holds the GIL meanwhile.
 Capacity is reserved before a call starts: busy children and killed children not yet
 reaped together stay within ``max_workers`` (a stale idle child is discarded before the
 check and holds its slot until reaped, briefly awaited); beyond that a call is refused at
@@ -41,6 +44,7 @@ import sys
 import threading
 import time
 import weakref
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Final, Literal
 
@@ -60,6 +64,13 @@ _OK, _INVALID, _TOO_LARGE, _READY, _UNRESOLVED = 0, 2, 3, 4, 5
 _LOG = logging.getLogger("fabric.transform")
 _RUNNERS: weakref.WeakSet[TransformRunner] = weakref.WeakSet()
 _NO_POLL = not hasattr(select, "poll")  # Windows: every transformation is withheld
+# The child's environment (Sol P0-A round 3): these, locale variables and the customer's
+# ``transform_env_allowlist`` only; never a FABRIC_*KEY* variable.
+_BASE_ENV = frozenset({"PATH", "LANG", "LANGUAGE", "TZ", "TMPDIR", "LD_LIBRARY_PATH",
+                       "DYLD_LIBRARY_PATH", "SYSTEMROOT"})  # fmt: skip
+_LOCALE_ENV = re.compile(r"LC_[A-Z]+")
+_ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+_KEY_ENV = re.compile(r"FABRIC_.*KEY.*", re.IGNORECASE)
 _DEATH: list[int] = []  # this process's parent-death pipe (read end, write end)
 _DEATH_LOCK = threading.Lock()
 
@@ -88,6 +99,29 @@ def _death_fd() -> int:
         if not _DEATH:
             _DEATH.extend(os.pipe())
         return _DEATH[0]
+
+
+def check_env_allowlist(value: object) -> tuple[str, ...]:
+    """``value`` as a tuple of environment variable names a transformation child may
+    read, else ``ValueError`` (fixed text): never a ``FABRIC_*KEY*`` name (an id,
+    spool, tokenization or content key)."""
+    if isinstance(value, str | bytes) or not isinstance(value, Iterable):
+        raise ValueError("transform_env_allowlist must be a list of variable names")
+    names = tuple(value)
+    if not all(isinstance(n, str) and _ENV_NAME.fullmatch(n) and not _KEY_ENV.fullmatch(n)
+               for n in names):  # fmt: skip
+        raise ValueError(
+            "transform_env_allowlist names environment variables, never a FABRIC_*KEY* one"
+        )
+    return names
+
+
+def _child_env(allowlist: tuple[str, ...]) -> dict[str, str]:
+    """The minimal environment of a child: the child gets ``sys.path`` in its
+    configuration, so no ``PYTHON*`` variable is needed (``-I`` ignores them anyway)."""
+    return {name: value for name, value in os.environ.items()
+            if (name in _BASE_ENV or _LOCALE_ENV.fullmatch(name) or name in allowlist)
+            and not _KEY_ENV.fullmatch(name)}  # fmt: skip
 
 
 class _BrokenError(Exception):
@@ -176,8 +210,10 @@ class TransformRunner:
         max_workers: int = DEFAULT_MAX_WORKERS, max_output_bytes: int = MAX_IO_BYTES,
         idle_timeout_s: float = DEFAULT_IDLE_TIMEOUT_S,
         start_timeout_s: float = DEFAULT_START_TIMEOUT_S,
+        env_allowlist: Iterable[str] = (),
     ) -> None:  # fmt: skip
         self.ref = check_transform_ref(ref)
+        self._env = check_env_allowlist(env_allowlist)
         for bound in (max_workers, max_output_bytes):
             if type(bound) is not int or bound < 1:
                 raise ValueError("transform runner bounds must be positive integers")
@@ -306,7 +342,8 @@ class TransformRunner:
             proc = subprocess.Popen(  # noqa: S603 - this interpreter, Fabric's own script
                 [sys.executable, "-I", _CHILD, str(death), repr(self._start_s)],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                close_fds=True, pass_fds=(death,), start_new_session=True, bufsize=0,
+                env=_child_env(self._env), close_fds=True, pass_fds=(death,),
+                start_new_session=True, bufsize=0,
             )  # fmt: skip
         except (OSError, ValueError, RuntimeError):
             return None

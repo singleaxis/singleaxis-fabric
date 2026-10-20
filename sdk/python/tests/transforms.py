@@ -137,7 +137,14 @@ def spawn_sleeper(data: bytes) -> bytes:
     input, then waits for it (Sol P0-A round 3 #5)."""
     import subprocess  # noqa: PLC0415
 
-    tool = subprocess.Popen(["/bin/sleep", "3600"])  # noqa: S603
+    tool = subprocess.Popen(["/bin/sleep", "3600"])
     Path(data.decode()).write_text(str(tool.pid))
     tool.wait()
     return data
+
+
+def environment(data: bytes) -> bytes:
+    """The child's environment, as JSON (Sol P0-A round 3 environment isolation)."""
+    import json  # noqa: PLC0415
+
+    return json.dumps(dict(os.environ)).encode()

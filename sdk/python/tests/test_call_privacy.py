@@ -254,6 +254,7 @@ def test_transform_runs_off_path_and_overflow_does_not_wait(
             roles=frozenset({ROLE}),
             queue_max_items=1,
             role_policies={ROLE: _policy("masked_only", "tests.transforms:gated")},
+            transform_env_allowlist=("FABRIC_TEST_GATE_DIR",),
         )
     )
     try:

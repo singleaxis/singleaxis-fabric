@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   at once (`transform_saturated`, round 2 #5); idle children exit after 60 s and
   `ByteEvidenceRecorder.close()`, `ContentProtector.close()` and the wire uninstall
   stop them (round 2 #6). Windows (no `poll`) withholds every transformation.
+  Round 3: a stale idle child is discarded before the capacity check; `close()`
+  waits for children still starting and they are never used; exited children are
+  reaped without another call; a child exits when the application dies (parent-death
+  pipe, `PR_SET_PDEATHSIG` on Linux, `SIGALRM` restored to its default action over
+  start-up and each call); a timeout or close kills the child's whole process group;
+  the child gets a minimal environment (`PATH`, locale variables and the new
+  `transform_env_allowlist`, never a `FABRIC_*KEY*` variable).
 
 ### Changed (breaking, TypeScript explicit line)
 

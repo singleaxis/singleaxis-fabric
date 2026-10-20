@@ -29,7 +29,7 @@ from types import MappingProxyType
 from typing import Any
 
 from ._sequence import GeneratedIds, check_id_key, id_key_from_env
-from ._transform_runner import TransformRunner, check_transform_ref
+from ._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
@@ -277,8 +277,14 @@ class ByteEvidenceConfig:
     # The id key (049 §7.3; FABRIC_WIRE_ID_KEY when unset): the production profile needs
     # it before any content is captured. A secret: never in repr or logs.
     id_key: bytes | None = field(default=None, repr=False)
+    # Environment variables a role-policy transform child may read, beyond PATH and
+    # locale variables (never a FABRIC_*KEY* one; Sol P0-A round 3).
+    transform_env_allowlist: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:  # noqa: PLR0912
+        object.__setattr__(
+            self, "transform_env_allowlist", check_env_allowlist(self.transform_env_allowlist)
+        )
         if not isinstance(self.store, ByteEvidenceStore) or not self.store.tenant_id:
             raise ValueError("byte evidence requires a tenant-scoped byte evidence store")
         check_safe_identifier("tenant_id", self.store.tenant_id)
@@ -367,6 +373,7 @@ class ByteEvidenceRecorder:
             role: TransformRunner(
                 policy.transform, "fabric-byte-transform",
                 max_output_bytes=config.payload_max_bytes,
+                env_allowlist=config.transform_env_allowlist,
             )
             for role, policy in (config.role_policies or {}).items()
             if policy.transform is not None
