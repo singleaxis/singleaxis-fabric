@@ -322,9 +322,7 @@ class GeneratedIds:
             return generated
 
 
-_LABEL_PSEUDONYM_RE = re.compile(r"^lbl-[0-9a-f]{32}$")
 _AGENT_PSEUDONYM_RE = re.compile(r"^agt-[0-9a-f]{32}$")
-_MINTED_ID_RE = re.compile(r"^[0-9a-f]{32}$")  # a Fabric-minted call id (uuid4 hex)
 
 
 class KeyedIds:
@@ -334,14 +332,21 @@ class KeyedIds:
     :func:`source_label` (``s-``), both function v1 keyed; an agent id is its v2 ``agt-``
     pseudonym; any other caller id (operation, attempt, stream, parent call: step labels,
     049 §2.3) is the keyed v1 operator label ``lbl-``. Deterministic, so records join
-    across recorders, processes and restarts that hold the key. An emitted value maps to
-    itself (ids pass through more than one layer), and so does a Fabric-minted call id
-    (32 hex), so a ``parent_call_id`` still joins its parent's ``call_id``."""
+    across recorders, processes and restarts that hold the key.
 
-    __slots__ = ("_key",)
+    Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): an id
+    this instance minted (:meth:`keep`, a call id) or emitted (an ``agt-``/``lbl-`` value
+    it derived) maps to itself, so ids pass through more than one layer and a
+    ``parent_call_id`` joins its parent's ``call_id``; every caller value, even a 32-hex
+    or ``lbl-``-shaped one, is mapped. The registry is bounded (oldest first out); a value
+    that aged out is mapped again, which can break a join but never leaks it."""
+
+    __slots__ = ("_emitted", "_key", "_lock")
 
     def __init__(self, key: bytes) -> None:
         self._key = key
+        self._lock = threading.Lock()
+        self._emitted: dict[str, None] = {}  # insertion-ordered: a FIFO-bounded set
 
     def __repr__(self) -> str:  # the key is a secret
         return "KeyedIds()"
@@ -353,17 +358,24 @@ class KeyedIds:
         return value if RUN_PSEUDONYM_RE.fullmatch(value) else run_pseudonym(value, self._key)
 
     def agent(self, value: str) -> str:
-        if _AGENT_PSEUDONYM_RE.fullmatch(value):
-            return value
-        return cast("str", pseudonym_v2("agt", value, self._key))
+        with self._lock:
+            if value in self._emitted:
+                return value
+        return self.keep(cast("str", pseudonym_v2("agt", value, self._key)))
 
     def keep(self, value: str) -> str:
+        """Register a Fabric-minted or emitted id: it maps to itself from now on."""
+        with self._lock:
+            self._emitted[value] = None
+            if len(self._emitted) > 2 * _MAX_GENERATED_IDS:
+                del self._emitted[next(iter(self._emitted))]
         return value
 
     def other(self, value: str) -> str:
-        if _LABEL_PSEUDONYM_RE.fullmatch(value) or _MINTED_ID_RE.fullmatch(value):
-            return value
-        return label_pseudonym("lbl-", value, self._key)
+        with self._lock:
+            if value in self._emitted:
+                return value
+        return self.keep(label_pseudonym("lbl-", value, self._key))
 
 
 EmittedIds = GeneratedIds | KeyedIds

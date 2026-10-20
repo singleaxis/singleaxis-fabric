@@ -154,19 +154,21 @@ class GeneratedIds {
 
 const RUN_PSEUDONYM = /^r-[0-9a-f]{32}$/;
 const SOURCE_PSEUDONYM = /^s-[0-9a-f]{32}$/;
-const LABEL_PSEUDONYM = /^lbl-[0-9a-f]{32}$/;
-const MINTED_ID = /^[0-9a-f]{32}$/;
 
 /**
  * Emitted ids in the `pseudonymous` identity mode with the id key (spec 049 §2.9 rules
  * 1-3), in parity with Python `fabric._sequence.KeyedIds` and as the wire line emits
  * them: the run id `r-` and the source id `s-` (function v1, keyed); any other caller id
  * (operation, attempt, stream: step labels, 049 §2.3) the keyed v1 operator label `lbl-`.
- * Deterministic, so records join across recorders and processes holding the key. An
- * emitted value maps to itself, and so does a Fabric-minted id (32 hex).
+ * Deterministic, so records join across recorders and processes holding the key.
+ * Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): only a
+ * `lbl-` value this instance emitted maps to itself; every caller value, even a 32-hex
+ * or `lbl-`-shaped one, is mapped. The registry is bounded (oldest first out), as in
+ * Python.
  */
 class KeyedIds {
   readonly #key: Uint8Array;
+  readonly #emitted = new Set<string>(); // insertion-ordered: a FIFO-bounded set
 
   constructor(key: Uint8Array) {
     this.#key = key;
@@ -181,9 +183,12 @@ class KeyedIds {
   }
 
   other(value: string): string {
-    return LABEL_PSEUDONYM.test(value) || MINTED_ID.test(value)
-      ? value
-      : labelPseudonym("lbl", value, this.#key);
+    if (this.#emitted.has(value)) return value;
+    const label = labelPseudonym("lbl", value, this.#key);
+    this.#emitted.add(label);
+    if (this.#emitted.size > 2 * MAX_GENERATED_IDS)
+      this.#emitted.delete(this.#emitted.values().next().value as string);
+    return label;
   }
 }
 

@@ -16,8 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   snapshots, journals and seals, `SyntheticCaptureSession` events and the call OTLP
   projection carry the run id as `r-`, the source id as `s-` (function v1, keyed, as
   the wire line), the agent id as `agt-` (v2) and any other caller id (operation,
-  attempt, stream, parent call) as the keyed operator label `lbl-`. Fabric-minted call
-  ids are kept, so parent joins still hold. `FABRIC_IDENTITY_MODE=clear` (or
+  attempt, stream, parent call) as the keyed operator label `lbl-`. Only ids the
+  recorder itself minted (call ids) or emitted map to themselves, so parent joins still
+  hold; provenance is registered, never inferred from shape, so a 32-hex (UUID-shaped)
+  or `lbl-`-shaped caller id is pseudonymised too. `FABRIC_IDENTITY_MODE=clear` (or
   `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
   `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
   emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a

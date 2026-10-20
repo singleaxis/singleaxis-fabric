@@ -264,6 +264,45 @@ describe("the explicit input's identity with the id key", () => {
     },
   );
 
+  it("maps a hex-shaped or unregistered lbl- caller id; only its own emitted ids pass", async () => {
+    // Sol P0-A round 4 #1: shape never proves provenance. Values computed by the Python SDK.
+    vi.stubEnv("FABRIC_IDENTITY_MODE", "");
+    vi.stubEnv("FABRIC_WIRE_ID_KEY", ID_KEY.toString());
+    const hex = "0123456789abcdef0123456789abcdef";
+    const label = "lbl-024cdec5bc0d58b8a636a3e3084582fc";
+    const recorder = new ByteEvidenceRecorder({
+      store: store(policy("production").tenant_id),
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy("production"),
+    });
+    const first = recorder.capture(SECRET, {
+      ...identity,
+      operationId: hex,
+      attemptId: hex,
+      streamId: hex,
+    });
+    expect(first).toMatchObject({ operation_id: label, attempt_id: label, stream_id: label });
+    const forged = recorder.capture(SECRET, {
+      ...options,
+      sourceSequence: 2,
+      operationId: "lbl-" + "f".repeat(32),
+      attemptId: label, // emitted by this recorder: it maps to itself
+    });
+    expect(forged).toMatchObject({
+      operation_id: "lbl-39de82a31fdc6362cccd1d7479f54e0c",
+      attempt_id: label,
+    });
+    await recorder.flush();
+    expect(JSON.stringify([first, forged, recorder.drainSettled()])).not.toContain(hex);
+    for (const root of roots)
+      for (const name of fs.readdirSync(root, { recursive: true })) {
+        const file = path.join(root, String(name));
+        if (fs.lstatSync(file).isFile())
+          expect(fs.readFileSync(file).includes(Buffer.from(hex))).toBe(false);
+      }
+    await recorder.close();
+  });
+
   it("FABRIC_IDENTITY_MODE=clear keeps the caller ids; an invalid mode throws", async () => {
     vi.stubEnv("FABRIC_WIRE_ID_KEY", ID_KEY.toString());
     vi.stubEnv("FABRIC_IDENTITY_MODE", "clear");

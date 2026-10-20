@@ -292,3 +292,74 @@ def test_the_clear_identity_mode_keeps_the_caller_ids(
         assert snapshot["calls"][0]["operation_id"] == "op-private-7"
     finally:
         assert recorder.close()
+
+
+HEX = "0123456789abcdef0123456789abcdef"  # a caller id shaped like a Fabric-minted one
+HEX_LABEL = "lbl-024cdec5bc0d58b8a636a3e3084582fc"  # its keyed label (Sol P0-A round 4 #1)
+
+
+def test_hex_shaped_caller_ids_are_pseudonymised_everywhere(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Sol P0-A round 4 #1: shape never proves a Fabric-minted id; only ids this recorder
+    # minted or emitted pass through, so a UUID-hex caller id leaves as its keyed label.
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
+    assert label_pseudonym("lbl-", HEX, KEY) == HEX_LABEL
+    recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
+        store=LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="tenant-a"),
+        roles=ROLES, id_key=KEY,
+    ))  # fmt: skip
+    root = tmp_path / "spool"
+    root.mkdir(mode=0o700)
+    journal = SyntheticSourceSpool(
+        str(root), tenant_id="tenant-a", run_id=recorder.emitted_run_id("private-case-123")
+    )
+    try:
+        descriptor = recorder.capture(
+            b"x", role="terminal.stdout", boundary="terminal", source_id="customer-alice",
+            source_epoch=0, source_sequence=1, run_id="private-case-123", operation_id=HEX,
+            attempt_id=HEX, stream_id=HEX, chunk_index=0,
+        )  # fmt: skip
+        assert [descriptor[key] for key in ("operation_id", "attempt_id", "stream_id")] == [
+            HEX_LABEL
+        ] * 3
+        forged = "lbl-" + "f" * 32  # prefixed, but never emitted by this recorder's key
+        assert recorder.capture(
+            b"x", role="terminal.stdout", boundary="terminal", source_id="customer-alice",
+            source_epoch=0, source_sequence=2, operation_id=forged,
+        )["operation_id"] == label_pseudonym("lbl-", forged, KEY)  # fmt: skip
+
+        calls = CallRecorder(recorder, run_id="private-case-123", agent_id="agent-private-bob",
+                             source_id="customer-alice", source_spool=journal)  # fmt: skip
+        assert calls.call(b"a", lambda _: b"r", operation_id=HEX, attempt_id=HEX) == b"r"
+        assert calls.call(b"a", lambda _: b"r", parent_call_id=HEX) == b"r"
+        minted = calls.snapshot()["calls"][0]["call_id"]
+        assert calls.call(b"a", lambda _: b"r", parent_call_id=minted) == b"r"
+        with calls.stream(b"a", lambda _: iter([b"c"]), operation_id=HEX) as chunks:
+            assert list(chunks) == [b"c"]
+        snapshot = calls.snapshot()
+        first, second, third, streamed = snapshot["calls"]
+        assert (first["operation_id"], first["attempt_id"]) == (HEX_LABEL, HEX_LABEL)
+        assert second["parent_call_id"] == HEX_LABEL
+        assert third["parent_call_id"] == minted  # a call id this recorder minted joins
+        assert streamed["operation_id"] == HEX_LABEL
+        assert calls.seal_source()["status"] == "sealed"
+        payload, _ = project_call_snapshot(snapshot)
+        assert HEX not in json.dumps(snapshot)
+        assert HEX.encode() not in payload
+
+        session = SyntheticCaptureSession(recorder, tenant_id="tenant-a", run_id="private-case-123")
+        session.capture(b"x", source_id="customer-alice", boundary="terminal",
+                        role="terminal.stdout", operation_id=HEX, attempt_id=HEX,
+                        stream_id=HEX, chunk_index=0)  # fmt: skip
+        event = session.snapshot()["events"][0]
+        for key in ("operation_id", "attempt_id"):
+            assert event[key] == event["descriptor"][key] == HEX_LABEL
+        assert event["descriptor"]["stream_id"] == HEX_LABEL
+        assert recorder.flush(10)
+        hits = [path.name for path in tmp_path.rglob("*")
+                if path.is_file() and HEX.encode() in path.read_bytes()]  # fmt: skip
+        assert hits == []  # descriptors, journal records and seals
+    finally:
+        journal.close()
+        assert recorder.close()
