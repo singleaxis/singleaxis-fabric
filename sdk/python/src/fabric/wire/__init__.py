@@ -59,31 +59,50 @@ _DRAIN_SHARE = 0.75  # of the close budget; the rest delivers the shutdown loss 
 def _after_fork_in_child() -> None:
     global _LOCK  # noqa: PLW0603
     _LOCK = threading.RLock()  # another parent thread may have held it
+    with contextlib.suppress(Exception):
+        _use_proxy_snapshot()
 
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_after_fork_in_child)
 
-_FORK_PRIMED = False
+# The system proxy configuration as read at install (macOS only; see _prime_fork_safety).
+_PROXY_SNAPSHOT: tuple[dict[str, Any], dict[str, str]] | None = None
 
 
 def _prime_fork_safety() -> None:
     """Keep ``fork`` as safe as it was without capture (049 §7.1, agent matrix D2). On
-    macOS the system proxy lookup (``urllib.request.getproxies``/``proxy_bypass``, which
-    httpx and requests make with no proxy variable set) runs Objective-C class
-    initializers, and a forked child of a multithreaded parent that runs one aborts.
-    Fabric's threads make the host multithreaded, so that lookup is made once here, on the
-    installing thread before any Fabric thread starts: a child then finds the classes
-    initialized. Its result is unused; Fabric's own delivery never consults it."""
-    global _FORK_PRIMED  # noqa: PLW0603
-    if _FORK_PRIMED or sys.platform != "darwin":
+    macOS the system proxy lookup (``urllib.request.getproxies``/``proxy_bypass``, made by
+    httpx and requests with no proxy variable set) goes through SystemConfiguration. In a
+    forked child of a multithreaded parent it either aborts under the Objective-C
+    fork-safety check (first lookup in the child) or reuses the parent's session and
+    intermittently segfaults (looked up in the parent before). Fabric's threads make the
+    host multithreaded, so the configuration is read once here, on the installing thread
+    before any Fabric thread starts, and a forked child answers urllib's two lookups from
+    that snapshot instead (:func:`_after_fork_in_child`): the values the parent saw at
+    install, never a crash. Fabric's own delivery never consults them (pinned proxies)."""
+    global _PROXY_SNAPSHOT  # noqa: PLW0603
+    if _PROXY_SNAPSHOT is not None or sys.platform != "darwin":
         return
-    _FORK_PRIMED = True
     with contextlib.suppress(Exception):
         import _scproxy  # type: ignore[import-not-found]  # noqa: PLC0415
+        import urllib.request  # noqa: PLC0415
 
-        _scproxy._get_proxy_settings()
-        _scproxy._get_proxies()
+        _PROXY_SNAPSHOT = (dict(_scproxy._get_proxy_settings()), dict(_scproxy._get_proxies()))
+        _ = urllib.request.getproxies  # imported now: a child patches it, never re-imports
+
+
+def _use_proxy_snapshot() -> None:
+    """In a forked child: urllib's SystemConfiguration lookups return the snapshot."""
+    if (snapshot := _PROXY_SNAPSHOT) is None:
+        return
+    request = sys.modules.get("urllib.request")
+    if request is None or not hasattr(request, "_get_proxies"):
+        return
+    settings, proxies = snapshot
+    setattr(request, "_get_proxy_settings", lambda: {  # noqa: B010
+        k: list(v) if isinstance(v, list) else v for k, v in settings.items()})  # fmt: skip
+    setattr(request, "_get_proxies", lambda: dict(proxies))  # noqa: B010
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
