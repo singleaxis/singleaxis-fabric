@@ -46,7 +46,7 @@ import time
 import weakref
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 Outcome = Literal["ok", "error", "invalid", "too_large", "timeout", "saturated"]
 DEFAULT_MAX_WORKERS: Final = 2
@@ -177,8 +177,7 @@ def _stop(proc: subprocess.Popen[bytes], *, pipes: bool = True) -> None:
     (never those a calling thread is waiting on: it sees the end of input and closes
     them); reaping is :func:`_reaped`'s (never waits)."""
     if proc.returncode is None:  # not reaped: the group id is still this child's own
-        with contextlib.suppress(OSError):  # already gone
-            os.killpg(proc.pid, signal.SIGKILL)
+        _kill_group(proc)
     with contextlib.suppress(OSError):  # already gone
         proc.kill()
     for pipe in (proc.stdin, proc.stdout) if pipes else ():
@@ -187,11 +186,36 @@ def _stop(proc: subprocess.Popen[bytes], *, pipes: bool = True) -> None:
                 pipe.close()
 
 
+# Linux can see an exit without reaping it, so the group is killed while the child's pid
+# still names it; elsewhere it is killed just after the reap (a group's id is not reused
+# while any member is alive, so only an empty group is ever at stake then).
+_WAITID: Any = getattr(os, "waitid", None)  # absent on macOS (and from its type stubs)
+_SEE_EXIT = _WAITID is not None and hasattr(os, "WNOWAIT")
+
+
+def _kill_group(proc: subprocess.Popen[bytes]) -> None:
+    with contextlib.suppress(OSError):  # an empty group is already gone
+        os.killpg(proc.pid, signal.SIGKILL)
+
+
 def _reaped(proc: subprocess.Popen[bytes]) -> bool:
+    """Whether ``proc`` has been reaped (never waits). An interpreter that exits by itself
+    (idle expiry, a crash, its alarm) takes its process group with it, so a tool its
+    transformation started never outlives it (Sol P0-A round 4 #3)."""
+    if proc.returncode is not None:
+        return True
+    if _SEE_EXIT:
+        with contextlib.suppress(OSError):
+            flags = getattr(os, "WEXITED", 0) | os.WNOHANG | getattr(os, "WNOWAIT", 0)
+            if _WAITID(getattr(os, "P_PID", 1), proc.pid, flags):
+                _kill_group(proc)
     try:
-        return proc.poll() is not None
+        done = proc.poll() is not None
     except OSError:
         return True
+    if done and not _SEE_EXIT:
+        _kill_group(proc)
+    return done
 
 
 class _Child:

@@ -66,12 +66,49 @@ def _reply(fd: int, kind: int, data: bytes = b"") -> None:
         _write_all(fd, data)
 
 
+def _kill_group(leader: int) -> None:
+    """Kill the process group ``leader`` leads (this child's own session: the tools its
+    transformation started), never one this process merely belongs to."""
+    with contextlib.suppress(OSError):
+        if os.getpgrp() == leader:
+            os.killpg(leader, signal.SIGKILL)
+
+
 def _watch_parent(fd: int) -> None:
-    """Exit at the end of the parent-death pipe: the parent died."""
+    """Exit, with the process group, at the end of the parent-death pipe: the parent died."""
     with contextlib.suppress(OSError):
         while os.read(fd, 1):
             pass
+    _kill_group(os.getpid())
     os._exit(0)
+
+
+def _start_guardian(death_fd: int) -> None:
+    """Fork the group's guardian (before any thread or customer code): it waits for the end
+    of the parent-death pipe or of a pipe only this interpreter writes, then kills the
+    group, so the tools a transformation started end with the parent or the interpreter
+    however either ends (``SIGKILL``, an alarm, ``PR_SET_PDEATHSIG``, idle expiry), even
+    while customer code holds the GIL. It runs no customer code and holds no protocol
+    pipe (Sol P0-A round 4 #3)."""
+    leader = os.getpid()
+    if os.getpgrp() != leader:  # not this child's own group: never kill another's
+        return
+    life, alive = os.pipe()  # not inherited by exec'd tools (non-inheritable)
+    if os.fork() == 0:
+        try:
+            os.close(alive)
+            null = os.open(os.devnull, os.O_RDWR)
+            for fd in (0, 1, 2):  # fds 0 and 1 are still the protocol pipes here
+                os.dup2(null, fd)
+            low, high = sorted((death_fd, life))
+            os.closerange(3, low)
+            os.closerange(low + 1, high)
+            while all(os.read(fd, 1) for fd in select.select([death_fd, life], [], [])[0]):
+                pass
+        finally:
+            _kill_group(leader)
+            os._exit(0)
+    os.close(life)
 
 
 def _default_alarm() -> None:
@@ -89,6 +126,7 @@ def _guard(death_fd: int, start_s: float) -> None:
             import ctypes  # noqa: PLC0415 - Linux only
 
             ctypes.CDLL(None).prctl(1, int(signal.SIGKILL), 0, 0, 0)  # PR_SET_PDEATHSIG
+    _start_guardian(death_fd)
     threading.Thread(target=_watch_parent, args=(death_fd,), daemon=True).start()
     signal.setitimer(signal.ITIMER_REAL, start_s + _ALARM_GRACE_S)
 

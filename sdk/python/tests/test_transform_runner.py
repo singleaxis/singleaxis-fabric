@@ -424,6 +424,73 @@ def test_stopping_a_child_stops_its_subprocesses(tmp_path: Path, stop: str) -> N
             os.kill(tool, signal.SIGKILL)
 
 
+def _wait_gone(pid: int, bound_s: float, what: str) -> None:
+    deadline = time.monotonic() + bound_s
+    while process_state(pid) not in ("", "Z"):  # PID 1 may reap it later
+        assert time.monotonic() < deadline, what
+        time.sleep(0.05)
+
+
+def test_an_exited_interpreter_takes_its_process_group(tmp_path: Path) -> None:
+    """Sol P0-A round 4 #3: a transformation started an external tool and returned; after
+    idle expiry and ``reap()`` the runner forgot its interpreter while the tool kept
+    running under PPID 1. Settling an exited interpreter kills its process group."""
+    marker = tmp_path / "tool.pid"
+    runner = TransformRunner(T + "leave_sleeper", idle_timeout_s=0.15)
+    tool = 0
+    try:
+        assert runner.run(str(marker).encode(), 5.0) == ("ok", b"safe")
+        tool = int(marker.read_text())
+        (proc,) = runner._procs
+        deadline = time.monotonic() + 5.0
+        while process_state(proc.pid) not in ("", "Z"):  # the idle interpreter exits
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        runner.reap()
+        assert runner.children() == 0
+        _wait_gone(tool, 3.0, "the tool outlived its interpreter")
+        assert runner.close()
+    finally:
+        runner.close()
+        if tool and process_state(tool) not in ("", "Z"):
+            os.kill(tool, signal.SIGKILL)
+
+
+@pytest.mark.parametrize(("ref", "timeout_s", "bound_s"), [
+    (T + "spawn_sleeper", 30.0, 3.0),  # waiting on the tool: the parent-death watchdog
+    (T + "sleeper_then_spin", 1.0, 8.0),  # holding the GIL: the call's alarm, then the guard
+])  # fmt: skip
+def test_a_dead_parent_takes_the_transformation_process_group(
+    tmp_path: Path, ref: str, timeout_s: float, bound_s: float
+) -> None:
+    """Sol P0-A round 4 #3: killing the recorder ended the transformation interpreter,
+    but the tool it started survived under PPID 1. The whole group goes."""
+    marker = tmp_path / "tool.pid"
+    code = _ORPHAN_PARENT.format(ignore_alarm=False, ref=ref, start_s=30.0,
+                                 data=str(marker).encode(), timeout_s=timeout_s)  # fmt: skip
+    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,  # noqa: S603
+                              cwd=Path(__file__).parent.parent)  # fmt: skip
+    pid = tool = 0
+    try:
+        assert parent.stdout is not None
+        pid = int(parent.stdout.readline())
+        deadline = time.monotonic() + 10.0
+        while not marker.exists() or not marker.read_text():
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        tool = int(marker.read_text())
+        parent.kill()
+        parent.wait(10.0)
+        _wait_gone(pid, bound_s, "the orphaned interpreter is still running")
+        _wait_gone(tool, bound_s, "the tool outlived the recorder")
+    finally:
+        parent.kill()
+        parent.wait(10.0)
+        for leftover in (pid, tool):
+            if leftover and process_state(leftover) not in ("", "Z"):
+                os.kill(leftover, signal.SIGKILL)
+
+
 _KEYS = {
     "FABRIC_WIRE_ID_KEY": "canary-id-key-0001",
     "FABRIC_TOKENIZATION_KEY": "canary-tokenization-key",
