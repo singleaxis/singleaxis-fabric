@@ -113,6 +113,11 @@ class Sender:
             self._forked = False
             return self._exporter
 
+    def owned_exporter(self) -> SpanExporter | None:
+        """The exporter this process built or was given, without rebuilding one in a forked
+        child (the parent's is never closed there); for shutdown at exit."""
+        return None if self._forked else self._exporter
+
     def _failures(self) -> int:
         """Capture events of this process that will never be delivered: exchanges lost
         before the spool (each one is a recorded loss), markers dropped (queue overflow or a
@@ -333,30 +338,41 @@ class Sender:
             instrumentation_scope=InstrumentationScope("fabric.wire", __version__),
         )  # fmt: skip
 
-    def _settle(self, deadline: float) -> bool:
+    def _admit_pending(self, deadline: float) -> bool:
+        """Spool pending losses and markers; ``False`` when a loss range is still waiting in
+        memory or the spool's directory barrier is not established (not durable)."""
+        durable = self.ensure_durable()
+        self.pump(deadline=deadline)
+        if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+            return False
+        try:  # after a pump: no loss range is still waiting in memory
+            admitted = not self.loss.has_pending_losses()
+        finally:
+            self._pump_lock.release()
+        return admitted and durable
+
+    def _settle(self, deadline: float, *, everything: bool = False) -> bool:
         """Spool pending losses/markers; wait until this process's records are settled
-        (delivered, or failed: quarantined or gone without a receipt). All of it, the
-        admission check included, runs on a helper thread: the caller waits only until
-        ``deadline``, even while another pump holds the lock during stalled disk I/O.
-        ``False`` also when a loss range could not be spooled, or while the spool's
-        directory barrier is not established (records are then not durable)."""
+        (delivered, or failed: quarantined or gone without a receipt) and, with
+        ``everything`` in the draining process, until every record pending now (other
+        writers' too: exited workers') is delivered. All of it, the admission check
+        included, runs on a helper thread: the caller waits only until ``deadline``, even
+        while another pump holds the lock during stalled disk I/O. ``False`` also when a
+        loss range could not be spooled, or while the spool's directory barrier is not
+        established (records are then not durable)."""
 
         def work() -> bool:
-            durable = self.ensure_durable()
-            self.pump(deadline=deadline)
-            if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
-                return False
-            try:  # after a pump: no loss range is still waiting in memory
-                admitted = not self.loss.has_pending_losses()
-            finally:
-                self._pump_lock.release()
+            admitted = self._admit_pending(deadline)
             pending = self.spool.pending()
+            drain_all = everything and self.spool.holder
+            others = set(self.spool.names()) - pending if drain_all else set()
             self.wake()
-            while self.spool.settle(pending):
+            while self.spool.settle(pending) or (others and others & set(self.spool.names())):
                 if time.monotonic() >= deadline:
                     return False
+                self.wake()
                 time.sleep(0.02)
-            return admitted and durable
+            return admitted
 
         return self._bounded(work, deadline)
 
@@ -384,12 +400,19 @@ class Sender:
         previous, self._failed_at_flush = self._failed_at_flush, self._failures()
         return delivered and self._failed_at_flush == previous
 
-    def close(self, timeout_s: float) -> bool:
-        """:meth:`_settle` (``final`` included), stop; undelivered records stay on disk.
-        ``False`` too when any exchange was lost before the spool or any marker was dropped
-        since this sender started."""
+    def close(self, timeout_s: float, *, exiting: bool = False) -> bool:
+        """:meth:`_settle` (``final`` included; the drainer delivers every pending record),
+        stop; undelivered records stay on disk. A process that is ``exiting`` and does not
+        drain the spool (a worker) only makes its records durable there: the drainer, now
+        or in a later process, delivers them, so the worker never waits on another
+        process. ``False`` too when any exchange was lost before the spool or any marker
+        was dropped since this sender started."""
         deadline = time.monotonic() + max(0.0, timeout_s)
-        delivered = self._settle(deadline) and self._failures() == self._failed_at_start
+        if exiting and not self.spool.holder:
+            settled = self._bounded(lambda: self._admit_pending(deadline), deadline)
+        else:
+            settled = self._settle(deadline, everything=True)
+        delivered = settled and self._failures() == self._failed_at_start
         self.loss.attach(None)  # later losses go to the direct path
         self._stop.set()
         self._wake.set()

@@ -67,7 +67,8 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. It must be HTTPS (verified; verification cannot be turned off) or plain HTTP to a loopback host only. A URL with user info, a query or a fragment is rejected without echoing it. Redirects are never followed (below). |
 | `FABRIC_WIRE_STORE` | no | Unset: node mode when a content endpoint is set, else metadata only (no bytes stored; runs can only be `unverified`). `node`: node mode explicitly. `file:///absolute/dir`: the agent writes a local store itself (development, offline or single-host; refused together with a content endpoint). `s3://…` is **refused**: S3 is written by the Node. |
 | `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
-| `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). Optional in file mode, where it enables the same delivery path. |
+| `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). In local file mode (`FABRIC_WIRE_STORE=file://…`, private tracer, an OTLP endpoint set) the spool is on by default at `<store root>/.fabric-wire-spool/<tenant>`, so a captured call survives the process (a crash, SIGKILL, a terminated worker) and the next process capturing to the same store delivers it; `off` restores direct export. |
+| `FABRIC_WIRE_AIOHTTP` | no | `1` (default) or `0`: capture model calls sent with `aiohttp` (capture point `wire.py.aiohttp`, LiteLLM's and DSPy's default async transport). |
 | `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY` | no | `FABRIC_WIRE_SPOOL_DIR` or one of its ancestors, provisioned durable by you (like a mount point): the spool's directory barrier fsyncs it and the directories below it, never above. Needed only when an ancestor of the spool cannot be opened by the agent and no earlier walk was recorded; see "The spool". |
 | `FABRIC_WIRE_SPOOL_MAX_BYTES` | no | Spool bound, default 1 GiB, minimum `2 × FABRIC_WIRE_MAX_BODY_BYTES + 1 MiB`. When full, new exchanges are dropped and recorded as `queue_full` losses; the host is unaffected. |
 | `FABRIC_WIRE_SPOOL_KEY` (or `FABRIC_WIRE_SPOOL_KEY_FILE`) | production profile | Base64 of a 32-byte AES-256-GCM key (spec 049 §7.8). Every spool record is sealed under it before it reaches the disk; the key is never written, and `WireHandle.status()` names it only by its `kid-` id. With a key set, a record **without** the envelope is never read or delivered: it is quarantined as `*.corrupt` and its exchange is reported as an `internal_error` loss (a plaintext record could be a downgrade by anyone able to replace spool files). `status()["spool_encrypted"]` stays `false` while any plaintext record, pending or quarantined, remains on disk (`spool_plaintext_records`). |
@@ -78,11 +79,12 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_LABELS` | no | Unset or `pseudonymous` (default): source id and `service.name` leave the agent only as `s-`/`svc-` pseudonyms. `clear`: they are emitted unchanged; **operator-chosen labels are exported unchanged; you guarantee they contain no personal data**. Any other value is a configuration error. Run ids are pseudonymised in both modes. |
 | `FABRIC_SOURCE_ID` | no | Id of this capture source, emitted as its `s-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`). Default `wire-` + 16 hex derived from host name and `service.name`. |
 | `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy); schema and example below. OpenAI, Anthropic and Azure OpenAI are matched by default. |
-| `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and worker queue length (default 256). |
+| `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and capture-queue entry cap (default 16384; the queue is bounded by bytes through the 256 MiB in-flight budget, the entry cap only bounds per-entry overhead). |
 | `FABRIC_WIRE_TRACER` | no | `private` (default, and required in node mode). `global` sends exchange spans through the agent's own provider without the spool; it is refused in node mode (see "Global mode" below). |
 | `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | **Removed.** Setting either is an error: encryption is configured on the Fabric Node. |
 | `OTEL_SERVICE_NAME` | no | Source of the capture spans' one resource attribute, `service.name` (must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, else `fabric-wire`), emitted as its `svc-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`); `OTEL_RESOURCE_ATTRIBUTES` and resource detectors are ignored. |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT` | yes | Node span ingress. Over HTTP the traces-specific variable takes the full URL (`https://node:4318/v1/traces`) and the general one gets `/v1/traces` appended; over gRPC use `https://node:4317`. User info, query or fragment is rejected. The content rule applies to spans too: verified TLS, or plaintext only to a loopback host (`localhost`, `127.0.0.1`, `[::1]`). Over gRPC Fabric decides the channel security itself: `https://` is TLS, `http://` is plaintext, and a scheme-less `host:port` is plaintext only when `OTEL_EXPORTER_OTLP_TRACES_INSECURE` (else `OTEL_EXPORTER_OTLP_INSECURE`) is `true`; plaintext to any other host fails installation. |
+| `OTEL_SDK_DISABLED` | no | `true` (the OpenTelemetry kill switch) also disables capture: nothing is patched or recorded, one warning is logged and `status()` reports `capture: disabled`, `capture_reason: otel_sdk_disabled`. |
 | `FABRIC_WIRE_PROXY` | no | Explicit forward proxy (`http://proxy:3128`, optional user info) for Fabric's own span and content delivery to an **HTTPS** endpoint; requests are tunnelled with `CONNECT`, so TLS (and its verification) stays end to end with the Node. Never used for a loopback endpoint. See "Proxies" below. |
 | `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` / `OTEL_EXPORTER_OTLP_PROTOCOL` | no | `http/protobuf` (default, port 4318) or `grpc` (port 4317). The content endpoint is always OTLP/HTTP protobuf. |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | over TLS | CA bundle that signs the Node's server certificate. |
@@ -210,8 +212,8 @@ stalled in disk I/O.
 once its spool file is fsync'd. From the moment the call finishes (the last
 response byte reaches the client, or the stream is closed or fails) until
 then, the exchange exists only in the agent's memory: it waits in the
-capture worker's queue (at most `FABRIC_WIRE_QUEUE_MAX_ITEMS`, default 256
-exchanges, and 256 MiB of bodies), and the worker hashes both bodies, then
+capture worker's queue (bounded by 256 MiB of retained bodies, and at most
+`FABRIC_WIRE_QUEUE_MAX_ITEMS` exchanges, default 16384), and the worker hashes both bodies, then
 writes, fsyncs and renames the record. With an idle worker that is one
 exchange for a few milliseconds (one SHA-256 pass plus one fsync; longer for
 multi-MiB bodies or slow disks); under a burst it is every queued exchange.
@@ -943,11 +945,34 @@ bounded wait as missing.
 
 ## 6. Known limits
 
-- **Python only, httpx and httpx2 only.** Calls through the default
+- **Python only: httpx, httpx2 and aiohttp.** Calls through the default
   transports of `httpx` and `httpx2` are captured (OpenAI below 3 and
-  Anthropic below 1 use httpx; `openai>=3` and `anthropic>=1` use httpx2).
-  `requests`, `aiohttp`, `boto3` (including Bedrock), gRPC clients, other
-  languages and other processes are not captured.
+  Anthropic below 1 use httpx; `openai>=3` and `anthropic>=1` use httpx2), and
+  calls sent with `aiohttp.ClientSession` (LiteLLM, DSPy, the OpenAI SDK's
+  `DefaultAioHttpClient`). `requests`, `urllib3`, `boto3` (including
+  Bedrock), gRPC clients, other languages and other processes are not
+  captured. A model call to a matched endpoint through `requests` or
+  `urllib3` is not silent: it takes a sequence number and is recorded as an
+  `uninstrumented_client` loss, so its run is `partial`, and
+  `WireHandle.status()` lists those clients (and any of httpx, httpx2 or
+  aiohttp loaded but not patched) under `uninstrumented_clients`, with the
+  state of each wire capture point under `capture_points`.
+- **Multiprocessing.** Forked and spawned workers capture like any process.
+  A worker that ends normally (`pool.close(); pool.join()`, or a worker that
+  returns) closes capture on its way out and its calls are delivered by the
+  process draining the spool. `with Pool():` sends SIGTERM to its workers:
+  what a worker had spooled is delivered, but a call its capture thread had
+  not yet written (a busy worker's backlog) is lost. For forked workers the
+  loss is always visible: the parent heartbeats each worker's last allocated
+  sequence, so its run is `partial` or `unverified`, never complete. A
+  spawned worker killed before it wrote any record leaves no trace. Prefer
+  `close()`/`join()` when every call must be kept.
+- **macOS and fork.** With capture on, a forked child answers the system
+  proxy lookup (`urllib.request.getproxies`/`proxy_bypass`, used by httpx and
+  requests without proxy variables) from the configuration read when capture
+  was installed, instead of asking SystemConfiguration, which crashes in a
+  forked child of a multithreaded process. A system proxy change after
+  install reaches such children only through proxy variables.
 - **What the spool does not cover.** An exchange still in the agent's
   in-memory window (§1: finished, not yet fsync'd; typically one exchange
   for a few milliseconds, at most the worker queue) is lost with a kill;
@@ -963,8 +988,7 @@ bounded wait as missing.
 - **Streams closed early.** A client that stops reading at `[DONE]` is
   recorded as `closed_early` with the bytes it read; that is not a gap.
   `openai>=3` does this, so its chat streams are normally `closed_early`.
-- **Not covered:** the OpenAI SDK's optional aiohttp client
-  (`DefaultAioHttpClient`) and any client built on a custom transport that
+- **Not covered:** any httpx client built on a custom transport that
   is not wrapped in `fabric.wire.WireTransport`. A wrapper takes the base
   class of the transport it wraps, so the official factories accept it:
   `anthropic.DefaultHttpxClient(transport=fabric.wire.WireTransport(httpx2.HTTPTransport()))`

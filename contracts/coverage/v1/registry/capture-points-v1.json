@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-point-registry/v1",
-  "registry_revision": 6,
+  "registry_revision": 7,
   "capture_points": [
     {
       "id": "fabric.self",
@@ -74,8 +74,42 @@
       "activation": "opt-in: `install()` or `FABRIC_WIRE_AUTOLOAD=1`",
       "state": "built (047/048)",
       "observes": "matched POST model exchanges: request/response body bytes, timing, response state, HTTP status, error class, scope",
-      "cannot_observe": "headers; non-chat endpoints (images, audio, moderations, rerank, fine-tuning, files, batch); GET; realtime; unmatched hosts or paths; `requests`, `urllib3`/`boto3`, `aiohttp`, gRPC; TLS; provider-side receipt",
+      "cannot_observe": "headers; non-chat endpoints (images, audio, moderations, rerank, fine-tuning, files, batch); GET; realtime; unmatched hosts or paths; `requests`, `urllib3`/`boto3`, gRPC; `aiohttp` (see `wire.py.aiohttp`); TLS; provider-side receipt",
       "passivity_gate": "`sdk/python/tests/test_wire_passivity.py` (047 §4.10)",
+      "supplies": [
+        "X08",
+        "X22",
+        "X24",
+        "X40",
+        "C34",
+        "C35",
+        "C37",
+        "C40",
+        "S07",
+        "S08",
+        "S09",
+        "S10",
+        "S11",
+        "S29",
+        "S30",
+        "S32",
+        "N01",
+        "N02",
+        "N07",
+        "D31"
+      ],
+      "input": "wire"
+    },
+    {
+      "id": "wire.py.aiohttp",
+      "kind": "W",
+      "runtime": "Python 3.11+, aiohttp 3.9+",
+      "process_global": "yes (patches aiohttp ClientRequest.send, ClientResponse.start/close/release, StreamReader.feed_data/feed_eof/set_exception, ResponseHandler.set_response_params)",
+      "activation": "opt-in with the wire input: `install()` or `FABRIC_WIRE_AUTOLOAD=1` (`FABRIC_WIRE_AIOHTTP=0` or `patch_aiohttp=False` turns it off)",
+      "state": "built (agent matrix: LiteLLM/DSPy default transport)",
+      "observes": "matched POST model exchanges sent with `aiohttp.ClientSession`: in-memory request body bytes, every response body byte aiohttp received (decoded when aiohttp decompresses, recorded as `identity`), timing, response state, HTTP status, error class, scope",
+      "cannot_observe": "headers; streamed, file, form or generator request bodies (`transport_incomplete`); a per-request `auto_decompress` set on the request rather than the response handler; aiohttp WebSocket frames; everything `wire.py.httpx` cannot observe besides its own client",
+      "passivity_gate": "`sdk/python/tests/test_wire_aiohttp_passivity.py` (047 §4.10 budgets on the hook paths), `sdk/python/tests/test_wire_aiohttp.py` (results, exceptions, streamed chunks unchanged)",
       "supplies": [
         "X08",
         "X22",

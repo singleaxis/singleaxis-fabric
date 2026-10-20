@@ -55,7 +55,7 @@ _REFUSED = (errno.EACCES, errno.EPERM, errno.EROFS)  # this process may not sync
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 _KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
 _COMMON = {"schema_version", "record_kind", "source", "order", "written_at_unix_nano"}
-_REASONS = ("queue_full", "internal_error", "shutdown", "span_dropped")
+_REASONS = ("queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client")
 # Objects per exchange record: 2 sides x (primary + 64 parts) + 2 review copies (049 §7.4).
 MAX_BODIES = 130
 

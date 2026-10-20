@@ -839,7 +839,7 @@
   "capture_input": [
     {
       "value": "wire",
-      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2; undici on the TypeScript track): exchanges plus their run markers."
+      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2, aiohttp; undici on the TypeScript track): exchanges plus their run markers."
     },
     {
       "value": "records",

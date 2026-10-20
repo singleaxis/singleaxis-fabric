@@ -550,3 +550,13 @@ func TestWireCapture_EventsAndLinksAreValueClosedToo(t *testing.T) {
 		t.Error("valid epoch removed from span link")
 	}
 }
+
+// A model call sent through a client wire capture does not tee is an
+// uninstrumented_client loss (agent matrix D4): admitted like every other reason.
+func TestCaptureLossAdmitsUninstrumentedClient(t *testing.T) {
+	g := newTestGuard(t, nil)
+	attrs := wireLossAttrs()
+	attrs["fabric.loss.reason"] = "uninstrumented_client"
+	span := processOne(t, g, "fabric.capture_loss", attrs)
+	assertKeysKept(t, span, attrs)
+}

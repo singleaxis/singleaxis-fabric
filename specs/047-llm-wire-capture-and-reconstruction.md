@@ -486,7 +486,10 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
    is already too large; such a side has a digest but no ref, §5).
 5. *(→ 048 §2 for delivery: in spool mode exports run on the sender
    thread from fsync'd records; undelivered records survive exit.)*
-   **Never blocks.** `queue_max_items` (default 256, cap 65,536). A full
+   **Never blocks.** The queue is bounded by bytes: queued exchanges keep
+   their bodies charged to `max_inflight_bytes`; `queue_max_items` (default
+   16,384, cap 65,536; was 256, which an asyncio fan-out overflowed) only
+   caps per-entry overhead. A full
    queue drops the exchange with a `queue_full` loss. Store retries (3
    attempts, backoff 0.1/0.4/1.6 s) run on the worker. `flush()`/`close()`
    block only when called, each for at most its timeout; exchanges still in
@@ -605,7 +608,10 @@ ref and `truncated` is true.
   **Loss records** (`fabric.capture_loss`): `{reason, count,
   first_sequence, last_sequence}` per `(source, epoch)`. Reasons:
   `queue_full`, `internal_error`, `shutdown`, `span_dropped` (sampled out,
-  or the private exporter reported failure). `record()` is O(1) and never
+  or the private exporter reported failure), `uninstrumented_client` (a
+  model call sent through a client wire capture does not tee, `requests` or
+  `urllib3`, seen by a zero-content detector: it takes a sequence and is
+  recorded lost, so the run is never complete; agent matrix D4). `record()` is O(1) and never
   raises; a 1 s emitter thread coalesces pending losses per
   `(source, epoch, reason)` into one range (min, max, count) and emits it.
   Loss and heartbeat records are exported through an always-on private
@@ -698,7 +704,7 @@ or body lengths are emitted.
 
 | Key | Value | On |
 |---|---|---|
-| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped` | loss |
+| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped`\|`uninstrumented_client` | loss |
 | `fabric.loss.count` | int ≥ 1 | loss |
 | `fabric.loss.first_sequence`, `fabric.loss.last_sequence` | int ≥ 0 | loss |
 | `fabric.heartbeat.last_sequence` | int ≥ -1 | heartbeat |

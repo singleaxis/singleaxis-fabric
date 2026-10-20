@@ -75,53 +75,85 @@ def _directory(path: Path, *, create: bool = False) -> Iterator[int]:
         os.close(fd)
 
 
+@contextlib.contextmanager
+def _subdirectory(parent: int, name: str, *, create: bool = False) -> Iterator[int]:
+    """``name`` under the pinned ``parent`` (created, durably, when asked), pinned."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if create:
+        try:
+            os.mkdir(name, mode=0o700, dir_fd=parent)
+            os.fsync(parent)
+        except FileExistsError:
+            pass  # The no-follow directory open below validates it.
+    fd = os.open(name, flags, dir_fd=parent)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
 def _read_bytes(path: Path) -> bytes:
     with _directory(path.parent) as directory:
-        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-        try:
-            info = os.fstat(fd)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                raise CorruptedObjectError("unsafe local content file")
-            with os.fdopen(fd, "rb", closefd=False) as stream:
-                return stream.read()
-        finally:
-            os.close(fd)
+        return _read_at(directory, path.name)
+
+
+def _read_at(directory: int, name: str) -> bytes:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise CorruptedObjectError("unsafe local content file")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            return stream.read()
+    finally:
+        os.close(fd)
 
 
 def _exists(path: Path) -> bool:
     try:
         with _directory(path.parent) as directory:
-            info = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                raise CorruptedObjectError("unsafe local content file")
-            return True
+            return _exists_at(directory, path.name)
     except FileNotFoundError:
         return False
+
+
+def _exists_at(directory: int, name: str) -> bool:
+    try:
+        info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise CorruptedObjectError("unsafe local content file")
+    return True
 
 
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Write and fsync through pinned directory descriptors, without symlinks."""
     with _directory(target.parent, create=True) as directory:
-        os.fchmod(directory, stat.S_IRWXU)  # owner-only directory (0o700)
-        if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
-            raise PermissionError("content directory must enforce owner-only permissions")
-        temporary = ".pending-" + uuid.uuid4().hex
-        fd = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-            0o600,
-            dir_fd=directory,
-        )
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, target.name, src_dir_fd=directory, dst_dir_fd=directory)
-            os.fsync(directory)
-        finally:
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(temporary, dir_fd=directory)
+        _atomic_write_at(directory, target.name, data)
+
+
+def _atomic_write_at(directory: int, name: str, data: bytes) -> None:
+    os.fchmod(directory, stat.S_IRWXU)  # owner-only directory (0o700)
+    if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
+        raise PermissionError("content directory must enforce owner-only permissions")
+    temporary = ".pending-" + uuid.uuid4().hex
+    fd = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=directory,
+    )
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary, dir_fd=directory)
 
 
 @dataclass(slots=True)
@@ -251,16 +283,22 @@ class LocalFilesystemContentStore:
             raise ValueError("descriptor ref does not match store namespace")
         meta = target.parent / "meta" / f"{object_id}.json"
         body = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-        if _exists(target):
-            if _read_bytes(target) != content:
-                raise CorruptedObjectError(f"pre-existing evidence object {target} differs")
-        else:
-            _atomic_write_bytes(target, content)
-        if _exists(meta):
-            if _read_bytes(meta) != body:
-                raise CorruptedObjectError(f"pre-existing evidence descriptor {meta} differs")
-        else:
-            _atomic_write_bytes(meta, body)
+        # One pinned walk for both files (each step of a walk is a system call: on the
+        # capture worker every one may wait for the host's thread to yield the GIL).
+        with _directory(target.parent, create=True) as evidence:
+            if _exists_at(evidence, target.name):
+                if _read_at(evidence, target.name) != content:
+                    raise CorruptedObjectError(f"pre-existing evidence object {target} differs")
+            else:
+                _atomic_write_at(evidence, target.name, content)
+            with _subdirectory(evidence, "meta", create=True) as directory:
+                if _exists_at(directory, meta.name):
+                    if _read_at(directory, meta.name) != body:
+                        raise CorruptedObjectError(
+                            f"pre-existing evidence descriptor {meta} differs"
+                        )
+                else:
+                    _atomic_write_at(directory, meta.name, body)
         return ContentRef(uri=ref, content_hash=digest)
 
     def write_manifest(
