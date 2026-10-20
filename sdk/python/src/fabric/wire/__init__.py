@@ -168,25 +168,40 @@ class WireHandle:
     """An installed wire tee, returned by :func:`install`."""
 
     def __init__(
-        self, config: WireConfig, tee: WireTee, *, patched: bool,
+        self, config: WireConfig, tee: WireTee | None, *, patched: bool,
         fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
     ) -> None:  # fmt: skip
+        """``tee=None``: capture is disabled (``OTEL_SDK_DISABLED``): nothing is patched,
+        no thread runs, nothing is recorded, and :meth:`status` says so."""
         from .._loss import PrivateFallback  # noqa: PLC0415
 
-        self.config, self._tee, self._patched = config, tee, patched
+        self.config, self._tee_or_none, self._patched = config, tee, patched
         self.gate = gate
         self._fallback = fallback or PrivateFallback(None)
         self._result: bool | None = None  # set once closed
+
+    @property
+    def _tee(self) -> WireTee:
+        if (tee := self._tee_or_none) is None:
+            raise RuntimeError("capture is disabled")
+        return tee
+
+    @property
+    def capturing(self) -> bool:
+        """``False`` when capture is disabled (``OTEL_SDK_DISABLED``)."""
+        return self._tee_or_none is not None
 
     def status(self) -> dict[str, Any]:
         """The install's content state (049 §7.3): profile, ``content_capture`` and its
         reason, policy reference, pseudonym mode and key id, spool encryption. Values
         only, never a key, path or content; ``{}`` for a handle built without a gate.
         ``spool_key_id`` names the key sealing the spool (049 §7.8), never the key."""
+        if self._tee_or_none is None:
+            return {"capture": "disabled", "capture_reason": "otel_sdk_disabled"}
         if self.gate is None:
             return {}
         sender = self._tee.sender
-        status = {**self.gate.status(),
+        status = {"capture": "active", **self.gate.status(),
                   "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
         if sender is not None:  # 049 §7.8: never "encrypted" while plaintext records remain
             plaintext = sender.spool.plaintext_records()
@@ -216,6 +231,8 @@ class WireHandle:
     def flush(self, timeout_s: float = 5.0) -> bool:
         """Deliver queued exchanges, losses and heartbeats within ``timeout_s``; ``False`` when
         anything was not delivered in time or a host provider sampled it away."""
+        if not self.capturing:
+            return False  # nothing was recorded: no delivery can be claimed
         deadline = time.monotonic() + max(0.0, timeout_s)
         drained = self._tee.flush(timeout_s)
         return self._deliver(max(0.0, deadline - time.monotonic()), closing=False) and drained
@@ -235,6 +252,10 @@ class WireHandle:
             if self._result is not None:
                 return self._result
             self._result = False
+            if not self.capturing:
+                if _HANDLE is self:
+                    _HANDLE = None
+                return False
             if _HANDLE is self:
                 _HANDLE = _transport._ACTIVE = None
                 if self._patched:
@@ -253,13 +274,15 @@ class WireHandle:
         self.close()
 
     def stats(self) -> WireStats:
-        values = self._tee.stats()
+        values = self._tee.stats() if self.capturing else {}
         return WireStats(**{f.name: values.get(f.name, 0) for f in dataclasses.fields(WireStats)})
 
     def _atexit_close(self) -> None:
         """At exit (atexit, or a multiprocessing worker's finalizer), bounded: close, then
         shut Fabric's exporter/providers down on a helper thread unless delivery failed
         (the exporter is then presumed blocked)."""
+        if not self.capturing:
+            return
         with contextlib.suppress(BaseException):  # interpreter shutdown
             from .. import _loss  # noqa: PLC0415
             from ..tracing import is_private_provider  # noqa: PLC0415
@@ -301,6 +324,13 @@ def install(
         if config.labels is None:
             config = dataclasses.replace(config, labels=labels_from_env(os.environ))
         config = _protection_from_env(config)
+        if _otel_disabled():
+            # The OpenTelemetry kill switch also stops Fabric's capture, never silently
+            # (agent matrix D6): one warning, and status() says so.
+            _LOG.warning("fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is "
+                         "recorded")  # fmt: skip
+            _HANDLE = WireHandle(config, None, patched=False)
+            return _HANDLE
         gate = _gate(config)
         if config.spool_migrate_plaintext and gate.profile == "production":
             # 049 §7.8: never in production; plaintext records there are quarantined.
@@ -398,6 +428,11 @@ def _log_gate(gate: ContentGate) -> None:
         )  # fmt: skip
 
 
+def _otel_disabled() -> bool:
+    """``OTEL_SDK_DISABLED``, parsed as the OpenTelemetry SDK parses it."""
+    return os.environ.get("OTEL_SDK_DISABLED", "").strip().lower() == "true"
+
+
 def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
@@ -473,6 +508,8 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
         from ._config import config_from_env  # noqa: PLC0415
 
         config, tracer_mode = config_from_env(os.environ if environ is None else environ)
+        if _otel_disabled():
+            return install(config)  # disabled: nothing is built
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():
             # D3: a Fabric-protected global provider never carries wire spans.
             if not otlp_endpoint_configured():
@@ -512,7 +549,7 @@ def run(run_id: str) -> Iterator[None]:
     ``run_start``/``run_end`` markers bound the calls started inside it (spec 048 §6).
     ``run_id`` is emitted only as its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``); in
     the production profile without that key, only the generated source fallback."""
-    handle = _HANDLE
+    handle = _HANDLE if _HANDLE is not None and _HANDLE.capturing else None
 
     def mark(scope: RunScope, kind: Literal["run_start", "run_end"]) -> None:
         if handle is not None:
