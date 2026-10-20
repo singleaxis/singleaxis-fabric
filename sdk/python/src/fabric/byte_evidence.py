@@ -12,6 +12,7 @@ Only a caller-reported provenance is supportable from this SDK surface.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import json
@@ -96,7 +97,7 @@ _OPAQUE_ID_MAX_LENGTH = 128
 ROLE_POLICIES_ID = "fabric.role-policies"
 _MASKED_MODES = frozenset({"masked_only", "original_plus_masked"})
 _LOG = logging.getLogger("fabric.byte_evidence")
-_REAP_INTERVAL_S = 1.0  # an idle worker reaps exited transformation children this often
+_REAP_INTERVAL_S = 0.25  # the worker reaps exited transformation children this often
 
 
 def _production_marked(policy: object) -> bool:
@@ -831,15 +832,18 @@ class ByteEvidenceRecorder:
         return complete and stopped
 
     def _reap(self) -> None:
-        """Reap exited transformation children on the worker's idle cadence, at most once
-        per ``_REAP_INTERVAL_S`` (never waits; Sol P0-A round 3 #3)."""
+        """Reap exited transformation children at most once per ``_REAP_INTERVAL_S``,
+        checked when idle and after every job, so steady traffic cannot postpone it
+        (never waits; Sol P0-A round 3 #3, round 4 #2)."""
         if (now := time.monotonic()) < self._next_reap:
             return
         self._next_reap = now + _REAP_INTERVAL_S
-        for runner in self._runners.values():
-            runner.reap()
+        runners: list[Any] = list(self._runners.values())
         if self._config.content_protector is not None:
-            self._config.content_protector.reap()
+            runners.append(self._config.content_protector)
+        for runner in runners:
+            with contextlib.suppress(Exception):  # maintenance never stops the worker
+                runner.reap()
 
     def _run(self) -> None:
         while True:
@@ -872,6 +876,7 @@ class ByteEvidenceRecorder:
                     self._pending -= 1
                     self._condition.notify_all()
                 self._queue.task_done()
+            self._reap()
 
     def _process(self, object_id: str, data: bytes, derivative_id: str | None) -> None:
         with self._condition:

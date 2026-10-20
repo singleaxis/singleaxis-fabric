@@ -405,3 +405,38 @@ def test_the_recorder_worker_reaps_an_idle_transform_child(tmp_path: Path) -> No
             time.sleep(0.05)
     finally:
         _close(recorder)
+
+
+def test_the_recorder_worker_reaps_under_steady_unrelated_traffic(tmp_path: Path) -> None:
+    """Sol P0-A round 4 #2: maintenance ran only when the queue stayed empty for a whole
+    poll, so untransformed captures every 50 ms left an exited transform child a zombie.
+    It now also runs on a time cadence between jobs."""
+    import time  # noqa: PLC0415
+
+    from tests.test_transform_runner import process_state  # noqa: PLC0415
+
+    other = "terminal.stdout"
+    recorder = ByteEvidenceRecorder(
+        ByteEvidenceConfig(
+            store=_store(tmp_path / "review"),
+            roles=frozenset({ROLE, other}),
+            role_policies={ROLE: _policy("masked_only")},
+        )
+    )
+    try:
+        (runner,) = recorder._runners.values()
+        runner._idle_s = 0.15
+        _capture(recorder)
+        _flush(recorder)
+        (proc,) = runner._procs
+        sequence = 0
+        deadline = time.monotonic() + 1.0  # idle timeout + cadence, well inside Sol's 1.55 s
+        while process_state(proc.pid) != "":
+            assert time.monotonic() < deadline, process_state(proc.pid)
+            sequence += 1
+            recorder.capture(b"x", role=other, boundary="terminal", source_id="source-b",
+                             source_epoch=0, source_sequence=sequence)  # fmt: skip
+            time.sleep(0.05)
+        assert sequence > 0  # traffic flowed the whole time
+    finally:
+        _close(recorder)

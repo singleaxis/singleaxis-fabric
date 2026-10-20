@@ -299,3 +299,21 @@ def test_fork_child_gets_new_epoch_and_working_pipeline() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "child 0", result.stderr
+
+
+def test_the_worker_reaps_on_a_cadence_under_steady_traffic(
+    parts: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sol P0-A round 4 #2: the worker reaped exited transformation children only after a
+    full idle poll; jobs every 50 ms postponed it indefinitely. It now also reaps on a
+    time cadence between jobs."""
+    pipeline, _, _, allocator, _ = parts
+    reaped: list[float] = []
+    assert pipeline._protector is not None
+    monkeypatch.setattr(pipeline._protector, "reap", lambda: reaped.append(time.monotonic()))
+    started = time.monotonic()
+    while time.monotonic() - started < 0.6 and not reaped:
+        assert pipeline.submit(_job(allocator))
+        time.sleep(0.05)
+    assert pipeline.flush(5.0)
+    assert reaped, "no maintenance while jobs kept arriving"
