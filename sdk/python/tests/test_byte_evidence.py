@@ -456,3 +456,31 @@ def test_a_hung_role_policy_transform_never_stops_the_recorder_worker(
                 assert secret not in path.read_bytes()
     finally:
         _close(recorder)
+
+
+def test_recorder_close_leaves_no_transform_thread_or_process(tmp_path: Path) -> None:
+    """Sol P0-A round 2 #6, the review's reproduction: six masked recorders created,
+    captured through and closed left six transform threads and runners alive. ``close``
+    now stops the worker and every transformation child process."""
+    import gc  # noqa: PLC0415
+
+    from .test_transform_runner import _children  # noqa: PLC0415
+
+    threads, children = threading.active_count(), _children()
+    for n in range(6):
+        review = LocalFilesystemContentStore(str(tmp_path / f"review-{n}"), tenant_id="tenant-a")
+        recorder, _ = _recorder(
+            tmp_path / str(n), review_store=review,
+            role_policies={"artifact.after": BytePrivacyPolicy(
+                mode="masked_only", transform="tests.transforms:masked",
+                transformation_id="mask", transformation_version="1",
+            )},
+        )  # fmt: skip
+        descriptor = _capture(recorder, b"secret")
+        assert recorder.flush(10.0)
+        assert recorder.get(descriptor["object_id"])["status"] == "redacted"  # type: ignore[index]
+        assert recorder.close()
+        del recorder
+    gc.collect()
+    assert threading.active_count() == threads
+    assert _children() == children
