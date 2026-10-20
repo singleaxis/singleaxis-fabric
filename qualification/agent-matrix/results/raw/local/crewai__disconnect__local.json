@@ -1,0 +1,234 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 1.267607209000289,
+  "result": {
+   "exception": "httpx.RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)",
+   "output": null,
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": "ERROR:root:OpenAI API call failed: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:crewai.flow.runtime:Error executing listener call_llm_native_tools: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:root:OpenAI API call failed: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:crewai.flow.runtime:Error executing listener call_llm_native_tools: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:root:OpenAI API call failed: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:crewai.flow.runtime:Error executing listener call_llm_native_tools: peer closed connection without sending complete message body (incomplete chunked read)\n"
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 6,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 6,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 1.6782509170002413,
+  "result": {
+   "exception": "httpx.RemoteProtocolError: peer closed connection without sending complete message body (incomplete chunked read)",
+   "output": null,
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": "ERROR:root:OpenAI API call failed: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:crewai.flow.runtime:Error executing listener call_llm_native_tools: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:root:OpenAI API call failed: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:crewai.flow.runtime:Error executing listener call_llm_native_tools: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:root:OpenAI API call failed: peer closed connection without sending complete message body (incomplete chunked read)\nERROR:crewai.flow.runtime:Error executing listener call_llm_native_tools: peer closed connection without sending complete message body (incomplete chunked read)\n"
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "crewai",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 6,
+  "cap_calls": 6,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 6,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     },
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478595138202923",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478595138202923: complete_for_declared_scope (6 exchanges, 2 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "closed_early",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "closed_early",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "closed_early",
+   "result_ref_bytes_ok": true,
+   "seq": 4,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 5,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  }
+ ],
+ "scenario": "disconnect",
+ "spans": {
+  "exchange": 6,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 7
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.008252332999745704,
+   0.0033409170000595623,
+   0.0040353749996029364,
+   0.0022023330002411967,
+   0.0024040829998739355
+  ],
+  "gaps_cap": [
+   0.02124912499994025,
+   0.0069371250001495355,
+   0.006131249999725696,
+   0.003750083999875642,
+   0.0035804159997496754
+  ]
+ },
+ "workdir": ".work/runs/crewai/disconnect-local"
+}

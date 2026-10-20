@@ -1,0 +1,253 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.6220663330000207,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=f5c2a0a71da8 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 8,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 8,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.738782375000028,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=f5c2a0a71da8 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "Agents/Python 0.24.0"
+ ],
+ "framework": "handoff",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 8,
+  "cap_calls": 8,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 8,
+    "gaps": [],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478710714116349",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478710714116349: complete_for_declared_scope (8 exchanges, 0 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 4,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 5,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 6,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 7,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  }
+ ],
+ "scenario": "retry429",
+ "spans": {
+  "exchange": 8,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 9
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.006306374999894615,
+   0.020871041000191326,
+   0.006173958999625029,
+   0.00332941699980438,
+   0.006076458000279672,
+   0.0037412500000755244,
+   0.0061293750000004366
+  ],
+  "gaps_cap": [
+   0.0070127919998412835,
+   0.02088287499964281,
+   0.006352875000175118,
+   0.0037508340001295437,
+   0.00623249999989639,
+   0.00398091699980796,
+   0.006234416999632231
+  ]
+ },
+ "workdir": ".work/runs/handoff/retry429-local"
+}

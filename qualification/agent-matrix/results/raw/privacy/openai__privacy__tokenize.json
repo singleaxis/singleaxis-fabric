@@ -1,0 +1,51 @@
+{
+ "findings": {
+  "delivered": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 0
+  },
+  "held": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 4
+  },
+  "objects": [
+   [
+    "model.exchange.request",
+    "tokenize",
+    "tokenized",
+    "redacted"
+   ],
+   [
+    "model.exchange.response",
+    "tokenize",
+    "tokenized",
+    "redacted"
+   ]
+  ],
+  "original_digest_hits": [],
+  "store_has_secret": false,
+  "store_reasons": [
+   "None"
+  ],
+  "store_status": [
+   "stored"
+  ],
+  "verdicts": [
+   "unverified"
+  ]
+ },
+ "framework": "openai",
+ "mode": "tokenize",
+ "policy_mode": "tokenize",
+ "reasons": [],
+ "scenario": "privacy",
+ "status": "PASS",
+ "transform": null,
+ "zero_code": true
+}

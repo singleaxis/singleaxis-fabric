@@ -1,0 +1,153 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.6489938749996327,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 3,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 3,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.6676027919997978,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "pydantic-ai/2.57.0"
+ ],
+ "framework": "pydantic-ai-anthropic",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 3,
+  "cap_calls": 3,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 3,
+    "gaps": [],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478514690831380",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478514690831380: complete_for_declared_scope (3 exchanges, 0 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  }
+ ],
+ "scenario": "stream",
+ "spans": {
+  "exchange": 3,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 4
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.012588250000135304,
+   0.0038464169997496356
+  ],
+  "gaps_cap": [
+   0.010809291999976267,
+   0.002889709000100993
+  ]
+ },
+ "workdir": ".work/runs/pydantic-ai-anthropic/stream-local"
+}

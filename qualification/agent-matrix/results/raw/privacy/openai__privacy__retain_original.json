@@ -1,0 +1,50 @@
+{
+ "findings": {
+  "delivered": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 0
+  },
+  "held": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": true,
+   "spool_records": 4
+  },
+  "objects": [
+   [
+    "model.exchange.request",
+    "retain_original",
+    "retained",
+    "stored"
+   ],
+   [
+    "model.exchange.response",
+    "retain_original",
+    "retained",
+    "stored"
+   ]
+  ],
+  "store_has_secret": true,
+  "store_reasons": [
+   "None"
+  ],
+  "store_status": [
+   "stored"
+  ],
+  "verdicts": [
+   "complete_for_declared_scope"
+  ]
+ },
+ "framework": "openai",
+ "mode": "retain_original",
+ "policy_mode": "retain_original",
+ "reasons": [],
+ "scenario": "privacy",
+ "status": "PASS",
+ "transform": null,
+ "zero_code": true
+}

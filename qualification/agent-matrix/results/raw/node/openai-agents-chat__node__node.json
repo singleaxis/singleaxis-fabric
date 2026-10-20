@@ -1,0 +1,153 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.80636179099929,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 3,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 3,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.9121618750004927,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "Agents/Python 0.24.0"
+ ],
+ "framework": "openai-agents-chat",
+ "mode": "node",
+ "passivity": {
+  "base_calls": 3,
+  "cap_calls": 3,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 3,
+    "gaps": [],
+    "run_id": "source:s-22cc3a212f7a461ec6ea7849fc4c9e70:1792478872057364484",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "telemetry_origin": "trusted_readback"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  }
+ ],
+ "scenario": "node",
+ "service": "matrix-openai-agents-chat-76bd66",
+ "spans": {
+  "authenticated": true,
+  "delivered": true,
+  "total": 4
+ },
+ "spool_left": 0,
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.0067905840005551,
+   0.0031191250000119908
+  ],
+  "gaps_cap": [
+   0.009062375000212342,
+   0.005316957999639271
+  ]
+ },
+ "workdir": ".work/runs/openai-agents-chat/node-nodemode"
+}

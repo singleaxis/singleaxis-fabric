@@ -1,0 +1,232 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.3571645830002126,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=ab0682af46d4 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 6,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 6,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.47007087500014677,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=ab0682af46d4 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "smolagents",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 6,
+  "cap_calls": 6,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 6,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478536171621594",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478536171621594: complete_for_declared_scope (6 exchanges, 3 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 429,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 4,
+   "status": 429,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 5,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "retry429",
+ "spans": {
+  "exchange": 6,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 7
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.006822750000083033,
+   0.0036897499999213323,
+   0.006641040999966208,
+   0.001438290999885794,
+   0.005932792000294285
+  ],
+  "gaps_cap": [
+   0.007325667000259273,
+   0.003876499999933003,
+   0.005805875000078231,
+   0.0014356249998854764,
+   0.00588366700003462
+  ]
+ },
+ "workdir": ".work/runs/smolagents/retry429-local"
+}

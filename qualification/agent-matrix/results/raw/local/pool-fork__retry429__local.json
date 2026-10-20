@@ -1,0 +1,1241 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.3408497919999718,
+  "result": {
+   "exception": null,
+   "output": [
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE"
+   ],
+   "tool_calls": [
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 0,
+  "missed": [
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 0,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 1,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 2,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 3,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 4,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 5,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 6,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 7,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 8,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 9,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 10,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 11,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 12,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 13,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 14,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 15,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 16,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 17,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 18,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 19,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 20,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 21,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 22,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 23,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 24,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 25,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 26,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 27,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 28,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 29,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 30,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 31,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 32,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 33,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 34,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 35,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 36,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 37,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 38,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 39,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 40,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 41,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 42,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 43,
+    "status": 429,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 44,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 45,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 46,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": false,
+    "kind": "chat",
+    "seq": 47,
+    "status": 200,
+    "stream": false,
+    "user_agent": "OpenAI/Python 3.35.1"
+   }
+  ],
+  "response_mismatch": [],
+  "server_exchanges": 48,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.43483275000016874,
+  "result": {
+   "exception": null,
+   "output": [
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE",
+    "Final Answer: done after 2 tool rounds; observed=692a2abf2104 TERMINATE"
+   ],
+   "tool_calls": [
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "pool-fork",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 48,
+  "cap_calls": 48,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [
+  "48/48 httpx exchanges not captured"
+ ],
+ "reconstruct": {
+  "exit": 1,
+  "runs": [],
+  "scopes": [],
+  "tail": "fabric.reconstruct: no runs reconstructed\n"
+ },
+ "rows": [
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 0,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 1,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 2,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 3,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 4,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 5,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 6,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 7,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 8,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 9,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 10,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 11,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 12,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 13,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 14,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 15,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 16,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 17,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 18,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 19,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 20,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 21,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 22,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 23,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 24,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 25,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 26,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 27,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 28,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 29,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 30,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 31,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 32,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 33,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 34,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 35,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 36,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 37,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 38,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 39,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 40,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 41,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 42,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 43,
+   "status": 429,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 44,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 45,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 46,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "kind": "chat",
+   "seq": 47,
+   "status": 200,
+   "stream": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "retry429",
+ "spans": {
+  "exchange": 0,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 1
+ },
+ "status": "FAIL",
+ "timing": {
+  "gaps_base": [
+   7.154099967010552e-05,
+   2.312500009793439e-05,
+   0.005834416999732639,
+   1.1541999811015557e-05,
+   2.191700014009257e-05,
+   0.004286207999939506,
+   1.129200018112897e-05,
+   0.0058440409998183895,
+   3.766700001506251e-05,
+   0.0006168750001052103,
+   8.675000026414637e-05,
+   0.0001301249999414722,
+   0.0001631669997550489,
+   0.005447583000204759,
+   7.137500006137998e-05,
+   0.00015350000012404053,
+   0.0017026249997798004,
+   6.933300028322265e-05,
+   5.733300031351973e-05,
+   5.316599981597392e-05,
+   0.00561529199967481,
+   5.0582999847392784e-05,
+   1.4582999938284047e-05,
+   0.000596708000102808,
+   0.005905874999825755,
+   9.124999905907316e-06,
+   7.375000222964445e-06,
+   7.166999694163678e-06,
+   0.0005372910000005504,
+   6.665999990218552e-06,
+   4.587500006891787e-05,
+   5.5792000239307526e-05,
+   0.005759957999998733
+  ],
+  "gaps_cap": [
+   0.0004712909999398107,
+   0.00013504199978342513,
+   0.006020374999934575,
+   3.24170000567392e-05,
+   0.0034177089996774157,
+   0.00013420799996310961,
+   0.005880542000340938,
+   6.341700009215856e-05,
+   0.0008273749999716529,
+   2.924999989772914e-05,
+   0.005814332999761973,
+   0.0023051670000313607,
+   5.000000010113581e-05,
+   1.6792000224086223e-05,
+   0.005428666999705456,
+   0.0003585409999686817,
+   0.00014774999999644933,
+   0.00015854200000831042,
+   0.0005804580000585702,
+   0.004768291000345926,
+   0.00031379200027004117,
+   0.0007018340002105106,
+   3.1582999781676335e-05,
+   0.0007962919999044971,
+   0.00020758400023623835,
+   0.004758791999847745,
+   0.0005980420000923914
+  ]
+ },
+ "workdir": ".work/runs/pool-fork/retry429-local"
+}

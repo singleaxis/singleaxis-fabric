@@ -1,0 +1,186 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 1.490728124999805,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 3 tool rounds; observed=54e8e5b0b0f8 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 4,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 4,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 1.6259900000000016,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 3 tool rounds; observed=54e8e5b0b0f8 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "DSPy/3.4.1"
+ ],
+ "framework": "dspy-httpx",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 4,
+  "cap_calls": 4,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 4,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     },
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478660782319563",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478660782319563: complete_for_declared_scope (4 exchanges, 2 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "closed_early",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  }
+ ],
+ "scenario": "stream",
+ "spans": {
+  "exchange": 4,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 5
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.013925874999586085,
+   0.004013749999558058,
+   0.004941041999700246
+  ],
+  "gaps_cap": [
+   0.015985750000254484,
+   0.004748500000005151,
+   0.004960917000062182
+  ]
+ },
+ "workdir": ".work/runs/dspy-httpx/stream-local"
+}

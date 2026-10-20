@@ -1,0 +1,173 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 1.4421962920005171,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=f5c2a0a71da8 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 4,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 4,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 1.319803915999728,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=f5c2a0a71da8 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "Agents/Python 0.24.0"
+ ],
+ "framework": "handoff",
+ "mode": "node",
+ "passivity": {
+  "base_calls": 4,
+  "cap_calls": 4,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 4,
+    "gaps": [],
+    "run_id": "source:s-22cc3a212f7a461ec6ea7849fc4c9e70:1792478940808399254",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "telemetry_origin": "trusted_readback"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  },
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  }
+ ],
+ "scenario": "node",
+ "service": "matrix-handoff-efe30e",
+ "spans": {
+  "authenticated": true,
+  "delivered": true,
+  "total": 5
+ },
+ "spool_left": 0,
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.04728075000002718,
+   0.009390541999891866,
+   0.00834054200004175
+  ],
+  "gaps_cap": [
+   0.03981333400042786,
+   0.006610166000427853,
+   0.008329875000526954
+  ]
+ },
+ "workdir": ".work/runs/handoff/node-nodemode"
+}

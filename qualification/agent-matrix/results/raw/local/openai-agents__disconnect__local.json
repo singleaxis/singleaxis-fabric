@@ -1,0 +1,93 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.7049900420001904,
+  "result": {
+   "exception": "openai.APIConnectionError: Connection error.",
+   "output": null,
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": "Error streaming response\n"
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 1,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 1,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.7689579159996356,
+  "result": {
+   "exception": "openai.APIConnectionError: Connection error.",
+   "output": null,
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": "Error streaming response\n"
+ },
+ "clients": [
+  "Agents/Python 0.24.0"
+ ],
+ "framework": "openai-agents",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 1,
+  "cap_calls": 1,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 1,
+    "gaps": [],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478427961332535",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478427961332535: complete_for_declared_scope (1 exchanges, 0 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "Agents/Python 0.24.0",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "responses",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "Agents/Python 0.24.0"
+  }
+ ],
+ "scenario": "disconnect",
+ "spans": {
+  "exchange": 1,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 2
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [],
+  "gaps_cap": []
+ },
+ "workdir": ".work/runs/openai-agents/disconnect-local"
+}

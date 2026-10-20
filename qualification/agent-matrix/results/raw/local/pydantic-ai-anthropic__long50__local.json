@@ -1,0 +1,1497 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.6497348749999219,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 50 tool rounds; observed=561d63cbdd37 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 51,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 51,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.7970394169997235,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 50 tool rounds; observed=561d63cbdd37 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "pydantic-ai/2.57.0"
+ ],
+ "framework": "pydantic-ai-anthropic",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 51,
+  "cap_calls": 51,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 51,
+    "gaps": [],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478526752595487",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478526752595487: complete_for_declared_scope (51 exchanges, 0 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 4,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 5,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 6,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 7,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 8,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 9,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 10,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 11,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 12,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 13,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 14,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 15,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 16,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 17,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 18,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 19,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 20,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 21,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 22,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 23,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 24,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 25,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 26,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 27,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 28,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 29,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 30,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 31,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 32,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 33,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 34,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 35,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 36,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 37,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 38,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 39,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 40,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 41,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 42,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 43,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 44,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 45,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 46,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 47,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 48,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 49,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  },
+  {
+   "captured": true,
+   "client": "pydantic-ai/2.57.0",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 50,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "pydantic-ai/2.57.0"
+  }
+ ],
+ "scenario": "long50",
+ "spans": {
+  "exchange": 51,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 52
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.016265000000203145,
+   0.0015686669999013247,
+   0.001573125000049913,
+   0.0014289999999164138,
+   0.0015204169999378792,
+   0.0013400839998212177,
+   0.001629583000067214,
+   0.0013576249998550338,
+   0.0013139159996171657,
+   0.0014226250000319851,
+   0.0013640830002259463,
+   0.001403833000040322,
+   0.0013636660000884149,
+   0.0013331249997463601,
+   0.001374458000100276,
+   0.0013354580000850547,
+   0.0014519999999720312,
+   0.001482291000229452,
+   0.0013973330001135764,
+   0.0014622919998146244,
+   0.0014054589996703726,
+   0.0013998750000610016,
+   0.0013930420000178856,
+   0.0014475839998340234,
+   0.0014222079998944537,
+   0.0014073330003157025,
+   0.00151716700020188,
+   0.0014304579999588896,
+   0.0014566249997187697,
+   0.0014504580003631418,
+   0.001488541999606241,
+   0.0014784579998377012,
+   0.001521042000149464,
+   0.0016751250000197615,
+   0.01820233399985227,
+   0.0019405000002734596,
+   0.0016662919997543213,
+   0.0016535830000066198,
+   0.001697749999948428,
+   0.0017364579998684349,
+   0.0016854999998940912,
+   0.001649749999614869,
+   0.0016042500001276494,
+   0.001603666999926645,
+   0.0016461659997730749,
+   0.001848709000114468,
+   0.0020546249998005806,
+   0.0020355000001472945,
+   0.0019406249998610292,
+   0.0018536249999669963
+  ],
+  "gaps_cap": [
+   0.015432749999945372,
+   0.0016959169997790013,
+   0.001611582999885286,
+   0.0016448749997834966,
+   0.001553666000290832,
+   0.002009457999974984,
+   0.001611207999758335,
+   0.0016464170003018808,
+   0.0015157499997258128,
+   0.0016553329996895627,
+   0.0015702910000072734,
+   0.0017151669999293517,
+   0.0016534999999748834,
+   0.0016919590002544282,
+   0.0016601669999545265,
+   0.0016726249996281695,
+   0.0015594169999531005,
+   0.001671167000040441,
+   0.0016390830001000722,
+   0.001731249999920692,
+   0.0016160830000444548,
+   0.0017817500001910958,
+   0.0016873750000740984,
+   0.0017507080001450959,
+   0.0017176670003209438,
+   0.0018285420001120656,
+   0.0016959170002337487,
+   0.0017923750001500593,
+   0.0017752919998201833,
+   0.0018495419999453588,
+   0.001794750000044587,
+   0.002047749999746884,
+   0.001787707999937993,
+   0.0018951659999402182,
+   0.001735625000037544,
+   0.0018339170001127059,
+   0.001787917000001471,
+   0.0019365829998605477,
+   0.0018156669998461439,
+   0.0018192090001321048,
+   0.0018258750001223234,
+   0.0020555000000967993,
+   0.0018683749999581778,
+   0.0018952089999402233,
+   0.0019396669999878213,
+   0.00188679199982289,
+   0.001984083000024839,
+   0.0018691669997679128,
+   0.001877083000181301,
+   0.0019428329997026594
+  ]
+ },
+ "workdir": ".work/runs/pydantic-ai-anthropic/long50-local"
+}

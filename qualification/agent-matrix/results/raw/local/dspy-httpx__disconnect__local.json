@@ -1,0 +1,266 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 4.568185082999662,
+  "result": {
+   "exception": "dspy.utils.exceptions.LMServerError: [fm-s2-p1-disc] litellm.MidStreamFallbackError: litellm.APIConnectionError: APIConnectionError: OpenAIException - peer closed connection without sending complete message body (incomplete chunked read)",
+   "output": null,
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 7,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 7,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 4.7918067919999885,
+  "result": {
+   "exception": "dspy.utils.exceptions.LMServerError: [fm-s2-p1-disc] litellm.MidStreamFallbackError: litellm.APIConnectionError: APIConnectionError: OpenAIException - peer closed connection without sending complete message body (incomplete chunked read)",
+   "output": null,
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "DSPy/3.4.1"
+ ],
+ "framework": "dspy-httpx",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 7,
+  "cap_calls": 7,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [
+  "reconstruct not complete: unverified['unparsed_exchange', 'unparsed_exchange', 'unparsed_exchange']"
+ ],
+ "reconstruct": {
+  "exit": 1,
+  "runs": [
+   {
+    "exchanges": 7,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     },
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     },
+     {
+      "effect": "unverified",
+      "gap_type": "unparsed_exchange",
+      "object_role": null,
+      "reason": "not_json"
+     },
+     {
+      "effect": "unverified",
+      "gap_type": "unparsed_exchange",
+      "object_role": null,
+      "reason": "not_json"
+     },
+     {
+      "effect": "unverified",
+      "gap_type": "unparsed_exchange",
+      "object_role": null,
+      "reason": "not_json"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478684867981987",
+    "verdict": "unverified"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478684867981987: unverified (7 exchanges, 5 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 4,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 5,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  },
+  {
+   "captured": true,
+   "client": "DSPy/3.4.1",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 6,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "DSPy/3.4.1"
+  }
+ ],
+ "scenario": "disconnect",
+ "spans": {
+  "exchange": 7,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 8
+ },
+ "status": "FAIL",
+ "timing": {
+  "gaps_base": [
+   1.0272849579996546,
+   0.010707416000059311,
+   1.015490041999783,
+   0.00897533299985298,
+   1.01628029099993,
+   0.004885917000137852
+  ],
+  "gaps_cap": [
+   1.0269931660000111,
+   0.02239895799993974,
+   1.0119461670001328,
+   0.0049437089996899886,
+   1.0112039579998964,
+   0.006482666000010795
+  ]
+ },
+ "workdir": ".work/runs/dspy-httpx/disconnect-local"
+}

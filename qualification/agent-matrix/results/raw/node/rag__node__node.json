@@ -1,0 +1,155 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 1.860014083000351,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 0 tool rounds; observed=e3b0c44298fc TERMINATE",
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 4,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 4,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 1.9597848749999685,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 0 tool rounds; observed=e3b0c44298fc TERMINATE",
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "OpenAI/Python 2.54.0"
+ ],
+ "framework": "rag",
+ "mode": "node",
+ "passivity": {
+  "base_calls": 4,
+  "cap_calls": 4,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 4,
+    "gaps": [],
+    "run_id": "source:s-22cc3a212f7a461ec6ea7849fc4c9e70:1792478947983722328",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "telemetry_origin": "trusted_readback"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "embeddings",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "embeddings",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "embeddings",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 2.54.0"
+  }
+ ],
+ "scenario": "node",
+ "service": "matrix-rag-442852",
+ "spans": {
+  "authenticated": true,
+  "delivered": true,
+  "total": 5
+ },
+ "spool_left": 0,
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.002441583999825525,
+   0.0024092499998005223,
+   0.01967483299995365
+  ],
+  "gaps_cap": [
+   0.0036528330001601717,
+   0.002727584000240313,
+   0.02596925000034389
+  ]
+ },
+ "workdir": ".work/runs/rag/node-nodemode"
+}

@@ -1,0 +1,38 @@
+{
+ "findings": {
+  "delivered": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 0
+  },
+  "held": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 4
+  },
+  "objects": [],
+  "original_digest_hits": [],
+  "store_has_secret": false,
+  "store_reasons": [
+   "privacy_policy"
+  ],
+  "store_status": [
+   "disabled"
+  ],
+  "verdicts": [
+   "unverified"
+  ]
+ },
+ "framework": "openai",
+ "mode": "omit",
+ "policy_mode": "omit",
+ "reasons": [],
+ "scenario": "privacy",
+ "status": "PASS",
+ "transform": null,
+ "zero_code": true
+}

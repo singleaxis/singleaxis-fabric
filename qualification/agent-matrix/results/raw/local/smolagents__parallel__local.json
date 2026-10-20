@@ -1,0 +1,212 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.3344183750000411,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=6da88290a5fc TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 3,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 3,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.4050426660000994,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 2 tool rounds; observed=6da88290a5fc TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "smolagents",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 3,
+  "cap_calls": 3,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 3,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     },
+     {
+      "effect": "info",
+      "gap_type": "prefix_break",
+      "object_role": null,
+      "reason": "history_rewritten"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     },
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478534107010577",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478534107010577: complete_for_declared_scope (3 exchanges, 7 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "parallel",
+ "spans": {
+  "exchange": 3,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 4
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.0037811669999427977,
+   0.0013379170000007434
+  ],
+  "gaps_cap": [
+   0.004372458000034385,
+   0.0014428749996113766
+  ]
+ },
+ "workdir": ".work/runs/smolagents/parallel-local"
+}

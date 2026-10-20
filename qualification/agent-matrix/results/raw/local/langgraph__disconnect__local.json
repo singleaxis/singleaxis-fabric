@@ -1,0 +1,100 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.5062337919998754,
+  "result": {
+   "exception": "langchain_openai.chat_models.base.OpenAIConnectionError: Connection error.",
+   "output": null,
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": "/Users/bryan77/Desktop/ai5labs/singleaxis-fabric-agent-matrix/qualification/agent-matrix/agents/langgraph_agent.py:37: LangGraphDeprecatedSinceV10: create_react_agent has been moved to `langchain.agents`. Please update your import to `from langchain.agents import create_agent`. Deprecated in LangGraph V1.0 to be removed in V2.0.\n  agent = create_react_agent(llm, [get_weather, c_to_f])\n"
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 1,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 1,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.5536266249996515,
+  "result": {
+   "exception": "langchain_openai.chat_models.base.OpenAIConnectionError: Connection error.",
+   "output": null,
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": "/Users/bryan77/Desktop/ai5labs/singleaxis-fabric-agent-matrix/qualification/agent-matrix/agents/langgraph_agent.py:37: LangGraphDeprecatedSinceV10: create_react_agent has been moved to `langchain.agents`. Please update your import to `from langchain.agents import create_agent`. Deprecated in LangGraph V1.0 to be removed in V2.0.\n  agent = create_react_agent(llm, [get_weather, c_to_f])\n"
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "langgraph",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 1,
+  "cap_calls": 1,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 1,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478464798375859",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478464798375859: complete_for_declared_scope (1 exchanges, 1 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "disconnect",
+ "spans": {
+  "exchange": 1,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 2
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [],
+  "gaps_cap": []
+ },
+ "workdir": ".work/runs/langgraph/disconnect-local"
+}

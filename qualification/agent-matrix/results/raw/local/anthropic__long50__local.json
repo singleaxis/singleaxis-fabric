@@ -1,0 +1,1497 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.4475620000002891,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 50 tool rounds; observed=561d63cbdd37 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 51,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 51,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.6265279170002032,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 50 tool rounds; observed=561d63cbdd37 TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ],
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ],
+    [
+     "c_to_f",
+     "{\"celsius\": 18.5}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "anthropic-sdk"
+ ],
+ "framework": "anthropic",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 51,
+  "cap_calls": 51,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 51,
+    "gaps": [],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478414427222372",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478414427222372: complete_for_declared_scope (51 exchanges, 0 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 2,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 3,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 4,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 5,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 6,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 7,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 8,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 9,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 10,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 11,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 12,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 13,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 14,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 15,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 16,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 17,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 18,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 19,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 20,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 21,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 22,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 23,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 24,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 25,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 26,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 27,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 28,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 29,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 30,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 31,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 32,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 33,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 34,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 35,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 36,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 37,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 38,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 39,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 40,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 41,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 42,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 43,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 44,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 45,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 46,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 47,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 48,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 49,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  },
+  {
+   "captured": true,
+   "client": "anthropic-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "messages",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 50,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "Anthropic/Python 1.15.0"
+  }
+ ],
+ "scenario": "long50",
+ "spans": {
+  "exchange": 51,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 52
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.0050211660000059055,
+   0.0005099999998492422,
+   0.0004019580001113354,
+   0.0003927910001948476,
+   0.0005086249998385028,
+   0.0003712500001711305,
+   0.00037804200019309064,
+   0.0003958750003221212,
+   0.0004140830001233553,
+   0.0004047920001539751,
+   0.0004421250000632426,
+   0.0003682910000861739,
+   0.0003664589999061718,
+   0.0004281669998817961,
+   0.0003789170000345621,
+   0.0004125840000597236,
+   0.0003787910000028205,
+   0.00040279099994222634,
+   0.0004168749997006671,
+   0.0004164169999967271,
+   0.00040720900005908334,
+   0.000521792000199639,
+   0.0004515000000537839,
+   0.000559958999929222,
+   0.0004115840001759352,
+   0.0005505409999386757,
+   0.0004861249999521533,
+   0.00045583300016005524,
+   0.00048758299999462906,
+   0.0004567500000121072,
+   0.0004733750001832959,
+   0.0004657910003516008,
+   0.00047470899971813196,
+   0.00048254200009978376,
+   0.0004551660003926372,
+   0.000468916000045283,
+   0.0004581250000228465,
+   0.000499000000218075,
+   0.00045816700003342703,
+   0.00047099999983402085,
+   0.0004919999996673141,
+   0.00048704199980420526,
+   0.0004912910003440629,
+   0.0004749579998133413,
+   0.0005327919998308062,
+   0.0004930000000058499,
+   0.0004943750000165892,
+   0.0005055830001765571,
+   0.0005034589999013406,
+   0.0005120000000715663
+  ],
+  "gaps_cap": [
+   0.008678583000346407,
+   0.0010816250000971195,
+   0.0008554159999221156,
+   0.0008770419999564183,
+   0.0008170000000973232,
+   0.0006213330002537987,
+   0.0006496250002783199,
+   0.0010292090000803,
+   0.0008587500001340231,
+   0.0007821660001354758,
+   0.0006654170001638704,
+   0.0013141249996806437,
+   0.001299624999774096,
+   0.0008155000000442669,
+   0.0006671659998573887,
+   0.0006186249997881532,
+   0.000758707999921171,
+   0.0005757919998359284,
+   0.0014605829996980901,
+   0.0010817079996741086,
+   0.0006325000003926107,
+   0.0005180000002837915,
+   0.0006441249997806153,
+   0.0005862910002178978,
+   0.0005533749999813153,
+   0.000578666999899724,
+   0.0007477080002900038,
+   0.0008456249997834675,
+   0.0007178339997153671,
+   0.0006661669999630249,
+   0.0005199160000302072,
+   0.0005946669998593279,
+   0.0007184579999375273,
+   0.000514374999966094,
+   0.0005939580000813294,
+   0.0005472910002026765,
+   0.0006477079996329849,
+   0.0005869579999853158,
+   0.0005422080002972507,
+   0.0005528329998014669,
+   0.0006450000000768341,
+   0.000540375000127824,
+   0.0005387080000218702,
+   0.0005360420000215527,
+   0.0005768330001956201,
+   0.0005424579999271373,
+   0.0006000419998599682,
+   0.0005571669998971629,
+   0.0005588750000242726,
+   0.0005704169998352882
+  ]
+ },
+ "workdir": ".work/runs/anthropic/long50-local"
+}

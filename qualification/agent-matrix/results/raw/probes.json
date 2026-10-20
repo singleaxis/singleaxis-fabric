@@ -1,0 +1,984 @@
+[
+ {
+  "exit": 1,
+  "framework": "openai",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-responses",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-responses",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-responses",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "anthropic",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "anthropic",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "anthropic",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-agents",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-agents",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-agents",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-agents-chat",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-agents-chat",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "openai-agents-chat",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "langgraph",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "langgraph",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "langgraph",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "llamaindex",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "llamaindex",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "llamaindex",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "pydantic-ai",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "pydantic-ai",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "pydantic-ai",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "pydantic-ai-anthropic",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "pydantic-ai-anthropic",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "pydantic-ai-anthropic",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "smolagents",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "smolagents",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "smolagents",
+  "gaps": [
+   "sequence_gap"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "autogen",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "autogen",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "autogen",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "ag2",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "ag2",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "ag2",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "crewai",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "crewai",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "crewai",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "dspy",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "dspy",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "dspy",
+  "gaps": [
+   "sequence_gap"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "dspy-httpx",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "dspy-httpx",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "dspy-httpx",
+  "gaps": [
+   "sequence_gap"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "handoff",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "handoff",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "handoff",
+  "gaps": [
+   "sequence_gap",
+   "unmatched_tool_call"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "rag",
+  "gaps": [
+   "missing_object"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "delete_object",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "rag",
+  "gaps": [
+   "digest_mismatch"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "flip_byte",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "exit": 1,
+  "framework": "rag",
+  "gaps": [
+   "sequence_gap"
+  ],
+  "intact": [
+   "complete_for_declared_scope"
+  ],
+  "probe": "drop_span",
+  "reasons": [],
+  "status": "PASS",
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "agent_exception": null,
+  "captured": 0,
+  "exit": 2,
+  "framework": "openai",
+  "gaps": [],
+  "killed": true,
+  "loss_reasons": [],
+  "losses": 0,
+  "lost": 21,
+  "probe": "sigkill-mid-run",
+  "reasons": [],
+  "scenario": "long50",
+  "server_calls": 21,
+  "status": "PASS",
+  "tail": "fabric.reconstruct: --spans input 1: directory holds no *.otlp files\n",
+  "uncaptured_clients": [],
+  "verdict": []
+ },
+ {
+  "agent_exception": null,
+  "captured": 14,
+  "exit": 1,
+  "framework": "gather",
+  "gaps": [
+   "loss",
+   "unmatched_tool_call"
+  ],
+  "killed": false,
+  "loss_reasons": [
+   "queue_full"
+  ],
+  "losses": 2,
+  "lost": 394,
+  "probe": "queue-overflow",
+  "reasons": [],
+  "scenario": "long50",
+  "server_calls": 408,
+  "status": "PASS",
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792479771696826144: partial (14 exchanges, 53 gaps)\n",
+  "uncaptured_clients": [],
+  "verdict": [
+   "partial"
+  ]
+ },
+ {
+  "agent_exception": null,
+  "captured": 0,
+  "exit": 2,
+  "framework": "openai",
+  "gaps": [],
+  "killed": false,
+  "loss_reasons": [],
+  "losses": 0,
+  "lost": 3,
+  "probe": "otel-sdk-disabled",
+  "reasons": [],
+  "scenario": "simple",
+  "server_calls": 3,
+  "status": "PASS",
+  "tail": "fabric.reconstruct: --spans input 1: directory holds no *.otlp files\n",
+  "uncaptured_clients": [],
+  "verdict": []
+ },
+ {
+  "agent_exception": null,
+  "captured": 2,
+  "exit": 0,
+  "framework": "mixed-clients",
+  "gaps": [],
+  "killed": false,
+  "loss_reasons": [],
+  "losses": 0,
+  "lost": 2,
+  "probe": "uncaptured-clients",
+  "reasons": [
+   "reported complete although calls were lost"
+  ],
+  "scenario": "simple",
+  "server_calls": 4,
+  "status": "FAIL",
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792479777789300239: complete_for_declared_scope (2 exchanges, 1 gaps)\n",
+  "uncaptured_clients": [
+   "aiohttp",
+   "requests"
+  ],
+  "verdict": [
+   "complete_for_declared_scope"
+  ]
+ },
+ {
+  "agent_exception": null,
+  "captured": 0,
+  "exit": 2,
+  "framework": "pool-spawn",
+  "gaps": [],
+  "killed": false,
+  "loss_reasons": [],
+  "losses": 0,
+  "lost": 24,
+  "probe": "isolated-interpreter-spawn",
+  "reasons": [],
+  "scenario": "simple",
+  "server_calls": 24,
+  "status": "PASS",
+  "tail": "fabric.reconstruct: --store-root is not a directory\n",
+  "uncaptured_clients": [],
+  "verdict": []
+ },
+ {
+  "baseline": {
+   "exception": null,
+   "returncode": 0,
+   "server_calls": 24,
+   "sigabrt_in_child": false,
+   "timed_out": false
+  },
+  "captured": {
+   "exception": null,
+   "returncode": -9,
+   "server_calls": 0,
+   "sigabrt_in_child": true,
+   "timed_out": true
+  },
+  "framework": "pool-fork",
+  "platform": "darwin",
+  "probe": "fork-without-proxy-env",
+  "reasons": [
+   "the application behaves differently with capture"
+  ],
+  "status": "FAIL"
+ },
+ {
+  "agent_exception": null,
+  "captured": 0,
+  "exit": 2,
+  "framework": "openai",
+  "gaps": [],
+  "killed": false,
+  "loss_reasons": [
+   "shutdown"
+  ],
+  "losses": 1,
+  "lost": 3,
+  "probe": "store-unwritable",
+  "reasons": [],
+  "scenario": "simple",
+  "server_calls": 3,
+  "status": "PASS",
+  "tail": "fabric.reconstruct: --store-root is not a directory\n",
+  "uncaptured_clients": [],
+  "verdict": []
+ }
+]

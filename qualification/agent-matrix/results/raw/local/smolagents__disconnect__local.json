@@ -1,0 +1,100 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.3225564170002144,
+  "result": {
+   "exception": "smolagents.utils.AgentGenerationError: Error while generating output:\nConnection error.",
+   "output": null,
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 1,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 1,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.4073873329998605,
+  "result": {
+   "exception": "smolagents.utils.AgentGenerationError: Error while generating output:\nConnection error.",
+   "output": null,
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "smolagents",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 1,
+  "cap_calls": 1,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 1,
+    "gaps": [
+     {
+      "effect": "info",
+      "gap_type": "unmatched_tool_call",
+      "object_role": null,
+      "reason": "emitted_not_consumed"
+     }
+    ],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478538245540608",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478538245540608: complete_for_declared_scope (1 exchanges, 1 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "error",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": true,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "disconnect",
+ "spans": {
+  "exchange": 1,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 2
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [],
+  "gaps_cap": []
+ },
+ "workdir": ".work/runs/smolagents/disconnect-local"
+}

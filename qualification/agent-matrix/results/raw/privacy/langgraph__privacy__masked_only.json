@@ -1,0 +1,51 @@
+{
+ "findings": {
+  "delivered": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 0
+  },
+  "held": {
+   "calls": 3,
+   "exception": null,
+   "returncode": 0,
+   "spool_opened_has_secret": false,
+   "spool_records": 4
+  },
+  "objects": [
+   [
+    "model.exchange.request",
+    "masked_only",
+    "redacted",
+    "redacted"
+   ],
+   [
+    "model.exchange.response",
+    "masked_only",
+    "redacted",
+    "redacted"
+   ]
+  ],
+  "original_digest_hits": [],
+  "store_has_secret": false,
+  "store_reasons": [
+   "None"
+  ],
+  "store_status": [
+   "stored"
+  ],
+  "verdicts": [
+   "complete_for_declared_scope"
+  ]
+ },
+ "framework": "langgraph",
+ "mode": "masked_only",
+ "policy_mode": "masked_only",
+ "reasons": [],
+ "scenario": "privacy",
+ "status": "PASS",
+ "transform": "mask",
+ "zero_code": false
+}

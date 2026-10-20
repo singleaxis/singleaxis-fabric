@@ -1,0 +1,125 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.21509045900029378,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 1 tool rounds; observed=c35ed30adacf TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 2,
+  "missed": [],
+  "response_mismatch": [],
+  "server_exchanges": 2,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.3332981670000663,
+  "result": {
+   "exception": null,
+   "output": "Final Answer: done after 1 tool rounds; observed=c35ed30adacf TERMINATE",
+   "tool_calls": [
+    [
+     "get_weather",
+     "{\"city\": \"Paris\"}"
+    ]
+   ]
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "openai",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 2,
+  "cap_calls": 2,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [],
+ "reconstruct": {
+  "exit": 0,
+  "runs": [
+   {
+    "exchanges": 2,
+    "gaps": [],
+    "run_id": "source:s-3fe44afce91b36d652b151454c41949a:1792478380677128899",
+    "verdict": "complete_for_declared_scope"
+   }
+  ],
+  "scopes": [],
+  "tail": "source:s-3fe44afce91b36d652b151454c41949a:1792478380677128899: complete_for_declared_scope (2 exchanges, 0 gaps)\n"
+ },
+ "rows": [
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 0,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": true,
+   "client": "openai-sdk",
+   "disconnected": false,
+   "http_status": 200,
+   "kind": "chat",
+   "request_ref_bytes_ok": true,
+   "response_sha_ok": true,
+   "response_state": "complete",
+   "result_ref_bytes_ok": true,
+   "seq": 1,
+   "status": 200,
+   "store_reason": null,
+   "store_status": "stored",
+   "stream": false,
+   "truncated": false,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "multimodal",
+ "spans": {
+  "exchange": 2,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 3
+ },
+ "status": "PASS",
+ "timing": {
+  "gaps_base": [
+   0.0029816669998581347
+  ],
+  "gaps_cap": [
+   0.0036314999997557607
+  ]
+ },
+ "workdir": ".work/runs/openai/multimodal-local"
+}

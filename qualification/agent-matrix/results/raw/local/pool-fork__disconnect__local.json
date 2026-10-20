@@ -1,0 +1,256 @@
+{
+ "autoload_failed": false,
+ "baseline": {
+  "elapsed_s": 0.2504007500001535,
+  "result": {
+   "exception": null,
+   "output": [
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error."
+   ],
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "capture": {
+  "byte_errors": [],
+  "captured": 0,
+  "missed": [
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 0,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 1,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 2,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 3,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 4,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 5,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 6,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   },
+   {
+    "captured": false,
+    "client": "openai-sdk",
+    "disconnected": true,
+    "kind": "chat",
+    "seq": 7,
+    "status": 200,
+    "stream": true,
+    "user_agent": "OpenAI/Python 3.35.1"
+   }
+  ],
+  "response_mismatch": [],
+  "server_exchanges": 8,
+  "uncaptured": [],
+  "unmatched_spans": []
+ },
+ "captured": {
+  "elapsed_s": 0.30517408300011084,
+  "result": {
+   "exception": null,
+   "output": [
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error.",
+    "openai.APIConnectionError: Connection error."
+   ],
+   "tool_calls": []
+  },
+  "returncode": 0,
+  "stderr_tail": ""
+ },
+ "clients": [
+  "openai-sdk"
+ ],
+ "framework": "pool-fork",
+ "launch": "isolated",
+ "mode": "local",
+ "passivity": {
+  "base_calls": 8,
+  "cap_calls": 8,
+  "same_requests": true,
+  "same_responses": true,
+  "same_result": true,
+  "same_returncode": true
+ },
+ "reasons": [
+  "8/8 httpx exchanges not captured"
+ ],
+ "reconstruct": {
+  "exit": 1,
+  "runs": [],
+  "scopes": [],
+  "tail": "fabric.reconstruct: no runs reconstructed\n"
+ },
+ "rows": [
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 0,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 1,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 2,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 3,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 4,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 5,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 6,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  },
+  {
+   "captured": false,
+   "client": "openai-sdk",
+   "disconnected": true,
+   "kind": "chat",
+   "seq": 7,
+   "status": 200,
+   "stream": true,
+   "user_agent": "OpenAI/Python 3.35.1"
+  }
+ ],
+ "scenario": "disconnect",
+ "spans": {
+  "exchange": 0,
+  "heartbeat": 1,
+  "loss": 0,
+  "total": 1
+ },
+ "status": "FAIL",
+ "timing": {
+  "gaps_base": [
+   0.0038755410000703705,
+   5.041600024924264e-05
+  ],
+  "gaps_cap": [
+   0.004082041999936337,
+   0.00016787499998827116,
+   0.00019070799999099108
+  ]
+ },
+ "workdir": ".work/runs/pool-fork/disconnect-local"
+}
