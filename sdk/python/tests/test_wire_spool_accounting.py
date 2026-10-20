@@ -139,6 +139,106 @@ def test_a_rescan_during_a_write_keeps_the_write_counted(tmp_path: Path) -> None
     spool.release()
 
 
+# A rescan racing a failed own write (CI run 39069670638: 452 bytes on disk, 192 in the
+# ledger, under the concurrent property below): the rescan dropped the bytes of a record
+# that was on disk, so the ledger fell one record below the disk. Each test here fails on
+# that code.
+
+
+def test_a_failed_write_that_ends_during_a_rescan_stays_counted(tmp_path: Path) -> None:
+    """A write admitted before a rescan renames its record while the directory is read,
+    then fails (``ENOSPC`` on the directory fsync) and cannot observe the record (``EIO``),
+    so its admission charge stays; it leaves ``_writing`` before the rescan ends. The
+    record stays counted. Before, the rescan neither saw the record (its listing predates
+    the rename) nor took the write as newer (no longer in flight, never touched), and
+    released the record's charge."""
+    root = tmp_path / "spool"
+    spool = Spool(str(root), LIMIT)
+    assert spool.try_lock()
+    admitted, listed = threading.Event(), threading.Event()
+    rename, listdir, lstat, failure = spool._rename, os.listdir, os.lstat, list[BaseException]()
+    record = f"{1:020d}-{os.getpid():010d}-{0:012d}.rec"  # the write's (not its temp file)
+
+    def rename_after_listing(src: str, dst: str) -> None:
+        admitted.set()
+        assert listed.wait(10)
+        rename(src, dst)
+
+    def unobservable(path: Any, *args: Any, **kwargs: Any) -> Any:
+        if os.path.basename(os.fspath(path)) == record:
+            raise OSError(errno.EIO, "injected")
+        return lstat(path, *args, **kwargs)
+
+    def write() -> None:
+        try:
+            spool.write(_final("own", 0))
+        except OSError as exc:
+            failure.append(exc)
+
+    def listdir_then_write_ends(path: Any) -> list[str]:
+        entries = listdir(path)  # the write's temp file, not yet its record
+        listed.set()
+        thread.join(10)
+        return entries
+
+    with (
+        patch.object(spool, "_rename", rename_after_listing),
+        patch.object(spool, "_sync_dir", _enospc),
+        patch("os.lstat", unobservable),
+    ):
+        thread = threading.Thread(target=write)
+        thread.start()
+        assert admitted.wait(10)
+        with patch("os.listdir", listdir_then_write_ends):
+            spool.rescan()
+        assert not thread.is_alive() and len(failure) == 1
+        assert not spool._writing
+    assert [path.name for path in root.iterdir() if path.suffix == ".rec"] == [record]
+    _assert_exact(spool, root)
+    index = 1
+    while spool.write(_final("own", index)) is not None:  # the bound holds the record
+        index += 1
+        _assert_exact(spool, root)
+    spool.rescan()
+    _assert_exact(spool, root)
+    spool.release()
+
+
+def test_a_rescan_before_a_failed_write_ends_keeps_its_temp_file_counted(
+    tmp_path: Path,
+) -> None:
+    """A write fails and its temp file cannot be unlinked, so its charge moves to the
+    temp file; a rescan then runs before ``write`` takes the name out of ``_writing``.
+    The temp file stays counted. Before, the rescan took every in-flight write as charged
+    under its final name and dropped its temp file's bytes."""
+    root = tmp_path / "spool"
+    spool = Spool(str(root), LIMIT)
+    assert spool.try_lock()
+    failed_write = spool._failed_write
+
+    def failed_write_then_rescan(name: str) -> None:
+        failed_write(name)  # the charge is on the temp file now
+        assert name in spool._writing  # the write is still in flight
+        spool.rescan()
+
+    with (
+        patch.object(spool, "_rename", _enospc),  # the write fails after its temp file
+        patch("os.unlink", _enospc),  # which then stays on disk
+        patch.object(spool, "_failed_write", failed_write_then_rescan),
+        pytest.raises(OSError),
+    ):
+        spool.write(_final("own", 0))
+    assert [path.name[:5] for path in root.iterdir() if path.suffix == ".rec"] == [".tmp-"]
+    _assert_exact(spool, root)
+    index = 1
+    while spool.write(_final("own", index)) is not None:  # the bound holds the temp file
+        index += 1
+        _assert_exact(spool, root)
+    spool.rescan()
+    _assert_exact(spool, root)
+    spool.release()
+
+
 # ----------------------------------------------------------------- interleaved operations
 
 _TARGETS = ("os.ftruncate", "os.fsync", "os.rename", "os.unlink", "dir")
