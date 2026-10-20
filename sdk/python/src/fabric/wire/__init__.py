@@ -260,6 +260,9 @@ class WireHandle:
                 _HANDLE = _transport._ACTIVE = None
                 if self._patched:
                     _transport.unpatch_httpx()
+                from . import _aiohttp  # noqa: PLC0415
+
+                _aiohttp.unpatch_aiohttp()
         with contextlib.suppress(Exception):
             atexit.unregister(self._atexit_close)
             timeout = self.config.shutdown_timeout_s if timeout_s is None else timeout_s
@@ -377,8 +380,7 @@ def install(
             sender.wake()
         _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback, gate=gate)
         _log_gate(gate)
-        if config.patch_httpx:
-            _transport.patch_httpx()
+        _patch_clients(config)
         _transport._ACTIVE = tee
         atexit.register(_HANDLE._atexit_close)
         if _truthy(os.environ.get("FABRIC_CAPTURE_LLM_CONTENT")):
@@ -387,6 +389,16 @@ def install(
                 "wire already stores content off telemetry"
             )
         return _HANDLE
+
+
+def _patch_clients(config: WireConfig) -> None:
+    """The process-global tees the config enables: httpx/httpx2, aiohttp."""
+    from . import _aiohttp, _transport  # noqa: PLC0415
+
+    if config.patch_httpx:
+        _transport.patch_httpx()
+    if config.patch_aiohttp:
+        _aiohttp.patch_aiohttp()
 
 
 def _protection_from_env(config: WireConfig) -> WireConfig:

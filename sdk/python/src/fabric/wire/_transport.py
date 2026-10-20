@@ -136,7 +136,9 @@ class WireTee:
         )  # fmt: skip
         _TEES.add(self)
 
-    def begin(self, request: Any) -> tuple[bool, Exchange | None]:
+    def begin(
+        self, request: Any, *, factory: type[Exchange] | None = None
+    ) -> tuple[bool, Exchange | None]:
         """Match ``request``, open an exchange; never raises. ``owned`` once a sequence is
         allocated or a provisional exchange opened (nested tees stay off; a failed setup is
         an ``internal_error`` loss).
@@ -166,7 +168,8 @@ class WireTee:
                 self.matched += 1
                 with contextlib.suppress(Exception):  # heartbeats cover the source from now on
                     self.loss.note_activity(self.allocator)
-            exchange = Exchange(self, found[0], found[1], epoch, sequence, scope, deferral=deferral)
+            kind = Exchange if factory is None else factory  # resolved now (tests patch it)
+            exchange = kind(self, found[0], found[1], epoch, sequence, scope, deferral=deferral)
             exchange.start(request)
             self._active.add(exchange)
             return True, exchange

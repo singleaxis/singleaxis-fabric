@@ -99,6 +99,8 @@ class WireConfig:
     max_inflight_bytes: int = 256 * 1024 * 1024
     queue_max_items: int = QUEUE_MAX_ITEMS
     patch_httpx: bool = True
+    # wire.py.aiohttp (049 §2.8): tee aiohttp client requests too (FABRIC_WIRE_AIOHTTP=0: off).
+    patch_aiohttp: bool = True
     shutdown_timeout_s: float = 2.0
     tenant_id: str | None = None
     content_endpoint: str | None = None  # node mode: bodies go to the Fabric Node (spec 048)
@@ -256,6 +258,14 @@ SPOOL_OFF = "off"
 FILE_SPOOL_DIR = ".fabric-wire-spool"
 
 
+def aiohttp_from_env(environ: Mapping[str, str]) -> bool:
+    """``FABRIC_WIRE_AIOHTTP`` (default on): whether to tee aiohttp client requests."""
+    value = (environ.get("FABRIC_WIRE_AIOHTTP") or "1").strip().lower()
+    if value not in ("1", "true", "yes", "on", "0", "false", "no", "off"):
+        raise ValueError("FABRIC_WIRE_AIOHTTP must be 1 or 0")
+    return value in ("1", "true", "yes", "on")
+
+
 def default_file_spool(
     store_uri: str, tenant: str | None, tracer_mode: str, environ: Mapping[str, str]
 ) -> str | None:
@@ -306,15 +316,13 @@ def config_from_env(
     if store_uri and not node and endpoint is not None:
         raise ValueError("FABRIC_WIRE_CONTENT_ENDPOINT is for node mode only")
     spool_dir = environ.get("FABRIC_WIRE_SPOOL_DIR") or None
-    if spool_dir == SPOOL_OFF:
-        spool_dir = None
-    elif spool_dir is None and store_uri and not node:
+    if spool_dir is None and store_uri and not node:
         spool_dir = default_file_spool(store_uri, tenant, tracer_mode, environ)
     kwargs: dict[str, Any] = {
         "store": build_store(store_uri, tenant) if store_uri and not node else None,
         "source_id": environ.get("FABRIC_SOURCE_ID") or None, "tenant_id": tenant,
         "content_endpoint": endpoint if node else None,
-        "spool_dir": spool_dir,
+        "spool_dir": None if spool_dir == SPOOL_OFF else spool_dir,
         "spool_durable_boundary": environ.get("FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
         "id_key": id_key_from_env(environ), "labels": labels_from_env(environ),
@@ -324,6 +332,7 @@ def config_from_env(
         "spool_key": key_from_env(environ, "FABRIC_WIRE_SPOOL_KEY", exact=SPOOL_KEY_BYTES),
         "spool_migrate_plaintext": migrate_plaintext_from_env(environ),
     }  # fmt: skip
+    kwargs["patch_aiohttp"] = aiohttp_from_env(environ)
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
     for name in ("MAX_BODY_BYTES", "MAX_RETAIN_BYTES", "PART_MIN_BYTES", "QUEUE_MAX_ITEMS",

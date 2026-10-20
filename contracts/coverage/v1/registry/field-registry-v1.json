@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 9,
+  "registry_revision": 10,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -207,7 +207,8 @@
       "type": "r-pseudonym or generated fallback",
       "observed_by": [
         "run.scope",
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "ID",
@@ -437,6 +438,7 @@
       "type": "unix ns",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -471,6 +473,7 @@
       "type": "unix ns",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -731,7 +734,8 @@
       "name": "store_reason",
       "type": "enum (section 4.2)",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -1400,7 +1404,8 @@
       "name": "model.provider, model.api",
       "type": "label, enum",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "LABEL/META",
@@ -1416,7 +1421,8 @@
       "name": "model.endpoint_id",
       "type": "label",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "LABEL",
@@ -1449,6 +1455,7 @@
       "type": "label",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
@@ -1498,7 +1505,8 @@
       "name": "provider_request_id",
       "type": "p-pseudonym",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "off",
       "privacy_class": "ID",
@@ -1648,6 +1656,7 @@
       "type": "enum (section 2.3)",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -1666,6 +1675,7 @@
       "type": "enum ok/error/cancelled/timeout/unknown",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -1684,6 +1694,7 @@
       "type": "enum application/transport/provider/tool/recorder",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "sdk.records"
       ],
       "default_policy": "metadata",
@@ -1701,6 +1712,7 @@
       "type": "label (class name)",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "sdk.records",
         "explicit.call_recorder"
       ],
@@ -1719,6 +1731,7 @@
       "type": "label/int",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
@@ -2010,7 +2023,8 @@
       "name": "stream.state",
       "type": "enum complete/closed_early/error/abandoned",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -2026,7 +2040,8 @@
       "name": "stream.first_chunk_offset_ns",
       "type": "int",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "META",
@@ -2059,7 +2074,8 @@
       "type": "enum requested/acknowledged/expired/unknown, actor ref",
       "observed_by": [
         "sdk.records",
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "metadata",
       "privacy_class": "META/ID",
@@ -2108,6 +2124,7 @@
       "type": "bytes",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "wire.ts.undici",
         "explicit.call_recorder",
         "explicit.byte_boundary"
@@ -2126,7 +2143,8 @@
       "name": "model.exchange.parts",
       "type": "list of object",
       "observed_by": [
-        "wire.py.httpx"
+        "wire.py.httpx",
+        "wire.py.aiohttp"
       ],
       "default_policy": "content",
       "privacy_class": "CONTENT",
@@ -2209,6 +2227,7 @@
       "type": "closed enum",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
@@ -3593,6 +3612,7 @@
       "type": "int",
       "observed_by": [
         "wire.py.httpx",
+        "wire.py.aiohttp",
         "reconstruct.parse"
       ],
       "default_policy": "metadata",
