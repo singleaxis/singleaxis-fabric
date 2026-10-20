@@ -59,6 +59,8 @@ _OK, _INVALID, _TOO_LARGE, _READY, _UNRESOLVED = 0, 2, 3, 4, 5
 _LOG = logging.getLogger("fabric.transform")
 _RUNNERS: weakref.WeakSet[TransformRunner] = weakref.WeakSet()
 _NO_POLL = not hasattr(select, "poll")  # Windows: every transformation is withheld
+_DEATH: list[int] = []  # this process's parent-death pipe (read end, write end)
+_DEATH_LOCK = threading.Lock()
 
 
 def check_transform_ref(value: object) -> str:
@@ -74,6 +76,17 @@ def check_transform_ref(value: object) -> str:
     if not isinstance(value, str) or len(value) > _MAX_REF or not _REF.fullmatch(value):
         raise ValueError("a transformation is a module reference 'package.module:function'")
     return value
+
+
+def _death_fd() -> int:
+    """The read end of this process's parent-death pipe, passed to every child. Only this
+    process holds the write end (non-inheritable; closed in a forked child), so a child
+    reads end of input when this process dies, whatever it is doing (Sol P0-A round 3
+    #4)."""
+    with _DEATH_LOCK:
+        if not _DEATH:
+            _DEATH.extend(os.pipe())
+        return _DEATH[0]
 
 
 class _BrokenError(Exception):
@@ -283,9 +296,11 @@ class TransformRunner:
 
     def _spawn(self, epoch: int) -> _Child | None:
         try:
+            death = _death_fd()
             proc = subprocess.Popen(  # noqa: S603 - this interpreter, Fabric's own script
-                [sys.executable, "-I", _CHILD], stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, close_fds=True, bufsize=0,
+                [sys.executable, "-I", _CHILD, str(death), repr(self._start_s)],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                close_fds=True, pass_fds=(death,), bufsize=0,
             )  # fmt: skip
         except (OSError, ValueError, RuntimeError):
             return None
@@ -393,6 +408,12 @@ class TransformRunner:
 
 
 def _after_fork_in_child() -> None:
+    global _DEATH_LOCK  # noqa: PLW0603 - another thread may have held it at the fork
+    _DEATH_LOCK = threading.Lock()
+    for fd in _DEATH:  # the parent's death pipe: this process starts its own
+        with contextlib.suppress(OSError):
+            os.close(fd)
+    _DEATH.clear()
     for runner in list(_RUNNERS):  # the parent's children are not this process's
         for proc in runner._procs:
             for pipe in (proc.stdin, proc.stdout):  # so a parent's exit still ends them

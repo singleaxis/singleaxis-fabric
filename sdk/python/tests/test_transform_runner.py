@@ -6,9 +6,12 @@
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -328,3 +331,63 @@ def test_an_idle_child_that_exited_is_reaped_without_another_call() -> None:
         finally:
             assert runner.close()
 
+
+_ORPHAN_PARENT = """
+import signal, sys, threading, time
+if {ignore_alarm}:  # the application ignores and blocks SIGALRM before capture
+    signal.signal(signal.SIGALRM, signal.SIG_IGN)
+    signal.pthread_sigmask(signal.SIG_BLOCK, {{signal.SIGALRM}})
+from fabric._transform_runner import TransformRunner
+runner = TransformRunner({ref!r}, start_timeout_s={start_s})
+def report():
+    while not runner._procs:
+        time.sleep(0.005)
+    print(next(iter(runner._procs)).pid, flush=True)
+threading.Thread(target=report, daemon=True).start()
+runner.run({data!r}, {timeout_s})
+"""
+
+
+@pytest.mark.parametrize(
+    ("ref", "data", "ignore_alarm", "start_s", "timeout_s", "bound_s"),
+    [
+        # Blocked in import (GIL released): the parent-death watchdog ends it at once.
+        ("tests.transforms_import_hang:fn", b"x", False, 30.0, 30.0, 3.0),
+        # Import holding the GIL: the start-up alarm (or PR_SET_PDEATHSIG) ends it.
+        ("tests.transforms_import_spin:fn", b"x", False, 1.0, 30.0, 6.0),
+        # Blocked in a callback, SIGALRM ignored and blocked by the application.
+        (T + "hang", b"x", True, 30.0, 30.0, 3.0),
+        # A callback holding the GIL, SIGALRM ignored and blocked: the call's alarm.
+        (T + "catastrophic", b"a" * 48 + b"!", True, 30.0, 1.0, 6.0),
+    ],
+)  # fmt: skip
+def test_a_child_whose_parent_died_exits_within_its_bound(
+    ref: str, data: bytes, ignore_alarm: bool, start_s: float, timeout_s: float,
+    bound_s: float,
+) -> None:  # fmt: skip
+    """Sol P0-A round 3 #4: a child blocked in its module's import, or in a callback with
+    ``SIGALRM`` ignored by the application, outlived its killed parent under PPID 1.
+    It now exits within its bound: the parent-death pipe, the alarms (reset to their
+    default action and unblocked) covering start-up and each call, and on Linux
+    ``PR_SET_PDEATHSIG``."""
+    code = _ORPHAN_PARENT.format(ignore_alarm=ignore_alarm, ref=ref, start_s=start_s,
+                                 data=data, timeout_s=timeout_s)  # fmt: skip
+    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,
+                              cwd=Path(__file__).parent.parent)  # fmt: skip
+    pid = 0
+    try:
+        assert parent.stdout is not None
+        pid = int(parent.stdout.readline())
+        time.sleep(0.5)  # the child is in its import or its callback
+        assert process_state(pid) not in ("", "Z")
+        parent.kill()
+        parent.wait(10.0)
+        deadline = time.monotonic() + bound_s
+        while process_state(pid) not in ("", "Z"):  # PID 1 may reap it later
+            assert time.monotonic() < deadline, "the orphaned child is still running"
+            time.sleep(0.05)
+    finally:
+        parent.kill()
+        parent.wait(10.0)
+        if pid and process_state(pid) not in ("", "Z"):
+            os.kill(pid, signal.SIGKILL)
