@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking, explicit-line identity)
+
+- With `FABRIC_WIRE_ID_KEY` set, in the default `pseudonymous` identity mode
+  (spec 049 §2.9), the explicit line no longer exports caller-supplied ids in clear:
+  descriptors (Python and TypeScript `ByteEvidenceRecorder`), `CallRecorder`
+  snapshots, journals and seals, `SyntheticCaptureSession` events and the call OTLP
+  projection carry the run id as `r-`, the source id as `s-` (function v1, keyed, as
+  the wire line), the agent id as `agt-` (v2) and any other caller id (operation,
+  attempt, stream, parent call) as the keyed operator label `lbl-`. Fabric-minted call
+  ids are kept, so parent joins still hold. `FABRIC_IDENTITY_MODE=clear` (or
+  `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
+  `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
+  emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a
+  spool keyed by the clear run id is refused. Qualified-run expectations, independent
+  feeds and attestations bind the emitted ids. `ByteEvidenceRecorder.generated_ids` is
+  renamed `emitted_ids`.
+
 ### Changed (breaking, Python customer transformations)
 
 - Python customer transformations (wire `Transformation`, `ContentProtector`
