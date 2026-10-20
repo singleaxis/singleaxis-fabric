@@ -15,8 +15,9 @@ Each call waits at most its timeout; on timeout the child is killed (``SIGKILL``
 preempts anything) and the caller withholds the content (``protection_failed``). The
 caller's thread only waits on the pipe (``poll``), so it never holds the GIL meanwhile.
 Capacity is reserved before a call starts: busy children and killed children not yet
-reaped together stay within ``max_workers``; beyond that a call is refused at once
-(``saturated``, counted), never queued. Input and output are capped. A killed child is
+reaped together stay within ``max_workers`` (a stale idle child is discarded before the
+check and holds its slot until reaped, briefly awaited); beyond that a call is refused at
+once (``saturated``, counted), never queued. Input and output are capped. A killed child is
 replaced by a new one at the next call. Idle children exit after ``idle_timeout_s``;
 :meth:`TransformRunner.close` stops every child now (a later call starts a new one).
 Platforms without ``poll`` (Windows) withhold every transformation. Nothing
@@ -45,6 +46,7 @@ DEFAULT_MAX_WORKERS: Final = 2
 DEFAULT_IDLE_TIMEOUT_S: Final = 60.0
 DEFAULT_START_TIMEOUT_S: Final = 30.0
 MAX_IO_BYTES: Final = 64 * 1024 * 1024
+_STALE_WAIT_S = 0.1  # reaping a stale idle child just killed, before refusing a call
 _REF = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*")
 _MAX_REF = 256
 _CHILD = str(Path(__file__).with_name("_transform_child.py"))
@@ -190,15 +192,24 @@ class TransformRunner:
         ``start_timeout_s``)."""
         if _NO_POLL or not isinstance(data, bytes) or len(data) > MAX_IO_BYTES:
             return "error", None
-        with self._lock:
-            if self._unresolved:
-                return "error", None
-            self._reaping = [p for p in self._reaping if not self._settle(p)]
-            if self._busy + len(self._reaping) >= self._max:
-                self.saturated += 1
-                return "saturated", None
-            self._busy += 1  # reserved before any work starts (Sol P0-A round 2 #5)
-            child = self._take_idle()
+        for retry in (False, True):
+            with self._lock:
+                if self._unresolved:
+                    return "error", None
+                self._reaping = [p for p in self._reaping if not self._settle(p)]
+                # Stale idle children are discarded before the capacity check: they hold
+                # their slots until reaped (Sol P0-A round 3 #1).
+                child, stale = self._take_idle()
+                if child is None and self._busy + len(self._reaping) >= self._max:
+                    if retry or not stale:
+                        self.saturated += 1
+                        return "saturated", None
+                else:
+                    self._busy += 1  # reserved before any work starts (Sol P0-A round 2 #5)
+                    break
+            for proc in stale:  # just killed: reaped within moments, then a slot is free
+                with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                    proc.wait(_STALE_WAIT_S)
         try:
             if child is None:
                 child = self._start()
@@ -210,15 +221,18 @@ class TransformRunner:
                 self._busy -= 1
         return outcome, result
 
-    def _take_idle(self) -> _Child | None:
-        """An idle child well inside its own idle timeout (holds the lock)."""
-        now = time.monotonic()
+    def _take_idle(self) -> tuple[_Child | None, list[subprocess.Popen[bytes]]]:
+        """An idle child well inside its own idle timeout, and the stale ones discarded on
+        the way, not yet reaped (holds the lock)."""
+        now, stale = time.monotonic(), []
         while self._idle:
             child = self._idle.pop()
             if now - child.last_used < self._idle_s / 2 and child.proc.poll() is None:
-                return child
+                return child, stale
             self._discard(child.proc)
-        return None
+            if child.proc in self._reaping:
+                stale.append(child.proc)
+        return None, stale
 
     def _call(self, child: _Child, data: bytes, timeout_s: float) -> tuple[Outcome, bytes | None]:
         proc = child.proc

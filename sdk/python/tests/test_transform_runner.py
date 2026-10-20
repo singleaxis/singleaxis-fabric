@@ -230,3 +230,18 @@ def test_a_forked_child_starts_its_own_children() -> None:
         assert runner.run(b"", 5.0) == ("ok", parent_child)  # the parent's is untouched
     finally:
         assert runner.close()
+
+
+def test_idle_replacement_stays_within_the_worker_bound() -> None:
+    """Sol P0-A round 3 #1: with a bound of one, a call 120 ms after the last (idle
+    timeout 0.2 s) discarded the stale idle child (killed, awaiting reaping) and started
+    a replacement anyway: two tracked children. The stale child is reaped first."""
+    runner = TransformRunner(T + "upper", max_workers=1, idle_timeout_s=0.2)
+    try:
+        assert runner.run(b"a", 5.0) == ("ok", b"A")
+        time.sleep(0.12)
+        assert runner.run(b"b", 5.0) == ("ok", b"B")
+        assert len(runner._procs) <= 1, runner._procs  # without a sweep: as tracked
+        assert runner._busy + len(runner._reaping) + len(runner._idle) <= 1
+    finally:
+        assert runner.close()
