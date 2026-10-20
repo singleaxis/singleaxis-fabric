@@ -54,7 +54,10 @@ def _body(kind: str, canary: str, size: int) -> dict[str, object]:
         filler = "x" * (size - 4096)
         content = [{"type": "text", "text": f"{canary} {filler}"},
                    {"type": "image_url", "image_url": {"url": _image(256 * 1024, 3)}}]  # fmt: skip
-    return {"model": "e2e-model-2026", "messages": [{"role": "user", "content": content}]}
+    return {
+        "model": "e2e-model-2026",
+        "messages": [{"role": "user", "content": content}],
+    }
 
 
 def mask(data: bytes) -> bytes:
@@ -83,8 +86,12 @@ def main() -> int:
     config, _ = config_from_env(os.environ)
     if args.transform != "none":
         # out of process (049 §7.7): this module, loaded by reference in a child
-        transform = Transformation("gate-mask", "1", f"_p0a_gate_agent:{args.transform}")
-        config = dataclasses.replace(config, transformations=dict.fromkeys(ROLES, transform))
+        transform = Transformation(
+            "gate-mask", "1", f"_p0a_gate_agent:{args.transform}"
+        )
+        config = dataclasses.replace(
+            config, transformations=dict.fromkeys(ROLES, transform)
+        )
     handle = wire.install(config)
     with httpx.Client(timeout=300) as client:
         response = client.post(

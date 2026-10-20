@@ -181,9 +181,17 @@ def test_shipped_production_config_is_telemetry_only_and_loopback_safe(
     assert "every OTLP receiver requires the bearer token" in result.stdout
     assert "bound source set (pseudonymous s- form)" in result.stdout
     assert "content key" not in result.stdout.lower()
-    stale = _run(tmp_path, FABRIC_TENANT_ID="", FABRIC_SOURCE_ID="", FABRIC_CONTENT_REQUIRE_SSE="")
+    stale = _run(
+        tmp_path,
+        FABRIC_TENANT_ID="",
+        FABRIC_SOURCE_ID="",
+        FABRIC_CONTENT_REQUIRE_SSE="",
+    )
     assert stale.returncode == 1, stale.stdout
-    assert "FABRIC_SOURCE_ID unset" in stale.stdout and "FABRIC_TENANT_ID unset" in stale.stdout
+    assert (
+        "FABRIC_SOURCE_ID unset" in stale.stdout
+        and "FABRIC_TENANT_ID unset" in stale.stdout
+    )
 
 
 def test_shipped_content_overlay_is_loopback_safe(tmp_path: Path) -> None:
@@ -460,7 +468,11 @@ def test_no_content_checks_without_a_content_exporter(tmp_path: Path) -> None:
     result = _run(tmp_path, FABRIC_CONTENT_KEY_FILE="")
     assert result.returncode == 0, result.stdout
     # Only the fixed spec 049 §7.3 notice about agent-side content mentions it.
-    checks = [line for line in result.stdout.splitlines() if not line.lstrip().startswith("INFO")]
+    checks = [
+        line
+        for line in result.stdout.splitlines()
+        if not line.lstrip().startswith("INFO")
+    ]
     assert "content" not in "\n".join(checks).lower().replace("contents", "")
 
 
@@ -546,7 +558,9 @@ def test_collector_configs_keep_content_on_its_own_path(names: tuple[str, ...]) 
     )
     if production:
         assert exporter["profile"] == "production"
-        assert exporter["file"]["encryption_key_file"] == "/run/secrets/fabric_content_key"
+        assert (
+            exporter["file"]["encryption_key_file"] == "/run/secrets/fabric_content_key"
+        )
         assert config["extensions"]["fabricenvelope/fabric_content"] == {
             "storage": "file_storage/fabric_content",
             "key_file": "/run/secrets/fabric_content_key",
@@ -575,7 +589,10 @@ def test_content_overlay_keeps_every_production_extension() -> None:
     hold every production extension plus the content queue."""
     base = _collector("collector-production.yaml")["service"]["extensions"]
     overlay = _collector("collector-content.yaml")["service"]["extensions"]
-    assert set(overlay) == set(base) | {"file_storage/fabric_content", "fabricenvelope/fabric_content"}
+    assert set(overlay) == set(base) | {
+        "file_storage/fabric_content",
+        "fabricenvelope/fabric_content",
+    }
 
 
 def test_production_content_receiver_uses_the_bearer_authenticator() -> None:
@@ -649,7 +666,9 @@ def test_content_queue_is_private(names: tuple[str, ...]) -> None:
         queue = exporter["sending_queue"]["storage"]
         if queue.startswith("fabricenvelope/"):
             # Spec 049 §7.8: the encrypted queue wraps the private file_storage.
-            assert config["extensions"][queue]["storage"] == "file_storage/fabric_content"
+            assert (
+                config["extensions"][queue]["storage"] == "file_storage/fabric_content"
+            )
         else:
             assert queue == "file_storage/fabric_content"
         assert exporter["queue_directory"] == storage["directory"]
@@ -688,7 +707,9 @@ def test_compose_publishes_content_port_and_volumes() -> None:
     assert "fabric-content:/var/lib/fabric-node/content" in node["volumes"]
     assert {"fabric-content-queue", "fabric-content"} <= set(content["volumes"])
     # Spec 049 §7.8: the Node content key is a file-backed secret, never env.
-    assert content["secrets"]["fabric_content_key"]["file"].startswith("${FABRIC_CONTENT_KEY_FILE:?")
+    assert content["secrets"]["fabric_content_key"]["file"].startswith(
+        "${FABRIC_CONTENT_KEY_FILE:?"
+    )
     assert "fabric_content_key" in node["secrets"]
     assert node["environment"]["FABRIC_TENANT_ID"].startswith("${FABRIC_TENANT_ID:?")
     assert node["mem_limit"] == "2g"
@@ -843,7 +864,9 @@ def test_every_shipped_content_exporter_has_one_tenant_and_encrypted_s3() -> Non
         where = f"{path}:{name}"
         if path == "collector-content-s3-production.yaml":
             # A merge overlay: only the production fields (spec 049 P0-A).
-            assert set(exporter) == {"profile", "source_binding", "sending_queue"}, where
+            assert set(exporter) == {"profile", "source_binding", "sending_queue"}, (
+                where
+            )
             continue
         assert exporter["allowed_tenants"] == ["${env:FABRIC_TENANT_ID}"], where
         assert "allow_multiple_tenants" not in exporter, where
@@ -1024,7 +1047,11 @@ def test_malformed_names_are_still_refused(tmp_path: Path, host: str) -> None:
 @pytest.mark.parametrize(
     ("source", "code", "expected"),
     [
-        ("s-c5aedfd8a3ee415e277e335bf1517ff4", 0, "bound source set (pseudonymous s- form)"),
+        (
+            "s-c5aedfd8a3ee415e277e335bf1517ff4",
+            0,
+            "bound source set (pseudonymous s- form)",
+        ),
         ("billing-agent", 0, "binds only agents running with FABRIC_WIRE_LABELS=clear"),
         ("billing agent", 1, "FABRIC_SOURCE_ID is not a safe source id"),
         ("", 1, "FABRIC_SOURCE_ID unset"),
@@ -1041,10 +1068,12 @@ def test_preflight_checks_the_bound_source(
 
 
 def test_preflight_refuses_a_node_without_the_binding(tmp_path: Path) -> None:
-    production = (COMPOSE_DIR / "collector-config" / "collector-production.yaml").read_text(
-        encoding="utf-8"
+    production = (
+        COMPOSE_DIR / "collector-config" / "collector-production.yaml"
+    ).read_text(encoding="utf-8")
+    unbound = re.sub(
+        r"(?ms)^    evidence_source_binding:\n(      .*\n)+", "", production
     )
-    unbound = re.sub(r"(?ms)^    evidence_source_binding:\n(      .*\n)+", "", production)
     assert "evidence_source_binding" not in unbound
     _stage(tmp_path, unbound)
     result = _run(tmp_path)
@@ -1059,7 +1088,12 @@ def test_preflight_refuses_a_node_without_the_binding(tmp_path: Path) -> None:
         (b"A" * 43 + b"=", 0o600, 0, "content key file holds a 32-byte key"),
         (b"0123456789abcdef" * 4, 0o600, 1, "must hold 32 raw bytes or their base64"),
         (b"short", 0o600, 1, "must hold 32 raw bytes or their base64"),
-        (bytes(range(32)), 0o644, 1, "content key file is accessible to every host user"),
+        (
+            bytes(range(32)),
+            0o644,
+            1,
+            "content key file is accessible to every host user",
+        ),
     ],
 )
 def test_preflight_checks_the_content_key(
@@ -1080,12 +1114,17 @@ def test_preflight_requires_the_content_key(tmp_path: Path) -> None:
     result = _run(tmp_path, FABRIC_CONTENT_KEY_FILE="", **FILE_CONTENT)
     assert result.returncode == 1, result.stdout
     assert "FABRIC_CONTENT_KEY_FILE unset" in result.stdout
-    missing = _run(tmp_path, FABRIC_CONTENT_KEY_FILE=str(tmp_path / "absent"), **FILE_CONTENT)
+    missing = _run(
+        tmp_path, FABRIC_CONTENT_KEY_FILE=str(tmp_path / "absent"), **FILE_CONTENT
+    )
     assert missing.returncode == 1 and "points at a missing file" in missing.stdout
 
 
 def test_preflight_states_the_048_section_1_supersession(tmp_path: Path) -> None:
     _stage_shipped(tmp_path, telemetry_tls=False)
     result = _run(tmp_path, **FILE_CONTENT)
-    assert "FABRIC_CAPTURE_POLICY" in result.stdout and "FABRIC_WIRE_ID_KEY" in result.stdout
+    assert (
+        "FABRIC_CAPTURE_POLICY" in result.stdout
+        and "FABRIC_WIRE_ID_KEY" in result.stdout
+    )
     assert "spec 048 §1 superseded" in result.stdout

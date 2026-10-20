@@ -71,7 +71,10 @@ GATE_AGENT = Path(__file__).with_name("_p0a_gate_agent.py")
 CANARY = f"P0AGATE{uuid.uuid4().hex[:12]}"
 FAIL_TEXT = f"transformation failed on {CANARY}"
 MIB = 1024 * 1024
-SPLIT_LIMITS = {"FABRIC_WIRE_MAX_BODY_BYTES": "8192", "FABRIC_WIRE_PART_MIN_BYTES": "1024"}
+SPLIT_LIMITS = {
+    "FABRIC_WIRE_MAX_BODY_BYTES": "8192",
+    "FABRIC_WIRE_PART_MIN_BYTES": "1024",
+}
 PART_ROLE = "model.exchange.part"
 
 pytestmark = pytest.mark.skipif(
@@ -85,7 +88,9 @@ def _sha(data: bytes) -> str:
 
 def _without_autoload(env: dict[str, str]) -> dict[str, str]:
     """The gate application installs capture itself (its transformations are code)."""
-    return {k: v for k, v in env.items() if k not in ("PYTHONPATH", "FABRIC_WIRE_AUTOLOAD")}
+    return {
+        k: v for k, v in env.items() if k not in ("PYTHONPATH", "FABRIC_WIRE_AUTOLOAD")
+    }
 
 
 def _run(env: dict[str, str], model_url: str, root: Path, *args: str) -> dict[str, Any]:
@@ -107,7 +112,9 @@ def _exchange(spans: list[dict[str, Any]]) -> dict[str, Any]:
     (span,) = {s["attributes"]["fabric.wire.exchange_id"]: s for s in spans
                if s["name"] == "fabric.model_call"}.values()  # fmt: skip
     for record in spans:  # 049 §7.9: the bound Node stamped every record it admitted
-        assert record["attributes"].get("fabric.source.authenticated") is True, record["name"]
+        assert record["attributes"].get("fabric.source.authenticated") is True, record[
+            "name"
+        ]
     return span
 
 
@@ -159,13 +166,17 @@ class FileGate:
             extra: dict[str, str] | None = None, drop: tuple[str, ...] = ()) -> dict[str, str]:  # fmt: skip
         stack = self.stack
         spool = stack.root / "spool" / service
-        env = _without_autoload(stack.agent_env(service, spool, token or node_e2e.INGRESS_TOKEN))
+        env = _without_autoload(
+            stack.agent_env(service, spool, token or node_e2e.INGRESS_TOKEN)
+        )
         env |= capture_protection(stack.root, node_e2e.TENANT, node_e2e.SPOOL_KEY, mode)
         env |= extra or {}
         return {k: v for k, v in env.items() if k not in drop}
 
     def run(self, service: str, *args: str, **env: Any) -> dict[str, Any]:
-        return _run(self.env(service, **env), self.stack.model.url, self.stack.root, *args)
+        return _run(
+            self.env(service, **env), self.stack.model.url, self.stack.root, *args
+        )
 
     def spans(self, service: str) -> list[dict[str, Any]]:
         return self.stack.wait_for_run(service, calls=1)
@@ -207,7 +218,10 @@ class FileGate:
             assert marker not in sink and marker.encode() not in raw, marker
             assert marker not in logs and marker not in reports, marker
             for volume in ("fabric-queue", "fabric-content-queue", "fabric-content"):
-                assert volume_grep(f"{stack.project}_{volume}", marker) == "", (volume, marker)
+                assert volume_grep(f"{stack.project}_{volume}", marker) == "", (
+                    volume,
+                    marker,
+                )
 
 
 @pytest.fixture(scope="module")
@@ -219,7 +233,8 @@ def node(tmp_path_factory: pytest.TempPathFactory) -> Iterator[FileGate]:
     assert text.count("\n  fabriccontent:\n") == 1
     stack.content_config.write_text(
         text.replace(
-            "\n  fabriccontent:\n", f"\n  fabriccontent:\n    max_body_bytes: {63 * MIB}\n"
+            "\n  fabriccontent:\n",
+            f"\n  fabriccontent:\n    max_body_bytes: {63 * MIB}\n",
         ),
         "utf-8",
     )
@@ -259,7 +274,9 @@ def test_masked_only_never_persists_the_original(node: FileGate) -> None:
     own = _by_op(descriptors, attrs["fabric.wire.exchange_id"])
     assert own and all(d["privacy_mode"] == "masked_only" for d in own)
     for descriptor in own:
-        assert "source_sha256" not in descriptor and "source_byte_length" not in descriptor
+        assert (
+            "source_sha256" not in descriptor and "source_byte_length" not in descriptor
+        )
         assert descriptor["protection_status"] == "redacted"
         data = node.body(store, descriptor["object_id"])
         assert CANARY.encode() not in data
@@ -278,12 +295,21 @@ def test_original_plus_masked_links_a_review_copy(node: FileGate) -> None:
     attrs = span["attributes"]
     store, descriptors = node.descriptors(span)
     own = _by_op(descriptors, attrs["fabric.wire.exchange_id"])
-    original = next(d for d in own if d["object_id"] == attrs["fabric.content.request_ref"])
+    original = next(
+        d for d in own if d["object_id"] == attrs["fabric.content.request_ref"]
+    )
     assert CANARY.encode() in node.body(store, original["object_id"])
     assert original["protection_status"] == "retained"
-    reviews = [d for d in own if d.get("links", [{}])[0].get("relation") == "derived_from"]
-    review = next(d for d in reviews if d["links"][0]["object_id"] == original["object_id"])
-    assert review["protection_status"] == "redacted" and review["source_authenticated"] is True
+    reviews = [
+        d for d in own if d.get("links", [{}])[0].get("relation") == "derived_from"
+    ]
+    review = next(
+        d for d in reviews if d["links"][0]["object_id"] == original["object_id"]
+    )
+    assert (
+        review["protection_status"] == "redacted"
+        and review["source_authenticated"] is True
+    )
     assert "source_sha256" not in review and "source_byte_length" not in review
     assert CANARY.encode() not in node.body(store, review["object_id"])
     # The span names the originals; a review copy never satisfies them.
@@ -388,7 +414,9 @@ def test_the_node_drops_forged_records_and_leaks_nothing(node: FileGate) -> None
                                     "Authorization": f"Bearer {node_e2e.INGRESS_TOKEN}"},
         )  # fmt: skip
         try:
-            with urllib.request.urlopen(request, timeout=30, context=context) as response:
+            with urllib.request.urlopen(
+                request, timeout=30, context=context
+            ) as response:
                 assert response.status == 200  # accepted into the queue, judged after
         except urllib.error.HTTPError as exc:
             assert 400 <= exc.code < 500, exc.code
@@ -411,7 +439,10 @@ def test_a_corrupt_object_is_a_gap_never_content(node: FileGate) -> None:
     corrupt = node.stack.root / f"corrupt-{uuid.uuid4().hex[:8]}"
     shutil.copytree(sealed, corrupt)
     target = (
-        corrupt / node_e2e.TENANT / "evidence" / span["attributes"]["fabric.content.request_ref"]
+        corrupt
+        / node_e2e.TENANT
+        / "evidence"
+        / span["attributes"]["fabric.content.request_ref"]
     )
     data = bytearray(target.read_bytes())
     data[-1] ^= 0xFF  # breaks the envelope's tag: never opened, never returned
@@ -430,7 +461,9 @@ def test_a_63_mib_skeleton_fits_the_node_request_cap(node: FileGate) -> None:
     """049 §7.4: max_body_bytes 63 MiB in node mode; the skeleton of a 63+ MiB request is
     one content request below the Node's 64 MiB cap, stored and reassembled."""
     limits = {"FABRIC_WIRE_MAX_BODY_BYTES": str(63 * MIB)}
-    node.run("gate-63mib", "--body", "big", "--size", str(63 * MIB - 64 * 1024), extra=limits)
+    node.run(
+        "gate-63mib", "--body", "big", "--size", str(63 * MIB - 64 * 1024), extra=limits
+    )
     span = node.stack.wait_for_run("gate-63mib", calls=1, timeout_s=300)
     span = _exchange(span)
     assert span["attributes"]["fabric.wire.store_status"] == "stored"
@@ -461,7 +494,9 @@ class S3Gate:
         env |= capture_protection(stack.root, s3_e2e.TENANT, stack.spool_key, mode)
         return _run(env | (extra or {}), stack.model.url, stack.root, *args)
 
-    def descriptors(self, span: dict[str, Any], count: int) -> tuple[dict[str, Any], list[Any]]:
+    def descriptors(
+        self, span: dict[str, Any], count: int
+    ) -> tuple[dict[str, Any], list[Any]]:
         """Every object of the exchange, once the Node wrote ``count`` of them."""
         exchange_id = span["attributes"]["fabric.wire.exchange_id"]
         found: list[dict[str, Any]] = []
@@ -469,12 +504,16 @@ class S3Gate:
         def written() -> bool:
             objects = self.stack.store_objects()
             found[:] = [objects]
-            metas = [json.loads(s3_e2e._decode(objects, k)) for k in objects if "/meta/" in k]
+            metas = [
+                json.loads(s3_e2e._decode(objects, k)) for k in objects if "/meta/" in k
+            ]
             return len(_by_op(metas, exchange_id)) >= count
 
         wait_until(written, 90, lambda: "the Node did not write the objects")
         objects = found[0]
-        metas = [json.loads(s3_e2e._decode(objects, k)) for k in objects if "/meta/" in k]
+        metas = [
+            json.loads(s3_e2e._decode(objects, k)) for k in objects if "/meta/" in k
+        ]
         return objects, metas
 
 
@@ -489,7 +528,9 @@ def s3(tmp_path_factory: pytest.TempPathFactory) -> Iterator[S3Gate]:
         stack.sink.start()
         up = stack.compose("up", "-d", "--no-build", "--wait", "--wait-timeout", "180",
                            check=False)  # fmt: skip
-        assert up.returncode == 0, f"{up.stdout}\n{up.stderr}\n{stack.node_logs()[-4000:]}"
+        assert up.returncode == 0, (
+            f"{up.stdout}\n{up.stderr}\n{stack.node_logs()[-4000:]}"
+        )
         stack.wait_health()
         yield S3Gate(stack)
     finally:
@@ -511,7 +552,10 @@ def test_s3_role_families_resolve_with_a_get_only_reader(s3: S3Gate) -> None:
     span = _exchange(s3.stack.wait_spans("gate-s3-split", exchanges=1))
     objects, metas = s3.descriptors(span, count=4)  # skeleton, two parts, response
     _assert_split(metas, span)
-    own = {d["object_id"] for d in _by_op(metas, span["attributes"]["fabric.wire.exchange_id"])}
+    own = {
+        d["object_id"]
+        for d in _by_op(metas, span["attributes"]["fabric.wire.exchange_id"])
+    }
     for key, entry in objects.items():
         if key.rsplit("/", 1)[-1].removesuffix(".json") in own:
             assert entry["sse"] == "AES256", key  # SSE on every body and descriptor
@@ -527,7 +571,10 @@ def test_s3_masked_only_never_persists_the_original(s3: S3Gate) -> None:
     own = _by_op(metas, span["attributes"]["fabric.wire.exchange_id"])
     for descriptor in own:
         assert descriptor["privacy_mode"] == "masked_only"
-        assert "source_sha256" not in descriptor and descriptor["source_authenticated"] is True
+        assert (
+            "source_sha256" not in descriptor
+            and descriptor["source_authenticated"] is True
+        )
     ids = {d["object_id"] for d in own}
     for key in objects:  # this exchange's bodies and descriptors
         if key.rsplit("/", 1)[-1].removesuffix(".json") in ids:

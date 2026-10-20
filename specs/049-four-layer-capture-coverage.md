@@ -1205,7 +1205,8 @@ store and the telemetry can recompute it.
    Allocation order defines the set; commit order does not matter.
 3. **Writer.** The worker computes it from the records it admitted and
    writes one `segment_seal` record once the segment's positions have
-   settled — admitted to the spool or recorded as a loss (section 2.10). `fabric.reconstruct` recomputes it from the store and
+   settled — admitted to the spool or recorded as a loss (section 2.10).
+   `fabric.reconstruct` recomputes it from the store and
    the telemetry; a difference is `partial(seal_mismatch)`; a segment
    without a seal is `unsealed`: `partial` with reason `source_lost`
    (as in `X44`).
@@ -2652,7 +2653,8 @@ fields that need no new role.
 - Entry: P0-A exit; P1-A exit.
 - Work: `record_trigger`, `record_input`, `record_run_context`,
   `record_outcome`, `record_tool_inventory`, `record_ui_action`;
-  the new `with d.side_effect(...)` context manager and `started_at`/`ended_at` on `record_side_effect`, with state and timing; delegation state and
+  the new `with d.side_effect(...)` context manager and `started_at`/`ended_at` on `record_side_effect`,
+  with state and timing; delegation state and
   payload; checkpoint action and state; workflow node and iteration;
   dispatch identity; attempt kind and selection; `step.error`;
   conversation and turn ids; MCP wrapper content roles, server version and

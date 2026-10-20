@@ -225,9 +225,17 @@ _CAP_BYTES = {"64 KiB": 65536, "256 KiB": 262144, "1 MiB": 1 << 20, "4 MiB": 4 <
 # Spec 049 §7.4: max_body_bytes is the deployment's value, never above 63 MiB
 # in node mode; the contract bound is that ceiling.
 _NODE_MAX_BODY_BYTES = 63 << 20
-_POLICY_FIELDS = ("privacy_mode", "policy_id", "policy_version", "policy_digest", "protection_status")
+_POLICY_FIELDS = (
+    "privacy_mode",
+    "policy_id",
+    "policy_version",
+    "policy_digest",
+    "protection_status",
+)
 _NO_LENGTH_MODES = frozenset({"omit", "redact", "tokenize", "masked_only"})
-_BYTE_MODES = frozenset({"retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"})
+_BYTE_MODES = frozenset(
+    {"retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"}
+)
 
 
 def _roles() -> dict[str, Mapping[str, Any]]:
@@ -238,28 +246,48 @@ def _roles() -> dict[str, Mapping[str, Any]]:
 
 def _media_allowed(patterns: Sequence[str], media_type: str) -> bool:
     return any(
-        p == "*" or p == media_type or p.endswith("/*") and media_type.startswith(p[:-1])
+        p == "*"
+        or p == media_type
+        or p.endswith("/*")
+        and media_type.startswith(p[:-1])
         for p in patterns
     )
 
 
 def _combination_ok(d: Mapping[str, Any]) -> bool:
     """Status, representation, transformations and digests (spec 048 §3, 049 §4.3, §7.5)."""
-    status, representation, transformations = d["status"], d["representation"], d["transformations"]
+    status, representation, transformations = (
+        d["status"],
+        d["representation"],
+        d["transformations"],
+    )
     has_stored, has_source, has_source_sha = (
-        "stored_byte_length" in d, "source_byte_length" in d, "source_sha256" in d,
+        "stored_byte_length" in d,
+        "source_byte_length" in d,
+        "source_sha256" in d,
     )
     if status == "not_captured":
-        return representation == "unavailable" and transformations == [] and not has_stored and "status_reason" in d
+        return (
+            representation == "unavailable"
+            and transformations == []
+            and not has_stored
+            and "status_reason" in d
+        )
     if status == "stored":
         if representation in {"exact", "partial"}:
             return (
                 transformations == []
                 and d.get("source_sha256") == d["stored_sha256"]
                 and d.get("source_byte_length") == d["stored_byte_length"]
-                and (representation == "exact" or d["role"] == "model.exchange.response")
+                and (
+                    representation == "exact" or d["role"] == "model.exchange.response"
+                )
             )
-        return representation == "split" and transformations == ["extract_parts"] and has_source_sha
+        return (
+            representation == "split"
+            and transformations == ["extract_parts"]
+            and has_source_sha
+        )
     if status == "truncated":
         return (
             representation == "truncated"
@@ -292,14 +320,23 @@ def _protection_ok(d: Mapping[str, Any]) -> bool:
         if reason == "privacy_policy":
             # Withheld by the mode itself; under redact or masked_only only a binary
             # part no part transformation applies to (spec 049 §7.5).
-            binary_part = d["role"] == "model.exchange.part" and mode in {"redact", "masked_only"}
-            return (mode in {"metadata_only", "omit"} or binary_part) and not has_source_sha
+            binary_part = d["role"] == "model.exchange.part" and mode in {
+                "redact",
+                "masked_only",
+            }
+            return (
+                mode in {"metadata_only", "omit"} or binary_part
+            ) and not has_source_sha
         return retains or not has_source_sha
     if status in {"stored", "truncated"}:
         return protection == "retained" and retains
     if d["representation"] == "tokenized":
         return mode == "tokenize" and protection == "tokenized"
-    if protection != "redacted" or mode not in {"redact", "masked_only", "original_plus_masked"}:
+    if protection != "redacted" or mode not in {
+        "redact",
+        "masked_only",
+        "original_plus_masked",
+    }:
         return False
     return mode != "original_plus_masked" or any(
         link["relation"] == "derived_from" for link in d.get("links", [])
@@ -317,7 +354,11 @@ def _links_ok(d: Mapping[str, Any]) -> bool:
             continue
         start, end = link["byte_range"]
         length = d.get("stored_byte_length", d.get("source_byte_length"))
-        if d["status"] == "redacted" or start > end or (length is not None and end - start != length):
+        if (
+            d["status"] == "redacted"
+            or start > end
+            or (length is not None and end - start != length)
+        ):
             return False
     return len(part_of) == (1 if d["role"] == "model.exchange.part" else 0)
 
@@ -352,17 +393,18 @@ def _check_descriptor(descriptor: Mapping[str, Any], path: str) -> None:
     for code, check in checks:
         if not check(descriptor):
             raise CaptureContractError(
-                code, path, "descriptor fields disagree with the content-v2 rules of spec 049 §4.3"
+                code,
+                path,
+                "descriptor fields disagree with the content-v2 rules of spec 049 §4.3",
             )
 
 
 def _validate_content(document: Mapping[str, Any]) -> None:
     attributes, body = document["attributes"], document["body"]
     empty = "sha256:" + hashlib.sha256(b"").hexdigest()
-    if (
-        body["byte_length"] != attributes.get("stored_byte_length", 0)
-        or body["sha256"] != attributes.get("stored_sha256", empty)
-    ):
+    if body["byte_length"] != attributes.get("stored_byte_length", 0) or body[
+        "sha256"
+    ] != attributes.get("stored_sha256", empty):
         raise CaptureContractError(
             "capture.content.digest",
             "$.body",
@@ -425,8 +467,10 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
             "source_sequence": attrs["fabric.source.sequence"],
         }
         # A descriptor-only (not_captured) body occupies no blob bytes.
-        if body["offset"] != offset or body["length"] != descriptor.get("stored_byte_length", 0) or any(
-            descriptor[k] != v for k, v in expected.items()
+        if (
+            body["offset"] != offset
+            or body["length"] != descriptor.get("stored_byte_length", 0)
+            or any(descriptor[k] != v for k, v in expected.items())
         ):
             raise _spool_inconsistent(
                 where, "bodies must be contiguous and match the span"
@@ -440,13 +484,18 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
         where = f"$.bodies[{index}]"
         targets = [link["object_id"] for link in descriptor.get("links", [])]
         if any(target not in by_id for target in targets):
-            raise _spool_inconsistent(where, "a part or review copy links a body of this record")
+            raise _spool_inconsistent(
+                where, "a part or review copy links a body of this record"
+            )
         role = descriptor["role"]
         # Spec 049 §7.5: only the primary object of a side (no link: the whole
         # side or its split skeleton) is named by the span's ref; parts link
         # part_of, review copies derived_from.
         if role in _ROLE_REF and not targets:
-            if role in primaries or attrs.get(_ROLE_REF[role]) != descriptor["object_id"]:
+            if (
+                role in primaries
+                or attrs.get(_ROLE_REF[role]) != descriptor["object_id"]
+            ):
                 raise _spool_inconsistent(
                     where, "one primary body per side, named by the span's ref"
                 )
