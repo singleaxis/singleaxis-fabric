@@ -28,7 +28,14 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
-from ._sequence import GeneratedIds, check_id_key, id_key_from_env
+from ._sequence import (
+    EmittedIds,
+    IdentityMode,
+    check_id_key,
+    emitted_ids,
+    id_key_from_env,
+    identity_mode_from_env,
+)
 from ._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
@@ -280,6 +287,9 @@ class ByteEvidenceConfig:
     # Environment variables a role-policy transform child may read, beyond PATH and
     # locale variables (never a FABRIC_*KEY* one; Sol P0-A round 3).
     transform_env_allowlist: tuple[str, ...] = ()
+    # 049 §2.9 rule 7 (FABRIC_IDENTITY_MODE when unset): caller ids leave as keyed
+    # pseudonyms (``pseudonymous``, the default) or as given (``clear``).
+    identity_mode: IdentityMode | None = None
 
     def __post_init__(self) -> None:  # noqa: PLR0912
         object.__setattr__(
@@ -296,6 +306,8 @@ class ByteEvidenceConfig:
         if not self.roles or not isinstance(self.roles, frozenset) or self.roles - _ROLES:
             raise ValueError("roles must be a non-empty frozenset of content-v2 roles")
         check_id_key(self.id_key)
+        if self.identity_mode not in (None, "pseudonymous", "clear"):
+            raise ValueError("identity_mode must be 'pseudonymous' or 'clear'")
         if self.content_protector is not None and self.deployment_policy is None:
             object.__setattr__(self, "deployment_policy", self.content_protector.policy)
         if self.deployment_policy is not None:
@@ -385,10 +397,10 @@ class ByteEvidenceRecorder:
         )
         if self._gate_reason is not None:
             self._log_gate()
-        # 049 §2.9 rule 5: production without the id key exports no caller-derived id.
-        self._generated_ids = (
-            GeneratedIds() if self._profile == "production" and id_key is None else None
-        )
+        # 049 §2.9: caller ids leave as keyed pseudonyms, or, in production without the id
+        # key (rule 5), as generated ids; as given only in the clear mode (or local, no key).
+        mode = config.identity_mode or identity_mode_from_env(os.environ)
+        self._emitted_ids = emitted_ids(self._profile, id_key, mode)
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -431,10 +443,17 @@ class ByteEvidenceRecorder:
         return totals
 
     @property
-    def generated_ids(self) -> GeneratedIds | None:
-        """The generated ids replacing caller ids (049 §2.9 rule 5) in the production
-        profile without the id key, else ``None`` (caller ids are emitted as given)."""
-        return self._generated_ids
+    def emitted_ids(self) -> EmittedIds | None:
+        """How caller ids are emitted (049 §2.9): keyed pseudonyms, generated ids (the
+        production profile without the id key, rule 5), or ``None`` (as given)."""
+        return self._emitted_ids
+
+    def emitted_run_id(self, run_id: str) -> str:
+        """``run_id`` as this recorder emits it (epoch 0): the id a source spool or a
+        qualified-run expectation for this run is keyed by. Never the clear value unless
+        ids are emitted as given."""
+        ids = self._emitted_ids
+        return run_id if ids is None else ids.run(run_id, 0)
 
     @property
     def tenant_id(self) -> str:
@@ -480,9 +499,9 @@ class ByteEvidenceRecorder:
             chunk_index=chunk_index,
         )
 
-        if (ids := self._generated_ids) is not None:  # 049 §2.9 rule 5: no caller id leaves
-            source_id = ids.source()
-            run_id = ids.run(source_epoch) if run_id is not None else None
+        if (ids := self._emitted_ids) is not None:  # 049 §2.9: no clear caller id leaves
+            source_id = ids.source(source_id)
+            run_id = ids.run(run_id, source_epoch) if run_id is not None else None
             operation_id, attempt_id, stream_id = (
                 ids.other(value) if value is not None else None
                 for value in (operation_id, attempt_id, stream_id)

@@ -1494,6 +1494,96 @@ def test_stream_closed_at_its_terminal_event_stitches_normally(capture: Capture)
     assert run["exchanges"][0]["tool_call_ids_emitted"] == [pid("call_c1")]
 
 
+_CUT_CHAT = json.dumps(
+    chat_response({"role": "assistant", "content": "partial answer"}, "c-cut")
+).encode()[:-20]
+
+
+@pytest.mark.parametrize(
+    ("state", "reason"),
+    [
+        ("closed_early", "stream_closed_early"),
+        ("abandoned", "transport_incomplete"),
+        ("error", "transport_incomplete"),
+    ],
+)
+@pytest.mark.parametrize("streamed", [True, False])
+def test_cut_off_response_is_partial_streamed_or_not(
+    capture: Capture, state: str, reason: str, streamed: bool
+) -> None:
+    """D5 (049 §2.6, §6.2 R4): a response the transport did not finish whose bytes do not
+    prove their own end is truncated: a gap, so ``partial``, never ``complete`` (a cut
+    stream) nor ``unverified`` (a cut JSON body)."""
+
+    if streamed:
+        response = (
+            sse(_chunk({"role": "assistant"}), _chunk({"content": "partial"}), done=False)
+            + b'data: {"id": "chatcmpl-s", "choi'
+        )
+    else:
+        response = _CUT_CHAT
+    capture.exchange(chat_request([SYSTEM, USER], stream=streamed), response, state=state)
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial", run["gaps"]
+    assert [(gap["gap_type"], gap["effect"], gap.get("object_role"), gap.get("reason"))
+            for gap in run["gaps"]] == [("truncated", "partial", "response", reason)]  # fmt: skip
+    assert run["exchanges"][0]["parse_status"] == "truncated"
+
+
+def test_cut_at_an_event_boundary_is_partial(capture: Capture) -> None:
+    """A stream cut between whole events (no terminal event) is as cut as one cut inside
+    an event."""
+
+    response = sse(_chunk({"role": "assistant"}), _chunk({"content": "partial"}), done=False)
+    capture.exchange(chat_request([SYSTEM, USER], stream=True), response, state="abandoned")
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "partial", run["gaps"]
+    assert run["gaps"][0]["reason"] == "transport_incomplete"
+
+
+@pytest.mark.parametrize(
+    ("api", "body"),
+    [
+        ("anthropic.messages", b'event: message_stop\ndata: {"type": "message_stop"}\n\n'),
+        ("openai.responses", None),
+    ],
+)
+def test_stream_closed_after_its_own_end_event_is_not_a_gap(
+    capture: Capture, api: str, body: bytes | None
+) -> None:
+    """The terminal event of each API ends a stream as ``[DONE]`` does."""
+
+    if api == "openai.responses":
+        completed = {"type": "response.completed", "response": {
+            "id": "resp-1", "model": MODEL, "status": "completed", "output": []}}  # fmt: skip
+        request: dict[str, Any] = {"model": MODEL, "input": "hi", "stream": True}
+        stream = sse(completed, done=False)
+    else:
+        request = {"model": MODEL, "max_tokens": 8, "stream": True,
+                   "messages": [{"role": "user", "content": "hi"}]}  # fmt: skip
+        message = {"id": "msg-1", "model": MODEL, "role": "assistant", "content": []}
+        start = {"type": "message_start", "message": {**message, "usage": {}}}
+        stream = (
+            b"event: message_start\ndata: " + json.dumps(start).encode() + b"\n\n" + (body or b"")
+        )
+    capture.exchange(request, stream, api=api, state="closed_early")
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
+
+
+def test_complete_response_that_is_not_json_stays_unverified(capture: Capture) -> None:
+    """A body the transport finished but that does not parse is unparsed, not cut."""
+
+    capture.exchange(chat_request([SYSTEM, USER]), _CUT_CHAT, state="complete")
+    capture.heartbeat()
+    run = only_run(capture.reconstruct())
+    assert run["verdict"] == "unverified"
+    assert run["gaps"][0]["gap_type"] == "unparsed_exchange"
+
+
 def test_unparsed_request_is_unverified(capture: Capture) -> None:
     capture.exchange(b"not json at all", chat_response({"role": "assistant", "content": "x"}, "c"))
     capture.heartbeat()

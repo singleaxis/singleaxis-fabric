@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, cast
 from urllib.parse import urlsplit
 
+from fabric._sequence import GeneratedIds
 from fabric.byte_evidence import ByteEvidenceRecorder
 from fabric.source_spool import SyntheticSourceSpool
 
@@ -82,6 +83,14 @@ class SyntheticCaptureSession:
     ) -> None:
         if recorder.tenant_id != tenant_id:
             raise ValueError("recorder store tenant does not match session tenant")
+        # Spec 049 §2.9: events carry the ids the recorder emits (keyed pseudonyms, or
+        # generated ids in production without the id key), never the caller's clear ids;
+        # a source spool is keyed by the emitted run id (unused for generated ids).
+        self._ids = recorder.emitted_ids
+        if self._ids is not None:
+            run_id = self._ids.run(run_id, 0)
+            if isinstance(self._ids, GeneratedIds):
+                source_spool = None
         if source_spool is not None and (
             source_spool.tenant_id != tenant_id or source_spool.run_id != run_id
         ):
@@ -95,6 +104,15 @@ class SyntheticCaptureSession:
         self._next: dict[str, int] = {}
         self._events: list[dict[str, Any]] = []
         self._operations: list[dict[str, Any]] = []
+
+    def _emit(self, source_id: str, *ids: str | None) -> tuple[Any, ...]:
+        """``source_id`` and the other caller ``ids`` as emitted (spec 049 §2.9)."""
+        if (emitted := self._ids) is None:
+            return (source_id, *ids)
+        return (
+            emitted.source(source_id),
+            *(emitted.other(value) if value is not None else None for value in ids),
+        )
 
     def _sequence(self, source_id: str) -> int:
         with self._lock:
@@ -124,6 +142,9 @@ class SyntheticCaptureSession:
         stream_id: str | None = None,
         chunk_index: int | None = None,
     ) -> dict[str, Any]:
+        source_id, operation_id, attempt_id, stream_id = self._emit(
+            source_id, operation_id, attempt_id, stream_id
+        )
         sequence = self._sequence(source_id)
         record_id = _opaque_id("evt")
         try:
@@ -181,6 +202,7 @@ class SyntheticCaptureSession:
     ) -> None:
         if status not in {"truncated", "unsupported", "dropped", "failed", "not_captured"}:
             raise ValueError("gap status must be an incomplete evidence state")
+        source_id, operation_id, attempt_id = self._emit(source_id, operation_id, attempt_id)
         with self._lock:
             event = {
                 "record_id": _opaque_id("evt"),
@@ -238,6 +260,10 @@ class SyntheticCaptureSession:
                 reason="outcome_field_not_allowed",
             )
             return
+        source_id, operation_id, attempt_id = self._emit(
+            source_id, fields["operation_id"], fields["attempt_id"]
+        )
+        fields = {**fields, "operation_id": operation_id, "attempt_id": attempt_id}
         sequence = self._sequence(source_id)
         observed_at = _now()
         event = {
