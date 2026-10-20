@@ -321,6 +321,11 @@ class ContentProtector:
         each of them."""
         return all([runner.close(timeout_s) for runner in self._runners.values()])  # noqa: C419 - close each
 
+    def reap(self) -> None:
+        """Reap exited redactor child processes (never waits; the recorder's worker)."""
+        for runner in self._runners.values():
+            runner.reap()
+
     def runs_customer_code(self, role: str) -> bool:
         """Whether protecting ``role`` calls a customer redactor (``redact``,
         ``masked_only``): the byte recorder then protects it on its worker thread."""

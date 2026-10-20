@@ -237,6 +237,11 @@ class Protector:
         runners = {id(r): r for r in self._runners.values()}.values()
         return all([runner.close(timeout_s) for runner in runners])  # noqa: C419 - close each
 
+    def reap(self) -> None:
+        """Reap exited transformation child processes (never waits; the capture worker)."""
+        for runner in self._runners.values():
+            runner.reap()
+
     def stats(self) -> dict[str, int]:
         """Counters of the transformation runners (never a value): calls whose child was
         killed at their timeout, calls withheld while the capacity bound was reached, and

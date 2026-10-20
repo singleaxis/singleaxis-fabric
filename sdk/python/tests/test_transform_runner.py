@@ -27,6 +27,13 @@ def _children() -> set[int]:
             if int(r[1]) == os.getpid() and int(r[0]) != probe.pid and r[2][0] != "Z"}  # fmt: skip
 
 
+def process_state(pid: int) -> str:
+    """``ps`` state of ``pid`` (``Z`` a zombie), or ``""`` once it is gone."""
+    probe = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(pid)],
+                           capture_output=True, text=True, check=False)  # fmt: skip
+    return probe.stdout.strip()
+
+
 def test_outcomes_run_in_a_reused_child_process() -> None:
     runner = TransformRunner(T + "upper")
     try:
@@ -299,3 +306,25 @@ def test_close_while_a_child_is_starting_settles_it() -> None:
     thread.join(10.0)
     assert result in ([("error", None)], [("ok", b"X")])  # ok only if it finished first
     assert runner.children() == 0
+
+
+def test_an_idle_child_that_exited_is_reaped_without_another_call() -> None:
+    """Sol P0-A round 3 #3: an idle child that exited by itself stayed a zombie; neither
+    ``children()`` nor ``stats()`` reaped it. Every entry point reaps without waiting."""
+    for entry in ("children", "stats", "reap"):
+        runner = TransformRunner(T + "pid", idle_timeout_s=0.15)
+        try:
+            outcome, pid = runner.run(b"", 5.0)
+            assert outcome == "ok" and pid is not None
+            time.sleep(0.5)  # the child exits after its idle timeout
+            if entry == "children":
+                assert runner.children() == 0
+            elif entry == "stats":
+                assert runner.stats()["transform_abandoned"] == 0
+            else:
+                runner.reap()
+            assert process_state(int(pid)) == "", entry
+            assert not runner._procs
+        finally:
+            assert runner.close()
+

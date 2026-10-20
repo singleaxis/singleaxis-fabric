@@ -18,7 +18,9 @@ Capacity is reserved before a call starts: busy children and killed children not
 reaped together stay within ``max_workers`` (a stale idle child is discarded before the
 check and holds its slot until reaped, briefly awaited); beyond that a call is refused at
 once (``saturated``, counted), never queued. Input and output are capped. A killed child is
-replaced by a new one at the next call. Idle children exit after ``idle_timeout_s``;
+replaced by a new one at the next call. Idle children exit after ``idle_timeout_s``; every
+entry point, and the owner's worker through :meth:`TransformRunner.reap`, reaps exited
+children without waiting;
 :meth:`TransformRunner.close` stops every child now (a later call starts a new one).
 Platforms without ``poll`` (Windows) withhold every transformation. Nothing
 here logs a value or keeps error text.
@@ -199,7 +201,7 @@ class TransformRunner:
             with self._lock:
                 if self._unresolved:
                     return "error", None
-                self._reaping = [p for p in self._reaping if not self._settle(p)]
+                self._sweep()
                 # Stale idle children are discarded before the capacity check: they hold
                 # their slots until reaped (Sol P0-A round 3 #1).
                 child, stale = self._take_idle()
@@ -344,7 +346,7 @@ class TransformRunner:
             with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 proc.wait(max(0.0, deadline - time.monotonic()))
         with self._lock:
-            self._reaping = [p for p in self._reaping if not self._settle(p)]
+            self._sweep()
             for proc in procs:
                 self._settle(proc)
             return not self._procs and not self._starting
@@ -364,16 +366,29 @@ class TransformRunner:
             with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 proc.wait(1.0)
 
+    def _sweep(self) -> None:
+        """Reap, without waiting, every child that has exited: killed ones and idle ones
+        past their own idle timeout, so none stays a zombie (holds the lock; Sol P0-A
+        round 3 #3)."""
+        self._reaping = [p for p in self._reaping if not self._settle(p)]
+        self._idle = [child for child in self._idle if not self._settle(child.proc)]
+
+    def reap(self) -> None:
+        """Reap exited children now (never waits): the owner's worker calls it on its
+        cadence, so an inactive runner leaves no zombie (Sol P0-A round 3 #3)."""
+        with self._lock:
+            self._sweep()
+
     def stats(self) -> dict[str, int]:
         with self._lock:
-            self._reaping = [p for p in self._reaping if not self._settle(p)]
+            self._sweep()
             return {"transform_timeouts": self.timeouts, "transform_saturated": self.saturated,
                     "transform_abandoned": len(self._reaping)}  # fmt: skip
 
     def children(self) -> int:
         """Child processes of this runner not yet reaped (diagnostics; never a value)."""
         with self._lock:
-            self._reaping = [p for p in self._reaping if not self._settle(p)]
+            self._sweep()
             return len(self._procs)
 
 

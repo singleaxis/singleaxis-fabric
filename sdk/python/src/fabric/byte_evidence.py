@@ -89,6 +89,7 @@ _OPAQUE_ID_MAX_LENGTH = 128
 ROLE_POLICIES_ID = "fabric.role-policies"
 _MASKED_MODES = frozenset({"masked_only", "original_plus_masked"})
 _LOG = logging.getLogger("fabric.byte_evidence")
+_REAP_INTERVAL_S = 1.0  # an idle worker reaps exited transformation children this often
 
 
 def _production_marked(policy: object) -> bool:
@@ -358,6 +359,7 @@ class ByteEvidenceRecorder:
         self._closed = False
         self._pending = 0
         self._unretained_drops = 0
+        self._next_reap = 0.0
         self._spool = config.durable_spool
         self._policy_block = _role_policies_block(config.role_policies or {})
         # One bounded runner per role transform (049 §7.7 rule 4): never on this worker.
@@ -802,6 +804,17 @@ class ByteEvidenceRecorder:
             return complete and stopped and spooled and not self._worker.is_alive()
         return complete and stopped
 
+    def _reap(self) -> None:
+        """Reap exited transformation children on the worker's idle cadence, at most once
+        per ``_REAP_INTERVAL_S`` (never waits; Sol P0-A round 3 #3)."""
+        if (now := time.monotonic()) < self._next_reap:
+            return
+        self._next_reap = now + _REAP_INTERVAL_S
+        for runner in self._runners.values():
+            runner.reap()
+        if self._config.content_protector is not None:
+            self._config.content_protector.reap()
+
     def _run(self) -> None:
         while True:
             try:
@@ -810,6 +823,7 @@ class ByteEvidenceRecorder:
                 with self._condition:
                     if self._closed and self._pending == 0:
                         return
+                self._reap()
                 continue
             try:
                 self._process(object_id, data, derivative_id)

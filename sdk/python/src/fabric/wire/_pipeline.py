@@ -64,6 +64,7 @@ _STATS = (
 _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
 _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are left to reconstruct
 _STOP = object()
+_REAP_INTERVAL_S = 1.0  # an idle worker reaps exited transformation children this often
 _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
 _IDS = RandomIdGenerator()
 _LOG = logging.getLogger("fabric.wire")
@@ -319,7 +320,15 @@ class CapturePipeline:
             return owned
 
     def _run(self) -> None:  # the worker is the only writer of its own counters
-        while (job := self._queue.get()) is not _STOP:
+        while True:
+            try:
+                job = self._queue.get(timeout=_REAP_INTERVAL_S)
+            except queue.Empty:  # idle: reap exited transformation children (Sol P0-A r3 #3)
+                if self._protector is not None:
+                    self._protector.reap()
+                continue
+            if job is _STOP:
+                return
             with self._cond:
                 self._current = job  # close() may claim it until the worker commits
             try:

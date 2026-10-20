@@ -376,3 +376,31 @@ def test_protected_mode_rejects_raw_paths_before_content_mutation(
     for path in tmp_path.rglob("*"):
         if path.is_file():
             assert SECRET not in path.read_bytes()
+
+
+def test_the_recorder_worker_reaps_an_idle_transform_child(tmp_path: Path) -> None:
+    """Sol P0-A round 3 #3: an exited idle child stays reaped by the recorder's worker
+    cadence, with no further capture and no runner call."""
+    import time  # noqa: PLC0415
+
+    from tests.test_transform_runner import process_state  # noqa: PLC0415
+
+    recorder = ByteEvidenceRecorder(
+        ByteEvidenceConfig(
+            store=_store(tmp_path / "review"),
+            roles=frozenset({ROLE}),
+            role_policies={ROLE: _policy("masked_only")},
+        )
+    )
+    try:
+        (runner,) = recorder._runners.values()
+        runner._idle_s = 0.15  # the child exits after 0.15 s idle
+        _capture(recorder)
+        _flush(recorder)
+        (proc,) = runner._procs
+        deadline = time.monotonic() + 5.0
+        while process_state(proc.pid) != "":
+            assert time.monotonic() < deadline, process_state(proc.pid)
+            time.sleep(0.05)
+    finally:
+        _close(recorder)
