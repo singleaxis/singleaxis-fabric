@@ -57,6 +57,16 @@ def _body(kind: str, canary: str, size: int) -> dict[str, object]:
     return {"model": "e2e-model-2026", "messages": [{"role": "user", "content": content}]}
 
 
+def mask(data: bytes) -> bytes:
+    """``--transform mask``: run in a transformation child process (049 §7.7)."""
+    return data.replace(os.environ["E2E_GATE_CANARY"].encode(), b"[masked]")
+
+
+def fail(_data: bytes) -> bytes:
+    """``--transform fail``: raises with the canary in its message (never surfaced)."""
+    raise RuntimeError(f"transformation failed on {os.environ['E2E_GATE_CANARY']}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-url", required=True)
@@ -70,16 +80,10 @@ def main() -> int:
     from fabric.wire import Transformation
     from fabric.wire._config import config_from_env
 
-    def mask(data: bytes) -> bytes:
-        return data.replace(canary.encode(), b"[masked]")
-
-    def fail(_data: bytes) -> bytes:
-        raise RuntimeError(f"transformation failed on {canary}")
-
     config, _ = config_from_env(os.environ)
     if args.transform != "none":
-        apply = mask if args.transform == "mask" else fail
-        transform = Transformation("gate-mask", "1", apply)
+        # out of process (049 §7.7): this module, loaded by reference in a child
+        transform = Transformation("gate-mask", "1", f"_p0a_gate_agent:{args.transform}")
         config = dataclasses.replace(config, transformations=dict.fromkeys(ROLES, transform))
     handle = wire.install(config)
     with httpx.Client(timeout=300) as client:

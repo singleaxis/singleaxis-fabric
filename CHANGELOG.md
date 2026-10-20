@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking, Python customer transformations)
+
+- Python customer transformations (wire `Transformation`, `ContentProtector`
+  `redactors`, `BytePrivacyPolicy.transform`) are now **module references**
+  (`"package.module:function"`) run **out of process**, matching TypeScript: a
+  dedicated child interpreter (`python -I`, never a fork) loads the function and is
+  called with the bytes of one object over a pipe; it never sees the spool, a store
+  or the network. Passing a callable now raises at construction ("in-process
+  transformation callables are not supported"). The wire `Transformation` field
+  `apply` is renamed `ref`. A call past its timeout kills the child (a GIL-holding
+  redactor can no longer stall the application, Sol P0-A round 2 #2) and withholds
+  the object as `not_captured(protection_failed)`; capacity (two busy calls per
+  transformation) is reserved before a call starts, beyond it content is withheld
+  at once (`transform_saturated`, round 2 #5); idle children exit after 60 s and
+  `ByteEvidenceRecorder.close()`, `ContentProtector.close()` and the wire uninstall
+  stop them (round 2 #6). Windows (no `poll`) withholds every transformation.
+
 ### Changed (breaking, TypeScript explicit line)
 
 - `ContentProtector` redactors for `redact` and `masked_only` are now customer
@@ -69,6 +86,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- An extracted `model.exchange.part` under `original_plus_masked` gets a masked
+  review copy, and a failed copy withholds the part too (Sol P0-A round 2 #1).
+- In the production profile without `FABRIC_WIRE_ID_KEY`, the explicit line
+  (Python and TypeScript `ByteEvidenceRecorder`, Python `CallRecorder` and its OTLP
+  projection) emits no caller-supplied id: a random per-process source id, the
+  generated run fallback and generated ids for the rest (spec 049 §2.9 rule 5;
+  round 2 #3).
+- Deferred redaction rechecks the recorder's `payload_max_bytes` before persistence
+  in both SDKs (round 2 #4).
 - Confined Python local content adapter operations through no-follow directory
   descriptors, including replacements after initialization.
 - Rejected TypeScript content-store symlink redirection and nonregular objects,

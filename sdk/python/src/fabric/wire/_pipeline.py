@@ -297,6 +297,8 @@ class CapturePipeline:
         self._queue.put(_STOP)
         if drained and self._worker is not threading.current_thread():
             self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
+        if self._protector is not None:  # its transformation child processes (Sol #6)
+            self._protector.close(max(0.0, deadline - time.monotonic()))
         return drained and not lost and current is None
 
     def stats(self) -> Mapping[str, int]:

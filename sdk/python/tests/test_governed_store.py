@@ -538,7 +538,7 @@ def test_existing_call_recorder_records_actual_encrypted_bytes(setup: Any) -> No
     store = store_for(setup, encryption_key=KEY)
     protector = ContentProtector(
         store.policy,
-        redactors={"artifact.after": lambda _: b"safe"},
+        redactors={"artifact.after": "tests.transforms:safe"},
         tokenization_key=b"t" * 32,
     )
     recorder = ByteEvidenceRecorder(
@@ -671,7 +671,9 @@ def test_public_policy_capture_routes_original_and_derivative_planes(setup: Any)
     derivative = store_for(setup, plane="derivative", encryption_key=KEY)
     config = original.policy
     protector = ContentProtector(
-        config, redactors={"artifact.after": lambda _: b"[REDACTED]"}, tokenization_key=b"t" * 32
+        config,
+        redactors={"artifact.after": "tests.transforms:redacted_upper"},
+        tokenization_key=b"t" * 32,
     )
     writer = ByteEvidenceRecorder(
         ByteEvidenceConfig(
@@ -729,9 +731,6 @@ def test_policy_capture_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
     spool_root.mkdir(mode=0o700)
     spool = SyntheticSourceSpool(str(spool_root), tenant_id=config.tenant_id, run_id="run")
 
-    def broken_redactor(_: bytes) -> bytes:
-        raise RuntimeError(secret.decode())
-
     failure = RuntimeError(secret.decode())
 
     def delegate(request: bytes) -> bytes:
@@ -748,7 +747,9 @@ def test_policy_capture_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
             deployment_policy=config,
             content_protector=ContentProtector(
                 config,
-                redactors={"tool.call.arguments": broken_redactor} if mode == "redact" else {},
+                redactors={"tool.call.arguments": "tests.transforms:raises"}
+                if mode == "redact"
+                else {},
                 tokenization_key=b"t" * 32,
             ),
         )

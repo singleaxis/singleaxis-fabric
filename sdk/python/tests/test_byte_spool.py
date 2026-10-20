@@ -51,7 +51,7 @@ def _recorder(tmp_path: Path, store: Any = None, **options: Any) -> tuple[Any, A
             role_policies={
                 ROLE: BytePrivacyPolicy(
                     mode="masked_only",
-                    transform=lambda _: b"protected",
+                    transform="tests.transforms:protected",
                     transformation_id="mask",
                     transformation_version="v1",
                 )
@@ -137,7 +137,8 @@ if mode == "pre_fsync":
 recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
     store=Store(), roles=frozenset({"artifact.after"}),
     durable_spool=spool, role_policies={"artifact.after":BytePrivacyPolicy(mode="masked_only",
-    transform=lambda _: b"protected", transformation_id="mask", transformation_version="v1")}))
+    transform="tests.transforms:protected", transformation_id="mask",
+    transformation_version="v1")}))
 if mode == "recover":
     ready.set()
     assert recorder.flush(10)
@@ -588,7 +589,9 @@ def test_deployment_privacy_replays_into_existing_governed_encrypted_stores(tmp_
         plane="derivative",
     )
     protector = ContentProtector(
-        policy, redactors={"artifact.after": lambda _: b"protected"}, tokenization_key=b"T" * 32
+        policy,
+        redactors={"artifact.after": "tests.transforms:protected"},
+        tokenization_key=b"T" * 32,
     )
 
     class Outage:

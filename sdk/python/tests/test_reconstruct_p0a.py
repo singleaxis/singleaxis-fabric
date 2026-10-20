@@ -102,7 +102,7 @@ def test_redacted_capture_verifies_and_the_report_uses_keyed_ids(tmp_path: Path)
     from fabric.wire import Transformation  # noqa: PLC0415
 
     privacy = {"model.exchange.request": "redact", "model.exchange.response": "redact"}
-    redact = Transformation("acme", "1", lambda data: data.replace(b"Lisbon", b"[city]"))
+    redact = Transformation("acme", "1", "tests.transforms:redact_city")
     rig = make_rig(
         tmp_path, tenant_id="tenant-a",
         capture_policy=DeploymentPolicy(production_policy(privacy=privacy, profile="local")),

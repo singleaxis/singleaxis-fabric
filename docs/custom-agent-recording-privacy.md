@@ -6,12 +6,18 @@ transformation. Fabric does not include a PII detector or claim that masking
 finds every sensitive value. Validate the transformation against the customer's
 data and policy before enabling it.
 
-```python
-from fabric import ByteEvidenceConfig, BytePrivacyPolicy, LocalFilesystemContentStore
+A transformation is named by **module reference** (`"package.module:function"`),
+never passed as a function: it runs out of process (see below).
 
+```python
+# acme_privacy/masks.py: an importable module of the customer's application
 def customer_mask(data: bytes) -> bytes:
     # Synthetic illustration only; use an approved transformation in deployment.
     return data.replace(b"synthetic-secret", b"[masked]")
+```
+
+```python
+from fabric import ByteEvidenceConfig, BytePrivacyPolicy, LocalFilesystemContentStore
 
 config = ByteEvidenceConfig(
     store=LocalFilesystemContentStore("/approved/original", tenant_id="tenant-a"),
@@ -20,7 +26,7 @@ config = ByteEvidenceConfig(
     role_policies={
         "model.request.messages": BytePrivacyPolicy(mode="original"),
         "tool.call.result": BytePrivacyPolicy(
-            mode="original_plus_masked", transform=customer_mask,
+            mode="original_plus_masked", transform="acme_privacy.masks:customer_mask",
             transformation_id="customer-mask", transformation_version="1",
         ),
         "database.rows": BytePrivacyPolicy(mode="omit"),
@@ -53,22 +59,32 @@ independent IAM permissions, encryption, retention, or authorization on a
 deployed customer store; those require actual deployment tests. On a laptop,
 both directories may remain readable by the same operating-system account.
 
-Transformations execute on the recording worker. Raw memory is queued inside
-the approved capture boundary; it is not a durable spool. Queue length,
-individual payload length, and retained descriptor count are bounded. A
-transform that raises, returns non-bytes, or exceeds the configured output
-size causes `privacy_transform_failed`, with no raw fallback and no exception
-text in records or logs. In dual-view mode transformation succeeds before
-either write begins. A later review-store write failure can leave a valid
-original and a failed review descriptor; this is reported, not rolled back.
+Transformations execute **out of process**: each is loaded by its module reference
+in a dedicated child interpreter (a fresh `python -I`, never a fork of the
+application, started with the application's `sys.path` and environment) and called
+with the bytes of one object over a pipe. The child sees only those bytes, never the
+spool, a store, a key or the network; its stdout and stderr go to `/dev/null`. Raw
+memory is queued inside the approved capture boundary; it is not a durable spool.
+Queue length, individual payload length, transformation input and output, and
+retained descriptor count are bounded. A transform that raises, returns non-bytes,
+or exceeds the configured output size withholds the object
+(`not_captured(protection_failed)`), with no raw fallback and no exception text in
+records or logs. In dual-view mode transformation succeeds before either write
+begins. A later review-store write failure can leave a valid original and a failed
+review descriptor; this is reported, not rolled back.
 
-Customer callbacks must terminate. A hung callback can occupy the worker;
-bounded `flush` returns false and new submissions eventually report overflow.
-Python cannot safely terminate an arbitrary callback thread. There is no
-claimed hard callback deadline, secure memory erasure, or crash-safe recovery
-of queued content. Independent run records are needed to identify losses
-before persistence. The recorder does not await transformations or storage
-while the monitored action runs.
+Each call is bounded by `timeout_s` (default 5 s): past it the child process is
+killed (`SIGKILL`), the object is withheld as `protection_failed`, and a new child
+serves the next call. Because the transformation never shares the application's
+interpreter, even one that holds the GIL (a catastrophic regular expression, a C
+extension) cannot stall the application's threads. Capacity is reserved before a
+call starts: at most two calls of one transformation are busy at once, and a call
+beyond that is withheld at once (counted as saturated), never queued. Idle children
+exit after 60 s; `recorder.close()` stops them, and the recorder's worker thread.
+Platforms without `poll` (Windows) withhold every transformation. There is no
+secure memory erasure or crash-safe recovery of queued content. Independent run
+records are needed to identify losses before persistence. The recorder does not
+await transformations or storage while the monitored action runs.
 
 The legacy Fabric governed-content configuration now rejects raw tracing
 capture for model/tool/retrieval/memory operations. This check occurs before

@@ -100,8 +100,9 @@ class WireStats:
     spool_undecryptable: int = 0
     # Plaintext spool records sealed in place by the explicit local migration (049 §7.8).
     spool_migrated: int = 0
-    # Customer transformations (049 §7.7 rule 4): calls abandoned at their timeout, calls
-    # withheld while two abandoned calls were still running, abandoned calls running now.
+    # Customer transformations (049 §7.7 rule 4), run out of process: calls whose child
+    # was killed at their timeout, calls withheld while the capacity bound was reached,
+    # killed children not yet reaped.
     transform_timeouts: int = 0
     transform_saturated: int = 0
     transform_abandoned: int = 0

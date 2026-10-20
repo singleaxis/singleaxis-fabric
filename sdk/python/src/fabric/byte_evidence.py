@@ -22,14 +22,14 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
 from ._sequence import GeneratedIds, check_id_key, id_key_from_env
-from ._transform_runner import TransformRunner
+from ._transform_runner import TransformRunner, check_transform_ref
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
@@ -180,17 +180,19 @@ def _validate_capture_args(
 class BytePrivacyPolicy:
     """Customer-approved content handling; transformations run behind the handoff.
 
-    A transform is customer code, not a built-in PII detector. It runs on a bounded
-    thread (:class:`fabric._transform_runner.TransformRunner`), never the caller's nor
-    the recorder's worker: a call past ``timeout_s`` is abandoned and the object (and a
-    review copy) withheld as ``protection_failed``; while two abandoned calls are still
-    running, content needing the transform is withheld at once (spec 049 §7.7 rule 4).
+    A transform is customer code, not a built-in PII detector, named by module
+    reference (``"package.module:function"``). It runs **out of process**, in a dedicated
+    child interpreter (:class:`fabric._transform_runner.TransformRunner`), never on the
+    caller's thread nor the recorder's worker: a call past ``timeout_s`` kills its child
+    and the object (and a review copy) is withheld as ``protection_failed``; while two
+    calls are busy, content needing the transform is withheld at once (spec 049 §7.7
+    rule 4). In-process callables are refused.
     Masked descriptors omit the original digest to avoid revealing low-entropy original
     values. Raw queued memory stays inside the customer's approved capture boundary.
     """
 
     mode: str = "original"
-    transform: Callable[[bytes], bytes] | None = None
+    transform: str | None = None
     transformation_id: str | None = None
     transformation_version: str | None = None
     timeout_s: float = 5.0
@@ -199,8 +201,10 @@ class BytePrivacyPolicy:
         if self.mode not in {"original", "omit", "masked_only", "original_plus_masked"}:
             raise ValueError("unsupported byte privacy mode")
         masked = self.mode in {"masked_only", "original_plus_masked"}
-        if masked and not callable(self.transform):
+        if masked and self.transform is None:
             raise ValueError("masked modes require a customer transformation")
+        if masked:
+            check_transform_ref(self.transform)
         for value in (self.transformation_id, self.transformation_version):
             if masked and (
                 not isinstance(value, str)
@@ -358,10 +362,13 @@ class ByteEvidenceRecorder:
         self._policy_block = _role_policies_block(config.role_policies or {})
         # One bounded runner per role transform (049 §7.7 rule 4): never on this worker.
         self._runners = {
-            role: TransformRunner("fabric-byte-transform")
+            role: TransformRunner(
+                policy.transform, "fabric-byte-transform",
+                max_output_bytes=config.payload_max_bytes,
+            )
             for role, policy in (config.role_policies or {}).items()
             if policy.transform is not None
-        }
+        }  # fmt: skip
         # 049 §7.3: never blocked, but not silent; a malformed id key still raises here.
         id_key = config.id_key if config.id_key is not None else id_key_from_env(os.environ)
         self._profile, self._gate_reason = content_gate(
@@ -777,15 +784,23 @@ class ByteEvidenceRecorder:
         return self._spool.health() if self._spool is not None else {"enabled": False}
 
     def close(self, timeout_s: float = 10.0) -> bool:
+        """Settle accepted writes, stop the worker and every transformation child process
+        (the role-policy runners and the content protector's; Sol P0-A round 2 #6), and
+        close the durable spool, all within ``timeout_s``."""
         deadline = time.monotonic() + max(0.0, timeout_s)
         with self._condition:
             self._closed = True
         complete = self.flush(max(0.0, deadline - time.monotonic()))
         self._worker.join(max(0.0, deadline - time.monotonic()))
+        runners: list[Any] = list(self._runners.values())
+        if self._config.content_protector is not None:
+            runners.append(self._config.content_protector)
+        # every runner is closed (no short circuit)
+        stopped = all([r.close(max(0.0, deadline - time.monotonic())) for r in runners])  # noqa: C419
         if self._spool is not None:
-            stopped = self._spool.close(max(0.0, deadline - time.monotonic()))
-            return complete and stopped and not self._worker.is_alive()
-        return complete
+            spooled = self._spool.close(max(0.0, deadline - time.monotonic()))
+            return complete and stopped and spooled and not self._worker.is_alive()
+        return complete and stopped
 
     def _run(self) -> None:
         while True:
@@ -851,12 +866,12 @@ class ByteEvidenceRecorder:
             self._write_record(derivative_id, transformed, self._config.review_store)
 
     def _role_transform(self, role: str, policy: BytePrivacyPolicy, data: bytes) -> bytes | None:
-        """A role policy's transform, on its bounded runner; ``None`` when it raised, timed
-        out, was refused while the abandoned bound is reached, or returned no usable bytes."""
+        """A role policy's transform, out of process; ``None`` when it raised, timed
+        out, was refused while the capacity bound is reached, or returned no usable bytes."""
         if policy.transform is None:
             return None
-        outcome, out = self._runners[role].run(policy.transform, data, policy.timeout_s)
-        if outcome != "ok" or not isinstance(out, bytes):
+        outcome, out = self._runners[role].run(data, policy.timeout_s)
+        if outcome != "ok" or out is None:
             return None
         return out if len(out) <= self._config.payload_max_bytes else None
 

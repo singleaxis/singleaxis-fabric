@@ -16,6 +16,8 @@ from fabric.byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder, ByteP
 from fabric.content_store.local import LocalFilesystemContentStore
 from fabric.deployment_policy import ContentProtector, DeploymentPolicy
 
+T = "tests.transforms:"  # customer transformations, run out of process
+
 ROOT = Path(__file__).resolve().parents[3]
 SECRET = b"sensitive-value"
 GOLDEN_DIGEST = "sha256:777dda0c14d100c2c6728b2e3858f53c55cd62fdf3c1c3ced5decee0a5f36ea6"
@@ -137,7 +139,7 @@ def test_original_and_redacted_outputs_remain_separate() -> None:
     assert original.original_digest == "sha256:" + hashlib.sha256(SECRET).hexdigest()
     assert "sensitive-value" not in repr(original)
     redacted = ContentProtector(
-        policy_for("redact"), redactors={"terminal.stdout": lambda _: b"[redacted]"}
+        policy_for("redact"), redactors={"terminal.stdout": T + "redacted"}
     ).protect("terminal.stdout", SECRET)
     assert redacted.status == "redacted"
     assert redacted.original_digest is None
@@ -153,7 +155,7 @@ def test_transforms_require_explicit_implementation_and_key() -> None:
     with pytest.raises(ValueError, match="32 bytes"):
         ContentProtector(policy_for("tokenize"), tokenization_key=b"weak")
     with pytest.raises(ValueError, match="explicitly"):
-        ContentProtector(policy_for("omit"), redactors={"terminal.stdout": lambda d: d})
+        ContentProtector(policy_for("omit"), redactors={"terminal.stdout": T + "identity"})
 
 
 def test_token_is_keyed_scoped_irreversible_and_matches_typescript() -> None:
@@ -181,19 +183,16 @@ def test_token_is_keyed_scoped_irreversible_and_matches_typescript() -> None:
 
 
 def test_transform_failures_are_safe_explicit_and_bounded() -> None:
-    def fail(_: bytes) -> bytes:
-        raise RuntimeError("sensitive-value")
-
-    protector = ContentProtector(policy_for("redact"), redactors={"terminal.stdout": fail})
+    protector = ContentProtector(policy_for("redact"), redactors={"terminal.stdout": T + "raises"})
     result = protector.protect("terminal.stdout", SECRET)
     assert result.status == "lost"
     assert result.metadata["reason"] == "protection_failed"
     assert "sensitive-value" not in repr(result)
     assert result.protected_bytes is None
-    bad = ContentProtector(policy_for("redact"), redactors={"terminal.stdout": lambda _: "bad"})  # type: ignore[dict-item,return-value]
+    bad = ContentProtector(policy_for("redact"), redactors={"terminal.stdout": T + "not_bytes"})
     assert bad.protect("terminal.stdout", SECRET).status == "unsupported"
     oversized = ContentProtector(
-        policy_for("redact"), redactors={"terminal.stdout": lambda _: b"abc"}, payload_max_bytes=2
+        policy_for("redact"), redactors={"terminal.stdout": T + "redacted"}, payload_max_bytes=2
     )
     assert (
         oversized.protect("terminal.stdout", b"x").metadata["reason"]
@@ -212,7 +211,7 @@ def test_real_recorder_routes_only_protected_bytes(
     review = LocalFilesystemContentStore(str(tmp_path / "derivative"), tenant_id=policy.tenant_id)
     protector = ContentProtector(
         policy,
-        redactors={"terminal.stdout": lambda _: b"[redacted]"} if mode == "redact" else None,
+        redactors={"terminal.stdout": T + "redacted"} if mode == "redact" else None,
         tokenization_key=b"k" * 32,
     )
     recorder = ByteEvidenceRecorder(
@@ -281,7 +280,7 @@ def test_real_recorder_routes_only_protected_bytes(
 def test_recorder_rejects_ambiguous_policy_tenant_and_plane(tmp_path: Path) -> None:
     policy = policy_for("redact")
     store = LocalFilesystemContentStore(str(tmp_path), tenant_id=policy.tenant_id)
-    protector = ContentProtector(policy, redactors={"terminal.stdout": lambda _: b"safe"})
+    protector = ContentProtector(policy, redactors={"terminal.stdout": T + "safe"})
     with pytest.raises(ValueError, match="same-tenant"):
         ByteEvidenceConfig(
             store=store, roles=frozenset({"terminal.stdout"}), content_protector=protector
@@ -318,7 +317,7 @@ def test_deployment_policy_rejects_overlapping_resolver_planes(
     )
     if reverse:
         store, review = review, store
-    protector = ContentProtector(policy, redactors={"terminal.stdout": lambda _: b"safe"})
+    protector = ContentProtector(policy, redactors={"terminal.stdout": T + "safe"})
     assert store.evidence_ref_for("object") != review.evidence_ref_for("object")
     with pytest.raises(ValueError, match="overlap"):
         ByteEvidenceConfig(
@@ -341,13 +340,10 @@ def test_token_output_respects_configured_bound() -> None:
 
 
 def test_transform_failure_in_recorder_never_stores_input(tmp_path: Path) -> None:
-    def fail(_: bytes) -> bytes:
-        raise RuntimeError("sensitive-value")
-
     policy = policy_for("redact")
     store = LocalFilesystemContentStore(str(tmp_path / "original"), tenant_id=policy.tenant_id)
     review = LocalFilesystemContentStore(str(tmp_path / "derivative"), tenant_id=policy.tenant_id)
-    protector = ContentProtector(policy, redactors={"terminal.stdout": fail})
+    protector = ContentProtector(policy, redactors={"terminal.stdout": T + "raises"})
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=store,
@@ -387,7 +383,7 @@ def test_masked_only_stores_only_the_masked_copy_and_original_plus_masked_withho
     original_plus_masked needs two objects, which the explicit line's protector does not
     make, so it withholds (fails closed) rather than storing the original alone."""
     masked = ContentProtector(
-        policy_for("masked_only"), redactors={"terminal.stdout": lambda _: b"[masked]"}
+        policy_for("masked_only"), redactors={"terminal.stdout": T + "masked"}
     ).protect("terminal.stdout", SECRET)
     assert (masked.status, masked.mode, masked.protected_bytes) == (
         "redacted", "masked_only", b"[masked]")  # fmt: skip
@@ -502,29 +498,18 @@ def test_the_explicit_gate_reads_the_id_key_from_the_environment(
 @pytest.mark.parametrize("mode", ["redact", "masked_only"])
 def test_explicit_masking_runs_off_the_caller_thread(tmp_path: Path, mode: str) -> None:
     """A slow (or hung) customer redactor never delays ``capture()``: protection runs
-    behind the handoff, before persistence; a redactor that does not return within its
-    timeout withholds the object (``protection_failed``), never raw bytes."""
-    import threading  # noqa: PLC0415
+    behind the handoff, out of process, before persistence; a redactor that does not
+    return within its timeout is killed and the object withheld (``protection_failed``),
+    never raw bytes."""
     import time  # noqa: PLC0415
 
-    release, threads = threading.Event(), []
-
-    def slow(data: bytes) -> bytes:
-        threads.append(threading.current_thread())
-        time.sleep(0.1)
-        return b"[redacted]"
-
-    def hung(data: bytes) -> bytes:
-        release.wait(30.0)
-        return b"[late]"
-
-    for redactor, expected in ((slow, "redacted"), (hung, "not_captured")):
+    for redactor, expected in (("slow_redacted", "redacted"), ("hang", "not_captured")):
         policy = policy_for(mode)
-        root = tmp_path / f"{mode}-{redactor.__name__}"
+        root = tmp_path / f"{mode}-{redactor}"
         store = LocalFilesystemContentStore(str(root / "original"), tenant_id=policy.tenant_id)
         review = LocalFilesystemContentStore(str(root / "review"), tenant_id=policy.tenant_id)
-        protector = ContentProtector(policy, redactors={"terminal.stdout": redactor},
-                                     transform_timeout_s=0.2)  # fmt: skip
+        protector = ContentProtector(policy, redactors={"terminal.stdout": T + redactor},
+                                     transform_timeout_s=0.5)  # fmt: skip
         recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
             store=store, review_store=review, roles=frozenset({"terminal.stdout"}),
             deployment_policy=policy, content_protector=protector,
@@ -542,7 +527,6 @@ def test_explicit_masking_runs_off_the_caller_thread(tmp_path: Path, mode: str) 
             assert settled is not None and settled["status"] == expected
             if expected == "redacted":
                 assert review.read(settled["ref"]) == b"[redacted]"
-                assert threading.main_thread() not in threads
             else:
                 assert settled["status_reason"] == "protection_failed"
                 assert settled["protection_status"] == "withheld" and "ref" not in settled
@@ -550,15 +534,13 @@ def test_explicit_masking_runs_off_the_caller_thread(tmp_path: Path, mode: str) 
                 if path.is_file():
                     assert SECRET not in path.read_bytes()
         finally:
-            release.set()
             assert recorder.close()
-        release.clear()
 
 
 def test_the_redactor_timeout_is_validated() -> None:
     for bad in (0, -1, 301, True, "5"):
         with pytest.raises(ValueError, match="transform_timeout_s"):
-            ContentProtector(policy_for("redact"), redactors={"terminal.stdout": lambda d: d},
+            ContentProtector(policy_for("redact"), redactors={"terminal.stdout": T + "identity"},
                              transform_timeout_s=bad)  # type: ignore[arg-type]  # fmt: skip
 
 
@@ -570,7 +552,7 @@ def test_deferred_redaction_rechecks_the_recorder_payload_cap(tmp_path: Path) ->
     policy = policy_for("redact")
     store = LocalFilesystemContentStore(str(tmp_path / "original"), tenant_id=policy.tenant_id)
     review = LocalFilesystemContentStore(str(tmp_path / "review"), tenant_id=policy.tenant_id)
-    protector = ContentProtector(policy, redactors={"terminal.stdout": lambda _: b"R" * 64},
+    protector = ContentProtector(policy, redactors={"terminal.stdout": T + "sixty_four"},
                                  payload_max_bytes=1024)  # fmt: skip
     recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
         store=store, review_store=review, roles=frozenset({"terminal.stdout"}),

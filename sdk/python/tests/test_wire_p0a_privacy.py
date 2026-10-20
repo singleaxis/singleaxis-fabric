@@ -81,12 +81,7 @@ def _call(handle: wire.WireHandle) -> None:
                     headers={"content-type": "application/json"})  # fmt: skip
 
 
-def _redactor(data: bytes) -> bytes:
-    return data.replace(SECRET.encode(), b"[redacted]")
-
-
-def _failing(data: bytes) -> bytes:
-    raise RuntimeError(data[:40].decode())  # would echo content; never kept
+T = "tests.transforms:"  # customer transformations, run out of process
 
 
 def _policy(mode: str, *, profile: str = "production") -> DeploymentPolicy:
@@ -94,7 +89,7 @@ def _policy(mode: str, *, profile: str = "production") -> DeploymentPolicy:
     return DeploymentPolicy(production_policy(privacy=privacy, profile=profile))
 
 
-def _protection(mode: str, transform: Any = _redactor) -> dict[str, Any]:
+def _protection(mode: str, transform: str = T + "redact_secret") -> dict[str, Any]:
     roles = ("model.exchange.request", "model.exchange.response")
     return {
         "capture_policy": _policy(mode), "tokenization_key": TOKEN_KEY,
@@ -309,9 +304,9 @@ def _settings(mode: str) -> dict[str, Any]:
     """``failure``: an injected redact failure; ``masked_copy_failure``: the review copy of
     ``original_plus_masked`` fails, which withholds the original too (049 §7.7 rule 4)."""
     if mode == "failure":
-        return _protection("redact", _failing)
+        return _protection("redact", T + "raises")
     if mode == "masked_copy_failure":
-        return _protection("original_plus_masked", _failing)
+        return _protection("original_plus_masked", T + "raises")
     return _protection(mode)
 
 
@@ -477,19 +472,12 @@ def test_defaults_follow_049() -> None:
 
 
 def test_a_hung_transformation_never_stalls_the_capture_worker(tmp_path: Path) -> None:
-    """Sol P0-A #6, through the pipeline: a redactor that never returns delays each of the
-    first two exchanges by its timeout only; every later exchange is processed at once
-    (withheld, counted) and the application is never affected."""
-    import threading  # noqa: PLC0415
+    """Sol P0-A #6 / round 2 #2, through the pipeline: a transformation that never
+    returns is killed at its timeout (out of process); every exchange is withheld
+    (``protection_failed``), the worker keeps up and the application is never affected."""
     import time  # noqa: PLC0415
 
-    release = threading.Event()
-
-    def hang(data: bytes) -> bytes:
-        release.wait(60.0)
-        return data
-
-    transform = Transformation("hang", "1", hang, timeout_s=0.05)  # one, for both roles
+    transform = Transformation("hang", "1", T + "hang", timeout_s=0.05)  # both roles
     roles = ("model.exchange.request", "model.exchange.response")
     settings: dict[str, Any] = {"capture_policy": _policy("redact"),
                                 "transformations": dict.fromkeys(roles, transform)}  # fmt: skip
@@ -501,7 +489,7 @@ def test_a_hung_transformation_never_stalls_the_capture_worker(tmp_path: Path) -
                 response = client.post(OPENAI_CHAT, content=REQUEST.encode(),
                                        headers={"content-type": "application/json"})  # fmt: skip
                 assert response.json() == REPLY and time.monotonic() - started < 1.0
-        assert rig.tee.flush(5.0)  # the worker is not stuck behind the hung callback
+        assert rig.tee.flush(30.0)  # the worker is not stuck behind the hung callback
         spans = rig.spans()
         assert len(spans) == 4
         for span in spans:
@@ -509,9 +497,8 @@ def test_a_hung_transformation_never_stalls_the_capture_worker(tmp_path: Path) -
             assert attrs.get("fabric.wire.store_reason") == "protection_failed"
             _scan(json.dumps(attrs), "telemetry")
         stats = rig.handle.stats()
-        assert (stats.transform_timeouts, stats.transform_saturated) == (2, 6)
+        assert (stats.transform_timeouts, stats.transform_saturated) == (8, 0)
         assert not [p for p in (tmp_path / "store").rglob("*") if p.is_file()
                     and SECRET.encode() in p.read_bytes()]  # fmt: skip
     finally:
-        release.set()
         rig.close()

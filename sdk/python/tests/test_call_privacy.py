@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -54,7 +53,7 @@ def _policy(mode: str, transform: Any = None) -> BytePrivacyPolicy:
         return BytePrivacyPolicy(mode=mode)
     return BytePrivacyPolicy(
         mode=mode,
-        transform=transform or (lambda _data: b"[masked]"),
+        transform=transform or ("tests.transforms:masked"),
         transformation_id="customer-mask",
         transformation_version="v1",
     )
@@ -174,7 +173,7 @@ def test_configuration_snapshots_policy_mapping_and_requires_version(tmp_path: P
     policies[ROLE] = _policy("original")
     assert config.role_policies is not None and config.role_policies[ROLE].mode == "omit"
     with pytest.raises(ValueError, match="identity and version"):
-        BytePrivacyPolicy(mode="masked_only", transform=lambda data: data)
+        BytePrivacyPolicy(mode="masked_only", transform="tests.transforms:identity")
     with pytest.raises(ValueError, match="enabled roles"):
         ByteEvidenceConfig(
             store=_store(tmp_path),
@@ -191,11 +190,8 @@ def test_failed_transform_never_falls_back_to_raw(
     mode: str,
     failure: str,
 ) -> None:
-    def transform(_data: bytes) -> Any:
-        if failure == "raise":
-            raise RuntimeError(SECRET.decode())
-        return "not bytes" if failure == "type" else b"x" * 129
-
+    transform = "tests.transforms:" + {"raise": "raises", "type": "not_bytes",
+                                       "oversize": "oversize_129"}[failure]  # fmt: skip
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=_store(tmp_path / "original"),
@@ -242,29 +238,30 @@ def test_omitted_role_has_no_fingerprint_or_stored_content(tmp_path: Path) -> No
     _close(recorder)
 
 
-def test_transform_runs_off_path_and_overflow_does_not_wait(tmp_path: Path) -> None:
-    entered, release = threading.Event(), threading.Event()
-    caller_thread = threading.get_ident()
-    worker_threads = []
+def test_transform_runs_off_path_and_overflow_does_not_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The transform runs in a child process (never the caller's thread or interpreter)
+    behind the handoff; a full queue drops at once instead of waiting."""
+    import time  # noqa: PLC0415
 
-    def transform(_data: bytes) -> bytes:
-        worker_threads.append(threading.get_ident())
-        entered.set()
-        release.wait(3)
-        return b"safe"
-
+    gate = tmp_path / "gate"
+    gate.mkdir()
+    monkeypatch.setenv("FABRIC_TEST_GATE_DIR", str(gate))
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=_store(tmp_path / "review"),
             roles=frozenset({ROLE}),
             queue_max_items=1,
-            role_policies={ROLE: _policy("masked_only", transform)},
+            role_policies={ROLE: _policy("masked_only", "tests.transforms:gated")},
         )
     )
     try:
         first = _capture(recorder)
-        worker_entered = entered.wait(2)
-        assert worker_entered
+        deadline = time.monotonic() + 10.0
+        while not (gate / "entered").exists():  # the transform is running in its child
+            assert time.monotonic() < deadline
+            time.sleep(0.005)
         second = _capture(recorder)
         third = _capture(recorder)
         assert first["status"] == second["status"] == "pending"
@@ -272,9 +269,8 @@ def test_transform_runs_off_path_and_overflow_does_not_wait(tmp_path: Path) -> N
         complete = recorder.flush(timeout_s=0)
         assert not complete
     finally:
-        release.set()
+        (gate / "release").write_bytes(b"")
         _close(recorder)
-    assert worker_threads and caller_thread not in worker_threads
 
 
 @pytest.mark.parametrize("store_kind", ["same", "same_path", "other_tenant"])

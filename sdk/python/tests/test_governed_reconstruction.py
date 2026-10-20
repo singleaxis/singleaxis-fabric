@@ -121,7 +121,7 @@ def _capture(
     review = _store(root, policy, plane="derivative", permissions={"write_derivative"})
     protector = ContentProtector(
         policy,
-        redactors={role: lambda _data: b"MASKED" for role in policy.privacy}
+        redactors=dict.fromkeys(policy.privacy, "tests.transforms:masked_upper")
         if mode == "redact"
         else None,
         tokenization_key=_KEY,

@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import inspect
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
-from ._transform_runner import TransformRunner
+from ._transform_runner import TransformRunner, check_transform_ref
 
 POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1"
 # masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
@@ -255,18 +254,22 @@ class ContentProtector:
     generic detector or silent fallback is supplied. Token keys remain in memory
     and must be independently generated with >=32 bytes of entropy.
 
-    A customer redactor runs on a dedicated, bounded thread, never the calling one,
-    and is abandoned after ``transform_timeout_s`` (spec 049 §7.7 rule 4: the content
-    is lost, ``protection_failed``); while two abandoned calls are still running,
-    every further redaction fails at once. :meth:`runs_customer_code` names the roles
-    whose protection the byte recorder defers to its worker (never the caller's thread).
+    A customer redactor is a module reference (``"package.module:function"``), run
+    **out of process** in a dedicated child interpreter
+    (:class:`fabric._transform_runner.TransformRunner`), never on the calling thread nor
+    in the application's interpreter, so even a redactor that holds the GIL cannot stall
+    the application. A call past ``transform_timeout_s`` kills its child (spec 049 §7.7
+    rule 4: the content is lost, ``protection_failed``); while two calls are busy, every
+    further redaction fails at once. In-process callables are refused.
+    :meth:`runs_customer_code` names the roles whose protection the byte recorder defers
+    to its worker (never the caller's thread); :meth:`close` stops the child processes.
     """
 
     def __init__(
         self,
         policy: DeploymentPolicy,
         *,
-        redactors: Mapping[str, Callable[[bytes], bytes]] | None = None,
+        redactors: Mapping[str, str] | None = None,
         tokenization_key: bytes | None = None,
         payload_max_bytes: int = 1024 * 1024,
         transform_timeout_s: float = 5.0,
@@ -285,11 +288,10 @@ class ContentProtector:
         self.payload_max_bytes = payload_max_bytes
         self._redactors = dict(redactors or {})
         roles = policy.privacy
-        if any(
-            roles.get(role) not in _MASKING or not callable(fn) or inspect.iscoroutinefunction(fn)
-            for role, fn in self._redactors.items()
-        ):
+        if any(roles.get(role) not in _MASKING for role in self._redactors):
             raise ValueError("redactors must match explicitly redacted roles")
+        for ref in self._redactors.values():
+            check_transform_ref(ref)
         if any(mode in _MASKING and role not in self._redactors for role, mode in roles.items()):
             raise ValueError("redact mode requires an explicit customer redactor for each role")
         if tokenization_key is not None and (
@@ -301,7 +303,10 @@ class ContentProtector:
         self._key = tokenization_key
         self._modes = dict(roles)
         self._runners = {
-            role: TransformRunner("fabric-content-redactor") for role in self._redactors
+            role: TransformRunner(
+                ref, "fabric-content-redactor", max_output_bytes=payload_max_bytes
+            )
+            for role, ref in self._redactors.items()
         }
         self._scope = {
             "schema_version": "fabric.token/v1",
@@ -309,6 +314,12 @@ class ContentProtector:
             "tenant_id": policy.tenant_id,
             "workload_id": policy.workload_id,
         }
+
+    def close(self, timeout_s: float = 2.0) -> bool:
+        """Stop the redactor child processes; the protector stays usable (a later
+        redaction starts a new child), so a protector shared by recorders may be closed by
+        each of them."""
+        return all([runner.close(timeout_s) for runner in self._runners.values()])  # noqa: C419 - close each
 
     def runs_customer_code(self, role: str) -> bool:
         """Whether protecting ``role`` calls a customer redactor (``redact``,
@@ -353,15 +364,13 @@ class ContentProtector:
                     "sha256:" + hashlib.sha256(data).hexdigest(),
                 )
             if mode in _MASKING:  # masked_only: only the masked copy is stored (049 §7.5)
-                outcome, payload = self._runners[role].run(
-                    self._redactors[role], data, self.transform_timeout_s
-                )
-                if outcome != "ok":  # raised, timed out, or the abandoned bound is reached
-                    return result("lost", "protection_failed")
-                if not isinstance(payload, bytes):
-                    if inspect.iscoroutine(payload):
-                        payload.close()
+                outcome, payload = self._runners[role].run(data, self.transform_timeout_s)
+                if outcome == "invalid":
                     return result("unsupported", "unsupported_transform_output")
+                if outcome == "too_large":
+                    return result("lost", "protected_payload_too_large")
+                if outcome != "ok" or payload is None:  # raised, timed out or saturated
+                    return result("lost", "protection_failed")
                 if len(payload) > self.payload_max_bytes:
                     return result("lost", "protected_payload_too_large")
                 metadata["transform"] = "customer_redactor"

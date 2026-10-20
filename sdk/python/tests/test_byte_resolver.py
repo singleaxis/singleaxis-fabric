@@ -45,7 +45,7 @@ def _fixture(path: Path, mode: str = "original_plus_masked") -> dict[str, Any]:
         if mode == "original"
         else BytePrivacyPolicy(
             mode=mode,
-            transform=lambda _data: b"[masked]",
+            transform="tests.transforms:masked",
             transformation_id="masker",
             transformation_version="1",
         )

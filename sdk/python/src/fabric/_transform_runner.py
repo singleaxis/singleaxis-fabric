@@ -1,125 +1,349 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Bounded execution of customer transformation code (spec 049 §7.7 rule 4).
+"""Bounded execution of customer transformation code (spec 049 §7.1, §7.7 rule 4).
 
 A customer transformation (a redactor) is code Fabric does not control: it may raise,
-run long or never return. :class:`TransformRunner` runs each call on a dedicated daemon
-thread, never the caller's, and waits at most the transformation's timeout. On timeout
-the call is **abandoned**: the caller withholds the content (``protection_failed``) and
-continues; the hung call keeps its thread until it returns, and its result is discarded.
-At most ``max_abandoned`` abandoned calls are in flight; while that bound is reached,
-every further call is refused at once (``saturated``) without waiting, so a hung
-callback can never stall the capture worker. Nothing here logs a value.
+run long or never return, and a Python callback can hold the GIL (a catastrophic regex),
+which no thread-based timeout can interrupt and which stalls every application thread
+meanwhile (Sol P0-A round 2 #2). So a transformation runs **out of process**, as the
+TypeScript Worker runner does: it is a module reference (``"package.module:function"``)
+loaded by a dedicated child interpreter (:mod:`fabric._transform_child`, started fresh
+with ``python -I``, never a fork of the application) and called with the bytes of one
+object over a pipe. The child never touches the spool, a store or the network.
+
+Each call waits at most its timeout; on timeout the child is killed (``SIGKILL``
+preempts anything) and the caller withholds the content (``protection_failed``). The
+caller's thread only waits on the pipe (``poll``), so it never holds the GIL meanwhile.
+Capacity is reserved before a call starts: busy children and killed children not yet
+reaped together stay within ``max_workers``; beyond that a call is refused at once
+(``saturated``, counted), never queued. Input and output are capped. A killed child is
+replaced by a new one at the next call. Idle children exit after ``idle_timeout_s``;
+:meth:`TransformRunner.close` stops every child now (a later call starts a new one).
+Platforms without ``poll`` (Windows) withhold every transformation. Nothing
+here logs a value or keeps error text.
 """
 
 from __future__ import annotations
 
+import contextlib
+import json
+import logging
 import os
-import queue
+import re
+import select
+import struct
+import subprocess
+import sys
 import threading
+import time
 import weakref
-from collections.abc import Callable
-from typing import Any, Final, Literal
+from pathlib import Path
+from typing import Final, Literal
 
-Outcome = Literal["ok", "error", "timeout", "saturated"]
-DEFAULT_MAX_ABANDONED: Final = 2
+Outcome = Literal["ok", "error", "invalid", "too_large", "timeout", "saturated"]
+DEFAULT_MAX_WORKERS: Final = 2
+DEFAULT_IDLE_TIMEOUT_S: Final = 60.0
+DEFAULT_START_TIMEOUT_S: Final = 30.0
+MAX_IO_BYTES: Final = 64 * 1024 * 1024
+_REF = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*")
+_MAX_REF = 256
+_CHILD = str(Path(__file__).with_name("_transform_child.py"))
+_LENGTH = struct.Struct(">Q")
+_REQUEST = struct.Struct(">Qd")
+_REPLY = struct.Struct(">BQ")
+_OK, _INVALID, _TOO_LARGE, _READY, _UNRESOLVED = 0, 2, 3, 4, 5
+_LOG = logging.getLogger("fabric.transform")
 _RUNNERS: weakref.WeakSet[TransformRunner] = weakref.WeakSet()
+_NO_POLL = not hasattr(select, "poll")  # Windows: every transformation is withheld
 
 
-class _Job:
-    __slots__ = ("abandoned", "data", "done", "error", "fn", "result")
+def check_transform_ref(value: object) -> str:
+    """``value`` when it is a module reference ``"package.module:function"``, else
+    ``ValueError`` (fixed text). An in-process callable is refused: it could hold the GIL
+    and stall the application (spec 049 §7.1, Sol P0-A round 2 #2)."""
+    if callable(value):
+        raise ValueError(
+            "in-process transformation callables are not supported for redact and "
+            "masked_only: pass a module reference 'package.module:function', which runs "
+            "in a child process"
+        )
+    if not isinstance(value, str) or len(value) > _MAX_REF or not _REF.fullmatch(value):
+        raise ValueError("a transformation is a module reference 'package.module:function'")
+    return value
 
-    def __init__(self, fn: Callable[[bytes], Any], data: bytes) -> None:
-        self.fn, self.data = fn, data
-        self.result: Any = None
-        self.error = self.abandoned = False
-        self.done = threading.Event()
+
+class _BrokenError(Exception):
+    """The child's pipe closed, failed or broke the protocol: it is not reused."""
 
 
-class _Worker:
-    """One daemon thread running jobs from its own queue, one at a time."""
+class _ExpiredError(Exception):
+    """The deadline passed with the child still working."""
 
-    def __init__(self, runner: TransformRunner, name: str) -> None:
-        self.jobs: queue.SimpleQueue[_Job | None] = queue.SimpleQueue()
-        self._runner = runner
-        self.thread = threading.Thread(target=self._run, name=name, daemon=True)
-        self.thread.start()
 
-    def _run(self) -> None:
-        while (job := self.jobs.get()) is not None:
-            try:
-                job.result = job.fn(job.data)
-            except BaseException:  # never the exception text: it may echo content
-                job.error = True
-            finally:
-                self._runner._finished(self, job)
+def _ready(fd: int, event: int, deadline: float) -> None:
+    """Wait until ``fd`` is ready for ``event`` (``poll``: no ``FD_SETSIZE`` limit in an
+    application with many open files), else :class:`_ExpiredError`. Releases the GIL."""
+    remaining = deadline - time.monotonic()
+    poller = select.poll()
+    poller.register(fd, event)
+    if remaining <= 0 or not poller.poll(max(1, int(remaining * 1000 + 0.999))):
+        raise _ExpiredError
+
+
+def _write(fd: int, data: bytes | memoryview, deadline: float) -> None:
+    view = memoryview(data)
+    while view:
+        _ready(fd, select.POLLOUT, deadline)
+        try:
+            view = view[os.write(fd, view) :]
+        except BlockingIOError:
+            continue
+        except OSError as exc:
+            raise _BrokenError from exc
+
+
+def _read(fd: int, size: int, deadline: float) -> bytes:
+    chunks, left = [], size
+    while left:
+        _ready(fd, select.POLLIN, deadline)
+        try:
+            chunk = os.read(fd, min(left, 1 << 20))
+        except BlockingIOError:
+            continue
+        except OSError as exc:
+            raise _BrokenError from exc
+        if not chunk:
+            raise _BrokenError
+        chunks.append(chunk)
+        left -= len(chunk)
+    return b"".join(chunks)
+
+
+def _stop(proc: subprocess.Popen[bytes], *, pipes: bool = True) -> None:
+    """Kill ``proc`` and close its pipes (never those a calling thread is waiting on: it
+    sees the end of input and closes them); reaping is :func:`_reaped`'s (never waits)."""
+    with contextlib.suppress(OSError):  # already gone
+        proc.kill()
+    for pipe in (proc.stdin, proc.stdout) if pipes else ():
+        if pipe is not None:
+            with contextlib.suppress(OSError):
+                pipe.close()
+
+
+def _reaped(proc: subprocess.Popen[bytes]) -> bool:
+    try:
+        return proc.poll() is not None
+    except OSError:
+        return True
+
+
+class _Child:
+    __slots__ = ("last_used", "proc")
+
+    def __init__(self, proc: subprocess.Popen[bytes]) -> None:
+        self.proc, self.last_used = proc, time.monotonic()
 
 
 class TransformRunner:
-    """Runs one transformation's calls off the calling thread, each bounded by a timeout,
-    with at most ``max_abandoned`` timed-out calls still in flight (see the module)."""
+    """Runs one transformation's calls in child processes, each bounded by a timeout, with
+    at most ``max_workers`` children busy or awaiting reaping (see the module)."""
 
-    def __init__(self, name: str = "fabric-transform", *,
-                 max_abandoned: int = DEFAULT_MAX_ABANDONED) -> None:  # fmt: skip
-        if type(max_abandoned) is not int or max_abandoned < 1:
-            raise ValueError("max_abandoned must be a positive integer")
-        self._name, self._max = name, max_abandoned
-        self.timeouts = 0  # calls abandoned at their timeout
+    def __init__(
+        self, ref: str, name: str = "fabric-transform", *,
+        max_workers: int = DEFAULT_MAX_WORKERS, max_output_bytes: int = MAX_IO_BYTES,
+        idle_timeout_s: float = DEFAULT_IDLE_TIMEOUT_S,
+        start_timeout_s: float = DEFAULT_START_TIMEOUT_S,
+    ) -> None:  # fmt: skip
+        self.ref = check_transform_ref(ref)
+        for bound in (max_workers, max_output_bytes):
+            if type(bound) is not int or bound < 1:
+                raise ValueError("transform runner bounds must be positive integers")
+        if not all(isinstance(v, int | float) and v > 0 for v in (idle_timeout_s,
+                                                                  start_timeout_s)):  # fmt: skip
+            raise ValueError("transform runner timeouts must be positive")
+        self._name, self._max = name, max_workers
+        self._max_output = min(max_output_bytes, MAX_IO_BYTES)
+        self._idle_s, self._start_s = float(idle_timeout_s), float(start_timeout_s)
+        self.timeouts = 0  # calls whose child was killed at their timeout
         self.saturated = 0  # calls refused while the bound was reached
+        self._procs: set[subprocess.Popen[bytes]] = set()  # every child not yet reaped
         self._reset()
         _RUNNERS.add(self)
+        weakref.finalize(self, TransformRunner._stop_all, self._procs)
 
     def _reset(self) -> None:
-        """Fresh worker state (also in a forked child, which has none of the threads)."""
+        """Fresh state (also in a forked child, which owns none of the parent's children)."""
         self._lock = threading.Lock()
-        self._idle: list[_Worker] = []
-        self.abandoned = 0  # timed-out calls still running
+        self._idle: list[_Child] = []
+        self._busy = 0  # reserved slots: calls in progress (starting a child included)
+        self._reaping: list[subprocess.Popen[bytes]] = []  # killed, not yet reaped
+        self._procs.clear()
+        self._unresolved = False  # the reference cannot be loaded: every call withheld
 
-    def run(self, fn: Callable[[bytes], Any], data: bytes, timeout_s: float) -> tuple[Outcome, Any]:
-        """``("ok", result)``, ``("error", None)``, ``("timeout", None)`` or
-        ``("saturated", None)``. Never raises for the callback; never waits longer than
-        ``timeout_s`` (plus thread start-up)."""
+    # -- one call ---------------------------------------------------------------------
+
+    def run(self, data: bytes, timeout_s: float) -> tuple[Outcome, bytes | None]:
+        """``("ok", result)``, or ``(outcome, None)``: ``error`` (raised, or the child
+        failed), ``invalid`` (a result that is not bytes), ``too_large`` (above
+        ``max_output_bytes``), ``timeout`` or ``saturated``. Never raises; never waits
+        longer than ``timeout_s`` for the call (plus a child's start-up, bounded by
+        ``start_timeout_s``)."""
+        if _NO_POLL or not isinstance(data, bytes) or len(data) > MAX_IO_BYTES:
+            return "error", None
         with self._lock:
-            if self.abandoned >= self._max:
+            if self._unresolved:
+                return "error", None
+            self._reaping = [p for p in self._reaping if not self._settle(p)]
+            if self._busy + len(self._reaping) >= self._max:
                 self.saturated += 1
                 return "saturated", None
-            worker = self._idle.pop() if self._idle else None
-        if worker is None:
-            try:
-                worker = _Worker(self, self._name)
-            except RuntimeError:  # interpreter shutdown, or no thread can be started
+            self._busy += 1  # reserved before any work starts (Sol P0-A round 2 #5)
+            child = self._take_idle()
+        try:
+            if child is None:
+                child = self._start()
+            if child is None:
                 return "error", None
-        job = _Job(fn, data)
-        worker.jobs.put(job)
-        if not job.done.wait(timeout_s):
+            outcome, result = self._call(child, data, timeout_s)
+        finally:
             with self._lock:
-                if not job.done.is_set():  # still running: abandon it, discard its result
-                    job.abandoned = True
-                    self.abandoned += 1
-                    self.timeouts += 1
-                    return "timeout", None
-        # done (also in the window between the wait and the lock): the worker is idle again
-        return ("error", None) if job.error else ("ok", job.result)
+                self._busy -= 1
+        return outcome, result
 
-    def _finished(self, worker: _Worker, job: _Job) -> None:
-        """On the worker thread, once its call returned: the worker is reusable; an
-        abandoned call frees its slot and its late result is dropped."""
+    def _take_idle(self) -> _Child | None:
+        """An idle child well inside its own idle timeout (holds the lock)."""
+        now = time.monotonic()
+        while self._idle:
+            child = self._idle.pop()
+            if now - child.last_used < self._idle_s / 2 and child.proc.poll() is None:
+                return child
+            self._discard(child.proc)
+        return None
+
+    def _call(self, child: _Child, data: bytes, timeout_s: float) -> tuple[Outcome, bytes | None]:
+        proc = child.proc
+        assert proc.stdin is not None and proc.stdout is not None  # noqa: S101 - piped
+        deadline = time.monotonic() + timeout_s
+        try:
+            _write(proc.stdin.fileno(), _REQUEST.pack(len(data), timeout_s), deadline)
+            _write(proc.stdin.fileno(), data, deadline)
+            kind, size = _REPLY.unpack(_read(proc.stdout.fileno(), _REPLY.size, deadline))
+            if size > (self._max_output if kind == _OK else 0):
+                raise _BrokenError
+            result = _read(proc.stdout.fileno(), size, deadline) if size else b""
+        except _ExpiredError:
+            with self._lock:
+                self.timeouts += 1
+                self._discard(proc)
+            return "timeout", None
+        except (_BrokenError, ValueError, OSError):
+            with self._lock:
+                self._discard(proc)
+            return "error", None
         with self._lock:
-            if job.abandoned:
-                self.abandoned -= 1
-                job.result = None
-            job.data = b""
-            self._idle.append(worker)
-            job.done.set()
+            if proc in self._procs:  # not stopped by close() meanwhile
+                child.last_used = time.monotonic()
+                self._idle.append(child)
+        if kind == _OK:
+            return "ok", result
+        failures: dict[int, Outcome] = {_INVALID: "invalid", _TOO_LARGE: "too_large"}
+        return failures.get(kind, "error"), None
+
+    # -- children ---------------------------------------------------------------------
+
+    def _start(self) -> _Child | None:
+        """A new child with the transformation loaded, or ``None`` (counted as an error)."""
+        try:
+            proc = subprocess.Popen(  # noqa: S603 - this interpreter, Fabric's own script
+                [sys.executable, "-I", _CHILD], stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, close_fds=True, bufsize=0,
+            )  # fmt: skip
+        except (OSError, ValueError, RuntimeError):
+            return None
+        with self._lock:
+            self._procs.add(proc)
+        assert proc.stdin is not None and proc.stdout is not None  # noqa: S101 - piped
+        config = json.dumps({"path": list(sys.path), "ref": self.ref, "idle_s": self._idle_s,
+                             "max_output": self._max_output}).encode()  # fmt: skip
+        deadline = time.monotonic() + self._start_s
+        try:
+            os.set_blocking(proc.stdin.fileno(), False)
+            _write(proc.stdin.fileno(), _LENGTH.pack(len(config)) + config, deadline)
+            kind, _ = _REPLY.unpack(_read(proc.stdout.fileno(), _REPLY.size, deadline))
+        except (_ExpiredError, _BrokenError, ValueError, OSError):
+            kind = None
+        if kind == _READY:
+            return _Child(proc)
+        with self._lock:
+            self._discard(proc)
+            if kind == _UNRESOLVED and not self._unresolved:
+                self._unresolved = True
+                _LOG.warning(
+                    "fabric.transform: a transformation module reference cannot be loaded; "
+                    "content needing it is withheld (protection_failed)"
+                )
+        return None
+
+    def _discard(self, proc: subprocess.Popen[bytes]) -> None:
+        """Stop ``proc``; it holds a slot until reaped (holds the lock)."""
+        _stop(proc)
+        if not self._settle(proc):
+            self._reaping.append(proc)
+
+    def _settle(self, proc: subprocess.Popen[bytes]) -> bool:
+        """Whether ``proc`` has been reaped (forgotten then; holds the lock)."""
+        if _reaped(proc):
+            self._procs.discard(proc)
+            return True
+        return False
+
+    def close(self, timeout_s: float = 2.0) -> bool:
+        """Stop every child now (idle or busy: a busy call then withholds its content) and
+        reap them within ``timeout_s``; the runner stays usable (a later call starts a new
+        child). ``True`` when no child of this runner is left."""
+        with self._lock:
+            procs, idle = list(self._procs), {child.proc for child in self._idle}
+            self._idle.clear()
+            for proc in procs:
+                _stop(proc, pipes=proc in idle or proc in self._reaping)
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        for proc in procs:
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                proc.wait(max(0.0, deadline - time.monotonic()))
+        with self._lock:
+            self._reaping = [p for p in self._reaping if not self._settle(p)]
+            for proc in procs:
+                self._settle(proc)
+            return not self._procs
+
+    @staticmethod
+    def _stop_all(procs: set[subprocess.Popen[bytes]]) -> None:
+        """Finalizer: a collected runner's children are killed and reaped."""
+        for proc in list(procs):
+            _stop(proc)
+            with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                proc.wait(1.0)
 
     def stats(self) -> dict[str, int]:
         with self._lock:
+            self._reaping = [p for p in self._reaping if not self._settle(p)]
             return {"transform_timeouts": self.timeouts, "transform_saturated": self.saturated,
-                    "transform_abandoned": self.abandoned}  # fmt: skip
+                    "transform_abandoned": len(self._reaping)}  # fmt: skip
+
+    def children(self) -> int:
+        """Child processes of this runner not yet reaped (diagnostics; never a value)."""
+        with self._lock:
+            self._reaping = [p for p in self._reaping if not self._settle(p)]
+            return len(self._procs)
 
 
 def _after_fork_in_child() -> None:
-    for runner in list(_RUNNERS):  # the parent's workers do not exist in the child
+    for runner in list(_RUNNERS):  # the parent's children are not this process's
+        for proc in runner._procs:
+            for pipe in (proc.stdin, proc.stdout):  # so a parent's exit still ends them
+                if pipe is not None:
+                    with contextlib.suppress(OSError):
+                        pipe.close()
         runner._reset()
 
 

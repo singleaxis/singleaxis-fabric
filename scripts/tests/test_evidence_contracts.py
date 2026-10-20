@@ -487,7 +487,7 @@ def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) ->
     ]
     protector = ContentProtector(
         policy,
-        redactors={"terminal.stdout": lambda _: b"[redacted]"}
+        redactors={"terminal.stdout": "_redactors:redacted"}
         if mode == "redact"
         else None,
         tokenization_key=b"k" * 32,

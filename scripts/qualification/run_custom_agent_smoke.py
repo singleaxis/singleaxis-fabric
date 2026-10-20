@@ -60,6 +60,11 @@ ROLES = frozenset(
 )
 
 
+def failed_mask(_data: bytes) -> bytes:
+    """A customer transformation that fails (run in a child process, spec 049 §7.7)."""
+    raise RuntimeError(CANARY.decode())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence-dir", type=Path)
@@ -338,9 +343,6 @@ def main() -> int:
         if missing["verdict"] != "partial" or corrupted["verdict"] != "partial":
             raise AssertionError("missing or corrupted evidence did not lower verdict")
 
-        def failed_mask(_data: bytes) -> bytes:
-            raise RuntimeError(CANARY.decode())
-
         privacy_store = LocalFilesystemContentStore(
             str(root / "privacy-protected"), tenant_id="synthetic"
         )
@@ -352,7 +354,8 @@ def main() -> int:
                 role_policies={
                     role: BytePrivacyPolicy(
                         mode="masked_only",
-                        transform=failed_mask,
+                        # out of process (spec 049 §7.7): this module, by reference
+                        transform="run_custom_agent_smoke:failed_mask",
                         transformation_id="fixture-mask",
                         transformation_version="1",
                     )

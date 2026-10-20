@@ -199,15 +199,12 @@ def _protect_rig(tmp: Path) -> Rig:
 
     from .test_wire_helpers import production_policy  # noqa: PLC0415
 
-    def slow_failure(data: bytes) -> bytes:
-        time.sleep(0.001)
-        raise RuntimeError("customer transformation failed")
-
     privacy = {"model.exchange.request": "redact", "model.exchange.response": "tokenize"}
     return make_rig(
         tmp, queue_max_items=65536, tenant_id="tenant-a",
         capture_policy=DeploymentPolicy(production_policy(privacy=privacy, profile="local")),
-        transformations={"model.exchange.request": Transformation("t", "1", slow_failure)},
+        transformations={"model.exchange.request": Transformation(
+            "t", "1", "tests.transforms:slow_failure")},
         tokenization_key=b"k" * 32,
     )  # fmt: skip
 

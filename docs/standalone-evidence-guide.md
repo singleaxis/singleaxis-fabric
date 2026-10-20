@@ -41,10 +41,11 @@ encrypted spool, delivery ledger or closure parity.
 ## Choose privacy and customer storage before real content
 
 Use a validated `DeploymentPolicy` and explicit per-role policy. Its
-`ByteEvidenceRecorder` path applies configured transformations before queue
-admission. The separate `BytePrivacyPolicy` `masked_only` callback runs on a recording
-worker: raw input can exist in process memory before that callback. Do not
-confuse that worker-side masking with pre-queue protection. Neither mechanism
+`ByteEvidenceRecorder` path applies Fabric's own protections (tokenize, omit,
+metadata only) before queue admission; customer redaction (`redact`, `masked_only`)
+and the separate `BytePrivacyPolicy` masked modes run behind the queue, in a
+transformation child process: raw input can exist in process memory before that
+transformation. Do not confuse that worker-side masking with pre-queue protection. Neither mechanism
 rewrites arbitrary host exporters, diagnostics or provider logs.
 
 Use [authenticated local governed storage](governed-local-storage.md) for the
