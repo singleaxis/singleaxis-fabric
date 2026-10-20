@@ -78,7 +78,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_LABELS` | no | Unset or `pseudonymous` (default): source id and `service.name` leave the agent only as `s-`/`svc-` pseudonyms. `clear`: they are emitted unchanged; **operator-chosen labels are exported unchanged; you guarantee they contain no personal data**. Any other value is a configuration error. Run ids are pseudonymised in both modes. |
 | `FABRIC_SOURCE_ID` | no | Id of this capture source, emitted as its `s-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`). Default `wire-` + 16 hex derived from host name and `service.name`. |
 | `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy); schema and example below. OpenAI, Anthropic and Azure OpenAI are matched by default. |
-| `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and worker queue length (default 256). |
+| `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and capture-queue entry cap (default 16384; the queue is bounded by bytes through the 256 MiB in-flight budget, the entry cap only bounds per-entry overhead). |
 | `FABRIC_WIRE_TRACER` | no | `private` (default, and required in node mode). `global` sends exchange spans through the agent's own provider without the spool; it is refused in node mode (see "Global mode" below). |
 | `FABRIC_WIRE_STORE_SSE`, `FABRIC_WIRE_STORE_KMS_KEY_ID` | — | **Removed.** Setting either is an error: encryption is configured on the Fabric Node. |
 | `OTEL_SERVICE_NAME` | no | Source of the capture spans' one resource attribute, `service.name` (must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`, else `fabric-wire`), emitted as its `svc-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`); `OTEL_RESOURCE_ATTRIBUTES` and resource detectors are ignored. |
@@ -210,8 +210,8 @@ stalled in disk I/O.
 once its spool file is fsync'd. From the moment the call finishes (the last
 response byte reaches the client, or the stream is closed or fails) until
 then, the exchange exists only in the agent's memory: it waits in the
-capture worker's queue (at most `FABRIC_WIRE_QUEUE_MAX_ITEMS`, default 256
-exchanges, and 256 MiB of bodies), and the worker hashes both bodies, then
+capture worker's queue (bounded by 256 MiB of retained bodies, and at most
+`FABRIC_WIRE_QUEUE_MAX_ITEMS` exchanges, default 16384), and the worker hashes both bodies, then
 writes, fsyncs and renames the record. With an idle worker that is one
 exchange for a few milliseconds (one SHA-256 pass plus one fsync; longer for
 multi-MiB bodies or slow disks); under a burst it is every queued exchange.

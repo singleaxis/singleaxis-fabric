@@ -40,6 +40,9 @@ _SET_KEYS = ("hosts", "host_suffixes", "schemes", "ports")
 _TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 MAX_BODY_BYTES_CAP, NODE_MAX_BODY_BYTES = 64 * 1024 * 1024, 63 * 1024 * 1024
 SPOOL_RESERVE_BYTES = 1024 * 1024
+# Default capture-queue entry cap (agent matrix D3: 256 entries overflowed on an asyncio
+# fan-out of 408 calls while the host's busy thread starved the capture worker).
+QUEUE_MAX_ITEMS = 16384
 
 DEFAULT_ENDPOINTS: tuple[EndpointMatcher, ...] = (
     EndpointMatcher("openai", "openai", hosts=frozenset({"api.openai.com"})),
@@ -89,8 +92,12 @@ class WireConfig:
     # Most one side may retain for the worker (049 §7.4); beyond it a side is truncated.
     max_retain_bytes: int = DEFAULT_MAX_RETAIN_BYTES
     part_min_bytes: int = DEFAULT_PART_MIN_BYTES  # smallest inline part worth extracting
+    # The capture queue is bounded by bytes: every queued exchange keeps its retained
+    # bodies charged to max_inflight_bytes until the worker has written it (past the
+    # budget a side is truncated, inflight_budget). queue_max_items only caps the
+    # per-entry overhead; a full queue drops with queue_full (049 §7.1 rule 5).
     max_inflight_bytes: int = 256 * 1024 * 1024
-    queue_max_items: int = 256
+    queue_max_items: int = QUEUE_MAX_ITEMS
     patch_httpx: bool = True
     shutdown_timeout_s: float = 2.0
     tenant_id: str | None = None

@@ -192,7 +192,7 @@ class CapturePipeline:
 
     def __init__(
         self, *, store: ByteEvidenceStore | None, tracer_provider: TracerProvider | None,
-        loss: LossEmitter, queue_max_items: int = 256,
+        loss: LossEmitter, queue_max_items: int = 16384,
         on_job_done: Callable[[CaptureJob], None] | None = None, sender: Sender | None = None,
         node_tenant_id: str | None = None, model_allowlist: Sequence[str] = (),
         fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
