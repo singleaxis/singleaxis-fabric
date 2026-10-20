@@ -293,11 +293,14 @@ class GeneratedIds:
         self._ids: dict[str, str] = {}
         self._generated: set[str] = set()
 
-    def source(self) -> str:
+    def source(self, value: str) -> str:  # nothing is derived from the value
         return process_source_id()
 
-    def run(self, epoch: int) -> str:
+    def run(self, value: str, epoch: int) -> str:  # nothing is derived from the value
         return encode_opaque_id(f"source:{process_source_id()}:{epoch}")
+
+    def agent(self, value: str) -> str:
+        return self.other(value)
 
     def keep(self, value: str) -> str:
         """Mark a Fabric-generated id (a call id) as generated: it maps to itself."""
@@ -317,6 +320,77 @@ class GeneratedIds:
                 self._ids[value] = generated
                 self._generated.add(generated)
             return generated
+
+
+_AGENT_PSEUDONYM_RE = re.compile(r"^agt-[0-9a-f]{32}$")
+
+
+class KeyedIds:
+    """Emitted explicit-line ids in the ``pseudonymous`` identity mode with
+    ``FABRIC_WIRE_ID_KEY`` (049 §2.9 rules 1-3), as the wire line and ``decision()`` emit
+    them: the run id is :func:`run_pseudonym` (``r-``) and the source id
+    :func:`source_label` (``s-``), both function v1 keyed; an agent id is its v2 ``agt-``
+    pseudonym; any other caller id (operation, attempt, stream, parent call: step labels,
+    049 §2.3) is the keyed v1 operator label ``lbl-``. Deterministic, so records join
+    across recorders, processes and restarts that hold the key.
+
+    Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): an id
+    this instance minted (:meth:`keep`, a call id) or emitted (an ``agt-``/``lbl-`` value
+    it derived) maps to itself, so ids pass through more than one layer and a
+    ``parent_call_id`` joins its parent's ``call_id``; every caller value, even a 32-hex
+    or ``lbl-``-shaped one, is mapped. The registry is bounded (oldest first out); a value
+    that aged out is mapped again, which can break a join but never leaks it."""
+
+    __slots__ = ("_emitted", "_key", "_lock")
+
+    def __init__(self, key: bytes) -> None:
+        self._key = key
+        self._lock = threading.Lock()
+        self._emitted: dict[str, None] = {}  # insertion-ordered: a FIFO-bounded set
+
+    def __repr__(self) -> str:  # the key is a secret
+        return "KeyedIds()"
+
+    def source(self, value: str) -> str:
+        return source_label(value, self._key)
+
+    def run(self, value: str, epoch: int) -> str:  # the same in every epoch
+        return value if RUN_PSEUDONYM_RE.fullmatch(value) else run_pseudonym(value, self._key)
+
+    def agent(self, value: str) -> str:
+        with self._lock:
+            if value in self._emitted:
+                return value
+        return self.keep(cast("str", pseudonym_v2("agt", value, self._key)))
+
+    def keep(self, value: str) -> str:
+        """Register a Fabric-minted or emitted id: it maps to itself from now on."""
+        with self._lock:
+            self._emitted[value] = None
+            if len(self._emitted) > 2 * _MAX_GENERATED_IDS:
+                del self._emitted[next(iter(self._emitted))]
+        return value
+
+    def other(self, value: str) -> str:
+        with self._lock:
+            if value in self._emitted:
+                return value
+        return self.keep(label_pseudonym("lbl-", value, self._key))
+
+
+EmittedIds = GeneratedIds | KeyedIds
+
+
+def emitted_ids(profile: str, key: bytes | None, mode: IdentityMode) -> EmittedIds | None:
+    """How the explicit line emits caller-supplied ids (049 §2.9): generated in the
+    production profile without the key (rule 5, whatever the mode); keyed pseudonyms in
+    the ``pseudonymous`` mode with the key; ``None`` (as given) in the ``clear`` mode, or
+    in the local profile without the key."""
+    if profile == "production" and key is None:
+        return GeneratedIds()
+    if key is not None and mode == "pseudonymous":
+        return KeyedIds(key)
+    return None
 
 
 def _after_fork_in_child() -> None:

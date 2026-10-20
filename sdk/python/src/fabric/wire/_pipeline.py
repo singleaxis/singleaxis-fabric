@@ -64,6 +64,7 @@ _STATS = (
 _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
 _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are left to reconstruct
 _STOP = object()
+_REAP_INTERVAL_S = 0.25  # the worker reaps exited transformation children this often
 _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
 _IDS = RandomIdGenerator()
 _LOG = logging.getLogger("fabric.wire")
@@ -93,6 +94,7 @@ def protector_for(config: WireConfig, gate: ContentGate | None) -> Protector | N
         policy, max_body_bytes=config.max_body_bytes,
         max_retain_bytes=config.max_retain_bytes, part_min_bytes=config.part_min_bytes,
         transformations=config.transformations, tokenization_key=config.tokenization_key,
+        transform_env_allowlist=config.transform_env_allowlist,
     )  # fmt: skip
 
 
@@ -319,7 +321,20 @@ class CapturePipeline:
             return owned
 
     def _run(self) -> None:  # the worker is the only writer of its own counters
-        while (job := self._queue.get()) is not _STOP:
+        next_reap = 0.0
+        while True:
+            # Reap exited transformation children on a time cadence, idle or not: steady
+            # traffic must not postpone it (Sol P0-A round 3 #3, round 4 #2).
+            if self._protector is not None and (now := time.monotonic()) >= next_reap:
+                next_reap = now + _REAP_INTERVAL_S
+                with contextlib.suppress(Exception):
+                    self._protector.reap()
+            try:
+                job = self._queue.get(timeout=_REAP_INTERVAL_S)
+            except queue.Empty:
+                continue
+            if job is _STOP:
+                return
             with self._cond:
                 self._current = job  # close() may claim it until the worker commits
             try:

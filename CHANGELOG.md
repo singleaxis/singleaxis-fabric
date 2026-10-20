@@ -62,6 +62,10 @@ and superseded specs to `specs/archive/`.
   The Node needs its source binding (`FABRIC_SOURCE_ID` /
   `receiver.workloadAuthentication.sourceId`) and, with content, its content
   key; Compose preflight and the Helm render fail until they are set.
+- With the id key set, the explicit line emits caller ids as keyed
+  pseudonyms (`r-`, `s-`, `agt-`, `lbl-`) by default; set
+  `FABRIC_IDENTITY_MODE=clear` for the previous output. Source spools are
+  keyed by the emitted run id.
 - TypeScript `ContentProtector` redactors are modules run in
   `worker_threads` Workers (`{ module, exportName }`); passing a function
   throws, and masking roles need `protectAsync()`.
@@ -85,6 +89,24 @@ and superseded specs to `specs/archive/`.
   P1-P5) are not built.
 - No customer production deployment has been qualified.
 
+### Changed (breaking, explicit-line identity)
+
+- With `FABRIC_WIRE_ID_KEY` set, in the default `pseudonymous` identity mode
+  (spec 049 §2.9), the explicit line no longer exports caller-supplied ids in clear:
+  descriptors (Python and TypeScript `ByteEvidenceRecorder`), `CallRecorder`
+  snapshots, journals and seals, `SyntheticCaptureSession` events and the call OTLP
+  projection carry the run id as `r-`, the source id as `s-` (function v1, keyed, as
+  the wire line), the agent id as `agt-` (v2) and any other caller id (operation,
+  attempt, stream, parent call) as the keyed operator label `lbl-`. Only ids the
+  recorder itself minted (call ids) or emitted map to themselves, so parent joins still
+  hold; provenance is registered, never inferred from shape, so a 32-hex (UUID-shaped)
+  or `lbl-`-shaped caller id is pseudonymised too. `FABRIC_IDENTITY_MODE=clear` (or
+  `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
+  `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
+  emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a
+  spool keyed by the clear run id is refused. Qualified-run expectations, independent
+  feeds and attestations bind the emitted ids. `ByteEvidenceRecorder.generated_ids` is
+  renamed `emitted_ids`.
 
 ### Changed (breaking, Python customer transformations)
 
@@ -102,6 +124,13 @@ and superseded specs to `specs/archive/`.
   at once (`transform_saturated`, round 2 #5); idle children exit after 60 s and
   `ByteEvidenceRecorder.close()`, `ContentProtector.close()` and the wire uninstall
   stop them (round 2 #6). Windows (no `poll`) withholds every transformation.
+  Round 3: a stale idle child is discarded before the capacity check; `close()`
+  waits for children still starting and they are never used; exited children are
+  reaped without another call; a child exits when the application dies (parent-death
+  pipe, `PR_SET_PDEATHSIG` on Linux, `SIGALRM` restored to its default action over
+  start-up and each call); a timeout or close kills the child's whole process group;
+  the child gets a minimal environment (`PATH`, locale variables and the new
+  `transform_env_allowlist`, never a `FABRIC_*KEY*` variable).
 
 ### Changed (breaking, TypeScript explicit line)
 
@@ -163,6 +192,24 @@ and superseded specs to `specs/archive/`.
   (integer overflow in `LoadCollectionSpecFromReader`).
 
 ### Fixed
+
+- `fabric.reconstruct`: a response the transport did not finish (`closed_early`,
+  `abandoned`, `error`) whose bytes do not prove their own end (a whole JSON document,
+  or a stream ending at `[DONE]`, `message_stop`, `response.completed`/`incomplete`/
+  `failed` or a provider `error`) is a `truncated` gap (reason `stream_closed_early` or
+  `transport_incomplete`), so `partial`, streamed or not. Before, a cut stream was
+  graded complete and a cut JSON body `unverified` (D5).
+- Python byte-evidence and wire capture workers reap exited transformation children on
+  a 250 ms cadence, checked between jobs as well as when idle; steady capture traffic
+  for other roles no longer leaves them as zombies (Sol P0-A round 4 #2).
+- Python customer transformations: a transformation interpreter that exits by itself
+  (idle expiry, a crash, its alarm) or whose recorder dies now takes its whole process
+  group, so an external tool a transformation started never outlives it under PPID 1.
+  The runner kills the group when it settles an exited interpreter, and each
+  interpreter forks a guardian (before any customer code) that kills the group when
+  the interpreter or the recorder ends, even while customer code holds the GIL or
+  `PR_SET_PDEATHSIG` ended the interpreter first (Sol P0-A round 4 #3).
+
 
 - An extracted `model.exchange.part` under `original_plus_masked` gets a masked
   review copy, and a failed copy withholds the part too (Sol P0-A round 2 #1).

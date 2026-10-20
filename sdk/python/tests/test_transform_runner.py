@@ -5,14 +5,18 @@
 
 from __future__ import annotations
 
+import json
 import os
+import signal
 import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
-from fabric._transform_runner import TransformRunner, check_transform_ref
+from fabric._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 
 T = "tests.transforms:"
 
@@ -25,6 +29,13 @@ def _children() -> set[int]:
     rows = [line.split() for line in out.splitlines()]
     return {int(r[0]) for r in rows
             if int(r[1]) == os.getpid() and int(r[0]) != probe.pid and r[2][0] != "Z"}  # fmt: skip
+
+
+def process_state(pid: int) -> str:
+    """``ps`` state of ``pid`` (``Z`` a zombie), or ``""`` once it is gone."""
+    command = ["/bin/ps", "-o", "stat=", "-p", str(pid)]
+    probe = subprocess.run(command, capture_output=True, text=True, check=False)  # noqa: S603
+    return probe.stdout.strip()
 
 
 def test_outcomes_run_in_a_reused_child_process() -> None:
@@ -230,3 +241,310 @@ def test_a_forked_child_starts_its_own_children() -> None:
         assert runner.run(b"", 5.0) == ("ok", parent_child)  # the parent's is untouched
     finally:
         assert runner.close()
+
+
+def test_idle_replacement_stays_within_the_worker_bound() -> None:
+    """Sol P0-A round 3 #1: with a bound of one, a call 120 ms after the last (idle
+    timeout 0.2 s) discarded the stale idle child (killed, awaiting reaping) and started
+    a replacement anyway: two tracked children. The stale child is reaped first."""
+    runner = TransformRunner(T + "upper", max_workers=1, idle_timeout_s=0.2)
+    try:
+        assert runner.run(b"a", 5.0) == ("ok", b"A")
+        time.sleep(0.12)
+        assert runner.run(b"b", 5.0) == ("ok", b"B")
+        assert len(runner._procs) <= 1, runner._procs  # without a sweep: as tracked
+        assert runner._busy + len(runner._reaping) + len(runner._idle) <= 1
+    finally:
+        assert runner.close()
+
+
+def test_close_during_child_startup_waits_and_the_new_child_is_never_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sol P0-A round 3 #2: paused just before ``Popen``, ``close()`` returned True with a
+    call still starting; resumed, that call returned ``("ok", b"X")`` and left a child
+    running after the successful close. Now close does not report success while a start
+    is in progress, and the starting call kills its new child and withholds."""
+    real, entered, release = subprocess.Popen, threading.Event(), threading.Event()
+    started: list[subprocess.Popen[bytes]] = []
+
+    def paused(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        entered.set()
+        release.wait(10.0)
+        proc = real(*args, **kwargs)  # type: ignore[call-overload]
+        started.append(proc)
+        return proc  # type: ignore[no-any-return]
+
+    runner = TransformRunner(T + "upper")
+    monkeypatch.setattr(subprocess, "Popen", paused)  # the runner's Popen
+    result: list[tuple[str, bytes | None]] = []
+    thread = threading.Thread(target=lambda: result.append(runner.run(b"x", 5.0)))
+    thread.start()
+    try:
+        assert entered.wait(10.0)
+        assert runner.close(timeout_s=0.2) is False  # a start is still in progress
+    finally:
+        release.set()
+        thread.join(10.0)
+    monkeypatch.undo()
+    assert result == [("error", None)]  # the call withheld: its child was never used
+    assert runner.close()
+    assert runner.children() == 0 and started and started[0].returncode is not None
+    assert runner.run(b"y", 5.0) == ("ok", b"Y")  # usable again after close
+    assert runner.close()
+
+
+def test_close_while_a_child_is_starting_settles_it() -> None:
+    """A call between ``Popen`` and the child's ``READY``: close stops the new child and
+    waits for the start to settle before reporting success."""
+    runner = TransformRunner(T + "upper")
+    result: list[tuple[str, bytes | None]] = []
+    thread = threading.Thread(target=lambda: result.append(runner.run(b"x", 5.0)))
+    thread.start()
+    deadline = time.monotonic() + 10.0
+    while not runner._procs and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert runner.close()
+    thread.join(10.0)
+    assert result in ([("error", None)], [("ok", b"X")])  # ok only if it finished first
+    assert runner.children() == 0
+
+
+def test_an_idle_child_that_exited_is_reaped_without_another_call() -> None:
+    """Sol P0-A round 3 #3: an idle child that exited by itself stayed a zombie; neither
+    ``children()`` nor ``stats()`` reaped it. Every entry point reaps without waiting."""
+    for entry in ("children", "stats", "reap"):
+        runner = TransformRunner(T + "pid", idle_timeout_s=0.15)
+        try:
+            outcome, pid = runner.run(b"", 5.0)
+            assert outcome == "ok" and pid is not None
+            time.sleep(0.5)  # the child exits after its idle timeout
+            if entry == "children":
+                assert runner.children() == 0
+            elif entry == "stats":
+                assert runner.stats()["transform_abandoned"] == 0
+            else:
+                runner.reap()
+            assert process_state(int(pid)) == "", entry
+            assert not runner._procs
+        finally:
+            assert runner.close()
+
+
+_ORPHAN_PARENT = """
+import signal, sys, threading, time
+if {ignore_alarm}:  # the application ignores and blocks SIGALRM before capture
+    signal.signal(signal.SIGALRM, signal.SIG_IGN)
+    signal.pthread_sigmask(signal.SIG_BLOCK, {{signal.SIGALRM}})
+from fabric._transform_runner import TransformRunner
+runner = TransformRunner({ref!r}, start_timeout_s={start_s})
+def report():
+    while not runner._procs:
+        time.sleep(0.005)
+    print(next(iter(runner._procs)).pid, flush=True)
+threading.Thread(target=report, daemon=True).start()
+runner.run({data!r}, {timeout_s})
+"""
+
+
+@pytest.mark.parametrize(
+    ("ref", "data", "ignore_alarm", "start_s", "timeout_s", "bound_s"),
+    [
+        # Blocked in import (GIL released): the parent-death watchdog ends it at once.
+        ("tests.transforms_import_hang:fn", b"x", False, 30.0, 30.0, 3.0),
+        # Import holding the GIL: the start-up alarm (or PR_SET_PDEATHSIG) ends it.
+        ("tests.transforms_import_spin:fn", b"x", False, 1.0, 30.0, 6.0),
+        # Blocked in a callback, SIGALRM ignored and blocked by the application.
+        (T + "hang", b"x", True, 30.0, 30.0, 3.0),
+        # A callback holding the GIL, SIGALRM ignored and blocked: the call's alarm.
+        (T + "catastrophic", b"a" * 48 + b"!", True, 30.0, 1.0, 6.0),
+    ],
+)  # fmt: skip
+def test_a_child_whose_parent_died_exits_within_its_bound(
+    ref: str, data: bytes, ignore_alarm: bool, start_s: float, timeout_s: float,
+    bound_s: float,
+) -> None:  # fmt: skip
+    """Sol P0-A round 3 #4: a child blocked in its module's import, or in a callback with
+    ``SIGALRM`` ignored by the application, outlived its killed parent under PPID 1.
+    It now exits within its bound: the parent-death pipe, the alarms (reset to their
+    default action and unblocked) covering start-up and each call, and on Linux
+    ``PR_SET_PDEATHSIG``."""
+    code = _ORPHAN_PARENT.format(ignore_alarm=ignore_alarm, ref=ref, start_s=start_s,
+                                 data=data, timeout_s=timeout_s)  # fmt: skip
+    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,  # noqa: S603
+                              cwd=Path(__file__).parent.parent)  # fmt: skip
+    pid = 0
+    try:
+        assert parent.stdout is not None
+        pid = int(parent.stdout.readline())
+        time.sleep(0.5)  # the child is in its import or its callback
+        assert process_state(pid) not in ("", "Z")
+        parent.kill()
+        parent.wait(10.0)
+        deadline = time.monotonic() + bound_s
+        while process_state(pid) not in ("", "Z"):  # PID 1 may reap it later
+            assert time.monotonic() < deadline, "the orphaned child is still running"
+            time.sleep(0.05)
+    finally:
+        parent.kill()
+        parent.wait(10.0)
+        if pid and process_state(pid) not in ("", "Z"):
+            os.kill(pid, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("stop", ["timeout", "close"])
+def test_stopping_a_child_stops_its_subprocesses(tmp_path: Path, stop: str) -> None:
+    """Sol P0-A round 3 #5: a timeout killed the interpreter only; the external tool its
+    redactor started kept running under PPID 1 after a successful ``close()``. Each
+    child leads its own process group, killed whole on timeout and on close."""
+    marker = tmp_path / "tool.pid"
+    runner = TransformRunner(T + "spawn_sleeper")
+    tool = 0
+    try:
+        if stop == "timeout":
+            assert runner.run(str(marker).encode(), 1.0) == ("timeout", None)
+        else:
+            thread = threading.Thread(target=runner.run, args=(str(marker).encode(), 30.0))
+            thread.start()
+            deadline = time.monotonic() + 10.0
+            while not marker.exists() or not marker.read_text():
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+        tool = int(marker.read_text())
+        assert runner.close()
+        if stop == "close":
+            thread.join(5.0)
+        deadline = time.monotonic() + 5.0
+        while process_state(tool) not in ("", "Z"):  # PID 1 may reap it later
+            assert time.monotonic() < deadline, "the redactor's subprocess is still running"
+            time.sleep(0.05)
+    finally:
+        runner.close()
+        if tool and process_state(tool) not in ("", "Z"):
+            os.kill(tool, signal.SIGKILL)
+
+
+def _wait_gone(pid: int, bound_s: float, what: str) -> None:
+    deadline = time.monotonic() + bound_s
+    while process_state(pid) not in ("", "Z"):  # PID 1 may reap it later
+        assert time.monotonic() < deadline, what
+        time.sleep(0.05)
+
+
+def test_an_exited_interpreter_takes_its_process_group(tmp_path: Path) -> None:
+    """Sol P0-A round 4 #3: a transformation started an external tool and returned; after
+    idle expiry and ``reap()`` the runner forgot its interpreter while the tool kept
+    running under PPID 1. Settling an exited interpreter kills its process group."""
+    marker = tmp_path / "tool.pid"
+    runner = TransformRunner(T + "leave_sleeper", idle_timeout_s=0.15)
+    tool = 0
+    try:
+        assert runner.run(str(marker).encode(), 5.0) == ("ok", b"safe")
+        tool = int(marker.read_text())
+        (proc,) = runner._procs
+        deadline = time.monotonic() + 5.0
+        while process_state(proc.pid) not in ("", "Z"):  # the idle interpreter exits
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        runner.reap()
+        assert runner.children() == 0
+        _wait_gone(tool, 3.0, "the tool outlived its interpreter")
+        assert runner.close()
+    finally:
+        runner.close()
+        if tool and process_state(tool) not in ("", "Z"):
+            os.kill(tool, signal.SIGKILL)
+
+
+@pytest.mark.parametrize(("ref", "timeout_s", "bound_s"), [
+    (T + "spawn_sleeper", 30.0, 3.0),  # waiting on the tool: the parent-death watchdog
+    (T + "sleeper_then_spin", 1.0, 8.0),  # holding the GIL: the call's alarm, then the guard
+])  # fmt: skip
+def test_a_dead_parent_takes_the_transformation_process_group(
+    tmp_path: Path, ref: str, timeout_s: float, bound_s: float
+) -> None:
+    """Sol P0-A round 4 #3: killing the recorder ended the transformation interpreter,
+    but the tool it started survived under PPID 1. The whole group goes."""
+    marker = tmp_path / "tool.pid"
+    code = _ORPHAN_PARENT.format(ignore_alarm=False, ref=ref, start_s=30.0,
+                                 data=str(marker).encode(), timeout_s=timeout_s)  # fmt: skip
+    parent = subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE,  # noqa: S603
+                              cwd=Path(__file__).parent.parent)  # fmt: skip
+    pid = tool = 0
+    try:
+        assert parent.stdout is not None
+        pid = int(parent.stdout.readline())
+        deadline = time.monotonic() + 10.0
+        while not marker.exists() or not marker.read_text():
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        tool = int(marker.read_text())
+        parent.kill()
+        parent.wait(10.0)
+        _wait_gone(pid, bound_s, "the orphaned interpreter is still running")
+        _wait_gone(tool, bound_s, "the tool outlived the recorder")
+    finally:
+        parent.kill()
+        parent.wait(10.0)
+        for leftover in (pid, tool):
+            if leftover and process_state(leftover) not in ("", "Z"):
+                os.kill(leftover, signal.SIGKILL)
+
+
+_KEYS = {
+    "FABRIC_WIRE_ID_KEY": "canary-id-key-0001",
+    "FABRIC_TOKENIZATION_KEY": "canary-tokenization-key",
+    "FABRIC_WIRE_SPOOL_KEY_FILE": "/canary/spool.key",
+    "FABRIC_SYNTHETIC_CONTENT_KEY": "canary-content-key",
+}
+
+
+def test_the_child_gets_a_minimal_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol P0-A round 3: the child inherited the whole environment, so a synthetic key
+    held there was readable by customer code. It gets ``PATH``, locale variables and the
+    customer's explicit allowlist only; never a ``FABRIC_*KEY*`` variable."""
+    for name, value in {**_KEYS, "CUSTOMER_SECRET": "canary-secret",
+                        "CUSTOMER_ALLOWED": "allowed"}.items():  # fmt: skip
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("LC_CTYPE", "C.UTF-8")
+    for allowlist in ((), ("CUSTOMER_ALLOWED",)):
+        runner = TransformRunner(T + "environment", env_allowlist=allowlist)
+        try:
+            outcome, out = runner.run(b"", 5.0)
+            assert outcome == "ok" and out is not None
+        finally:
+            assert runner.close()
+        env = json.loads(out)
+        assert "canary" not in out.decode() and not any(k.startswith("FABRIC_") for k in env)
+        assert env["PATH"] == os.environ["PATH"] and env["LC_CTYPE"] == "C.UTF-8"
+        assert env.get("CUSTOMER_ALLOWED") == ("allowed" if allowlist else None)
+        assert "CUSTOMER_SECRET" not in env
+
+
+def test_the_environment_allowlist_never_names_a_key() -> None:
+    assert check_env_allowlist(["CUSTOMER_TOOL_HOME", "HOME"]) == ("CUSTOMER_TOOL_HOME", "HOME")
+    for bad in (*_KEYS, "fabric_x_key", "FABRIC_KEYS", "BAD-NAME", "", 3):
+        with pytest.raises(ValueError, match="transform_env_allowlist"):
+            check_env_allowlist([bad])
+    with pytest.raises(ValueError, match="transform_env_allowlist"):
+        check_env_allowlist("PATH")  # a bare string is not a list of names
+    with pytest.raises(ValueError, match="transform_env_allowlist"):
+        TransformRunner(T + "upper", env_allowlist=["FABRIC_WIRE_ID_KEY"])
+
+
+def test_every_config_refuses_a_key_in_the_environment_allowlist(tmp_path: Path) -> None:
+    from fabric import LocalFilesystemContentStore  # noqa: PLC0415
+    from fabric.byte_evidence import ByteEvidenceConfig  # noqa: PLC0415
+    from fabric.wire._config import WireConfig  # noqa: PLC0415
+
+    store = LocalFilesystemContentStore(str(tmp_path), tenant_id="tenant-a")
+    assert WireConfig(transform_env_allowlist=("HOME",)).transform_env_allowlist == ("HOME",)
+    config = ByteEvidenceConfig(store=store, roles=frozenset({"tool.call.result"}),
+                                transform_env_allowlist=("HOME",))  # fmt: skip
+    assert config.transform_env_allowlist == ("HOME",)
+    for name in _KEYS:
+        with pytest.raises(ValueError, match="transform_env_allowlist"):
+            WireConfig(transform_env_allowlist=(name,))
+        with pytest.raises(ValueError, match="transform_env_allowlist"):
+            ByteEvidenceConfig(store=store, roles=frozenset({"tool.call.result"}),
+                               transform_env_allowlist=(name,))  # fmt: skip

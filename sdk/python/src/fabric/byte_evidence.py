@@ -12,6 +12,7 @@ Only a caller-reported provenance is supportable from this SDK surface.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
 import json
@@ -28,8 +29,15 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
-from ._sequence import GeneratedIds, check_id_key, id_key_from_env
-from ._transform_runner import TransformRunner, check_transform_ref
+from ._sequence import (
+    EmittedIds,
+    IdentityMode,
+    check_id_key,
+    emitted_ids,
+    id_key_from_env,
+    identity_mode_from_env,
+)
+from ._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
@@ -89,6 +97,7 @@ _OPAQUE_ID_MAX_LENGTH = 128
 ROLE_POLICIES_ID = "fabric.role-policies"
 _MASKED_MODES = frozenset({"masked_only", "original_plus_masked"})
 _LOG = logging.getLogger("fabric.byte_evidence")
+_REAP_INTERVAL_S = 0.25  # the worker reaps exited transformation children this often
 
 
 def _production_marked(policy: object) -> bool:
@@ -276,8 +285,17 @@ class ByteEvidenceConfig:
     # The id key (049 §7.3; FABRIC_WIRE_ID_KEY when unset): the production profile needs
     # it before any content is captured. A secret: never in repr or logs.
     id_key: bytes | None = field(default=None, repr=False)
+    # Environment variables a role-policy transform child may read, beyond PATH and
+    # locale variables (never a FABRIC_*KEY* one; Sol P0-A round 3).
+    transform_env_allowlist: tuple[str, ...] = ()
+    # 049 §2.9 rule 7 (FABRIC_IDENTITY_MODE when unset): caller ids leave as keyed
+    # pseudonyms (``pseudonymous``, the default) or as given (``clear``).
+    identity_mode: IdentityMode | None = None
 
     def __post_init__(self) -> None:  # noqa: PLR0912
+        object.__setattr__(
+            self, "transform_env_allowlist", check_env_allowlist(self.transform_env_allowlist)
+        )
         if not isinstance(self.store, ByteEvidenceStore) or not self.store.tenant_id:
             raise ValueError("byte evidence requires a tenant-scoped byte evidence store")
         check_safe_identifier("tenant_id", self.store.tenant_id)
@@ -289,6 +307,8 @@ class ByteEvidenceConfig:
         if not self.roles or not isinstance(self.roles, frozenset) or self.roles - _ROLES:
             raise ValueError("roles must be a non-empty frozenset of content-v2 roles")
         check_id_key(self.id_key)
+        if self.identity_mode not in (None, "pseudonymous", "clear"):
+            raise ValueError("identity_mode must be 'pseudonymous' or 'clear'")
         if self.content_protector is not None and self.deployment_policy is None:
             object.__setattr__(self, "deployment_policy", self.content_protector.policy)
         if self.deployment_policy is not None:
@@ -358,6 +378,7 @@ class ByteEvidenceRecorder:
         self._closed = False
         self._pending = 0
         self._unretained_drops = 0
+        self._next_reap = 0.0
         self._spool = config.durable_spool
         self._policy_block = _role_policies_block(config.role_policies or {})
         # One bounded runner per role transform (049 §7.7 rule 4): never on this worker.
@@ -365,6 +386,7 @@ class ByteEvidenceRecorder:
             role: TransformRunner(
                 policy.transform, "fabric-byte-transform",
                 max_output_bytes=config.payload_max_bytes,
+                env_allowlist=config.transform_env_allowlist,
             )
             for role, policy in (config.role_policies or {}).items()
             if policy.transform is not None
@@ -376,10 +398,10 @@ class ByteEvidenceRecorder:
         )
         if self._gate_reason is not None:
             self._log_gate()
-        # 049 §2.9 rule 5: production without the id key exports no caller-derived id.
-        self._generated_ids = (
-            GeneratedIds() if self._profile == "production" and id_key is None else None
-        )
+        # 049 §2.9: caller ids leave as keyed pseudonyms, or, in production without the id
+        # key (rule 5), as generated ids; as given only in the clear mode (or local, no key).
+        mode = config.identity_mode or identity_mode_from_env(os.environ)
+        self._emitted_ids = emitted_ids(self._profile, id_key, mode)
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -422,10 +444,17 @@ class ByteEvidenceRecorder:
         return totals
 
     @property
-    def generated_ids(self) -> GeneratedIds | None:
-        """The generated ids replacing caller ids (049 §2.9 rule 5) in the production
-        profile without the id key, else ``None`` (caller ids are emitted as given)."""
-        return self._generated_ids
+    def emitted_ids(self) -> EmittedIds | None:
+        """How caller ids are emitted (049 §2.9): keyed pseudonyms, generated ids (the
+        production profile without the id key, rule 5), or ``None`` (as given)."""
+        return self._emitted_ids
+
+    def emitted_run_id(self, run_id: str) -> str:
+        """``run_id`` as this recorder emits it (epoch 0): the id a source spool or a
+        qualified-run expectation for this run is keyed by. Never the clear value unless
+        ids are emitted as given."""
+        ids = self._emitted_ids
+        return run_id if ids is None else ids.run(run_id, 0)
 
     @property
     def tenant_id(self) -> str:
@@ -471,9 +500,9 @@ class ByteEvidenceRecorder:
             chunk_index=chunk_index,
         )
 
-        if (ids := self._generated_ids) is not None:  # 049 §2.9 rule 5: no caller id leaves
-            source_id = ids.source()
-            run_id = ids.run(source_epoch) if run_id is not None else None
+        if (ids := self._emitted_ids) is not None:  # 049 §2.9: no clear caller id leaves
+            source_id = ids.source(source_id)
+            run_id = ids.run(run_id, source_epoch) if run_id is not None else None
             operation_id, attempt_id, stream_id = (
                 ids.other(value) if value is not None else None
                 for value in (operation_id, attempt_id, stream_id)
@@ -802,6 +831,20 @@ class ByteEvidenceRecorder:
             return complete and stopped and spooled and not self._worker.is_alive()
         return complete and stopped
 
+    def _reap(self) -> None:
+        """Reap exited transformation children at most once per ``_REAP_INTERVAL_S``,
+        checked when idle and after every job, so steady traffic cannot postpone it
+        (never waits; Sol P0-A round 3 #3, round 4 #2)."""
+        if (now := time.monotonic()) < self._next_reap:
+            return
+        self._next_reap = now + _REAP_INTERVAL_S
+        runners: list[Any] = list(self._runners.values())
+        if self._config.content_protector is not None:
+            runners.append(self._config.content_protector)
+        for runner in runners:
+            with contextlib.suppress(Exception):  # maintenance never stops the worker
+                runner.reap()
+
     def _run(self) -> None:
         while True:
             try:
@@ -810,6 +853,7 @@ class ByteEvidenceRecorder:
                 with self._condition:
                     if self._closed and self._pending == 0:
                         return
+                self._reap()
                 continue
             try:
                 self._process(object_id, data, derivative_id)
@@ -832,6 +876,7 @@ class ByteEvidenceRecorder:
                     self._pending -= 1
                     self._condition.notify_all()
                 self._queue.task_done()
+            self._reap()
 
     def _process(self, object_id: str, data: bytes, derivative_id: str | None) -> None:
         with self._condition:

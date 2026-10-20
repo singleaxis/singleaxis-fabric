@@ -175,21 +175,156 @@ describe("the explicit input's identity without the id key", () => {
     await recorder.close();
   });
   it.each([
-    ["local", undefined],
-    ["production", ID_KEY],
-  ] as const)("keeps the caller ids with a %s policy", async (profile, idKey) => {
+    ["local", undefined, undefined],
+    ["production", ID_KEY, "clear"],
+  ] as const)("keeps the caller ids with a %s policy", async (profile, idKey, identityMode) => {
     vi.stubEnv("FABRIC_WIRE_ID_KEY", "");
     const recorder = new ByteEvidenceRecorder({
       store: store(policy(profile).tenant_id),
       roles: new Set(["terminal.stdout"]),
       deploymentPolicy: policy(profile),
       idKey,
+      identityMode,
     });
     const descriptor = recorder.capture(SECRET, identity);
-    expect([descriptor.source_id, descriptor.run_id]).toEqual([
+    expect([descriptor.source_id, descriptor.run_id, descriptor.operation_id]).toEqual([
       "customer-alice",
       "private-case-123",
+      "op-private-7",
     ]);
     await recorder.close();
+  });
+});
+
+describe("the explicit input's identity with the id key", () => {
+  // Spec 049 §2.9: with FABRIC_WIRE_ID_KEY, in the default pseudonymous identity mode,
+  // every caller id leaves as its keyed pseudonym (run r-, source s-, any other caller id
+  // lbl-), byte-identical to Python `fabric._sequence.KeyedIds` and the wire line.
+  const canaries = [
+    "customer-alice",
+    "private-case-123",
+    "op-private-7",
+    "att-private-9",
+    "stream-private-1",
+  ];
+  const identity = {
+    ...options,
+    sourceId: "customer-alice",
+    runId: "private-case-123",
+    operationId: "op-private-7",
+    attemptId: "att-private-9",
+    streamId: "stream-private-1",
+    chunkIndex: 0,
+  };
+  // Computed by the Python SDK (KeyedIds with the test key): cross-SDK parity.
+  const expected = {
+    source_id: "s-d196c616097bb8984f6ada4557109619",
+    run_id: "r-7d4a93f9ecdfc6e4615a0f16d3a44b72",
+    operation_id: "lbl-7972e6c680673bc371ed0645267ddcce",
+    attempt_id: "lbl-cb8290324423bf78a132033a1ebd41d5",
+    stream_id: "lbl-b8bf64540989ab7375f7654158f38e73",
+  };
+
+  it.each([
+    ["production", "the environment"],
+    ["local", "the environment"],
+    ["production", "the config"],
+  ] as const)(
+    "emits keyed pseudonyms with a %s policy and the key from %s",
+    async (profile, from) => {
+      vi.stubEnv("FABRIC_IDENTITY_MODE", "");
+      vi.stubEnv("FABRIC_WIRE_ID_KEY", from === "the environment" ? ID_KEY.toString() : "");
+      const recorders = [0, 1].map(
+        () =>
+          new ByteEvidenceRecorder({
+            store: store(policy(profile).tenant_id),
+            roles: new Set(["terminal.stdout"]),
+            deploymentPolicy: policy(profile),
+            ...(from === "the config" ? { idKey: ID_KEY } : {}),
+          }),
+      );
+      const [first, second] = recorders.map((recorder) => recorder.capture(SECRET, identity));
+      for (const recorder of recorders) await recorder.flush();
+      const settled = recorders.flatMap((recorder) => recorder.drainSettled());
+      expect(settled.map((descriptor) => descriptor.status)).toEqual(["stored", "stored"]);
+      const text = JSON.stringify([first, second, settled]);
+      for (const canary of canaries) expect(text).not.toContain(canary);
+      expect(first).toMatchObject(expected);
+      expect(second).toMatchObject(expected); // deterministic: recorders and processes join
+      expect(recorders[0]!.emittedRunId("private-case-123")).toBe(expected.run_id);
+      // nothing written outside content carries a clear caller id
+      for (const root of roots)
+        for (const name of fs.readdirSync(root, { recursive: true })) {
+          const file = path.join(root, String(name));
+          if (fs.lstatSync(file).isFile())
+            for (const canary of canaries)
+              expect(fs.readFileSync(file).includes(Buffer.from(canary))).toBe(false);
+        }
+      for (const recorder of recorders) await recorder.close();
+    },
+  );
+
+  it("maps a hex-shaped or unregistered lbl- caller id; only its own emitted ids pass", async () => {
+    // Sol P0-A round 4 #1: shape never proves provenance. Values computed by the Python SDK.
+    vi.stubEnv("FABRIC_IDENTITY_MODE", "");
+    vi.stubEnv("FABRIC_WIRE_ID_KEY", ID_KEY.toString());
+    const hex = "0123456789abcdef0123456789abcdef";
+    const label = "lbl-024cdec5bc0d58b8a636a3e3084582fc";
+    const recorder = new ByteEvidenceRecorder({
+      store: store(policy("production").tenant_id),
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy("production"),
+    });
+    const first = recorder.capture(SECRET, {
+      ...identity,
+      operationId: hex,
+      attemptId: hex,
+      streamId: hex,
+    });
+    expect(first).toMatchObject({ operation_id: label, attempt_id: label, stream_id: label });
+    const forged = recorder.capture(SECRET, {
+      ...options,
+      sourceSequence: 2,
+      operationId: "lbl-" + "f".repeat(32),
+      attemptId: label, // emitted by this recorder: it maps to itself
+    });
+    expect(forged).toMatchObject({
+      operation_id: "lbl-39de82a31fdc6362cccd1d7479f54e0c",
+      attempt_id: label,
+    });
+    await recorder.flush();
+    expect(JSON.stringify([first, forged, recorder.drainSettled()])).not.toContain(hex);
+    for (const root of roots)
+      for (const name of fs.readdirSync(root, { recursive: true })) {
+        const file = path.join(root, String(name));
+        if (fs.lstatSync(file).isFile())
+          expect(fs.readFileSync(file).includes(Buffer.from(hex))).toBe(false);
+      }
+    await recorder.close();
+  });
+
+  it("FABRIC_IDENTITY_MODE=clear keeps the caller ids; an invalid mode throws", async () => {
+    vi.stubEnv("FABRIC_WIRE_ID_KEY", ID_KEY.toString());
+    vi.stubEnv("FABRIC_IDENTITY_MODE", "clear");
+    const recorder = new ByteEvidenceRecorder({
+      store: store(policy("production").tenant_id),
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy("production"),
+    });
+    expect(recorder.capture(SECRET, identity)).toMatchObject({
+      source_id: "customer-alice",
+      run_id: "private-case-123",
+      operation_id: "op-private-7",
+    });
+    expect(recorder.emittedRunId("private-case-123")).toBe("private-case-123");
+    await recorder.close();
+    expect(
+      () =>
+        new ByteEvidenceRecorder({
+          store: store(policy("production").tenant_id),
+          roles: new Set(["terminal.stdout"]),
+          identityMode: "canary" as never,
+        }),
+    ).toThrow("identityMode must be");
   });
 });

@@ -15,6 +15,7 @@ from urllib.parse import unquote, urlsplit
 
 from .._model_names import parse_model_allowlist
 from .._sequence import OPAQUE_ID_RE, Labels, check_id_key, id_key_from_env, labels_from_env
+from .._transform_runner import check_env_allowlist
 from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
 from ..deployment_policy import DeploymentPolicy
 from ..tracing import check_content_endpoint_url
@@ -116,6 +117,9 @@ class WireConfig:
     transformations: Mapping[str, Transformation] = field(
         default_factory=lambda: MappingProxyType({}), repr=False
     )
+    # Environment variables a transformation child may read, beyond PATH and locale
+    # variables (never a FABRIC_*KEY* one; Sol P0-A round 3).
+    transform_env_allowlist: tuple[str, ...] = ()
     # Tenant-scoped tokenization key (FABRIC_TOKENIZATION_KEY[_FILE]); a secret.
     tokenization_key: bytes | None = field(default=None, repr=False)
     # AES-256-GCM spool envelope key (049 §7.8; FABRIC_WIRE_SPOOL_KEY[_FILE]); a secret.
@@ -158,6 +162,9 @@ class WireConfig:
         ):  # fmt: skip
             raise ValueError("the capture policy belongs to another tenant")
         check_transformations(self.transformations)
+        object.__setattr__(
+            self, "transform_env_allowlist", check_env_allowlist(self.transform_env_allowlist)
+        )
         key = self.tokenization_key
         if key is not None and (not isinstance(key, bytes) or len(key) < TOKEN_KEY_MIN_BYTES):
             raise ValueError(f"tokenization_key must be at least {TOKEN_KEY_MIN_BYTES} bytes")

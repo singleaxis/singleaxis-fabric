@@ -130,3 +130,41 @@ def gated(data: bytes) -> bytes:
     while not (gate / "release").exists() and time.monotonic() < deadline:
         time.sleep(0.005)
     return b"safe"
+
+
+def spawn_sleeper(data: bytes) -> bytes:
+    """Starts an external tool that keeps running, records its pid at the path given as
+    input, then waits for it (Sol P0-A round 3 #5)."""
+    import subprocess  # noqa: PLC0415
+
+    tool = subprocess.Popen(["/bin/sleep", "3600"])
+    Path(data.decode()).write_text(str(tool.pid))
+    tool.wait()
+    return data
+
+
+def environment(data: bytes) -> bytes:
+    """The child's environment, as JSON (Sol P0-A round 3 environment isolation)."""
+    import json  # noqa: PLC0415
+
+    return json.dumps(dict(os.environ)).encode()
+
+
+def leave_sleeper(data: bytes) -> bytes:
+    """Starts an external tool that keeps running, records its pid at the path given as
+    input, and returns without waiting for it (Sol P0-A round 4 #3)."""
+    import subprocess  # noqa: PLC0415
+
+    tool = subprocess.Popen(["/bin/sleep", "120"])
+    Path(data.decode()).write_text(str(tool.pid))
+    return b"safe"
+
+
+def sleeper_then_spin(data: bytes) -> bytes:
+    """Starts an external tool, records its pid at the path given as input, then holds
+    the GIL in a catastrophic regex (Sol P0-A round 4 #3)."""
+    import subprocess  # noqa: PLC0415
+
+    tool = subprocess.Popen(["/bin/sleep", "120"])
+    Path(data.decode()).write_text(str(tool.pid))
+    return catastrophic(b"a" * 48 + b"!")

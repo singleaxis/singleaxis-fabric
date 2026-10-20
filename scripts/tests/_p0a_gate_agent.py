@@ -89,8 +89,11 @@ def main() -> int:
         transform = Transformation(
             "gate-mask", "1", f"_p0a_gate_agent:{args.transform}"
         )
+        # The child gets a minimal environment (049 §7.7): allow the canary it masks.
         config = dataclasses.replace(
-            config, transformations=dict.fromkeys(ROLES, transform)
+            config,
+            transformations=dict.fromkeys(ROLES, transform),
+            transform_env_allowlist=("E2E_GATE_CANARY",),
         )
     handle = wire.install(config)
     with httpx.Client(timeout=300) as client:

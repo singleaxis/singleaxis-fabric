@@ -14,12 +14,12 @@ import hashlib
 import hmac
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
-from ._transform_runner import TransformRunner, check_transform_ref
+from ._transform_runner import TransformRunner, check_env_allowlist, check_transform_ref
 
 POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1"
 # masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
@@ -273,6 +273,7 @@ class ContentProtector:
         tokenization_key: bytes | None = None,
         payload_max_bytes: int = 1024 * 1024,
         transform_timeout_s: float = 5.0,
+        transform_env_allowlist: Iterable[str] = (),
     ) -> None:
         if not isinstance(policy, DeploymentPolicy):
             raise ValueError("content protection requires a DeploymentPolicy")
@@ -302,9 +303,13 @@ class ContentProtector:
             raise ValueError("tokenize mode requires a caller-supplied key")
         self._key = tokenization_key
         self._modes = dict(roles)
+        env = check_env_allowlist(transform_env_allowlist)
         self._runners = {
             role: TransformRunner(
-                ref, "fabric-content-redactor", max_output_bytes=payload_max_bytes
+                ref,
+                "fabric-content-redactor",
+                max_output_bytes=payload_max_bytes,
+                env_allowlist=env,
             )
             for role, ref in self._redactors.items()
         }
@@ -320,6 +325,11 @@ class ContentProtector:
         redaction starts a new child), so a protector shared by recorders may be closed by
         each of them."""
         return all([runner.close(timeout_s) for runner in self._runners.values()])  # noqa: C419 - close each
+
+    def reap(self) -> None:
+        """Reap exited redactor child processes (never waits; the recorder's worker)."""
+        for runner in self._runners.values():
+            runner.reap()
 
     def runs_customer_code(self, role: str) -> bool:
         """Whether protecting ``role`` calls a customer redactor (``redact``,

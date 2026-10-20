@@ -12,6 +12,12 @@ import { sha256BytesPrefixed as digest } from "./hash.js";
 
 import type { GovernedStore } from "./content-store.js";
 import {
+  checkIdentityMode,
+  identityModeFromEnv,
+  labelPseudonym,
+  type IdentityMode,
+} from "./identity.js";
+import {
   ContentProtector,
   DeploymentPolicy,
   type PrivacyMode,
@@ -133,7 +139,7 @@ class GeneratedIds {
     return processSource;
   }
 
-  run(epoch: number): string {
+  run(_value: string, epoch: number): string {
     return `source:${this.source()}:${epoch}`;
   }
 
@@ -143,6 +149,46 @@ class GeneratedIds {
     const generated = "g-" + randomUUID().replaceAll("-", "");
     if (this.#ids.size < MAX_GENERATED_IDS) this.#ids.set(value, generated);
     return generated;
+  }
+}
+
+const RUN_PSEUDONYM = /^r-[0-9a-f]{32}$/;
+const SOURCE_PSEUDONYM = /^s-[0-9a-f]{32}$/;
+
+/**
+ * Emitted ids in the `pseudonymous` identity mode with the id key (spec 049 §2.9 rules
+ * 1-3), in parity with Python `fabric._sequence.KeyedIds` and as the wire line emits
+ * them: the run id `r-` and the source id `s-` (function v1, keyed); any other caller id
+ * (operation, attempt, stream: step labels, 049 §2.3) the keyed v1 operator label `lbl-`.
+ * Deterministic, so records join across recorders and processes holding the key.
+ * Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): only a
+ * `lbl-` value this instance emitted maps to itself; every caller value, even a 32-hex
+ * or `lbl-`-shaped one, is mapped. The registry is bounded (oldest first out), as in
+ * Python.
+ */
+class KeyedIds {
+  readonly #key: Uint8Array;
+  readonly #emitted = new Set<string>(); // insertion-ordered: a FIFO-bounded set
+
+  constructor(key: Uint8Array) {
+    this.#key = key;
+  }
+
+  source(value: string): string {
+    return SOURCE_PSEUDONYM.test(value) ? value : labelPseudonym("s", value, this.#key);
+  }
+
+  run(value: string): string {
+    return RUN_PSEUDONYM.test(value) ? value : labelPseudonym("r", value, this.#key);
+  }
+
+  other(value: string): string {
+    if (this.#emitted.has(value)) return value;
+    const label = labelPseudonym("lbl", value, this.#key);
+    this.#emitted.add(label);
+    if (this.#emitted.size > 2 * MAX_GENERATED_IDS)
+      this.#emitted.delete(this.#emitted.values().next().value as string);
+    return label;
   }
 }
 
@@ -218,6 +264,11 @@ export interface ByteEvidenceConfig {
    * production profile needs it before any content is captured. A secret.
    */
   idKey?: Uint8Array;
+  /**
+   * Spec 049 §2.9 rule 7 (`FABRIC_IDENTITY_MODE` when unset): caller ids leave as keyed
+   * pseudonyms (`pseudonymous`, the default) or as given (`clear`).
+   */
+  identityMode?: IdentityMode;
 }
 
 /** The content state of an explicit-line recorder (spec 049 §7.3). Values only. */
@@ -253,8 +304,8 @@ export class ByteEvidenceRecorder {
   private lostRecordCount = 0;
   private readonly profile: "local" | "production";
   private readonly gateReason: string | null;
-  /** Generated ids replacing caller ids (spec 049 §2.9 rule 5), when the gate needs it. */
-  private readonly generatedIds?: GeneratedIds;
+  /** How caller ids are emitted (spec 049 §2.9); undefined: as given. */
+  private readonly emittedIds?: GeneratedIds | KeyedIds;
   private readonly counts = {
     stored: 0,
     redacted: 0,
@@ -347,8 +398,14 @@ export class ByteEvidenceRecorder {
     const gate = contentGate(policy, idKey, config.store, config.reviewStore);
     this.profile = gate.profile;
     this.gateReason = gate.reason;
-    if (gate.profile === "production" && idKey === undefined)
-      this.generatedIds = new GeneratedIds();
+    // Spec 049 §2.9: keyed pseudonyms, or generated ids in production without the id key
+    // (rule 5, whatever the mode); as given only in the clear mode (or local, no key).
+    const mode =
+      config.identityMode !== undefined
+        ? checkIdentityMode(config.identityMode)
+        : identityModeFromEnv(typeof process !== "undefined" ? process.env : {});
+    if (gate.profile === "production" && idKey === undefined) this.emittedIds = new GeneratedIds();
+    else if (idKey !== undefined && mode === "pseudonymous") this.emittedIds = new KeyedIds(idKey);
     if (gate.reason !== null)
       console.warn(
         `fabric.byteEvidence: content capture disabled (${gate.reason}, ${gate.profile} ` +
@@ -357,6 +414,15 @@ export class ByteEvidenceRecorder {
   }
 
   /** The content state (spec 049 §7.3): profile, content capture and its reason. */
+  /**
+   * `runId` as this recorder emits it (epoch 0), in parity with Python
+   * `ByteEvidenceRecorder.emitted_run_id`: never the clear value unless ids are emitted
+   * as given.
+   */
+  emittedRunId(runId: string): string {
+    return this.emittedIds === undefined ? runId : this.emittedIds.run(runId, 0);
+  }
+
   status(): ByteEvidenceStatus {
     return {
       profile: this.profile,
@@ -409,13 +475,15 @@ export class ByteEvidenceRecorder {
     }
     const sourceRegistryFull = previous === undefined && this.highWater.size >= this.maxSources;
     if (!sourceRegistryFull) this.highWater.set(key, options.sourceSequence);
-    const ids = this.generatedIds;
+    const ids = this.emittedIds;
     if (ids !== undefined) {
-      // Spec 049 §2.9 rule 5: no value derived from a caller id leaves the process.
+      // Spec 049 §2.9: no clear caller id leaves the process.
       options = {
         ...options,
-        sourceId: ids.source(),
-        ...(options.runId !== undefined ? { runId: ids.run(options.sourceEpoch) } : {}),
+        sourceId: ids.source(options.sourceId),
+        ...(options.runId !== undefined
+          ? { runId: ids.run(options.runId, options.sourceEpoch) }
+          : {}),
         ...(options.operationId !== undefined
           ? { operationId: ids.other(options.operationId) }
           : {}),
