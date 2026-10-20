@@ -1,0 +1,33 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "verify-prod" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "fabric.verify_prod" },
+          "spans": [
+            {
+              "traceId": "5b8aa5a2d2c872e8321cf37308d69df3",
+              "spanId": "051581bf3cb55c14",
+              "name": "fabric.decision",
+              "kind": 1,
+              "startTimeUnixNano": "1713614400000000000",
+              "endTimeUnixNano": "1713614400500000000",
+              "attributes": [
+                { "key": "event_class", "value": { "stringValue": "decision_summary" } },
+                { "key": "fabric.tenant_id", "value": { "stringValue": "__FABRIC_TENANT_ID__" } },
+                { "key": "fabric.source_id", "value": { "stringValue": "__FABRIC_SOURCE_ID__" } },
+                { "key": "fabric.agent_id", "value": { "stringValue": "verify-prod" } }
+              ],
+              "status": { "code": 1 }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
