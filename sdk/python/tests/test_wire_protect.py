@@ -34,6 +34,7 @@ from .test_wire_helpers import content_validator, production_policy
 REPO = Path(__file__).resolve().parents[3]
 SPLIT_VECTOR = REPO / "contracts/content/v2/valid/split-reassembly-retain-original.json"
 REQUEST = "model.exchange.request"
+PART = "model.exchange.part"
 PNG = base64.b64encode(b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 3)  # 1036 bytes
 WAV = base64.b64encode(b"RIFF\x00\x00\x00\x00WAVEfmt " + bytes(1024))  # 1388 bytes
 SECRET = b"canary-ssn-078-05-1120"
@@ -411,6 +412,78 @@ def test_redacted_split_withholds_binary_parts_and_drops_ranges() -> None:
     assert part.descriptor["links"] == [{"relation": "part_of", "object_id": skeleton.object_id}]
     _valid(result)
     _canary_free(result, data)
+
+
+def _node_rules(result: SideResult) -> None:
+    """The Node's closed descriptor rules (mirrored by the capture validator)."""
+    from .test_wire_helpers import load_validator  # noqa: PLC0415
+
+    capture = load_validator()
+    for obj in result.objects:
+        capture._check_descriptor(dict(obj.descriptor), "part")
+
+
+def test_original_plus_masked_parts_get_a_masked_review_copy() -> None:
+    """Sol P0-A round 2 #1: an extracted part under ``original_plus_masked`` follows the
+    whole-side rule: the original part (exact, with its range) plus a masked review copy
+    of it, linked ``part_of`` the skeleton and ``derived_from`` the original part."""
+    data = _big_request([PNG])
+    policy = _policy(model_exchange_request="retain_original",
+                     model_exchange_part="original_plus_masked")  # fmt: skip
+    mask = Transformation("acme-part-mask", "2", lambda _data: b"[masked-part]")
+    result = _side(_protector(policy, max_body=1100, transformations={PART: mask}), data)
+    skeleton, part, review = result.objects
+    assert result.primary is skeleton and result.reason is None
+    (link,) = part.descriptor["links"]
+    start, end = link["byte_range"]
+    assert part.data == data[start:end] == PNG
+    assert (part.descriptor["status"], part.descriptor["protection_status"]) == (
+        "stored", "retained")  # fmt: skip
+    d = review.descriptor
+    assert review.data == b"[masked-part]"
+    assert (d["status"], d["protection_status"], d["privacy_mode"]) == (
+        "redacted", "redacted", "original_plus_masked")  # fmt: skip
+    assert (d["transformation_id"], d["transformation_version"]) == ("acme-part-mask", "2")
+    assert d["links"] == [{"relation": "part_of", "object_id": skeleton.object_id},
+                          {"relation": "derived_from", "object_id": part.object_id}]  # fmt: skip
+    assert "source_sha256" not in d and "source_byte_length" not in d
+    _valid(result)
+    _node_rules(result)
+
+
+@pytest.mark.parametrize("transform", [
+    None,
+    Transformation("x", "1", _raises),
+    Transformation("x", "1", lambda data: "not bytes"),  # type: ignore[arg-type, return-value]
+])  # fmt: skip
+def test_a_failed_part_review_copy_withholds_the_part_too(
+    transform: Transformation | None,
+) -> None:
+    """Sol P0-A round 2 #1: the reproduction (``request=retain_original``,
+    ``part=original_plus_masked``, no transformation) stored the unchanged PNG part with
+    its digest and range. A part whose masked copy cannot be produced is withheld with
+    its copy: ``not_captured(protection_failed)``, no digest, length or range."""
+    data = _big_request([PNG])
+    policy = _policy(model_exchange_request="retain_original",
+                     model_exchange_part="original_plus_masked")  # fmt: skip
+    transforms = {PART: transform} if transform is not None else {}
+    result = _side(_protector(policy, max_body=1100, transformations=transforms), data)
+    skeleton, part, review = result.objects
+    assert result.primary is skeleton and result.reason == "protection_failed"
+    for obj in (part, review):
+        d = obj.descriptor
+        assert obj.data == b"" and (d["status"], d["status_reason"]) == (
+            "not_captured", "protection_failed")  # fmt: skip
+        assert d["protection_status"] == "withheld"
+        assert "source_byte_length" not in d and "source_sha256" not in d
+    assert part.descriptor["links"] == [{"relation": "part_of", "object_id": skeleton.object_id}]
+    assert review.descriptor["links"][-1] == {"relation": "derived_from",
+                                              "object_id": part.object_id}  # fmt: skip
+    assert PNG not in skeleton.data
+    text = json.dumps([o.descriptor for o in result.objects])
+    assert hashlib.sha256(PNG).hexdigest() not in text
+    _valid(result)
+    _node_rules(result)
 
 
 def test_tokenized_split_tokenizes_each_object() -> None:

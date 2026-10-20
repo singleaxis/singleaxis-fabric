@@ -340,6 +340,9 @@ class Protector:
         retained = mode in ("retain_original", "original_plus_masked")
         if retained and retain_skeleton:
             link["byte_range"] = [part.start, part.end]
+        if mode == "original_plus_masked" and length <= self.max_body:
+            self._part_with_review_copy(result, part_base, data, part, skeleton_id, index, link)
+            return
         if mode == "metadata_only":
             obj = self._withheld(part_base, PART_ROLE, mode, "privacy_policy",
                                  source_byte_length=length)  # fmt: skip
@@ -362,6 +365,33 @@ class Protector:
         obj.descriptor["links"] = [link]
         obj.descriptor["object_id"] = part_object_id(skeleton_id, index)
         self._admit(result, obj, primary=False)
+
+    def _part_with_review_copy(
+        self, result: SideResult, part_base: Mapping[str, Any], data: bytes, part: _Part,
+        skeleton_id: str, index: int, link: dict[str, Any],
+    ) -> None:  # fmt: skip
+        """An ``original_plus_masked`` part (Sol P0-A round 2 #1): the whole-side rule per
+        part. The original part and its masked review copy (``part_of`` the skeleton,
+        ``derived_from`` the part) are both produced before either is admitted; a failed
+        copy withholds both, ``not_captured(protection_failed)`` with no digest, length or
+        range of the original (049 §7.7 rule 4)."""
+        mode, stored = "original_plus_masked", data[part.start : part.end]
+        review = self._redacted(part_base, PART_ROLE, mode, stored, split=False)
+        if review.stored and self._admissible(review):
+            original = self._stored(part_base, PART_ROLE, mode, stored, "exact", [], "stored",
+                                    "retained", {"source_byte_length": len(stored),
+                                                 "source_sha256": _sha(stored)})  # fmt: skip
+        else:
+            link.pop("byte_range", None)
+            original = self._withheld(part_base, PART_ROLE, mode, "protection_failed")
+            review = self._withheld(part_base, PART_ROLE, mode, "protection_failed")
+        original.descriptor["links"] = [link]
+        original.descriptor["object_id"] = part_object_id(skeleton_id, index)
+        review.descriptor["links"] = [{"relation": "part_of", "object_id": skeleton_id},
+                                      {"relation": "derived_from",
+                                       "object_id": original.object_id}]  # fmt: skip
+        self._admit(result, original, primary=False)
+        self._admit(result, review, primary=False)
 
     def _with_review_copy(
         self, result: SideResult, base: Mapping[str, Any], role: str, data: bytes,
