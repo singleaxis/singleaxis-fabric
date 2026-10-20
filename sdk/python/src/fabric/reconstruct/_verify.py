@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
+from fabric._sequence import encode_opaque_id
 from fabric._version import __version__
 from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
@@ -495,11 +496,21 @@ class _Verifier:
                 observed[exchange.run_id].append(exchange)
         runs: list[dict[str, Any]] = []
         scopes: list[dict[str, Any]] = []
-        for run_id in sorted(set(observed) | set(self.run_scopes)):
+        # An epoch that allocated sequences (its heartbeats say so) of which no exchange and
+        # no scope marker arrived (a killed fork worker, wire/_forks.py) is reported as its
+        # source-fallback run, every sequence missing: a loss, never silence.
+        seen = {x.source for xs in observed.values() for x in xs}
+        seen |= {scope.key for scope in self.scopes.values()}
+        silent = {
+            encode_opaque_id(f"source:{key[0]}:{key[1]}"): key
+            for key, source in self.sources.items()
+            if key not in seen and source.top >= 0
+        }
+        for run_id in sorted(set(observed) | set(self.run_scopes) | set(silent)):
             if wanted is not None and run_id not in wanted:
                 continue
             members = [self.scopes[scope_id] for scope_id in self.run_scopes.get(run_id, ())]
-            run = _Run(self, run_id, observed.get(run_id, []), members)
+            run = _Run(self, run_id, observed.get(run_id, []), members, silent.get(run_id))
             if run.windows:
                 report, scope_reports = run.build()
                 runs.append(report)
@@ -572,6 +583,7 @@ class _Run:
         run_id: str,
         observed: list[ExchangeObs],
         scopes: Sequence[_Scope],
+        silent: SourceKey | None = None,
     ) -> None:
         self.verifier = verifier
         self.run_id = run_id
@@ -600,6 +612,11 @@ class _Run:
             self._scoped()
         else:
             self._unscoped()
+        if silent is not None and not observed and not self.scopes:
+            top = self.verifier.sources[silent].top
+            self.windows.append(_Window(silent, 0, top))
+            self._inside_gaps(silent, 0, top)
+            self._tail(silent, self.verifier.sources[silent].tail_problem())
         self.windows.sort(key=lambda w: (w.key, w.low, w.high, w.scope_id or ""))
 
     def _add(self, gap: Gap, scopes: Iterable[str] | None = None) -> None:

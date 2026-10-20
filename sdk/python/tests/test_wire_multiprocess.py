@@ -14,11 +14,20 @@ from pathlib import Path
 
 import pytest
 
-from ._wire_live import FakeModel, OtlpSink, capture_env, run_agent
+from ._wire_live import (
+    FakeModel,
+    OtlpSink,
+    capture_env,
+    reconstruct,
+    run_agent,
+    verdicts,
+    wait_for,
+)
 
 pytestmark = pytest.mark.skipif(not hasattr(os, "fork"), reason="POSIX start methods")
 
-TASKS = 8
+TASKS, CALLS_PER_TASK = 8, 2
+COMPLETE = ("complete_for_declared_scope", "complete_for_observed_scopes")
 
 # The agent-matrix ``openai_pool`` case, reduced: a Pool(4) whose tasks each make a plain
 # and a streamed Chat Completions call with their own client. Nothing here mentions Fabric.
@@ -116,3 +125,59 @@ def test_children_forked_right_after_install_never_crash_in_the_proxy_lookup(
     for _ in range(15):
         result = run_agent(script, capture_env(model, sink, store), timeout_s=60)
         assert "EXIT [0, 0, 0, 0]" in result["stdout"], (result["stdout"], result["stderr"][-3000:])
+
+
+@pytest.mark.parametrize("method", ["fork", "spawn"])
+def test_pool_workers_closed_and_joined_deliver_every_call(
+    tmp_path: Path, rig: tuple[FakeModel, OtlpSink, Path], method: str
+) -> None:
+    """D1: workers that exit through ``close()``/``join()`` deliver every exchange: a fork
+    worker ends in ``os._exit`` (no atexit), so its capture is closed by a multiprocessing
+    finalizer; its records are durable in the spool before it exits."""
+    model, sink, store = rig
+    result = run_agent(tmp_path / "pool_agent.py", capture_env(model, sink, store), method, "join")
+    assert result["returncode"] == 0 and not result["hung"], result["stderr"][-2000:]
+    calls = TASKS * CALLS_PER_TASK
+    assert len(model.requests) == calls
+    assert wait_for(lambda: len(sink.exchanges()) >= calls), len(sink.exchanges())
+    assert len(sink.exchanges()) == calls
+    assert not sink.losses()
+    report = reconstruct(sink.directory, store, tmp_path / "report.json")
+    assert verdicts(report) and set(verdicts(report)) <= set(COMPLETE), verdicts(report)
+
+
+@pytest.mark.parametrize("method", ["fork", "spawn"])
+def test_pool_workers_terminated_by_the_with_block_are_delivered_or_accounted(
+    tmp_path: Path, rig: tuple[FakeModel, OtlpSink, Path], method: str
+) -> None:
+    """D1: ``with Pool()`` SIGTERMs its idle workers, so no exit hook runs in them, and a
+    worker's capture thread writes its records a few milliseconds after each exchange: the
+    signal can beat it. What a worker spooled is delivered by the drainer; what it did not
+    is never silent. A fork worker's epoch and last allocated sequence survive it in the
+    fork ledger, so reconstruct reports its run and never calls it complete. (A spawned
+    worker killed before its first record left no trace anywhere: it stays invisible.)"""
+    model, sink, store = rig
+    result = run_agent(tmp_path / "pool_agent.py", capture_env(model, sink, store), method, "with")
+    assert result["returncode"] == 0 and not result["hung"], result["stderr"][-2000:]
+    calls = TASKS * CALLS_PER_TASK
+    assert len(model.requests) == calls
+    wait_for(lambda: len(sink.exchanges()) >= calls, timeout_s=3)
+    report = reconstruct(sink.directory, store, tmp_path / "report.json")
+    found = verdicts(report)
+    if len(sink.exchanges()) < calls:  # a missing call: no run may claim completeness
+        assert not (found and set(found) <= set(COMPLETE)), found
+    if method == "fork":  # every call is accounted: allocated, and inside a reported run
+        sources = report["sources"]
+        tops = {
+            (x["source_id"], x["source_epoch"]): max(
+                x["heartbeat_sequence"], x.get("final_heartbeat_sequence", -1)
+            )
+            for x in sources
+        }
+        assert sum(top + 1 for top in tops.values()) == calls, sources
+        windows = {
+            (w["source_id"], w["source_epoch"])
+            for run in report["runs"]
+            for w in run["declared_scope"]["windows"]
+        }
+        assert {key for key, top in tops.items() if top >= 0} <= windows, report["runs"]

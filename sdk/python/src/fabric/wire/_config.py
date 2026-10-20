@@ -244,6 +244,34 @@ def build_store(uri: str, tenant_id: str | None) -> ByteEvidenceStore:
 
 
 MIGRATE_PLAINTEXT_ENV = "FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT"
+# FABRIC_WIRE_SPOOL_DIR=off: local file mode exports spans directly, without the spool.
+SPOOL_OFF = "off"
+FILE_SPOOL_DIR = ".fabric-wire-spool"
+
+
+def default_file_spool(
+    store_uri: str, tenant: str | None, tracer_mode: str, environ: Mapping[str, str]
+) -> str | None:
+    """Local file mode's spool (agent matrix D1/D6): ``<store root>/.fabric-wire-spool/
+    <tenant>``, so an exchange record is durable once the capture worker has written it
+    (fsync'd), whatever happens to the process afterwards, and any later process capturing
+    to the same store delivers what an earlier one left. Only where the spool can deliver:
+    a private tracer, an OTLP traces endpoint, POSIX ``fcntl``; else ``None`` (the direct
+    export path, as before). ``.`` never starts a tenant id, so the store never reads it."""
+    if tracer_mode != "private" or not tenant or not _TENANT_RE.fullmatch(tenant):
+        return None
+    try:
+        import fcntl  # noqa: F401, PLC0415
+    except ImportError:
+        return None
+    if not (environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+            or environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")):  # fmt: skip
+        return None
+    parsed = urlsplit(store_uri)
+    root = unquote(parsed.path)
+    if parsed.scheme != "file" or not root.startswith("/"):
+        return None
+    return os.path.join(os.path.normpath(root), FILE_SPOOL_DIR, tenant)
 
 
 def migrate_plaintext_from_env(environ: Mapping[str, str]) -> bool:
@@ -270,11 +298,16 @@ def config_from_env(
         raise ValueError("node mode and the spool need FABRIC_WIRE_TRACER=private")
     if store_uri and not node and endpoint is not None:
         raise ValueError("FABRIC_WIRE_CONTENT_ENDPOINT is for node mode only")
+    spool_dir = environ.get("FABRIC_WIRE_SPOOL_DIR") or None
+    if spool_dir == SPOOL_OFF:
+        spool_dir = None
+    elif spool_dir is None and store_uri and not node:
+        spool_dir = default_file_spool(store_uri, tenant, tracer_mode, environ)
     kwargs: dict[str, Any] = {
         "store": build_store(store_uri, tenant) if store_uri and not node else None,
         "source_id": environ.get("FABRIC_SOURCE_ID") or None, "tenant_id": tenant,
         "content_endpoint": endpoint if node else None,
-        "spool_dir": environ.get("FABRIC_WIRE_SPOOL_DIR") or None,
+        "spool_dir": spool_dir,
         "spool_durable_boundary": environ.get("FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
         "id_key": id_key_from_env(environ), "labels": labels_from_env(environ),

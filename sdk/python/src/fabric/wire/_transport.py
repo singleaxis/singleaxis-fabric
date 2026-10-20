@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from .._capture_scope import current_explicit_model_scope
 from .._loss import LossEmitter, LossReason, PrivateFallback
 from .._sequence import SourceAllocator, current_run_scope
+from ._forks import ForkLedger
 from ._match import EndpointIndex
 from ._model import CaptureJob
 from ._pipeline import CapturePipeline, protector_for
@@ -124,6 +125,8 @@ class WireTee:
         self.closed, self.matched, self.internal_errors = False, 0, 0
         self.deferred_to_explicit = 0  # local counter only; never telemetry
         self._active: set[Exchange] = set()
+        self.forks = ForkLedger()  # what forked children allocate survives their death
+        loss.add_beat_source(self._child_beats)
         self.pipeline = pipeline or CapturePipeline(
             store=config.store, tracer_provider=config.tracer_provider, loss=loss,
             queue_max_items=config.queue_max_items, on_job_done=self._release, sender=sender,
@@ -151,7 +154,7 @@ class WireTee:
             if found is None:
                 return False, None
             if (deferral := current_explicit_model_scope()) is None:
-                epoch, sequence, scope = self.allocator.next_sequence()
+                epoch, sequence, scope = self._allocate()
             else:  # provisional: nothing allocated until it is adopted
                 epoch, sequence, scope = -1, -1, current_run_scope()
         except Exception:  # nothing allocated: nothing to account for
@@ -178,6 +181,18 @@ class WireTee:
                     self.internal_errors += 1
             return True, None
 
+    def _child_beats(self) -> list[Any]:
+        """A ``periodic`` heartbeat per forked child epoch at its last allocated sequence."""
+        source = self.allocator.source_id
+        return [(source, epoch, last, None, None, "periodic")
+                for _, epoch, last in self.forks.children()]  # fmt: skip
+
+    def _allocate(self, scope: Any = None, *, adopted: bool = False) -> tuple[Any, ...]:
+        found = self.allocator.next_sequence_for(scope) if adopted else (
+            self.allocator.next_sequence())  # fmt: skip
+        self.forks.note(found[0], found[1])
+        return found
+
     def adopt(self, exchange: Exchange) -> bool:
         """A finished provisional exchange: ``False`` (bytes released) when its explicit model
         call is still live, so the explicit record owns it; else allocate its sequence now
@@ -190,7 +205,7 @@ class WireTee:
             exchange.release()
             return False
         try:
-            exchange.assign(*self.allocator.next_sequence_for(exchange.scope))
+            exchange.assign(*self._allocate(exchange.scope, adopted=True))
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
             exchange.release()
@@ -274,10 +289,15 @@ class WireTee:
             elif deferral.defers:  # its explicit call is still live and owns it
                 self.deferred_to_explicit += 1
             else:  # it outlived its explicit call: wire's, and now lost
-                stranded.append(self.allocator.next_sequence_for(None)[:2])
+                stranded.append(self._allocate(None, adopted=True)[:2])
         for epoch, sequence in stranded:
             self.lose(epoch, sequence, "shutdown")
-        return self.pipeline.close(max(0.0, deadline - time.monotonic())) and not stranded
+        closed = self.pipeline.close(max(0.0, deadline - time.monotonic())) and not stranded
+        with contextlib.suppress(Exception):  # children seen so far, then no more
+            for beat in self._child_beats():
+                self.loss.queue_beat(beat)
+        self.loss.remove_beat_source(self._child_beats)
+        return closed
 
     def flush(self, timeout_s: float) -> bool:
         deadline = time.monotonic() + max(0.0, timeout_s)

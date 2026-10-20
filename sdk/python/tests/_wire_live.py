@@ -207,7 +207,8 @@ def run_agent(
 
 
 def reconstruct(spans: Path, store: Path, out: Path) -> dict[str, Any]:
-    """``python -m fabric.reconstruct`` over the sink's files and the local store."""
+    """``python -m fabric.reconstruct`` over the sink's files and the local store; the
+    report (``{}`` when there was nothing to reconstruct)."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "OTEL_"))}
     subprocess.run(  # noqa: S603
         [sys.executable, "-m", "fabric.reconstruct", "--spans", str(spans), "--store-root",
@@ -224,3 +225,8 @@ def wait_for(predicate: Any, timeout_s: float = 10.0) -> bool:
             return True
         time.sleep(0.05)
     return bool(predicate())
+
+
+def verdicts(report: dict[str, Any]) -> list[str]:
+    """Every run's verdict (one run per source epoch without ``fabric.wire.run()``)."""
+    return [run["verdict"] for run in report.get("runs", [])]

@@ -61,6 +61,21 @@ def _after_fork_in_child() -> None:
     _LOCK = threading.RLock()  # another parent thread may have held it
     with contextlib.suppress(Exception):
         _use_proxy_snapshot()
+    # A multiprocessing worker ends in os._exit (no atexit): its capture is closed by a
+    # multiprocessing finalizer instead (agent matrix D1). Finalizers registered here would
+    # be cleared by the worker's bootstrap, so one is registered by its after-forkers.
+    util = sys.modules.get("multiprocessing.util")
+    if (handle := _HANDLE) is not None and util is not None:
+        with contextlib.suppress(Exception):
+            util.register_after_fork(handle, _finalize_in_worker)
+
+
+def _finalize_in_worker(handle: WireHandle) -> None:
+    """In a forked multiprocessing worker: close capture when the worker exits normally
+    (``util._exit_function``, before ``os._exit``), after the application's finalizers."""
+    with contextlib.suppress(Exception):
+        util = sys.modules["multiprocessing.util"]
+        util.Finalize(None, handle._atexit_close, exitpriority=-100)
 
 
 if hasattr(os, "register_at_fork"):
@@ -183,12 +198,14 @@ class WireHandle:
     def allocator(self) -> SourceAllocator:
         return self._tee.allocator
 
-    def _deliver(self, timeout_s: float, *, closing: bool) -> bool:
+    def _deliver(self, timeout_s: float, *, closing: bool, exiting: bool = False) -> bool:
         """Through the spool sender, else the exchange (or global) and loss providers."""
         from opentelemetry import trace  # noqa: PLC0415
 
         if (sender := self._tee.sender) is not None:  # undelivered records stay on disk
-            return sender.close(timeout_s) if closing else sender.flush(timeout_s)
+            if closing:
+                return sender.close(timeout_s, exiting=exiting)
+            return sender.flush(timeout_s)
         # Resolved now: the host may have installed a Fabric-protected global provider since
         # install. A refused route (``None``) is never reported as delivered.
         provider = self._tee.pipeline.resolved_provider()
@@ -206,6 +223,11 @@ class WireHandle:
     def close(self, timeout_s: float | None = None) -> bool:
         """Restore httpx, drain, report what missed the deadline as losses, deliver; within
         ``timeout_s`` even when the store, disk or exporter is blocked. Idempotent."""
+        return self._close(timeout_s, exiting=False)
+
+    def _close(self, timeout_s: float | None, *, exiting: bool) -> bool:
+        """``exiting``: the process is ending; a process that does not drain the spool
+        only makes its records durable there, for the drainer (never waits on another)."""
         global _HANDLE  # noqa: PLW0603
         from . import _transport  # noqa: PLC0415
 
@@ -224,7 +246,7 @@ class WireHandle:
             drained = self._tee.close(timeout * _DRAIN_SHARE)
             self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
             remaining = max(0.0, deadline - time.monotonic())
-            self._result = self._deliver(remaining, closing=True) and drained
+            self._result = self._deliver(remaining, closing=True, exiting=exiting) and drained
         return self._result
 
     def uninstall(self) -> None:
@@ -235,21 +257,23 @@ class WireHandle:
         return WireStats(**{f.name: values.get(f.name, 0) for f in dataclasses.fields(WireStats)})
 
     def _atexit_close(self) -> None:
-        """At exit, bounded: close, then shut Fabric's exporter/providers down on a helper
-        thread unless delivery failed (the exporter is then presumed blocked)."""
+        """At exit (atexit, or a multiprocessing worker's finalizer), bounded: close, then
+        shut Fabric's exporter/providers down on a helper thread unless delivery failed
+        (the exporter is then presumed blocked)."""
         with contextlib.suppress(BaseException):  # interpreter shutdown
             from .. import _loss  # noqa: PLC0415
             from ..tracing import is_private_provider  # noqa: PLC0415
 
             deadline = time.monotonic() + max(0.0, self.config.shutdown_timeout_s)
-            closed = self.close()
+            closed = self._close(None, exiting=True)
             loss, sender = self._tee.loss, self._tee.sender
             if sender is None:  # the direct path: the loss emitter's thread and provider
                 closed = loss.close(max(0.0, deadline - time.monotonic())) and closed
             providers = {self.config.tracer_provider, loss.tracer_provider,
                          self._fallback.provider} - {None}  # fmt: skip
-            targets: list[Any] = [sender.exporter] if sender else [
+            targets: list[Any] = [sender.owned_exporter()] if sender else [
                 p for p in providers if is_private_provider(p)]  # fmt: skip
+            targets = [target for target in targets if target is not None]
             for target in targets if closed else ():  # else presumed blocked: skipped
                 shutdown = lambda t=target: t.shutdown() or True  # noqa: E731
                 _loss.run_bounded(shutdown, deadline, "fabric-shutdown")
