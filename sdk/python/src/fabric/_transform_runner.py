@@ -176,8 +176,11 @@ class TransformRunner:
     def _reset(self) -> None:
         """Fresh state (also in a forked child, which owns none of the parent's children)."""
         self._lock = threading.Lock()
+        self._started = threading.Condition(self._lock)  # a start in progress settled
         self._idle: list[_Child] = []
         self._busy = 0  # reserved slots: calls in progress (starting a child included)
+        self._starting = 0  # calls starting a child (Sol P0-A round 3 #2)
+        self._epoch = 0  # close() advances it: a child started before is never used
         self._reaping: list[subprocess.Popen[bytes]] = []  # killed, not yet reaped
         self._procs.clear()
         self._unresolved = False  # the reference cannot be loaded: every call withheld
@@ -206,13 +209,14 @@ class TransformRunner:
                         return "saturated", None
                 else:
                     self._busy += 1  # reserved before any work starts (Sol P0-A round 2 #5)
+                    epoch, self._starting = self._epoch, self._starting + (child is None)
                     break
             for proc in stale:  # just killed: reaped within moments, then a slot is free
                 with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                     proc.wait(_STALE_WAIT_S)
         try:
             if child is None:
-                child = self._start()
+                child = self._start(epoch)
             if child is None:
                 return "error", None
             outcome, result = self._call(child, data, timeout_s)
@@ -265,8 +269,17 @@ class TransformRunner:
 
     # -- children ---------------------------------------------------------------------
 
-    def _start(self) -> _Child | None:
-        """A new child with the transformation loaded, or ``None`` (counted as an error)."""
+    def _start(self, epoch: int) -> _Child | None:
+        """A new child with the transformation loaded, or ``None`` (counted as an error).
+        A child of an earlier ``epoch`` (``close()`` ran meanwhile) is stopped, never used."""
+        try:
+            return self._spawn(epoch)
+        finally:
+            with self._lock:
+                self._starting -= 1
+                self._started.notify_all()
+
+    def _spawn(self, epoch: int) -> _Child | None:
         try:
             proc = subprocess.Popen(  # noqa: S603 - this interpreter, Fabric's own script
                 [sys.executable, "-I", _CHILD], stdin=subprocess.PIPE,
@@ -276,6 +289,9 @@ class TransformRunner:
             return None
         with self._lock:
             self._procs.add(proc)
+            if self._epoch != epoch:  # closed before the child existed
+                self._discard(proc)
+                return None
         assert proc.stdin is not None and proc.stdout is not None  # noqa: S101 - piped
         config = json.dumps({"path": list(sys.path), "ref": self.ref, "idle_s": self._idle_s,
                              "max_output": self._max_output}).encode()  # fmt: skip
@@ -286,9 +302,9 @@ class TransformRunner:
             kind, _ = _REPLY.unpack(_read(proc.stdout.fileno(), _REPLY.size, deadline))
         except (_ExpiredError, _BrokenError, ValueError, OSError):
             kind = None
-        if kind == _READY:
-            return _Child(proc)
         with self._lock:
+            if kind == _READY and self._epoch == epoch and proc in self._procs:
+                return _Child(proc)
             self._discard(proc)
             if kind == _UNRESOLVED and not self._unresolved:
                 self._unresolved = True
@@ -314,13 +330,16 @@ class TransformRunner:
     def close(self, timeout_s: float = 2.0) -> bool:
         """Stop every child now (idle or busy: a busy call then withholds its content) and
         reap them within ``timeout_s``; the runner stays usable (a later call starts a new
-        child). ``True`` when no child of this runner is left."""
-        with self._lock:
-            procs, idle = list(self._procs), {child.proc for child in self._idle}
-            self._idle.clear()
-            for proc in procs:
-                _stop(proc, pipes=proc in idle or proc in self._reaping)
+        child). A call still starting a child stops it and withholds; ``close`` waits for
+        it (Sol P0-A round 3 #2). ``True`` when no child of this runner is left."""
         deadline = time.monotonic() + max(0.0, timeout_s)
+        with self._lock:
+            self._epoch += 1
+            self._stop_tracked()
+            while self._starting and (left := deadline - time.monotonic()) > 0:
+                self._started.wait(left)
+            self._stop_tracked()  # registered by a start meanwhile
+            procs = list(self._procs)
         for proc in procs:
             with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 proc.wait(max(0.0, deadline - time.monotonic()))
@@ -328,7 +347,14 @@ class TransformRunner:
             self._reaping = [p for p in self._reaping if not self._settle(p)]
             for proc in procs:
                 self._settle(proc)
-            return not self._procs
+            return not self._procs and not self._starting
+
+    def _stop_tracked(self) -> None:
+        """Stop every child (holds the lock); a busy call's pipes stay open (see _stop)."""
+        idle = {child.proc for child in self._idle}
+        self._idle.clear()
+        for proc in list(self._procs):
+            _stop(proc, pipes=proc in idle or proc in self._reaping)
 
     @staticmethod
     def _stop_all(procs: set[subprocess.Popen[bytes]]) -> None:

@@ -245,3 +245,57 @@ def test_idle_replacement_stays_within_the_worker_bound() -> None:
         assert runner._busy + len(runner._reaping) + len(runner._idle) <= 1
     finally:
         assert runner.close()
+
+
+def test_close_during_child_startup_waits_and_the_new_child_is_never_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sol P0-A round 3 #2: paused just before ``Popen``, ``close()`` returned True with a
+    call still starting; resumed, that call returned ``("ok", b"X")`` and left a child
+    running after the successful close. Now close does not report success while a start
+    is in progress, and the starting call kills its new child and withholds."""
+    import fabric._transform_runner as runner_module  # noqa: PLC0415
+
+    real, entered, release = subprocess.Popen, threading.Event(), threading.Event()
+    started: list[subprocess.Popen[bytes]] = []
+
+    def paused(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        entered.set()
+        release.wait(10.0)
+        proc = real(*args, **kwargs)  # type: ignore[call-overload]
+        started.append(proc)
+        return proc  # type: ignore[no-any-return]
+
+    runner = TransformRunner(T + "upper")
+    monkeypatch.setattr(runner_module.subprocess, "Popen", paused)
+    result: list[tuple[str, bytes | None]] = []
+    thread = threading.Thread(target=lambda: result.append(runner.run(b"x", 5.0)))
+    thread.start()
+    try:
+        assert entered.wait(10.0)
+        assert runner.close(timeout_s=0.2) is False  # a start is still in progress
+    finally:
+        release.set()
+        thread.join(10.0)
+    monkeypatch.setattr(runner_module.subprocess, "Popen", real)
+    assert result == [("error", None)]  # the call withheld: its child was never used
+    assert runner.close()
+    assert runner.children() == 0 and started and started[0].returncode is not None
+    assert runner.run(b"y", 5.0) == ("ok", b"Y")  # usable again after close
+    assert runner.close()
+
+
+def test_close_while_a_child_is_starting_settles_it() -> None:
+    """A call between ``Popen`` and the child's ``READY``: close stops the new child and
+    waits for the start to settle before reporting success."""
+    runner = TransformRunner(T + "upper")
+    result: list[tuple[str, bytes | None]] = []
+    thread = threading.Thread(target=lambda: result.append(runner.run(b"x", 5.0)))
+    thread.start()
+    deadline = time.monotonic() + 10.0
+    while not runner._procs and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert runner.close()
+    thread.join(10.0)
+    assert result in ([("error", None)], [("ok", b"X")])  # ok only if it finished first
+    assert runner.children() == 0
