@@ -8,6 +8,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### v0.8.0 release notes (draft)
+
+Fabric v0.8 is a passive recorder for AI agents: CAPTURE -> PROTECT ->
+DELIVER. Documentation was rewritten to describe exactly this release
+([docs/README.md](docs/README.md)); superseded pages moved to `docs/archive/`
+and superseded specs to `specs/archive/`.
+
+**Highlights**
+
+- Zero-code model-call capture for Python (`fabric.wire`): an in-process tee
+  of `httpx`/`httpx2` records the exact request and response bytes of chat
+  completions, responses, completions, embeddings and messages calls, so it
+  covers the official `openai` (>= 3 on httpx2, earlier on httpx) and
+  `anthropic` (>= 1) SDKs and frameworks built on them. Enabled only by
+  `FABRIC_WIRE_AUTOLOAD=1` with the autoload directory on `PYTHONPATH`, or by
+  `fabric.wire.install()`.
+- Durable agent spool: fsync'd, AES-256-GCM encrypted
+  (`FABRIC_WIRE_SPOOL_KEY`), at-least-once delivery with restart replay.
+- Delivery through the Fabric Node to a file directory or an S3 /
+  S3-compatible store (SSE required); the agent holds no store credentials.
+- `python -m fabric.reconstruct`: offline verification with the verdicts
+  `complete_for_declared_scope`, `complete_for_observed_scopes`, `partial`
+  and `unverified`.
+- Spec 049 P0-A protection before disk: seven privacy modes per content
+  role, customer redactors run out of process, the production profile gate,
+  keyed pseudonyms (v2), encryption at rest for the agent spool, the Node
+  content directory and the Node content queue, source authentication at
+  the Node, and typed extraction of large inline media.
+- Explicit app-reported APIs in Python and TypeScript (`decision()` /
+  `record_*`, `ByteEvidenceRecorder`); `CallRecorder` and byte-boundary
+  adapters in Python; opt-in qualified-run mode (spec 049 §2.13).
+- Fabric Node, `fabric-gate`, Helm chart (`shadow-dev`, `shadow-production`)
+  and Compose (local and production profiles); auditd and eBPF host sensors
+  (corroboration only, not enterprise-qualified).
+
+**Breaking changes**
+
+- The CrewAI adapter (`fabric.adapters.crewai`) and the Python
+  auto-instrumentation (`fabric.auto_instrument` and the `openai`,
+  `anthropic`, `bedrock`, `otel-langchain` and `cohere` extras) are removed.
+  Use wire capture and the explicit APIs.
+- `fabric.enterprise` (`PolicyCaptureSession`),
+  `fabric.enterprise_preflight`, `fabric.deployment_state` (with
+  `fabric.capture_identity` and `fabric.capture_readback`) and
+  `fabric.control_protocol` are removed and are forbidden release members.
+- Customer redactors and transformations are module references
+  (`"package.module:function"`) run out of process. Passing a Python
+  callable raises; the wire `Transformation.apply` field is now `ref`.
+- Node mode is the production profile: an agent records content only with
+  a capture policy (`FABRIC_CAPTURE_POLICY`), `FABRIC_WIRE_ID_KEY` and
+  `FABRIC_WIRE_SPOOL_KEY`; otherwise content stops and metadata continues.
+  The Node needs its source binding (`FABRIC_SOURCE_ID` /
+  `receiver.workloadAuthentication.sourceId`) and, with content, its content
+  key; Compose preflight and the Helm render fail until they are set.
+- TypeScript `ContentProtector` redactors are modules run in
+  `worker_threads` Workers (`{ module, exportName }`); passing a function
+  throws, and masking roles need `protectAsync()`.
+- `fabric-gate` refuses configurations it accepted before (no `noredirect`
+  middleware, a telemetry pipeline without `fabricguard`, `--feature-gates`,
+  non-literal pipeline blocks). The shipped Compose and Helm configurations
+  comply.
+
+**Known limitations** ([docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md))
+
+- TypeScript wire capture is not built.
+- Calls through `aiohttp` and `requests` are not captured. DSPy and LiteLLM
+  default to aiohttp; their httpx mode is captured.
+- Multiprocessing worker pools can lose calls (fix in progress); on macOS a
+  fork pool with capture on can hang.
+- Very large fan-out can overflow the capture queue; every loss is recorded
+  and reported `partial`.
+- A production Node binds exactly one agent source.
+- Model endpoints other than the five above are not captured.
+- The four-layer run structure, context, and decisions and effects (spec 049
+  P1-P5) are not built.
+- No customer production deployment has been qualified.
+
+
 ### Changed (breaking, Python customer transformations)
 
 - Python customer transformations (wire `Transformation`, `ContentProtector`
@@ -534,7 +612,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   MCP gains inventory capture — `InstrumentedMCPSession.snapshot_inventory()`
   and `record_mcp_inventory(...)` hash each tool *definition* so a
   tool changing underneath the agent (shadow/poison) is detectable. See
-  [`docs/capturing-interactions.md`](docs/capturing-interactions.md).
+  [`docs/capturing-interactions.md`](docs/archive/capturing-interactions.md) (archived).
   (spec 022)
 - **Generic interaction capture (Python SDK).** A universal
   `Decision.record_interaction(kind, target, …)` captures *any*
@@ -614,7 +692,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   MCP instrumentation, no host-side I/O helpers, not published to npm,
   and gated by an advisory rather than required CI job. It is not a
   drop-in substitute for the Python SDK, and there is no Go SDK.
-  Outstanding mirror work: [`docs/typescript-parity-backlog.md`](docs/typescript-parity-backlog.md).
+  Outstanding mirror work: [`docs/typescript-parity-backlog.md`](docs/archive/typescript-parity-backlog.md) (archived).
 - **Presidio sidecar is bundled, not missing.** `docs/deployment.md`
   said the umbrella did not yet bundle the Presidio subchart. It has
   been a declared dependency since the subchart landed; the accurate
@@ -695,7 +773,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   repository, and `/components/telemetry-bridge/` is now in
   `.gitignore` so it cannot reappear here. `components/README.md`
   already listed it under "Not here (Layer 2 / Layer 3)" and needed no
-  edit; spec [`004-telemetry-bridge.md`](specs/004-telemetry-bridge.md)
+  edit; spec `004-telemetry-bridge.md` (removed)
   stays as the public design of record.
 
 ### Operator action required
@@ -1878,13 +1956,13 @@ been exercised against a real tag. See Known issues below.
   subcharts gated by `*.enabled` toggles so operators can start with
   just the collector and layer on guardrails/observability/red-team as
   the deployment matures
-  ([008-deployment-model.md](specs/008-deployment-model.md)):
+  (`008-deployment-model.md` (removed)):
   - `otel-collector` — Fabric OTel Collector distribution with the
     `fabricguard`, `fabricpolicy`, `fabricsampler`, and `fabricredact`
     processors.
   - `nemo-sidecar` — NeMo Colang inline guardrails sidecar, Deployment
     form for dev; per-pod sidecar injection lands in Phase 2
-    ([005-guardrails-inline.md](specs/005-guardrails-inline.md)).
+    (`005-guardrails-inline.md` (removed)).
   - `langfuse` — single-Deployment Langfuse v2 wrapper as the default
     observability sink; tenants at scale swap in the upstream chart.
   - `redteam-runner` — CronJob running Garak + PyRIT against the
@@ -1897,20 +1975,20 @@ been exercised against a real tag. See Known issues below.
   - `permissive-dev` — minimum-viable path for local clusters.
   - `eu-ai-act-high-risk` — fail-closed redact provider, signed updates,
     observability required
-    ([009-compliance-mapping.md](specs/009-compliance-mapping.md)).
+    (`009-compliance-mapping.md` (removed)).
 - **Python SDK `singleaxis-fabric`** (`sdk/python`) with inline guardrails,
   decision/escalation helpers, Presidio + NeMo clients over UDS,
   HMAC-signed sampler hints, retrieval/memory wrappers, OTel tracing,
   and orchestration adapters for LangGraph, Microsoft Agent Framework,
   and CrewAI as opt-in extras
-  ([011-roadmap.md](specs/011-roadmap.md)).
+  (`011-roadmap.md` (removed)).
 - **Six Python components** with matching Docker/Helm surfaces:
   `presidio-sidecar`, `nemo-sidecar`, `langfuse-bootstrap`,
   `redteam-runner`, `update-agent`, plus the OTel collector
   distribution under `components/otel-collector-fabric`
   (Go / OCB-built).
 - **Go Telemetry Bridge** scaffold under `_internal/` as the Layer-2
-  ingest path ([004-telemetry-bridge.md](specs/004-telemetry-bridge.md));
+  ingest path (`004-telemetry-bridge.md` (removed));
   not shipped in the public OSS release.
 - **Release pipeline** (`.github/workflows/release.yml`): CI-green gate
   on the tagged SHA, tag-must-be-on-main check, CHANGELOG extraction,
@@ -1936,7 +2014,7 @@ been exercised against a real tag. See Known issues below.
   installed trusted key; the default placeholder
   `REPLACE_AT_INSTALL_TIME` causes the webhook to fail closed until
   operators install a real key
-  ([008-deployment-model.md](specs/008-deployment-model.md)).
+  (`008-deployment-model.md` (removed)).
 - **Fabric-canonical JSON** for signable manifest bytes so verification
   is deterministic across producers.
 - **HMAC-signed sampler hints** — SDK-emitted sampling hints carry an

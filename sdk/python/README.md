@@ -1,224 +1,144 @@
-# SingleAxis Fabric recorder SDK for Python
+# SingleAxis Fabric SDK for Python
 
-The Python SDK adds passive OpenTelemetry activity capture to an AI agent. It
-records enough identity and causal context to reconstruct model calls, tool
-calls, retrieval, memory activity, side effects, delegation, retries and
-failures. It does not block or alter the agent.
+`singleaxis-fabric` records what a Python AI agent does, protects the record
+inside the process before it reaches disk, and delivers it to storage you
+own. It never blocks, alters or delays the agent.
 
 ```text
 CAPTURE -> PROTECT -> DELIVER
-   ^
-   |
-Python SDK (optional instrumentation)
 ```
 
-Protection and delivery happen in the customer-controlled Fabric Node. Raw LLM
-content capture is disabled by default.
+It provides:
+
+- **Zero-code wire capture** (`fabric.wire`): the exact request and response
+  bytes of every model call sent through `httpx` or `httpx2`, which covers
+  the official `openai` and `anthropic` SDKs and frameworks built on them.
+- **Explicit APIs**: `Fabric.decision()` and its `record_*` methods,
+  `ByteEvidenceRecorder`, `CallRecorder` and byte-boundary adapters, for
+  activity the application reports itself.
+- **`python -m fabric.reconstruct`**: an offline verifier that states
+  whether each run's record is complete and unaltered.
+- **Qualified-run mode** (`fabric.qualified_run`): opt-in, receipt- and
+  witness-backed verification for the `CallRecorder` line.
+
+Requires Python 3.11+. Linux and macOS; node mode (the production profile)
+needs POSIX.
 
 ## Install
-
-```bash
-pip install singleaxis-fabric
-```
-
-Add OTLP export:
 
 ```bash
 pip install "singleaxis-fabric[otlp]"
 ```
 
-## Capture one agent decision
+Extras: `otlp` (OTLP exporter and spool encryption; needed for node mode),
+`s3` (boto3, for reading an S3 store with `fabric.reconstruct`; agents never
+need it), `mcp` (MCP client instrumentation), `signing` (Ed25519 for
+qualified-run mode). Wire capture uses whichever of `httpx`/`httpx2` your
+application already installs.
+
+## Zero-code wire capture
+
+Installing the package enables nothing. Turn capture on per process:
+
+```bash
+export PYTHONPATH="$(python -m fabric.wire --print-autoload-path)${PYTHONPATH:+:$PYTHONPATH}"
+export FABRIC_WIRE_AUTOLOAD=1
+```
+
+then choose where records go:
+
+- **Local profile** (development): `FABRIC_WIRE_STORE=file:///abs/dir`,
+  `FABRIC_TENANT_ID`, and an OTLP endpoint for the spans
+  (`OTEL_EXPORTER_OTLP_ENDPOINT`).
+- **Production profile** (node mode): `FABRIC_WIRE_CONTENT_ENDPOINT`,
+  `FABRIC_WIRE_SPOOL_DIR`, `FABRIC_TENANT_ID`, `FABRIC_SOURCE_ID`, the Node's
+  OTLP endpoint and credentials, plus `FABRIC_CAPTURE_POLICY`,
+  `FABRIC_WIRE_ID_KEY` and `FABRIC_WIRE_SPOOL_KEY`. Without the policy and
+  keys content capture is disabled (metadata continues) and every span says
+  why.
+
+Or install from code:
 
 ```python
-from fabric import Fabric, FabricConfig
+from fabric import wire
 
-fabric = Fabric(FabricConfig(tenant_id="acme", agent_id="support-agent"))
+wire.install_from_env()           # what the autoload does; None (one warning) if invalid
+with wire.run("order-1234"):      # optional run scope, emitted as an r- pseudonym
+    ...                           # model calls here are captured
+wire.flush()                      # optional; capture also drains at exit
+```
 
-with fabric.decision(session_id="session-42", request_id="request-7") as decision:
-    with decision.llm_call(provider="provider-example", model="model-example") as call:
-        # Invoke the customer's model client here.
-        call.set_response(model="model-example")
+`wire.install(...)` takes the same settings as keyword arguments (`store=`,
+`content_endpoint=`, `transformations=`, ...) and raises on an invalid
+configuration.
 
+Matched by default: `api.openai.com`, `api.anthropic.com`,
+`*.openai.azure.com`; add other hosts with `FABRIC_WIRE_ENDPOINTS`. Matched
+APIs: chat completions, responses, completions, embeddings, messages.
+`aiohttp` and `requests` are not captured.
+
+Verify offline:
+
+```bash
+python -m fabric.reconstruct --spans <span files> --store-root <store> --tenant <tenant>
+```
+
+See the [quickstart](../../docs/quickstart.md),
+[deployment](../../docs/deployment.md) and
+[reconstruct](../../docs/reconstruct.md).
+
+## Explicit APIs
+
+```python
+from fabric import Fabric, FabricConfig, install_default_provider
+
+install_default_provider(service_name="my-agent")  # metadata-only exporter from OTEL_EXPORTER_OTLP_ENDPOINT
+
+fabric = Fabric(FabricConfig(tenant_id="demo", agent_id="my-agent"))
+
+with fabric.decision(session_id="session-1", request_id="request-1") as decision:
+    with decision.llm_call(provider="openai", model="gpt-4o-mini") as call:
+        call.set_usage(input_tokens=5, output_tokens=6, finish_reason="stop")
     with decision.tool_call("lookup_order", call_id="tool-1") as tool:
-        tool.set_arguments('{"order_id":"order-123"}')
-        # Invoke the customer's tool here.
-        tool.set_result('{"status":"shipped"}')
+        tool.set_arguments('{"order_id": "order-123"}')
+        tool.set_result('{"status": "shipped"}')
 ```
 
-The SDK hashes tool payloads locally. It does not send telemetry by itself;
-configure the OpenTelemetry provider/exporter used by the host application to
-send to Fabric Node. For tests and small agents,
-`fabric.install_default_provider(...)` wires a `TracerProvider` for you — pass
-an exporter, or set `OTEL_EXPORTER_OTLP_ENDPOINT` with the `[otlp]` extra
-installed and an OTLP exporter is constructed from the environment. Calling it
-with neither produces spans that go nowhere (the SDK warns loudly rather than
-dropping them silently).
+Payloads are hashed, not recorded. Session, user and similar ids are
+emitted as keyed pseudonyms and omitted without `FABRIC_WIRE_ID_KEY`
+(`FABRIC_IDENTITY_MODE=clear` emits them unchanged).
 
-The managed provider's default span exporter suppresses raw content, hashes
-free-form metadata strings and preserves typed numeric usage and trace
-identity. Existing host exporters are not modified. See
-[managed span export: protection and limits](../../docs/python-span-export-protection.md).
-
-`gen_ai.client.*` metrics (token usage, operation duration, time-to-first-token,
-time-per-chunk, tool duration) are recorded on the global OpenTelemetry metrics
-API. Without a `MeterProvider` installed they silently no-op — install an SDK
-`MeterProvider` (for example one wired to an OTLP metric exporter) at process
-level, pass `meter_provider=` to `install_default_provider`, or inject a `Meter`
-via `Fabric(..., meter=...)`.
-
-Use `Fabric.execution(...)` to correlate multiple decisions and the retrieval,
-memory, side-effect, checkpoint, delegation and generic-interaction methods on
-`Decision` to capture consequential activity beyond LLM and tool calls.
-
-When a `ContentStore` (for example `LocalFilesystemContentStore` or
-`S3ContentStore`) is passed to `Fabric`, recorder paths that receive raw
-content — `remember`, `recall` and `record_side_effect` payloads — write it to
-the tenant-controlled store and stamp the returned `fabric.content.*_ref` URI on
-the emitted event. The trace stream then carries a governed reference an
-auditor resolves out-of-band, never the raw bytes.
-
-### Experimental explicit byte evidence (content v2)
-
-For custom dispatchers, `CallRecorder` joins a call timeline to these protected
-byte objects. It supports sync/async calls and pull-through streams, nested
-calls and parallel agent identities. Install the wheel containing spec 043
-before using this experimental API:
+`CallRecorder` records exact bytes at your dispatcher's final model and
+tool boundaries, with call, attempt and stream identity:
 
 ```python
-from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, CallRecorder
-from fabric import LocalFilesystemContentStore
+from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, CallRecorder, LocalFilesystemContentStore
 
-store = LocalFilesystemContentStore("./protected-data", tenant_id="tenant-1")
-writer = ByteEvidenceRecorder(ByteEvidenceConfig(
-    store=store,
-    roles=frozenset({"tool.call.arguments", "tool.call.result"}),
-))
-calls = CallRecorder(writer, run_id="run-1", agent_id="agent-1", source_id="dispatcher-1")
-result = calls.call(
-    b"exact-input", existing_tool_function,
-    kind="tool", operation_id="lookup-1", attempt_id="try-1",
-)
-# Offline, after the monitored work: snapshot waits for local storage settlement.
-record = calls.snapshot()
-writer.close()
-```
-
-Configure your OpenTelemetry tracer as above to retain real trace IDs. Use
-`acall` for async delegates, `stream` for iterators and `astream` for async
-iterators. Close a stream explicitly when stopping early. Within a delegate,
-`calls.record_data(bytes, role="artifact.after")` attaches approved file bytes
-to that call; this helper does not independently observe filesystem changes.
-
-`BytePrivacyPolicy` configures role-specific omission or a customer-supplied
-masking callback. Original and masked review copies require separate store
-namespaces; target access permissions still need deployment verification.
-Masking occurs in the bounded background worker. A failing callback withholds
-content and never falls back to raw export. It is not a built-in PII detector.
-
-The offline `fabric.call_reconcile.reconcile_call_run` compares specific calls
-and bytes against independent witness inputs. Matching local fixtures remain
-`unverified`; missing or corrupt evidence becomes `partial`. The API has no
-authenticated source or durable delivery receipt chain and its in-memory
-timeline is not crash-durable. See [custom-agent recording](../../docs/custom-agent-recording.md)
-and [spec 043](../../specs/043-custom-agent-call-recording.md).
-
-The optional `fabric.qualified_run.verify_qualified_call_run` path is separate:
-it checks signed independent feeds, exact original bytes, fresh sealed source
-readback, source binding, route closure and four exact receipt sets. It can
-verify a bounded submitted package for one source epoch under owner-provided
-issuer authority. It does not supply production issuers or live storage
-qualification. See [installed-package qualified tests](../../docs/qualified-call-run-testing.md)
-and [spec 046](../../specs/046-qualified-call-run-verification.md).
-
-The separate `ByteEvidenceRecorder` API captures bytes the caller explicitly
-supplies. It does not intercept terminal, SSH, database or sandbox operations.
-
-For a byte-oriented Python agent that already exposes its final model
-transport or tool-call function, the optional
-`fabric.adapters.byte_boundary.ByteBoundaryAdapter` provides a test-start
-integration without replacing the delegate:
-
-```python
-from fabric.adapters.byte_boundary import ByteBoundaryAdapter
-
-# Configure ByteEvidenceRecorder and SyntheticCaptureSession as in the
-# bounded reference pilot; keep the protected store customer-controlled.
-model = ByteBoundaryAdapter(session, kind="model", source_id="model-client-1")
-response = model.call(
-    final_request_bytes,
-    existing_send_function,
-    operation_id="model-call-1",
-    attempt_id="attempt-1",
-    context=approved_context_bytes,
-)
-```
-
-`existing_send_function` receives the same byte object once; its result or
-exception passes through unchanged. Instrument *after* the framework's last
-serialization step. If that function or a lower client changes the request,
-this is caller-side evidence, not proof of provider-bound bytes. Streaming,
-async calls, unwrapped routes and external side effects are not captured by
-this adapter. Reconcile against an independent endpoint/tool witness before
-claiming coverage. The current session/source identity and receipt chain are
-not production-qualified; see [spec 042](../../specs/042-client-boundary-integration.md).
-
-This is not a substitute for the terminal/artifact adapter or an installer
-that discovers every route in a client's agent. A customer must declare and
-test each reachable route separately.
-
-An example observation is:
-
-```python
-from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, LocalFilesystemContentStore
-
-store = LocalFilesystemContentStore("/private/fabric-content", tenant_id="acme")
 recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
-    store=store,
-    roles=frozenset({"artifact.after"}),
+    store=LocalFilesystemContentStore(root="./evidence", tenant_id="demo"),
+    roles=frozenset({"model.request.messages", "model.output.messages"}),
 ))
-initial = recorder.capture(
-    artifact_bytes,
-    role="artifact.after",
-    boundary="sandbox",
-    source_id="sandbox-1",
-    source_epoch=0,
-    source_sequence=7,
-    run_id="run-42",
-)
-recorder.flush()
-settled = recorder.get(initial["object_id"])
+calls = CallRecorder(recorder, run_id="run-1", agent_id="support-agent", source_id="host-a")
+reply = calls.call(request_bytes, send_to_model, kind="model")
 recorder.close()
 ```
 
-The store receives exact binary bytes and a per-observation v2 descriptor;
-the descriptor uses `caller_reported` provenance. `pending` is only a
-process-memory handoff, not durable storage. Only `stored` after `flush()`
-confirms local store settlement. A bounded queue, payload cap and record
-index report `dropped` rather than pretending coverage. Callers must publish
-and reconcile settled descriptors independently; this experimental API does
-not yet emit correlated OTLP events, delivery receipts or run-level coverage
-manifests. It is not a compliance-grade complete-capture path.
+Privacy is set per content role (`BytePrivacyPolicy`, or a
+`DeploymentPolicy` with `ContentProtector`). Masking uses your own
+transformation, named by module reference (`"package.module:function"`)
+and run in a separate process; a failure withholds the content.
 
-## Stable recorder-v1 surface
+Full reference: [explicit APIs](../../docs/explicit-apis.md),
+[privacy and security](../../docs/privacy-and-security.md),
+[qualified-run mode](../../docs/qualified-run-mode.md).
 
-The `fabric` package root exports capture, activity-correlation, governed
-content-reference and integrity primitives only. Framework and provider
-instrumentation remain optional extras.
+## Not in this package
 
-It does not export or install judges, evaluation workers, guardrail engines,
-prompt-time PII/NeMo controls, policy engines, tool authorization, escalation
-enforcement or management-plane commands.
-
-Recorder-v1 artifacts do not contain the former runtime-control, judge,
-evaluation, policy, authorization or escalation modules. Their former
-`Decision` methods and `Fabric` constructor parameters have also been removed;
-this is an intentional breaking boundary so installing the recorder cannot put
-enforcement behavior in an agent's request path.
-
-See the
-[SDK scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/sdk/python/SCOPE.md)
-and [recorder-v1 spec](https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/027-recorder-v1.md)
-for the authoritative boundary.
+Framework adapters and auto-instrumentation extras were removed in v0.8;
+wire capture replaces them. The package contains no evaluation, scoring or
+control code, and nothing in it can block or change an agent's request. See
+[limitations](../../docs/limitations-and-roadmap.md) and the
+[changelog](../../CHANGELOG.md).
 
 ## Development
 
@@ -228,26 +148,3 @@ uv run pytest
 uv run ruff check src tests
 uv run mypy src
 ```
-
-### Local decision capture health
-
-Inspect `decision.capture_health` during or after a decision. It reports local
-`decision_span_only` health with `recording_at_start`, `dropped_events`, and
-`dropped_attributes`. The last counter covers span attributes, not attributes
-inside individual events. Unsupported provider counters are `None`, never zero.
-The SDK emits one content-free warning per process/reason for `disabled` (the
-span did not record) or `partial` (the provider reports local dropped events or
-attributes). Warning-handler errors do not change the application's result.
-
-A normal snapshot remains `unverified`, not complete. This does not assess child
-spans, exporter queues, delivery, uninstrumented calls, independent records, or
-production readiness. Sampling and privacy choices remain yours; the SDK does
-not force recording or increase event limits. OpenTelemetry's default event cap
-can drop earlier decision events during long runs; exact local counts remain in
-the health snapshot even when events were dropped. Use deployment-specific loss
-and route-coverage qualification before relying on complete capture.
-
-### Enterprise capture interfaces and SDK scope
-
-See the [Python/TypeScript support matrix](../../docs/sdk-support-matrix.md).
-The SDK does not install a portal, controller client or execution gate.
