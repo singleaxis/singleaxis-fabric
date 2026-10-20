@@ -265,8 +265,6 @@ def test_close_during_child_startup_waits_and_the_new_child_is_never_used(
     call still starting; resumed, that call returned ``("ok", b"X")`` and left a child
     running after the successful close. Now close does not report success while a start
     is in progress, and the starting call kills its new child and withholds."""
-    import fabric._transform_runner as runner_module  # noqa: PLC0415
-
     real, entered, release = subprocess.Popen, threading.Event(), threading.Event()
     started: list[subprocess.Popen[bytes]] = []
 
@@ -278,7 +276,7 @@ def test_close_during_child_startup_waits_and_the_new_child_is_never_used(
         return proc  # type: ignore[no-any-return]
 
     runner = TransformRunner(T + "upper")
-    monkeypatch.setattr(runner_module.subprocess, "Popen", paused)
+    monkeypatch.setattr(subprocess, "Popen", paused)  # the runner's Popen
     result: list[tuple[str, bytes | None]] = []
     thread = threading.Thread(target=lambda: result.append(runner.run(b"x", 5.0)))
     thread.start()
@@ -288,7 +286,7 @@ def test_close_during_child_startup_waits_and_the_new_child_is_never_used(
     finally:
         release.set()
         thread.join(10.0)
-    monkeypatch.setattr(runner_module.subprocess, "Popen", real)
+    monkeypatch.undo()
     assert result == [("error", None)]  # the call withheld: its child was never used
     assert runner.close()
     assert runner.children() == 0 and started and started[0].returncode is not None
@@ -473,9 +471,9 @@ def test_every_config_refuses_a_key_in_the_environment_allowlist(tmp_path: Path)
     from fabric.wire._config import WireConfig  # noqa: PLC0415
 
     store = LocalFilesystemContentStore(str(tmp_path), tenant_id="tenant-a")
-    assert WireConfig(transform_env_allowlist=["HOME"]).transform_env_allowlist == ("HOME",)
+    assert WireConfig(transform_env_allowlist=("HOME",)).transform_env_allowlist == ("HOME",)
     config = ByteEvidenceConfig(store=store, roles=frozenset({"tool.call.result"}),
-                                transform_env_allowlist=["HOME"])  # fmt: skip
+                                transform_env_allowlist=("HOME",))  # fmt: skip
     assert config.transform_env_allowlist == ("HOME",)
     for name in _KEYS:
         with pytest.raises(ValueError, match="transform_env_allowlist"):

@@ -285,7 +285,7 @@ class TransformRunner:
     def _take_idle(self) -> tuple[_Child | None, list[subprocess.Popen[bytes]]]:
         """An idle child well inside its own idle timeout, and the stale ones discarded on
         the way, not yet reaped (holds the lock)."""
-        now, stale = time.monotonic(), []
+        now, stale = time.monotonic(), list[subprocess.Popen[bytes]]()
         while self._idle:
             child = self._idle.pop()
             if now - child.last_used < self._idle_s / 2 and child.proc.poll() is None:
