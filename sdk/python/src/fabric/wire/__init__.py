@@ -11,6 +11,7 @@ import dataclasses
 import functools
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -62,6 +63,27 @@ def _after_fork_in_child() -> None:
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_after_fork_in_child)
+
+_FORK_PRIMED = False
+
+
+def _prime_fork_safety() -> None:
+    """Keep ``fork`` as safe as it was without capture (049 §7.1, agent matrix D2). On
+    macOS the system proxy lookup (``urllib.request.getproxies``/``proxy_bypass``, which
+    httpx and requests make with no proxy variable set) runs Objective-C class
+    initializers, and a forked child of a multithreaded parent that runs one aborts.
+    Fabric's threads make the host multithreaded, so that lookup is made once here, on the
+    installing thread before any Fabric thread starts: a child then finds the classes
+    initialized. Its result is unused; Fabric's own delivery never consults it."""
+    global _FORK_PRIMED  # noqa: PLW0603
+    if _FORK_PRIMED or sys.platform != "darwin":
+        return
+    _FORK_PRIMED = True
+    with contextlib.suppress(Exception):
+        import _scproxy  # type: ignore[import-not-found]  # noqa: PLC0415
+
+        _scproxy._get_proxy_settings()
+        _scproxy._get_proxies()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -225,6 +247,7 @@ def install(
     from . import _transport  # noqa: PLC0415
     from ._sender import build_sender  # noqa: PLC0415
 
+    _prime_fork_safety()  # before any Fabric thread starts
     with _LOCK:
         if _HANDLE is not None:
             _LOG.warning("fabric.wire: already installed; returning the active handle")
@@ -396,6 +419,7 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
     the host's, and losses too without an OTLP endpoint). A Fabric-protected global provider
     never carries wire spans: global mode then resolves to the private provider when an OTLP
     endpoint is set, and otherwise capture is not installed (one class-only warning)."""
+    _prime_fork_safety()  # before the private provider starts its export thread
     try:
         from .._loss import get_loss_emitter  # noqa: PLC0415
         from ..tracing import (  # noqa: PLC0415
