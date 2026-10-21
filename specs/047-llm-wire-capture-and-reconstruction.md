@@ -872,6 +872,24 @@ own function. The report is still customer data.
    `fabric.wire.run()` blocks with the same run id on one source whose
    markers carry the same `last_sequence` merge; give concurrent blocks
    distinct run ids.
+
+   *Gap listing (D6).* Missing ranges and their loss/unexplained parts
+   (*segments*) are computed once per `(source, epoch)` and reported once,
+   in `sources[].missing_sequences` and `loss_ranges`. A run lists each
+   segment of one stretch as its own gap (one stretch: the segments inside a
+   scope window, those after an open scope's last call, those intersecting
+   `[lo − 1, hi + 1]`, or those after it) while the stretch holds at most 16;
+   a longer stretch is one gap per reason (`loss` per loss reason,
+   `sequence_gap` for the unexplained parts) with `first_sequence` the first
+   and `last_sequence` the last missing sequence of that reason in the
+   stretch. Such a summary range can span recorded sequences and other
+   reasons; the source's ranges say which sequences are missing. More than
+   16 conflicted sequences in one window are likewise one
+   `conflicting_claim` gap from the first to the last. Gap types, effects
+   and reasons, hence every check and verdict, are the same as if each
+   segment were listed; only the entry count (`counts.gaps_by_type`)
+   differs, and the report grows with runs plus distinct ranges, never with
+   runs × ranges.
 4. *Tail.* `declared_scope.windows` records `lo`, `hi` and `H`, and
    `closed_by` (`run_markers` or `final_heartbeat`) when the window's end
    is proven; a window without `closed_by` is never part of a complete run.
