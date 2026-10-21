@@ -46,6 +46,7 @@ AGENT = Path(__file__).with_name("_wire_capture_agent.py")
 SINK = Path(__file__).with_name("_wire_capture_sink.py")
 DEFAULT_NODE_IMAGE = "fabric/node:wire-capture-e2e"
 SPOOL_MAGIC = b"FWSPOOL1"
+SPOOL_BATCH_MAGIC = b"FWSPOOLB"  # a batch of exchange records in one file
 SPOOL_ENVELOPE_MAGIC = b"FWSPENC1"
 
 
@@ -482,13 +483,28 @@ def open_spool_record(path: Path, key: bytes | None = None) -> bytes:
     return AESGCM(key).decrypt(nonce, data[head + 24 :], aad)
 
 
-def spool_header(path: Path, key: bytes | None = None) -> dict[str, Any]:
-    """The JSON header of one spool record (framing checked, blob ignored)."""
-    data = open_spool_record(path, key)
-    assert data.startswith(SPOOL_MAGIC), path.name
-    (length,) = struct.unpack(">I", data[8:12])
-    header: dict[str, Any] = json.loads(data[12 : 12 + length])
+def _frame_header(frame: bytes, name: str) -> dict[str, Any]:
+    assert frame.startswith(SPOOL_MAGIC), name
+    (length,) = struct.unpack(">I", frame[8:12])
+    header: dict[str, Any] = json.loads(frame[12 : 12 + length])
     return header
+
+
+def spool_headers(path: Path, key: bytes | None = None) -> list[dict[str, Any]]:
+    """The JSON headers of a spool record file (framing checked, blobs ignored): one, or
+    every frame of a batch file (spec 048 §2: ``FWSPOOLB | u32 count | count x (u64
+    length | frame) | sha256``)."""
+    data = open_spool_record(path, key)
+    if not data.startswith(SPOOL_BATCH_MAGIC):
+        return [_frame_header(data, path.name)]
+    assert hashlib.sha256(data[:-32]).digest() == data[-32:], path.name
+    (count,), offset, headers = struct.unpack(">I", data[8:12]), 12, []
+    for _ in range(count):
+        (length,) = struct.unpack(">Q", data[offset : offset + 8])
+        headers.append(_frame_header(data[offset + 8 : offset + 8 + length], path.name))
+        offset += 8 + length
+    assert offset == len(data) - 32, path.name
+    return headers
 
 
 def volume_grep(volume: str, needle: str) -> str:

@@ -40,6 +40,9 @@ _SET_KEYS = ("hosts", "host_suffixes", "schemes", "ports")
 _TENANT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")
 MAX_BODY_BYTES_CAP, NODE_MAX_BODY_BYTES = 64 * 1024 * 1024, 63 * 1024 * 1024
 SPOOL_RESERVE_BYTES = 1024 * 1024
+# Default capture-queue entry cap (agent matrix D3: 256 entries overflowed on an asyncio
+# fan-out of 408 calls while the host's busy thread starved the capture worker).
+QUEUE_MAX_ITEMS = 16384
 
 DEFAULT_ENDPOINTS: tuple[EndpointMatcher, ...] = (
     EndpointMatcher("openai", "openai", hosts=frozenset({"api.openai.com"})),
@@ -89,9 +92,15 @@ class WireConfig:
     # Most one side may retain for the worker (049 §7.4); beyond it a side is truncated.
     max_retain_bytes: int = DEFAULT_MAX_RETAIN_BYTES
     part_min_bytes: int = DEFAULT_PART_MIN_BYTES  # smallest inline part worth extracting
+    # The capture queue is bounded by bytes: every queued exchange keeps its retained
+    # bodies charged to max_inflight_bytes until the worker has written it (past the
+    # budget a side is truncated, inflight_budget). queue_max_items only caps the
+    # per-entry overhead; a full queue drops with queue_full (049 §7.1 rule 5).
     max_inflight_bytes: int = 256 * 1024 * 1024
-    queue_max_items: int = 256
+    queue_max_items: int = QUEUE_MAX_ITEMS
     patch_httpx: bool = True
+    # wire.py.aiohttp (049 §2.8): tee aiohttp client requests too (FABRIC_WIRE_AIOHTTP=0: off).
+    patch_aiohttp: bool = True
     shutdown_timeout_s: float = 2.0
     tenant_id: str | None = None
     content_endpoint: str | None = None  # node mode: bodies go to the Fabric Node (spec 048)
@@ -250,6 +259,42 @@ def build_store(uri: str, tenant_id: str | None) -> ByteEvidenceStore:
 
 
 MIGRATE_PLAINTEXT_ENV = "FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT"
+# FABRIC_WIRE_SPOOL_DIR=off: local file mode exports spans directly, without the spool.
+SPOOL_OFF = "off"
+FILE_SPOOL_DIR = ".fabric-wire-spool"
+
+
+def aiohttp_from_env(environ: Mapping[str, str]) -> bool:
+    """``FABRIC_WIRE_AIOHTTP`` (default on): whether to tee aiohttp client requests."""
+    value = (environ.get("FABRIC_WIRE_AIOHTTP") or "1").strip().lower()
+    if value not in ("1", "true", "yes", "on", "0", "false", "no", "off"):
+        raise ValueError("FABRIC_WIRE_AIOHTTP must be 1 or 0")
+    return value in ("1", "true", "yes", "on")
+
+
+def default_file_spool(
+    store_uri: str, tenant: str | None, tracer_mode: str, environ: Mapping[str, str]
+) -> str | None:
+    """Local file mode's spool (agent matrix D1/D6): ``<store root>/.fabric-wire-spool/
+    <tenant>``, so an exchange record is durable once the capture worker has written it
+    (fsync'd), whatever happens to the process afterwards, and any later process capturing
+    to the same store delivers what an earlier one left. Only where the spool can deliver:
+    a private tracer, an OTLP traces endpoint, POSIX ``fcntl``; else ``None`` (the direct
+    export path, as before). ``.`` never starts a tenant id, so the store never reads it."""
+    if tracer_mode != "private" or not tenant or not _TENANT_RE.fullmatch(tenant):
+        return None
+    try:
+        import fcntl  # noqa: F401, PLC0415
+    except ImportError:
+        return None
+    if not (environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+            or environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")):  # fmt: skip
+        return None
+    parsed = urlsplit(store_uri)
+    root = unquote(parsed.path)
+    if parsed.scheme != "file" or not root.startswith("/"):
+        return None
+    return os.path.join(os.path.normpath(root), FILE_SPOOL_DIR, tenant)
 
 
 def migrate_plaintext_from_env(environ: Mapping[str, str]) -> bool:
@@ -276,11 +321,14 @@ def config_from_env(
         raise ValueError("node mode and the spool need FABRIC_WIRE_TRACER=private")
     if store_uri and not node and endpoint is not None:
         raise ValueError("FABRIC_WIRE_CONTENT_ENDPOINT is for node mode only")
+    spool_dir = environ.get("FABRIC_WIRE_SPOOL_DIR") or None
+    if spool_dir is None and store_uri and not node:
+        spool_dir = default_file_spool(store_uri, tenant, tracer_mode, environ)
     kwargs: dict[str, Any] = {
         "store": build_store(store_uri, tenant) if store_uri and not node else None,
         "source_id": environ.get("FABRIC_SOURCE_ID") or None, "tenant_id": tenant,
         "content_endpoint": endpoint if node else None,
-        "spool_dir": environ.get("FABRIC_WIRE_SPOOL_DIR") or None,
+        "spool_dir": None if spool_dir == SPOOL_OFF else spool_dir,
         "spool_durable_boundary": environ.get("FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY") or None,
         "model_allowlist": parse_model_allowlist(environ.get("FABRIC_WIRE_MODEL_ALLOWLIST")),
         "id_key": id_key_from_env(environ), "labels": labels_from_env(environ),
@@ -291,6 +339,7 @@ def config_from_env(
         "spool_migrate_plaintext": migrate_plaintext_from_env(environ),
         "redaction": RedactionService.from_env(environ),
     }  # fmt: skip
+    kwargs["patch_aiohttp"] = aiohttp_from_env(environ)
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
     for name in ("MAX_BODY_BYTES", "MAX_RETAIN_BYTES", "PART_MIN_BYTES", "QUEUE_MAX_ITEMS",

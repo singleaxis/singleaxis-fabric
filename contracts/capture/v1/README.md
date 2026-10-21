@@ -111,6 +111,15 @@ conflicting observations invalidates every window holding it
 `closed_early` exchange without a response digest is a `missing_object`
 gap (`response_not_recorded`).
 
+A run's sequence gaps reference the source's ranges rather than copy them
+(spec 047 §9 step 3, D6): `sources[].missing_sequences` and `loss_ranges`
+list every missing range once; a run lists the segments of one stretch
+(inside a window, adjacent to it, or after it) one gap each while there are
+at most 16, and otherwise one gap per reason whose `first_sequence` and
+`last_sequence` are that reason's first and last missing sequence in the
+stretch, a range that can span recorded sequences. Gap types, effects,
+reasons and verdicts do not depend on which form is used.
+
 The content descriptor definition is identical in the spool and content
 log-record schemas: the content-v2 descriptor fields without `encoding`
 and `ref`, which every writer adds itself. `fixtures/golden/` pins the
@@ -118,8 +127,10 @@ exact bytes a writer must produce for the descriptor sidecar
 (`json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n"`, so
 `", "` and `": "` separators) and the object and descriptor keys of the
 shared layout (`<prefix><tenant>/evidence/<object_id>` and
-`<prefix><tenant>/evidence/meta/<object_id>.json`), for a file directory and
-an S3 prefix. The Fabric Node's `fabriccontent` exporter and the SDK local
+`<prefix><tenant>/evidence/meta/<object_id>.json`; a Node directory stores
+them under a two-level shard `<h[0:2]>/<h[2:4]>/` of hex SHA-256(object id)
+below `evidence/` and `evidence/meta/`, refs keeping the flat key), for a
+file directory and an S3 prefix. The Fabric Node's `fabriccontent` exporter and the SDK local
 store must both match them byte for byte.
 
 **Spec 049 additions (manifest 1.1.0; contract only, P1 builds the

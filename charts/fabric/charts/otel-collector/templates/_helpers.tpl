@@ -513,8 +513,15 @@ a profile that requires encryption.
 {{- if eq .Values.fabric.profile "production" -}}
 {{- $r := .Values.receiver -}}
 {{- if $r.workloadAuthentication.enabled -}}
-{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" ($r.workloadAuthentication.sourceId | toString)) -}}
+{{- $sourceId := $r.workloadAuthentication.sourceId | toString -}}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $sourceId) -}}
 {{- fail "fabric.profile=production requires receiver.workloadAuthentication.sourceId: the agents' source id as it travels (s-<32 hex> under pseudonymous labels); every batch is bound to it (spec 049 §7.9)" -}}
+{{- end -}}
+{{- /* Pseudonymous capture labels (the default) carry fabric.source_id only as
+   s-<32 hex>: fabricguard drops any other form, so a clear sourceId would bind
+   the Node to a source no conforming agent can send. */ -}}
+{{- if and (ne (.Values.fabric.guard.captureLabels | default "pseudonymous") "clear") (not (regexMatch "^s-[0-9a-f]{32}$" $sourceId)) -}}
+{{- fail "receiver.workloadAuthentication.sourceId must be s-<32 lowercase hex> (the agents' pseudonymous source id, FABRIC_SOURCE_ID as it travels) unless fabric.guard.captureLabels=clear (spec 049 §7.9)" -}}
 {{- end -}}
 {{- else if not $r.evidenceSourceBinding.enabled -}}
 {{- fail "fabric.profile=production rejects unauthenticated sources: set receiver.workloadAuthentication.enabled=true (with sourceId) or a dedicated evidenceSourceBinding (spec 049 §7.9)" -}}

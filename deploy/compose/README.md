@@ -155,7 +155,7 @@ openssl rand -base64 32 > secrets/content.key
 sudo chown "$(id -u)":65532 secrets/content.key && chmod 0440 secrets/content.key
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml [content overlays] up -d --wait
-make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 authenticated spans (queue metrics warn-only)
+make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 for a span under the bound FABRIC_TENANT_ID/FABRIC_SOURCE_ID, 400 for another source (queue metrics warn-only)
 make logs-prod
 ```
 

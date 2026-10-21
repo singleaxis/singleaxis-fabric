@@ -18,6 +18,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import os
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass, field
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
+from fabric._sequence import encode_opaque_id
 from fabric._version import __version__
 from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
@@ -72,6 +74,10 @@ _HTTP_ERROR = 400
 # Response states that say a response was received: its digest must be recorded. An
 # ``abandoned`` stream had a response; an ``error`` one did when its status was recorded.
 _RESPONSE_EXPECTED = frozenset({"complete", "closed_early", "abandoned"})
+# D6: a run lists at most this many missing segments (or conflicted sequences) of one
+# stretch of a source individually; a longer stretch is summarized per reason, so the
+# report grows with runs + distinct ranges, never runs x ranges (spec 047 §9 step 3).
+_LISTED_SEGMENTS = 16
 
 
 # --------------------------------------------------------------------------
@@ -81,6 +87,13 @@ _RESPONSE_EXPECTED = frozenset({"complete", "closed_early", "abandoned"})
 
 @dataclass(slots=True)
 class _Source:
+    """One ``(source_id, source_epoch)``: its missing ranges, computed once.
+
+    The missing ranges and their loss/unexplained segments are kept as flat
+    sorted arrays so a run looks up the ranges in or after its window by
+    bisection (D6): runs never copy or rescan the source's loss list.
+    """
+
     key: SourceKey
     sequences: set[int] = field(default_factory=set)
     losses: set[LossObs] = field(default_factory=set)
@@ -88,11 +101,23 @@ class _Source:
     final: int | None = None
     top: int = -1
     missing: list[tuple[int, int]] = field(default_factory=list)
-    segments: dict[tuple[int, int], list[Segment]] = field(default_factory=dict)
+    # Missing ranges as parallel sorted arrays (ranges are disjoint and ascending).
+    missing_low: list[int] = field(default_factory=list)
+    missing_high: list[int] = field(default_factory=list)
+    # Every segment of every missing range, in order, as parallel arrays;
+    # ``segment_of[i]`` is the index of missing range i's first segment
+    # (with a trailing sentinel). ``reason`` is ``None`` for an unexplained part.
+    seg_low: list[int] = field(default_factory=list)
+    seg_high: list[int] = field(default_factory=list)
+    seg_reason: list[str | None] = field(default_factory=list)
+    segment_of: list[int] = field(default_factory=list)
+    # Segment indices per reason (one gap class each), ascending.
+    by_reason: dict[str | None, list[int]] = field(default_factory=dict)
     # Sequences claimed by conflicting observations (one exchange id seen with
     # different values, or one sequence claimed by several exchange ids). No
     # window holding one can be complete, whichever run the claims name.
     conflicted: set[int] = field(default_factory=set)
+    conflicted_sorted: list[int] = field(default_factory=list)
 
     def finalize(self) -> None:
         self.top = max(
@@ -106,8 +131,27 @@ class _Source:
         if self.top > previous:
             self.missing.append((previous + 1, self.top))
         ordered = sorted(self.losses, key=lambda x: (x.first_sequence, x.reason, x.last_sequence))
+        # One sweep over the ascending missing ranges: ``active`` holds, in sorted
+        # order, the loss records that can still overlap a later range.
+        active: list[LossObs] = []
+        position = 0
         for first, last in self.missing:
-            self.segments[(first, last)] = _segments(first, last, ordered)
+            while position < len(ordered) and ordered[position].first_sequence <= last:
+                active.append(ordered[position])
+                position += 1
+            active = [loss for loss in active if loss.last_sequence >= first]
+            self.missing_low.append(first)
+            self.missing_high.append(last)
+            self.segment_of.append(len(self.seg_low))
+            for low, high, reason in _segments(first, last, active):
+                self.by_reason.setdefault(reason, []).append(len(self.seg_low))
+                self.seg_low.append(low)
+                self.seg_high.append(high)
+                self.seg_reason.append(reason)
+        self.segment_of.append(len(self.seg_low))
+
+    def finalize_conflicts(self) -> None:
+        self.conflicted_sorted = sorted(self.conflicted)
 
     def tail_problem(self) -> str | None:
         """Why this epoch's end is unknown; ``None`` when a final heartbeat ended it.
@@ -479,6 +523,8 @@ class _Verifier:
         for (key, sequence), ids in self.claims.items():
             if len(ids) > 1 or not ids.isdisjoint(self.conflicts):
                 self.sources[key].conflicted.add(sequence)
+        for source in self.sources.values():
+            source.finalize_conflicts()
         for scope in self.scopes.values():
             scope.finalize()
             if scope.scope_id in self.malformed_scopes:  # a malformed marker names it
@@ -495,11 +541,21 @@ class _Verifier:
                 observed[exchange.run_id].append(exchange)
         runs: list[dict[str, Any]] = []
         scopes: list[dict[str, Any]] = []
-        for run_id in sorted(set(observed) | set(self.run_scopes)):
+        # An epoch that allocated sequences (its heartbeats say so) of which no exchange and
+        # no scope marker arrived (a killed fork worker, wire/_forks.py) is reported as its
+        # source-fallback run, every sequence missing: a loss, never silence.
+        seen = {x.source for xs in observed.values() for x in xs}
+        seen |= {scope.key for scope in self.scopes.values()}
+        silent = {
+            encode_opaque_id(f"source:{key[0]}:{key[1]}"): key
+            for key, source in self.sources.items()
+            if key not in seen and source.top >= 0
+        }
+        for run_id in sorted(set(observed) | set(self.run_scopes) | set(silent)):
             if wanted is not None and run_id not in wanted:
                 continue
             members = [self.scopes[scope_id] for scope_id in self.run_scopes.get(run_id, ())]
-            run = _Run(self, run_id, observed.get(run_id, []), members)
+            run = _Run(self, run_id, observed.get(run_id, []), members, silent.get(run_id))
             if run.windows:
                 report, scope_reports = run.build()
                 runs.append(report)
@@ -572,6 +628,7 @@ class _Run:
         run_id: str,
         observed: list[ExchangeObs],
         scopes: Sequence[_Scope],
+        silent: SourceKey | None = None,
     ) -> None:
         self.verifier = verifier
         self.run_id = run_id
@@ -600,6 +657,11 @@ class _Run:
             self._scoped()
         else:
             self._unscoped()
+        if silent is not None and not observed and not self.scopes:
+            top = self.verifier.sources[silent].top
+            self.windows.append(_Window(silent, 0, top))
+            self._inside_gaps(silent, 0, top)
+            self._tail(silent, self.verifier.sources[silent].tail_problem())
         self.windows.sort(key=lambda w: (w.key, w.low, w.high, w.scope_id or ""))
 
     def _add(self, gap: Gap, scopes: Iterable[str] | None = None) -> None:
@@ -691,13 +753,10 @@ class _Run:
 
         source = self.verifier.sources[key]
         top = source.top if high is None else high
-        for first, last in source.missing:
-            if first > top or last < low:
-                continue
-            for seg_low, seg_high, reason in source.segments[(first, last)]:
-                clipped_low, clipped_high = max(seg_low, low), min(seg_high, top)
-                if clipped_low <= clipped_high:
-                    self._sequence_gap(key, clipped_low, clipped_high, reason, effect)
+        # The segments intersecting [low, top]: segments are disjoint and ascending.
+        first = bisect_left(source.seg_high, low)
+        end = bisect_right(source.seg_low, top)
+        self._segment_gaps(key, first, end, low, top, effect)
         self._conflicted(key, low, top)
 
     def _near_gaps(self, key: SourceKey, low: int, high: int) -> None:
@@ -710,34 +769,81 @@ class _Run:
         """
 
         source = self.verifier.sources[key]
-        for first, last in source.missing:
-            effect: Literal["partial", "unverified"]
-            if first <= high + 1 and last >= low - 1:
-                effect = "partial"
-            elif last >= low:
-                effect = "unverified"
-            else:
-                continue
-            for seg_low, seg_high, reason in source.segments[(first, last)]:
-                self._sequence_gap(key, seg_low, seg_high, reason, effect)
+        # Whole missing ranges intersecting [low - 1, high + 1] are partial; every
+        # range after them (first > high + 1, hence last >= low) is unverified.
+        near = bisect_left(source.missing_high, low - 1)
+        after = bisect_right(source.missing_low, high + 1)
+        segment_of = source.segment_of
+        if near < after:
+            self._segment_gaps(key, segment_of[near], segment_of[after], None, None, "partial")
+        self._segment_gaps(key, segment_of[after], segment_of[-1], None, None, "unverified")
         self._conflicted(key, low - 1, high + 1)
 
-    def _conflicted(self, key: SourceKey, low: int, high: int) -> None:
-        """A sequence with conflicting claims inside a window invalidates it (partial)."""
+    def _segment_gaps(
+        self,
+        key: SourceKey,
+        first: int,
+        end: int,
+        low: int | None,
+        high: int | None,
+        effect: Literal["partial", "unverified"],
+    ) -> None:
+        """Gaps for the source's segments ``[first, end)``, clipped to ``[low, high]``.
 
-        for sequence in sorted(self.verifier.sources[key].conflicted):
-            if low <= sequence <= high:
-                self._add(
-                    Gap(
-                        "digest_mismatch",
-                        "partial",
-                        source_id=key[0],
-                        source_epoch=key[1],
-                        first_sequence=sequence,
-                        last_sequence=sequence,
-                        reason="conflicting_claim",
-                    )
+        Up to :data:`_LISTED_SEGMENTS` segments are each one gap. A longer
+        stretch (many runs over a heavily load-shed source, D6) is one gap per
+        reason, from its first to its last segment of that reason in the
+        stretch: the range then also spans recorded sequences, and the
+        source's ``missing_sequences`` and ``loss_ranges`` list the parts
+        once. The gap types, effects and reasons, hence every verdict and
+        check, are the same either way.
+        """
+
+        if end <= first:
+            return
+        source = self.verifier.sources[key]
+        seg_low, seg_high = source.seg_low, source.seg_high
+        if end - first <= _LISTED_SEGMENTS:
+            pairs = [(index, index) for index in range(first, end)]
+            reasons = [source.seg_reason[index] for index in range(first, end)]
+        else:
+            pairs, reasons = [], []
+            for reason, indices in source.by_reason.items():
+                start, stop = bisect_left(indices, first), bisect_left(indices, end)
+                if start < stop:
+                    pairs.append((indices[start], indices[stop - 1]))
+                    reasons.append(reason)
+        for (head, tail), reason in zip(pairs, reasons, strict=True):
+            gap_low = seg_low[head] if low is None else max(seg_low[head], low)
+            gap_high = seg_high[tail] if high is None else min(seg_high[tail], high)
+            self._sequence_gap(key, gap_low, gap_high, reason, effect)
+
+    def _conflicted(self, key: SourceKey, low: int, high: int) -> None:
+        """A sequence with conflicting claims inside a window invalidates it (partial).
+
+        Beyond :data:`_LISTED_SEGMENTS` such sequences in one window, they are
+        one gap from the first to the last (D6); each is in no other report
+        field, but the verdict and check are the same.
+        """
+
+        conflicted = self.verifier.sources[key].conflicted_sorted
+        found = conflicted[bisect_left(conflicted, low) : bisect_right(conflicted, high)]
+        if len(found) > _LISTED_SEGMENTS:
+            found_ranges = [(found[0], found[-1])]
+        else:
+            found_ranges = [(sequence, sequence) for sequence in found]
+        for first, last in found_ranges:
+            self._add(
+                Gap(
+                    "digest_mismatch",
+                    "partial",
+                    source_id=key[0],
+                    source_epoch=key[1],
+                    first_sequence=first,
+                    last_sequence=last,
+                    reason="conflicting_claim",
                 )
+            )
 
     def _sequence_gap(
         self,

@@ -82,7 +82,7 @@ from _wire_capture_common import (
     open_spool_record,
     production_config_with_tls,
     pseudonym,
-    spool_header,
+    spool_headers,
     spool_records,
     volume_grep,
     wait_until,
@@ -128,6 +128,7 @@ def source_of(service: str) -> str:
 CONTENT_KEY = os.urandom(32)
 SPOOL_KEY = os.urandom(32)
 NODE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
+SHARD = re.compile(r"^(.+/evidence/(?:meta/)?)[0-9a-f]{2}/[0-9a-f]{2}/([^/]+)$")
 
 
 def unseal_store(sealed: Path, plain: Path) -> None:
@@ -138,11 +139,12 @@ def unseal_store(sealed: Path, plain: Path) -> None:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
 
     for path in sealed.rglob("*"):
-        rel = path.relative_to(sealed).as_posix()
-        target = plain / rel
         if path.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
             continue
+        # The envelope binds the object's logical (flat) key, not its hash shard (spec
+        # 048 rule 4): <tenant>/evidence/[meta/]ab/cd/<name> -> <tenant>/evidence/[meta/]<name>.
+        rel = SHARD.sub(r"\1\2", path.relative_to(sealed).as_posix())
+        target = plain / rel
         if path.name.startswith(".fabric-root-barrier"):
             continue
         data = path.read_bytes()
@@ -891,7 +893,9 @@ def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -
     # though nothing could be delivered.
     assert time.monotonic() - started < 60
     # Capture itself still worked: every record waits on disk for replay.
-    headers = [spool_header(path, SPOOL_KEY) for path in spool_records(bad.spool)]
+    headers = [
+        h for path in spool_records(bad.spool) for h in spool_headers(path, SPOOL_KEY)
+    ]
     rejected_ids = {
         h["span"]["attributes"]["fabric.wire.exchange_id"]
         for h in headers if h["record_kind"] == "exchange"

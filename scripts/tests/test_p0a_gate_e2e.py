@@ -63,7 +63,7 @@ from _wire_capture_common import (
     build_image,
     capture_protection,
     compose_available,
-    spool_header,
+    spool_headers,
     spool_records,
     volume_grep,
     wait_until,
@@ -376,7 +376,11 @@ def test_production_without_protection_records_no_content(
     assert info["status"]["store_reason"] == reason
     if token is not None:
         spool = node.stack.root / "spool" / service
-        headers = [spool_header(p, node_e2e.SPOOL_KEY) for p in spool_records(spool)]
+        headers = [
+            h
+            for p in spool_records(spool)
+            for h in spool_headers(p, node_e2e.SPOOL_KEY)
+        ]
         spans = [h["span"] for h in headers if h["record_kind"] == "exchange"]
     else:
         spans = [s for s in node.spans(service) if s["name"] == "fabric.model_call"]
@@ -454,12 +458,9 @@ def test_a_corrupt_object_is_a_gap_never_content(node: FileGate) -> None:
     sealed = node.stack.sealed[store]
     corrupt = node.stack.root / f"corrupt-{uuid.uuid4().hex[:8]}"
     shutil.copytree(sealed, corrupt)
-    target = (
-        corrupt
-        / node_e2e.TENANT
-        / "evidence"
-        / span["attributes"]["fabric.content.request_ref"]
-    )
+    ref = span["attributes"]["fabric.content.request_ref"]
+    shard = hashlib.sha256(ref.encode()).hexdigest()  # spec 048 rule 4: the hash shard
+    target = corrupt / node_e2e.TENANT / "evidence" / shard[:2] / shard[2:4] / ref
     data = bytearray(target.read_bytes())
     data[-1] ^= 0xFF  # breaks the envelope's tag: never opened, never returned
     target.write_bytes(bytes(data))

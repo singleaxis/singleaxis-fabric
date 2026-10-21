@@ -85,6 +85,10 @@
       "meaning": "The capture queue was full (existing loss reason)."
     },
     {
+      "value": "disk_full",
+      "meaning": "The agent spool's volume or quota was full (`ENOSPC`/`EDQUOT`) before its configured bound; the record could not be persisted (loss reason)."
+    },
+    {
       "value": "shutdown",
       "meaning": "The process stopped before the record was persisted (existing loss reason)."
     },
@@ -839,7 +843,7 @@
   "capture_input": [
     {
       "value": "wire",
-      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2; undici on the TypeScript track): exchanges plus their run markers."
+      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2, aiohttp; undici on the TypeScript track): exchanges plus their run markers."
     },
     {
       "value": "records",
