@@ -32,8 +32,11 @@ spec:
           image: ghcr.io/singleaxis/fabric-host-emitter@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
           env:
+            # The chart's Node Service for `helm upgrade --install fabric
+            # charts/fabric -n fabric-system` (<release>-otel-collector, OTLP/gRPC).
+            # Change it if your release name or namespace differ.
             - name: EMIT_ENDPOINT
-              value: "fabric-collector.fabric-system.svc.cluster.local:4317"
+              value: "fabric-otel-collector.fabric-system.svc.cluster.local:4317"
             - name: EMIT_TLS_CA_FILE
               value: /var/run/secrets/fabric/ca.crt
             - name: EMIT_TLS_CERT_FILE

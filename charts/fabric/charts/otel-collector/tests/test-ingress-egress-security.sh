@@ -270,5 +270,36 @@ expect_fail "production explicit ingress cannot be disabled" "profile shadow-pro
 expect_fail "production namespace deny-default cannot be disabled" "profile shadow-production requires" \
   "${umbrella_dir}" "${production_args[@]}" --set networkPolicy.denyDefault=false
 
+# helm test: the umbrella deny-default policy and the runtime policy would
+# block the health probe. Two test-hook NetworkPolicies open exactly the probe
+# pod -> Collector health port path, only while `helm test` runs.
+hook_np="charts/otel-collector/templates/tests/test-connection-networkpolicy.yaml"
+hook_render="$(helm template ci "${umbrella_dir}" "${production_args[@]}" --show-only "${hook_np}")"
+runtime_np="$(helm template ci "${umbrella_dir}" "${production_args[@]}" --show-only charts/otel-collector/templates/networkpolicy.yaml)"
+expect_contains "test hook opens probe egress" "${hook_render}" "name: ci-otel-collector-test-connection-egress"
+expect_contains "test hook opens the health port on the Collector" "${hook_render}" "name: ci-otel-collector-test-connection-ingress"
+if [[ "$(grep -Fc '"helm.sh/hook": test' <<<"${hook_render}")" -eq 2 ]]; then
+  pass "both probe policies are test hooks"
+else
+  fail "both probe policies must be test hooks"
+fi
+if [[ "$(grep -Fc 'hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed' <<<"${hook_render}")" -eq 2 ]]; then
+  pass "probe policies never outlive the test"
+else
+  fail "probe policies must be deleted after the test, success or failure"
+fi
+expect_contains "probe policies are created before the probe pod" "${hook_render}" '"helm.sh/hook-weight": "-10"'
+if [[ "$(grep -Ec '^ *port: [0-9]+$' <<<"${hook_render}")" -eq 4 ]] \
+  && [[ "$(grep -Ec '^ *port: (53|13133)$' <<<"${hook_render}")" -eq 4 ]]; then
+  pass "probe policies open only DNS and the health port"
+else
+  fail "probe policies open ports other than DNS and the health port"
+fi
+expect_not_contains "probe ingress is same-namespace only" "$(sed -n '/test-connection-ingress/,$p' <<<"${hook_render}")" "namespaceSelector"
+expect_contains "probe ingress admits only the release's probe pod" "${hook_render}" "app.kubernetes.io/component: health-test"
+expect_not_contains "runtime policy keeps the health port closed" "${runtime_np}" "port: 13133"
+dev_hook="$(helm template ci "${umbrella_dir}" --show-only "${hook_np}")"
+expect_not_contains "no Collector ingress hook without a runtime policy" "${dev_hook}" "test-connection-ingress"
+
 printf '\n--- summary: %d passed, %d failed ---\n' "${passed}" "${failed}"
 exit $((failed > 0 ? 1 : 0))
