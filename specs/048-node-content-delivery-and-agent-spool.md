@@ -583,8 +583,26 @@ attribute set itself.
    Python `json.dumps(d, ensure_ascii=False, sort_keys=True) + "\n"`
    (keys sorted, `", "` and `": "` separators, integers as integers). The
    goldens in `contracts/capture/v1/fixtures/golden/` pin these bytes.
+   These are the logical keys: the S3 backend stores at them as is; the
+   directory backend stores at a two-level hash-prefix shard of them,
+   `<dir>/<tenant>/evidence/<h[0:2]>/<h[2:4]>/<object_id>` and
+   `<dir>/<tenant>/evidence/meta/<h[0:2]>/<h[2:4]>/<object_id>.json`, with
+   `h` the lowercase hex SHA-256 of the object id's UTF-8 bytes (the id
+   itself may be time-ordered; the hash spreads any id format and its
+   components are always `[0-9a-f]{2}`). The `ref` and the spec 049 §7.8
+   envelope AAD keep the logical (flat) key. A flat directory would gain
+   two files per exchange without bound (about two million per directory
+   per day at ten exchanges a second): inode exhaustion before bytes, slow
+   lookups, walks and directory fsyncs. Readers
+   (`LocalFilesystemContentStore`, `ByteEvidenceResolver`) try the shard,
+   then the flat name, so stores written flat before sharding stay
+   readable. Operators alert on the content filesystem's inode use, not
+   only its bytes.
 5. Never overwrite: an existing object or descriptor with identical bytes
-   is success (replay); different bytes → reject (`conflict`).
+   is success (replay); different bytes → reject (`conflict`). On disk the
+   check covers both the shard and the flat, pre-shard name: an id stored
+   flat before an upgrade is a replay or a conflict, never written again in
+   its shard.
 
 Backends: `file` (`directory`; files `0600`, directories `0700`; a fully
 fsync'd temp file is published with `link(2)`, falling back to an atomic

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -52,6 +53,16 @@ def open_node_envelope(data: bytes, relative: str, key: bytes | None) -> bytes:
     except Exception:  # InvalidTag, short input: never the bytes
         raise CorruptedObjectError("Node content envelope does not authenticate") from None
     return opened
+
+
+def node_shard(object_id: str) -> tuple[str, str]:
+    """The Fabric Node directory backend's two shard directories for ``object_id``: the
+    first and second pairs of lowercase hex of SHA-256(object_id). The Node stores
+    ``<tenant>/evidence/<id>`` at ``<tenant>/evidence/<s1>/<s2>/<id>`` and
+    ``<tenant>/evidence/meta/<id>.json`` at ``<tenant>/evidence/meta/<s1>/<s2>/<id>.json``;
+    refs and envelope AADs keep the flat (logical) key."""
+    digest = hashlib.sha256(object_id.encode("utf-8")).hexdigest()
+    return digest[:2], digest[2:4]
 
 
 @contextlib.contextmanager
@@ -354,29 +365,49 @@ class LocalFilesystemContentStore:
             return False
         return True
 
+    def _located(self, path: Path) -> Path:
+        """Where the evidence object or descriptor at logical ``path`` is stored: the Fabric
+        Node's sharded location (:func:`node_shard`) when present, else ``path`` itself (the
+        flat layout of this SDK's writer and of Nodes before sharding)."""
+        if self.tenant_id is None:
+            return path
+        evidence = self._tenant_root() / "evidence"
+        if path.parent == evidence:
+            object_id = path.name
+        elif path.parent == evidence / "meta" and path.name.endswith(".json"):
+            object_id = path.name.removesuffix(".json")
+        else:
+            return path
+        sharded = path.parent.joinpath(*node_shard(object_id), path.name)
+        return sharded if _exists(sharded) else path
+
     def exists(self, uri: str) -> bool:
-        return _exists(self._resolve_uri(uri))
+        return _exists(self._located(self._resolve_uri(uri)))
 
     def read(self, uri: str) -> bytes:
         path = self._resolve_uri(uri)
-        if not _exists(path):
+        stored = self._located(path)
+        if not _exists(stored):
             raise FileNotFoundError(uri)
-        return self._opened(path)
+        return self._opened(stored, path)
 
-    def _opened(self, path: Path) -> bytes:
-        """The file's bytes, through the Node envelope rule (:func:`open_node_envelope`)."""
+    def _opened(self, path: Path, logical: Path | None = None) -> bytes:
+        """The file's bytes, through the Node envelope rule (:func:`open_node_envelope`). The
+        AAD is the ``logical`` (flat) location when the file is stored in a Node shard."""
         data = _read_bytes(path)
         if self.envelope_key is None and not data.startswith(NODE_ENVELOPE_MAGIC):
             return data
-        relative = path.resolve().relative_to(self._root_path()).as_posix()
+        bound = path if logical is None else logical
+        relative = bound.resolve().relative_to(self._root_path()).as_posix()
         return open_node_envelope(data, relative, self.envelope_key)
 
     def read_descriptor(self, uri: str) -> Mapping[str, Any]:
         path = self._resolve_uri(uri)
         meta = path.parent / "meta" / f"{path.name}.json"
-        if not _exists(meta):
+        stored = self._located(meta)
+        if not _exists(stored):
             raise FileNotFoundError(f"no descriptor sidecar for {uri!r}")
-        value = json.loads(self._opened(meta).decode("utf-8"))
+        value = json.loads(self._opened(stored, meta).decode("utf-8"))
         if not isinstance(value, dict):
             raise ValueError(f"descriptor sidecar at {uri!r} is not an object")
         return value
