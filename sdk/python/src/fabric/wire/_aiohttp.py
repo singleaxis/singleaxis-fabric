@@ -75,8 +75,7 @@ class AiohttpExchange(Exchange):
         self.run_id = scope.run_id if scope else resolve_run_id(
             self.tee.allocator, trace_id=self.trace_id)  # fmt: skip
         self.exchange_id = str(uuid.uuid4())
-        self.request = side = _Side(request.headers)
-        self.outgoing = request
+        self.request = side = _Side(request.headers)  # never kept: aiohttp sends it as is
         body = request.body
         value = body if isinstance(body, bytes) else getattr(body, "_value", None)
         if isinstance(value, bytes):
@@ -285,9 +284,17 @@ def _restore() -> None:
 
 
 def unpatch_aiohttp() -> None:
-    """Restore the originals; exchanges in progress still end through their readers."""
+    """Restore the originals. Exchanges in progress can no longer be fed (their readers'
+    callbacks are gone): each is a ``shutdown`` loss now, and nothing of it (reader,
+    retained bytes, response) stays referenced here."""
     with _PATCH_LOCK:
         _restore()
+        stranded = list(_READERS.values())
+        _READERS.clear()
+        _SENT.clear()
+    for exchange in stranded:
+        exchange.reader = None
+        exchange.tee.shut(exchange)
 
 
 def patched() -> bool:

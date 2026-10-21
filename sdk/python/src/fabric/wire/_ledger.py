@@ -114,6 +114,7 @@ class LossLedger:
         self._own: list[int] = []  # slots this process holds (locked), in use order
         self._stored: list[bytes] = []  # what each own slot holds now
         self._held: set[int] = set()  # orphan slots the drainer has locked
+        self._dirty = False  # written since the last successful fsync (EIO keeps it set)
         self._owner = f"{os.getpid()}-{os.urandom(4).hex()}"
         self.overflows = self.failures = self.corrupt = 0
 
@@ -190,14 +191,14 @@ class LossLedger:
                     self._own.append(index)
                     self._stored.append(_blank())
                 chunks += [_blank()] * (len(self._own) - len(chunks))
-                changed = False
                 for position, data in enumerate(chunks):
                     if self._stored[position] != data:
+                        self._dirty = True
                         self._write(self._own[position], data)
                         self._stored[position] = data
-                        changed = True
-                if changed:
+                if self._dirty:  # also a retry after a failed fsync: synced before success
                     os.fsync(self._fd)
+                    self._dirty = False
                 while self._own and self._stored[-1] == _blank():  # release cleared slots
                     self._unlock(self._own.pop())
                     self._stored.pop()
@@ -234,8 +235,10 @@ class LossLedger:
 
     def _clear(self, index: int) -> bool:
         try:
+            self._dirty = True
             self._write(index, _blank())
             os.fsync(self._fd)
+            self._dirty = False
         except OSError:
             self.failures += 1
             return False

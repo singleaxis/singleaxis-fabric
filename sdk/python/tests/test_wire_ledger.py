@@ -204,3 +204,70 @@ def test_a_batch_file_over_the_bound_falls_back_to_single_records(tmp_path: Path
     kept = [r for r in results if isinstance(r, str)]
     assert len(kept) == 2 and results.count(None) == 2  # as many as fit, the rest refused
     assert len(set(kept)) == 2  # one file each
+
+
+def test_a_failed_fsync_is_retried_before_the_store_reports_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = LossLedger(str(tmp_path))
+    calls: list[int] = []
+    real = os.fsync
+
+    def fsync(fd: int) -> None:
+        calls.append(fd)
+        if len(calls) == 1:
+            raise OSError(errno.EIO, "io")
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    assert not ledger.store([LOSS])  # written, never made durable
+    assert ledger.store([LOSS]) and len(calls) == 2  # the unchanged retry syncs again
+    assert ledger.store([LOSS]) and len(calls) == 2  # durable now: nothing more to sync
+
+
+def test_a_failed_fsync_while_clearing_keeps_the_slot_until_synced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = LossLedger(str(tmp_path))
+    assert ledger.store([LOSS])
+    calls: list[int] = []
+    real = os.fsync
+
+    def fsync(fd: int) -> None:
+        calls.append(fd)
+        if len(calls) == 1:
+            raise OSError(errno.EIO, "io")
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    assert not ledger.store([])
+    assert ledger.used() == 1  # still held: the cleared slot is not durable yet
+    assert ledger.store([]) and ledger.used() == 0 and len(calls) == 2  # synced, then released
+
+
+def test_a_batch_over_iov_max_is_written_in_os_sized_vectors(tmp_path: Path) -> None:
+    parts = [b"x%d" % part for part in range(21)]  # 21 objects per request (Sol's case)
+
+    def many(sequence: int) -> tuple[dict[str, Any], list[bytes]]:
+        span = _exchange(sequence)[0]["span"]
+        staged = [({"stored_byte_length": len(p)}, p) for p in parts]
+        return exchange_doc("s-a", 7, "svc", span, staged), parts
+
+    spool = Spool(str(tmp_path / "spool"), 64 << 20)
+    synced: list[int] = []
+    real = os.fsync
+
+    def fsync(fd: int) -> None:
+        synced.append(fd)
+        real(fd)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(os, "fsync", fsync)
+        assert all(isinstance(n, str) for n in spool.write_group([many(0), many(1)]))
+        small, synced[:] = len(synced), []
+        names = spool.write_group([many(sequence) for sequence in range(64)])  # > IOV_MAX
+    assert all(isinstance(name, str) for name in names) and len(set(names)) == 1
+    assert len(synced) == small  # still one file fsync (and one directory fsync) per batch
+    assert isinstance(names[0], str)
+    records = unframe_all(spool.read(names[0]))
+    assert len(records) == 64 and bytes(records[63][1]) == b"".join(parts)
