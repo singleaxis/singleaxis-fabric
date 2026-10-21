@@ -77,3 +77,5 @@ replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter => ./exporter/fabriccontentexporter
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension => ./extension/noredirectextension
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/fabricenvelopeextension => ./extension/fabricenvelopeextension
+  # CVE-2026-63209: klauspost/compress below 1.18.7 (transitive).
+  - github.com/klauspost/compress => github.com/klauspost/compress v1.18.7
