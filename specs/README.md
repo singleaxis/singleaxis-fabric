@@ -75,4 +75,4 @@ Every spec declares a `Status` in its header:
 | [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implementation in progress; NO-GO |
 | [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | draft; NO_COVERAGE_CLAIM; partly superseded by 048 |
 | [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft; NO_COVERAGE_CLAIM |
-| [049](049-four-layer-capture-coverage.md) | Four-layer capture coverage: context, structure, content, decisions and effects (plan, phases P0–P5) | draft; NO_COVERAGE_CLAIM |
+| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | final rev 6.2, owner-approved 2026-10-18; NO_COVERAGE_CLAIM |
