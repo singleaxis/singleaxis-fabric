@@ -152,19 +152,17 @@ class GeneratedIds {
   }
 }
 
-const RUN_PSEUDONYM = /^r-[0-9a-f]{32}$/;
-const SOURCE_PSEUDONYM = /^s-[0-9a-f]{32}$/;
-
 /**
  * Emitted ids in the `pseudonymous` identity mode with the id key (spec 049 §2.9 rules
  * 1-3), in parity with Python `fabric._sequence.KeyedIds` and as the wire line emits
  * them: the run id `r-` and the source id `s-` (function v1, keyed); any other caller id
  * (operation, attempt, stream: step labels, 049 §2.3) the keyed v1 operator label `lbl-`.
  * Deterministic, so records join across recorders and processes holding the key.
- * Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): only a
- * `lbl-` value this instance emitted maps to itself; every caller value, even a 32-hex
- * or `lbl-`-shaped one, is mapped. The registry is bounded (oldest first out), as in
- * Python.
+ * Provenance, never shape, decides what passes through (Sol P0-A rounds 4 and 5 #1):
+ * only an `r-`/`s-`/`lbl-` value this instance emitted maps to itself; every caller
+ * value, even a 32-hex or `r-`/`s-`/`lbl-`-shaped one, is mapped. Continuity across
+ * processes comes from passing the same clear id, never an emitted one. The registry is
+ * bounded (least recently used first out), as in Python.
  */
 class KeyedIds {
   readonly #key: Uint8Array;
@@ -175,16 +173,24 @@ class KeyedIds {
   }
 
   source(value: string): string {
-    return SOURCE_PSEUDONYM.test(value) ? value : labelPseudonym("s", value, this.#key);
+    return this.#map("s", value);
   }
 
   run(value: string): string {
-    return RUN_PSEUDONYM.test(value) ? value : labelPseudonym("r", value, this.#key);
+    return this.#map("r", value);
   }
 
   other(value: string): string {
-    if (this.#emitted.has(value)) return value;
-    const label = labelPseudonym("lbl", value, this.#key);
+    return this.#map("lbl", value);
+  }
+
+  #map(prefix: string, value: string): string {
+    if (this.#emitted.delete(value)) {
+      this.#emitted.add(value); // still in use: least recently used ages out first
+      return value;
+    }
+    const label = labelPseudonym(prefix, value, this.#key);
+    this.#emitted.delete(label);
     this.#emitted.add(label);
     if (this.#emitted.size > 2 * MAX_GENERATED_IDS)
       this.#emitted.delete(this.#emitted.values().next().value as string);

@@ -23,7 +23,6 @@ from typing import Literal, cast
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
-SOURCE_PSEUDONYM_RE = re.compile(r"^s-[0-9a-f]{32}$")
 ID_KEY_ENV = "FABRIC_WIRE_ID_KEY"
 LABELS_ENV = "FABRIC_WIRE_LABELS"  # "clear": operator labels exported unchanged (opt-in)
 Labels = Literal["pseudonymous", "clear"]
@@ -89,8 +88,9 @@ def run_pseudonym(run_id: str, key: bytes | None = None) -> str:
 
 def source_label(source_id: str, key: bytes | None = None, *, clear: bool = False) -> str:
     """The emitted source id (J1): ``s-`` + :func:`label_pseudonym`, or the operator's label
-    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). An ``s-`` value is kept."""
-    if clear or SOURCE_PSEUDONYM_RE.fullmatch(source_id):
+    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). A caller value is always mapped,
+    even an ``s-``-shaped one (Sol P0-A round 5 #1): shape never proves it was emitted."""
+    if clear:
         return source_id
     return label_pseudonym("s-", source_id, key)
 
@@ -334,12 +334,14 @@ class KeyedIds:
     049 §2.3) is the keyed v1 operator label ``lbl-``. Deterministic, so records join
     across recorders, processes and restarts that hold the key.
 
-    Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): an id
-    this instance minted (:meth:`keep`, a call id) or emitted (an ``agt-``/``lbl-`` value
-    it derived) maps to itself, so ids pass through more than one layer and a
-    ``parent_call_id`` joins its parent's ``call_id``; every caller value, even a 32-hex
-    or ``lbl-``-shaped one, is mapped. The registry is bounded (oldest first out); a value
-    that aged out is mapped again, which can break a join but never leaks it."""
+    Provenance, never shape, decides what passes through (Sol P0-A rounds 4 and 5 #1): an
+    id this instance minted (:meth:`keep`, a call id) or emitted (an ``r-``/``s-``/
+    ``agt-``/``lbl-`` value it derived) maps to itself, so ids pass through more than one
+    layer and a ``parent_call_id`` joins its parent's ``call_id``; every caller value, even
+    a 32-hex or ``r-``/``s-``/``lbl-``-shaped one, is mapped. Continuity across processes
+    comes from passing the same clear id, never an emitted one. The registry is bounded
+    (least recently used first out); a value that aged out is mapped again, which can
+    break a join but never leaks it."""
 
     __slots__ = ("_emitted", "_key", "_lock")
 
@@ -351,16 +353,25 @@ class KeyedIds:
     def __repr__(self) -> str:  # the key is a secret
         return "KeyedIds()"
 
+    def _emitted_here(self, value: str) -> bool:
+        with self._lock:
+            if value not in self._emitted:
+                return False
+            del self._emitted[value]  # still in use: least recently used ages out first
+            self._emitted[value] = None
+            return True
+
     def source(self, value: str) -> str:
-        return source_label(value, self._key)
+        if self._emitted_here(value):
+            return value
+        return self.keep(source_label(value, self._key))
 
     def run(self, value: str, epoch: int) -> str:  # the same in every epoch
-        return value if RUN_PSEUDONYM_RE.fullmatch(value) else run_pseudonym(value, self._key)
+        return value if self._emitted_here(value) else self.keep(run_pseudonym(value, self._key))
 
     def agent(self, value: str) -> str:
-        with self._lock:
-            if value in self._emitted:
-                return value
+        if self._emitted_here(value):
+            return value
         return self.keep(cast("str", pseudonym_v2("agt", value, self._key)))
 
     def keep(self, value: str) -> str:
@@ -372,9 +383,8 @@ class KeyedIds:
         return value
 
     def other(self, value: str) -> str:
-        with self._lock:
-            if value in self._emitted:
-                return value
+        if self._emitted_here(value):
+            return value
         return self.keep(label_pseudonym("lbl-", value, self._key))
 
 

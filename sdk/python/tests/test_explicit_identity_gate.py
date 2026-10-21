@@ -363,3 +363,105 @@ def test_hex_shaped_caller_ids_are_pseudonymised_everywhere(
     finally:
         journal.close()
         assert recorder.close()
+
+
+PREFIXED_RUN = "r-" + HEX  # caller ids shaped like the r-/s- pseudonyms (Sol P0-A round 5 #1)
+PREFIXED_SOURCE = "s-" + HEX
+PREFIXED_RUN_LABEL = "r-115b7affde7a19e0990d1c3dfab4e0d4"  # their keyed v1 mappings
+PREFIXED_SOURCE_LABEL = "s-5db24377fab0ff85a785a1cd798c29c4"
+
+
+def test_prefixed_caller_run_and_source_ids_are_pseudonymised(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Sol P0-A round 5 #1: a caller run/source id is always mapped through the keyed
+    # function, whatever its shape; only ids this process emitted pass through unchanged.
+    # Continuity comes from passing the same clear id (deterministic per key).
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
+    assert run_pseudonym(PREFIXED_RUN, KEY) == PREFIXED_RUN_LABEL
+    assert source_label(PREFIXED_SOURCE, KEY) == PREFIXED_SOURCE_LABEL
+    other_key = b"another-test-id-key-not-secret"
+
+    def recorder(name: str, key: bytes) -> ByteEvidenceRecorder:
+        return ByteEvidenceRecorder(ByteEvidenceConfig(
+            store=LocalFilesystemContentStore(str(tmp_path / name), tenant_id="tenant-a"),
+            roles=ROLES, id_key=key,
+        ))  # fmt: skip
+
+    first, rotated = recorder("first", KEY), recorder("rotated", other_key)
+    root = tmp_path / "spool"
+    root.mkdir(mode=0o700)
+    journal = SyntheticSourceSpool(
+        str(root), tenant_id="tenant-a", run_id=first.emitted_run_id(PREFIXED_RUN)
+    )
+    try:
+        assert first.emitted_run_id(PREFIXED_RUN) == PREFIXED_RUN_LABEL
+
+        def capture(target: ByteEvidenceRecorder, run_id: str, source_id: str) -> object:
+            return target.capture(
+                b"x", role="terminal.stdout", boundary="terminal", source_id=source_id,
+                source_epoch=0, source_sequence=1, run_id=run_id,
+            )  # fmt: skip
+
+        descriptor = capture(first, PREFIXED_RUN, PREFIXED_SOURCE)
+        assert (descriptor["run_id"], descriptor["source_id"]) == (  # type: ignore[index]
+            PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)  # fmt: skip
+        moved = capture(rotated, PREFIXED_RUN, PREFIXED_SOURCE)
+        assert (moved["run_id"], moved["source_id"]) == (  # type: ignore[index]
+            run_pseudonym(PREFIXED_RUN, other_key),
+            source_label(PREFIXED_SOURCE, other_key),
+        )
+        # Values this recorder emitted pass through unchanged (layered callers).
+        again = capture(first, PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)
+        assert (again["run_id"], again["source_id"]) == (  # type: ignore[index]
+            PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)  # fmt: skip
+        # ... but not in another recorder, which never emitted them.
+        foreign = capture(rotated, PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)
+        assert foreign["run_id"] == run_pseudonym(PREFIXED_RUN_LABEL, other_key)  # type: ignore[index]
+
+        calls = CallRecorder(first, run_id=PREFIXED_RUN, agent_id="agent-private-bob",
+                             source_id=PREFIXED_SOURCE, source_spool=journal)  # fmt: skip
+        assert (calls.run_id, calls.source_id) == (PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)
+        assert calls.call(b"a", lambda _: b"r") == b"r"
+        snapshot = calls.snapshot()
+        assert snapshot["run_id"] == PREFIXED_RUN_LABEL
+        assert list(snapshot["source_high_water"]) == [PREFIXED_SOURCE_LABEL]
+        assert calls.seal_source()["status"] == "sealed"
+        project_call_snapshot(snapshot)
+
+        session = SyntheticCaptureSession(first, tenant_id="tenant-a", run_id=PREFIXED_RUN)
+        stored = session.capture(b"x", source_id=PREFIXED_SOURCE, boundary="terminal",
+                                 role="terminal.stdout", operation_id="op",
+                                 attempt_id="at")  # fmt: skip
+        assert stored["status"] != "failed", stored
+        event = session.snapshot()["events"][0]
+        assert (event["run_id"], event["source_id"]) == (PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)
+        assert (stored["run_id"], stored["source_id"]) == (
+            PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)  # fmt: skip
+        assert first.flush(10)
+        hits = [path.name for path in tmp_path.rglob("*")
+                if path.is_file() and HEX.encode() in path.read_bytes()]  # fmt: skip
+        assert hits == []
+    finally:
+        journal.close()
+        assert first.close()
+        assert rotated.close()
+
+
+def test_the_wire_line_maps_prefixed_run_and_source_ids_like_the_explicit_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fabric import wire  # noqa: PLC0415
+    from fabric._sequence import current_run_id  # noqa: PLC0415
+    from fabric.wire import WireConfig  # noqa: PLC0415
+
+    monkeypatch.delenv("FABRIC_SOURCE_ID", raising=False)
+    configured = WireConfig(source_id=PREFIXED_SOURCE, id_key=KEY, labels="pseudonymous")
+    assert wire._source_id(configured) == PREFIXED_SOURCE_LABEL
+    monkeypatch.setenv("FABRIC_SOURCE_ID", PREFIXED_SOURCE)
+    assert wire._source_id(WireConfig(id_key=KEY, labels="pseudonymous")) == (
+        PREFIXED_SOURCE_LABEL)  # fmt: skip
+    assert wire._source_id(WireConfig(id_key=KEY, labels="clear")) == PREFIXED_SOURCE
+    monkeypatch.setattr(wire, "_HANDLE", None)
+    with wire.run(PREFIXED_RUN):  # no handle: unkeyed v1, still never verbatim
+        assert current_run_id() == run_pseudonym(PREFIXED_RUN)

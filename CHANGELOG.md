@@ -19,7 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   attempt, stream, parent call) as the keyed operator label `lbl-`. Only ids the
   recorder itself minted (call ids) or emitted map to themselves, so parent joins still
   hold; provenance is registered, never inferred from shape, so a 32-hex (UUID-shaped)
-  or `lbl-`-shaped caller id is pseudonymised too. `FABRIC_IDENTITY_MODE=clear` (or
+  or `r-`/`s-`/`lbl-`-shaped caller id is pseudonymised too. Continuity across
+  processes and hosts comes from passing the same clear id (the keyed mapping is
+  deterministic per key), never from passing an emitted value to another process.
+- The wire line's source id: a configured `source_id` / `FABRIC_SOURCE_ID` that is
+  already shaped like `s-` + 32 hex is now mapped through the keyed function like any
+  other label (previously exported unchanged), matching the explicit line. Wire run ids
+  were already always mapped (`fabric.wire.run("r-…")` emits the pseudonym of that
+  value); `FABRIC_WIRE_LABELS=clear` still exports source labels unchanged. The
+  verifier still shows an `s-` source id read from a record as is. `FABRIC_IDENTITY_MODE=clear` (or
   `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
   `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
   emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a
