@@ -100,6 +100,7 @@ var statusReasons = map[string]bool{
 	"part_cap":               true,
 	"inflight_budget":        true,
 	"queue_full":             true,
+	"disk_full":              true,
 	"shutdown":               true,
 	"internal_error":         true,
 	"span_dropped":           true,

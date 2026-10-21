@@ -423,20 +423,20 @@ func TestSourceBindingAndPersistedAuthentication(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertDropped(t, e, logs, map[string]uint64{reasonSourceUnbound: 2, reasonBadDescriptor: 1})
-	meta := readFile(t, filepath.Join(dir, testTenant, "evidence", "meta", testObjectID+".json"))
+	meta := readFile(t, shardedMeta(dir, testTenant, testObjectID))
 	if !strings.Contains(string(meta), `"source_authenticated": true`) {
 		t.Fatalf("bound descriptor lacks source_authenticated: %s", meta)
 	}
 	for _, id := range []string{"0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a03", "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a04"} {
-		if _, err := os.Stat(filepath.Join(dir, testTenant, "evidence", id)); !os.IsNotExist(err) {
+		if _, err := os.Stat(shardedObject(dir, testTenant, id)); !os.IsNotExist(err) {
 			t.Errorf("unbound record %s written", id)
 		}
 	}
 	// Descriptor-only: a descriptor, no body object.
-	if _, err := os.Stat(filepath.Join(dir, testTenant, "evidence", "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a05")); !os.IsNotExist(err) {
+	if _, err := os.Stat(shardedObject(dir, testTenant, "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a05")); !os.IsNotExist(err) {
 		t.Error("withheld record wrote a body object")
 	}
-	withheldMeta := readFile(t, filepath.Join(dir, testTenant, "evidence", "meta", "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a05.json"))
+	withheldMeta := readFile(t, shardedMeta(dir, testTenant, "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a05"))
 	if !strings.Contains(string(withheldMeta), `"source_authenticated": true`) || strings.Contains(string(withheldMeta), `"ref"`) {
 		t.Errorf("withheld descriptor = %s", withheldMeta)
 	}
@@ -446,7 +446,7 @@ func TestSourceBindingAndPersistedAuthentication(t *testing.T) {
 	if err := e.pushLogs(context.Background(), makeLogs(t, withBody(validAttrs(body), body))); err != nil {
 		t.Fatal(err)
 	}
-	if meta := readFile(t, filepath.Join(unbound, testTenant, "evidence", "meta", testObjectID+".json")); strings.Contains(string(meta), "source_authenticated") {
+	if meta := readFile(t, shardedMeta(unbound, testTenant, testObjectID)); strings.Contains(string(meta), "source_authenticated") {
 		t.Fatalf("unbound exporter wrote source_authenticated: %s", meta)
 	}
 }

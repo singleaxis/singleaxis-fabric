@@ -179,9 +179,9 @@ def _inject_blocking(request_sleep_s: float, chunk_sleep_s: float) -> None:
 
     begin, add = _transport.WireTee.begin, _stream.Exchange.add
 
-    def slow_begin(self: Any, request: Any) -> Any:
+    def slow_begin(self: Any, request: Any, **kwargs: Any) -> Any:
         time.sleep(request_sleep_s)
-        return begin(self, request)
+        return begin(self, request, **kwargs)
 
     def slow_add(self: Any, chunk: bytes) -> None:
         time.sleep(chunk_sleep_s)

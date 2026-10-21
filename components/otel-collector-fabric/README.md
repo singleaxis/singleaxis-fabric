@@ -21,8 +21,14 @@ destination. SingleAxis Platform is optional.
   name its tenant; use one Node per tenant otherwise), and writes body then
   descriptor to a directory or an S3(-compatible) bucket (`sse: AES256` or
   `aws:kms` required) with the SDK store layout
-  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`). It
-  never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
+  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`; the
+  directory backend shards both under two hash-prefix levels,
+  `<tenant>/evidence/<h[0:2]>/<h[2:4]>/<id>` and
+  `<tenant>/evidence/meta/<h[0:2]>/<h[2:4]>/<id>.json` with `h` the hex
+  SHA-256 of the id, while refs keep the flat key; objects an earlier
+  version wrote flat are still read and still count for replay/conflict.
+  Each exchange adds files, so alert on the content filesystem's inode
+  use, not only its bytes). It never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
   hard-linked into place, or renamed with an atomic no-replace rename —
   `renameat2(RENAME_NOREPLACE)` on Linux — where the filesystem has no hard
   links; a filesystem offering neither fails the write retryably, never a

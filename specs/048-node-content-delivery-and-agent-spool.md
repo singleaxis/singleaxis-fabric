@@ -300,6 +300,27 @@ Framing (big-endian):
 b"FWSPOOL1" | u32 header_len | header (canonical JSON, UTF-8) | blob | sha256(all preceding bytes) (32 bytes)
 ```
 
+**Batch file (chaos report D4).** The capture worker takes up to 64 queued
+exchanges (about 8 MiB of captured bytes) at a time and writes them as one
+record file, named after its first record:
+
+```text
+b"FWSPOOLB" | u32 count | count × (u64 frame_len | FWSPOOL1 frame) | sha256(all preceding bytes)
+```
+
+One temp file, one write, one `fsync`, one rename and one directory `fsync`
+cover the batch; no record of it counts as spooled before they all
+succeeded (durability before acknowledgement, per batch). With a key the
+whole file is one envelope (049 §7.8). The drainer delivers a batch file's
+records together (every body, then every span) and retires, receipts or
+quarantines the file as one unit; a damaged batch file explains the
+sequence of every frame that still verifies. A batch that does not fit
+under the bound is written one record per file instead, so as many as fit
+are kept. Loss and marker records are always single frames. Per-record
+files made every exchange pay ~6 syscalls (each a GIL hand-off) and a
+directory scan; under CPU-bound host threads the worker then shed load at
+~20–60 exchanges/s.
+
 `header` is a `fabric.wire-spool-record/v1` document
 (`contracts/capture/v1/schema/spool-record-v1.schema.json`): `record_kind`
 `exchange` (span data + up to two content descriptors with `offset`/`length`
@@ -373,10 +394,37 @@ charge stays as it was, and a rescan that cannot observe every spool file
 releases nothing (a later complete rescan settles it). The drainer never
 takes an own write still in flight. An exchange record is admitted only while `spool_bytes +
 size ≤ FABRIC_WIRE_SPOOL_MAX_BYTES`; otherwise it is dropped and recorded as
-a `queue_full` loss. Loss and marker records may use a 1 MiB reserve above
-the bound; past it, loss ranges stay in the in-memory table (merged per key,
-as 047) and are spooled when space frees, and a marker is dropped and
-counted (its scope then stays open: `unverified`, never false complete).
+a `queue_full` loss. A write that fails because the volume or quota is full
+(`ENOSPC`, `EDQUOT`; the volume filled before the bound) is a `disk_full`
+loss, never `internal_error`. Loss and marker records may use a 1 MiB
+reserve above the bound (the loss ledger below included); past it, loss
+ranges stay in the in-memory table (merged per key, as 047) and are spooled
+when space frees, and a marker is held (up to 1,024; past that dropped and
+counted: its scope then stays open, `unverified`, never false complete) and
+retried on every pump.
+
+**Loss ledger (chaos report D1).** Evidence of a loss must survive a full
+disk and the death of the process that lost the data: kept only in memory,
+a loss range or run marker that cannot be spooled dies with its process,
+and a run whose exchanges were all lost leaves no trace. When the spool is
+opened, `.ledger` (260 KiB: a header and 64 slots of 4 KiB) is created once,
+written in full (never sparse), fsync'd and linked into place (never
+replacing one). Each process mirrors into its own slots exactly the loss and
+marker records it could not spool — complete spool-record-v1 headers with a
+fixed `order` and `written_at_unix_nano` — overwritten in place (`pwrite`,
+`fsync`: no allocation on in-place filesystems; a copy-on-write filesystem
+may still need free blocks) and cleared once they are spooled. A process
+holds a POSIX record lock (`lockf`) on each slot it uses (at most 16); the
+kernel releases it when the process dies. The drainer, when it takes the
+spool lock and at every rescan, takes every non-empty slot whose lock it can
+get, exports its records directly as the spans the spool would have
+delivered (no disk space needed) and clears it; a failed export leaves the
+slot for the next attempt. A slot whose digest fails (a torn write) is
+cleared and counted, never misread. A crash between a record's spool write
+and its slot's clearing reports it twice; the verifier deduplicates losses
+by content and heartbeats by logical identity. Losses recorded after the
+sender's last pump before a `SIGKILL` stay in memory only; their sequences
+are still unexplained gaps (`partial`), never complete.
 **Shared bound.** The bound holds across every process sharing the spool
 directory, at every moment. After the local ledger admits a record, the
 writer takes the **admission lock** — a thread lock, then
@@ -494,7 +542,9 @@ content and heartbeats by logical identity (§6).
 
 **Stats** (`WireStats`, counters only): adds `spooled`, `spool_bytes`,
 `spool_full_drops`, `delivered`, `send_retries`, `content_rejected`,
-`quarantined`, `markers_dropped`.
+`quarantined`, `markers_dropped`, `disk_full_drops`, `markers_held` and
+`ledger_recovered` (loss and marker records a drainer exported from dead
+processes' ledger slots).
 
 ## 3. Content transport (F3)
 
@@ -583,8 +633,26 @@ attribute set itself.
    Python `json.dumps(d, ensure_ascii=False, sort_keys=True) + "\n"`
    (keys sorted, `", "` and `": "` separators, integers as integers). The
    goldens in `contracts/capture/v1/fixtures/golden/` pin these bytes.
+   These are the logical keys: the S3 backend stores at them as is; the
+   directory backend stores at a two-level hash-prefix shard of them,
+   `<dir>/<tenant>/evidence/<h[0:2]>/<h[2:4]>/<object_id>` and
+   `<dir>/<tenant>/evidence/meta/<h[0:2]>/<h[2:4]>/<object_id>.json`, with
+   `h` the lowercase hex SHA-256 of the object id's UTF-8 bytes (the id
+   itself may be time-ordered; the hash spreads any id format and its
+   components are always `[0-9a-f]{2}`). The `ref` and the spec 049 §7.8
+   envelope AAD keep the logical (flat) key. A flat directory would gain
+   two files per exchange without bound (about two million per directory
+   per day at ten exchanges a second): inode exhaustion before bytes, slow
+   lookups, walks and directory fsyncs. Readers
+   (`LocalFilesystemContentStore`, `ByteEvidenceResolver`) try the shard,
+   then the flat name, so stores written flat before sharding stay
+   readable. Operators alert on the content filesystem's inode use, not
+   only its bytes.
 5. Never overwrite: an existing object or descriptor with identical bytes
-   is success (replay); different bytes → reject (`conflict`).
+   is success (replay); different bytes → reject (`conflict`). On disk the
+   check covers both the shard and the flat, pre-shard name: an id stored
+   flat before an upgrade is a replay or a conflict, never written again in
+   its shard.
 
 Backends: `file` (`directory`; files `0600`, directories `0700`; a fully
 fsync'd temp file is published with `link(2)`, falling back to an atomic

@@ -26,7 +26,17 @@ from ._sequence import RunScope, SourceAllocator
 from ._version import __version__
 from .tracing import FABRIC_SDK_NAME, has_protected_route
 
-LossReason = Literal["queue_full", "internal_error", "shutdown", "span_dropped"]
+# uninstrumented_client: a model call sent through a client wire capture does not tee
+# (wire/_detect.py); it has a sequence and is recorded as lost. disk_full: the spool's
+# volume (or quota) was full (ENOSPC/EDQUOT) before the configured bound (queue_full).
+LossReason = Literal[
+    "queue_full",
+    "internal_error",
+    "shutdown",
+    "span_dropped",
+    "uninstrumented_client",
+    "disk_full",
+]
 HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
 SPAN_LOSS, SPAN_HEARTBEAT = "fabric.capture_loss", "fabric.capture_heartbeat"
 _RUN_KINDS = ("run_start", "run_end")
@@ -150,6 +160,9 @@ class LossEmitter:
         self.exit_timeout_s = 2.0  # the at-exit close budget; wire.install sets its own
         self._wake: Callable[[], None] | None = None  # the spool sender, when attached
         self._fallback: PrivateFallback | None = None  # used instead of a protected route
+        # Heartbeats of sources this process does not allocate for (forked children's
+        # epochs, wire/_forks.py), taken with every drain.
+        self._beat_sources: list[Callable[[], list[_Beat]]] = []
         self._init_state()
         _EMITTERS.add(self)
 
@@ -213,6 +226,10 @@ class LossEmitter:
             self._sources.pop(allocator, None)  # re-noted when the new epoch allocates
         self._queue_beat((allocator.source_id, epoch, last, None, None, "final"))
 
+    def queue_beat(self, beat: _Beat) -> None:
+        """Queue a heartbeat of a source this process does not allocate for."""
+        self._queue_beat(beat)
+
     def _queue_beat(self, beat: _Beat) -> None:
         with self._lock:
             if len(self._beats) < _MAX_QUEUED_HEARTBEATS:
@@ -220,6 +237,13 @@ class LossEmitter:
             else:
                 self.markers_dropped += 1
         self._ensure_thread()
+
+    def add_beat_source(self, source: Callable[[], list[_Beat]]) -> None:
+        self._beat_sources.append(source)
+
+    def remove_beat_source(self, source: Callable[[], list[_Beat]]) -> None:
+        with contextlib.suppress(ValueError):
+            self._beat_sources.remove(source)
 
     def note_activity(self, allocator: SourceAllocator) -> None:
         """Make ``allocator`` eligible for the next periodic heartbeat (called at allocation)."""
@@ -275,6 +299,9 @@ class LossEmitter:
         if periodic or every_source:
             self._last_periodic = time.monotonic()
         beats += [(a.source_id, *a.last_sequence(), None, None, "periodic") for a in due]
+        for source in list(self._beat_sources):
+            with contextlib.suppress(Exception):
+                beats += source()
         return list(pending.items()), beats
 
     def periodic_due(self) -> bool:

@@ -38,14 +38,15 @@ func temps(t *testing.T, dir string) []string {
 // published the object, before its temp was removed.
 func crashAfterLink(t *testing.T, b *fileBackend, key string, body []byte) string {
 	t.Helper()
-	if err := b.privateDirs(filepath.Dir(key)); err != nil {
+	obj := onDisk(b.dir, key)
+	if err := b.privateDirs(filepath.Dir(obj)); err != nil {
 		t.Fatal(err)
 	}
-	tmp := filepath.Join(filepath.Dir(key), "."+filepath.Base(key)+".123.tmp")
+	tmp := filepath.Join(filepath.Dir(obj), "."+filepath.Base(obj)+".123.tmp")
 	if err := os.WriteFile(tmp, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Link(tmp, key); err != nil {
+	if err := os.Link(tmp, obj); err != nil {
 		t.Fatal(err)
 	}
 	return tmp
@@ -58,7 +59,7 @@ func TestFileBackend_PutLeavesOneLinkAndNoTemp(t *testing.T) {
 	if err := b.put(context.Background(), key, []byte("exact wire body")); err != nil {
 		t.Fatal(err)
 	}
-	if n := nlink(t, key); n != 1 {
+	if n := nlink(t, onDisk(dir, key)); n != 1 {
 		t.Errorf("nlink = %d, want 1", n)
 	}
 	if left := temps(t, dir); len(left) != 0 {
@@ -77,13 +78,13 @@ func TestFileBackend_ReplayHealsACrashAfterLink(t *testing.T) {
 	if err := b.put(context.Background(), key, body); err != nil {
 		t.Fatalf("replay put: %v", err)
 	}
-	if n := nlink(t, key); n != 1 {
+	if n := nlink(t, onDisk(dir, key)); n != 1 {
 		t.Errorf("nlink after replay = %d, want 1", n)
 	}
 	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
 		t.Errorf("stale temp still present after replay")
 	}
-	got, err := os.ReadFile(key)
+	got, err := os.ReadFile(onDisk(dir, key))
 	if err != nil || string(got) != string(body) {
 		t.Errorf("object bytes changed: %q, %v", got, err)
 	}
@@ -116,7 +117,7 @@ func TestFileBackend_StartSweepsStaleTemps(t *testing.T) {
 	if left := temps(t, dir); len(left) != 0 {
 		t.Errorf("temp files left after start: %v", left)
 	}
-	if n := nlink(t, key); n != 1 {
+	if n := nlink(t, onDisk(dir, key)); n != 1 {
 		t.Errorf("nlink after start = %d, want 1", n)
 	}
 	if _, err := os.Stat(outside); err != nil {
@@ -161,7 +162,7 @@ func TestFileBackend_ReplayAfterFailedDirFsyncSyncsTheDirectory(t *testing.T) {
 	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000001"))
-	parent := filepath.Dir(filepath.FromSlash(key))
+	parent := filepath.Dir(onDisk(dir, key))
 	if err := b.privateDirs(parent); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +172,7 @@ func TestFileBackend_ReplayAfterFailedDirFsyncSyncsTheDirectory(t *testing.T) {
 	if err := b.put(context.Background(), key, body); err == nil {
 		t.Fatal("first put: want the injected directory fsync failure")
 	}
-	if n := nlink(t, key); n != 1 {
+	if n := nlink(t, onDisk(dir, key)); n != 1 {
 		t.Fatalf("object after failed fsync: nlink = %d, want 1 (published, temp dropped)", n)
 	}
 	*calls = 0
@@ -194,7 +195,7 @@ func TestFileBackend_ConcurrentExistingTargetSyncsTheDirectory(t *testing.T) {
 	dir := filepath.Join(physicalTempDir(t), "content")
 	b := newFileBackend(dir)
 	key := filepath.ToSlash(filepath.Join(dir, "acme", "evidence", "0b1c2d3e-0000-4000-8000-000000000002"))
-	parent := filepath.Dir(filepath.FromSlash(key))
+	parent := filepath.Dir(onDisk(dir, key))
 	body := []byte("exact wire body")
 	originalLink := linkFile
 	t.Cleanup(func() { linkFile = originalLink })
@@ -215,7 +216,7 @@ func TestFileBackend_ConcurrentExistingTargetSyncsTheDirectory(t *testing.T) {
 		t.Fatal("concurrent replay accepted without a successful directory fsync")
 	}
 	fail, *calls = false, 0
-	if err := os.Remove(filepath.FromSlash(key)); err != nil {
+	if err := os.Remove(onDisk(dir, key)); err != nil {
 		t.Fatal(err)
 	}
 	if err := b.put(context.Background(), key, body); err != nil {

@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import os
 import re
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
@@ -307,8 +308,16 @@ def _id_key(args: argparse.Namespace, environ: Mapping[str, str]) -> bytes | Non
     return key
 
 
-def _write_report(path: str, text: str) -> None:
-    """Write ``text`` to ``path`` atomically, readable by the owner only.
+def _report_chunks(document: Mapping[str, Any]) -> Iterator[str]:
+    """The report as ``json.dumps(document, ensure_ascii=False, indent=2) + "\\n"``, in
+    pieces: a large report is never held as one string next to its document (D6)."""
+
+    yield from json.JSONEncoder(ensure_ascii=False, indent=2).iterencode(document)
+    yield "\n"
+
+
+def _write_report(path: str, document: Mapping[str, Any]) -> None:
+    """Write the report for ``document`` to ``path`` atomically, owner-readable only.
 
     A private temporary file in the target directory is written, fsync'd and
     renamed over the target, so a reader never sees a partial report and an
@@ -322,7 +331,11 @@ def _write_report(path: str, text: str) -> None:
     try:
         with os.fdopen(fd, "wb") as stream:
             os.fchmod(stream.fileno(), 0o600)
-            stream.write(text.encode("utf-8"))
+            writer = io.TextIOWrapper(stream, encoding="utf-8", newline="", write_through=False)
+            for chunk in _report_chunks(document):
+                writer.write(chunk)
+            writer.flush()
+            writer.detach()
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, target)
@@ -366,10 +379,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:  # fixed text: a message can carry paths or secrets
         _fail(f"internal error ({type(exc).__name__})")
         return EXIT_USAGE
-    text = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
     if args.out:
         try:
-            _write_report(args.out, text)
+            _write_report(args.out, document)
         except OSError:
             _fail("cannot write the --out report file")
             return EXIT_USAGE
@@ -380,7 +392,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
     else:
-        sys.stdout.write(text)
+        for chunk in _report_chunks(document):
+            sys.stdout.write(chunk)
     if not document["runs"]:
         _fail("no runs reconstructed")
     return _exit_code(document)

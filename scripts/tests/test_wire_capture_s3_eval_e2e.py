@@ -101,7 +101,7 @@ from _wire_capture_common import (
     open_spool_record,
     production_config_with_tls,
     pseudonym,
-    spool_header,
+    spool_headers,
     spool_records,
     volume_grep,
     wait_until,
@@ -901,7 +901,11 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
         # The host is unaffected: it finished its work and exited normally,
         # within the bounded exit handler, while nothing could be delivered.
         assert time.monotonic() - started < 60
-        headers = [spool_header(path, stack.spool_key) for path in spool_records(spool)]
+        headers = [
+            h
+            for path in spool_records(spool)
+            for h in spool_headers(path, stack.spool_key)
+        ]
         kinds = sorted(h["record_kind"] for h in headers)
         assert kinds.count("exchange") == 3, kinds
         assert sorted(
@@ -948,7 +952,11 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
     started = time.monotonic()
     bad = stack.run_agent("s3-eval-e2e-wrong-token", token=WRONG_TOKEN)
     assert time.monotonic() - started < 60
-    headers = [spool_header(path, stack.spool_key) for path in spool_records(bad.spool)]
+    headers = [
+        h
+        for path in spool_records(bad.spool)
+        for h in spool_headers(path, stack.spool_key)
+    ]
     rejected_ids = {
         h["span"]["attributes"]["fabric.wire.exchange_id"]
         for h in headers if h["record_kind"] == "exchange"

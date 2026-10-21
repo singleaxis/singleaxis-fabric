@@ -11,6 +11,7 @@ import dataclasses
 import functools
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -59,10 +60,65 @@ _DRAIN_SHARE = 0.75  # of the close budget; the rest delivers the shutdown loss 
 def _after_fork_in_child() -> None:
     global _LOCK  # noqa: PLW0603
     _LOCK = threading.RLock()  # another parent thread may have held it
+    with contextlib.suppress(Exception):
+        _use_proxy_snapshot()
+    # A multiprocessing worker ends in os._exit (no atexit): its capture is closed by a
+    # multiprocessing finalizer instead (agent matrix D1). Finalizers registered here would
+    # be cleared by the worker's bootstrap, so one is registered by its after-forkers.
+    util = sys.modules.get("multiprocessing.util")
+    if (handle := _HANDLE) is not None and util is not None:
+        with contextlib.suppress(Exception):
+            util.register_after_fork(handle, _finalize_in_worker)
+
+
+def _finalize_in_worker(handle: WireHandle) -> None:
+    """In a forked multiprocessing worker: close capture when the worker exits normally
+    (``util._exit_function``, before ``os._exit``), after the application's finalizers."""
+    with contextlib.suppress(Exception):
+        util = sys.modules["multiprocessing.util"]
+        util.Finalize(None, handle._atexit_close, exitpriority=-100)
 
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_after_fork_in_child)
+
+# The system proxy configuration as read at install (macOS only; see _prime_fork_safety).
+_PROXY_SNAPSHOT: tuple[dict[str, Any], dict[str, str]] | None = None
+
+
+def _prime_fork_safety() -> None:
+    """Keep ``fork`` as safe as it was without capture (049 §7.1, agent matrix D2). On
+    macOS the system proxy lookup (``urllib.request.getproxies``/``proxy_bypass``, made by
+    httpx and requests with no proxy variable set) goes through SystemConfiguration. In a
+    forked child of a multithreaded parent it either aborts under the Objective-C
+    fork-safety check (first lookup in the child) or reuses the parent's session and
+    intermittently segfaults (looked up in the parent before). Fabric's threads make the
+    host multithreaded, so the configuration is read once here, on the installing thread
+    before any Fabric thread starts, and a forked child answers urllib's two lookups from
+    that snapshot instead (:func:`_after_fork_in_child`): the values the parent saw at
+    install, never a crash. Fabric's own delivery never consults them (pinned proxies)."""
+    global _PROXY_SNAPSHOT  # noqa: PLW0603
+    if _PROXY_SNAPSHOT is not None or sys.platform != "darwin":
+        return
+    with contextlib.suppress(Exception):
+        import _scproxy  # type: ignore[import-not-found]  # noqa: PLC0415
+        import urllib.request  # noqa: PLC0415
+
+        _PROXY_SNAPSHOT = (dict(_scproxy._get_proxy_settings()), dict(_scproxy._get_proxies()))
+        _ = urllib.request.getproxies  # imported now: a child patches it, never re-imports
+
+
+def _use_proxy_snapshot() -> None:
+    """In a forked child: urllib's SystemConfiguration lookups return the snapshot."""
+    if (snapshot := _PROXY_SNAPSHOT) is None:
+        return
+    request = sys.modules.get("urllib.request")
+    if request is None or not hasattr(request, "_get_proxies"):
+        return
+    settings, proxies = snapshot
+    setattr(request, "_get_proxy_settings", lambda: {  # noqa: B010
+        k: list(v) if isinstance(v, list) else v for k, v in settings.items()})  # fmt: skip
+    setattr(request, "_get_proxies", lambda: dict(proxies))  # noqa: B010
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -107,31 +163,56 @@ class WireStats:
     redaction_timeouts: int = 0
     redaction_saturated: int = 0
     redaction_failures: int = 0
+    # Model calls sent through a client wire capture does not tee (requests, urllib3): each
+    # is an ``uninstrumented_client`` loss (agent matrix D4).
+    uninstrumented_calls: int = 0
+    # Exchanges lost because the spool's volume was full (ENOSPC/EDQUOT; ``disk_full``
+    # losses, chaos report D1); run markers not spooled yet (retried, kept in the spool's
+    # loss ledger); loss and marker records a drainer recovered from the ledger slots of
+    # processes that died with them unspooled.
+    disk_full_drops: int = 0
+    markers_held: int = 0
+    ledger_recovered: int = 0
 
 
 class WireHandle:
     """An installed wire tee, returned by :func:`install`."""
 
     def __init__(
-        self, config: WireConfig, tee: WireTee, *, patched: bool,
+        self, config: WireConfig, tee: WireTee | None, *, patched: bool,
         fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
     ) -> None:  # fmt: skip
+        """``tee=None``: capture is disabled (``OTEL_SDK_DISABLED``): nothing is patched,
+        no thread runs, nothing is recorded, and :meth:`status` says so."""
         from .._loss import PrivateFallback  # noqa: PLC0415
 
-        self.config, self._tee, self._patched = config, tee, patched
+        self.config, self._tee_or_none, self._patched = config, tee, patched
         self.gate = gate
         self._fallback = fallback or PrivateFallback(None)
         self._result: bool | None = None  # set once closed
+
+    @property
+    def _tee(self) -> WireTee:
+        if (tee := self._tee_or_none) is None:
+            raise RuntimeError("capture is disabled")
+        return tee
+
+    @property
+    def capturing(self) -> bool:
+        """``False`` when capture is disabled (``OTEL_SDK_DISABLED``)."""
+        return self._tee_or_none is not None
 
     def status(self) -> dict[str, Any]:
         """The install's content state (049 §7.3): profile, ``content_capture`` and its
         reason, policy reference, pseudonym mode and key id, spool encryption. Values
         only, never a key, path or content; ``{}`` for a handle built without a gate.
         ``spool_key_id`` names the key sealing the spool (049 §7.8), never the key."""
+        if self._tee_or_none is None:
+            return {"capture": "disabled", "capture_reason": "otel_sdk_disabled"}
         if self.gate is None:
             return {}
         sender = self._tee.sender
-        status = {**self.gate.status(),
+        status = {"capture": "active", **self.gate.status(), **_client_status(self.config),
                   "spool_key_id": sender.spool.key_id if sender is not None else None}  # fmt: skip
         if sender is not None:  # 049 §7.8: never "encrypted" while plaintext records remain
             plaintext = sender.spool.plaintext_records()
@@ -143,12 +224,14 @@ class WireHandle:
     def allocator(self) -> SourceAllocator:
         return self._tee.allocator
 
-    def _deliver(self, timeout_s: float, *, closing: bool) -> bool:
+    def _deliver(self, timeout_s: float, *, closing: bool, exiting: bool = False) -> bool:
         """Through the spool sender, else the exchange (or global) and loss providers."""
         from opentelemetry import trace  # noqa: PLC0415
 
         if (sender := self._tee.sender) is not None:  # undelivered records stay on disk
-            return sender.close(timeout_s) if closing else sender.flush(timeout_s)
+            if closing:
+                return sender.close(timeout_s, exiting=exiting)
+            return sender.flush(timeout_s)
         # Resolved now: the host may have installed a Fabric-protected global provider since
         # install. A refused route (``None``) is never reported as delivered.
         provider = self._tee.pipeline.resolved_provider()
@@ -159,6 +242,8 @@ class WireHandle:
     def flush(self, timeout_s: float = 5.0) -> bool:
         """Deliver queued exchanges, losses and heartbeats within ``timeout_s``; ``False`` when
         anything was not delivered in time or a host provider sampled it away."""
+        if not self.capturing:
+            return False  # nothing was recorded: no delivery can be claimed
         deadline = time.monotonic() + max(0.0, timeout_s)
         drained = self._tee.flush(timeout_s)
         return self._deliver(max(0.0, deadline - time.monotonic()), closing=False) and drained
@@ -166,6 +251,11 @@ class WireHandle:
     def close(self, timeout_s: float | None = None) -> bool:
         """Restore httpx, drain, report what missed the deadline as losses, deliver; within
         ``timeout_s`` even when the store, disk or exporter is blocked. Idempotent."""
+        return self._close(timeout_s, exiting=False)
+
+    def _close(self, timeout_s: float | None, *, exiting: bool) -> bool:
+        """``exiting``: the process is ending; a process that does not drain the spool
+        only makes its records durable there, for the drainer (never waits on another)."""
         global _HANDLE  # noqa: PLW0603
         from . import _transport  # noqa: PLC0415
 
@@ -173,10 +263,18 @@ class WireHandle:
             if self._result is not None:
                 return self._result
             self._result = False
+            if not self.capturing:
+                if _HANDLE is self:
+                    _HANDLE = None
+                return False
             if _HANDLE is self:
                 _HANDLE = _transport._ACTIVE = None
                 if self._patched:
                     _transport.unpatch_httpx()
+                from . import _aiohttp, _detect  # noqa: PLC0415
+
+                _aiohttp.unpatch_aiohttp()
+                _detect.unpatch_detectors()
         with contextlib.suppress(Exception):
             atexit.unregister(self._atexit_close)
             timeout = self.config.shutdown_timeout_s if timeout_s is None else timeout_s
@@ -184,32 +282,36 @@ class WireHandle:
             drained = self._tee.close(timeout * _DRAIN_SHARE)
             self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
             remaining = max(0.0, deadline - time.monotonic())
-            self._result = self._deliver(remaining, closing=True) and drained
+            self._result = self._deliver(remaining, closing=True, exiting=exiting) and drained
         return self._result
 
     def uninstall(self) -> None:
         self.close()
 
     def stats(self) -> WireStats:
-        values = self._tee.stats()
+        values = self._tee.stats() if self.capturing else {}
         return WireStats(**{f.name: values.get(f.name, 0) for f in dataclasses.fields(WireStats)})
 
     def _atexit_close(self) -> None:
-        """At exit, bounded: close, then shut Fabric's exporter/providers down on a helper
-        thread unless delivery failed (the exporter is then presumed blocked)."""
+        """At exit (atexit, or a multiprocessing worker's finalizer), bounded: close, then
+        shut Fabric's exporter/providers down on a helper thread unless delivery failed
+        (the exporter is then presumed blocked)."""
+        if not self.capturing:
+            return
         with contextlib.suppress(BaseException):  # interpreter shutdown
             from .. import _loss  # noqa: PLC0415
             from ..tracing import is_private_provider  # noqa: PLC0415
 
             deadline = time.monotonic() + max(0.0, self.config.shutdown_timeout_s)
-            closed = self.close()
+            closed = self._close(None, exiting=True)
             loss, sender = self._tee.loss, self._tee.sender
             if sender is None:  # the direct path: the loss emitter's thread and provider
                 closed = loss.close(max(0.0, deadline - time.monotonic())) and closed
             providers = {self.config.tracer_provider, loss.tracer_provider,
                          self._fallback.provider} - {None}  # fmt: skip
-            targets: list[Any] = [sender.exporter] if sender else [
+            targets: list[Any] = [sender.owned_exporter()] if sender else [
                 p for p in providers if is_private_provider(p)]  # fmt: skip
+            targets = [target for target in targets if target is not None]
             for target in targets if closed else ():  # else presumed blocked: skipped
                 shutdown = lambda t=target: t.shutdown() or True  # noqa: E731
                 _loss.run_bounded(shutdown, deadline, "fabric-shutdown")
@@ -226,6 +328,7 @@ def install(
     from . import _transport  # noqa: PLC0415
     from ._sender import build_sender  # noqa: PLC0415
 
+    _prime_fork_safety()  # before any Fabric thread starts
     with _LOCK:
         if _HANDLE is not None:
             _LOG.warning("fabric.wire: already installed; returning the active handle")
@@ -236,6 +339,13 @@ def install(
         if config.labels is None:
             config = dataclasses.replace(config, labels=labels_from_env(os.environ))
         config = _protection_from_env(config)
+        if _otel_disabled():
+            # The OpenTelemetry kill switch also stops Fabric's capture, never silently
+            # (agent matrix D6): one warning, and status() says so.
+            _LOG.warning("fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is "
+                         "recorded")  # fmt: skip
+            _HANDLE = WireHandle(config, None, patched=False)
+            return _HANDLE
         gate = _gate(config)
         if config.spool_migrate_plaintext and gate.profile == "production":
             # 049 §7.8: never in production; plaintext records there are quarantined.
@@ -282,8 +392,7 @@ def install(
             sender.wake()
         _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback, gate=gate)
         _log_gate(gate)
-        if config.patch_httpx:
-            _transport.patch_httpx()
+        _patch_clients(config)
         _transport._ACTIVE = tee
         atexit.register(_HANDLE._atexit_close)
         if _truthy(os.environ.get("FABRIC_CAPTURE_LLM_CONTENT")):
@@ -292,6 +401,36 @@ def install(
                 "wire already stores content off telemetry"
             )
         return _HANDLE
+
+
+def _patch_clients(config: WireConfig) -> None:
+    """The process-global tees the config enables: httpx/httpx2, aiohttp."""
+    from . import _aiohttp, _detect, _transport  # noqa: PLC0415
+
+    if config.patch_httpx:
+        _transport.patch_httpx()
+        _detect.patch_detectors()  # the clients wire does not tee: their model calls count
+    if config.patch_aiohttp:
+        _aiohttp.patch_aiohttp()
+
+
+def _client_status(config: WireConfig) -> dict[str, Any]:
+    """The wire capture points' states and the HTTP clients a model call may have used
+    unseen (049 §2.8; until the capture manifest is built, status() declares them)."""
+    from . import _aiohttp, _detect, _transport  # noqa: PLC0415
+
+    flavors = {module for module, _ in _transport._PATCHED}
+    httpx_state = "active" if flavors else "failed" if config.patch_httpx else "disabled"
+    if _aiohttp.patched():
+        aiohttp_state = "active"
+    elif not config.patch_aiohttp:
+        aiohttp_state = "disabled"
+    else:
+        aiohttp_state = "failed" if _aiohttp.installed() else "installed_inactive"
+    patched = lambda name: name in flavors or (name == "aiohttp" and _aiohttp.patched())  # noqa: E731
+    unseen = {*_detect.seen(), *_detect.loaded_unpatched(patched)}
+    return {"capture_points": {"wire.py.httpx": httpx_state, "wire.py.aiohttp": aiohttp_state},
+            "uninstrumented_clients": sorted(unseen)}  # fmt: skip
 
 
 def _protection_from_env(config: WireConfig) -> WireConfig:
@@ -334,6 +473,11 @@ def _log_gate(gate: ContentGate) -> None:
             "fabric.wire: content capture disabled (%s, %s profile); metadata capture continues",
             gate.reason, gate.profile,
         )  # fmt: skip
+
+
+def _otel_disabled() -> bool:
+    """``OTEL_SDK_DISABLED``, parsed as the OpenTelemetry SDK parses it."""
+    return os.environ.get("OTEL_SDK_DISABLED", "").strip().lower() == "true"
 
 
 def _truthy(value: str | None) -> bool:
@@ -400,6 +544,7 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
     the host's, and losses too without an OTLP endpoint). A Fabric-protected global provider
     never carries wire spans: global mode then resolves to the private provider when an OTLP
     endpoint is set, and otherwise capture is not installed (one class-only warning)."""
+    _prime_fork_safety()  # before the private provider starts its export thread
     try:
         from .._loss import get_loss_emitter  # noqa: PLC0415
         from ..tracing import (  # noqa: PLC0415
@@ -410,6 +555,8 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
         from ._config import config_from_env  # noqa: PLC0415
 
         config, tracer_mode = config_from_env(os.environ if environ is None else environ)
+        if _otel_disabled():
+            return install(config)  # disabled: nothing is built
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():
             # D3: a Fabric-protected global provider never carries wire spans.
             if not otlp_endpoint_configured():
@@ -449,7 +596,7 @@ def run(run_id: str) -> Iterator[None]:
     ``run_start``/``run_end`` markers bound the calls started inside it (spec 048 §6).
     ``run_id`` is emitted only as its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``); in
     the production profile without that key, only the generated source fallback."""
-    handle = _HANDLE
+    handle = _HANDLE if _HANDLE is not None and _HANDLE.capturing else None
 
     def mark(scope: RunScope, kind: Literal["run_start", "run_end"]) -> None:
         if handle is not None:
