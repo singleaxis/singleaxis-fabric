@@ -136,6 +136,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   interpreter forks a guardian (before any customer code) that kills the group when
   the interpreter or the recorder ends, even while customer code holds the GIL or
   `PR_SET_PDEATHSIG` ended the interpreter first (Sol P0-A round 4 #3).
+- Python customer transformations: every process Fabric starts is now reaped by its
+  own parent, so none accumulates as a zombie under a PID 1 that never reaps (a Linux
+  container without an init). The runner starts a guardian, which forks the
+  interpreter into its own process group and stays its parent: the guardian kills
+  that group and reaps the interpreter (and, as a Linux child subreaper, the group's
+  orphaned tools) when the interpreter exits, the recorder dies or the runner stops it
+  (`SIGTERM` on timeout or close; a guardian not gone 5 s later is killed); the runner
+  reaps the guardian (Sol P0-A round 5 #3). The guardian and the interpreter wait with
+  `poll`, so a parent-death pipe above `FD_SETSIZE` (an application with more than
+  1,024 open descriptors) no longer fails every transformation (Sol P0-A round 5 #2).
 
 
 - An extracted `model.exchange.part` under `original_plus_masked` gets a masked

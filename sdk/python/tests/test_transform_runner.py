@@ -378,17 +378,17 @@ def test_a_child_whose_parent_died_exits_within_its_bound(
         assert parent.stdout is not None
         pid = int(parent.stdout.readline())
         time.sleep(0.5)  # the child is in its import or its callback
-        assert process_state(pid) not in ("", "Z")
+        assert process_state(pid)[:1] not in ("", "Z")
         parent.kill()
         parent.wait(10.0)
         deadline = time.monotonic() + bound_s
-        while process_state(pid) not in ("", "Z"):  # PID 1 may reap it later
+        while process_state(pid)[:1] not in ("", "Z"):  # PID 1 may reap it later
             assert time.monotonic() < deadline, "the orphaned child is still running"
             time.sleep(0.05)
     finally:
         parent.kill()
         parent.wait(10.0)
-        if pid and process_state(pid) not in ("", "Z"):
+        if pid and process_state(pid)[:1] not in ("", "Z"):
             os.kill(pid, signal.SIGKILL)
 
 
@@ -415,18 +415,18 @@ def test_stopping_a_child_stops_its_subprocesses(tmp_path: Path, stop: str) -> N
         if stop == "close":
             thread.join(5.0)
         deadline = time.monotonic() + 5.0
-        while process_state(tool) not in ("", "Z"):  # PID 1 may reap it later
+        while process_state(tool)[:1] not in ("", "Z"):  # PID 1 may reap it later
             assert time.monotonic() < deadline, "the redactor's subprocess is still running"
             time.sleep(0.05)
     finally:
         runner.close()
-        if tool and process_state(tool) not in ("", "Z"):
+        if tool and process_state(tool)[:1] not in ("", "Z"):
             os.kill(tool, signal.SIGKILL)
 
 
 def _wait_gone(pid: int, bound_s: float, what: str) -> None:
     deadline = time.monotonic() + bound_s
-    while process_state(pid) not in ("", "Z"):  # PID 1 may reap it later
+    while process_state(pid)[:1] not in ("", "Z"):  # PID 1 may reap it later
         assert time.monotonic() < deadline, what
         time.sleep(0.05)
 
@@ -443,7 +443,7 @@ def test_an_exited_interpreter_takes_its_process_group(tmp_path: Path) -> None:
         tool = int(marker.read_text())
         (proc,) = runner._procs
         deadline = time.monotonic() + 5.0
-        while process_state(proc.pid) not in ("", "Z"):  # the idle interpreter exits
+        while process_state(proc.pid)[:1] not in ("", "Z"):  # the idle interpreter exits
             assert time.monotonic() < deadline
             time.sleep(0.05)
         runner.reap()
@@ -452,7 +452,7 @@ def test_an_exited_interpreter_takes_its_process_group(tmp_path: Path) -> None:
         assert runner.close()
     finally:
         runner.close()
-        if tool and process_state(tool) not in ("", "Z"):
+        if tool and process_state(tool)[:1] not in ("", "Z"):
             os.kill(tool, signal.SIGKILL)
 
 
@@ -487,7 +487,7 @@ def test_a_dead_parent_takes_the_transformation_process_group(
         parent.kill()
         parent.wait(10.0)
         for leftover in (pid, tool):
-            if leftover and process_state(leftover) not in ("", "Z"):
+            if leftover and process_state(leftover)[:1] not in ("", "Z"):
                 os.kill(leftover, signal.SIGKILL)
 
 
@@ -548,3 +548,74 @@ def test_every_config_refuses_a_key_in_the_environment_allowlist(tmp_path: Path)
         with pytest.raises(ValueError, match="transform_env_allowlist"):
             ByteEvidenceConfig(store=store, roles=frozenset({"tool.call.result"}),
                                transform_env_allowlist=(name,))  # fmt: skip
+
+
+_MANY_FDS = """
+import os, resource
+soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+want = 1400 if hard == resource.RLIM_INFINITY else min(hard, 1400)
+resource.setrlimit(resource.RLIMIT_NOFILE, (max(soft, want), hard))
+held = [os.open(os.devnull, os.O_RDONLY) for _ in range(1100)]
+from fabric._transform_runner import TransformRunner, _death_fd
+death = _death_fd()
+runner = TransformRunner("tests.transforms:upper")
+results = [runner.run(b"abc", 10.0) for _ in range(3)]
+print(death, results, runner.close(), flush=True)
+"""
+
+
+def test_a_death_pipe_above_fd_setsize_still_transforms() -> None:
+    """Sol P0-A round 5 #2: with 1,100 descriptors open before the first transformation,
+    the death pipe got fd 1103 and the guardian's ``select()`` (``FD_SETSIZE`` 1024)
+    failed, killing every call (``error``). The watched descriptors are polled."""
+    probe = subprocess.run([sys.executable, "-c", _MANY_FDS], capture_output=True,  # noqa: S603
+                           text=True, timeout=60, cwd=Path(__file__).parent.parent,
+                           check=False)  # fmt: skip
+    assert probe.returncode == 0, probe.stderr
+    death, results = probe.stdout.split(" ", 1)
+    assert int(death) > 1024
+    assert results.strip() == "[('ok', b'ABC'), ('ok', b'ABC'), ('ok', b'ABC')] True"
+
+
+_NO_REAPER = """
+import ctypes, os, sys, time
+ctypes.CDLL(None).prctl(36, 1, 0, 0, 0)  # PR_SET_CHILD_SUBREAPER: like PID 1, never waits
+from fabric._transform_runner import TransformRunner
+for _ in range(6):
+    runner = TransformRunner("tests.transforms:upper")
+    assert runner.run(b"abc", 10.0) == ("ok", b"ABC")
+    assert runner.close()
+runner = TransformRunner("tests.transforms:leave_sleeper", idle_timeout_s=0.15)
+assert runner.run(sys.argv[1].encode(), 10.0) == ("ok", b"safe")
+time.sleep(0.6)  # idle expiry
+runner.reap()
+assert runner.run(sys.argv[1].encode() + b".2", 10.0) == ("ok", b"safe")
+assert TransformRunner("tests.transforms:spawn_sleeper").run(
+    sys.argv[1].encode() + b".3", 0.5) == ("timeout", None)
+assert runner.close()
+time.sleep(1.0)
+me = str(os.getpid())
+zombies = []
+for entry in os.listdir("/proc"):
+    if entry.isdigit():
+        try:
+            stat = open(f"/proc/{entry}/stat").read().rsplit(")", 1)[1].split()
+        except OSError:
+            continue
+        if stat[1] == me:
+            zombies.append((entry, stat[0]))
+print(zombies, flush=True)
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux child subreaper")
+def test_no_process_is_left_for_a_reaper_that_never_waits(tmp_path: Path) -> None:
+    """Sol P0-A round 5 #3: in a container whose PID 1 never reaps, every guardian (killed
+    with its group after its interpreter, whose parent it was) stayed a zombie under
+    PPID 1. Every process Fabric starts is now reaped by its own parent: the runner reaps
+    the guardian, the guardian its interpreter and (Linux subreaper) its orphaned tools."""
+    probe = subprocess.run([sys.executable, "-c", _NO_REAPER, str(tmp_path / "tool")],  # noqa: S603
+                           capture_output=True, text=True, timeout=120,
+                           cwd=Path(__file__).parent.parent, check=False)  # fmt: skip
+    assert probe.returncode == 0, probe.stderr
+    assert probe.stdout.strip() == "[]"

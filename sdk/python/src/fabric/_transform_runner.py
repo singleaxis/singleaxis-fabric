@@ -13,9 +13,13 @@ object over a pipe. The child never touches the spool, a store or the network, a
 environment is minimal: ``PATH``, locale variables and the customer's
 ``transform_env_allowlist`` (never a ``FABRIC_*KEY*`` variable).
 
-Each call waits at most its timeout; on timeout the child is killed with its process
-group (``SIGKILL`` preempts anything; each child leads its own session) and the caller
-withholds the content (``protection_failed``). The caller's thread only waits on the pipe
+Each child is a guardian (it leads its own session) and the interpreter it forked
+(:mod:`fabric._transform_child`): every process is reaped by its own parent, the
+guardian by this runner, so none is left for a PID 1 that never reaps (Sol P0-A round 5
+#3). Each call waits at most its timeout; on timeout the child is stopped (``SIGTERM`` to
+the guardian, which kills the interpreter's process group, preempting anything,
+and reaps it; a guardian not gone after a grace is killed) and the caller withholds the
+content (``protection_failed``). The caller's thread only waits on the pipe
 (``poll``), so it never holds the GIL meanwhile.
 Capacity is reserved before a call starts: busy children and killed children not yet
 reaped together stay within ``max_workers`` (a stale idle child is discarded before the
@@ -46,7 +50,7 @@ import time
 import weakref
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Final, Literal
 
 Outcome = Literal["ok", "error", "invalid", "too_large", "timeout", "saturated"]
 DEFAULT_MAX_WORKERS: Final = 2
@@ -54,6 +58,7 @@ DEFAULT_IDLE_TIMEOUT_S: Final = 60.0
 DEFAULT_START_TIMEOUT_S: Final = 30.0
 MAX_IO_BYTES: Final = 64 * 1024 * 1024
 _STALE_WAIT_S = 0.1  # reaping a stale idle child just killed, before refusing a call
+_GUARDIAN_GRACE_S = 5.0  # a stopped guardian still running after this is killed
 _REF = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*:[A-Za-z_][A-Za-z0-9_]*")
 _MAX_REF = 256
 _CHILD = str(Path(__file__).with_name("_transform_child.py"))
@@ -171,51 +176,44 @@ def _read(fd: int, size: int, deadline: float) -> bytes:
     return b"".join(chunks)
 
 
+_STOPPED: weakref.WeakKeyDictionary[subprocess.Popen[bytes], float] = (
+    weakref.WeakKeyDictionary()
+)  # a stopped guardian: when it was asked to stop
+
+
 def _stop(proc: subprocess.Popen[bytes], *, pipes: bool = True) -> None:
-    """Kill ``proc`` with its process group (it leads its own session, so the processes a
-    customer transformation started go too; Sol P0-A round 3 #5) and close its pipes
-    (never those a calling thread is waiting on: it sees the end of input and closes
-    them); reaping is :func:`_reaped`'s (never waits)."""
-    if proc.returncode is None:  # not reaped: the group id is still this child's own
-        _kill_group(proc)
-    with contextlib.suppress(OSError):  # already gone
-        proc.kill()
+    """Stop ``proc``, a guardian: ``SIGTERM`` makes it kill its interpreter's process
+    group (the processes a customer transformation started go too; Sol P0-A round 3 #5),
+    reap it and exit; close its pipes (never those a calling thread is waiting on: it
+    sees the end of input and closes them); reaping is :func:`_reaped`'s (never
+    waits)."""
+    if proc.returncode is None and proc not in _STOPPED:
+        _STOPPED[proc] = time.monotonic()
+        with contextlib.suppress(OSError):  # already gone
+            proc.send_signal(signal.SIGTERM)
     for pipe in (proc.stdin, proc.stdout) if pipes else ():
         if pipe is not None:
             with contextlib.suppress(OSError):
                 pipe.close()
 
 
-# Linux can see an exit without reaping it, so the group is killed while the child's pid
-# still names it; elsewhere it is killed just after the reap (a group's id is not reused
-# while any member is alive, so only an empty group is ever at stake then).
-_WAITID: Any = getattr(os, "waitid", None)  # absent on macOS (and from its type stubs)
-_SEE_EXIT = _WAITID is not None and hasattr(os, "WNOWAIT")
-
-
-def _kill_group(proc: subprocess.Popen[bytes]) -> None:
-    with contextlib.suppress(OSError):  # an empty group is already gone
-        os.killpg(proc.pid, signal.SIGKILL)
-
-
 def _reaped(proc: subprocess.Popen[bytes]) -> bool:
-    """Whether ``proc`` has been reaped (never waits). An interpreter that exits by itself
-    (idle expiry, a crash, its alarm) takes its process group with it, so a tool its
-    transformation started never outlives it (Sol P0-A round 4 #3)."""
+    """Whether ``proc`` has been reaped (never waits). Its guardian ends the interpreter's
+    group whenever the interpreter exits by itself (idle expiry, a crash, its alarm), so a
+    tool its transformation started never outlives it (Sol P0-A round 4 #3). A guardian
+    still running a grace after it was stopped is killed."""
     if proc.returncode is not None:
         return True
-    if _SEE_EXIT:
-        with contextlib.suppress(OSError):
-            flags = getattr(os, "WEXITED", 0) | os.WNOHANG | getattr(os, "WNOWAIT", 0)
-            if _WAITID(getattr(os, "P_PID", 1), proc.pid, flags):
-                _kill_group(proc)
     try:
-        done = proc.poll() is not None
+        if proc.poll() is not None:
+            return True
     except OSError:
         return True
-    if done and not _SEE_EXIT:
-        _kill_group(proc)
-    return done
+    stopped = _STOPPED.get(proc)
+    if stopped is not None and time.monotonic() - stopped > _GUARDIAN_GRACE_S:
+        with contextlib.suppress(OSError):
+            proc.kill()
+    return False
 
 
 class _Child:
@@ -446,8 +444,13 @@ class TransformRunner:
         """Finalizer: a collected runner's children are killed and reaped."""
         for proc in list(procs):
             _stop(proc)
+        for proc in list(procs):
             with contextlib.suppress(subprocess.TimeoutExpired, OSError):
                 proc.wait(1.0)
+            if proc.returncode is None:
+                with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+                    proc.kill()
+                    proc.wait(_STALE_WAIT_S)
 
     def _sweep(self) -> None:
         """Reap, without waiting, every child that has exited: killed ones and idle ones

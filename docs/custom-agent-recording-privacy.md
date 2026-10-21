@@ -78,7 +78,9 @@ review descriptor; this is reported, not rolled back.
 
 Each call is bounded by `timeout_s` (default 5 s): past it the child process is
 killed (`SIGKILL`) with its process group, so subprocesses the transformation started
-go too, the object is withheld as `protection_failed`, and a new child serves the next
+go too (a small guardian process, the interpreter's parent, kills and reaps the group,
+so no process is left as a zombie even under a container PID 1 without an init), the
+object is withheld as `protection_failed`, and a new child serves the next
 call. A child never outlives the application beyond its bounds: it exits when the
 application process dies (a parent-death pipe, and `PR_SET_PDEATHSIG` on Linux), and
 an alarm with its default action, restored even when the application ignores
