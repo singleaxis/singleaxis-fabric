@@ -7,7 +7,7 @@
 # /sys/kernel/btf, /sys/fs/cgroup, /sys/kernel/debug.
 
 ARG GO_VERSION=1.26
-FROM golang:${GO_VERSION}-bookworm@sha256:d9c68c2c51161e12fd77e4c6320687c9cd86e1af1e3ad6e6cd63ff970641453c AS builder
+FROM golang:${GO_VERSION}-bookworm@sha256:fe3da92a5cb2881e4aa75e625cb0b7c50571632fb4cf340cbe53e6ccdcffdd51 AS builder
 
 # Re-declare so the ARG is visible inside the stage (global ARGs end at FROM).
 ARG GO_VERSION
