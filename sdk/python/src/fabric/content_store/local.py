@@ -5,13 +5,14 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import os
 import re
 import stat
 import uuid
 from collections.abc import Iterator, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -25,6 +26,43 @@ from fabric.content_store.base import (
 )
 
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+# The Fabric Node's directory-backend envelope (spec 049 §7.8; contracts/content/v2/
+# fixtures/node-envelope-v1.json): magic | 12-byte nonce | AES-256-GCM(plaintext), with the
+# object's location below the content root bound as AAD.
+NODE_ENVELOPE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
+_NODE_ENVELOPE_AAD = "fabric.node-content-envelope/v1"
+
+
+def open_node_envelope(data: bytes, relative: str, key: bytes | None) -> bytes:
+    """A Node-written body or descriptor, as stored: opened with ``key`` (the magic is then
+    required and the envelope must authenticate), else returned as is unless it is an
+    envelope (which a reader without the key refuses: fail closed). Fixed-text errors."""
+    sealed = data.startswith(NODE_ENVELOPE_MAGIC)
+    if key is None:
+        if sealed:
+            raise CorruptedObjectError("enveloped Node content needs the Node content key")
+        return data
+    if not sealed:
+        raise CorruptedObjectError("Node content is not enveloped under the configured key")
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+
+    head = len(NODE_ENVELOPE_MAGIC)
+    aad = json.dumps([_NODE_ENVELOPE_AAD, relative], separators=(",", ":")).encode()
+    try:
+        opened: bytes = AESGCM(key).decrypt(data[head : head + 12], data[head + 12 :], aad)
+    except Exception:  # InvalidTag, short input: never the bytes
+        raise CorruptedObjectError("Node content envelope does not authenticate") from None
+    return opened
+
+
+def node_shard(object_id: str) -> tuple[str, str]:
+    """The Fabric Node directory backend's two shard directories for ``object_id``: the
+    first and second pairs of lowercase hex of SHA-256(object_id). The Node stores
+    ``<tenant>/evidence/<id>`` at ``<tenant>/evidence/<s1>/<s2>/<id>`` and
+    ``<tenant>/evidence/meta/<id>.json`` at ``<tenant>/evidence/meta/<s1>/<s2>/<id>.json``;
+    refs and envelope AADs keep the flat (logical) key."""
+    digest = hashlib.sha256(object_id.encode("utf-8")).hexdigest()
+    return digest[:2], digest[2:4]
 
 
 @contextlib.contextmanager
@@ -48,53 +86,85 @@ def _directory(path: Path, *, create: bool = False) -> Iterator[int]:
         os.close(fd)
 
 
+@contextlib.contextmanager
+def _subdirectory(parent: int, name: str, *, create: bool = False) -> Iterator[int]:
+    """``name`` under the pinned ``parent`` (created, durably, when asked), pinned."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if create:
+        try:
+            os.mkdir(name, mode=0o700, dir_fd=parent)
+            os.fsync(parent)
+        except FileExistsError:
+            pass  # The no-follow directory open below validates it.
+    fd = os.open(name, flags, dir_fd=parent)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+
 def _read_bytes(path: Path) -> bytes:
     with _directory(path.parent) as directory:
-        fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
-        try:
-            info = os.fstat(fd)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                raise CorruptedObjectError("unsafe local content file")
-            with os.fdopen(fd, "rb", closefd=False) as stream:
-                return stream.read()
-        finally:
-            os.close(fd)
+        return _read_at(directory, path.name)
+
+
+def _read_at(directory: int, name: str) -> bytes:
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise CorruptedObjectError("unsafe local content file")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            return stream.read()
+    finally:
+        os.close(fd)
 
 
 def _exists(path: Path) -> bool:
     try:
         with _directory(path.parent) as directory:
-            info = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                raise CorruptedObjectError("unsafe local content file")
-            return True
+            return _exists_at(directory, path.name)
     except FileNotFoundError:
         return False
+
+
+def _exists_at(directory: int, name: str) -> bool:
+    try:
+        info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise CorruptedObjectError("unsafe local content file")
+    return True
 
 
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Write and fsync through pinned directory descriptors, without symlinks."""
     with _directory(target.parent, create=True) as directory:
-        os.fchmod(directory, stat.S_IRWXU)  # owner-only directory (0o700)
-        if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
-            raise PermissionError("content directory must enforce owner-only permissions")
-        temporary = ".pending-" + uuid.uuid4().hex
-        fd = os.open(
-            temporary,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
-            0o600,
-            dir_fd=directory,
-        )
-        try:
-            with os.fdopen(fd, "wb") as stream:
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, target.name, src_dir_fd=directory, dst_dir_fd=directory)
-            os.fsync(directory)
-        finally:
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(temporary, dir_fd=directory)
+        _atomic_write_at(directory, target.name, data)
+
+
+def _atomic_write_at(directory: int, name: str, data: bytes) -> None:
+    os.fchmod(directory, stat.S_IRWXU)  # owner-only directory (0o700)
+    if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
+        raise PermissionError("content directory must enforce owner-only permissions")
+    temporary = ".pending-" + uuid.uuid4().hex
+    fd = os.open(
+        temporary,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+        dir_fd=directory,
+    )
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, name, src_dir_fd=directory, dst_dir_fd=directory)
+        os.fsync(directory)
+    finally:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary, dir_fd=directory)
 
 
 @dataclass(slots=True)
@@ -117,8 +187,14 @@ class LocalFilesystemContentStore:
 
     root: str
     tenant_id: str | None = None
+    # Reader side of the Node directory envelope (spec 049 §7.8): a secret, never in repr.
+    envelope_key: bytes | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        if self.envelope_key is not None and (
+            not isinstance(self.envelope_key, bytes) or len(self.envelope_key) != 32  # noqa: PLR2004
+        ):  # fmt: skip
+            raise ValueError("envelope_key must be a 32-byte AES-256-GCM key")
         # Resolve only the explicitly configured root, once. Descendants are
         # traversed through no-follow directory descriptors on every operation.
         self.root = str(Path(self.root).resolve())
@@ -218,16 +294,22 @@ class LocalFilesystemContentStore:
             raise ValueError("descriptor ref does not match store namespace")
         meta = target.parent / "meta" / f"{object_id}.json"
         body = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
-        if _exists(target):
-            if _read_bytes(target) != content:
-                raise CorruptedObjectError(f"pre-existing evidence object {target} differs")
-        else:
-            _atomic_write_bytes(target, content)
-        if _exists(meta):
-            if _read_bytes(meta) != body:
-                raise CorruptedObjectError(f"pre-existing evidence descriptor {meta} differs")
-        else:
-            _atomic_write_bytes(meta, body)
+        # One pinned walk for both files (each step of a walk is a system call: on the
+        # capture worker every one may wait for the host's thread to yield the GIL).
+        with _directory(target.parent, create=True) as evidence:
+            if _exists_at(evidence, target.name):
+                if _read_at(evidence, target.name) != content:
+                    raise CorruptedObjectError(f"pre-existing evidence object {target} differs")
+            else:
+                _atomic_write_at(evidence, target.name, content)
+            with _subdirectory(evidence, "meta", create=True) as directory:
+                if _exists_at(directory, meta.name):
+                    if _read_at(directory, meta.name) != body:
+                        raise CorruptedObjectError(
+                            f"pre-existing evidence descriptor {meta} differs"
+                        )
+                else:
+                    _atomic_write_at(directory, meta.name, body)
         return ContentRef(uri=ref, content_hash=digest)
 
     def write_manifest(
@@ -283,21 +365,49 @@ class LocalFilesystemContentStore:
             return False
         return True
 
+    def _located(self, path: Path) -> Path:
+        """Where the evidence object or descriptor at logical ``path`` is stored: the Fabric
+        Node's sharded location (:func:`node_shard`) when present, else ``path`` itself (the
+        flat layout of this SDK's writer and of Nodes before sharding)."""
+        if self.tenant_id is None:
+            return path
+        evidence = self._tenant_root() / "evidence"
+        if path.parent == evidence:
+            object_id = path.name
+        elif path.parent == evidence / "meta" and path.name.endswith(".json"):
+            object_id = path.name.removesuffix(".json")
+        else:
+            return path
+        sharded = path.parent.joinpath(*node_shard(object_id), path.name)
+        return sharded if _exists(sharded) else path
+
     def exists(self, uri: str) -> bool:
-        return _exists(self._resolve_uri(uri))
+        return _exists(self._located(self._resolve_uri(uri)))
 
     def read(self, uri: str) -> bytes:
         path = self._resolve_uri(uri)
-        if not _exists(path):
+        stored = self._located(path)
+        if not _exists(stored):
             raise FileNotFoundError(uri)
-        return _read_bytes(path)
+        return self._opened(stored, path)
+
+    def _opened(self, path: Path, logical: Path | None = None) -> bytes:
+        """The file's bytes, through the Node envelope rule (:func:`open_node_envelope`). The
+        AAD is the ``logical`` (flat) location when the file is stored in a Node shard."""
+        data = _read_bytes(path)
+        if self.envelope_key is None and not data.startswith(NODE_ENVELOPE_MAGIC):
+            return data
+        bound = path if logical is None else logical
+        relative = bound.resolve().relative_to(self._root_path()).as_posix()
+        return open_node_envelope(data, relative, self.envelope_key)
 
     def read_descriptor(self, uri: str) -> Mapping[str, Any]:
         path = self._resolve_uri(uri)
         meta = path.parent / "meta" / f"{path.name}.json"
-        if not _exists(meta):
+        stored = self._located(meta)
+        if not _exists(stored):
             raise FileNotFoundError(f"no descriptor sidecar for {uri!r}")
-        value = json.loads(_read_bytes(meta).decode("utf-8"))
+        value = json.loads(self._opened(stored, meta).decode("utf-8"))
         if not isinstance(value, dict):
             raise ValueError(f"descriptor sidecar at {uri!r} is not an object")
         return value

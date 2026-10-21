@@ -21,6 +21,9 @@ GapType = Literal[
     "prefix_break",
     "unmatched_tool_call",
     "unresolved_previous_response",
+    # 049 §7.9, decision 20: in the production profile a record without the Node's
+    # fabric.source.authenticated stamp read back from a trusted location.
+    "source_unauthenticated",
 ]
 Effect = Literal["info", "partial", "unverified"]
 Check = Literal["passed", "failed", "skipped", "not_applicable"]

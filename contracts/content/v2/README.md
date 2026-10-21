@@ -74,5 +74,29 @@ lists every row of it, existing roles first. Version 2.1.0 adds:
   the `fabriccontent` exporter writes it into the persisted descriptor; an
   agent-supplied value is rejected by the exporter's closed parser.
 
-Wiring the exporter and the SDK sender to the role table is spec 049 P0-A;
-nothing in this directory changes what recorder v1 emits.
+Version 2.2.0 (spec 049 P0-A) adds:
+
+- the privacy modes `masked_only` (only a masked copy is stored, outcome
+  `redacted`) and `original_plus_masked` (the original, outcome `retained`,
+  plus a masked review copy, outcome `redacted`, that names the original
+  with a `derived_from` link and keeps no digest or length of it);
+- withholding on a failed transformation in any byte-storing mode:
+  `not_captured`, `protection_status: withheld`, `status_reason:
+  protection_failed`, no original-body digest (§7.7);
+- withholding by the policy itself of a binary `model.exchange.part` that no
+  part transformation applies to under `redact` or `masked_only` (§7.5):
+  `not_captured`, `protection_status: withheld`, `status_reason:
+  privacy_policy`, with its `part_of` link and no digest or length
+  (`valid/persisted-descriptor-part-privacy-withheld.json`); on any other role
+  those modes never withhold by `privacy_policy`;
+- `fixtures/node-envelope-v1.json`: the Node directory backend's AES-256-GCM
+  customer-key envelope (§7.8), pinned for every reader;
+- derived part ids: the wire producer names the `index`-th part of a split
+  side (0-based, ascending `byte_range` start) with the uuid4 layout (version
+  and variant bits set) of the first 16 bytes of SHA-256(`"fabric.part/v1"`
+  NUL skeleton `object_id` NUL decimal `index`), so a reader holding only
+  GetObject finds every part from the skeleton (`fabric._roles.part_object_id`).
+
+The `fabriccontent` exporter enforces the role table and these rules on the
+content path (capture/v1 `content-log-record-v1`); nothing in this directory
+changes what recorder v1 emits.

@@ -1,0 +1,11 @@
+{
+  "contract": "singleaxis.fabric.redaction",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "schema/redaction-error-v1.schema.json", "role": "redaction-error-schema", "sha256": "dfc30ae2602755f071d484bf917acbb3ab42a7506c80cdea2809b4d2823d2c63", "expectation": "schema"},
+    {"path": "valid/unknown-transformation.json", "role": "valid-unknown-transformation", "sha256": "5e1230407b8f7c685c030943d7ac9155468e8e1f0b147c956c5d2b471b2f9e6f", "expectation": "valid"},
+    {"path": "invalid/free-text-message.json", "role": "invalid-free-text-message", "sha256": "5fe1e52fe110c7259bc7dd1c99991a321f6c24265e927496064f22d45af3dd63", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/unknown-error-code.json", "role": "invalid-unknown-error-code", "sha256": "fec26b6f83eae1704869ce8b302a12c14fbc1bc16f36a3ae3b5281dfe88d2d88", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"}
+  ]
+}

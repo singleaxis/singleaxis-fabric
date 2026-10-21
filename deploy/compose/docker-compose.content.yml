@@ -18,9 +18,21 @@
 # disk's encryption is accepted instead (the Helm chart's
 # content.requireServerSideEncryption=false).
 #
+# Spec 049 P0-A (production profile): the content queue and the local store
+# are sealed with the Node-side customer key FABRIC_CONTENT_KEY_FILE (32 raw
+# bytes or their base64; a Compose secret, operator-owned, group 65532,
+# 0440, like the ingress token). Every content record is bound to
+# FABRIC_TENANT_ID / FABRIC_SOURCE_ID. Agents in node mode also need a capture
+# policy (FABRIC_CAPTURE_POLICY) and FABRIC_WIRE_ID_KEY, or they record
+# metadata only (spec 049 §7.3, superseding spec 048 §1).
+#
 # The content receiver must be at least as strict as the telemetry receivers:
 # uncomment its tls: stanza in collector-content.yaml together with theirs in
 # collector-production.yaml before publishing beyond loopback.
+
+secrets:
+  fabric_content_key:
+    file: ${FABRIC_CONTENT_KEY_FILE:?set FABRIC_CONTENT_KEY_FILE in .env to the Node content key file (spec 049 §7.8)}
 
 volumes:
   # Back both up like fabric-queue (docs/operations/dr.md). With
@@ -38,6 +50,9 @@ services:
       # The only tenant the content exporter writes (agents send the same
       # FABRIC_TENANT_ID with every content record).
       FABRIC_TENANT_ID: ${FABRIC_TENANT_ID:?set FABRIC_TENANT_ID in .env to the tenant id your agents send}
+    secrets:
+      - fabric_ingress_token
+      - fabric_content_key
     volumes:
       - ./collector-config/collector-content.yaml:/etc/fabric-node/collector-content.yaml:ro
       - fabric-content-queue:/var/lib/fabric-node/content-queue

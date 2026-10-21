@@ -1406,7 +1406,8 @@
         "unsealed_prior_epochs": [],
         "unsealed_prior_epoch_count": 0,
         "source_auth": "bound",
-        "content_capture_reason": "missing_id_key"
+        "content_capture_reason": "missing_id_key",
+        "spool_key_id": "kid-5e6f7a8b"
       },
       "attributes": {
         "fabric.capture.manifest_id": "5fab8ca0-6356-4fe0-a6c9-787151825ebe",
@@ -1469,6 +1470,7 @@
         "fabric.manifest.sequence_unit": "record",
         "fabric.manifest.source_auth": "bound",
         "fabric.manifest.spool_encrypted": true,
+        "fabric.manifest.spool_key_id": "kid-5e6f7a8b",
         "fabric.manifest.uncaptured_classes": [
           "requests",
           "urllib3",

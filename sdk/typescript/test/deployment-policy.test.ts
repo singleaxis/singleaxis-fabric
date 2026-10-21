@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   ByteEvidenceRecorder,
   ContentProtector,
@@ -15,6 +15,28 @@ import {
 } from "../src/index.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../../..");
+import { mask, startService, status, type TestService } from "./redaction-service.js";
+
+/** Customer redaction services (contracts/redaction/v1): masking, and always failing. */
+let MASK: TestService;
+let FAIL: TestService;
+let REDIRECT: TestService;
+beforeAll(async () => {
+  [MASK, FAIL, REDIRECT] = await Promise.all([
+    startService(mask),
+    startService(status(500)),
+    startService(status(307, { Location: "http://127.0.0.1:1/" })),
+  ]);
+});
+afterAll(async () => {
+  for (const service of [MASK, FAIL, REDIRECT]) await service?.close();
+});
+const TRANSFORMATION = { id: "test-mask", version: "1" };
+/** Options routing the masked role through `service` (replaces the object: `[redacted]`). */
+const service = (target: TestService) => ({
+  transformations: { "terminal.stdout": TRANSFORMATION },
+  redaction: { endpoint: target.endpoint },
+});
 const SECRET = Buffer.from("sensitive-value");
 const DIGEST = "sha256:777dda0c14d100c2c6728b2e3858f53c55cd62fdf3c1c3ced5decee0a5f36ea6";
 const TOKEN = "fabric.token.v1:a603512146debdb7ec03d124e146fbd4ae088f64c32642b950877829a632a31d";
@@ -120,7 +142,7 @@ describe("ContentProtector", () => {
     expect(unknown.mode).toBe("omit");
     expect(unknown.metadata.source_byte_length).toBeUndefined();
   });
-  it("separates original and derivative bytes and never serializes payloads", () => {
+  it("separates original and derivative bytes and never serializes payloads", async () => {
     const original = new ContentProtector(policyFor("retain_original")).protect(
       "terminal.stdout",
       SECRET,
@@ -131,9 +153,9 @@ describe("ContentProtector", () => {
       "sha256:" + createHash("sha256").update(SECRET).digest("hex"),
     );
     expect(JSON.stringify(original)).not.toContain("sensitive-value");
-    const redacted = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": () => Buffer.from("[redacted]") },
-    }).protect("terminal.stdout", SECRET);
+    const redacted = await new ContentProtector(policyFor("redact"), {
+      ...service(MASK),
+    }).protectAsync("terminal.stdout", SECRET);
     expect(redacted.status).toBe("redacted");
     expect(redacted.originalDigest).toBeNull();
     expect(redacted.metadata.source_byte_length).toBeUndefined();
@@ -142,8 +164,60 @@ describe("ContentProtector", () => {
     copy[0] = 0;
     expect(Buffer.from(original.protectedBytes!)).toEqual(SECRET);
   });
+  it("stores only the masked copy for masked_only and withholds original_plus_masked", async () => {
+    // Spec 049 §7.5/§7.7, parity with Python test_deployment_policy.py.
+    const protector = new ContentProtector(policyFor("masked_only"), {
+      ...service(MASK),
+    });
+    const masked = await protector.protectAsync("terminal.stdout", SECRET);
+    expect(masked.status).toBe("redacted");
+    expect(masked.mode).toBe("masked_only");
+    expect(Buffer.from(masked.protectedBytes!).toString()).toBe("[redacted]");
+    // The service is never called on the caller's path: protect() fails closed.
+    const sync = protector.protect("terminal.stdout", SECRET);
+    expect(sync.status).toBe("unsupported");
+    expect(sync.metadata.reason).toBe("redaction_requires_protect_async");
+    expect(sync.protectedBytes).toBeNull();
+    expect(masked.originalDigest).toBeNull();
+    expect(masked.metadata.source_byte_length).toBeUndefined();
+    expect(() => new ContentProtector(policyFor("masked_only"))).toThrow("transformation");
+    expect(
+      () =>
+        new ContentProtector(policyFor("original_plus_masked"), {
+          ...service(MASK),
+        }),
+    ).toThrow("transformations must match");
+    const both = new ContentProtector(policyFor("original_plus_masked")).protect(
+      "terminal.stdout",
+      SECRET,
+    );
+    expect(both.status).toBe("unsupported");
+    expect(both.protectedBytes).toBeNull();
+    expect(both.originalDigest).toBeNull();
+  });
   it("rejects absent transforms and keys before capture", () => {
-    expect(() => new ContentProtector(policyFor("redact"))).toThrow("redactor");
+    expect(() => new ContentProtector(policyFor("redact"))).toThrow("transformation");
+    expect(
+      () =>
+        new ContentProtector(policyFor("redact"), {
+          transformations: { "terminal.stdout": TRANSFORMATION },
+        }),
+    ).toThrow("FABRIC_REDACTION_ENDPOINT");
+    for (const legacy of [
+      { redactors: { "terminal.stdout": { module: "/abs/mask.mjs" } } },
+      { transformTimeoutMs: 5 },
+      { transformations: { "terminal.stdout": { module: "/abs/mask.mjs" } } },
+      { transformations: { "terminal.stdout": () => new Uint8Array() } },
+    ])
+      expect(() => new ContentProtector(policyFor("redact"), legacy as never)).toThrow(
+        "docs/wire-capture-deployment.md#redaction-service",
+      );
+    expect(
+      () =>
+        new ContentProtector(policyFor("omit"), {
+          redaction: { endpoint: "http://example.com:80" },
+        }),
+    ).toThrow("FABRIC_REDACTION_ENDPOINT must be");
     expect(() => new ContentProtector(policyFor("tokenize"))).toThrow("caller-supplied key");
     expect(
       () => new ContentProtector(policyFor("tokenize"), { tokenizationKey: Buffer.from("weak") }),
@@ -151,7 +225,7 @@ describe("ContentProtector", () => {
     expect(
       () =>
         new ContentProtector(policyFor("omit"), {
-          redactors: { "terminal.stdout": (data) => data },
+          ...service(MASK),
         }),
     ).toThrow("explicitly");
   });
@@ -185,34 +259,37 @@ describe("ContentProtector", () => {
       ).toString(),
     ).not.toBe(TOKEN);
   });
-  it("makes failed, unsupported and oversized transformations explicit without error text", () => {
+  it("makes failed, unsupported and oversized transformations explicit without error text", async () => {
     const protector = new ContentProtector(policyFor("redact"), {
-      redactors: {
-        "terminal.stdout": () => {
-          throw new Error("sensitive-value");
-        },
-      },
+      ...service(FAIL),
     });
-    const result = protector.protect("terminal.stdout", SECRET);
+    const result = await protector.protectAsync("terminal.stdout", SECRET);
     expect(result.status).toBe("lost");
     expect(result.metadata.reason).toBe("protection_failed");
     expect(JSON.stringify(result)).not.toContain("sensitive-value");
     expect(result.protectedBytes).toBeNull();
     const bad = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": () => "bad" as unknown as Uint8Array },
+      ...service(REDIRECT),
     });
-    expect(bad.protect("terminal.stdout", SECRET).status).toBe("unsupported");
+    // A redirect is a failure: never followed (contracts/redaction/v1).
+    expect((await bad.protectAsync("terminal.stdout", SECRET)).metadata.reason).toBe(
+      "protection_failed",
+    );
     const oversized = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": () => Buffer.from("abc") },
+      ...service(MASK),
       payloadMaxBytes: 2,
     });
-    expect(oversized.protect("terminal.stdout", Buffer.from("x")).metadata.reason).toBe(
-      "protected_payload_too_large",
+    // A response above the cap is a failed call (contracts/redaction/v1): withheld.
+    expect(
+      (await oversized.protectAsync("terminal.stdout", Buffer.from("x"))).metadata.reason,
+    ).toBe("protection_failed");
+    expect((await oversized.protectAsync("terminal.stdout", SECRET)).metadata.reason).toBe(
+      "payload_too_large",
     );
-    expect(oversized.protect("terminal.stdout", SECRET).metadata.reason).toBe("payload_too_large");
-    expect(oversized.protect("terminal.stdout", "bad" as unknown as Uint8Array).status).toBe(
-      "unsupported",
-    );
+    expect(
+      (await oversized.protectAsync("terminal.stdout", "bad" as unknown as Uint8Array)).status,
+    ).toBe("unsupported");
+    for (const used of [protector, bad, oversized]) await used.close();
   });
 });
 
@@ -246,87 +323,99 @@ describe("Deployment-protected byte recorder", () => {
     await recorder.close();
   });
 
-  it.each(["retain_original", "omit", "metadata_only", "redact", "tokenize"] as const)(
-    "applies %s before queue/store",
-    async (mode) => {
-      const policy = policyFor(mode);
-      const original = store(policy.tenant_id);
-      const derivative = store(policy.tenant_id);
-      const contentProtector = new ContentProtector(policy, {
-        redactors:
-          mode === "redact" ? { "terminal.stdout": () => Buffer.from("[redacted]") } : undefined,
-        tokenizationKey: Buffer.alloc(32, "k"),
-      });
-      const recorder = new ByteEvidenceRecorder({
-        store: original,
-        reviewStore: derivative,
-        roles: new Set(["terminal.stdout"]),
-        deploymentPolicy: policy,
-        contentProtector,
-      });
-      const initial = recorder.capture(SECRET, {
-        role: "terminal.stdout",
-        boundary: "terminal",
-        sourceId: "sdk",
-        sourceEpoch: 0,
-        sourceSequence: 1,
-      });
-      await recorder.flush();
-      const settled = recorder.get(initial.object_id)!;
-      expect(settled.policy_digest).toBe(policy.digest);
-      if (mode === "retain_original") {
-        expect(settled.status).toBe("stored");
-        expect(Buffer.from(original.read(settled.ref!))).toEqual(SECRET);
-      } else if (mode === "redact" || mode === "tokenize") {
-        expect(settled.status).toBe("redacted");
-        expect(settled.representation).toBe(mode === "redact" ? "redacted" : "tokenized");
-        expect(settled.source_sha256).toBeUndefined();
-        expect(settled.source_byte_length).toBeUndefined();
-        expect(Buffer.from(derivative.read(settled.ref!)).toString()).toBe(
-          mode === "redact" ? "[redacted]" : TOKEN,
+  it.each([
+    "retain_original",
+    "omit",
+    "metadata_only",
+    "redact",
+    "tokenize",
+    "masked_only",
+    "original_plus_masked",
+  ] as const)("applies %s before queue/store", async (mode) => {
+    const policy = policyFor(mode);
+    const original = store(policy.tenant_id);
+    const derivative = store(policy.tenant_id);
+    const masking = mode === "redact" || mode === "masked_only";
+    const contentProtector = new ContentProtector(policy, {
+      ...(masking ? service(MASK) : {}),
+      tokenizationKey: Buffer.alloc(32, "k"),
+    });
+    const recorder = new ByteEvidenceRecorder({
+      store: original,
+      reviewStore: derivative,
+      roles: new Set(["terminal.stdout"]),
+      deploymentPolicy: policy,
+      contentProtector,
+    });
+    const initial = recorder.capture(SECRET, {
+      role: "terminal.stdout",
+      boundary: "terminal",
+      sourceId: "sdk",
+      sourceEpoch: 0,
+      sourceSequence: 1,
+    });
+    await recorder.flush();
+    const settled = recorder.get(initial.object_id)!;
+    expect(settled.policy_digest).toBe(policy.digest);
+    if (mode === "retain_original") {
+      expect(settled.status).toBe("stored");
+      expect(Buffer.from(original.read(settled.ref!))).toEqual(SECRET);
+    } else if (masking || mode === "tokenize") {
+      expect(settled.status).toBe("redacted");
+      expect(settled.privacy_mode).toBe(mode);
+      expect(settled.representation).toBe(masking ? "redacted" : "tokenized");
+      expect(settled.source_sha256).toBeUndefined();
+      expect(settled.source_byte_length).toBeUndefined();
+      expect(Buffer.from(derivative.read(settled.ref!)).toString()).toBe(
+        masking ? "[redacted]" : TOKEN,
+      );
+      const bytes = derivative.read(settled.ref!);
+      const descriptor = derivative.readDescriptor(settled.ref!);
+      for (const change of [
+        { source_byte_length: SECRET.length },
+        { policy_id: undefined },
+        { policy_version: 0 },
+        { protection_status: "retained" },
+      ]) {
+        expect(() => derivative.putBytesObject({ ...descriptor, ...change }, bytes)).toThrow(
+          "invalid content-v2",
         );
-        const bytes = derivative.read(settled.ref!);
-        const descriptor = derivative.readDescriptor(settled.ref!);
-        for (const change of [
-          { source_byte_length: SECRET.length },
-          { policy_id: undefined },
-          { policy_version: 0 },
-          { protection_status: "retained" },
-        ]) {
-          expect(() => derivative.putBytesObject({ ...descriptor, ...change }, bytes)).toThrow(
-            "invalid content-v2",
-          );
-        }
-      } else {
-        expect(settled.status).toBe("not_captured");
-        expect(settled.ref).toBeUndefined();
       }
-      if (mode !== "retain_original") {
-        for (const root of roots)
-          for (const filename of fs.readdirSync(root, { recursive: true })) {
-            const target = path.join(root, String(filename));
-            const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-            try {
-              if (fs.fstatSync(fd).isFile()) {
-                const bytes = fs.readFileSync(fd);
-                expect(bytes.includes(SECRET)).toBe(false);
-                expect(
-                  bytes.includes(Buffer.from(createHash("sha256").update(SECRET).digest("hex"))),
-                ).toBe(false);
-              }
-            } finally {
-              fs.closeSync(fd);
+    } else if (mode === "original_plus_masked") {
+      // Two objects are needed; this single-object protector fails closed.
+      expect(settled.status).toBe("unsupported");
+      expect(settled.protection_status).toBe("unsupported");
+      expect(settled.ref).toBeUndefined();
+      expect(settled.source_sha256).toBeUndefined();
+    } else {
+      expect(settled.status).toBe("not_captured");
+      expect(settled.ref).toBeUndefined();
+    }
+    if (mode !== "retain_original") {
+      for (const root of roots)
+        for (const filename of fs.readdirSync(root, { recursive: true })) {
+          const target = path.join(root, String(filename));
+          const fd = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+          try {
+            if (fs.fstatSync(fd).isFile()) {
+              const bytes = fs.readFileSync(fd);
+              expect(bytes.includes(SECRET)).toBe(false);
+              expect(
+                bytes.includes(Buffer.from(createHash("sha256").update(SECRET).digest("hex"))),
+              ).toBe(false);
             }
+          } finally {
+            fs.closeSync(fd);
           }
-      }
-      await recorder.close();
-    },
-  );
+        }
+    }
+    await recorder.close();
+  });
   it("rejects wrong tenant and overlapping derivative destinations", () => {
     const policy = policyFor("redact");
     const original = store(policy.tenant_id);
     const contentProtector = new ContentProtector(policy, {
-      redactors: { "terminal.stdout": () => Buffer.from("safe") },
+      ...service(MASK),
     });
     expect(
       () =>
@@ -365,7 +454,7 @@ describe("Deployment-protected byte recorder", () => {
       policy.tenant_id,
     );
     const contentProtector = new ContentProtector(policy, {
-      redactors: { "terminal.stdout": () => Buffer.from("safe") },
+      ...service(MASK),
     });
     expect(
       () =>
@@ -379,7 +468,7 @@ describe("Deployment-protected byte recorder", () => {
   });
 });
 
-it("bounds token output and keeps failing redactors from ever storing input", async () => {
+it("bounds token output and keeps a failing redaction service from ever storing input", async () => {
   const token = new ContentProtector(policyFor("tokenize"), {
     tokenizationKey: Buffer.alloc(32, "k"),
     payloadMaxBytes: 2,
@@ -391,11 +480,7 @@ it("bounds token output and keeps failing redactors from ever storing input", as
   const original = store(policy.tenant_id);
   const derivative = store(policy.tenant_id);
   const contentProtector = new ContentProtector(policy, {
-    redactors: {
-      "terminal.stdout": () => {
-        throw new Error("sensitive-value");
-      },
-    },
+    ...service(FAIL),
   });
   const recorder = new ByteEvidenceRecorder({
     store: original,
@@ -403,15 +488,19 @@ it("bounds token output and keeps failing redactors from ever storing input", as
     roles: new Set(["terminal.stdout"]),
     contentProtector,
   });
-  const item = recorder.capture(SECRET, {
+  const initial = recorder.capture(SECRET, {
     role: "terminal.stdout",
     boundary: "terminal",
     sourceId: "sdk",
     sourceEpoch: 0,
     sourceSequence: 1,
   });
-  expect(item.status).toBe("failed");
-  expect(item.protection_status).toBe("lost");
+  // The service is called behind the handoff (Sol P0-A #5); its failure withholds.
+  expect(initial.status).toBe("pending");
+  await recorder.flush();
+  const item = recorder.get(initial.object_id)!;
+  expect(item.status).toBe("not_captured");
+  expect(item.protection_status).toBe("withheld");
   expect(item.status_reason).toBe("protection_failed");
   expect(item.source_sha256).toBeUndefined();
   expect(item.source_byte_length).toBeUndefined();
@@ -419,4 +508,44 @@ it("bounds token output and keeps failing redactors from ever storing input", as
   expect(original.listObjectUris()).toEqual([]);
   expect(derivative.listObjectUris()).toEqual([]);
   await recorder.close();
+});
+
+it("rechecks the recorder payload cap after deferred redaction", async () => {
+  // Sol P0-A round 2 #4: a separately supplied protector may allow more than the
+  // recorder. The recorder's cap applies to the redacted bytes, as before deferral.
+  const policy = policyFor("redact");
+  const original = store(policy.tenant_id);
+  const derivative = store(policy.tenant_id);
+  const contentProtector = new ContentProtector(policy, {
+    ...service(MASK), // "[redacted]": 10 bytes
+    payloadMaxBytes: 1024,
+  });
+  const recorder = new ByteEvidenceRecorder({
+    store: original,
+    reviewStore: derivative,
+    roles: new Set(["terminal.stdout"]),
+    deploymentPolicy: policy,
+    contentProtector,
+    payloadMaxBytes: 8,
+  });
+  const initial = recorder.capture(Buffer.from("raw"), {
+    role: "terminal.stdout",
+    boundary: "terminal",
+    sourceId: "sdk",
+    sourceEpoch: 0,
+    sourceSequence: 1,
+  });
+  await recorder.flush();
+  const settled = recorder.get(initial.object_id)!;
+  expect(settled).toMatchObject({
+    status: "dropped",
+    status_reason: "payload_too_large",
+    representation: "unavailable",
+  });
+  expect(settled.ref).toBeUndefined();
+  expect(settled.stored_sha256).toBeUndefined();
+  expect(derivative.listObjectUris()).toEqual([]);
+  expect(recorder.stats()).toMatchObject({ dropped: 1, pending: 0, redacted: 0 });
+  await recorder.close();
+  await contentProtector.close();
 });

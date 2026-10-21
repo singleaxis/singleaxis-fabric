@@ -29,12 +29,28 @@ from .._version import __version__
 from ._config import WireConfig
 from ._content import NodeContentClient, content_client_from_env
 from ._model import SPAN_EXCHANGE
-from ._spool import CorruptRecordError, Spool, exchange_doc, loss_doc, marker_doc, unframe
+from ._spool import (
+    SCHEMA,
+    CorruptRecordError,
+    Spool,
+    UndecryptableRecordError,
+    disk_full,
+    exchange_doc,
+    loss_doc,
+    marker_doc,
+    unframe_all,
+    valid_header,
+)
 
 _LOG = logging.getLogger("fabric.wire")
 _BATCH, _RESCAN_S, _LOCK_RETRY_S, _BACKOFF_S, _BACKOFF_CAP_S = 64, 5.0, 5.0, 0.5, 30.0
+_EXPORT_SPANS = 512  # a drain exports at most about this many spans per request
 _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_rejected",
-          "quarantined", "markers_dropped")  # fmt: skip
+          "quarantined", "markers_dropped", "spool_undecryptable", "spool_migrated",
+          "disk_full_drops", "ledger_recovered")  # fmt: skip
+# Markers that could not be spooled are held (retried, mirrored to the loss ledger) up to
+# this many; past it one is dropped and counted (its scope stays open: unverified).
+_MAX_HELD_MARKERS = 1024
 _SENDERS: weakref.WeakSet[Sender] = weakref.WeakSet()
 # Delivery objects a forked child replaced: kept referenced, never closed or collected,
 # because closing (or finalizing) them may need a lock a parent thread held at fork.
@@ -81,6 +97,14 @@ class Sender:
         # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
         # exported again by this drainer; retried before anything new is exported.
         self._retiring: dict[str, None] = {}  # names, in delivery order
+        # Records sealed under another key: left for a process holding it (049 §7.8).
+        self._sealed_elsewhere: set[str] = set()
+        # Run markers not spooled yet (a full spool or disk): retried on every pump and,
+        # with the loss ranges still in memory, mirrored to the spool's loss ledger (D1).
+        self._held: list[Any] = []
+        # The ledger copy of each held record: (order, written_at) fixed when first held.
+        self._ledger_ids: dict[Any, tuple[int, int]] = {}
+        self._ledger_order = 0
         # Admission failures (lost exchanges, dropped markers) at start and at the last flush.
         self._failed_at_start = self._failed_at_flush = self._failures()
 
@@ -103,6 +127,11 @@ class Sender:
             self._forked = False
             return self._exporter
 
+    def owned_exporter(self) -> SpanExporter | None:
+        """The exporter this process built or was given, without rebuilding one in a forked
+        child (the parent's is never closed there); for shutdown at exit."""
+        return None if self._forked else self._exporter
+
     def _failures(self) -> int:
         """Capture events of this process that will never be delivered: exchanges lost
         before the spool (each one is a recorded loss), markers dropped (queue overflow or a
@@ -121,9 +150,15 @@ class Sender:
 
     def stats(self) -> Mapping[str, int]:
         dropped = self._stats["markers_dropped"] + self.loss.markers_dropped
+        ledger = self.spool.ledger
         return {**self._stats, "markers_dropped": dropped, "spool_bytes": self.spool.bytes,
                 "spool_undurable": int(not self.spool.durable),
-                "spool_barrier_failures": self.spool.barrier_failures}  # fmt: skip
+                "spool_barrier_failures": self.spool.barrier_failures,
+                "markers_held": len(self._held),
+                "ledger_slots": ledger.used() if ledger else 0,
+                "ledger_overflows": ledger.overflows if ledger else 0,
+                "ledger_failures": ledger.failures if ledger else 0,
+                "ledger_corrupt": ledger.corrupt if ledger else 0}  # fmt: skip
 
     def ensure_durable(self) -> bool:
         """Establish the spool's directory barrier (sender or flush-helper thread only);
@@ -153,6 +188,35 @@ class Sender:
         self.wake()
         return True
 
+    def spool_exchanges(
+        self, items: Sequence[tuple[str, int, Mapping[str, Any],
+                                    Sequence[tuple[Mapping[str, Any], bytes]]]],
+    ) -> list[str]:  # fmt: skip
+        """Write exchange records in one batch (capture worker thread). Per item:
+        ``spooled``, ``queue_full`` (over the bound), ``disk_full`` (ENOSPC/EDQUOT) or
+        ``internal_error``."""
+        docs = [
+            (exchange_doc(source_id, epoch, self.service_name, span, staged),
+             [data for _, data in staged])
+            for source_id, epoch, span, staged in items
+        ]  # fmt: skip
+        outcomes: list[str] = []
+        for result in self.spool.write_group(docs):
+            if isinstance(result, str):
+                self._stats["spooled"] += 1
+                outcomes.append("spooled")
+            elif result is None:
+                self._stats["spool_full_drops"] += 1
+                outcomes.append("queue_full")
+            elif disk_full(result):
+                self._stats["disk_full_drops"] += 1
+                outcomes.append("disk_full")
+            else:
+                outcomes.append("internal_error")
+        if "spooled" in outcomes:
+            self.wake()
+        return outcomes
+
     def _write(self, doc: Mapping[str, Any]) -> bool:
         with contextlib.suppress(Exception):
             if self.spool.write(doc, reserve=True) is not None:
@@ -170,18 +234,68 @@ class Sender:
         try:
             due = every_source or self.loss.periodic_due()
             losses, beats = self.loss.take(periodic=due, every_source=every_source)
+            unspooled = []
             for loss in losses:
                 if not self._write(loss_doc(loss)):
                     self.loss.retain(loss)  # kept in memory, spooled when space frees
-            for beat in (b for b in beats if b[-1] != "periodic"):
-                if not self._write(marker_doc(beat)):
+                    unspooled.append(loss)
+            markers, self._held = [*self._held, *(b for b in beats if b[-1] != "periodic")], []
+            for beat in markers:
+                if self._write(marker_doc(beat)):
+                    continue
+                if len(self._held) < _MAX_HELD_MARKERS:
+                    self._held.append(beat)  # retried on the next pump
+                else:
                     self._stats["markers_dropped"] += 1  # its scope stays open: unverified
+            self._mirror(unspooled, self._held)
             now = time.time_ns()
             spans = [self._root(SPAN_HEARTBEAT, beat_attributes(b), now, f"{b}{now}")
                      for b in beats if b[-1] == "periodic"]  # fmt: skip
             return not spans or self.exporter.export(spans) is SpanExportResult.SUCCESS
         finally:
             self._pump_lock.release()
+
+    def _mirror(self, losses: Sequence[Any], markers: Sequence[Any]) -> None:
+        """Make this process's loss-ledger slots hold exactly the loss ranges and markers
+        not spooled now (D1): they then survive a full disk and this process's death (the
+        drainer exports a dead process's slots). Each keeps the order and time it was
+        first held, so an unchanged set rewrites nothing."""
+        ledger = self.spool.ledger
+        if ledger is None:
+            return
+        keyed = [(("loss", loss[0]), loss_doc(loss)) for loss in losses]
+        keyed += [(("marker", beat), marker_doc(beat)) for beat in markers]
+        ids: dict[Any, tuple[int, int]] = {}
+        records = []
+        for key, doc in keyed:
+            if (fixed := self._ledger_ids.get(key)) is None:
+                fixed, self._ledger_order = (self._ledger_order, time.time_ns()), (
+                    self._ledger_order + 1)  # fmt: skip
+            ids[key] = fixed
+            records.append({**doc, "schema_version": SCHEMA, "order": fixed[0],
+                            "written_at_unix_nano": fixed[1]})  # fmt: skip
+        self._ledger_ids = ids
+        ledger.store(records)
+
+    def _recover_orphans(self) -> None:
+        """Drainer: export the ledger slots of processes that died with unspooled loss or
+        marker records (D1), directly (a full disk needs no room for this), then clear
+        them; a failed export leaves the slot for the next attempt."""
+        ledger = self.spool.ledger
+        if ledger is None:
+            return
+        for index, records in ledger.orphans():
+            try:
+                spans = [self._span(doc) for doc in records
+                         if isinstance(doc, dict) and doc.get("record_kind") in ("loss", "marker")
+                         and valid_header(doc, 0)]  # fmt: skip
+                delivered = not spans or self.exporter.export(spans) is SpanExportResult.SUCCESS
+            except Exception:
+                delivered = False
+            if delivered and ledger.clear(index):
+                self._stats["ledger_recovered"] += len(spans)
+            elif not delivered:
+                ledger.release(index)
 
     def _run(self) -> None:
         backoff, scanned, locked, barrier = 0.0, 0.0, -_LOCK_RETRY_S, -_RESCAN_S
@@ -193,11 +307,14 @@ class Sender:
                 if (now := time.monotonic()) - scanned >= _RESCAN_S:
                     self.spool.rescan()
                     self.spool.settle()  # own records drained elsewhere: consume receipts
+                    if self.spool.holder:
+                        self._recover_orphans()
                     scanned = now
                 self.pump()
                 if not self.spool.holder and now - locked >= _LOCK_RETRY_S:
                     locked = now
-                    self.spool.try_lock()
+                    if self.spool.try_lock():  # a new drainer: dead processes' ledger first
+                        self._recover_orphans()
                 state = self._drain() if self.spool.holder else "idle"
             except Exception as exc:  # never let the thread die; never log a message
                 _LOG.warning("fabric.wire: spool sender error (%s)", type(exc).__name__)
@@ -212,30 +329,55 @@ class Sender:
                 self._wake.clear()
         self.spool.release()  # stopped: another process (or a later install) may drain
 
-    def _drain(self) -> str:
-        """Deliver up to 64 ready records: ``more``, ``idle`` or ``retry``."""
+    def _drain(self) -> str:  # noqa: PLR0912 - per-record outcomes of a drain
+        """Deliver up to 64 ready record files (a batch file holds several records):
+        ``more``, ``idle`` or ``retry``. A file is exported and retired only once every
+        body of every record in it was accepted."""
         if not self._retire_delivered():
             return "retry"
-        names, batch, state = self.spool.names()[:_BATCH], [], "idle"
+        if self.spool.migrate:  # 049 §7.8: the explicit local migration, before any read
+            self._stats["spool_migrated"] += self.spool.migrate_plaintext()
+            self.spool.migrate = False
+        skip = self._sealed_elsewhere
+        names, batch, state = [n for n in self.spool.names() if n not in skip][:_BATCH], [], "idle"
+        spans = 0
         for name in names:
+            if spans >= _EXPORT_SPANS:
+                break
             try:
-                doc, blob = unframe(self.spool.read(name))
+                records = unframe_all(self.spool.read(name))
             except FileNotFoundError:
                 continue
-            except CorruptRecordError as corrupt:
-                self._quarantine(name, corrupt.doc)
+            except UndecryptableRecordError:
+                if name not in skip:
+                    skip.add(name)
+                    self._stats["spool_undecryptable"] += 1
+                    _LOG.warning("fabric.wire: spool record sealed under another key left")
                 continue
-            if doc["record_kind"] == "exchange" and not self._send_bodies(name, doc, blob):
+            except CorruptRecordError as corrupt:
+                self._quarantine(name, corrupt.docs)
+                continue
+            sent, base = True, 0
+            for doc, blob in records:
+                if doc["record_kind"] == "exchange":
+                    sent = self._send_bodies(name, doc, blob, base)
+                    base += len(doc["bodies"])
+                if not sent:
+                    break
+            if not sent:
                 state = "retry"
                 break
-            batch.append((name, self._span(doc)))
+            batch.append((name, [self._span(doc) for doc, _ in records]))
+            spans += len(records)
         if batch:
-            if self.exporter.export([span for _, span in batch]) is not SpanExportResult.SUCCESS:
+            if self.exporter.export([span for _, file in batch for span in file]) is not (
+                SpanExportResult.SUCCESS
+            ):  # fmt: skip
                 return "retry"
-            for name, _ in batch:
+            for name, file in batch:
                 self._retiring[name] = None
                 self._progress.pop(name, None)
-                self._stats["delivered"] += 1
+                self._stats["delivered"] += len(file)
             if not self._retire_delivered():
                 return "retry"
         return state if state == "retry" or not names else "more"
@@ -244,29 +386,34 @@ class Sender:
         """Retire delivered records in order (another writer's becomes its receipt in place:
         no allocation); ``False`` while one cannot be. It then stays on disk and in
         ``_retiring``, so it is never exported again; nothing new is exported meanwhile."""
-        for name in list(self._retiring):
-            try:
-                self.spool.retire(name)
-            except OSError as exc:
-                _LOG.warning("fabric.wire: delivered record not retired (%s)", type(exc).__name__)
-                return False
+        names = list(self._retiring)
+        retired, error = self.spool.retire_many(names)
+        for name in names[:retired]:
             del self._retiring[name]
+        if error is not None:
+            _LOG.warning("fabric.wire: delivered record not retired (%s)", type(error).__name__)
+            return False
         return True
 
-    def _quarantine(self, name: str, doc: Mapping[str, Any] | None) -> None:
+    def _quarantine(self, name: str, docs: Sequence[Mapping[str, Any]]) -> None:
         self.spool.quarantine(name)  # an own record is a failure; another writer's settles
         self._stats["quarantined"] += 1
         _LOG.warning("fabric.wire: corrupt spool record quarantined")
-        with contextlib.suppress(Exception):  # header parsed: its sequence is an explained loss
-            attrs = doc["span"]["attributes"] if doc else {}
-            keys = ("fabric.source_id", "fabric.source.epoch", "fabric.source.sequence")
-            source, epoch, sequence = (attrs[key] for key in keys)
-            if isinstance(source, str) and type(epoch) is int and type(sequence) is int:
-                # retain, not record: the record existed; it is not an admission failure
-                self.loss.retain(((source, epoch, "internal_error"), (sequence, sequence, 1)))
+        for doc in docs:  # headers that parsed: their sequences are explained losses
+            with contextlib.suppress(Exception):
+                attrs = doc["span"]["attributes"]
+                keys = ("fabric.source_id", "fabric.source.epoch", "fabric.source.sequence")
+                source, epoch, sequence = (attrs[key] for key in keys)
+                if isinstance(source, str) and type(epoch) is int and type(sequence) is int:
+                    # retain, not record: the record existed; it is not an admission failure
+                    self.loss.retain(((source, epoch, "internal_error"), (sequence, sequence, 1)))
 
-    def _send_bodies(self, name: str, doc: Mapping[str, Any], blob: memoryview) -> bool:
-        for index, body in enumerate(doc["bodies"]):
+    def _send_bodies(
+        self, name: str, doc: Mapping[str, Any], blob: memoryview, base: int = 0
+    ) -> bool:
+        """Post a record's bodies; ``base``: how many bodies the file's earlier records
+        hold (progress is counted per file)."""
+        for index, body in enumerate(doc["bodies"], base):
             if index < self._progress.get(name, 0):
                 continue  # already accepted by the Node in an earlier attempt
             data = blob[body["offset"] : body["offset"] + body["length"]]  # copied once, to send
@@ -313,30 +460,41 @@ class Sender:
             instrumentation_scope=InstrumentationScope("fabric.wire", __version__),
         )  # fmt: skip
 
-    def _settle(self, deadline: float) -> bool:
+    def _admit_pending(self, deadline: float) -> bool:
+        """Spool pending losses and markers; ``False`` when a loss range is still waiting in
+        memory or the spool's directory barrier is not established (not durable)."""
+        durable = self.ensure_durable()
+        self.pump(deadline=deadline)
+        if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
+            return False
+        try:  # after a pump: no loss range or marker is still waiting in memory
+            admitted = not self.loss.has_pending_losses() and not self._held
+        finally:
+            self._pump_lock.release()
+        return admitted and durable
+
+    def _settle(self, deadline: float, *, everything: bool = False) -> bool:
         """Spool pending losses/markers; wait until this process's records are settled
-        (delivered, or failed: quarantined or gone without a receipt). All of it, the
-        admission check included, runs on a helper thread: the caller waits only until
-        ``deadline``, even while another pump holds the lock during stalled disk I/O.
-        ``False`` also when a loss range could not be spooled, or while the spool's
-        directory barrier is not established (records are then not durable)."""
+        (delivered, or failed: quarantined or gone without a receipt) and, with
+        ``everything`` in the draining process, until every record pending now (other
+        writers' too: exited workers') is delivered. All of it, the admission check
+        included, runs on a helper thread: the caller waits only until ``deadline``, even
+        while another pump holds the lock during stalled disk I/O. ``False`` also when a
+        loss range could not be spooled, or while the spool's directory barrier is not
+        established (records are then not durable)."""
 
         def work() -> bool:
-            durable = self.ensure_durable()
-            self.pump(deadline=deadline)
-            if not self._pump_lock.acquire(timeout=max(0.0, deadline - time.monotonic())):
-                return False
-            try:  # after a pump: no loss range is still waiting in memory
-                admitted = not self.loss.has_pending_losses()
-            finally:
-                self._pump_lock.release()
+            admitted = self._admit_pending(deadline)
             pending = self.spool.pending()
+            drain_all = everything and self.spool.holder
+            others = set(self.spool.names()) - pending if drain_all else set()
             self.wake()
-            while self.spool.settle(pending):
+            while self.spool.settle(pending) or (others and others & set(self.spool.names())):
                 if time.monotonic() >= deadline:
                     return False
+                self.wake()
                 time.sleep(0.02)
-            return admitted and durable
+            return admitted
 
         return self._bounded(work, deadline)
 
@@ -364,12 +522,19 @@ class Sender:
         previous, self._failed_at_flush = self._failed_at_flush, self._failures()
         return delivered and self._failed_at_flush == previous
 
-    def close(self, timeout_s: float) -> bool:
-        """:meth:`_settle` (``final`` included), stop; undelivered records stay on disk.
-        ``False`` too when any exchange was lost before the spool or any marker was dropped
-        since this sender started."""
+    def close(self, timeout_s: float, *, exiting: bool = False) -> bool:
+        """:meth:`_settle` (``final`` included; the drainer delivers every pending record),
+        stop; undelivered records stay on disk. A process that is ``exiting`` and does not
+        drain the spool (a worker) only makes its records durable there: the drainer, now
+        or in a later process, delivers them, so the worker never waits on another
+        process. ``False`` too when any exchange was lost before the spool or any marker
+        was dropped since this sender started."""
         deadline = time.monotonic() + max(0.0, timeout_s)
-        delivered = self._settle(deadline) and self._failures() == self._failed_at_start
+        if exiting and not self.spool.holder:
+            settled = self._bounded(lambda: self._admit_pending(deadline), deadline)
+        else:
+            settled = self._settle(deadline, everything=True)
+        delivered = settled and self._failures() == self._failed_at_start
         self.loss.attach(None)  # later losses go to the direct path
         self._stop.set()
         self._wake.set()
@@ -391,7 +556,8 @@ def build_sender(
         content = content_client_from_env(
             os.environ, endpoint=config.content_endpoint, service_name=service)  # fmt: skip
     spool = Spool(config.spool_dir, config.spool_max_bytes, config.spool_max_receipts,
-                  durable_boundary=config.spool_durable_boundary)  # fmt: skip
+                  durable_boundary=config.spool_durable_boundary, key=config.spool_key,
+                  migrate_plaintext=config.spool_migrate_plaintext)  # fmt: skip
     factory = None if exporter is not None else tracing.build_capture_span_exporter
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
     return Sender(spool, exporter, loss, content=content, service_name=service,

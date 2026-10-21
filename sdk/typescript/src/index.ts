@@ -134,10 +134,28 @@ export {
   BYTE_EVIDENCE_BOUNDARIES,
   BYTE_EVIDENCE_ROLES,
   ByteEvidenceRecorder,
+  contentGate,
+  idKeyFromEnv,
   type ByteEvidenceCapture,
   type ByteEvidenceConfig,
   type ByteEvidenceDescriptor,
+  type ByteEvidenceStatus,
+  type CallerId,
 } from "./byte-evidence.js";
+export { EmittedId } from "./identity.js";
+export {
+  RedactionClient,
+  REDACTION_ENDPOINT_ENV,
+  REDACTION_TOKEN_FILE_ENV,
+  checkTransformation,
+  parseRedactionEndpoint,
+  redactionServiceFromEnv,
+  type RedactionEndpoint,
+  type RedactionMode,
+  type RedactionServiceOptions,
+  type RedactionStats,
+  type Transformation,
+} from "./redaction.js";
 export {
   ContentResolver,
   ResolveStatus,

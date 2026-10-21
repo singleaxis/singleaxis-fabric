@@ -25,6 +25,11 @@ receivers:
         max_request_body_size: 67108864
         tls: {cert_file: /run/fabric-node/tls/server.crt, key_file: /run/fabric-node/tls/server.key}
 processors:
+  fabricguard:
+    profile: production
+    evidence_source_binding:
+      tenant_id: ${env:FABRIC_TENANT_ID}
+      source_id: ${env:FABRIC_SOURCE_ID}
   memory_limiter: {}
 exporters:
   otlp_http/fabric:

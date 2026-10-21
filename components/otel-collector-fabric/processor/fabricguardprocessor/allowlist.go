@@ -120,10 +120,6 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"http.request.method", "http.response.status_code", "http.route", "http.status_code",
 	"rpc.system", "rpc.service", "rpc.method", "rpc.grpc.status_code",
 	"db.system", "db.namespace", "db.operation.name",
-	"fabric.crewai.event_type", "fabric.crewai.tool", "fabric.crewai.agent",
-	"fabric.crewai.content_sha256", "fabric.crewai.content_chars",
-	"fabric.crewai.task_description_sha256", "fabric.crewai.task_description_chars",
-	"fabric.crewai.output_chars",
 	// Spec 047 rev 3 wire capture: LLM exchange spans, capture-loss records
 	// and heartbeats. Ids, enums, digests and sequence numbers only; exact
 	// bytes stay in the customer store and all stitching is done offline from

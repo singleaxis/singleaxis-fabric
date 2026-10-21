@@ -82,6 +82,11 @@ receiver:
     enabled: false
     tenantId: ""
     workloadId: ""
+    # The agents' source id AS IT TRAVELS (spec 049 §7.9): s-<32 hex> under
+    # their default pseudonymous labels (HMAC-SHA256 of their FABRIC_SOURCE_ID
+    # with FABRIC_WIRE_ID_KEY). Required in the production profile, where
+    # every batch must name it; one Node per agent source.
+    sourceId: ""
     identityAttestationRef: ""
     # Optional paired metadata naming the approved capture policy. The Node
     # does not download or execute it. Its actual config has a separate hash.
@@ -156,6 +161,15 @@ topologySpreadConstraints: []
 # prompt-time PII processing, redaction sidecars, and sampling are not chart
 # surfaces in the recorder release.
 fabric:
+  # Node deployment profile (spec 049 §7.3): "local" (default) or
+  # "production". The production profile rejects unauthenticated sources:
+  # fabricguard (and the content exporter) bind every batch to one tenant and
+  # source -- receiver.workloadAuthentication.tenantId/sourceId, or a
+  # dedicated evidenceSourceBinding -- and, with content, the persistent
+  # content queue (and a file store) are sealed with content.encryption's
+  # Node key. fabric-gate refuses a production config that lacks either.
+  # profiles/shadow-production.yaml pins it on.
+  profile: local
   guard:
     eventClassAttribute: event_class
     dropUnknownClasses: true
@@ -175,6 +189,12 @@ fabric:
     # running with FABRIC_WIRE_LABELS=clear: operator-chosen labels are
     # exported unchanged; you guarantee they contain no personal data.
     captureLabels: pseudonymous
+    # Identity mode (spec 049 §2.9 rule 7): `pseudonymous` (default) admits
+    # externally meaningful ids only in their keyed prefix form
+    # (fabric.session_id as sess-<32 hex>, fabric.delegation.to_agent as
+    # agt-<32 hex>). `clear` is the counterpart of agents running
+    # FABRIC_IDENTITY_MODE=clear; you guarantee the ids hold no personal data.
+    identityMode: pseudonymous
 
 # OTLP/HTTP egress target.
 #
@@ -328,6 +348,16 @@ content:
       name: ""
       accessKeyIdKey: AWS_ACCESS_KEY_ID
       secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+  # Node-side customer key (spec 049 §7.8) sealing the persistent content
+  # queue and, for backend=file, every stored object and descriptor
+  # (AES-256-GCM). Name an operator-created Secret whose key holds 32 random
+  # bytes or their base64; it is mounted as a file, never a chart value.
+  # Required in the production profile. Losing it loses queued content;
+  # rotate only with an empty queue.
+  encryption:
+    keySecret:
+      name: ""
+      key: key
   # Durable content queue. With exporter.sendingQueue.persistence enabled it
   # lives on the same PVC (<persistence.directory>/content-queue, fsync as
   # configured there); size that PVC for queueSize x maxRequestBodyBytes on

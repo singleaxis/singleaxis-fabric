@@ -12,6 +12,11 @@ exact bytes the Node delivered, not only the decoded view.
 
 Usage: ``_wire_capture_sink.py OUT_DIR PORT BIND CERT KEY EXPECTED_AUTH``.
 Request headers are never written anywhere.
+
+The TLS handshake runs on each connection's handler thread, never in ``accept()`` on the
+server's only accept thread, and every connection has a socket timeout: one connection
+whose handshake stalls (a corrupted or lossy network) costs one thread for at most
+``TIMEOUT_S`` instead of wedging the sink for every later delivery (chaos report H1).
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ PORT = int(sys.argv[2])
 BIND = sys.argv[3]
 CERT, KEY = sys.argv[4], sys.argv[5]
 EXPECTED_AUTH = sys.argv[6]
+TIMEOUT_S = 30
 RECORDS = OUT / "records.jsonl"
 RAW = OUT / "raw"
 _WRITE_LOCK = threading.Lock()
@@ -123,6 +129,7 @@ def _fsync_dir(path: Path) -> None:
 class Handler(BaseHTTPRequestHandler):
     server_version = "FabricWireE2ESink/1"
     protocol_version = "HTTP/1.1"
+    timeout = TIMEOUT_S  # StreamRequestHandler: settimeout() on each connection
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         return  # request lines are not needed; headers are never logged
@@ -185,7 +192,10 @@ def main() -> None:
     context.load_cert_chain(CERT, KEY)
     server = ThreadingHTTPServer((BIND, PORT), Handler)
     server.daemon_threads = True
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    # The handshake happens on the handler thread's first read, under its timeout.
+    server.socket = context.wrap_socket(
+        server.socket, server_side=True, do_handshake_on_connect=False
+    )
     print(f"sink ready on {BIND}:{PORT}", flush=True)
     server.serve_forever()
 

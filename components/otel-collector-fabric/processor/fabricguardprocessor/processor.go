@@ -40,6 +40,8 @@ type guardStats struct {
 	statusMessageRemoved atomic.Uint64
 	nativeTextNormalized atomic.Uint64
 	aggregateCapped      atomic.Uint64
+	unboundSpanDropped   atomic.Uint64
+	duplicateKeyRejected atomic.Uint64
 }
 
 type guardStatsSnapshot struct {
@@ -54,6 +56,8 @@ type guardStatsSnapshot struct {
 	StatusMessageRemoved uint64
 	NativeTextNormalized uint64
 	AggregateCapped      uint64
+	UnboundSpanDropped   uint64
+	DuplicateKeyRejected uint64
 }
 
 func (s *guardStats) snapshot() guardStatsSnapshot {
@@ -69,6 +73,8 @@ func (s *guardStats) snapshot() guardStatsSnapshot {
 		StatusMessageRemoved: s.statusMessageRemoved.Load(),
 		NativeTextNormalized: s.nativeTextNormalized.Load(),
 		AggregateCapped:      s.aggregateCapped.Load(),
+		UnboundSpanDropped:   s.unboundSpanDropped.Load(),
+		DuplicateKeyRejected: s.duplicateKeyRejected.Load(),
 	}
 }
 
@@ -77,6 +83,11 @@ func newGuard(cfg *Config, logger *zap.Logger) *guard {
 }
 
 func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) {
+	// Duplicates first: once no guarded key repeats, every Get below (the
+	// binding and the evidence validators) reads the only occurrence.
+	if g.duplicateKeyInLogs(ld) {
+		return ld, g.refuseDuplicateKey()
+	}
 	if g.cfg.EvidenceSourceBinding != nil && !g.boundEvidenceBatch(ld) {
 		return ld, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: evidence source binding rejected"))
 	}
@@ -469,8 +480,15 @@ func validSHA256Prefixed(value pcommon.Value) bool {
 }
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
-	if g.cfg.EvidenceSourceBinding != nil && td.SpanCount() != 0 {
-		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: evidence source binding rejects traces"))
+	bound := g.cfg.EvidenceSourceBinding != nil
+	switch g.checkTraceBatch(td) {
+	case traceDuplicateKey:
+		return td, g.refuseDuplicateKey()
+	case traceForeignBinding:
+		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: source binding rejected"))
+	}
+	if bound {
+		g.dropUnboundSpans(td)
 	}
 	allowed := unionSets(TraceAllowedFields, toSet(g.cfg.ExtraAllowedTraceFields...))
 	resourceSpans := td.ResourceSpans()
@@ -503,9 +521,248 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 			spans.RemoveIf(func(span ptrace.Span) bool {
 				return g.applyToSpan(span, allowed)
 			})
+			if bound {
+				// After every filter: the stamp is the Node's own statement
+				// that this span arrived on the ingress bound to its tenant
+				// and source (spec 049 §7.9); an agent-supplied value was
+				// stripped above as receiver-owned.
+				for i := 0; i < spans.Len(); i++ {
+					spans.At(i).Attributes().PutBool(sourceAuthenticatedKey, true)
+				}
+			}
 		}
 	}
 	return td, nil
+}
+
+type traceBatchVerdict int
+
+const (
+	traceAdmitted traceBatchVerdict = iota
+	traceDuplicateKey
+	traceForeignBinding
+)
+
+// checkTraceBatch checks the whole request before mutating or forwarding any
+// span, in one pass over every attribute map the processor filters or stamps
+// (resource, scope, span, span event, span link):
+//
+//   - A fabric.* key carried more than once in one map refuses the batch
+//     (traceDuplicateKey). pcommon.Map.Get returns the first occurrence while
+//     a last-wins consumer reads the last, so a duplicate would let a span be
+//     validated under one identity and read under another (D2). OTLP forbids
+//     duplicate keys; for Fabric's own keys a duplicate is a forgery signal.
+//   - On a bound ingress (spec 049 §7.9), every occurrence of
+//     fabric.source_id / fabric.tenant_id must name the bound source and
+//     tenant (traceForeignBinding). A span that names no source at all is
+//     not a forgery: dropUnboundSpans removes it on its own.
+//
+// A duplicate anywhere in the batch wins over a binding mismatch, so the
+// refusal reason does not depend on key order.
+func (g *guard) checkTraceBatch(td ptrace.Traces) traceBatchVerdict {
+	verdict := traceAdmitted
+	check := func(attrs pcommon.Map) bool {
+		dup, foreign := g.checkTraceAttrs(attrs)
+		if dup {
+			verdict = traceDuplicateKey
+			return false
+		}
+		if foreign {
+			verdict = traceForeignBinding
+		}
+		return true
+	}
+	resourceSpans := td.ResourceSpans()
+	for ri := 0; ri < resourceSpans.Len(); ri++ {
+		resourceSpan := resourceSpans.At(ri)
+		if !check(resourceSpan.Resource().Attributes()) {
+			return verdict
+		}
+		scopeSpans := resourceSpan.ScopeSpans()
+		for si := 0; si < scopeSpans.Len(); si++ {
+			if !check(scopeSpans.At(si).Scope().Attributes()) {
+				return verdict
+			}
+			spans := scopeSpans.At(si).Spans()
+			for i := 0; i < spans.Len(); i++ {
+				span := spans.At(i)
+				if !check(span.Attributes()) {
+					return verdict
+				}
+				for ei := 0; ei < span.Events().Len(); ei++ {
+					if !check(span.Events().At(ei).Attributes()) {
+						return verdict
+					}
+				}
+				for li := 0; li < span.Links().Len(); li++ {
+					if !check(span.Links().At(li).Attributes()) {
+						return verdict
+					}
+				}
+			}
+		}
+	}
+	return verdict
+}
+
+// checkTraceAttrs makes the single Range over one map: it reports a repeated
+// fabric.* key and, on a bound ingress, any occurrence of fabric.source_id or
+// fabric.tenant_id that is not the bound string. Every occurrence is visited;
+// nothing relies on Get's first match.
+func (g *guard) checkTraceAttrs(attrs pcommon.Map) (dup, foreign bool) {
+	bound := g.cfg.EvidenceSourceBinding
+	var seen guardedKeySet
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		if !isTraceGuardedKey(key) {
+			return true
+		}
+		if seen.addOrFind(key) {
+			dup = true
+			return false
+		}
+		if bound != nil {
+			switch key {
+			case "fabric.source_id":
+				foreign = foreign || value.Type() != pcommon.ValueTypeStr || value.Str() != bound.SourceID
+			case "fabric.tenant_id":
+				foreign = foreign || value.Type() != pcommon.ValueTypeStr || value.Str() != bound.TenantID
+			}
+		}
+		return true
+	})
+	return dup, foreign
+}
+
+// isTraceGuardedKey: every key in Fabric's own namespace. The binding keys,
+// run/segment ids, content descriptors and the receiver-owned stamp all
+// live there; other keys are validated entry by entry by the allowlist and
+// never read by the binding.
+func isTraceGuardedKey(key string) bool { return strings.HasPrefix(key, "fabric.") }
+
+// evidenceFieldNames is the AEEP projection: the binding keys (tenant_id,
+// source_id), run/call ids and content descriptors the evidence validators
+// read with Get.
+var evidenceFieldNames = unionSets(BuiltInAllowedFields["evidence"])
+
+// isLogGuardedKey: Fabric's namespace, the event-class key and every AEEP
+// evidence key.
+func isLogGuardedKey(key, classKey string) bool {
+	if key == classKey || strings.HasPrefix(key, "fabric.") {
+		return true
+	}
+	_, ok := evidenceFieldNames[key]
+	return ok
+}
+
+// duplicateKeyInLogs reports a guarded key repeated in any resource, scope or
+// log record attribute map of the batch. It runs before the evidence binding
+// and before any mutation, on bound and unbound ingresses alike.
+func (g *guard) duplicateKeyInLogs(ld plog.Logs) bool {
+	classKey := g.cfg.EventClassAttribute
+	guarded := func(key string) bool { return isLogGuardedKey(key, classKey) }
+	resourceLogs := ld.ResourceLogs()
+	for ri := 0; ri < resourceLogs.Len(); ri++ {
+		resourceLog := resourceLogs.At(ri)
+		if hasDuplicateKey(resourceLog.Resource().Attributes(), guarded) {
+			return true
+		}
+		scopeLogs := resourceLog.ScopeLogs()
+		for si := 0; si < scopeLogs.Len(); si++ {
+			if hasDuplicateKey(scopeLogs.At(si).Scope().Attributes(), guarded) {
+				return true
+			}
+			records := scopeLogs.At(si).LogRecords()
+			for li := 0; li < records.Len(); li++ {
+				if hasDuplicateKey(records.At(li).Attributes(), guarded) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// hasDuplicateKey reports whether attrs carries any key accepted by guarded
+// more than once.
+func hasDuplicateKey(attrs pcommon.Map, guarded func(string) bool) bool {
+	var seen guardedKeySet
+	dup := false
+	attrs.Range(func(key string, _ pcommon.Value) bool {
+		if guarded(key) && seen.addOrFind(key) {
+			dup = true
+			return false
+		}
+		return true
+	})
+	return dup
+}
+
+// guardedKeySet remembers the guarded keys seen in one attribute map. It
+// lives on the stack and does not allocate until a map carries more guarded
+// keys than the inline buffer holds (a capture span carries about twenty).
+type guardedKeySet struct {
+	inline [32]string
+	n      int
+	spill  map[string]struct{}
+}
+
+// addOrFind records key and reports whether it had been recorded already.
+func (s *guardedKeySet) addOrFind(key string) bool {
+	for i := 0; i < s.n; i++ {
+		if s.inline[i] == key {
+			return true
+		}
+	}
+	if s.spill != nil {
+		if _, ok := s.spill[key]; ok {
+			return true
+		}
+	}
+	if s.n < len(s.inline) {
+		s.inline[s.n] = key
+		s.n++
+		return false
+	}
+	if s.spill == nil {
+		s.spill = make(map[string]struct{})
+	}
+	s.spill[key] = struct{}{}
+	return false
+}
+
+// refuseDuplicateKey counts the refusal and returns the same permanent
+// InvalidArgument the source binding uses, which the OTLP receiver maps to a
+// client error (HTTP 400). Neither the key nor its values are logged.
+func (g *guard) refuseDuplicateKey() error {
+	g.stats.duplicateKeyRejected.Add(1)
+	g.logger.Debug("refusing batch", zap.String("reason", "duplicate_attribute_key"))
+	return consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: duplicate attribute key rejected"))
+}
+
+// dropUnboundSpans removes, one by one, the spans of an admitted bound batch
+// that name no fabric.source_id: in global-tracer mode the application's own
+// spans share a batch with the capture records, and refusing the batch for
+// them (non-retryably) would lose every capture record in it. Dropped spans
+// are never stamped and are counted (unboundSpanDropped).
+func (g *guard) dropUnboundSpans(td ptrace.Traces) {
+	resourceSpans := td.ResourceSpans()
+	dropped := 0
+	for ri := 0; ri < resourceSpans.Len(); ri++ {
+		scopeSpans := resourceSpans.At(ri).ScopeSpans()
+		for si := 0; si < scopeSpans.Len(); si++ {
+			scopeSpans.At(si).Spans().RemoveIf(func(span ptrace.Span) bool {
+				if _, ok := span.Attributes().Get("fabric.source_id"); ok {
+					return false
+				}
+				dropped++
+				return true
+			})
+		}
+	}
+	if dropped > 0 {
+		g.stats.unboundSpanDropped.Add(uint64(dropped))
+		g.logger.Debug("dropping trace spans", zap.String("reason", "unbound_span"), zap.Int("count", dropped))
+	}
 }
 
 // clearEntityRefs removes resource entity_refs — an OTLP proto field of
@@ -666,7 +923,6 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		{"fabric.skill.name", "fabric.skill"},
 		{"fabric.hook.phase", "fabric.hook"},
 		{"fabric.coverage.kind", "fabric.coverage"},
-		{"fabric.crewai.event_type", "fabric.crewai"},
 		{"fabric.execution.status", "fabric.execution"},
 		{"fabric.execution_id", "fabric.execution"},
 		{"fabric.decision_id", "fabric.decision"},
@@ -682,7 +938,7 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		"fabric.interaction", "fabric.file_access", "fabric.delegation", "fabric.error",
 		"fabric.retry", "fabric.cancellation", "fabric.deployment_change", "fabric.human_action",
 		"fabric.checkpoint", "fabric.replay", "fabric.mcp.inventory", "fabric.skill",
-		"fabric.hook", "fabric.coverage", "fabric.crewai.step", "fabric.crewai.task",
+		"fabric.hook", "fabric.coverage",
 		"fabric.capture_loss", "fabric.capture_heartbeat", "fabric.capture_manifest":
 		return name
 	default:
@@ -829,7 +1085,7 @@ var (
 	)
 	captureResponseStates = toSet("complete", "closed_early", "error", "abandoned")
 	captureStoreStatuses  = toSet("stored", "partial", "failed", "disabled")
-	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped")
+	captureLossReasons    = toSet("queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client", "disk_full")
 	// captureHeartbeatKinds is the closed heartbeat vocabulary: periodic
 	// liveness, explicit run boundaries from fabric.wire.run(), the seal of
 	// one run segment (spec 049 §2.12 rule 4) and the final heartbeat a clean

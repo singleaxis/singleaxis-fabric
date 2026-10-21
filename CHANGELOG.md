@@ -8,6 +8,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed (breaking, explicit-line identity)
+
+- With `FABRIC_WIRE_ID_KEY` set, in the default `pseudonymous` identity mode
+  (spec 049 §2.9), the explicit line no longer exports caller-supplied ids in clear:
+  descriptors (Python and TypeScript `ByteEvidenceRecorder`), `CallRecorder`
+  snapshots, journals and seals, `SyntheticCaptureSession` events and the call OTLP
+  projection carry the run id as `r-`, the source id as `s-` (function v1, keyed, as
+  the wire line), the agent id as `agt-` (v2) and any other caller id (operation,
+  attempt, stream, parent call) as the keyed operator label `lbl-`. Only ids the
+  recorder itself minted (call ids) or emitted map to themselves, so parent joins still
+  hold. Provenance is carried by type, never inferred from shape or looked up in a
+  bounded cache (Sol P0-A round 6 #1): emitted and minted ids are returned as typed
+  values (Python `fabric._sequence.EmittedId`, a `str` subclass; TypeScript
+  `EmittedId`, accepted wherever an id is), so a recorder's run and source ids never
+  change for its lifetime, whatever other traffic it sees. A plain string, even a
+  32-hex (UUID-shaped) or `r-`/`s-`/`lbl-`-shaped one, or an emitted id that lost its
+  type (serialised and read back), is caller input and is pseudonymised. New:
+  `ByteEvidenceRecorder.emitted_source_id()` (TypeScript `emittedSourceId()`). Continuity across
+  processes and hosts comes from passing the same clear id (the keyed mapping is
+  deterministic per key), never from passing an emitted value to another process.
+- The wire line's source id: a configured `source_id` / `FABRIC_SOURCE_ID` that is
+  already shaped like `s-` + 32 hex is now mapped through the keyed function like any
+  other label (previously exported unchanged), matching the explicit line. Wire run ids
+  were already always mapped (`fabric.wire.run("r-…")` emits the pseudonym of that
+  value); `FABRIC_WIRE_LABELS=clear` still exports source labels unchanged. The
+  verifier still shows an `s-` source id read from a record as is. `FABRIC_IDENTITY_MODE=clear` (or
+  `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
+  `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
+  emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a
+  spool keyed by the clear run id is refused. Qualified-run expectations, independent
+  feeds and attestations bind the emitted ids. `ByteEvidenceRecorder.generated_ids` is
+  renamed `emitted_ids`.
+
+### Changed (breaking, customer redaction is a customer-run redaction service)
+
+- Fabric no longer runs customer redaction code in any form: no imported module, no
+  callable, no child process, no worker thread (spec 049 §7.7, owner decision
+  2026-10-21). `redact`, `masked_only` and the review copy of `original_plus_masked`
+  are performed by a **redaction service the customer runs** beside the
+  application, which the recorder calls: `POST /v1/transform` with the raw bytes of
+  one object and `X-Fabric-Transformation`, `X-Fabric-Transformation-Version`,
+  `X-Fabric-Role` and `X-Fabric-Mode` headers; `200` returns the masked bytes. The
+  new public contract `contracts/redaction/v1` (README plus the closed error-body
+  schema, pinned in the data-plane contract validator) defines it. `tokenize`,
+  `omit`, `metadata_only` and `retain_original` are unchanged and need no service.
+- Configure the endpoint with `FABRIC_REDACTION_ENDPOINT` (or `redaction=
+  RedactionService(...)` in Python, `redaction: { endpoint }` in TypeScript): only
+  `unix:///absolute/path.sock` or `http://127.0.0.1:<port>` / `http://[::1]:<port>`;
+  anything else raises at `install()` or construction. No proxy, no redirect (a
+  `3xx` is a failure), no TLS on loopback. An optional bearer token is read once
+  from `FABRIC_REDACTION_TOKEN_FILE` (a `0600` file owned by the process user) and
+  never logged.
+- A transformation is now only its identity: Python `Transformation(id, version)`,
+  `BytePrivacyPolicy(mode, transformation_id, transformation_version)`,
+  `ContentProtector(policy, transformations={role: Transformation(...)},
+  redaction=...)`; TypeScript `ContentProtector(policy, { transformations: { role:
+  { id, version } }, redaction })`. Module references
+  (`Transformation(..., ref)`, `BytePrivacyPolicy.transform`, `ContentProtector`
+  `redactors`, TypeScript `redactors: { role: { module } }`) and callables raise at
+  construction with a pointer to `docs/wire-capture-deployment.md#redaction-service`.
+  Deleted settings: `transform_env_allowlist` (wire, byte evidence, protector),
+  `timeout_s` on `Transformation`/`BytePrivacyPolicy`, `transform_timeout_s` and
+  TypeScript `transformTimeoutMs` (which throws); the timeout is now
+  `RedactionService.timeout_s` / `timeoutMs`. Removed modules: `fabric._transform_runner`,
+  `fabric._transform_child` (and its guardian process) and TypeScript
+  `redactor-worker` (`RedactorModule`). `ContentProtector.runs_customer_code` /
+  `runsCustomerCode` is renamed `needs_redaction_service` /
+  `needsRedactionService`; `ByteEvidenceRecorder.transform_stats()` is
+  `redaction_stats()`; `WireStats.transform_timeouts`, `transform_saturated` and
+  `transform_abandoned` are `redaction_timeouts`, `redaction_saturated` and
+  `redaction_failures`.
+- Calls are made only on the recorder's worker (the capture worker thread in
+  Python, the recorder's asynchronous drain in Node.js), never on the application's
+  thread or event loop, over one connection pool per recorder that `close()`
+  closes. Each call has a hard timeout (default 5 s, at most 300 s) and at most two
+  calls are in flight per recorder (`max_in_flight` / `maxInFlight`); above the
+  bound a call is withheld at once and counted. Any failure (a non-200 status, a
+  timeout, an answer above the object cap, a connection error, saturation)
+  withholds the object as `not_captured(protection_failed)`, with no raw fallback
+  and no error body or exception text kept. An oversized answer is now
+  `protection_failed`, not `protected_payload_too_large`. Stored masked objects of a
+  deployment-policy role now carry `transformation_id` and `transformation_version`
+  in both SDKs.
+- `examples/redaction-service/` adds a stdlib-only reference service (Unix socket
+  or loopback HTTP, regex rules from JSON, Dockerfile, Compose and Kubernetes
+  sidecar snippets). It is an example, not part of the recorder release artifacts.
+- The TypeScript `ByteEvidenceRecorder.close()` now also closes its protector's
+  service connections.
+
+### Changed (breaking, TypeScript explicit line)
+
+- The TypeScript `ByteEvidenceRecorder` applies the spec 049 §7.3 production gate:
+  a production-profile policy needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`);
+  without it content capture is disabled with the reason (Sol P0-A review #4).
+
 ### Added
 
 - Added the Python capture reference build with protected metadata export,
@@ -53,6 +148,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `fabric.reconstruct`: a response the transport did not finish (`closed_early`,
+  `abandoned`, `error`) whose bytes do not prove their own end (a whole JSON document,
+  or a stream ending at `[DONE]`, `message_stop`, `response.completed`/`incomplete`/
+  `failed` or a provider `error`) is a `truncated` gap (reason `stream_closed_early` or
+  `transport_incomplete`), so `partial`, streamed or not. Before, a cut stream was
+  graded complete and a cut JSON body `unverified` (D5).
+- Python byte-evidence and wire capture workers reap exited transformation children on
+  a 250 ms cadence, checked between jobs as well as when idle; steady capture traffic
+  for other roles no longer leaves them as zombies (Sol P0-A round 4 #2).
+- Python customer transformations: a transformation interpreter that exits by itself
+  (idle expiry, a crash, its alarm) or whose recorder dies now takes its whole process
+  group, so an external tool a transformation started never outlives it under PPID 1.
+  The runner kills the group when it settles an exited interpreter, and each
+  interpreter forks a guardian (before any customer code) that kills the group when
+  the interpreter or the recorder ends, even while customer code holds the GIL or
+  `PR_SET_PDEATHSIG` ended the interpreter first (Sol P0-A round 4 #3).
+- Python customer transformations: every process Fabric starts is now reaped by its
+  own parent, so none accumulates as a zombie under a PID 1 that never reaps (a Linux
+  container without an init). The runner starts a guardian, which forks the
+  interpreter into its own process group and stays its parent: the guardian kills
+  that group and reaps the interpreter (and, as a Linux child subreaper, the group's
+  orphaned tools) when the interpreter exits, the recorder dies or the runner stops it
+  (`SIGTERM` on timeout or close; a guardian not gone 5 s later is killed); the runner
+  reaps the guardian (Sol P0-A round 5 #3). The guardian and the interpreter wait with
+  `poll`, so a parent-death pipe above `FD_SETSIZE` (an application with more than
+  1,024 open descriptors) no longer fails every transformation (Sol P0-A round 5 #2).
+
+
+- An extracted `model.exchange.part` under `original_plus_masked` gets a masked
+  review copy, and a failed copy withholds the part too (Sol P0-A round 2 #1).
+- In the production profile without `FABRIC_WIRE_ID_KEY`, the explicit line
+  (Python and TypeScript `ByteEvidenceRecorder`, Python `CallRecorder` and its OTLP
+  projection) emits no caller-supplied id: a random per-process source id, the
+  generated run fallback and generated ids for the rest (spec 049 §2.9 rule 5;
+  round 2 #3).
+- Deferred redaction rechecks the recorder's `payload_max_bytes` before persistence
+  in both SDKs (round 2 #4).
 - Confined Python local content adapter operations through no-follow directory
   descriptors, including replacements after initialization.
 - Rejected TypeScript content-store symlink redirection and nonregular objects,
@@ -89,6 +221,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Release note and migration: spec 049 P0-A on the Fabric Node.** This
+  supersedes spec 048 §1. Node mode is the `production` profile.
+  - **Agents.** An agent in node mode records content only with a capture
+    policy (`FABRIC_CAPTURE_POLICY`) and `FABRIC_WIRE_ID_KEY`. Without them,
+    content capture stops on upgrade, metadata continues, and every exchange
+    span reports `fabric.wire.store_reason`.
+  - **Node preflight and render fail; the application never does.** Compose
+    preflight, Compose itself and the Helm render fail until the Node has
+    its P0-A settings, and they state this supersession.
+  - **Source authentication (§7.9).** `fabricguard`'s
+    `evidence_source_binding` now covers every trace span: exchanges, loss
+    records, heartbeats, markers and manifests. A span, resource or scope
+    that names another source (`fabric.source_id`) or tenant
+    (`fabric.tenant_id`) is a forgery signal: the whole batch is refused
+    with `INVALID_ARGUMENT`. A span that names no source at all, such as an
+    application span batched with capture records in global-tracer mode, is
+    dropped on its own, never stamped and counted; the rest of the batch
+    goes through. Admitted spans are stamped
+    `fabric.source.authenticated=true`; an agent's value is stripped.
+    `fabriccontent` takes the same `source_binding`, drops other sources
+    (`source_unbound`) and writes the receiver-owned
+    `source_authenticated: true` into every persisted descriptor.
+  - **Production profile (§7.3).** A new `profile: local|production` on
+    both components. Production requires the binding, and `fabric-gate`
+    enforces it on the effective configuration: one single-token bearer
+    authenticator shared by the OTLP and `otlp/content` receivers, and no
+    other receiver.
+  - **Encryption at rest (§7.8).** The new `fabricenvelope` storage
+    extension seals everything the persistent `fabric_content` queue holds
+    (AES-256-GCM, Node-side customer key from a file; delivery semantics
+    unchanged). `fabriccontent` `file.encryption_key_file` seals every
+    object and descriptor of the directory backend. Both are required in
+    production; S3 keeps mandatory SSE. The Node envelope is pinned by
+    `contracts/content/v2/fixtures/node-envelope-v1.json`.
+  - **Role table (§4.3).** `fabriccontent` is driven by
+    `contracts/coverage/v1` content-roles-v1: every role, with its
+    boundary, provenance, media type and cap (`max_body_bytes`, default
+    32 MiB, at most 63 MiB). It now accepts `redacted`/`tokenized`,
+    descriptor-only `not_captured`, the privacy fields, split
+    skeletons/parts, `masked_only`, `original_plus_masked` review copies and
+    `protection_failed` withholding.
+  - **Identity validators (§4.2, C0A-4).** `fabric.session_id` is admitted
+    only as `sess-<32 hex>` unless the Node runs `identity_mode: clear`;
+    `fabric.delegation.to_agent` only as `agt-<32 hex>`.
+  - **Compose.** `.env` needs `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID`
+    (the agents' source id as it travels, `s-<32 hex>`). With content it
+    also needs `FABRIC_CONTENT_KEY_FILE` (a Compose secret).
+  - **Helm.** `shadow-production` pins `fabric.profile: production` and
+    needs `receiver.workloadAuthentication.sourceId`. With content it also
+    needs `content.encryption.keySecret`.
+  - **Contracts.** capture/v1 1.2.0, content/v2 2.2.0, deployment-policy/v1
+    1.1.0 (`masked_only`, `original_plus_masked`), and the new reason
+    `missing_spool_key`.
+  - **Limit: one source per production Node.** A production Node binds
+    exactly one agent source (one tenant, one `fabric.source_id`, one
+    ingress token). Agents with different source ids need one Node each; a
+    shared Node, such as one DaemonSet Node serving many pods that each run
+    as their own source, cannot be a production Node in P0-A. Pods that
+    should share a Node must run with the same `FABRIC_SOURCE_ID`.
 - **Migration: `fabric-gate` tightenings.** Existing collector configurations
   that the gate accepted before may now be refused at container start; the
   shipped Compose, Helm and example configurations already comply:
@@ -110,7 +301,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     serve TLS, client certificates when they require mTLS.
   Main's gate tests were updated for the first two rules only (they now add
   the middleware and a guard to fixtures that lacked them).
-- The Compose production overlay is telemetry only again and starts with an
+- The Compose production overlay is telemetry only (superseded in part by
+  spec 049 P0-A above: it now needs the source binding) and once started with an
   existing `.env`; the content path is the opt-in
   `docker-compose.content.yml` (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
   `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's
@@ -135,6 +327,129 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   by the real-SDK loopback benchmark.
 - Enabled existing CI workflows for the exact #164 parent branch so the
   stacked capture draft receives validation.
+
+### Removed
+
+- **Breaking: removed the CrewAI adapter** (`fabric.adapters.crewai`,
+  `attach_callbacks`). Fabric captures at the LLM wire and through
+  app-reported records, not through framework adapters. Callers that used it
+  should drop the callbacks; `fabric.wire` (zero-code model capture) and the
+  `Decision` record APIs (`record_hook`, `tool_call`, `llm_call`) cover the
+  same activity without framework coupling. The Fabric Node guard
+  (`fabricguard`) no longer allowlists the `fabric.crewai.*` attributes, and
+  `fabric.crewai.step` / `fabric.crewai.task` event names now normalize to
+  `fabric.activity`; telemetry from older SDKs that still emit them loses
+  those attributes. The module is now a forbidden wheel/sdist member in the
+  release policy and wheel qualifier, and the Python SDK connector manifest
+  declares `framework_lifecycle` as `caller_reported`.
+- **Breaking: removed `fabric.capture_capabilities`** (`sdk_capabilities`).
+  The static `fabric.capture-sdk-capabilities/v1` matrix duplicated the
+  connector capability manifests in `contracts/connect/v1/manifests`, which
+  stay the machine-readable declaration. The module is now a forbidden
+  wheel/sdist member.
+- **Breaking: removed `fabric.enterprise` (`PolicyCaptureSession`) and
+  `fabric.enterprise_preflight`** (including `python -m
+  fabric.enterprise_preflight`). The session was a thin wrapper; compose
+  `ByteEvidenceRecorder` (with `ByteEvidenceConfig(deployment_policy=...,
+  content_protector=ContentProtector(...))`) and `CallRecorder` directly.
+  Governed redaction before persistence is unchanged. The preflight's
+  offline checks and fixture canary are gone without a replacement; the
+  session's early refusal of a store bound to a different deployment policy
+  is gone too (`GovernedLocalContentStore` still rejects a write whose
+  descriptor carries another policy binding). Both modules are now forbidden
+  wheel/sdist members.
+- **Breaking: removed the local capture-policy registry and principal
+  binding** (`fabric.deployment_state`: `CapturePolicyRegistry`,
+  `validate_policy`, `RevisionConflictError`; `fabric.capture_identity`:
+  `IdentityBoundAuthority`, `PrincipalBinding`; `fabric.capture_readback`:
+  `CaptureReadback`, `assess_readback`). Policy rollout, approval and
+  readback are management scope, outside the recorder. `DeploymentPolicy`
+  (`fabric.deployment_policy`) still validates and digests the capture
+  configuration. The three modules are now forbidden wheel/sdist members.
+- **Breaking: removed `fabric.control_protocol`** (`FinalBoundaryRequest`,
+  `ExternalControlReply`, `BoundaryOutcomeObservation`,
+  `ExternalFinalBoundaryController`, `correlate_external_exchange`). The
+  contract existed for a future external Control Runtime and was never
+  invoked by the recorder; AGENTS.md keeps any Control Runtime outside the
+  default recorder. `fabric.control_evidence.ControlObservation` (metadata
+  about an external control decision) stays. The module is now a forbidden
+  wheel/sdist member, and `docs/capture-control-compatibility.md` is removed.
+- **Breaking: removed `fabric.reference_receipts`** (`ReferenceReceiptService`,
+  `ReferenceReceiptClient`, `ReferenceByteStore` and `python -m
+  fabric.reference_receipts`). It was an HTTP + SQLite receipt service
+  shipped inside the SDK wheel; a server is outside the recorder package.
+  Qualified-run mode does not depend on it: `receipt_sets`,
+  `evidence_attestation` and `qualified_run` still verify the delivery v1
+  receipt sets and attestations offline. The module is now a forbidden
+  wheel/sdist member.
+- **Breaking: removed `fabric.distributed_closure`** (`ClosureEvidenceStore`,
+  `verify_distributed_closure`, `authenticate_propagated_context` and the
+  signed closure documents). The multi-source closure verifier was used only
+  by the enterprise reference example and is not part of qualified-run mode,
+  whose single-epoch route closure in `qualified_run` is unchanged. The
+  module is now a forbidden wheel/sdist member, and
+  `docs/enterprise-distributed-closure.md` is removed.
+- **Breaking: removed Python auto-instrumentation**
+  (`fabric.auto_instrument`, `Fabric.enable_auto_instrumentation`,
+  `enable_auto_instrumentation_with_manifest`) together with
+  `fabric.coverage_manifest`, `fabric._coverage_canary` and
+  `fabric._instrumentation_registry`, and the `openai`, `anthropic`,
+  `bedrock`, `otel-langchain` and `cohere` extras that pulled the upstream
+  `opentelemetry-instrumentation-*` hooks. Fabric captures model calls at
+  the LLM wire (`fabric.wire`) and through app-reported records
+  (`llm_call`, `tool_call`); the upstream hooks also coupled the SDK to a
+  framework (langchain). `install_default_provider` and
+  `trace_export_protection_status` (the protected managed span export) are
+  unchanged; `docs/python-auto-capture-privacy.md` is now
+  `docs/python-span-export-protection.md`. The modules are forbidden
+  wheel/sdist members and the five extras are forbidden extras; the license
+  scan no longer inventories them.
+- Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
+  it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
+  same check.
+- Removed the `benchmarks/fabric-comparison` SDK instrumentation comparison
+  and its frozen evidence (45,189 lines). No workflow, test or Make target ran
+  it, and its evidence was pinned to `18ec69a`, whose SDK hashes had already
+  drifted. History stays in git.
+- Removed the Codex/Sol laptop-stage rehearsal (`run_sol_local_stage.py`,
+  `project_sol_stage_to_fabric.py`, `verify_sol_sink_readback.py`) and the
+  laptop "local GO" simulation (`run_local_go_simulation.sh`,
+  `summarize_local_go_simulation.py`) with their tests and
+  `qualification/sol-local-stage` and `qualification/local-go-simulation`
+  records. Nothing invoked them. The qualification-status links now point
+  at commit `4a5c945`.
+- Removed `scripts/qualification/run_composed_collector_journey.py` and its
+  `qualification/composed-collector-capture-matrix.json` record. Only docs
+  referred to it; the spec 048 Compose content path and the wire-capture Node
+  E2E tests in `scripts/tests` exercise a real Collector instead.
+- Removed the enterprise examples (`examples/enterprise-orchestration`,
+  `examples/enterprise-reference`, `examples/enterprise/scope.local.json`),
+  the enterprise journeys (`scripts/qualification/run_enterprise_local.py`,
+  `scripts/qualification/enterprise_preflight.py`), their repository tests,
+  and the docs that only described them (`enterprise-testing-quickstart.md`,
+  `enterprise-reference-validation.md`, `enterprise-release-traceability.md`,
+  `specs/enterprise-capture-build.md`). The README and quickstart now point
+  at `examples/wire-capture`. `examples/enterprise/policy.local.json` stays
+  as the deployment-policy test fixture.
+- Removed the C8 network journey (`run_c8_network_journey.py`), the C0–C10
+  acceptance runner (`run_capture_acceptance.py`) and its
+  `capture_measurements.py` helper, with their tests, the
+  `qualification/c8-network-capture-matrix.json` and
+  `capture-level-matrix.json` records, and `docs/evidence-qualification-map.md`.
+  Only their own tests ran them.
+- Removed the historical `qualification/` records (cloud audits, the
+  2026-10-02 cloud run, Python test-contract snapshots, the production GO
+  packet and the synthetic-slice plans and reports) and
+  `docs/cloud-qualification-2026-10-02.md`. No test or release step read
+  them, and nothing verified their source-hash pins. Only the four
+  `qualification/synthetic-slice/kind-production-*.yaml` files that
+  `e2e-production-profile.yml` installs remain. The qualification-status
+  links now point at commit `4a5c945`.
+- Removed the remaining doc references to `PolicyCaptureSession` and
+  `test_auto_instrument.py` outside the SDK, which the SDK cleanup removes.
+- `examples/kind-quickstart/up.sh` no longer installs the removed
+  `anthropic` extra; it installs `singleaxis-fabric[otlp]` and, for a real
+  model run, the `anthropic` client the demo agent imports.
 
 ### Known limitations
 

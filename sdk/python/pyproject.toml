@@ -34,47 +34,15 @@ dependencies = [
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
+  # Spec 049 §7.8: node mode (the production profile) seals the agent spool with an
+  # AES-256-GCM customer-key envelope.
+  "cryptography>=49",
 ]
 # Reader side only: `python -m fabric.reconstruct --store-uri s3://...` and
 # S3ContentStore read the customer's bucket with boto3. Never needed by an
 # agent (the Node writes S3) and never imported by the capture path.
 s3 = [
   "boto3>=1.34",
-]
-# Auto-instrumentation extras for popular LLM SDK families. Each
-# pulls the upstream `opentelemetry-instrumentation-<lib>` package
-# (Traceloop-authored, jointly maintained with the OTel GenAI WG)
-# alongside Fabric's metadata-only content default. The user pip-installs
-# the LLM SDK itself separately; the Instrumentor hooks whatever
-# version is present at runtime.
-#
-# Enable via `Fabric.enable_auto_instrumentation()` (or the module-level
-# `fabric.auto_instrument.enable_auto_instrumentation()`).
-#
-# Content capture is disabled by default (raw prompts/completions do
-# not land on spans) per Fabric's compliance posture. Override with
-# `FABRIC_CAPTURE_LLM_CONTENT=true` or
-# `enable_auto_instrumentation(capture_content=True)`.
-openai = [
-  # 2.4b0 imports genai.instruments removed in util-genai 1.2b0 and imports
-  # httpx even when the separately installed OpenAI SDK uses httpx2.
-  # Bound to the real-SDK loopback benchmark's verified dependency combination.
-  "opentelemetry-instrumentation-openai-v2==2.4b0",
-  "opentelemetry-util-genai==0.4b0",
-  "httpx>=0.28.1,<1",
-
-]
-anthropic = [
-  "opentelemetry-instrumentation-anthropic>=0.30b0",
-]
-bedrock = [
-  "opentelemetry-instrumentation-bedrock>=0.30b0",
-]
-otel-langchain = [
-  "opentelemetry-instrumentation-langchain>=0.30b0",
-]
-cohere = [
-  "opentelemetry-instrumentation-cohere>=0.30b0",
 ]
 # Optional MCP (Model Context Protocol) tool-call instrumentation. The
 # `fabric.integrations.mcp` module duck-types the client session via a
@@ -114,6 +82,7 @@ dev = [
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.
   "cryptography>=49",
+  "aiohttp>=3.9",
 ]
 
 [project.urls]
@@ -149,7 +118,21 @@ exclude = [
   "/src/fabric/presidio.py",
   "/src/fabric/stream.py",
   "/src/fabric/tool_auth.py",
+  "/src/fabric/auto_instrument.py",
+  "/src/fabric/coverage_manifest.py",
+  "/src/fabric/_coverage_canary.py",
+  "/src/fabric/_instrumentation_registry.py",
+  "/src/fabric/distributed_closure.py",
+  "/src/fabric/reference_receipts.py",
+  "/src/fabric/control_protocol.py",
+  "/src/fabric/deployment_state.py",
+  "/src/fabric/capture_identity.py",
+  "/src/fabric/capture_readback.py",
+  "/src/fabric/enterprise.py",
+  "/src/fabric/enterprise_preflight.py",
+  "/src/fabric/capture_capabilities.py",
   "/src/fabric/adapters/agent_framework.py",
+  "/src/fabric/adapters/crewai.py",
   "/src/fabric/adapters/langgraph.py",
   "/src/fabric/guardrail_adapters",
   "/src/fabric/judge_adapters",
@@ -174,7 +157,21 @@ exclude = [
   "/src/fabric/presidio.py",
   "/src/fabric/stream.py",
   "/src/fabric/tool_auth.py",
+  "/src/fabric/auto_instrument.py",
+  "/src/fabric/coverage_manifest.py",
+  "/src/fabric/_coverage_canary.py",
+  "/src/fabric/_instrumentation_registry.py",
+  "/src/fabric/distributed_closure.py",
+  "/src/fabric/reference_receipts.py",
+  "/src/fabric/control_protocol.py",
+  "/src/fabric/deployment_state.py",
+  "/src/fabric/capture_identity.py",
+  "/src/fabric/capture_readback.py",
+  "/src/fabric/enterprise.py",
+  "/src/fabric/enterprise_preflight.py",
+  "/src/fabric/capture_capabilities.py",
   "/src/fabric/adapters/agent_framework.py",
+  "/src/fabric/adapters/crewai.py",
   "/src/fabric/adapters/langgraph.py",
   "/src/fabric/guardrail_adapters",
   "/src/fabric/judge_adapters",
@@ -219,9 +216,6 @@ ignore = ["PLR0913"]
 # satisfy Darwin's 104-byte sun_path limit, and invalid paths to
 # trigger negative-path assertions).
 "tests/**" = ["S101", "PLR2004", "S108"]
-# S603 for the fixed `python -m fabric.reference_receipts` subprocess. Kept here
-# (not as an inline noqa) so ruff 0.13 (CI pin) and newer ruff both accept it.
-"tests/test_reference_receipts.py" = ["S603"]
 
 [tool.mypy]
 python_version = "3.11"

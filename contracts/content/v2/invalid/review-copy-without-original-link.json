@@ -1,0 +1,33 @@
+{
+  "schema_version": "fabric.content-object/v2",
+  "tenant_id": "tenant-a",
+  "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+  "operation_id": "0f4c2a7e-9b1d-4e3f-8a6c-5d2e1b0a9f8e",
+  "provenance": "protocol",
+  "boundary": "provider_bound",
+  "source_id": "s-c5aedfd8a3ee415e277e335bf1517ff4",
+  "source_epoch": 4611686018427387905,
+  "source_sequence": 7,
+  "captured_at": "2026-10-19T09:00:00Z",
+  "object_id": "7b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e",
+  "role": "model.exchange.request",
+  "media_type": "application/json",
+  "content_encoding": "identity",
+  "status": "redacted",
+  "representation": "redacted",
+  "transformations": [
+    "redact"
+  ],
+  "privacy_mode": "original_plus_masked",
+  "protection_status": "redacted",
+  "stored_byte_length": 68,
+  "stored_sha256": "sha256:7cc016a5ffc62004f96399701c87f3576bd90229ea63d5bb5a9480733a0f67b7",
+  "encoding": "binary",
+  "ref": "file:///var/lib/fabric/tenant-a/evidence/7b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e",
+  "source_authenticated": true,
+  "policy_id": "acme-capture",
+  "policy_version": 3,
+  "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+  "transformation_id": "acme-pii-mask",
+  "transformation_version": "7"
+}

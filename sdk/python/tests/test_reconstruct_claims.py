@@ -222,7 +222,22 @@ def test_exit_code_needs_every_scope_and_unscoped_run_complete(capture: Capture)
 
 
 @pytest.mark.parametrize("state", ["complete", "closed_early"])
-@pytest.mark.parametrize("store", [True, False])
+def test_without_stored_content_no_response_digest_is_expected(tmp_path: Path, state: str) -> None:
+    """049 §2.4 rule 8: with content disabled no object is stored, so neither digest is
+    emitted; its absence is not a missing-response gap (the bytes check is skipped)."""
+    capture = Capture(tmp_path, store=False)
+    capture.run_start(R)
+    exchange = capture.exchange(*TURN, run_id=R, state=state)
+    capture.run_end(R)
+    for key in ("fabric.wire.response_sha256", "fabric.wire.request_sha256"):
+        exchange.span["attributes"].pop(key, None)
+    run = only_run(capture.reconstruct())
+    assert ("missing_object", "response_not_recorded") not in real_gaps(run)
+    assert run["checks"]["bytes"] != "failed"
+
+
+@pytest.mark.parametrize("state", ["complete", "closed_early"])
+@pytest.mark.parametrize("store", [True])
 def test_a_received_response_without_evidence_blocks_completeness(
     tmp_path: Path, state: str, store: bool
 ) -> None:

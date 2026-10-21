@@ -3,9 +3,27 @@
 /** Local capture configuration, never regulatory certification or an execution gate. */
 import { createHmac } from "node:crypto";
 import { sha256BytesPrefixed } from "./hash.js";
+import {
+  RedactionClient,
+  checkTransformation,
+  parseRedactionEndpoint,
+  redactionServiceFromEnv,
+  redactorRemovedError,
+  type RedactionServiceOptions,
+  type RedactionStats,
+  type Transformation,
+} from "./redaction.js";
 
 export const POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1";
-export type PrivacyMode = "metadata_only" | "omit" | "redact" | "tokenize" | "retain_original";
+// masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
+export type PrivacyMode =
+  | "metadata_only"
+  | "omit"
+  | "redact"
+  | "tokenize"
+  | "retain_original"
+  | "masked_only"
+  | "original_plus_masked";
 export type ProtectionStatus =
   | "withheld"
   | "redacted"
@@ -19,7 +37,15 @@ export const PRIVACY_MODES: ReadonlySet<string> = new Set([
   "redact",
   "tokenize",
   "retain_original",
+  "masked_only",
+  "original_plus_masked",
 ]);
+/**
+ * Modes whose stored object is a customer-masked copy (spec 049 §7.7 rule 3). An
+ * `original_plus_masked` role needs two objects, which this single-object protector
+ * does not make: it reports `unsupported` and stores nothing (fails closed).
+ */
+const MASKING: ReadonlySet<string> = new Set(["redact", "masked_only"]);
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
@@ -250,13 +276,28 @@ export class ProtectedContent {
   }
 }
 export interface ContentProtectorOptions {
-  redactors?: Readonly<Record<string, (data: Uint8Array) => Uint8Array>>;
+  /**
+   * The customer transformation `{ id, version }` of each `redact` / `masked_only` role,
+   * performed by the customer-run redaction service (spec 049 §7.7,
+   * `contracts/redaction/v1`), never by code in this process.
+   */
+  transformations?: Readonly<Record<string, Transformation>>;
+  /** The redaction service; `FABRIC_REDACTION_ENDPOINT` when unset. */
+  redaction?: RedactionServiceOptions;
   tokenizationKey?: Uint8Array;
   payloadMaxBytes?: number;
 }
-/** Caller-supplied redaction and irreversible whole-object HMAC pseudonyms. */
+/**
+ * Customer redaction and irreversible whole-object HMAC pseudonyms.
+ *
+ * A masking role is redacted by the customer-run redaction service, called by
+ * {@link ContentProtector.protectAsync} through one bounded connection pool; a failed,
+ * slow or saturated call loses the content (`protection_failed`), never raw bytes. The
+ * byte recorder runs it behind the handoff, never on the caller's path.
+ */
 export class ContentProtector {
-  readonly #redactors: Readonly<Record<string, (data: Uint8Array) => Uint8Array>>;
+  readonly #client?: RedactionClient;
+  readonly #transformations: Readonly<Record<string, Transformation>>;
   readonly #key?: Uint8Array;
   readonly #modes: Readonly<Record<string, PrivacyMode>>;
   readonly payloadMaxBytes: number;
@@ -266,21 +307,32 @@ export class ContentProtector {
   ) {
     if (!(policy instanceof DeploymentPolicy))
       throw new Error("content protection requires a DeploymentPolicy");
+    const legacy = options as Record<string, unknown>;
+    if (legacy.redactors !== undefined || legacy.transformTimeoutMs !== undefined)
+      throw redactorRemovedError();
     this.payloadMaxBytes = positive(options.payloadMaxBytes ?? 1024 * 1024, 64 * 1024 * 1024);
     this.#modes = policy.privacy;
-    this.#redactors = Object.freeze({ ...options.redactors });
-    if (
-      Object.entries(this.#redactors).some(
-        ([role, fn]) => this.#modes[role] !== "redact" || typeof fn !== "function",
-      )
-    )
-      throw new Error("redactors must match explicitly redacted roles");
-    if (
-      Object.entries(this.#modes).some(
-        ([role, mode]) => mode === "redact" && !Object.hasOwn(this.#redactors, role),
-      )
-    )
-      throw new Error("redact mode requires an explicit customer redactor for each role");
+    const transformations: Record<string, Transformation> = {};
+    for (const [role, value] of Object.entries(options.transformations ?? {}))
+      transformations[role] = checkTransformation(value);
+    if (Object.keys(transformations).some((role) => !MASKING.has(this.#modes[role] ?? "")))
+      throw new Error("transformations must match explicitly redacted roles");
+    const masking = Object.entries(this.#modes).filter(([, mode]) => MASKING.has(mode));
+    if (masking.some(([role]) => !Object.hasOwn(transformations, role)))
+      throw new Error("redact mode requires an explicit customer transformation for each role");
+    this.#transformations = Object.freeze(transformations);
+    // A malformed endpoint is a configuration error even when no role needs it.
+    const service =
+      options.redaction ??
+      redactionServiceFromEnv(typeof process !== "undefined" ? process.env : {});
+    if (service !== undefined) parseRedactionEndpoint(service.endpoint);
+    if (masking.length > 0) {
+      if (service === undefined)
+        throw new Error(
+          "masking modes require a redaction service endpoint (FABRIC_REDACTION_ENDPOINT)",
+        );
+      this.#client = new RedactionClient(service, { maxOutputBytes: this.payloadMaxBytes });
+    }
     if (
       options.tokenizationKey !== undefined &&
       (!(options.tokenizationKey instanceof Uint8Array) || options.tokenizationKey.byteLength < 32)
@@ -291,6 +343,63 @@ export class ContentProtector {
     this.#key =
       options.tokenizationKey === undefined ? undefined : new Uint8Array(options.tokenizationKey);
   }
+  /** Whether protecting `role` calls the redaction service (`redact`, `masked_only`). */
+  needsRedactionService(role: string): boolean {
+    return typeof role === "string" && MASKING.has(this.#modes[role] ?? "");
+  }
+
+  /** The transformation configured for a masking `role`. */
+  transformationFor(role: string): Transformation | undefined {
+    return Object.hasOwn(this.#transformations, role) ? this.#transformations[role] : undefined;
+  }
+
+  /** Counters of the redaction service calls (never a value). */
+  stats(): RedactionStats {
+    return (
+      this.#client?.stats() ?? {
+        redaction_timeouts: 0,
+        redaction_saturated: 0,
+        redaction_failures: 0,
+      }
+    );
+  }
+
+  /** Close the redaction service connection pool; later redactions are lost. */
+  async close(): Promise<void> {
+    await this.#client?.close();
+  }
+
+  /**
+   * Protect one object. Masking roles are sent to the redaction service, bounded by its
+   * timeout and in-flight bound; every other mode is {@link ContentProtector.protect}.
+   */
+  async protectAsync(role: string, data: Uint8Array): Promise<ProtectedContent> {
+    if (!this.needsRedactionService(role) || !(data instanceof Uint8Array))
+      return this.protect(role, data);
+    const mode = this.#modes[role]!;
+    const metadata: Record<string, string | number> = { policy_digest: this.policy.digest };
+    const result = (status: ProtectionStatus, reason: string, bytes: Uint8Array | null = null) =>
+      new ProtectedContent(status, mode, null, Object.freeze({ ...metadata, reason }), bytes);
+    if (data.byteLength > this.payloadMaxBytes) return result("lost", "payload_too_large");
+    const transformation = this.#transformations[role]!;
+    const out = await this.#client!.transform(data, {
+      transformation,
+      role,
+      mode: mode as "redact" | "masked_only",
+    });
+    if (out === null) return result("lost", "protection_failed");
+    if (out.byteLength > this.payloadMaxBytes) return result("lost", "protected_payload_too_large");
+    metadata.transform = "redaction_service";
+    metadata.transformation_id = transformation.id;
+    metadata.transformation_version = transformation.version;
+    return result("redacted", "redacted_by_customer", out);
+  }
+
+  /**
+   * Protect one object synchronously: every mode but `redact` and `masked_only`, which
+   * call the redaction service ({@link ContentProtector.protectAsync}); for those this
+   * fails closed (`unsupported`, `redaction_requires_protect_async`).
+   */
   protect(role: string, data: Uint8Array): ProtectedContent {
     const mode = Object.hasOwn(this.#modes, role) ? this.#modes[role]! : "omit";
     const metadata: Record<string, string | number> = { policy_digest: this.policy.digest };
@@ -313,18 +422,9 @@ export class ContentProtector {
         metadata.source_byte_length = data.byteLength;
         return result("retained", "original_retained", data, sha256BytesPrefixed(data));
       }
-      if (mode === "redact") {
-        const bytes = this.#redactors[role]!(new Uint8Array(data));
-        if (!(bytes instanceof Uint8Array)) {
-          // A mistakenly async callback must not cause an unhandled rejection.
-          if ((bytes as unknown) instanceof Promise)
-            void (bytes as unknown as Promise<unknown>).catch(() => undefined);
-          return result("unsupported", "unsupported_transform_output");
-        }
-        if (bytes.byteLength > this.payloadMaxBytes)
-          return result("lost", "protected_payload_too_large");
-        metadata.transform = "customer_redactor";
-        return result("redacted", "redacted_by_customer", bytes);
+      if (MASKING.has(mode)) {
+        // The service is never called on the caller's path (spec 049 §7.1): protectAsync.
+        return result("unsupported", "redaction_requires_protect_async");
       }
       if (mode === "tokenize" && this.#key !== undefined) {
         const scope = Buffer.from(

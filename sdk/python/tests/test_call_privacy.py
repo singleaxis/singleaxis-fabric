@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import threading
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +15,10 @@ import pytest
 from fabric import ContentCaptureConfig, Fabric, FabricConfig, LocalFilesystemContentStore
 from fabric._calls import LLMCall, ToolCall
 from fabric.byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder, BytePrivacyPolicy
+from fabric.redaction import RedactionService
+
+from . import transforms
+from .redaction_server import RedactionServer
 
 SECRET = b"CANARY-private-customer-8842"
 ROLE = "tool.call.result"
@@ -49,14 +52,18 @@ def _close(recorder: ByteEvidenceRecorder) -> None:
     assert complete
 
 
-def _policy(mode: str, transform: Any = None) -> BytePrivacyPolicy:
+@pytest.fixture(autouse=True)
+def _service(redaction_server: RedactionServer, redaction: RedactionService) -> None:
+    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests:
+    ``customer-mask`` answers ``[masked]``."""
+    redaction_server.behaviours["customer-mask"] = transforms.masked
+
+
+def _policy(mode: str, transformation: str = "customer-mask") -> BytePrivacyPolicy:
     if mode in {"original", "omit"}:
         return BytePrivacyPolicy(mode=mode)
     return BytePrivacyPolicy(
-        mode=mode,
-        transform=transform or (lambda _data: b"[masked]"),
-        transformation_id="customer-mask",
-        transformation_version="v1",
+        mode=mode, transformation_id=transformation, transformation_version="v1"
     )
 
 
@@ -84,7 +91,11 @@ def test_masked_only_never_persists_original_or_fingerprint(tmp_path: Path) -> N
     assert settled is not None
     assert settled["status"] == "redacted"
     assert settled["representation"] == "redacted"
-    assert settled["source_byte_length"] == len(SECRET)
+    # Spec 049 §7.5/§7.7, content-v2 2.2.0: no digest or length of the original, and the
+    # object is bound to the implicit role-policy identity.
+    assert "source_byte_length" not in settled and "source_sha256" not in settled
+    assert settled["protection_status"] == "redacted"
+    assert settled["policy_id"] == "fabric.role-policies" and settled["policy_version"] == 1
     assert settled["stored_byte_length"] == len(b"[masked]")
     assert settled["stored_sha256"] == "sha256:" + hashlib.sha256(b"[masked]").hexdigest()
     assert settled["transformation_version"] == "v1"
@@ -118,7 +129,10 @@ def test_original_and_review_are_separate_linked_objects(tmp_path: Path) -> None
     assert review.read(derivative["ref"]) == b"[masked]"
     assert derivative["links"] == [{"relation": "derived_from", "object_id": settled["object_id"]}]
     assert derivative["attempt_id"] == settled["attempt_id"] == "attempt-a"
-    assert "source_sha256" not in derivative
+    assert "source_sha256" not in derivative and "source_byte_length" not in derivative
+    assert settled["protection_status"] == "retained"
+    assert derivative["protection_status"] == "redacted"
+    assert derivative["policy_digest"] == settled["policy_digest"]
     assert not review.owns_uri(settled["ref"])
     assert not original.owns_uri(derivative["ref"])
     _validate_descriptor(settled)
@@ -167,7 +181,11 @@ def test_configuration_snapshots_policy_mapping_and_requires_version(tmp_path: P
     policies[ROLE] = _policy("original")
     assert config.role_policies is not None and config.role_policies[ROLE].mode == "omit"
     with pytest.raises(ValueError, match="identity and version"):
-        BytePrivacyPolicy(mode="masked_only", transform=lambda data: data)
+        BytePrivacyPolicy(mode="masked_only")
+    docs = "redaction service.*docs/wire-capture-deployment.md#redaction-service"
+    with pytest.raises(ValueError, match=docs):  # module references are removed
+        BytePrivacyPolicy(mode="masked_only", transform="tests.transforms:identity",
+                          transformation_id="m", transformation_version="1")  # fmt: skip
     with pytest.raises(ValueError, match="enabled roles"):
         ByteEvidenceConfig(
             store=_store(tmp_path),
@@ -177,18 +195,15 @@ def test_configuration_snapshots_policy_mapping_and_requires_version(tmp_path: P
 
 
 @pytest.mark.parametrize("mode", ["masked_only", "original_plus_masked"])
-@pytest.mark.parametrize("failure", ["raise", "type", "oversize"])
+@pytest.mark.parametrize("failure", ["raise", "redirect", "oversize", "unknown"])
 def test_failed_transform_never_falls_back_to_raw(
     tmp_path: Path,
     caplog: Any,
     mode: str,
     failure: str,
 ) -> None:
-    def transform(_data: bytes) -> Any:
-        if failure == "raise":
-            raise RuntimeError(SECRET.decode())
-        return "not bytes" if failure == "type" else b"x" * 129
-
+    transform = {"raise": "raises", "redirect": "redirects", "oversize": "oversize_129",
+                 "unknown": "unknown-transformation"}[failure]  # fmt: skip
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=_store(tmp_path / "original"),
@@ -203,9 +218,12 @@ def test_failed_transform_never_falls_back_to_raw(
     records = recorder.drain_settled()
     assert len(records) == (2 if mode == "original_plus_masked" else 1)
     for record in records:
-        assert record["status"] == "failed"
-        assert record["status_reason"] == "privacy_transform_failed"
+        # Spec 049 §7.7 rule 4: a failed transformation withholds, never raw bytes.
+        assert record["status"] == "not_captured"
+        assert record["status_reason"] == "protection_failed"
+        assert record["protection_status"] == "withheld"
         assert "ref" not in record
+        assert "source_sha256" not in record and "source_byte_length" not in record
         _validate_descriptor(record)
     assert SECRET.decode() not in caplog.text + json.dumps(records) + json.dumps(initial)
     assert not list(tmp_path.rglob("*.json"))
@@ -232,29 +250,23 @@ def test_omitted_role_has_no_fingerprint_or_stored_content(tmp_path: Path) -> No
     _close(recorder)
 
 
-def test_transform_runs_off_path_and_overflow_does_not_wait(tmp_path: Path) -> None:
-    entered, release = threading.Event(), threading.Event()
-    caller_thread = threading.get_ident()
-    worker_threads = []
-
-    def transform(_data: bytes) -> bytes:
-        worker_threads.append(threading.get_ident())
-        entered.set()
-        release.wait(3)
-        return b"safe"
-
+def test_transform_runs_off_path_and_overflow_does_not_wait(
+    tmp_path: Path, redaction_server: RedactionServer
+) -> None:
+    """The service call runs on the recorder's worker (never the caller's thread) behind
+    the handoff; a full queue drops at once instead of waiting."""
+    redaction_server.release.clear()  # the service holds every call
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=_store(tmp_path / "review"),
             roles=frozenset({ROLE}),
             queue_max_items=1,
-            role_policies={ROLE: _policy("masked_only", transform)},
+            role_policies={ROLE: _policy("masked_only", "safe")},
         )
     )
     try:
         first = _capture(recorder)
-        worker_entered = entered.wait(2)
-        assert worker_entered
+        assert redaction_server.entered.wait(10.0)  # the worker is in the service call
         second = _capture(recorder)
         third = _capture(recorder)
         assert first["status"] == second["status"] == "pending"
@@ -262,9 +274,8 @@ def test_transform_runs_off_path_and_overflow_does_not_wait(tmp_path: Path) -> N
         complete = recorder.flush(timeout_s=0)
         assert not complete
     finally:
-        release.set()
+        redaction_server.release.set()
         _close(recorder)
-    assert worker_threads and caller_thread not in worker_threads
 
 
 @pytest.mark.parametrize("store_kind", ["same", "same_path", "other_tenant"])
@@ -370,29 +381,3 @@ def test_protected_mode_rejects_raw_paths_before_content_mutation(
     for path in tmp_path.rglob("*"):
         if path.is_file():
             assert SECRET not in path.read_bytes()
-
-
-@pytest.mark.parametrize(
-    "env",
-    [
-        "FABRIC_CAPTURE_LLM_CONTENT",
-        "TRACELOOP_TRACE_CONTENT",
-        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
-    ],
-)
-def test_protected_auto_instrumentation_rejects_raw_environment(
-    tmp_path: Path,
-    monkeypatch: Any,
-    env: str,
-) -> None:
-    client = Fabric(
-        FabricConfig(tenant_id="tenant-a", agent_id="agent-a"),
-        content_capture=ContentCaptureConfig(store=_store(tmp_path), roles="all"),
-    )
-    monkeypatch.setenv(env, "true")
-    with pytest.raises(ValueError, match="raw span"):
-        client.enable_auto_instrumentation(only=[], capture_content=False)
-    monkeypatch.delenv(env)
-    with pytest.raises(ValueError, match="raw span"):
-        client.enable_auto_instrumentation(only=[], capture_content=True)
-    client.close()

@@ -7,6 +7,7 @@ otel-collector:
     workloadAuthentication:
       tenantId: customer-production
       workloadId: example-agent
+      sourceId: s-c5aedfd8a3ee415e277e335bf1517ff4
       identityAttestationRef: fixture-identity-review
       tokenSecret:
         name: fixture-workload-token

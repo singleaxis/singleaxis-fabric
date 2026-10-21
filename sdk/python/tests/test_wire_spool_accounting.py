@@ -156,13 +156,18 @@ def test_a_failed_write_that_ends_during_a_rescan_stays_counted(tmp_path: Path) 
     spool = Spool(str(root), LIMIT)
     assert spool.try_lock()
     admitted, listed = threading.Event(), threading.Event()
-    rename, listdir, lstat, failure = spool._rename, os.listdir, os.lstat, list[BaseException]()
+    rename, listdir, lstat, failure = (
+        spool._rename_many,
+        os.listdir,
+        os.lstat,
+        list[BaseException](),
+    )
     record = f"{1:020d}-{os.getpid():010d}-{0:012d}.rec"  # the write's (not its temp file)
 
-    def rename_after_listing(src: str, dst: str) -> None:
+    def rename_after_listing(names: Any) -> Any:
         admitted.set()
         assert listed.wait(10)
-        rename(src, dst)
+        return rename(names)
 
     def unobservable(path: Any, *args: Any, **kwargs: Any) -> Any:
         if os.path.basename(os.fspath(path)) == record:
@@ -182,7 +187,7 @@ def test_a_failed_write_that_ends_during_a_rescan_stays_counted(tmp_path: Path) 
         return entries
 
     with (
-        patch.object(spool, "_rename", rename_after_listing),
+        patch.object(spool, "_rename_many", rename_after_listing),
         patch.object(spool, "_sync_dir", _enospc),
         patch("os.lstat", unobservable),
     ):
@@ -222,7 +227,7 @@ def test_a_rescan_before_a_failed_write_ends_keeps_its_temp_file_counted(
         spool.rescan()
 
     with (
-        patch.object(spool, "_rename", _enospc),  # the write fails after its temp file
+        patch.object(spool, "_rename_many", _enospc),  # the write fails after its temp file
         patch("os.unlink", _enospc),  # which then stays on disk
         patch.object(spool, "_failed_write", failed_write_then_rescan),
         pytest.raises(OSError),
@@ -267,14 +272,19 @@ def _maybe(rng: random.Random, original: Callable[..., Any]) -> Callable[..., An
     return call
 
 
+@pytest.mark.parametrize("sealed", [False, True])
 @pytest.mark.parametrize("seed", range(24))
-def test_interleaved_admissions_retirements_failures_and_rescans(tmp_path: Path, seed: int) -> None:
+def test_interleaved_admissions_retirements_failures_and_rescans(
+    tmp_path: Path, seed: int, sealed: bool
+) -> None:
     """Random admissions (own and another writer's), drains, receipt consumption and
     rescans, with failures injected into every disk step: after each operation the
-    drainer's ledger equals what is on disk and never exceeds the bound."""
+    drainer's ledger equals what is on disk and never exceeds the bound. ``sealed``: the
+    049 §7.8 envelope changes record sizes, never the accounting."""
     rng, root = random.Random(seed), tmp_path / "spool"  # noqa: S311 - a reproducible schedule
-    writer = Spool(str(root), 4000)
-    drainer = Spool(str(root), 4000)
+    key = bytes(range(32)) if sealed else None
+    writer = Spool(str(root), 4000, key=key)
+    drainer = Spool(str(root), 4000, key=key)
     assert drainer.try_lock() and drainer.max_receipts == 3
     sender = Sender(drainer, _Ok(), LossEmitter(), content=None, service_name="svc")
     for counter in range(1, 161):

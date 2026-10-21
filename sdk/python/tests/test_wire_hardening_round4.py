@@ -487,21 +487,21 @@ def test_spool_records_and_content_records_carry_the_pseudonyms(
     monkeypatch.setenv("OTEL_SERVICE_NAME", LABEL)
     node.mode = "down"
     spool = tmp_path / "spool"
-    handle = install_node(node, spool, source_id=LABEL)
+    handle = install_node(node, spool, source_id=LABEL)  # node mode: keyed (049 §7.3)
     with wire.run("run-h"), model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert not handle.flush(0.5)  # the Node is down: everything stays spooled
     headers = headers_of(spool)
     assert headers and LABEL not in json.dumps(headers)
-    assert {h["source"]["source_id"] for h in headers} == {"s-" + hex32(LABEL)}
+    assert {h["source"]["source_id"] for h in headers} == {"s-" + hex32(LABEL, KEY)}
     exchange = next(h for h in headers if h["record_kind"] == "exchange")
-    assert exchange["service_name"] == "svc-" + hex32(LABEL)
-    assert {b["descriptor"]["source_id"] for b in exchange["bodies"]} == {"s-" + hex32(LABEL)}
+    assert exchange["service_name"] == "svc-" + hex32(LABEL, KEY)
+    assert {b["descriptor"]["source_id"] for b in exchange["bodies"]} == {"s-" + hex32(LABEL, KEY)}
     node.mode = "ok"
     assert handle.flush(10.0)
-    assert node.content and all(a["source_id"] == "s-" + hex32(LABEL) for a, _ in node.content)
+    assert node.content and all(a["source_id"] == "s-" + hex32(LABEL, KEY) for a, _ in node.content)
     spans = node.spans
-    assert spans and all(resource == {"service.name": "svc-" + hex32(LABEL)}
+    assert spans and all(resource == {"service.name": "svc-" + hex32(LABEL, KEY)}
                          for _, _, resource in spans)  # fmt: skip
 
 

@@ -18,7 +18,7 @@ import {
   SimpleSpanProcessor,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-node";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ConcurrentDecisionUseError,
@@ -52,7 +52,13 @@ afterAll(async () => {
   context.disable();
 });
 
-beforeEach(() => exporter.reset());
+beforeEach(() => {
+  exporter.reset();
+  // These goldens pin the pre-049 identity output, which clear mode
+  // reproduces byte for byte (spec 049 §2.9 rule 7).
+  vi.stubEnv("FABRIC_IDENTITY_MODE", "clear");
+});
+afterEach(() => vi.unstubAllEnvs());
 
 function fabric(): Fabric {
   return new Fabric({ tenantId: "acme", agentId: "support-bot", profile: "p" });

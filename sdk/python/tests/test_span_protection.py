@@ -18,7 +18,6 @@ from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 from opentelemetry.trace import Link, SpanContext, Status, StatusCode, TraceFlags, TraceState
 
 from fabric._span_protection import MetadataOnlySpanExporter
-from fabric.coverage_manifest import inspect_integrations
 from fabric.tracing import install_default_provider, trace_export_protection_status
 
 SECRET = "SYNTHETIC-PRIVATE-CANARY-3742"  # noqa: S105 - synthetic canary
@@ -190,9 +189,7 @@ def test_independent_host_exporter_stays_raw_and_boundary_is_visible() -> None:
 @pytest.mark.parametrize(
     "capture,status", [(False, "PROTECTED_METADATA_ONLY"), (True, "CONTENT_OPT_IN")]
 )
-def test_managed_install_and_manifest_report_route(
-    monkeypatch: Any, capture: bool, status: str
-) -> None:
+def test_managed_install_reports_route(monkeypatch: Any, capture: bool, status: str) -> None:
     monkeypatch.setenv("OTEL_TRACES_SAMPLER", "always_on")
     installed: list[Any] = [trace.ProxyTracerProvider()]
     monkeypatch.setattr(trace, "get_tracer_provider", lambda: installed[0])
@@ -206,7 +203,7 @@ def test_managed_install_and_manifest_report_route(
     assert provider.force_flush()
     assert (SECRET in sink.get_finished_spans()[0].to_json()) is capture
     monkeypatch.setattr(trace, "get_tracer_provider", lambda: provider)
-    observed = inspect_integrations(only=[]).to_dict()["trace_export_protection"]
+    observed = trace_export_protection_status()
     assert observed["status"] == status and observed["basis"] == "current_process"
     provider.shutdown()
 

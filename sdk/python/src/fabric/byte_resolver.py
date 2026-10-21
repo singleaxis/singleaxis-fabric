@@ -21,7 +21,7 @@ from typing import Any
 
 from .byte_evidence import _BOUNDARIES, _ROLES
 from .content_store.base import check_safe_identifier
-from .content_store.local import LocalFilesystemContentStore
+from .content_store.local import LocalFilesystemContentStore, node_shard
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FIELDS = frozenset(
@@ -57,8 +57,16 @@ _FIELDS = frozenset(
         "privacy_mode",
         "transformation_id",
         "transformation_version",
+        # content-v2 2.2.0 privacy block (spec 049 §7.7 rule 3), all or none.
+        "policy_id",
+        "policy_version",
+        "policy_digest",
+        "protection_status",
     }
 )
+_POLICY_FIELDS = frozenset({"policy_id", "policy_version", "policy_digest", "protection_status"})
+_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_PROTECTION = frozenset({"withheld", "redacted", "tokenized", "retained", "unsupported", "lost"})
 _MAX_DESCRIPTOR_BYTES = 64 * 1024
 _DEFAULT_MAX_OBJECT_BYTES = 16 * 1024 * 1024
 
@@ -141,6 +149,7 @@ class ByteEvidenceResolver:
         if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
             raise OSError("safe local resolution unavailable")
         directory_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
+        file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
         with ExitStack() as opened:
             descriptors: list[int] = []
             descriptors.append(os.open(self._root.anchor, directory_flags))
@@ -154,11 +163,22 @@ class ByteEvidenceResolver:
                 descriptors.append(os.open(component, directory_flags, dir_fd=descriptors[-1]))
                 opened.callback(os.close, descriptors[-1])
             name = f"{object_id}.json" if metadata else object_id
-            descriptor = os.open(
-                name,
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                dir_fd=descriptors[-1],
-            )
+            # The Fabric Node's two-level shard first, then the flat name (this
+            # SDK's writer, and Nodes before sharding) in the same pinned parent.
+            flat = directory = descriptors[-1]
+            for component in node_shard(object_id):
+                try:
+                    directory = os.open(component, directory_flags, dir_fd=directory)
+                except FileNotFoundError:
+                    directory = flat
+                    break
+                opened.callback(os.close, directory)
+            try:
+                descriptor = os.open(name, file_flags, dir_fd=directory)
+            except FileNotFoundError:
+                if directory == flat:
+                    raise
+                descriptor = os.open(name, file_flags, dir_fd=flat)
             opened.callback(os.close, descriptor)
             info = os.fstat(descriptor)
             limit = _MAX_DESCRIPTOR_BYTES if metadata else self.max_object_bytes
@@ -215,6 +235,18 @@ class ByteEvidenceResolver:
         for field in ("source_epoch", "source_sequence"):
             if not _counter(descriptor.get(field)):
                 return False
+        present = _POLICY_FIELDS.intersection(descriptor)
+        if present and (
+            present != _POLICY_FIELDS
+            or not _opaque(descriptor["policy_id"])
+            or not _counter(descriptor["policy_version"])
+            or descriptor["policy_version"] < 1
+            or not isinstance(descriptor["policy_digest"], str)
+            or not _DIGEST.fullmatch(descriptor["policy_digest"])
+            or not isinstance(descriptor["protection_status"], str)
+            or descriptor["protection_status"] not in _PROTECTION
+        ):
+            return False
         return "chunk_index" not in descriptor or (
             _counter(descriptor["chunk_index"]) and "stream_id" in descriptor
         )
@@ -229,7 +261,12 @@ class ByteEvidenceResolver:
             or not _opaque(descriptor.get("transformation_id"))
             or not _opaque(descriptor.get("transformation_version"))
             or "source_sha256" in descriptor
-            or not _counter(descriptor.get("source_byte_length"))
+            # content-v2 2.2.0: a masked object bound to a policy keeps no original length;
+            # an older (2.1.0) review descriptor may still carry one.
+            or (
+                "source_byte_length" in descriptor
+                and not _counter(descriptor["source_byte_length"])
+            )
         ):
             return False
         links = descriptor.get("links", [])

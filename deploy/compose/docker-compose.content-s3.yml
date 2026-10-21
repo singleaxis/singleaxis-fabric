@@ -22,6 +22,7 @@ services:
       - --config=/etc/fabric-node/collector-production.yaml
       - --config=/etc/fabric-node/collector-content.yaml
       - --config=/etc/fabric-node/collector-content-s3.yaml
+      - --config=/etc/fabric-node/collector-content-s3-production.yaml
     environment:
       FABRIC_CONTENT_S3_BUCKET: ${FABRIC_CONTENT_S3_BUCKET:?set FABRIC_CONTENT_S3_BUCKET in .env}
       FABRIC_CONTENT_S3_PREFIX: ${FABRIC_CONTENT_S3_PREFIX:-fabric/content/}
@@ -32,3 +33,4 @@ services:
       FABRIC_CONTENT_S3_KMS_KEY_ID: ${FABRIC_CONTENT_S3_KMS_KEY_ID:-}
     volumes:
       - ./collector-config/collector-content-s3.yaml:/etc/fabric-node/collector-content-s3.yaml:ro
+      - ./collector-config/collector-content-s3-production.yaml:/etc/fabric-node/collector-content-s3-production.yaml:ro

@@ -55,6 +55,12 @@ services:
       # Egress destination credentials; required, fail closed at compose time.
       FABRIC_EXPORT_ENDPOINT: ${FABRIC_EXPORT_ENDPOINT:?set FABRIC_EXPORT_ENDPOINT in .env to an https OTLP/HTTP endpoint}
       FABRIC_EXPORT_AUTH_HEADER: ${FABRIC_EXPORT_AUTH_HEADER:?set FABRIC_EXPORT_AUTH_HEADER in .env to the egress Authorization header value}
+      # Spec 049 §7.9: the production profile binds every batch to one tenant
+      # and source (fabricguard evidence_source_binding, fabriccontent
+      # source_binding). FABRIC_SOURCE_ID is the agents' source id as it
+      # travels (s-<32 hex> under the default pseudonymous labels).
+      FABRIC_TENANT_ID: ${FABRIC_TENANT_ID:?set FABRIC_TENANT_ID in .env to the tenant id your agents send}
+      FABRIC_SOURCE_ID: ${FABRIC_SOURCE_ID:?set FABRIC_SOURCE_ID in .env to the wire source id your agents send (spec 049 §7.9)}
       # Egress private-CA bundle, only consulted if the ca_file line in
       # collector-production.yaml is uncommented. Must live under
       # /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR).

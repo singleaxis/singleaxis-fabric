@@ -21,8 +21,14 @@ destination. SingleAxis Platform is optional.
   name its tenant; use one Node per tenant otherwise), and writes body then
   descriptor to a directory or an S3(-compatible) bucket (`sse: AES256` or
   `aws:kms` required) with the SDK store layout
-  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`). It
-  never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
+  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`; the
+  directory backend shards both under two hash-prefix levels,
+  `<tenant>/evidence/<h[0:2]>/<h[2:4]>/<id>` and
+  `<tenant>/evidence/meta/<h[0:2]>/<h[2:4]>/<id>.json` with `h` the hex
+  SHA-256 of the id, while refs keep the flat key; objects an earlier
+  version wrote flat are still read and still count for replay/conflict.
+  Each exchange adds files, so alert on the content filesystem's inode
+  use, not only its bytes). It never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
   hard-linked into place, or renamed with an atomic no-replace rename —
   `renameat2(RENAME_NOREPLACE)` on Linux — where the filesystem has no hard
   links; a filesystem offering neither fails the write retryably, never a
@@ -156,6 +162,40 @@ the queue drain) if a rotation reintroduces an unsafe file. Operators who
 override the container entrypoint or launch `otelcol-fabric` directly leave
 the enforced path; `verify-prod.sh` surfaces a container-level entrypoint
 override at verification time.
+
+## Spec 049 P0-A: production profile
+
+- `fabricguard` `profile: production` requires `evidence_source_binding`
+  (`tenant_id`, `source_id` as the records carry them). On a bound ingress
+  a span, resource or scope naming another `fabric.source_id` or
+  `fabric.tenant_id` refuses the whole batch with `INVALID_ARGUMENT` before
+  any mutation. A span naming no source is dropped on its own and counted
+  (`unbound_span`); the rest of the batch is admitted, and admitted spans
+  get `fabric.source.authenticated=true`. One production Node binds exactly
+  one agent source. `identity_mode: pseudonymous` (the
+  default) admits `fabric.session_id` only as `sess-<32 hex>`; `clear`
+  keeps its earlier admission. `fabric.delegation.to_agent` is admitted
+  only as `agt-<32 hex>`.
+- `fabriccontent` follows the role table
+  `contracts/coverage/v1/registry/content-roles-v1.json`
+  (`roles_generated.go`, rendered by
+  `scripts/contracts/generate_p0_contracts.py`), up to `max_body_bytes`
+  (default 32 MiB, at most 63 MiB). With `source_binding` it drops other
+  tenants or sources (`source_unbound`) and writes `source_authenticated:
+  true` into the persisted descriptor. With `file.encryption_key_file`
+  every object and descriptor is stored in the AES-256-GCM envelope
+  (`contracts/content/v2/fixtures/node-envelope-v1.json`). Its
+  `profile: production` requires the binding, a persistent queue on a
+  `fabricenvelope` storage extension and, for the file backend, the key.
+- `fabricenvelope` (extension) wraps a `file_storage` extension. It seals
+  every value the persistent queue persists with the key in `key_file`
+  (32 raw bytes or their base64). A value that fails authentication is an
+  error and is never read as plaintext.
+- `fabric-gate` treats a configuration whose `fabricguard`/`fabriccontent`
+  declare `profile: production` as a production Node. It enforces the
+  binding, one single-token bearer authenticator on every receiver, the
+  same binding on every content exporter, the sealed queue and the
+  directory key.
 
 ## Build and qualify
 

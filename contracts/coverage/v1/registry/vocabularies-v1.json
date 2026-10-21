@@ -85,6 +85,10 @@
       "meaning": "The capture queue was full (existing loss reason)."
     },
     {
+      "value": "disk_full",
+      "meaning": "The agent spool's volume or quota was full (`ENOSPC`/`EDQUOT`) before its configured bound; the record could not be persisted (loss reason)."
+    },
+    {
       "value": "shutdown",
       "meaning": "The process stopped before the record was persisted (existing loss reason)."
     },
@@ -127,6 +131,10 @@
     {
       "value": "missing_id_key",
       "meaning": "A keyed pseudonym was required and `FABRIC_WIRE_ID_KEY` was not set."
+    },
+    {
+      "value": "missing_spool_key",
+      "meaning": "The production profile requires spool encryption and no spool key was configured; content capture is disabled and metadata continues (sections 7.3, 7.8)."
     },
     {
       "value": "provider_redacted",
@@ -782,6 +790,10 @@
       "meaning": "Production profile without `FABRIC_WIRE_ID_KEY`."
     },
     {
+      "value": "missing_spool_key",
+      "meaning": "Production profile without a spool encryption key (section 7.8)."
+    },
+    {
       "value": "privacy_policy",
       "meaning": "The role's privacy mode retains no bytes."
     },
@@ -831,7 +843,7 @@
   "capture_input": [
     {
       "value": "wire",
-      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2; undici on the TypeScript track): exchanges plus their run markers."
+      "meaning": "Automatic in-process tee of model traffic (httpx/httpx2, aiohttp; undici on the TypeScript track): exchanges plus their run markers."
     },
     {
       "value": "records",

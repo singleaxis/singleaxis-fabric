@@ -41,6 +41,9 @@ SCHEMAS = {
     "fabric.content-object/v2": ("content", "schema/content-object-v2.schema.json"),
 }
 SPLIT_VECTOR = "fabric.split-reassembly-vector/v1"
+NODE_ENVELOPE_VECTOR = "fabric.node-envelope-vectors/v1"
+NODE_ENVELOPE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
+NODE_ENVELOPE_SCHEMA = "fabric.node-content-envelope/v1"
 BAD_STATUSES = frozenset(
     {"truncated", "redacted", "not_captured", "unsupported", "dropped", "failed"}
 )
@@ -244,22 +247,63 @@ def _validate_content(document: Mapping[str, Any]) -> None:
 
 
 def _validate_content_protection(document: Mapping[str, Any]) -> None:
-    """Keep configured privacy and recorded outcomes consistent, without certifying policy."""
+    """Keep configured privacy and recorded outcomes consistent, without certifying policy.
+
+    Spec 049 §2.7, §7.5 and §7.7: ``masked_only`` stores only a masked copy
+    (outcome ``redacted``); ``original_plus_masked`` stores the original
+    (``retained``) and a separately referenced masked review copy
+    (``redacted``); a transformation that fails in any byte-storing mode
+    withholds the content (``withheld``, ``not_captured``, status reason
+    ``protection_failed``), never falling back to raw bytes.
+    """
     mode = document["privacy_mode"]
     protection = document["protection_status"]
     status = document["status"]
     expected = {
-        "omit": "withheld",
-        "metadata_only": "withheld",
-        "retain_original": "retained",
-        "redact": "redacted",
-        "tokenize": "tokenized",
+        "omit": {"withheld"},
+        "metadata_only": {"withheld"},
+        "retain_original": {"retained"},
+        "redact": {"redacted"},
+        "tokenize": {"tokenized"},
+        "masked_only": {"redacted"},
+        "original_plus_masked": {"retained", "redacted"},
     }
-    valid = mode in expected and protection in {
-        expected.get(mode),
-        "lost",
-        "unsupported",
+    byte_storing = {
+        "retain_original",
+        "redact",
+        "tokenize",
+        "masked_only",
+        "original_plus_masked",
     }
+    failed = (
+        protection == "withheld"
+        and document.get("status_reason") == "protection_failed"
+    )
+    # Spec 049 §7.5: under redact or masked_only, a binary part no part transformation
+    # applies to is withheld by the policy itself (descriptor only, no digest or length).
+    binary_part = (
+        protection == "withheld"
+        and document.get("status_reason") == "privacy_policy"
+        and document.get("role") == "model.exchange.part"
+        and mode in {"redact", "masked_only"}
+        and status == "not_captured"
+        and "source_sha256" not in document
+        and "source_byte_length" not in document
+    )
+    valid = mode in expected and (
+        protection in expected[mode] | {"lost", "unsupported"}
+        or failed
+        and mode in byte_storing
+        or binary_part
+    )
+    if failed:
+        # Only a mode that stores bytes has a transformation to fail.
+        valid = (
+            valid
+            and mode in byte_storing
+            and status == "not_captured"
+            and "source_sha256" not in document
+        )
     if protection == "lost":
         valid = valid and status in {"failed", "dropped"}
     elif protection == "unsupported":
@@ -275,8 +319,26 @@ def _validate_content_protection(document: Mapping[str, Any]) -> None:
             "pending",
             "stored" if protection == "retained" else "redacted",
         }
-        if mode in {"redact", "tokenize"}:
+        transformation = {"redacted": "redact", "tokenized": "tokenize"}.get(protection)
+        if transformation is not None and "transformations" in document:
+            valid = valid and document["transformations"] in (
+                [transformation],
+                ["extract_parts", transformation],
+            )
+        elif mode in {"redact", "tokenize"}:
             valid = valid and document.get("transformations") == [mode]
+        if mode == "original_plus_masked" and protection == "redacted":
+            valid = valid and any(
+                link.get("relation") == "derived_from"
+                for link in document.get("links", [])
+            )
+    elif status == "truncated":
+        # retain_original keeps the 047 truncation (spec 049 §7.4 rule 4).
+        valid = (
+            valid
+            and protection == "retained"
+            and document["representation"] == "truncated"
+        )
     else:
         valid = valid and status in {"failed", "dropped"}
     if not valid:
@@ -691,12 +753,72 @@ def _validate_split_vector(
         )
 
 
+def _validate_node_envelope_vector(document: Mapping[str, Any]) -> None:
+    """Re-open every case of the Node directory envelope vector (spec 049 §7.8)."""
+    try:
+        from cryptography.exceptions import InvalidTag  # noqa: PLC0415
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+    except ImportError as exc:  # fail closed: an unverifiable vector is not valid
+        raise EvidenceContractError(
+            "evidence.envelope.unverifiable", "$", "cryptography is required"
+        ) from exc
+    if set(document) != {"schema_version", "rule", "cases"} or not document["cases"]:
+        raise EvidenceContractError(
+            "evidence.envelope.shape", "$", "closed vector fields"
+        )
+    fields = {
+        "name",
+        "key_base64",
+        "path",
+        "aad",
+        "plaintext_base64",
+        "envelope_base64",
+        "valid",
+    }
+    for index, case in enumerate(document["cases"]):
+        where = f"$.cases[{index}]"
+        if not isinstance(case, dict) or set(case) != fields:
+            raise EvidenceContractError(
+                "evidence.envelope.shape", where, "closed case fields"
+            )
+        aad = json.dumps(
+            [NODE_ENVELOPE_SCHEMA, case["path"]], sort_keys=True, separators=(",", ":")
+        )
+        if case["aad"] != aad:
+            raise EvidenceContractError(
+                "evidence.envelope.aad", where, "aad is not the canonical form"
+            )
+        key = base64.b64decode(case["key_base64"], validate=True)
+        envelope = base64.b64decode(case["envelope_base64"], validate=True)
+        header = len(NODE_ENVELOPE_MAGIC) + 12
+        try:
+            if not envelope.startswith(NODE_ENVELOPE_MAGIC):
+                raise InvalidTag
+            plaintext = AESGCM(key).decrypt(
+                envelope[len(NODE_ENVELOPE_MAGIC) : header],
+                envelope[header:],
+                aad.encode(),
+            )
+            opened = plaintext == base64.b64decode(
+                case["plaintext_base64"], validate=True
+            )
+        except InvalidTag:
+            opened = False
+        if opened != case["valid"]:
+            raise EvidenceContractError(
+                "evidence.envelope.case", where, f"{case['name']}: opened={opened}"
+            )
+
+
 def validate_document(
     document: Mapping[str, Any], schemas: Mapping[str, Mapping[str, Any]]
 ) -> None:
     version = document.get("schema_version")
     if version == SPLIT_VECTOR:
         _validate_split_vector(document, schemas)
+        return
+    if version == NODE_ENVELOPE_VECTOR:
+        _validate_node_envelope_vector(document)
         return
     selected = SCHEMAS.get(version) if isinstance(version, str) else None
     if selected is None:
@@ -939,7 +1061,7 @@ def validate_contracts(repo_root: Path) -> list[str]:
             )
         if (manifest["contract"], manifest["version"], manifest["digest_scope"]) != (
             f"singleaxis.fabric.{family}",
-            "1.0.0" if family == "evidence" else "2.1.0",
+            "1.0.0" if family == "evidence" else "2.2.0",
             "exact_file_bytes",
         ):
             raise EvidenceContractError(

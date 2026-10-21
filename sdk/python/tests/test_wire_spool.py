@@ -32,14 +32,17 @@ from fabric._loss import LossEmitter
 from fabric._sequence import run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire import WireConfig, _spool
-from fabric.wire._spool import Spool, unframe
+from fabric.wire._spool import Spool, unframe, unframe_all
 
 from .test_wire_helpers import (
     CAPTURE,
     OPENAI_CHAT,
+    PRODUCTION_ID_KEY,
     capture_schemas,
     chat_response,
     load_validator,
+    open_record,
+    production_overrides,
 )
 
 VALIDATOR = load_validator()
@@ -60,6 +63,8 @@ def any_value(value: Any) -> Any:
     kind = value.WhichOneof("value")
     if kind == "array_value":
         return [any_value(v) for v in value.array_value.values]
+    if kind == "kvlist_value":
+        return {kv.key: any_value(kv.value) for kv in value.kvlist_value.values}
     return getattr(value, kind) if kind else None
 
 
@@ -156,9 +161,12 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
 
 def install_node(node: FakeNode, spool: Path, **overrides: Any) -> wire.WireHandle:
+    """Node mode is the production profile (049 §7.3): a policy, the id key and the spool
+    key enable content; an override of ``None`` removes one."""
+    settings = {**production_overrides(), **overrides}
     config = WireConfig(
         content_endpoint=node.url + "/v1/logs", tenant_id="tenant-a", spool_dir=str(spool),
-        patch_httpx=False, max_body_bytes=SMALL, spool_max_bytes=SPOOL_MIN, **overrides,
+        patch_httpx=False, max_body_bytes=SMALL, spool_max_bytes=SPOOL_MIN, **settings,
     )  # fmt: skip
     exporter = OTLPSpanExporter(endpoint=node.url + "/v1/traces", timeout=2)
     return wire.install(config, span_exporter=exporter)
@@ -184,8 +192,14 @@ def wait_for(predicate: Any, timeout: float = 10.0) -> bool:
     return bool(predicate())
 
 
+def _stopped(handle: wire.WireHandle) -> None:
+    sender = handle._tee.sender
+    if sender is not None and sender._thread is not None:
+        sender._thread.join(30.0)
+
+
 def headers_of(spool: Path) -> list[dict[str, Any]]:
-    return [unframe(path.read_bytes())[0] for path in records(spool)]
+    return [doc for path in records(spool) for doc, _ in unframe_all(open_record(path))]
 
 
 def validate_header(doc: dict[str, Any]) -> None:
@@ -209,7 +223,8 @@ def test_node_mode_delivers_content_then_span_and_empties_the_spool(
     by_role = {attrs["role"]: data for attrs, data in node.content}
     assert by_role["model.exchange.response"] == body  # exact bytes
     assert span["fabric.wire.store_status"] == "stored"
-    assert span["fabric.run.id"] == run_pseudonym("run-a") and "fabric.run.scope_id" in span
+    expected_run = run_pseudonym("run-a", PRODUCTION_ID_KEY)
+    assert span["fabric.run.id"] == expected_run and "fabric.run.scope_id" in span
     for attrs, data in node.content:
         VALIDATOR.validate_document({
             "schema_version": "fabric.content-log-record/v1", "attributes": attrs,
@@ -253,7 +268,9 @@ def test_spooled_headers_match_the_contract(node: FakeNode, tmp_path: Path) -> N
     for path in records(spool):  # 0600 files in a 0700 directory
         assert path.stat().st_mode & 0o777 == 0o600
     assert spool.stat().st_mode & 0o777 == 0o700
-    raw = records(spool)[0].read_bytes()
+    sealed = records(spool)[0].read_bytes()  # 049 §7.8: the envelope, no plaintext header
+    assert sealed[:8] == b"FWSPENC1" and b"fabric.wire-spool-record" not in sealed
+    raw = open_record(records(spool)[0])
     (size,) = struct.unpack(">I", raw[8:12])
     assert raw[:8] == b"FWSPOOL1" and raw[-32:] == hashlib.sha256(raw[:-32]).digest()
     assert json.loads(raw[12 : 12 + size]) == unframe(raw)[0]
@@ -329,19 +346,20 @@ def test_corrupt_record_is_quarantined_with_an_internal_error_loss(
 ) -> None:
     node.mode = "down"
     spool = tmp_path / "spool"
-    handle = install_node(node, spool)
+    handle = install_node(node, spool, spool_key=None)  # a plaintext header to recover
     with model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert not handle.close(1.0)  # the exchange and the final marker stay on disk
+    _stopped(handle)  # no export of a batch read before the corruption is still in flight
     exchange = next(
-        p for p in records(spool) if unframe(p.read_bytes())[0]["record_kind"] == "exchange"
+        p for p in records(spool) if unframe_all(p.read_bytes())[0][0]["record_kind"] == "exchange"
     )
     data = bytearray(exchange.read_bytes())
-    data[-40] ^= 0xFF  # inside the blob: the trailer no longer matches
+    data[-1] ^= 0xFF  # the trailer no longer matches; the header still parses
     exchange.write_bytes(bytes(data))
     wire.uninstall()
     node.mode = "ok"
-    handle = install_node(node, spool)  # a restarted agent replays and quarantines
+    handle = install_node(node, spool, spool_key=None)  # replays and quarantines
     assert wait_for(lambda: records(spool) == [], 20.0) and handle.flush(5.0)
     assert (spool / (exchange.name + ".corrupt")).exists() and records(spool) == []
     assert handle.stats().quarantined == 1
@@ -424,3 +442,118 @@ def test_stale_temp_files_are_removed_by_the_drainer(tmp_path: Path) -> None:
     assert spool.try_lock()
     spool.rescan()
     assert not old.exists() and new.exists() and spool.bytes == 1
+
+
+def test_tampered_sealed_record_is_quarantined_and_another_key_is_left(
+    node: FakeNode, tmp_path: Path
+) -> None:
+    """049 §7.8: a sealed record that does not authenticate is quarantined (its header is
+    sealed too, so no sequence can be recovered: the verifier sees the gap); a record
+    sealed under another key is never delivered, quarantined or deleted here."""
+    node.mode = "down"
+    spool = tmp_path / "spool"
+    handle = install_node(node, spool)
+    with model_client() as client:
+        client.post(OPENAI_CHAT, json={"messages": []})
+        handle._tee.flush(5.0)  # its own record file, not one batch file with the next
+        client.post(OPENAI_CHAT, json={"messages": []})
+    assert not handle.close(1.0)
+    _stopped(handle)
+    first, second = [p for p in records(spool)
+                     if unframe_all(open_record(p))[0][0]["record_kind"] == "exchange"]  # fmt: skip
+    data = bytearray(first.read_bytes())
+    data[-1] ^= 0xFF
+    first.write_bytes(bytes(data))
+    wire.uninstall()
+    node.mode = "ok"
+    handle = install_node(node, spool, spool_key=bytes(32))  # another key
+    assert wait_for(lambda: handle.stats().spool_undecryptable >= 2, 10.0)
+    assert first.exists() and second.exists() and node.named("fabric.model_call") == []
+    wire.uninstall()
+    _stopped(handle)
+    handle = install_node(node, spool)  # the sealing key again
+    assert wait_for(lambda: not second.exists(), 20.0)
+    assert (spool / (first.name + ".corrupt")).exists()
+    assert handle.stats().quarantined == 1
+    assert len(node.named("fabric.model_call")) == 1
+
+
+def _plaintext_spool(node: FakeNode, spool: Path) -> list[Path]:
+    """Records written by an install without the spool key (plaintext), left on disk."""
+    node.mode = "down"
+    handle = install_node(node, spool, spool_key=None)
+    with model_client() as client:
+        client.post(OPENAI_CHAT, json={"messages": []})
+    assert not handle.close(1.0)
+    _stopped(handle)
+    wire.uninstall()
+    plain = records(spool)
+    assert plain and not any(p.read_bytes().startswith(b"FWSPENC1") for p in plain)
+    return plain
+
+
+def test_a_plaintext_record_under_a_key_is_quarantined_never_delivered(
+    node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # fmt: skip
+    """Sol P0-A #2: a keyed spool never delivers a record without the envelope (written
+    before the key, or a forged downgrade); it is quarantined and its exchange is a loss.
+    The migration opt-in never runs in the production profile (node mode), and the
+    status never reports the spool encrypted while plaintext records remain."""
+    spool = tmp_path / "spool"
+    plain = _plaintext_spool(node, spool)
+    exchange = next(
+        p for p in plain if unframe_all(p.read_bytes())[0][0]["record_kind"] == "exchange"
+    )
+    monkeypatch.setenv("FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT", "1")
+    node.mode = "ok"
+    handle = install_node(node, spool)
+    assert "migration is ignored in the production profile" in caplog.text
+    status = handle.status()
+    assert status["spool_encrypted"] is False and status["spool_plaintext_records"] >= 1
+    assert wait_for(lambda: records(spool) == [], 20.0) and handle.flush(5.0)
+    assert (spool / (exchange.name + ".corrupt")).exists()
+    assert handle.stats().quarantined == len(plain) and handle.stats().spool_migrated == 0
+    assert node.named("fabric.model_call") == [] and node.content == []
+    (loss,) = node.named("fabric.capture_loss")
+    assert loss["fabric.loss.reason"] == "internal_error"
+    assert handle.status()["spool_encrypted"] is False  # quarantined plaintext is at rest
+    for path in spool.glob("*.corrupt"):
+        path.unlink()
+    assert handle.status()["spool_encrypted"] is True
+    assert handle.status()["spool_plaintext_records"] == 0
+
+
+def test_the_local_profile_migrates_plaintext_records_on_explicit_opt_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT=1`` with a key, in the local profile: the
+    drainer seals every plaintext record in place before it reads any, then delivers."""
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (  # noqa: PLC0415
+        InMemorySpanExporter,
+    )
+
+    from .test_wire_helpers import PRODUCTION_SPOOL_KEY  # noqa: PLC0415
+
+    spool = tmp_path / "spool"
+    span = {
+        "name": "fabric.model_call", "kind": "client", "trace_id": "1" * 32,
+        "span_id": "2" * 16, "trace_flags": 1, "start_time_unix_nano": 1,
+        "end_time_unix_nano": 2, "status": "unset",
+        "attributes": {"fabric.source_id": "s-x", "fabric.source.sequence": 0},
+    }  # fmt: skip
+    name = Spool(str(spool), SPOOL_MIN).write(_spool.exchange_doc("s-x", 1, "svc", span, []))
+    assert name is not None
+    monkeypatch.setenv("FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT", "1")
+    exporter = InMemorySpanExporter()
+    store = LocalFilesystemContentStore(root=str(tmp_path / "store"), tenant_id="tenant-a")
+    handle = wire.install(WireConfig(
+        store=store, tenant_id="tenant-a", spool_dir=str(spool), spool_key=PRODUCTION_SPOOL_KEY,
+        patch_httpx=False, max_body_bytes=SMALL, spool_max_bytes=SPOOL_MIN,
+    ), span_exporter=exporter)  # fmt: skip
+    assert handle.status()["profile"] == "local"
+    assert wait_for(lambda: handle.stats().spool_migrated == 1, 20.0)
+    assert wait_for(lambda: not (spool / name).exists(), 20.0)
+    assert [s.name for s in exporter.get_finished_spans()].count("fabric.model_call") == 1
+    assert handle.stats().quarantined == 0
+    assert handle.status()["spool_encrypted"] is True

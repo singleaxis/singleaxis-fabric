@@ -67,6 +67,9 @@ jobs:
           - name: noredirect-extension
             # Spec 048 J4: the Node's redirect-refusing HTTP client middleware.
             path: components/otel-collector-fabric/extension/noredirectextension
+          - name: envelope-extension
+            # Spec 049 §7.8: the Node's encrypted queue storage wrapper.
+            path: components/otel-collector-fabric/extension/fabricenvelopeextension
           - name: host-emitter
             path: components/host-emitter
           - name: fabricctl
@@ -107,6 +110,7 @@ jobs:
           components/otel-collector-fabric/receiver/auditreceiver
           components/otel-collector-fabric/exporter/fabriccontentexporter
           components/otel-collector-fabric/extension/noredirectextension
+          components/otel-collector-fabric/extension/fabricenvelopeextension
           components/host-emitter
           tools/fabricctl/cmd/fabricctl/release_main.go
           tools/fabricctl/internal/recorder
@@ -137,6 +141,7 @@ jobs:
             components/otel-collector-fabric/receiver/auditreceiver
             components/otel-collector-fabric/exporter/fabriccontentexporter
             components/otel-collector-fabric/extension/noredirectextension
+            components/otel-collector-fabric/extension/fabricenvelopeextension
             components/host-emitter
             tools/fabricctl
 

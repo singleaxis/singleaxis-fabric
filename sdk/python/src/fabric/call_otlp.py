@@ -114,6 +114,11 @@ def project_call_snapshot(  # noqa: PLR0912, PLR0915 - closed metadata validatio
             ):
                 if event.get(key) != descriptor.get(key):
                     raise ValueError("call content identity mismatch")
+            withheld = (
+                descriptor.get("status") == "not_captured"
+                and descriptor.get("status_reason") == "protection_failed"
+                and descriptor.get("protection_status") == "withheld"
+            )
             for key in CONTENT_JOIN_FIELDS - {"content_sha256", "content_byte_length"}:
                 if key == "representation" and descriptor.get("status") not in {
                     "stored",
@@ -121,6 +126,10 @@ def project_call_snapshot(  # noqa: PLR0912, PLR0915 - closed metadata validatio
                 }:
                     # Failed persistence changes availability, not the original
                     # privacy decision. Preserve the failure observation.
+                    continue
+                if key == "protection_status" and withheld:
+                    # A customer redaction runs behind the handoff (spec 049 §7.7); its
+                    # failure withholds after the journal recorded the intended outcome.
                     continue
                 if key in event and event[key] != descriptor.get(key):
                     raise ValueError("call content policy mismatch")

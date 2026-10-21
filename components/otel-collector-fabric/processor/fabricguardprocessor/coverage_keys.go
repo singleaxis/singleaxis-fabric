@@ -28,8 +28,10 @@ import (
 
 // coverageKeyValidators: every key the registry admits now, with its check.
 var coverageKeyValidators = map[string]func(pcommon.Value) bool{
+	"fabric.delegation.to_agent":                              matches(pseudonymPattern("agt")),
 	"fabric.interaction.target":                               matches(pseudonymPattern("tgt")),
 	"fabric.memory.key":                                       matches(pseudonymPattern("mkey")),
+	"fabric.session_id":                                       matches(pseudonymPattern("sess")),
 	"fabric.user_id":                                          matches(pseudonymPattern("usr")),
 	"db.system.name":                                          matches(dbSystemPattern),
 	"fabric.actor.id":                                         matches(pseudonymPattern("act")),
@@ -94,7 +96,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.manifest.clock.domain":                            constStr("wall_utc"),
 	"fabric.manifest.clock.uncertainty_ns":                    intAtLeast(0),
 	"fabric.manifest.content_capture":                         oneOf(toSet("enabled", "disabled", "metadata_only")),
-	"fabric.manifest.content_capture_reason":                  oneOf(toSet("missing_capture_policy", "missing_id_key", "not_configured", "hook_disabled")),
+	"fabric.manifest.content_capture_reason":                  oneOf(toSet("missing_capture_policy", "missing_id_key", "missing_spool_key", "not_configured", "hook_disabled")),
 	"fabric.manifest.coverage_profile":                        matches(coverageProfilePattern),
 	"fabric.manifest.emitted_at":                              isRFC3339,
 	"fabric.manifest.endpoint_set_digest":                     matches(coverageDigestPattern),
@@ -121,6 +123,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.manifest.sequence_unit":                           oneOf(toSet("exchange", "record")),
 	"fabric.manifest.source_auth":                             oneOf(toSet("bound", "unbound")),
 	"fabric.manifest.spool_encrypted":                         isBool,
+	"fabric.manifest.spool_key_id":                            matches(keyIDPattern),
 	"fabric.manifest.uncaptured_classes":                      sliceOf(0, 64, true, oneOf(toSet("requests", "urllib3", "boto3", "aiohttp", "grpc", "websocket", "webrtc", "node_http", "axios", "custom_fetch", "node_below_24", "stdio_mcp", "direct_pipe_reads", "provider_batch_files", "non_post_endpoints", "unmatched_endpoints", "other_runtime"))),
 	"fabric.manifest.unsealed_prior_epoch_count":              intAtLeast(0),
 	"fabric.manifest.unsealed_prior_epochs":                   sliceOf(0, 64, false, matchesInt64(decimalEpochPattern, "epoch")),
@@ -180,7 +183,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.tool.execution_side":                              oneOf(toSet("agent", "provider", "mcp_server", "remote", "sandbox")),
 	"fabric.turn_id":                                          matches(pseudonymPattern("turn")),
 	"fabric.wire.first_chunk_offset_ns":                       intAtLeast(0),
-	"fabric.wire.store_reason":                                oneOf(toSet("no_store", "missing_capture_policy", "missing_id_key", "privacy_policy", "protection_failed", "explicit_withheld", "store_failed", "body_cap", "inflight_budget", "transport_incomplete")),
+	"fabric.wire.store_reason":                                oneOf(toSet("no_store", "missing_capture_policy", "missing_id_key", "missing_spool_key", "privacy_policy", "protection_failed", "explicit_withheld", "store_failed", "body_cap", "inflight_budget", "transport_incomplete")),
 	"fabric.workflow.iteration":                               intAtLeast(0),
 	"fabric.workflow.node":                                    matches(operatorLabelPattern),
 	"fabric.event_id":                                         matches(captureObjectIDPattern),
@@ -192,6 +195,12 @@ var operatorLabelKeys = toSet(
 	"fabric.control.policy_id",
 	"fabric.run.agent_policy_id",
 	"fabric.workflow.node",
+)
+
+// clearIdentityKeys keep their pre-049 admission under identity_mode: clear
+// (spec 049 §2.9 rule 7); a pseudonymous Node admits only the check.
+var clearIdentityKeys = toSet(
+	"fabric.session_id",
 )
 
 // manifestSpanKeys are the closed attributes of the fabric.capture_manifest span.
@@ -236,6 +245,7 @@ var manifestSpanKeys = toSet(
 	"fabric.manifest.sequence_unit",
 	"fabric.manifest.source_auth",
 	"fabric.manifest.spool_encrypted",
+	"fabric.manifest.spool_key_id",
 	"fabric.manifest.uncaptured_classes",
 	"fabric.manifest.unsealed_prior_epoch_count",
 	"fabric.manifest.unsealed_prior_epochs",
@@ -255,7 +265,7 @@ var (
 	frameworkNamePattern       = regexp.MustCompile(`^@?[a-z0-9][a-z0-9._/-]{0,127}$`)
 	softwareVersionPattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
 	manifestPointFieldsPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}=([XCSND][0-9]{2}(,[XCSND][0-9]{2}){0,255})?$`)
-	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|-)$`)
+	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|-)$`)
 	coverageProfilePattern     = regexp.MustCompile(`^fabric\.profile\.[a-z0-9-]+/v[0-9]+$`)
 	keyIDPattern               = regexp.MustCompile(`^kid-[0-9a-f]{8}$`)
 	roleTableVersionPattern    = regexp.MustCompile(`^fabric\.content-role-table/v[0-9]+@[0-9]+$`)
@@ -282,8 +292,12 @@ func pseudonymPattern(prefix string) *regexp.Regexp {
 
 // receiverOwnedKeys are set only by the Node (registry owner: receiver). An
 // agent-supplied value is stripped from every record, whatever the
-// configuration says (spec 049 §7.9; stamping at a bound ingress is P0-A).
-var receiverOwnedKeys = toSet("fabric.source.authenticated")
+// configuration says; a bound ingress then stamps its own (spec 049 §7.9).
+var receiverOwnedKeys = toSet(sourceAuthenticatedKey)
+
+// sourceAuthenticatedKey is stamped true on every span admitted at an
+// ingress bound to its tenant and source (spec 049 §7.9, X47).
+const sourceAuthenticatedKey = "fabric.source.authenticated"
 
 // Capture record classes (isCaptureSpan) a coverage key may appear on.
 const (
@@ -463,6 +477,11 @@ func (g *guard) validCoverageValue(key string, value pcommon.Value) (valid, ok b
 	validate, ok := coverageKeyValidators[key]
 	if !ok {
 		return false, false
+	}
+	if _, keeps := clearIdentityKeys[key]; keeps && g.cfg.IdentityMode == identityModeClear {
+		// identity_mode clear keeps the pre-049 admission (spec 049 §2.9
+		// rule 7): the generic metadata checks of filterAttributes still apply.
+		return true, true
 	}
 	if !validate(value) {
 		return false, true

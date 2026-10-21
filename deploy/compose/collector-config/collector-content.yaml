@@ -27,6 +27,13 @@
 # telemetry pipeline.
 
 extensions:
+  # Spec 049 §7.8: everything the content queue persists is sealed with the
+  # Node-side customer key (AES-256-GCM); delivery semantics are unchanged.
+  # The key is the Compose secret fabric_content_key (FABRIC_CONTENT_KEY_FILE),
+  # never a configuration literal.
+  fabricenvelope/fabric_content:
+    storage: file_storage/fabric_content
+    key_file: /run/secrets/fabric_content_key
   file_storage/fabric_content:
     # Separate durable queue for content records (up to 64 MiB each).
     directory: /var/lib/fabric-node/content-queue
@@ -70,15 +77,24 @@ processors:
 
 exporters:
   # Content store: the local fabric-content volume, in the SDK store layout
-  # (<dir>/<tenant>/evidence/<object_id> + evidence/meta/<id>.json) that
-  # `fabric.reconstruct --store-root` reads. collector-content-s3.yaml
+  # (<dir>/<tenant>/evidence/<object_id> + evidence/meta/<id>.json, sharded
+  # on disk as evidence/<h0h1>/<h2h3>/ with h = sha256(object_id); alert on
+  # inode use, not only bytes) that `fabric.reconstruct --store-root` reads. collector-content-s3.yaml
   # replaces it in the pipeline with an S3 exporter. Only tenants listed here
   # are written; anything else is dropped with a content-free log line.
   fabriccontent:
+    # Spec 049 §7.9: the same binding as fabricguard; descriptors written for
+    # this source carry source_authenticated: true.
+    profile: production
+    source_binding:
+      tenant_id: ${env:FABRIC_TENANT_ID}
+      source_id: ${env:FABRIC_SOURCE_ID}
     allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
     backend: file
     file:
       directory: /var/lib/fabric-node/content
+      # Spec 049 §7.8: objects and descriptors in the customer-key envelope.
+      encryption_key_file: /run/secrets/fabric_content_key
     timeout: 60s
     # The content queue's file_storage directory, made private at start.
     queue_directory: /var/lib/fabric-node/content-queue
@@ -89,7 +105,7 @@ exporters:
       # volume. preflight-prod.sh estimates this next to the telemetry queue.
       queue_size: 64
       block_on_overflow: true
-      storage: file_storage/fabric_content
+      storage: fabricenvelope/fabric_content
     retry_on_failure:
       enabled: true
       initial_interval: 1s
@@ -100,7 +116,7 @@ exporters:
 service:
   # Lists replace on merge: this is collector-production.yaml's list plus the
   # content queue.
-  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content, bearertokenauth]
+  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content, fabricenvelope/fabric_content, bearertokenauth]
   pipelines:
     # Bodies pass unchanged (no fabricguard); fabriccontent enforces the
     # closed descriptor itself. Never routed to otlp_http/fabric.

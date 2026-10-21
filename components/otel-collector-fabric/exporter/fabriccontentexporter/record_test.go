@@ -59,7 +59,7 @@ func TestGoldenDescriptorLayout(t *testing.T) {
 	for _, name := range []string{"content-descriptor-file.json", "content-descriptor-s3.json"} {
 		t.Run(name, func(t *testing.T) {
 			g := loadGolden(t, name)
-			rec := parseDescriptor(mapOf(t, g.Record.Attributes))
+			rec := parseDescriptor(mapOf(t, g.Record.Attributes), defaultMaxBodyBytes)
 			if rec == nil {
 				t.Fatal("golden attributes rejected")
 			}
@@ -84,7 +84,7 @@ func TestGoldenDescriptorLayout(t *testing.T) {
 			if got := b.ref(full); got != g.Ref {
 				t.Errorf("ref = %q, want %q", got, g.Ref)
 			}
-			if got := string(rec.descriptorJSON(b.ref(full))); got != g.DescriptorJSON {
+			if got := string(rec.descriptorJSON(b.ref(full), false)); got != g.DescriptorJSON {
 				t.Errorf("descriptor bytes differ:\n got %q\nwant %q", got, g.DescriptorJSON)
 			}
 		})
@@ -93,22 +93,22 @@ func TestGoldenDescriptorLayout(t *testing.T) {
 
 func TestDescriptorJSONTruncatedAndEscaping(t *testing.T) {
 	body := []byte("x")
-	rec := parseDescriptor(mapOf(t, truncatedAttrs(body)))
+	rec := parseDescriptor(mapOf(t, truncatedAttrs(body)), defaultMaxBodyBytes)
 	if rec == nil {
 		t.Fatal("valid truncated record rejected")
 	}
-	got := string(rec.descriptorJSON("file:///c/tenant-a/evidence/x"))
+	got := string(rec.descriptorJSON("file:///c/tenant-a/evidence/x", false))
 	if !strings.Contains(got, `"transformations": ["truncate"]`) || strings.Contains(got, "source_sha256") {
 		t.Errorf("truncated descriptor = %s", got)
 	}
 	// media_type may contain '&' etc.: no HTML escaping (Python json.dumps).
 	attrs := validAttrs(body)
 	attrs["media_type"] = "application/a&b+json"
-	rec = parseDescriptor(mapOf(t, attrs))
+	rec = parseDescriptor(mapOf(t, attrs), defaultMaxBodyBytes)
 	if rec == nil {
 		t.Fatal("media type with & rejected")
 	}
-	if got := string(rec.descriptorJSON("r")); !strings.Contains(got, `"media_type": "application/a&b+json"`) {
+	if got := string(rec.descriptorJSON("r", false)); !strings.Contains(got, `"media_type": "application/a&b+json"`) {
 		t.Errorf("media_type escaped: %s", got)
 	}
 	if got := quote("a\"b\\c\n\x01é"); got != `"a\"b\\c\n\u0001é"` {
@@ -133,7 +133,7 @@ func TestParseRecordAcceptsValidRecords(t *testing.T) {
 				b = nil
 			}
 			lr := makeLogs(t, withBody(attrs, b)).ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-			if _, reason := parseRecord(lr); reason != "" {
+			if _, reason := parseRecord(lr, defaultMaxBodyBytes); reason != "" {
 				t.Fatalf("valid record dropped: %s", reason)
 			}
 		})
@@ -190,7 +190,7 @@ func TestParseRecordRejectsBadDescriptors(t *testing.T) {
 	for name, attrs := range cases {
 		t.Run(name, func(t *testing.T) {
 			lr := makeLogs(t, withBody(attrs, body)).ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
-			if rec, reason := parseRecord(lr); reason != reasonBadDescriptor {
+			if rec, reason := parseRecord(lr, defaultMaxBodyBytes); reason != reasonBadDescriptor {
 				t.Fatalf("reason = %q (rec %v), want bad_descriptor", reason, rec != nil)
 			}
 		})
@@ -199,7 +199,7 @@ func TestParseRecordRejectsBadDescriptors(t *testing.T) {
 		ld := makeLogs(t, withBody(validAttrs(body), body))
 		lr := ld.ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
 		lr.Body().SetStr("hello")
-		if _, reason := parseRecord(lr); reason != reasonBadDescriptor {
+		if _, reason := parseRecord(lr, defaultMaxBodyBytes); reason != reasonBadDescriptor {
 			t.Fatalf("reason = %q, want bad_descriptor", reason)
 		}
 	})
@@ -222,7 +222,7 @@ func TestParseRecordRejectsBadDescriptors(t *testing.T) {
 		if got.Attributes().Len() != len(validAttrs(body))+1 {
 			t.Skipf("pdata deduplicated keys on unmarshal (len %d)", got.Attributes().Len())
 		}
-		if _, reason := parseRecord(got); reason != reasonBadDescriptor {
+		if _, reason := parseRecord(got, defaultMaxBodyBytes); reason != reasonBadDescriptor {
 			t.Fatalf("duplicate key accepted: %q", reason)
 		}
 	})
@@ -242,7 +242,7 @@ func TestParseRecordDigestMismatch(t *testing.T) {
 			}
 			lr := makeLogs(t, withBody(attrs, body)).ResourceLogs().At(0).ScopeLogs().At(0).LogRecords().At(0)
 			mutate(lr)
-			if _, reason := parseRecord(lr); reason != reasonDigestMismatch {
+			if _, reason := parseRecord(lr, defaultMaxBodyBytes); reason != reasonDigestMismatch {
 				t.Fatalf("reason = %q, want digest_mismatch", reason)
 			}
 		})

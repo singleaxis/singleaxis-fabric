@@ -46,9 +46,26 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 61
+    assert len(validated) == 80
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
+
+
+def test_report_records_telemetry_origin_and_source_authentication() -> None:
+    """Spec 049 §7.9, decision 20: the report says where its telemetry came from and
+    names an unauthenticated production record as its own gap type."""
+    schema = _json("schema/run-reconstruction-v1.schema.json")
+    inputs = schema["properties"]["inputs"]["properties"]
+    assert inputs["telemetry_origin"]["enum"] == ["trusted_readback", "imported"]
+    assert inputs["profile"]["enum"] == ["local", "production"]
+    assert "source_unauthenticated" in schema["$defs"]["gapType"]["enum"]
+    report = _json("fixtures/valid/run-reconstruction-production-imported.json")
+    (gap,) = [
+        g
+        for g in report["runs"][0]["gaps"]
+        if g["gap_type"] == "source_unauthenticated"
+    ]
+    assert gap["effect"] == "unverified" and gap["reason"] == "imported_telemetry"
 
 
 def test_exchange_record_carries_no_content_or_stitching_keys() -> None:
@@ -295,6 +312,21 @@ CONTENT_ATTRIBUTES = {
     "run_id",
     "operation_id",
     "captured_at",
+    # spec 049 §4.3 rule 6 (P0-A)
+    "status_reason",
+    "observed_at",
+    "workload_id",
+    "attempt_id",
+    "stream_id",
+    "chunk_index",
+    "privacy_mode",
+    "policy_id",
+    "policy_version",
+    "policy_digest",
+    "protection_status",
+    "transformation_id",
+    "transformation_version",
+    "links",
 }
 
 
@@ -306,11 +338,13 @@ def test_spool_and_content_share_one_descriptor_definition() -> None:
     assert (
         "ref" not in content["properties"] and "encoding" not in content["properties"]
     )
+    # Receiver-owned: never part of what an agent sends (spec 049 §4.3 rule 6).
+    assert "source_authenticated" not in content["properties"]
 
 
 def test_content_log_record_attribute_set_is_closed() -> None:
     document = _json("fixtures/valid/content-log-record-request.json")
-    assert set(document["attributes"]) == CONTENT_ATTRIBUTES
+    assert set(document["attributes"]) <= CONTENT_ATTRIBUTES
     for key in ("ref", "content", "path", "bucket"):
         broken = copy.deepcopy(document)
         broken["attributes"][key] = "x"
@@ -574,3 +608,23 @@ def test_manifest_is_spooled_as_a_marker_without_a_position() -> None:
     broken = copy.deepcopy(marker)
     broken["marker"]["manifest_seq"] = 0
     _assert_error(broken, "capture.schema")
+
+
+@pytest.mark.parametrize(
+    ("pseudonym", "valid"),
+    [
+        ("p-0123456789abcdef", True),
+        ("p-0123456789abcdef0123456789abcdef", True),
+        ("p-0123456789abcdef0", False),
+        ("p-0123456789ABCDEF", False),
+        ("resp_abc123", False),
+    ],
+)
+def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> None:
+    """Spec 049 §2.9 rule 4: keyed p- + 32 hex, legacy p- + 16 hex stays readable."""
+    import re  # noqa: PLC0415
+
+    pattern = _json("schema/run-reconstruction-v1.schema.json")["$defs"]["pseudonym"][
+        "pattern"
+    ]
+    assert (re.fullmatch(pattern, pseudonym) is not None) is valid
