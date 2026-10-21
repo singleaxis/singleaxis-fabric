@@ -141,11 +141,11 @@ def test_emit_endpoint_names_the_chart_node_service() -> None:
         text=True,
     ).stdout
     services = [
-        doc
-        for doc in yaml.safe_load_all(rendered)
-        if doc and doc["kind"] == "Service"
+        doc for doc in yaml.safe_load_all(rendered) if doc and doc["kind"] == "Service"
     ]
     node = [doc for doc in services if doc["metadata"]["name"] == name]
-    assert node, f"chart renders no Service {name!r}: {[s['metadata']['name'] for s in services]}"
+    assert node, (
+        f"chart renders no Service {name!r}: {[s['metadata']['name'] for s in services]}"
+    )
     grpc = [p for p in node[0]["spec"]["ports"] if p["name"] == "otlp-grpc"]
     assert grpc and grpc[0]["port"] == int(port)

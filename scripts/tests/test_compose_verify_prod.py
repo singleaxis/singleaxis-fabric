@@ -82,9 +82,7 @@ def _run(
     (secrets / "ingress.token").write_text("a" * 32, encoding="utf-8")
     (tmp_path / ".env").write_text(env_file, encoding="utf-8")
     env = {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("FABRIC_")
+        key: value for key, value in os.environ.items() if not key.startswith("FABRIC_")
     }
     env.update(
         PATH=f"{bin_dir}:{env['PATH']}",
@@ -166,7 +164,9 @@ def test_harness_fixture_is_refused_by_a_bound_node(tmp_path: Path) -> None:
     """Regression: the old probe (tenant ``harness``, no source) is what a
     bound production Node refuses; verify-prod must not post it."""
     text = (COMPOSE_DIR / "verify-prod.sh").read_text(encoding="utf-8")
-    assert "decision-summary.json" not in text.split("# --- authenticated acceptance")[1]
+    assert (
+        "decision-summary.json" not in text.split("# --- authenticated acceptance")[1]
+    )
     harness = _span_identity(COMPOSE_DIR / "fixtures" / "decision-summary.json")
     assert harness.get("fabric.tenant_id") == "harness"
     assert "fabric.source_id" not in harness
