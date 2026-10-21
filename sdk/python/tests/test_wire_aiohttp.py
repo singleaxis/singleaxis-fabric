@@ -8,8 +8,10 @@ application sees exactly what it saw without capture: results, exceptions, strea
 from __future__ import annotations
 
 import asyncio
+import gc
 import gzip
 import json
+import weakref
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -275,3 +277,35 @@ def test_an_httpx_client_on_an_aiohttp_transport_is_captured_once(rig: Rig, serv
         _transport.unpatch_httpx()
     (span,) = _captured(rig)
     assert rig.read_ref(span["fabric.content.result_ref"]) == REPLY
+
+
+@pytest.mark.parametrize("close_capture", [True, False])
+def test_unpatching_mid_stream_retains_nothing(rig: Rig, server: Any, close_capture: bool) -> None:
+    """Sol's reproduction: a stream begun under capture, capture closed and aiohttp unpatched,
+    then the stream read to its end and closed. Nothing of the exchange is retained after
+    GC, and the unfinished exchange is a ``shutdown`` loss (whichever of the unpatch and the
+    tee's close claims it)."""
+    refs: dict[str, weakref.ref[Any]] = {}
+
+    async def scenario(base: str) -> Any:
+        async with aiohttp.ClientSession() as session:
+            response = await session.post(base + "/v1/chat/completions?mode=slow", json=CHAT)
+            first = await response.content.readline()
+            ((reader, exchange),) = _aiohttp._READERS.items()
+            assert reader is response.content
+            refs.update(response=weakref.ref(response), exchange=weakref.ref(exchange))
+            del reader, exchange
+            _transport._ACTIVE = None  # WireHandle.close: deactivate, unpatch, close the tee
+            _aiohttp.unpatch_aiohttp()
+            if close_capture:
+                rig.tee.close(5.0)
+            rest = await response.read()
+            response.close()
+            return first + rest
+
+    assert server(scenario) == b"".join(EVENTS)
+    gc.collect()
+    assert _aiohttp._READERS == {}
+    assert refs["exchange"]() is None and refs["response"]() is None
+    assert rig.loss_counts() == {"shutdown": 1}
+    assert _captured(rig) == []
