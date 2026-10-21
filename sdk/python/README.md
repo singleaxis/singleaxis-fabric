@@ -11,8 +11,9 @@ CAPTURE -> PROTECT -> DELIVER
 It provides:
 
 - **Zero-code wire capture** (`fabric.wire`): the exact request and response
-  bytes of every model call sent through `httpx` or `httpx2`, which covers
-  the official `openai` and `anthropic` SDKs and frameworks built on them.
+  bytes of every model call sent through `httpx`, `httpx2` or `aiohttp`,
+  which covers the official `openai` and `anthropic` SDKs, LiteLLM, DSPy
+  and frameworks built on them.
 - **Explicit APIs**: `Fabric.decision()` and its `record_*` methods,
   `ByteEvidenceRecorder`, `CallRecorder` and byte-boundary adapters, for
   activity the application reports itself.
@@ -33,8 +34,8 @@ pip install "singleaxis-fabric[otlp]"
 Extras: `otlp` (OTLP exporter and spool encryption; needed for node mode),
 `s3` (boto3, for reading an S3 store with `fabric.reconstruct`; agents never
 need it), `mcp` (MCP client instrumentation), `signing` (Ed25519 for
-qualified-run mode). Wire capture uses whichever of `httpx`/`httpx2` your
-application already installs.
+qualified-run mode). Wire capture uses whichever of `httpx`, `httpx2` and
+`aiohttp` your application already installs.
 
 ## Zero-code wire capture
 
@@ -75,7 +76,9 @@ configuration.
 Matched by default: `api.openai.com`, `api.anthropic.com`,
 `*.openai.azure.com`; add other hosts with `FABRIC_WIRE_ENDPOINTS`. Matched
 APIs: chat completions, responses, completions, embeddings, messages.
-`aiohttp` and `requests` are not captured.
+`aiohttp` calls are captured too (`FABRIC_WIRE_AIOHTTP=0` turns that off).
+A model call through `requests` or `urllib3` is not captured; it is
+recorded as an `uninstrumented_client` loss, so its run is `partial`.
 
 Verify offline:
 
@@ -124,9 +127,11 @@ recorder.close()
 ```
 
 Privacy is set per content role (`BytePrivacyPolicy`, or a
-`DeploymentPolicy` with `ContentProtector`). Masking uses your own
-transformation, named by module reference (`"package.module:function"`)
-and run in a separate process; a failure withholds the content.
+`DeploymentPolicy` with `ContentProtector`). Masking is done by a
+redaction service you run beside the application
+(`FABRIC_REDACTION_ENDPOINT`, a Unix socket or loopback port; protocol
+`contracts/redaction/v1`); you name the transformation by id and version.
+Fabric runs no customer code, and a failure withholds the content.
 
 Full reference: [explicit APIs](../../docs/explicit-apis.md),
 [privacy and security](../../docs/privacy-and-security.md),

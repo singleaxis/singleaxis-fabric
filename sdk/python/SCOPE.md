@@ -11,7 +11,7 @@ deliver the record.
 - retrieval and memory events using hashes instead of raw content;
 - side effects, checkpoints, delegation, MCP inventory, skills, hooks, file
   access and generic interactions;
-- zero-code capture of model calls at the httpx/httpx2 transport
+- zero-code capture of model calls at the httpx, httpx2 and aiohttp clients
   (`fabric.wire`), the PROTECT stage before the durable spool, and delivery
   to a Fabric Node;
 - exact-byte recording at caller-chosen boundaries (`ByteEvidenceRecorder`,

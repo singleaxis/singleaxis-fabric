@@ -6,12 +6,13 @@ Fabric Node or an OTLP endpoint. They never block, alter or delay the agent.
 
 | Language | Package | What it provides |
 |----------|---------|------------------|
-| [`python`](python/) | `singleaxis-fabric` | Zero-code wire capture of httpx/httpx2 model calls (`fabric.wire`), durable encrypted spool, PROTECT stage, explicit APIs (`decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters), `python -m fabric.reconstruct`, qualified-run mode |
-| [`typescript`](typescript/) | `@singleaxis/fabric` | Explicit APIs only (`decision`/`record*`, `ByteEvidenceRecorder` with worker-thread redactors). **No wire capture.** |
+| [`python`](python/) | `singleaxis-fabric` | Zero-code wire capture of httpx, httpx2 and aiohttp model calls (`fabric.wire`), durable encrypted spool, PROTECT stage, explicit APIs (`decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters), `python -m fabric.reconstruct`, qualified-run mode |
+| [`typescript`](typescript/) | `@singleaxis/fabric` | Explicit APIs only (`decision`/`record*`, `ByteEvidenceRecorder` with redaction-service masking). **No wire capture.** |
 
 Protection depends on the path. Wire capture and `ByteEvidenceRecorder`
-apply the capture policy before persistence; customer redactors run out of
-process (Python child process, TypeScript worker thread). Python's
+apply the capture policy before persistence; customer masking is done by
+a redaction service you run (Unix socket or loopback), never by code Fabric
+runs. Python's
 `install_default_provider` adds a metadata-only export projection;
 TypeScript does not sanitize spans from a provider you register. Do not
 assume every export path is metadata-only. See

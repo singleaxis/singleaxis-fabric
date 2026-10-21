@@ -885,8 +885,8 @@ def test_verify_prod_does_not_claim_content_delivery() -> None:
     text = (COMPOSE_DIR / "verify-prod.sh").read_text(encoding="utf-8")
     assert "content delivery to the store is not verified here" in text
     assert "content-to-store delivery needs the content canary" in text
-    assert "## 5. Verify a run" in (
-        REPO_ROOT / "docs" / "wire-capture-deployment.md"
+    assert "## Verify a deployment" in (
+        REPO_ROOT / "docs" / "operations" / "README.md"
     ).read_text(encoding="utf-8")
 
 

@@ -18,21 +18,28 @@ and superseded specs to `specs/archive/`.
 **Highlights**
 
 - Zero-code model-call capture for Python (`fabric.wire`): an in-process tee
-  of `httpx`/`httpx2` records the exact request and response bytes of chat
-  completions, responses, completions, embeddings and messages calls, so it
-  covers the official `openai` (>= 3 on httpx2, earlier on httpx) and
-  `anthropic` (>= 1) SDKs and frameworks built on them. Enabled only by
-  `FABRIC_WIRE_AUTOLOAD=1` with the autoload directory on `PYTHONPATH`, or by
-  `fabric.wire.install()`.
+  of `httpx`, `httpx2` and `aiohttp` records the exact request and response
+  bytes of chat completions, responses, completions, embeddings and messages
+  calls, so it covers the official `openai` (>= 3 on httpx2, earlier on
+  httpx) and `anthropic` (>= 1) SDKs, LiteLLM and DSPy (aiohttp by default)
+  and frameworks built on them. A model call through `requests` or `urllib3`
+  is recorded as an `uninstrumented_client` loss, so its run is `partial`.
+  Enabled only by `FABRIC_WIRE_AUTOLOAD=1` with the autoload directory on
+  `PYTHONPATH`, or by `fabric.wire.install()`.
 - Durable agent spool: fsync'd, AES-256-GCM encrypted
-  (`FABRIC_WIRE_SPOOL_KEY`), at-least-once delivery with restart replay.
+  (`FABRIC_WIRE_SPOOL_KEY`), batched writes, at-least-once delivery with
+  restart replay, a preallocated loss ledger so a full disk (`disk_full`)
+  never hides a loss; on by default in local file mode too. Multiprocessing
+  pools ended with `close()`/`join()` deliver every call.
 - Delivery through the Fabric Node to a file directory or an S3 /
   S3-compatible store (SSE required); the agent holds no store credentials.
 - `python -m fabric.reconstruct`: offline verification with the verdicts
   `complete_for_declared_scope`, `complete_for_observed_scopes`, `partial`
   and `unverified`.
 - Spec 049 P0-A protection before disk: seven privacy modes per content
-  role, customer redactors run out of process, the production profile gate,
+  role, customer redaction by a customer-run redaction service
+  (`contracts/redaction/v1`, reference service in
+  `examples/redaction-service/`), the production profile gate,
   keyed pseudonyms (v2), encryption at rest for the agent spool, the Node
   content directory and the Node content queue, source authentication at
   the Node, and typed extraction of large inline media.
@@ -41,7 +48,7 @@ and superseded specs to `specs/archive/`.
   adapters in Python; opt-in qualified-run mode (spec 049 §2.13).
 - Fabric Node, `fabric-gate`, Helm chart (`shadow-dev`, `shadow-production`)
   and Compose (local and production profiles); auditd and eBPF host sensors
-  (corroboration only, not enterprise-qualified).
+  (corroboration only, local profile only, not enterprise-qualified).
 
 **Breaking changes**
 
@@ -53,9 +60,19 @@ and superseded specs to `specs/archive/`.
   `fabric.enterprise_preflight`, `fabric.deployment_state` (with
   `fabric.capture_identity` and `fabric.capture_readback`) and
   `fabric.control_protocol` are removed and are forbidden release members.
-- Customer redactors and transformations are module references
-  (`"package.module:function"`) run out of process. Passing a Python
-  callable raises; the wire `Transformation.apply` field is now `ref`.
+- Customer redaction is performed by a redaction service you run
+  (`contracts/redaction/v1`), reached at `FABRIC_REDACTION_ENDPOINT` (a Unix
+  socket or a loopback port only) with an optional `0600`
+  `FABRIC_REDACTION_TOKEN_FILE`; each call has a 5 s timeout and at most two
+  are in flight per recorder, and any failure withholds the object
+  (`protection_failed`). A transformation is only its identity
+  (`Transformation(id, version)`; TypeScript `{ id, version }`). Callables,
+  module references (`Transformation.apply`/`ref`,
+  `BytePrivacyPolicy.transform`, `ContentProtector` `redactors`) and
+  TypeScript worker redactors (`{ module, exportName }`) raise or throw at
+  construction; `transform_env_allowlist`, `transform_timeout_s` and
+  `transformTimeoutMs` are removed; `WireStats.transform_*` counters are
+  `redaction_*`.
 - Node mode is the production profile: an agent records content only with
   a capture policy (`FABRIC_CAPTURE_POLICY`), `FABRIC_WIRE_ID_KEY` and
   `FABRIC_WIRE_SPOOL_KEY`; otherwise content stops and metadata continues.
@@ -65,10 +82,16 @@ and superseded specs to `specs/archive/`.
 - With the id key set, the explicit line emits caller ids as keyed
   pseudonyms (`r-`, `s-`, `agt-`, `lbl-`) by default; set
   `FABRIC_IDENTITY_MODE=clear` for the previous output. Source spools are
-  keyed by the emitted run id.
-- TypeScript `ContentProtector` redactors are modules run in
-  `worker_threads` Workers (`{ module, exportName }`); passing a function
-  throws, and masking roles need `protectAsync()`.
+  keyed by the emitted run id. Caller-supplied ids are always
+  pseudonymised, whatever their shape; only ids a recorder returned (typed
+  `EmittedId` values) pass through. For continuity across processes, pass
+  the same clear id.
+- The wire line's `FABRIC_SOURCE_ID` is now pseudonymised even when it is
+  already `s-` + 32 hex; recompute the Node's bound source id
+  (`s-` + HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, agent `FABRIC_SOURCE_ID`)).
+- The Node's directory content store writes objects and descriptors into
+  hash-sharded subdirectories (`evidence/<h0h1>/<h2h3>/`); flat objects are
+  still read. Upgrade `fabric.reconstruct` with the Node.
 - `fabric-gate` refuses configurations it accepted before (no `noredirect`
   middleware, a telemetry pipeline without `fabricguard`, `--feature-gates`,
   non-literal pipeline blocks). The shipped Compose and Helm configurations
@@ -77,13 +100,17 @@ and superseded specs to `specs/archive/`.
 **Known limitations** ([docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md))
 
 - TypeScript wire capture is not built.
-- Calls through `aiohttp` and `requests` are not captured. DSPy and LiteLLM
-  default to aiohttp; their httpx mode is captured.
-- Multiprocessing worker pools can lose calls (fix in progress); on macOS a
-  fork pool with capture on can hang.
-- Very large fan-out can overflow the capture queue; every loss is recorded
-  and reported `partial`.
-- A production Node binds exactly one agent source.
+- Calls through `requests` and `urllib3` are not captured (they are
+  reported as `uninstrumented_client` losses); `boto3`, gRPC and other
+  clients are not captured or detected.
+- A `with Pool()` block (SIGTERM) can lose calls a worker had not yet
+  written; the loss is accounted (never `complete`). Use
+  `pool.close(); pool.join()`.
+- Capture is GIL-bound under heavy CPU contention: with 16 or more
+  CPU-bound threads in one process it sheds load (every loss is recorded
+  and reported `partial`).
+- A production Node binds exactly one agent source and does not accept
+  host sensors (planned for P4).
 - Model endpoints other than the five above are not captured.
 - The four-layer run structure, context, and decisions and effects (spec 049
   P1-P5) are not built.
@@ -222,6 +249,30 @@ and superseded specs to `specs/archive/`.
   chart refuse the content path on a dedicated evidence ingress and require
   content receivers to share the telemetry receivers' authenticator.
 
+- Added the `wire.py.aiohttp` capture point: `aiohttp.ClientSession` requests to
+  matched endpoints go through the same matching, PROTECT, spool and sender path as
+  httpx (LiteLLM's and DSPy's default transport, the OpenAI SDK's
+  `DefaultAioHttpClient`). On whenever wire capture is installed;
+  `FABRIC_WIRE_AIOHTTP=0` (or `patch_aiohttp=False`) turns it off.
+- Added the `uninstrumented_client` loss reason: a POST to a matched model
+  endpoint through `requests` or `urllib3` takes a source sequence and is recorded
+  as a `fabric.capture_loss` (method and URL only are read), so its run is
+  `partial`. `WireHandle.status()` reports `capture_points` and
+  `uninstrumented_clients`; `WireStats.uninstrumented_calls` counts the calls.
+- Added the `disk_full` loss reason and the spool's preallocated loss ledger
+  (`.ledger`, 260 KiB): when the spool's volume fills (`ENOSPC`, `EDQUOT`), the loss
+  ranges and run markers that cannot be spooled survive the process and are exported
+  by the next drainer (`disk_full_drops`, `markers_held`, `ledger_recovered`).
+- Local file mode (`FABRIC_WIRE_STORE=file://…`) spools by default at
+  `<store>/.fabric-wire-spool/<tenant>` when an OTLP endpoint is set, so captured
+  calls survive a crash or SIGKILL and the next process delivers them;
+  `FABRIC_WIRE_SPOOL_DIR=off` restores direct export.
+- Multiprocessing: forked workers close capture on normal exit, the draining process
+  delivers every record pending at its close, and the parent records each forked
+  worker's last allocated sequence so a lost worker is never reported complete.
+- `scripts/qualification/bench_wire_capture_throughput.py` measures per-process
+  capture throughput.
+
 ### Security
 
 - Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter
@@ -235,27 +286,26 @@ and superseded specs to `specs/archive/`.
   `failed` or a provider `error`) is a `truncated` gap (reason `stream_closed_early` or
   `transport_incomplete`), so `partial`, streamed or not. Before, a cut stream was
   graded complete and a cut JSON body `unverified` (D5).
-- Python byte-evidence and wire capture workers reap exited transformation children on
-  a 250 ms cadence, checked between jobs as well as when idle; steady capture traffic
-  for other roles no longer leaves them as zombies (Sol P0-A round 4 #2).
-- Python customer transformations: a transformation interpreter that exits by itself
-  (idle expiry, a crash, its alarm) or whose recorder dies now takes its whole process
-  group, so an external tool a transformation started never outlives it under PPID 1.
-  The runner kills the group when it settles an exited interpreter, and each
-  interpreter forks a guardian (before any customer code) that kills the group when
-  the interpreter or the recorder ends, even while customer code holds the GIL or
-  `PR_SET_PDEATHSIG` ended the interpreter first (Sol P0-A round 4 #3).
-- Python customer transformations: every process Fabric starts is now reaped by its
-  own parent, so none accumulates as a zombie under a PID 1 that never reaps (a Linux
-  container without an init). The runner starts a guardian, which forks the
-  interpreter into its own process group and stays its parent: the guardian kills
-  that group and reaps the interpreter (and, as a Linux child subreaper, the group's
-  orphaned tools) when the interpreter exits, the recorder dies or the runner stops it
-  (`SIGTERM` on timeout or close; a guardian not gone 5 s later is killed); the runner
-  reaps the guardian (Sol P0-A round 5 #3). The guardian and the interpreter wait with
-  `poll`, so a parent-death pipe above `FD_SETSIZE` (an application with more than
-  1,024 open descriptors) no longer fails every transformation (Sol P0-A round 5 #2).
-
+- The capture worker writes queued exchanges in batches (up to 64, one batch spool
+  file, one `fsync` per batch) and the capture queue is bounded by bytes (256 MiB)
+  with a 16,384-entry cap (was 256 entries): bursts that overflowed the queue are
+  captured, and per-process throughput under CPU-bound threads rose 8–9×; beyond
+  about 16 CPU-bound threads capture remains GIL-bound and sheds load as
+  `queue_full` losses.
+- macOS: a forked child of a capturing process no longer crashes or hangs in the
+  system proxy lookup; it answers `getproxies`/`proxy_bypass` from a snapshot taken
+  at install.
+- `OTEL_SDK_DISABLED=true` disables capture with one warning, and `status()` reports
+  `capture: disabled` (`otel_sdk_disabled`); before, capture stopped silently.
+- `fabric.reconstruct` computes source gaps once, lists up to 16 segments per stretch
+  and summarises longer stretches as one gap per reason (exact ranges stay in
+  `sources[].missing_sequences`), and streams the report: heavy loss no longer
+  exhausts memory. Verdicts and checks are unchanged.
+- `fabricguard` refuses a batch that repeats a `fabric.*` key or a binding key on any
+  attribute map, so a duplicate key can no longer pose as the bound source.
+- The Node's directory content store shards objects into two levels of hash-named
+  subdirectories; flat objects written earlier are still read and checked for replay
+  and conflict.
 
 - An extracted `model.exchange.part` under `original_plus_masked` gets a masked
   review copy, and a failed copy withholds the part too (Sol P0-A round 2 #1).

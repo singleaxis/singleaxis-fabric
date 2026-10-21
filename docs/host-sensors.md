@@ -92,8 +92,10 @@ scope are deliberately unusable until you set them.
   other than `otlp` and `otlp/content` in the production profile, so the
   `audit` receiver cannot run there; and a source-bound `fabricguard` logs
   pipeline accepts only `event_class=evidence` records, so audit records
-  sent by the emitter are refused. Run host sensors against a separate,
-  local-profile Node.
+  sent by the emitter are refused. In v0.8 host sensors are a
+  local-profile feature: run them against a separate, local-profile Node.
+  A production ingress for host sensors (its own source binding, source id
+  and epoch) is planned for phase P4; its design is not yet settled.
 - **Not in the Helm chart or Compose.** There are no chart values or Compose
   overlays for either sensor.
 - **No run identity.** Host records carry no `fabric.run.*` or source-epoch

@@ -53,7 +53,11 @@ SeaweedFS S3 store with SSE, Node-only writer keys and a read-only reader),
 `make down` / `make reset`.
 
 Agent settings for the local Node with a direct `file://` store (the
-[quickstart](quickstart.md) runs this):
+[quickstart](quickstart.md) runs this). With an OTLP endpoint set, file
+mode spools by default at `<store>/.fabric-wire-spool/<tenant>`: a captured
+call survives the process (a crash, SIGKILL or a terminated worker) and the
+next process capturing to the same store delivers it.
+`FABRIC_WIRE_SPOOL_DIR=off` restores direct export.
 
 ```bash
 export PYTHONPATH="$(python -m fabric.wire --print-autoload-path)${PYTHONPATH:+:$PYTHONPATH}"
@@ -93,12 +97,13 @@ The application is never blocked.
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | CA bundle of the Node's server certificate |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | agent client certificate (Helm `shadow-production` requires mTLS **and** the token) |
 | `FABRIC_TENANT_ID` | the Node's single allowed tenant; must equal the policy's `tenant_id` |
-| `FABRIC_SOURCE_ID` | the source id the Node is bound to; use an `s-<32 hex>` value (below) |
+| `FABRIC_SOURCE_ID` | this source's id; the Node is bound to its `s-` pseudonym (below) |
 | `FABRIC_WIRE_SPOOL_DIR` | absolute directory for the durable spool (created `0700`, must be owned by the agent's uid) |
 | `FABRIC_WIRE_SPOOL_KEY` or `FABRIC_WIRE_SPOOL_KEY_FILE` | 32-byte AES-256-GCM key (base64, or raw/base64 in the file) |
 | `FABRIC_CAPTURE_POLICY` | path to a deployment-policy/v1 JSON file (below) |
 | `FABRIC_WIRE_ID_KEY` | secret of at least 16 bytes (used as given, not base64) for pseudonyms |
 | `FABRIC_TOKENIZATION_KEY` | only for `tokenize`: base64 of at least 32 bytes, distinct from the id key |
+| `FABRIC_REDACTION_ENDPOINT`, `FABRIC_REDACTION_TOKEN_FILE` | only for `redact`, `masked_only` and `original_plus_masked`: your [redaction service](privacy-and-security.md#redaction-service) (Unix socket or loopback port) and its optional `0600` token file |
 | `OTEL_SERVICE_NAME` | optional; emitted as an `svc-` pseudonym |
 
 Other settings: `FABRIC_WIRE_ENDPOINTS` (extra model hosts, a JSON array of
@@ -106,22 +111,31 @@ matchers: `endpoint_id`, `dialect` `openai`/`anthropic`, `hosts` or
 `host_suffixes`, optional `ports`, `path_prefix`, `schemes`,
 `provider_name`), `FABRIC_WIRE_MODEL_ALLOWLIST`, `FABRIC_WIRE_MAX_BODY_BYTES`
 (default 32 MiB, at most 63 MiB in node mode), `FABRIC_WIRE_QUEUE_MAX_ITEMS`
-(default 256), `FABRIC_WIRE_SPOOL_MAX_BYTES` (default 1 GiB),
+(default 16384; the capture queue is bounded by 256 MiB of retained bodies,
+the entry cap only bounds per-entry overhead), `FABRIC_WIRE_SPOOL_MAX_BYTES`
+(default 1 GiB), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
+on by default),
 `FABRIC_WIRE_PROXY` (an explicit CONNECT proxy for Fabric's own delivery),
 `FABRIC_WIRE_LABELS=clear`. `FABRIC_WIRE_STORE_SSE` and
 `FABRIC_WIRE_STORE_KMS_KEY_ID` are refused: encryption is configured on the
 Node. Source: `sdk/python/src/fabric/wire/_config.py`.
 
-**Source id.** The Node is bound to one source id as it travels. The
-simplest choice is to generate one `s-` value and give the same value to
-the agent and the Node; an `s-<32 hex>` value is emitted unchanged:
+**Source id.** The Node is bound to one source id **as it travels**. The
+agent always emits its `FABRIC_SOURCE_ID` as a keyed pseudonym, `s-` + the
+first 32 hex of HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, `FABRIC_SOURCE_ID`), even
+when the value already looks like `s-` + 32 hex. Choose an opaque agent
+value (letters, digits, `.`, `_`, `:`, `-`; at most 128 characters), then
+compute the Node's value with the same key:
 
 ```bash
-echo "s-$(openssl rand -hex 16)"
+export FABRIC_SOURCE_ID=support-agent-prod
+python3 -c 'import hashlib, hmac, os
+print("s-" + hmac.new(os.environ["FABRIC_WIRE_ID_KEY"].encode(),
+      os.environ["FABRIC_SOURCE_ID"].encode(), hashlib.sha256).hexdigest()[:32])'
 ```
 
-(Any other agent value is emitted as `s-` + HMAC-SHA256 of it under
-`FABRIC_WIRE_ID_KEY`, which you would then have to compute for the Node.)
+It is also the `fabric.source_id` on the agent's capture spans. Only with
+`FABRIC_WIRE_LABELS=clear` is the agent value sent, and bound, unchanged.
 
 **Capture policy.** A deployment-policy/v1 document
 (`contracts/deployment-policy/v1`). For wire capture name the
@@ -154,9 +168,17 @@ echo "s-$(openssl rand -hex 16)"
 All ten top-level keys are required; `storage.backend` must be `local`.
 Modes are listed in
 [privacy and security](privacy-and-security.md#protection-modes-the-protect-stage).
-`redact`, `masked_only` and `original_plus_masked` need a transformation
-passed to `fabric.wire.install(transformations=...)`; zero-code autoload
-cannot configure one and withholds those roles.
+`redact`, `masked_only` and `original_plus_masked` need a
+[redaction service](privacy-and-security.md#redaction-service) you run
+beside the agent (`FABRIC_REDACTION_ENDPOINT`) and a transformation named in
+code at `fabric.wire.install()`; zero-code autoload cannot name one and
+withholds those roles.
+
+**Running the redaction service.** Run it on the same host or in the same
+Pod, reachable only over a Unix socket on a shared volume or a loopback
+port. [`examples/redaction-service/`](../examples/redaction-service/README.md)
+has a Dockerfile and Compose and Kubernetes sidecar snippets for its
+reference service; replace its sample rules with your own detection.
 
 ### Compose production overlay
 
@@ -261,6 +283,13 @@ helm upgrade --install fabric charts/fabric -n fabric-system \
   -f charts/fabric/profiles/shadow-production.yaml -f production-values.yaml
 ```
 
+The `file` content backend (allowed in Compose, refused in this profile)
+stores objects at `<dir>/<tenant>/evidence/<h0h1>/<h2h3>/<object-id>`
+(`h` = hex SHA-256 of the id; descriptors under `evidence/meta/` likewise).
+Objects stored flat by earlier Nodes are still read and still count for
+replay and conflict checks. Alert on the volume's inode use, not only
+bytes. S3 keys are unchanged.
+
 Put the Node's S3 writer role on `otel-collector.serviceAccount.annotations`
 (IRSA), or name a credentials Secret in `content.s3.credentialsSecret` for an
 S3-compatible store. `matchLabels` values must be strings (`"true"`; use
@@ -307,7 +336,8 @@ encrypted StorageClass survives both.
 
 A production Node binds exactly one tenant, one source id and one ingress
 token. Agents with different source ids need one Node each; several pods
-may share a Node only if they run with the same `FABRIC_SOURCE_ID`.
+may share a Node only if they run with the same `FABRIC_SOURCE_ID` and
+`FABRIC_WIRE_ID_KEY`.
 
 ## Minimal IAM (S3)
 
@@ -329,6 +359,21 @@ is never overwritten. `<prefix>` defaults to `fabric/content/`.
   `receiver.workloadAuthentication.sourceId` (and, with content,
   `FABRIC_CONTENT_KEY_FILE` / `content.encryption.keySecret`) are set. The
   agents are never affected by a Node configuration error.
+- **Customer redaction moved to a redaction service.** Module-reference
+  and callable transformations (Python `Transformation(..., ref)`,
+  `BytePrivacyPolicy.transform`, `ContentProtector` `redactors`) and
+  TypeScript worker redactors (`{ module, exportName }`) are removed and
+  raise at construction. Run a [redaction service](privacy-and-security.md#redaction-service),
+  set `FABRIC_REDACTION_ENDPOINT`, and name each transformation by id and
+  version.
+- **`s-`-shaped source ids are now pseudonymised.** An agent
+  `FABRIC_SOURCE_ID` that was already `s-` + 32 hex used to be sent
+  unchanged; it is now mapped like any other value. Recompute the Node's
+  `FABRIC_SOURCE_ID` / `sourceId` as shown under "Source id" above.
+- **Node directory store layout.** New objects go to hash-sharded
+  subdirectories; existing flat objects stay readable. Readers older than
+  this release do not find sharded objects: upgrade `fabric.reconstruct`
+  together with the Node.
 - **Plaintext spool records.** With a spool key set, records written before
   it are quarantined in production. In the local profile,
   `FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT=1` seals them in place once.

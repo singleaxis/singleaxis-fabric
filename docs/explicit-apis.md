@@ -89,6 +89,21 @@ include `sess-` (session), `usr-` (user), `conv-`, `mkey-` (memory key),
 - `request_id` and the configured `agent_id` are emitted as given; use
   opaque values.
 
+With the id key, `ByteEvidenceRecorder`, `CallRecorder` and
+`SyntheticCaptureSession` emit the run id as `r-`, the source id as `s-`,
+the agent id as `agt-` and any other caller id (operation, attempt, stream,
+parent call) as `lbl-`. **Every caller-supplied id is pseudonymised**, even
+one already shaped like `r-`, `s-`, `lbl-` or a UUID. Only ids a recorder
+returned pass through unchanged: they are typed `EmittedId` values (Python
+`fabric._sequence.EmittedId`, a `str` subclass; TypeScript `EmittedId`),
+recognised by type and issuer, never by shape, so a `parent_call_id` joins
+its parent's `call_id`. An emitted id written out as text and read back is
+a plain string again and is mapped. For continuity across processes and
+hosts, pass the **same clear id** under the same key (the mapping is
+deterministic), never an emitted value. `emitted_run_id(run_id)` and
+`emitted_source_id(source_id)` (TypeScript `emittedRunId`, `emittedSourceId`) return
+the emitted form; a source spool is keyed by the emitted run id.
+
 ### Content with the decision API
 
 By default the decision API records hashes, not content. Two opt-ins exist:
@@ -115,16 +130,21 @@ queue. Privacy is chosen per role, before anything is persisted:
   `original_plus_masked`, `retain_original`, applied by a `ContentProtector`.
   Roles the policy does not name are omitted.
 
-Masking modes need a **customer transformation, named by module
-reference** (`"package.module:function"`, bytes in, bytes out). Fabric ships
-no PII detector. Python runs the function in a separate `python -I` child
-process; TypeScript runs a module (`{ module: "/abs/path/redactor.mjs",
-exportName: "redact" }`) in a `worker_threads` Worker. Passing a function
-raises (Python) or throws (TypeScript). Each call has a timeout (default 5 s);
-an error, timeout or oversized result **withholds** the object
-(`not_captured`, `protection_failed`); there is no fallback to raw bytes. At
-most two calls per transformation run at once; beyond that content is
-withheld (`transform_saturated`). See [privacy and security](privacy-and-security.md).
+Masking modes (`redact`, `masked_only`, and the review copy of
+`original_plus_masked`) are performed by a **redaction service you run**
+beside the application; Fabric ships no PII detector and never runs your
+code. Name the transformation by id and version
+(`BytePrivacyPolicy(mode="masked_only", transformation_id="example-mask", transformation_version="1")`,
+or `ContentProtector(policy, transformations={role: Transformation("example-mask", "1")})`;
+TypeScript `new ContentProtector(policy, { transformations: { role: { id: "example-mask", version: "1" } } })`)
+and point the recorder at the service (`redaction=RedactionService(...)` /
+`redaction: { endpoint }`, else `FABRIC_REDACTION_ENDPOINT`). The service is
+called only on the recorder's worker, with a 5 s timeout and at most two
+calls in flight; any failure **withholds** the object (`not_captured`,
+`protection_failed`), never stores raw bytes, and is counted in
+`redaction_stats()`. A masking role without a transformation or a service
+raises at construction, and module references or functions are refused.
+Details: [redaction service](privacy-and-security.md#redaction-service).
 
 In the production profile (`deployment.profile: production` in the policy)
 content capture also needs `FABRIC_WIRE_ID_KEY`; without it every object is
@@ -139,8 +159,8 @@ loses pending content.
 
 `CallRecorder` wraps your dispatcher's final model and tool send/receive
 points. Each call gets an operation and attempt id, causal parent links
-(propagated across asyncio tasks; pass `parent_call_id` across threads and
-processes) and its input and output bytes through a `ByteEvidenceRecorder`.
+(propagated across asyncio tasks; pass `parent_call_id` across threads;
+across processes see the emitted-id rule under Identifiers) and its input and output bytes through a `ByteEvidenceRecorder`.
 
 ```python
 from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, CallRecorder, LocalFilesystemContentStore

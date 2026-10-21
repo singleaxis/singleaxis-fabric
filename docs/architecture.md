@@ -16,7 +16,7 @@ system, and it does not evaluate, judge, score or control it.
 
 ```text
 ┌──────────────────────── agent process (Python) ────────────────────────┐
-│ app ─► httpx / httpx2 ─► model provider                                │
+│ app ─► httpx / httpx2 / aiohttp ─► model provider                      │
 │          │ tee (bytes copied, never changed)                           │
 │          ▼                                                             │
 │   capture worker: match ─► extract parts ─► PROTECT ─► digest          │
@@ -42,10 +42,13 @@ Two inputs exist in the Python SDK:
 - **Wire capture** (`fabric.wire`, Python only). Enabled per process by
   `fabric.wire.install()` or by the autoload (`FABRIC_WIRE_AUTOLOAD=1` with
   the autoload directory on `PYTHONPATH`); installing the package enables
-  nothing. It patches the default transports of `httpx` and `httpx2`, so it
-  covers any client built on them: the official `openai` SDK (httpx in 1.x/2.x,
-  httpx2 from 3.x) and `anthropic` SDK (httpx2 from 1.x) and the frameworks
-  that use them. A request is matched by host and path (chat completions,
+  nothing. It patches the default transports of `httpx` and `httpx2` and
+  `aiohttp.ClientSession` requests, so it covers any client built on them:
+  the official `openai` SDK (httpx in 1.x/2.x, httpx2 from 3.x, and its
+  optional aiohttp client) and `anthropic` SDK (httpx2 from 1.x), LiteLLM
+  and DSPy (aiohttp by default), and the frameworks that use them. A model
+  call through `requests` or `urllib3` is not captured but is recorded as
+  an `uninstrumented_client` loss. A request is matched by host and path (chat completions,
   responses, completions, embeddings, messages); its exact request and
   response bytes are copied on the transport and handed to a background
   worker. Nothing is parsed at capture time. Each call gets a source
@@ -69,8 +72,9 @@ Protection happens in the agent, on the capture worker, **before** the spool:
 
 - each object gets the privacy mode of its content role from the capture
   policy (`omit`, `metadata_only`, `redact`, `tokenize`, `masked_only`,
-  `original_plus_masked`, `retain_original`); customer redaction runs out of
-  process; a failure withholds the object;
+  `original_plus_masked`, `retain_original`); customer redaction is done by
+  a redaction service you run beside the agent (Unix socket or loopback),
+  never by code Fabric runs; a failure withholds the object;
 - large JSON requests are split into a skeleton and extracted media parts,
   each protected separately;
 - identifiers leave as keyed pseudonyms; telemetry carries ids, digests and
@@ -93,7 +97,8 @@ file store. Details: [privacy and security](privacy-and-security.md).
   Content goes through its own persistent queue to a directory or an
   S3/S3-compatible bucket with server-side encryption; objects are written
   once (`If-None-Match: *`) under `<prefix><tenant>/evidence/<object-id>`
-  with a JSON descriptor beside each.
+  with a JSON descriptor beside each (a Node directory store shards these
+  into hash-named subdirectories).
 - Delivery is at least once; destinations deduplicate.
 
 ### Verify
@@ -126,7 +131,7 @@ authenticated, single-source Node). See [deployment](deployment.md).
 | Host emitter image `ghcr.io/singleaxis/fabric-host-emitter` | eBPF host sensor |
 | Helm chart `fabric` | the Node, profiles `shadow-dev` and `shadow-production` |
 | `fabricctl` | `init`, `recorder validate`, `recorder digest`, `version`, `help` for a local recorder configuration file |
-| Public contracts | activity v2, connect v1, content v1, delivery v1, privacy v1, recorder v1 (published archive); capture v1, content v2, coverage v1, deployment-policy v1 and evidence v1 are in the repository as drafts |
+| Public contracts | activity v2, connect v1, content v1, delivery v1, privacy v1, recorder v1 (published archive); capture v1, content v2, coverage v1, deployment-policy v1, evidence v1 and redaction v1 are in the repository as drafts |
 
 Compose files for the Node are in `deploy/compose` (not a separate
 artifact).

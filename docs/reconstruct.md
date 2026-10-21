@@ -54,7 +54,7 @@ Diagnostics never echo an argument value, path, key or exception message.
 | Gap type | Effect | Meaning |
 |---|---|---|
 | `sequence_gap` | partial | A record is missing with no loss record explaining it. |
-| `loss` | partial | Capture recorded a loss (`queue_full`, `internal_error`, `shutdown`, `span_dropped`). |
+| `loss` | partial | Capture recorded a loss (`queue_full`, `disk_full`, `internal_error`, `shutdown`, `span_dropped`, or `uninstrumented_client`: a model call sent through `requests` or `urllib3`, which wire capture does not tee). |
 | `tail_unverified` | unverified | No final heartbeat, so loss after the last record cannot be ruled out. |
 | `missing_object` | partial | A body the record references is not in the store (`not_stored`, `absent`, `response_not_recorded`, `part_missing`, ...). |
 | `digest_mismatch` | partial | Stored bytes or descriptor do not match the record, or two records conflict. |
@@ -64,6 +64,14 @@ Diagnostics never echo an argument value, path, key or exception message.
 | `unmatched_tool_call` | info or partial | A tool call with no result, or a result with no call, inside the run. |
 | `unresolved_previous_response` | partial | A `previous_response_id` that no captured exchange produced. |
 | `source_unauthenticated` | unverified | Production profile: a record or object without the Node's stamp, or spans that were imported rather than read back from a trusted location. |
+
+**Gap listing.** A run lists up to 16 segments of a stretch of missing or
+lost sequences one by one. A longer stretch (a heavily load-shed source)
+is reported as one gap per reason, from its first to its last segment, and
+that range can include sequences that were recorded. Take the exact
+missing sequences from the source's `sources[].missing_sequences` (and
+`loss_ranges`), which list every range once. Verdicts and checks are the
+same either way. The report is streamed, so heavy loss keeps it bounded.
 
 Content that was **not captured by configuration** (production profile
 without policy or keys, `metadata_only`, `omit`) produces no missing-object
@@ -78,7 +86,7 @@ gives `partial`; otherwise any `unverified` gap or skipped check gives
 
 | Verdict | Applies to | Meaning |
 |---|---|---|
-| `complete_for_declared_scope` | a `fabric.wire.run()` scope, or a run without scopes | Every model call that started in the scope through an instrumented httpx/httpx2 transport to a matched endpoint was captured, stored unaltered and stitched without gaps. |
+| `complete_for_declared_scope` | a `fabric.wire.run()` scope, or a run without scopes | Every model call that started in the scope through an instrumented httpx, httpx2 or aiohttp client to a matched endpoint was captured, stored unaltered and stitched without gaps. |
 | `complete_for_observed_scopes` | a run made of scopes | Every scope that left a record is complete. A scope whose every record died in memory (for example a killed process) left nothing to claim. |
 | `partial` | scope or run | Something the record proves existed is missing or altered. |
 | `unverified` | scope or run | Completeness cannot be shown (missing tail, unparsable bytes, content not captured, or unauthenticated in production). |
@@ -88,10 +96,12 @@ or `unverified`, or no run was reconstructed; `2` an input, usage or
 internal error.
 
 **What a complete verdict does not say.** It covers only calls made through
-httpx or httpx2 to a matched endpoint, in processes whose records reached
-the store. It says nothing about calls through `aiohttp`, `requests` or
-other clients, other processes, unlisted endpoints, tool execution or
-effects, and nothing about whether the agent behaved correctly. See
+httpx, httpx2 or aiohttp to a matched endpoint, in processes whose records
+reached the store. A matched call through `requests` or `urllib3` is not
+silent: it is an `uninstrumented_client` loss and the run is `partial`. A
+complete verdict says nothing about calls through other clients (`boto3`,
+gRPC), other processes, unlisted endpoints, tool execution or effects, and
+nothing about whether the agent behaved correctly. See
 [limitations](limitations-and-roadmap.md).
 
 Without `fabric.wire.run()`, each process epoch is its own run, named

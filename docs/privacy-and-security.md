@@ -66,23 +66,10 @@ Example policy fragment:
 }
 ```
 
-**Customer transformations.** `redact`, `masked_only` and the review copy of
-`original_plus_masked` need your own transformation; Fabric ships no PII
-detector. It is named by module reference (`"package.module:function"`,
-bytes in, bytes out) and runs out of process: a separate `python -I` child
-in Python (POSIX only; on Windows it always withholds), a `worker_threads`
-Worker in TypeScript. In-process functions are refused. For wire capture the
-transformation is configured only through
-`fabric.wire.install(transformations={role: Transformation(transformation_id, version, ref, timeout_s)})`;
-under zero-code autoload these modes withhold.
-
-**Failure withholds, never leaks.** A transformation error, timeout
-(default 5 s; the child is killed), non-bytes or oversized result,
-saturation (more than two calls in flight), unsupported media or a missing
-transformation produces a descriptor-only object (`not_captured`,
-`protection_status: withheld`, reason `protection_failed`). There is no
-fallback to raw bytes. A crash between capture and protection persists
-nothing.
+**Customer transformations.** `redact`, `masked_only` and the review copy
+of `original_plus_masked` need your own transformation, performed by your
+[redaction service](#redaction-service). Fabric ships no PII detector.
+`tokenize`, `omit`, `metadata_only` and `retain_original` need no service.
 
 **Large requests.** A side up to `max_body_bytes` (default 32 MiB; at most
 63 MiB in node mode) is stored whole. A larger JSON side, up to 64 MiB, is
@@ -95,6 +82,85 @@ verifier reassembles the original and checks its digest; under masking
 modes no original digest or byte range is kept. A part above
 `max_body_bytes` is withheld; a side above 64 MiB or a non-JSON body is
 truncated.
+
+## Redaction service
+
+Fabric never runs your code: no imported module, callable, child process or
+worker thread. The masking for `redact`, `masked_only` and the review copy
+of `original_plus_masked` is done by a **redaction service you run** beside
+the application, and the recorder calls it. The protocol is
+[`contracts/redaction/v1`](../contracts/redaction/v1/README.md) (a draft in
+the repository, not in the published contracts archive): one
+`POST /v1/transform` per object, with the raw bytes as the body and the
+transformation id and version, role and mode as `X-Fabric-*` headers; a
+`200` answer carries the masked bytes.
+[`examples/redaction-service/`](../examples/redaction-service/README.md) is
+a small standard-library reference service (regular-expression rules from a
+JSON file) with a Dockerfile and Compose and Kubernetes sidecar snippets. It
+is an example, not a PII detector, and not part of any release artifact.
+
+```bash
+export FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock   # or http://127.0.0.1:8181
+export FABRIC_REDACTION_TOKEN_FILE=/run/secrets/fabric-redaction-token  # optional
+```
+
+- **Endpoint.** Only `unix:///absolute/path` or a loopback address
+  (`http://127.0.0.1:<port>`, `http://[::1]:<port>`) is accepted; anything
+  else fails at `install()` or recorder construction. No TLS, no proxy, and
+  a redirect is a failure.
+- **Token.** Optional. `FABRIC_REDACTION_TOKEN_FILE` must be a regular
+  file owned by the process user with mode `0600`, holding one printable
+  ASCII token (at most 4096 bytes). It is read once, sent as
+  `Authorization: Bearer`, and never logged.
+- **Bounds.** Calls run only on the recorder's worker (the capture worker
+  thread in Python, the recorder's asynchronous drain in Node.js), never on
+  the application's thread or event loop. Each call has a 5 s timeout
+  (`timeout_s` / `timeoutMs`, at most 300 s) and at most two calls are in
+  flight per recorder (`max_in_flight` / `maxInFlight`, at most 64).
+- **Failure withholds, never leaks.** A status other than 200, a redirect,
+  a timeout, an answer above the object cap, a connection error, the
+  in-flight bound reached, or (wire capture) a masking role with no
+  transformation or no service, produces a descriptor-only object (`not_captured`,
+  `protection_status: withheld`, reason `protection_failed`); wire spans
+  carry `fabric.wire.store_reason=protection_failed`. There is no fallback
+  to raw bytes and no error body or exception text is kept. `WireStats`
+  counts `redaction_timeouts`, `redaction_saturated` and
+  `redaction_failures`. A slow or absent service loses content; it never
+  delays or fails the monitored call. A crash between capture and
+  protection persists nothing.
+
+Name the transformation per role in code. Fabric records its id and version
+on every stored object and sends them with each call:
+
+```python
+import dataclasses
+import os
+
+from fabric import wire
+from fabric.wire import Transformation
+from fabric.wire._config import config_from_env
+
+config, _ = config_from_env(os.environ)   # reads FABRIC_REDACTION_ENDPOINT
+mask = Transformation("example-mask", "1")
+wire.install(dataclasses.replace(config, transformations={
+    "model.exchange.request": mask, "model.exchange.response": mask,
+}))
+```
+
+The explicit APIs take the same identity:
+`ContentProtector(policy, transformations={role: Transformation(...)}, redaction=RedactionService(...))`
+or `BytePrivacyPolicy(mode="masked_only", transformation_id=..., transformation_version=...)`
+in Python, and
+`new ContentProtector(policy, { transformations: { role: { id, version } }, redaction: { endpoint } })`
+in TypeScript. Without an explicit `redaction`, both SDKs read
+`FABRIC_REDACTION_ENDPOINT`. An explicit `ContentProtector` whose policy
+has a masking role raises (throws) at construction when that role has no
+transformation or no service is configured. Zero-code autoload cannot name
+a transformation, so under autoload the masking modes withhold.
+
+Module references (`"package.module:function"`), callables and TypeScript
+`{ module, exportName }` redactors, used by earlier v0.8 builds, raise or
+throw at construction with a pointer to this section.
 
 ## Pseudonyms (keyed pseudonym v2)
 
@@ -114,6 +180,17 @@ profile without a key, wire labels use an **unkeyed** SHA-256, which anyone
 who can guess the value can reverse; do not rely on it for privacy.
 `FABRIC_WIRE_LABELS=clear` and `FABRIC_IDENTITY_MODE=clear` emit labels and
 ids unchanged; use them only with values that are not personal data.
+
+**Caller-supplied ids are always pseudonymised.** A plain string is caller
+input and is mapped, whatever its shape, even a value that already looks
+like `r-`, `s-` or `lbl-` + 32 hex; this includes `FABRIC_SOURCE_ID` (unless
+`FABRIC_WIRE_LABELS=clear`). Only ids a recorder itself returned pass
+through unchanged: they are typed values (Python `fabric._sequence.EmittedId`,
+a `str` subclass; TypeScript `EmittedId`), recognised by type and issuer,
+never by shape. An emitted id that is serialised and read back is a plain
+string again and is mapped. For continuity across processes and hosts,
+pass the **same clear id** with the same key (the keyed mapping is
+deterministic), never an emitted value.
 
 Keep the id key secret and stable: `fabric.reconstruct` needs it to match a
 clear run id to its pseudonym.
@@ -200,15 +277,18 @@ Fabric is designed to hold against:
 - a downgrade by replacing spool records with plaintext (quarantine);
 - a redirect or proxy sending content elsewhere (no redirects, verified
   TLS);
-- a slow, crashing or malicious redaction function stalling the agent
-  (out-of-process with timeout and capacity bounds).
+- a slow, failing or absent redaction service stalling the agent (calls
+  only on the recorder's worker, with timeout and in-flight bounds; failure
+  withholds).
 
 Not covered:
 
 - a compromised agent host or process: it sees the plaintext and holds the
   ingress token and keys;
 - a compromised Node: it holds the content key and store credentials;
-- correctness of your transformation, policy or classification of data;
+- correctness and security of your redaction service, policy or
+  classification of data (it receives raw content; run it on the same host
+  or Pod and restrict its socket);
   Fabric ships no PII detector and makes no de-identification claim;
 - traffic Fabric does not capture (see [limitations](limitations-and-roadmap.md));
 - your destination's access control, retention, residency and legal

@@ -153,8 +153,11 @@ source:s-…:…: complete_for_declared_scope (2 exchanges, 0 gaps)
 
 If a run reports `unverified` with `tail_unverified` (`no_final_heartbeat`),
 its closing heartbeat did not reach the Node within the 2-second exit budget
-(we saw this once, on the first run after starting the Node). Direct
-`file://` mode has no spool to retry it; node mode does.
+(we saw this once, on the first run after starting the Node). With an OTLP
+endpoint set, `file://` mode spools every record first, in
+`store/.fabric-wire-spool/demo`: the next process capturing to the same
+store (run `python app.py` again) delivers what is left. The verifier never
+reads that directory.
 
 Without `fabric.wire.run(...)` each process is one run, named after its
 source and epoch. Stop the stack with `make -C deploy/compose reset`
@@ -162,10 +165,11 @@ and the fake server with `kill %1`.
 
 Real providers (`api.openai.com`, `api.anthropic.com`,
 `*.openai.azure.com`) need no `FABRIC_WIRE_ENDPOINTS`. Anything that sends
-model calls through `httpx` or `httpx2` is captured the same way, including
-the official OpenAI and Anthropic SDKs and frameworks built on them. Calls
-through `aiohttp` or `requests` are not; see
-[limitations](limitations-and-roadmap.md).
+model calls through `httpx`, `httpx2` or `aiohttp` is captured the same way,
+including the official OpenAI and Anthropic SDKs, LiteLLM and DSPy, and
+frameworks built on them. A model call through `requests` or `urllib3` is
+not captured; it is recorded as an `uninstrumented_client` loss, so its run
+is `partial`. See [limitations](limitations-and-roadmap.md).
 
 ## 5. Record app-level activity (optional)
 

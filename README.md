@@ -18,11 +18,12 @@
 </div>
 
 Fabric records the exact bytes of every model call a Python agent makes
-through `httpx`/`httpx2` (the official OpenAI and Anthropic SDKs and the
-frameworks built on them) without code changes, plus whatever the
-application reports through its SDK. It protects each record in the agent
-process before it reaches disk (privacy mode per content role, customer
-redaction run out of process, keyed pseudonyms, encryption), spools it
+through `httpx`, `httpx2` or `aiohttp` (the official OpenAI and Anthropic
+SDKs, LiteLLM, DSPy and the frameworks built on them) without code changes,
+plus whatever the application reports through its SDK. It protects each
+record in the agent process before it reaches disk (privacy mode per
+content role, customer redaction by a redaction service you run, keyed
+pseudonyms, encryption), spools it
 durably, and delivers it through the Fabric Node to a file directory or
 S3-compatible store and an OTLP destination that you own. An offline
 verifier, `python -m fabric.reconstruct`, proves whether each run's record
@@ -40,28 +41,30 @@ CAPTURE  ->  PROTECT  ->  DELIVER
 
 | Capability | Where |
 |---|---|
-| Zero-code wire capture of model calls in Python (httpx and httpx2; chat completions, responses, completions, embeddings, messages), enabled by autoload or `fabric.wire.install()` | `sdk/python/src/fabric/wire` |
-| Durable, encrypted agent spool with at-least-once delivery and restart replay | `fabric/wire/_spool.py` |
-| PROTECT before disk: 7 privacy modes, customer redactors as module references run out of process, typed extraction for large multimodal requests | `fabric/wire/_protect.py` |
+| Zero-code wire capture of model calls in Python (httpx, httpx2 and aiohttp; chat completions, responses, completions, embeddings, messages), enabled by autoload or `fabric.wire.install()`; model calls through `requests`/`urllib3` reported as `uninstrumented_client` losses | `sdk/python/src/fabric/wire` |
+| Durable, encrypted agent spool (batched writes, loss ledger for a full disk) with at-least-once delivery and restart replay; on by default in node mode and in local file mode | `fabric/wire/_spool.py`, `fabric/wire/_ledger.py` |
+| Multiprocessing worker pools ended with `close()`/`join()`: every call delivered | `fabric/wire/_forks.py` |
+| PROTECT before disk: 7 privacy modes, customer redaction by a customer-run redaction service (`contracts/redaction/v1`, Unix socket or loopback; reference service in `examples/redaction-service`), typed extraction for large multimodal requests | `fabric/wire/_protect.py`, `fabric/redaction.py` |
 | Production profile gate: no content without a capture policy, id key and spool key | `fabric/wire/_policy.py` |
-| Keyed pseudonyms: run, source and service labels, and (pseudonym v2, per-type keys) session, user and other caller ids | `fabric/_sequence.py` |
-| Fabric Node: allowlist, source authentication (one bound source per production Node), encrypted content queue and file store, delivery to a file directory or S3 with SSE | `components/otel-collector-fabric` |
+| Keyed pseudonyms: run, source and service labels, and (pseudonym v2, per-type keys) session, user and other caller ids; caller-supplied ids always pseudonymised, emitted ids recognised by type (`EmittedId`) | `fabric/_sequence.py` |
+| Fabric Node: allowlist, source authentication (one bound source per production Node), encrypted content queue and hash-sharded file store, delivery to a file directory or S3 with SSE | `components/otel-collector-fabric` |
 | `fabric-gate`: refuses unsafe Node configurations at start | `components/otel-collector-fabric/gate` |
 | Offline verifier `python -m fabric.reconstruct` and its verdicts | `fabric/reconstruct` |
 | Explicit app-reported APIs: `decision()`/`record_*`, `ByteEvidenceRecorder` (Python and TypeScript); `CallRecorder` and byte-boundary adapters (Python) | `sdk/python`, `sdk/typescript` |
 | Opt-in qualified-run mode: witness- and receipt-backed `verified_complete_for_declared_scope` (Python) | `fabric/qualified_run.py` |
 | Helm chart (`shadow-dev`, `shadow-production`) and Docker Compose (local and production) | `charts/fabric`, `deploy/compose` |
-| Linux host sensors (metadata only, corroboration): auditd receiver, eBPF host emitter | `components/host-emitter`, `deploy/auditd` |
+| Linux host sensors (metadata only, corroboration; local profile only): auditd receiver, eBPF host emitter | `components/host-emitter`, `deploy/auditd` |
 
 **Not yet available**
 
 | Gap | Status |
 |---|---|
 | TypeScript wire capture | Not built (spec 049 TS-1) |
-| Calls through `aiohttp`, `requests`, `boto3` and other non-httpx clients (LiteLLM and DSPy default to aiohttp; their httpx mode is captured) | Not captured |
+| Calls through `requests`/`urllib3` (reported as losses), `boto3`, gRPC and other clients | Not captured |
 | Model endpoints other than the five above (images, audio, realtime, batch, files, ...) | Not captured (P5) |
-| Multiprocessing worker pools | Can lose calls; fix in progress |
-| Very large bursts | Can overflow the capture queue; every loss is recorded and reported |
+| `with Pool()` worker pools (SIGTERM) | Can lose calls a worker had not written; accounted, never `complete` |
+| Heavy CPU contention (16+ CPU-bound threads in one process) | GIL-bound capture sheds load; every loss is recorded and reported |
+| Host sensors on a production Node | Local profile only (planned for P4) |
 | Several agent sources on one production Node | One source per production Node |
 | Four-layer record: run structure, context, decisions and effects | Phases P1–P5, not built |
 
@@ -113,14 +116,15 @@ runs an unmodified OpenAI SDK program through a local Fabric Node, and
 
 ```text
 agent process                                   Fabric Node                         you choose
-httpx/httpx2 tee ─► PROTECT ─► encrypted spool ─► otlp/content ─► fabriccontent ─► file dir / S3 (SSE)
+wire tee ─► PROTECT ─► encrypted spool ─────────► otlp/content ─► fabriccontent ─► file dir / S3 (SSE)
 explicit APIs ───────────────────────────────────► otlp ─► fabricguard ─► queue ─► OTLP destination
                                                   (fabric-gate, source binding, sealed queues)
 offline: python -m fabric.reconstruct  ─► complete_for_declared_scope | complete_for_observed_scopes | partial | unverified
 ```
 
-- **Capture** copies bytes on the HTTP transport and hands them to a
-  background worker; nothing is parsed and nothing on the call path waits.
+- **Capture** copies bytes on the HTTP client (httpx, httpx2, aiohttp)
+  and hands them to a background worker; nothing is parsed and nothing on
+  the call path waits.
 - **Protect** applies the capture policy per role before the spool; failure
   withholds content, never falls back to raw bytes.
 - **Deliver** drains the spool to the Node, which writes the store and

@@ -7,9 +7,16 @@ and restore of Node volumes see the [recovery runbook](dr.md).
 ## The agent spool
 
 In node mode every exchange (span data and protected bytes), loss record
-and run marker is written as one fsync'd, encrypted file in
+and run marker is written to an fsync'd, encrypted file in
 `FABRIC_WIRE_SPOOL_DIR` before it is sent (`sdk/python/src/fabric/wire/_spool.py`,
-`_sender.py`).
+`_sender.py`). The capture worker writes up to 64 queued exchanges (about
+8 MiB) at a time as one batch file: one write, one `fsync` and one rename
+per batch, and no exchange of a batch counts as spooled before the whole
+batch is durable. Loss and marker records are single-record files.
+
+Local file mode (`FABRIC_WIRE_STORE=file://…`) uses the same spool by
+default when an OTLP endpoint is set, at `<store>/.fabric-wire-spool/<tenant>`;
+`FABRIC_WIRE_SPOOL_DIR=off` turns it off (direct export, not crash-durable).
 
 - **Delivery.** One sender thread posts each body to the Node's content
   endpoint, then exports its span, and deletes the record only after both
@@ -23,6 +30,19 @@ and run marker is written as one fsync'd, encrypted file in
   `2 × max_body_bytes + 1 MiB`) bounds the whole directory. When it is full,
   new exchanges are dropped as `queue_full` losses; the application is
   unaffected. Size it for the longest Node outage you want to ride out.
+- **Full volume.** Size the volume above `FABRIC_WIRE_SPOOL_MAX_BYTES` plus
+  1 MiB. If the volume fills first (`ENOSPC`, `EDQUOT`), new exchanges are
+  recorded as `disk_full` losses (`WireStats.disk_full_drops`) and the
+  application is unaffected. Loss ranges and run markers that cannot be
+  spooled are held in memory and mirrored into the spool's preallocated
+  loss ledger (`.ledger`, 260 KiB, written in full when the spool is opened,
+  overwritten in place). The next process that drains the spool exports a
+  dead process's ledger records (`ledger_recovered`), so a run whose
+  exchanges were all lost is still reported (`partial` or `unverified`),
+  not missing. On copy-on-write filesystems (btrfs, ZFS) overwriting the
+  ledger may itself need free blocks: keep the spool on ext4, xfs or an
+  equivalent. A process that opens the spool on an already-full volume
+  cannot create the ledger and keeps its losses in memory only.
 - **Sharing.** Several processes may share one spool: one drains, all
   write, under a shared admission lock taken only on Fabric's background
   threads. Run the same Fabric version in every process that shares a
@@ -36,21 +56,62 @@ and run marker is written as one fsync'd, encrypted file in
   plaintext record when a spool key is set, is renamed `*.corrupt` and
   reported as an `internal_error` loss.
 - **The window before the spool.** From the end of a call until its record
-  is fsync'd, the exchange exists only in memory (the capture queue, at most
-  `FABRIC_WIRE_QUEUE_MAX_ITEMS`, default 256, and 256 MiB of bodies). A
+  is fsync'd, the exchange exists only in memory (the capture queue, bounded
+  by 256 MiB of retained bodies and `FABRIC_WIRE_QUEUE_MAX_ITEMS`, default
+  16384 entries). A
   kill inside that window loses those exchanges; their sequence numbers
   make the gap visible (`partial` or `unverified`, never complete).
 
-Files in a spool directory: `.lock`, `.admit`, `.barrier`, `*.rec`,
-`*.ack` (delivery receipts for other processes), `.tmp-*`, `*.corrupt`.
+Files in a spool directory: `.lock`, `.admit`, `.barrier`, `.ledger`,
+`*.rec` (one record or a batch), `*.ack` (delivery receipts for other
+processes), `.tmp-*`, `*.corrupt`.
+
+### Multiprocessing
+
+Forked and spawned workers capture like any process and share the spool.
+End pools with `pool.close(); pool.join()` (or let workers return): each
+worker closes capture on its way out and the process draining the spool
+delivers every record pending at its close, including exited workers'.
+`with Pool():` sends SIGTERM to its workers: what a worker had spooled is
+delivered, but a call its capture thread had not yet written is lost. For
+forked workers that loss is always visible (the parent records each
+worker's last allocated sequence, so its run is `partial` or `unverified`);
+a spawned worker killed before it wrote any record leaves no trace.
+
+### Throughput
+
+One capture worker per process writes the spool, and it needs the GIL.
+Measured with `scripts/qualification/bench_wire_capture_throughput.py`
+(small exchanges, production profile, encrypted spool, loopback fake model
+and Node, one Apple-silicon laptop):
+
+| Load | Spooled exchanges/s | Shed (`queue_full`) |
+|---|---:|---:|
+| 200 threads, 100 ms model latency | 1,732 | 0% |
+| 1 CPU-bound thread | 758–835 (keeps up) | 0% |
+| 4 CPU-bound threads | 1,643–1,790 | 0% |
+| 16 CPU-bound threads | 528–539 | 15–19% |
+| 64 CPU-bound threads | 128–132 | 27–34% |
+
+When application threads wait on I/O, as agents waiting on a model do, the
+worker keeps up. When many threads spin on the CPU, they hold the GIL and
+the worker gets about one turn in N+1: capture sheds load, and every shed
+exchange is a recorded `queue_full` loss (the run is `partial`). Run the
+benchmark on your own hardware before relying on these numbers.
 
 `fabric.wire.current_handle().stats()` returns counters only (no content):
 `matched`, `submitted`, `dropped`, `truncated`, `spooled`, `spool_bytes`,
-`spool_full_drops`, `delivered`, `send_retries`, `content_rejected`,
-`quarantined`, `spool_undurable`, `transform_timeouts`,
-`transform_saturated`, and others. `handle.status()` reports the profile,
-whether content capture is enabled and why not, the policy reference, the
-pseudonym mode and whether the spool is encrypted.
+`spool_full_drops`, `disk_full_drops`, `markers_held`, `ledger_recovered`,
+`delivered`, `send_retries`, `content_rejected`, `quarantined`,
+`spool_undurable`, `uninstrumented_calls`, `redaction_timeouts`,
+`redaction_saturated`, `redaction_failures`, and others.
+`handle.status()` reports the profile, whether content capture is enabled
+and why not, the policy reference, the pseudonym mode, whether the spool is
+encrypted, the state of each wire capture point (`capture_points`:
+`wire.py.httpx`, `wire.py.aiohttp`) and `uninstrumented_clients` (clients
+seen sending model calls Fabric does not capture, and httpx, httpx2 or
+aiohttp loaded but not patched). With `OTEL_SDK_DISABLED=true` it reports
+`capture: disabled` (`capture_reason: otel_sdk_disabled`).
 
 ## The Node queues
 
@@ -65,6 +126,13 @@ up to `queue_size × 64 MiB`. Size the volumes for your outage window and
 alert on disk use. When a queue is full the Node backpressures its senders;
 the agent's spool then absorbs the backlog up to its own bound. Never mount
 one queue volume into two running Nodes.
+
+The Node's `file` content store shards objects into two levels of
+hash-named subdirectories (`<tenant>/evidence/<h0h1>/<h2h3>/<id>`, `h` =
+SHA-256 of the id); objects written flat by earlier Nodes are still read.
+It holds one file per object and one per descriptor, so alert on the
+volume's inode use as well as bytes. At startup the Node sweeps temporary
+files across the whole content tree, which takes longer as the store grows.
 
 ## Health and metrics
 
@@ -115,15 +183,17 @@ After any change to the Node, the store or the agents:
 | Symptom | Likely cause |
 |---|---|
 | Spans carry `fabric.wire.store_reason=missing_capture_policy` / `missing_id_key` / `missing_spool_key` | Production profile without that item; content disabled, metadata continues. |
-| `store_reason=protection_failed` | A masking mode with no transformation (always the case under autoload), or the transformation failed, timed out or was saturated. |
+| `store_reason=protection_failed` | A masking mode with no transformation (always the case under autoload) or no redaction service, or the service failed, timed out, answered a non-200 status or was saturated (`redaction_*` counters). |
 | `store_reason=privacy_policy` | The policy says `metadata_only` or `omit` for that role. |
 | Warning `fabric.wire: autoload failed (...)` or `capture not installed (...)` | Invalid configuration; the class name says which. Capture is off; the application runs. |
-| No spans at all | No OTLP endpoint (spans are dropped with a warning), `OTEL_SDK_DISABLED=true`, or the autoload directory is not on `PYTHONPATH`. |
-| Calls missing from the record | The client is not httpx/httpx2 (`aiohttp`, `requests`), the host is not matched (add `FABRIC_WIRE_ENDPOINTS`), or the path is not one of the five supported APIs. |
-| `queue_full` losses | Burst larger than the capture queue or a full spool: raise `FABRIC_WIRE_QUEUE_MAX_ITEMS` or `FABRIC_WIRE_SPOOL_MAX_BYTES`. |
+| No spans at all | No OTLP endpoint (spans are dropped with a warning), `OTEL_SDK_DISABLED=true` (`status()` says `capture: disabled`), or the autoload directory is not on `PYTHONPATH`. |
+| `uninstrumented_client` losses | Model calls sent through `requests` or `urllib3`, which are not captured; move them to httpx, httpx2 or aiohttp. |
+| Calls missing from the record | The client is not httpx, httpx2 or aiohttp (`boto3`, gRPC, other processes), `FABRIC_WIRE_AIOHTTP=0`, the host is not matched (add `FABRIC_WIRE_ENDPOINTS`), or the path is not one of the five supported APIs. |
+| `queue_full` losses | Burst larger than the capture queue, CPU-bound threads starving the capture worker (see Throughput), or a full spool: raise `FABRIC_WIRE_QUEUE_MAX_ITEMS` or `FABRIC_WIRE_SPOOL_MAX_BYTES`. |
+| `disk_full` losses | The spool's volume filled before its bound; grow the volume. |
 | Agent batches refused with `INVALID_ARGUMENT` | The agent's tenant or `fabric.source_id` does not match the Node's binding; compare the `s-` value on the agent's spans with the Node's configured source id. |
 | `flush()` returns `False` | Something was not delivered in time, the spool barrier is not established, or another process's records were quarantined. |
-| Multiprocessing workers' calls missing | Known defect; see [limitations](../limitations-and-roadmap.md). |
+| Multiprocessing workers' calls missing | The pool was ended by `with Pool():` (SIGTERM); use `close()`/`join()` (see Multiprocessing). |
 
 **Finding a run by its clear id.** Records carry only pseudonyms. Pass the
 clear run id to `fabric.reconstruct --run` with the agent's
