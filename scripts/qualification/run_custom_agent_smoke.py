@@ -35,6 +35,7 @@ from fabric import (
 )
 from fabric import __file__ as fabric_package_file
 from fabric.call_recorder import CallRecorder
+from fabric.redaction import RedactionService
 from fabric.byte_resolver import ByteEvidenceResolver
 from fabric.call_reconcile import (
     CallByteWitness,
@@ -58,11 +59,6 @@ ROLES = frozenset(
         "artifact.after",
     }
 )
-
-
-def failed_mask(_data: bytes) -> bytes:
-    """A customer transformation that fails (run in a child process, spec 049 §7.7)."""
-    raise RuntimeError(CANARY.decode())
 
 
 def main() -> int:
@@ -354,13 +350,14 @@ def main() -> int:
                 role_policies={
                     role: BytePrivacyPolicy(
                         mode="masked_only",
-                        # out of process (spec 049 §7.7): this module, by reference
-                        transform="run_custom_agent_smoke:failed_mask",
                         transformation_id="fixture-mask",
                         transformation_version="1",
                     )
                     for role in privacy_roles
                 },
+                # A customer redaction service that is not running (spec 049 §7.7
+                # rule 4): every masked object is withheld, never stored raw.
+                redaction=RedactionService("unix://" + str(root / "absent.sock")),
             )
         )
         privacy_run = run_id + "-privacy"

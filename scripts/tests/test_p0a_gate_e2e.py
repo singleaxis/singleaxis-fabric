@@ -3,8 +3,9 @@
 """Spec 049 P0-A exit gate, with real processes, on the built Node image.
 
     application (_p0a_gate_agent.py: fabric.wire.install() in node mode, a capture
-    policy, the id key, a sealed spool; customer transformations where the mode
-    needs them) -> production Fabric Node (fabric-gate, collector-production.yaml +
+    policy, the id key, a sealed spool; transformations where the mode needs them,
+    performed by the reference customer redaction service, run by this test as a
+    subprocess on a Unix socket) -> production Fabric Node (fabric-gate, collector-production.yaml +
     the content path, source binding, sealed content queue)
         -> customer store: the Node's sealed directory (file backend) and the
            S3-compatible evaluation store (SeaweedFS, SSE, GetObject-only reader)
@@ -57,11 +58,12 @@ from typing import Any
 import pytest
 import test_wire_capture_node_e2e as node_e2e
 import test_wire_capture_s3_eval_e2e as s3_e2e
+from _redaction_service import reference_service
 from _wire_capture_common import (
     build_image,
     capture_protection,
     compose_available,
-    spool_header,
+    spool_headers,
     spool_records,
     volume_grep,
     wait_until,
@@ -80,6 +82,19 @@ PART_ROLE = "model.exchange.part"
 pytestmark = pytest.mark.skipif(
     not compose_available(), reason="docker compose unavailable — env-dependent gate"
 )
+_REDACTION: list[str] = []  # the reference service's endpoint, while the module runs
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _redaction_service() -> Iterator[None]:
+    """The customer redaction service (contracts/redaction/v1): ``gate-mask`` replaces
+    the canary with ``[masked]``; ``gate-fail`` is not implemented (a failed call)."""
+    with reference_service(
+        {"gate-mask": [(re.escape(CANARY), "[masked]")]}
+    ) as endpoint:
+        _REDACTION[:] = [endpoint]
+        yield
+    _REDACTION.clear()
 
 
 def _sha(data: bytes) -> str:
@@ -96,7 +111,8 @@ def _without_autoload(env: dict[str, str]) -> dict[str, str]:
 def _run(env: dict[str, str], model_url: str, root: Path, *args: str) -> dict[str, Any]:
     result = subprocess.run(  # noqa: S603
         [sys.executable, str(GATE_AGENT), "--model-url", model_url, *args],
-        env={**env, "E2E_GATE_CANARY": CANARY}, cwd=root, capture_output=True, text=True,
+        env={**env, "E2E_GATE_CANARY": CANARY, "FABRIC_REDACTION_ENDPOINT": _REDACTION[0]},
+        cwd=root, capture_output=True, text=True,
         timeout=900, check=False,
     )  # fmt: skip
     # The application is never affected: it exits normally with its model answer.
@@ -360,7 +376,11 @@ def test_production_without_protection_records_no_content(
     assert info["status"]["store_reason"] == reason
     if token is not None:
         spool = node.stack.root / "spool" / service
-        headers = [spool_header(p, node_e2e.SPOOL_KEY) for p in spool_records(spool)]
+        headers = [
+            h
+            for p in spool_records(spool)
+            for h in spool_headers(p, node_e2e.SPOOL_KEY)
+        ]
         spans = [h["span"] for h in headers if h["record_kind"] == "exchange"]
     else:
         spans = [s for s in node.spans(service) if s["name"] == "fabric.model_call"]
@@ -438,12 +458,9 @@ def test_a_corrupt_object_is_a_gap_never_content(node: FileGate) -> None:
     sealed = node.stack.sealed[store]
     corrupt = node.stack.root / f"corrupt-{uuid.uuid4().hex[:8]}"
     shutil.copytree(sealed, corrupt)
-    target = (
-        corrupt
-        / node_e2e.TENANT
-        / "evidence"
-        / span["attributes"]["fabric.content.request_ref"]
-    )
+    ref = span["attributes"]["fabric.content.request_ref"]
+    shard = hashlib.sha256(ref.encode()).hexdigest()  # spec 048 rule 4: the hash shard
+    target = corrupt / node_e2e.TENANT / "evidence" / shard[:2] / shard[2:4] / ref
     data = bytearray(target.read_bytes())
     data[-1] ^= 0xFF  # breaks the envelope's tag: never opened, never returned
     target.write_bytes(bytes(data))

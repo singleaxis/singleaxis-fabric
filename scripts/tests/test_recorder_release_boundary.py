@@ -156,3 +156,32 @@ def test_umbrella_declares_only_collector_dependency() -> None:
     assert re.findall(r"(?m)^  - name: ([^\s]+)", dependency_text) == ["otel-collector"]
     for forbidden in FORBIDDEN_CHART_NAMES:
         assert forbidden not in chart_text
+
+
+def test_redaction_service_example_is_not_a_release_artifact() -> None:
+    """The reference redaction service (examples/redaction-service) is an example a
+    customer runs, never part of the wheel, sdist, npm package or a release image."""
+    import tomllib
+
+    assert (ROOT / "examples/redaction-service/redaction_service.py").is_file()
+    pyproject = tomllib.loads(
+        (ROOT / "sdk/python/pyproject.toml").read_text(encoding="utf-8")
+    )
+    targets = pyproject["tool"]["hatch"]["build"]["targets"]
+    assert targets["wheel"]["packages"] == ["src/fabric"]
+    assert set(targets["sdist"]["include"]) == {"/src", "/README.md", "/LICENSE"}
+    package = json.loads(
+        (ROOT / "sdk/typescript/package.json").read_text(encoding="utf-8")
+    )
+    assert set(package["files"]) <= {"dist", "README.md", "LICENSE"}
+    scanned = [
+        *(ROOT / ".github/workflows").glob("release*.yml"),
+        *(ROOT / "scripts/release").rglob("*"),
+        *(ROOT / "components").rglob("Dockerfile*"),
+        *(ROOT / "deploy").rglob("Dockerfile*"),
+    ]
+    for path in scanned:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            assert "redaction-service" not in text, path
+            assert "redaction_service" not in text, path

@@ -81,8 +81,9 @@ exporters:
       max_interval: 5s
       max_elapsed_time: 0s
   # Content store: the SDK layout <dir>/<tenant>/evidence/<object_id> plus
-  # evidence/meta/<object_id>.json, readable by `fabric.reconstruct
-  # --store-root`. collector-content-s3.yaml switches to S3.
+  # evidence/meta/<object_id>.json, sharded on disk under two hash-prefix
+  # levels (evidence/<h0h1>/<h2h3>/, h = sha256(object_id); alert on inode
+  # use, not only bytes), readable by `fabric.reconstruct --store-root`. collector-content-s3.yaml switches to S3.
   fabriccontent:
     allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
     backend: file

@@ -99,8 +99,22 @@ and superseded specs to `specs/archive/`.
   the wire line), the agent id as `agt-` (v2) and any other caller id (operation,
   attempt, stream, parent call) as the keyed operator label `lbl-`. Only ids the
   recorder itself minted (call ids) or emitted map to themselves, so parent joins still
-  hold; provenance is registered, never inferred from shape, so a 32-hex (UUID-shaped)
-  or `lbl-`-shaped caller id is pseudonymised too. `FABRIC_IDENTITY_MODE=clear` (or
+  hold. Provenance is carried by type, never inferred from shape or looked up in a
+  bounded cache (Sol P0-A round 6 #1): emitted and minted ids are returned as typed
+  values (Python `fabric._sequence.EmittedId`, a `str` subclass; TypeScript
+  `EmittedId`, accepted wherever an id is), so a recorder's run and source ids never
+  change for its lifetime, whatever other traffic it sees. A plain string, even a
+  32-hex (UUID-shaped) or `r-`/`s-`/`lbl-`-shaped one, or an emitted id that lost its
+  type (serialised and read back), is caller input and is pseudonymised. New:
+  `ByteEvidenceRecorder.emitted_source_id()` (TypeScript `emittedSourceId()`). Continuity across
+  processes and hosts comes from passing the same clear id (the keyed mapping is
+  deterministic per key), never from passing an emitted value to another process.
+- The wire line's source id: a configured `source_id` / `FABRIC_SOURCE_ID` that is
+  already shaped like `s-` + 32 hex is now mapped through the keyed function like any
+  other label (previously exported unchanged), matching the explicit line. Wire run ids
+  were already always mapped (`fabric.wire.run("r-…")` emits the pseudonym of that
+  value); `FABRIC_WIRE_LABELS=clear` still exports source labels unchanged. The
+  verifier still shows an `s-` source id read from a record as is. `FABRIC_IDENTITY_MODE=clear` (or
   `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
   `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
   emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a
@@ -108,42 +122,64 @@ and superseded specs to `specs/archive/`.
   feeds and attestations bind the emitted ids. `ByteEvidenceRecorder.generated_ids` is
   renamed `emitted_ids`.
 
-### Changed (breaking, Python customer transformations)
+### Changed (breaking, customer redaction is a customer-run redaction service)
 
-- Python customer transformations (wire `Transformation`, `ContentProtector`
-  `redactors`, `BytePrivacyPolicy.transform`) are now **module references**
-  (`"package.module:function"`) run **out of process**, matching TypeScript: a
-  dedicated child interpreter (`python -I`, never a fork) loads the function and is
-  called with the bytes of one object over a pipe; it never sees the spool, a store
-  or the network. Passing a callable now raises at construction ("in-process
-  transformation callables are not supported"). The wire `Transformation` field
-  `apply` is renamed `ref`. A call past its timeout kills the child (a GIL-holding
-  redactor can no longer stall the application, Sol P0-A round 2 #2) and withholds
-  the object as `not_captured(protection_failed)`; capacity (two busy calls per
-  transformation) is reserved before a call starts, beyond it content is withheld
-  at once (`transform_saturated`, round 2 #5); idle children exit after 60 s and
-  `ByteEvidenceRecorder.close()`, `ContentProtector.close()` and the wire uninstall
-  stop them (round 2 #6). Windows (no `poll`) withholds every transformation.
-  Round 3: a stale idle child is discarded before the capacity check; `close()`
-  waits for children still starting and they are never used; exited children are
-  reaped without another call; a child exits when the application dies (parent-death
-  pipe, `PR_SET_PDEATHSIG` on Linux, `SIGALRM` restored to its default action over
-  start-up and each call); a timeout or close kills the child's whole process group;
-  the child gets a minimal environment (`PATH`, locale variables and the new
-  `transform_env_allowlist`, never a `FABRIC_*KEY*` variable).
+- Fabric no longer runs customer redaction code in any form: no imported module, no
+  callable, no child process, no worker thread (spec 049 §7.7, owner decision
+  2026-10-21). `redact`, `masked_only` and the review copy of `original_plus_masked`
+  are performed by a **redaction service the customer runs** beside the
+  application, which the recorder calls: `POST /v1/transform` with the raw bytes of
+  one object and `X-Fabric-Transformation`, `X-Fabric-Transformation-Version`,
+  `X-Fabric-Role` and `X-Fabric-Mode` headers; `200` returns the masked bytes. The
+  new public contract `contracts/redaction/v1` (README plus the closed error-body
+  schema, pinned in the data-plane contract validator) defines it. `tokenize`,
+  `omit`, `metadata_only` and `retain_original` are unchanged and need no service.
+- Configure the endpoint with `FABRIC_REDACTION_ENDPOINT` (or `redaction=
+  RedactionService(...)` in Python, `redaction: { endpoint }` in TypeScript): only
+  `unix:///absolute/path.sock` or `http://127.0.0.1:<port>` / `http://[::1]:<port>`;
+  anything else raises at `install()` or construction. No proxy, no redirect (a
+  `3xx` is a failure), no TLS on loopback. An optional bearer token is read once
+  from `FABRIC_REDACTION_TOKEN_FILE` (a `0600` file owned by the process user) and
+  never logged.
+- A transformation is now only its identity: Python `Transformation(id, version)`,
+  `BytePrivacyPolicy(mode, transformation_id, transformation_version)`,
+  `ContentProtector(policy, transformations={role: Transformation(...)},
+  redaction=...)`; TypeScript `ContentProtector(policy, { transformations: { role:
+  { id, version } }, redaction })`. Module references
+  (`Transformation(..., ref)`, `BytePrivacyPolicy.transform`, `ContentProtector`
+  `redactors`, TypeScript `redactors: { role: { module } }`) and callables raise at
+  construction with a pointer to `docs/wire-capture-deployment.md#redaction-service`.
+  Deleted settings: `transform_env_allowlist` (wire, byte evidence, protector),
+  `timeout_s` on `Transformation`/`BytePrivacyPolicy`, `transform_timeout_s` and
+  TypeScript `transformTimeoutMs` (which throws); the timeout is now
+  `RedactionService.timeout_s` / `timeoutMs`. Removed modules: `fabric._transform_runner`,
+  `fabric._transform_child` (and its guardian process) and TypeScript
+  `redactor-worker` (`RedactorModule`). `ContentProtector.runs_customer_code` /
+  `runsCustomerCode` is renamed `needs_redaction_service` /
+  `needsRedactionService`; `ByteEvidenceRecorder.transform_stats()` is
+  `redaction_stats()`; `WireStats.transform_timeouts`, `transform_saturated` and
+  `transform_abandoned` are `redaction_timeouts`, `redaction_saturated` and
+  `redaction_failures`.
+- Calls are made only on the recorder's worker (the capture worker thread in
+  Python, the recorder's asynchronous drain in Node.js), never on the application's
+  thread or event loop, over one connection pool per recorder that `close()`
+  closes. Each call has a hard timeout (default 5 s, at most 300 s) and at most two
+  calls are in flight per recorder (`max_in_flight` / `maxInFlight`); above the
+  bound a call is withheld at once and counted. Any failure (a non-200 status, a
+  timeout, an answer above the object cap, a connection error, saturation)
+  withholds the object as `not_captured(protection_failed)`, with no raw fallback
+  and no error body or exception text kept. An oversized answer is now
+  `protection_failed`, not `protected_payload_too_large`. Stored masked objects of a
+  deployment-policy role now carry `transformation_id` and `transformation_version`
+  in both SDKs.
+- `examples/redaction-service/` adds a stdlib-only reference service (Unix socket
+  or loopback HTTP, regex rules from JSON, Dockerfile, Compose and Kubernetes
+  sidecar snippets). It is an example, not part of the recorder release artifacts.
+- The TypeScript `ByteEvidenceRecorder.close()` now also closes its protector's
+  service connections.
 
 ### Changed (breaking, TypeScript explicit line)
 
-- `ContentProtector` redactors for `redact` and `masked_only` are now customer
-  **modules** run in a `worker_threads` Worker, not functions:
-  `redactors: { role: { module: "/abs/path/redactor.mjs", exportName?: "redact" } }`.
-  Passing a function now throws at construction ("in-process redactor functions are
-  not supported"). A redactor never runs on the application's event loop; each call
-  is bounded by `transformTimeoutMs` (default 5000 ms, the Worker is terminated), and
-  an error or timeout withholds the object as `not_captured(protection_failed)`.
-  `ByteEvidenceRecorder.capture()` returns `pending` for masking roles and settles
-  after the Worker ran; `ContentProtector.protect()` fails closed for masking roles
-  (use `protectAsync()`). Spec 049 §7.1, §7.7 (Sol P0-A review #5).
 - The TypeScript `ByteEvidenceRecorder` applies the spec 049 §7.3 production gate:
   a production-profile policy needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`);
   without it content capture is disabled with the reason (Sol P0-A review #4).
@@ -209,6 +245,16 @@ and superseded specs to `specs/archive/`.
   interpreter forks a guardian (before any customer code) that kills the group when
   the interpreter or the recorder ends, even while customer code holds the GIL or
   `PR_SET_PDEATHSIG` ended the interpreter first (Sol P0-A round 4 #3).
+- Python customer transformations: every process Fabric starts is now reaped by its
+  own parent, so none accumulates as a zombie under a PID 1 that never reaps (a Linux
+  container without an init). The runner starts a guardian, which forks the
+  interpreter into its own process group and stays its parent: the guardian kills
+  that group and reaps the interpreter (and, as a Linux child subreaper, the group's
+  orphaned tools) when the interpreter exits, the recorder dies or the runner stops it
+  (`SIGTERM` on timeout or close; a guardian not gone 5 s later is killed); the runner
+  reaps the guardian (Sol P0-A round 5 #3). The guardian and the interpreter wait with
+  `poll`, so a parent-death pipe above `FD_SETSIZE` (an application with more than
+  1,024 open descriptors) no longer fails every transformation (Sol P0-A round 5 #2).
 
 
 - An extracted `model.exchange.part` under `original_plus_masked` gets a masked

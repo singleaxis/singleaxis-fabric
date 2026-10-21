@@ -15,6 +15,10 @@ import pytest
 from fabric import ContentCaptureConfig, Fabric, FabricConfig, LocalFilesystemContentStore
 from fabric._calls import LLMCall, ToolCall
 from fabric.byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder, BytePrivacyPolicy
+from fabric.redaction import RedactionService
+
+from . import transforms
+from .redaction_server import RedactionServer
 
 SECRET = b"CANARY-private-customer-8842"
 ROLE = "tool.call.result"
@@ -48,14 +52,18 @@ def _close(recorder: ByteEvidenceRecorder) -> None:
     assert complete
 
 
-def _policy(mode: str, transform: Any = None) -> BytePrivacyPolicy:
+@pytest.fixture(autouse=True)
+def _service(redaction_server: RedactionServer, redaction: RedactionService) -> None:
+    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests:
+    ``customer-mask`` answers ``[masked]``."""
+    redaction_server.behaviours["customer-mask"] = transforms.masked
+
+
+def _policy(mode: str, transformation: str = "customer-mask") -> BytePrivacyPolicy:
     if mode in {"original", "omit"}:
         return BytePrivacyPolicy(mode=mode)
     return BytePrivacyPolicy(
-        mode=mode,
-        transform=transform or ("tests.transforms:masked"),
-        transformation_id="customer-mask",
-        transformation_version="v1",
+        mode=mode, transformation_id=transformation, transformation_version="v1"
     )
 
 
@@ -173,7 +181,11 @@ def test_configuration_snapshots_policy_mapping_and_requires_version(tmp_path: P
     policies[ROLE] = _policy("original")
     assert config.role_policies is not None and config.role_policies[ROLE].mode == "omit"
     with pytest.raises(ValueError, match="identity and version"):
-        BytePrivacyPolicy(mode="masked_only", transform="tests.transforms:identity")
+        BytePrivacyPolicy(mode="masked_only")
+    docs = "redaction service.*docs/wire-capture-deployment.md#redaction-service"
+    with pytest.raises(ValueError, match=docs):  # module references are removed
+        BytePrivacyPolicy(mode="masked_only", transform="tests.transforms:identity",
+                          transformation_id="m", transformation_version="1")  # fmt: skip
     with pytest.raises(ValueError, match="enabled roles"):
         ByteEvidenceConfig(
             store=_store(tmp_path),
@@ -183,15 +195,15 @@ def test_configuration_snapshots_policy_mapping_and_requires_version(tmp_path: P
 
 
 @pytest.mark.parametrize("mode", ["masked_only", "original_plus_masked"])
-@pytest.mark.parametrize("failure", ["raise", "type", "oversize"])
+@pytest.mark.parametrize("failure", ["raise", "redirect", "oversize", "unknown"])
 def test_failed_transform_never_falls_back_to_raw(
     tmp_path: Path,
     caplog: Any,
     mode: str,
     failure: str,
 ) -> None:
-    transform = "tests.transforms:" + {"raise": "raises", "type": "not_bytes",
-                                       "oversize": "oversize_129"}[failure]  # fmt: skip
+    transform = {"raise": "raises", "redirect": "redirects", "oversize": "oversize_129",
+                 "unknown": "unknown-transformation"}[failure]  # fmt: skip
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=_store(tmp_path / "original"),
@@ -239,30 +251,22 @@ def test_omitted_role_has_no_fingerprint_or_stored_content(tmp_path: Path) -> No
 
 
 def test_transform_runs_off_path_and_overflow_does_not_wait(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, redaction_server: RedactionServer
 ) -> None:
-    """The transform runs in a child process (never the caller's thread or interpreter)
-    behind the handoff; a full queue drops at once instead of waiting."""
-    import time  # noqa: PLC0415
-
-    gate = tmp_path / "gate"
-    gate.mkdir()
-    monkeypatch.setenv("FABRIC_TEST_GATE_DIR", str(gate))
+    """The service call runs on the recorder's worker (never the caller's thread) behind
+    the handoff; a full queue drops at once instead of waiting."""
+    redaction_server.release.clear()  # the service holds every call
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=_store(tmp_path / "review"),
             roles=frozenset({ROLE}),
             queue_max_items=1,
-            role_policies={ROLE: _policy("masked_only", "tests.transforms:gated")},
-            transform_env_allowlist=("FABRIC_TEST_GATE_DIR",),
+            role_policies={ROLE: _policy("masked_only", "safe")},
         )
     )
     try:
         first = _capture(recorder)
-        deadline = time.monotonic() + 10.0
-        while not (gate / "entered").exists():  # the transform is running in its child
-            assert time.monotonic() < deadline
-            time.sleep(0.005)
+        assert redaction_server.entered.wait(10.0)  # the worker is in the service call
         second = _capture(recorder)
         third = _capture(recorder)
         assert first["status"] == second["status"] == "pending"
@@ -270,7 +274,7 @@ def test_transform_runs_off_path_and_overflow_does_not_wait(
         complete = recorder.flush(timeout_s=0)
         assert not complete
     finally:
-        (gate / "release").write_bytes(b"")
+        redaction_server.release.set()
         _close(recorder)
 
 
@@ -377,66 +381,3 @@ def test_protected_mode_rejects_raw_paths_before_content_mutation(
     for path in tmp_path.rglob("*"):
         if path.is_file():
             assert SECRET not in path.read_bytes()
-
-
-def test_the_recorder_worker_reaps_an_idle_transform_child(tmp_path: Path) -> None:
-    """Sol P0-A round 3 #3: an exited idle child stays reaped by the recorder's worker
-    cadence, with no further capture and no runner call."""
-    import time  # noqa: PLC0415
-
-    from tests.test_transform_runner import process_state  # noqa: PLC0415
-
-    recorder = ByteEvidenceRecorder(
-        ByteEvidenceConfig(
-            store=_store(tmp_path / "review"),
-            roles=frozenset({ROLE}),
-            role_policies={ROLE: _policy("masked_only")},
-        )
-    )
-    try:
-        (runner,) = recorder._runners.values()
-        runner._idle_s = 0.15  # the child exits after 0.15 s idle
-        _capture(recorder)
-        _flush(recorder)
-        (proc,) = runner._procs
-        deadline = time.monotonic() + 5.0
-        while process_state(proc.pid) != "":
-            assert time.monotonic() < deadline, process_state(proc.pid)
-            time.sleep(0.05)
-    finally:
-        _close(recorder)
-
-
-def test_the_recorder_worker_reaps_under_steady_unrelated_traffic(tmp_path: Path) -> None:
-    """Sol P0-A round 4 #2: maintenance ran only when the queue stayed empty for a whole
-    poll, so untransformed captures every 50 ms left an exited transform child a zombie.
-    It now also runs on a time cadence between jobs."""
-    import time  # noqa: PLC0415
-
-    from tests.test_transform_runner import process_state  # noqa: PLC0415
-
-    other = "terminal.stdout"
-    recorder = ByteEvidenceRecorder(
-        ByteEvidenceConfig(
-            store=_store(tmp_path / "review"),
-            roles=frozenset({ROLE, other}),
-            role_policies={ROLE: _policy("masked_only")},
-        )
-    )
-    try:
-        (runner,) = recorder._runners.values()
-        runner._idle_s = 0.15
-        _capture(recorder)
-        _flush(recorder)
-        (proc,) = runner._procs
-        sequence = 0
-        deadline = time.monotonic() + 1.0  # idle timeout + cadence, well inside Sol's 1.55 s
-        while process_state(proc.pid) != "":
-            assert time.monotonic() < deadline, process_state(proc.pid)
-            sequence += 1
-            recorder.capture(b"x", role=other, boundary="terminal", source_id="source-b",
-                             source_epoch=0, source_sequence=sequence)  # fmt: skip
-            time.sleep(0.05)
-        assert sequence > 0  # traffic flowed the whole time
-    finally:
-        _close(recorder)

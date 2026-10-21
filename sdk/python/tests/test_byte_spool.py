@@ -22,10 +22,20 @@ from fabric.byte_spool import DurableByteSpool
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.deployment_policy import ContentProtector, DeploymentPolicy
 from fabric.governed_store import GovernedLocalContentStore, LocalCapabilityAuthority
+from fabric.redaction import RedactionService, Transformation
+
+from . import transforms
+from .redaction_server import RedactionServer
 
 KEY = b"synthetic spool key only!!!!!!!!"
 CANARY = b"SPOOL_RAW_PRIVATE_CANARY_654321"
 ROLE = "artifact.after"
+
+
+@pytest.fixture(autouse=True)
+def _service(redaction_server: RedactionServer, redaction: RedactionService) -> None:
+    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests."""
+    redaction_server.behaviours["mask"] = transforms.protected
 
 
 def _capture(recorder: ByteEvidenceRecorder, data: bytes = CANARY) -> dict[str, Any]:
@@ -51,7 +61,6 @@ def _recorder(tmp_path: Path, store: Any = None, **options: Any) -> tuple[Any, A
             role_policies={
                 ROLE: BytePrivacyPolicy(
                     mode="masked_only",
-                    transform="tests.transforms:protected",
                     transformation_id="mask",
                     transformation_version="v1",
                 )
@@ -143,8 +152,7 @@ if mode == "pre_fsync":
 recorder = ByteEvidenceRecorder(ByteEvidenceConfig(
     store=Store(), roles=frozenset({"artifact.after"}),
     durable_spool=spool, role_policies={"artifact.after":BytePrivacyPolicy(mode="masked_only",
-    transform="tests.transforms:protected", transformation_id="mask",
-    transformation_version="v1")}))
+    transformation_id="mask", transformation_version="v1")}))
 if mode == "recover":
     ready.set()
     assert recorder.flush(10)
@@ -596,7 +604,7 @@ def test_deployment_privacy_replays_into_existing_governed_encrypted_stores(tmp_
     )
     protector = ContentProtector(
         policy,
-        redactors={"artifact.after": "tests.transforms:protected"},
+        transformations={"artifact.after": Transformation("protected", "1")},
         tokenization_key=b"T" * 32,
     )
 

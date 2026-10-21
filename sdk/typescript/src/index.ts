@@ -140,7 +140,22 @@ export {
   type ByteEvidenceConfig,
   type ByteEvidenceDescriptor,
   type ByteEvidenceStatus,
+  type CallerId,
 } from "./byte-evidence.js";
+export { EmittedId } from "./identity.js";
+export {
+  RedactionClient,
+  REDACTION_ENDPOINT_ENV,
+  REDACTION_TOKEN_FILE_ENV,
+  checkTransformation,
+  parseRedactionEndpoint,
+  redactionServiceFromEnv,
+  type RedactionEndpoint,
+  type RedactionMode,
+  type RedactionServiceOptions,
+  type RedactionStats,
+  type Transformation,
+} from "./redaction.js";
 export {
   ContentResolver,
   ResolveStatus,
@@ -158,7 +173,6 @@ export {
   PRIVACY_MODES,
   type DeploymentPolicyData,
   type ContentProtectorOptions,
-  type RedactorModule,
   type PrivacyMode,
   type ProtectionStatus,
 } from "./deployment-policy.js";

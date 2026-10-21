@@ -57,7 +57,8 @@ archive): [capture v1](../contracts/capture/v1/README.md),
 [content v2](../contracts/content/v2/README.md),
 [coverage v1](../contracts/coverage/v1/README.md),
 deployment-policy v1 (`contracts/deployment-policy/v1`),
-[evidence v1](../contracts/evidence/v1/README.md).
+[evidence v1](../contracts/evidence/v1/README.md),
+[redaction v1](../contracts/redaction/v1/README.md).
 
 ## Contributors and maintainers
 

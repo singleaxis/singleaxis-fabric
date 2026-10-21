@@ -3,10 +3,12 @@
 """A model-calling application for the spec 049 P0-A exit gate (``test_p0a_gate_e2e.py``).
 
 Unlike ``_wire_capture_agent.py`` it installs wire capture explicitly, because the
-customer transformations of ``masked_only``, ``original_plus_masked`` and ``redact``
-(§7.7) are code, not environment: ``fabric.wire.install()`` with the node-mode
-configuration from ``FABRIC_*`` plus, with ``--transform``, one transformation for
-the request, response and part roles. It then makes one OpenAI-compatible chat call
+transformations of ``masked_only``, ``original_plus_masked`` and ``redact`` (§7.7) are
+named per role in code: ``fabric.wire.install()`` with the node-mode configuration from
+``FABRIC_*`` (the customer redaction service from ``FABRIC_REDACTION_ENDPOINT``) plus,
+with ``--transform``, one transformation for the request, response and part roles. The
+redaction service performs it (``contracts/redaction/v1``); Fabric runs no customer
+code. It then makes one OpenAI-compatible chat call
 over httpx and prints one JSON line: the HTTP status, whether capture was installed and
 the install's content status (``WireHandle.status()``, values only).
 
@@ -19,9 +21,9 @@ the install's content status (``WireHandle.status()``, values only).
 - ``big``: a ``--size`` byte text message plus one inline image, so that the
   skeleton is just below ``--size`` (the 63 MiB request-cap case).
 
-``--transform``: ``none``; ``mask`` replaces the canary with ``[masked]`` (the
-JSON stays valid); ``fail`` raises with the canary in its message (it must never
-surface anywhere).
+``--transform``: ``none``; ``mask`` is ``gate-mask``, which the gate's service maps to
+replacing the canary with ``[masked]`` (the JSON stays valid); ``fail`` is
+``gate-fail``, which the service does not implement (a failed call: withheld).
 """
 
 from __future__ import annotations
@@ -60,16 +62,6 @@ def _body(kind: str, canary: str, size: int) -> dict[str, object]:
     }
 
 
-def mask(data: bytes) -> bytes:
-    """``--transform mask``: run in a transformation child process (049 §7.7)."""
-    return data.replace(os.environ["E2E_GATE_CANARY"].encode(), b"[masked]")
-
-
-def fail(_data: bytes) -> bytes:
-    """``--transform fail``: raises with the canary in its message (never surfaced)."""
-    raise RuntimeError(f"transformation failed on {os.environ['E2E_GATE_CANARY']}")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-url", required=True)
@@ -85,15 +77,10 @@ def main() -> int:
 
     config, _ = config_from_env(os.environ)
     if args.transform != "none":
-        # out of process (049 §7.7): this module, loaded by reference in a child
-        transform = Transformation(
-            "gate-mask", "1", f"_p0a_gate_agent:{args.transform}"
-        )
-        # The child gets a minimal environment (049 §7.7): allow the canary it masks.
+        # performed by the customer redaction service (FABRIC_REDACTION_ENDPOINT)
+        transform = Transformation(f"gate-{args.transform}", "1")
         config = dataclasses.replace(
-            config,
-            transformations=dict.fromkeys(ROLES, transform),
-            transform_env_allowlist=("E2E_GATE_CANARY",),
+            config, transformations=dict.fromkeys(ROLES, transform)
         )
     handle = wire.install(config)
     with httpx.Client(timeout=300) as client:

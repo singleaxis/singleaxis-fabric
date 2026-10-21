@@ -29,7 +29,7 @@ from typing import Any
 
 import pytest
 
-from fabric.wire._spool import RESERVE_BYTES, Spool, _accounted, marker_doc, unframe
+from fabric.wire._spool import RESERVE_BYTES, Spool, _accounted, marker_doc, unframe_all
 
 from .test_wire_helpers import open_record, production_env
 from .test_wire_spool import FakeNode
@@ -196,7 +196,7 @@ def test_processes_sharing_a_spool_stay_within_the_bound_with_the_node_down(
     assert sum(losses.values()) == writers * EXCHANGES - 2
     # Every exchange and loss record was delivered; only a process's ``final`` marker,
     # written at close after the drainer exited, may wait for the next drainer.
-    left = [unframe(open_record(p))[0] for p in root.glob("[0-9]*.rec")]
+    left = [doc for p in root.glob("[0-9]*.rec") for doc, _ in unframe_all(open_record(p))]
     assert {doc["record_kind"] for doc in left} <= {"marker"}
 
 

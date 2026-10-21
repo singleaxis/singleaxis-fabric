@@ -95,18 +95,23 @@ def test_provider_ids_are_keyed_with_the_key_and_legacy_without() -> None:
     assert [k.response_id for k in keys] == [case["pseudonym"], legacy["pseudonym"]]
 
 
-def test_redacted_capture_verifies_and_the_report_uses_keyed_ids(tmp_path: Path) -> None:
+def test_redacted_capture_verifies_and_the_report_uses_keyed_ids(
+    tmp_path: Path, redaction: object
+) -> None:
     """A redacted exchange verifies against the stored (redacted) objects' digests, and
     a keyed verifier reports the provider id in its keyed form."""
+    import os  # noqa: PLC0415
+
     from fabric.deployment_policy import DeploymentPolicy  # noqa: PLC0415
-    from fabric.wire import Transformation  # noqa: PLC0415
+    from fabric.wire import RedactionService, Transformation  # noqa: PLC0415
 
     privacy = {"model.exchange.request": "redact", "model.exchange.response": "redact"}
-    redact = Transformation("acme", "1", "tests.transforms:redact_city")
+    redact = Transformation("redact_city", "1")
     rig = make_rig(
         tmp_path, tenant_id="tenant-a",
         capture_policy=DeploymentPolicy(production_policy(privacy=privacy, profile="local")),
         transformations=dict.fromkeys(privacy, redact),
+        redaction=RedactionService.from_env(os.environ),
     )  # fmt: skip
     reply = {"id": "chatcmpl-9AbCdEfGhIjKlMn", "model": "gpt-4o", "choices": []}
     try:
