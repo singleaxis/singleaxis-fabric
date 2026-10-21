@@ -23,7 +23,6 @@ from typing import Literal, cast
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
-SOURCE_PSEUDONYM_RE = re.compile(r"^s-[0-9a-f]{32}$")
 ID_KEY_ENV = "FABRIC_WIRE_ID_KEY"
 LABELS_ENV = "FABRIC_WIRE_LABELS"  # "clear": operator labels exported unchanged (opt-in)
 Labels = Literal["pseudonymous", "clear"]
@@ -89,8 +88,9 @@ def run_pseudonym(run_id: str, key: bytes | None = None) -> str:
 
 def source_label(source_id: str, key: bytes | None = None, *, clear: bool = False) -> str:
     """The emitted source id (J1): ``s-`` + :func:`label_pseudonym`, or the operator's label
-    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). An ``s-`` value is kept."""
-    if clear or SOURCE_PSEUDONYM_RE.fullmatch(source_id):
+    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). A caller value is always mapped,
+    even an ``s-``-shaped one (Sol P0-A round 5 #1): shape never proves it was emitted."""
+    if clear:
         return source_id
     return label_pseudonym("s-", source_id, key)
 
@@ -268,6 +268,7 @@ def resolve_run_id(allocator: SourceAllocator, *, trace_id: int | None = None) -
 
 _PROCESS_SOURCE: list[str] = []  # this process's random source id, once generated
 _MAX_GENERATED_IDS = 65536
+_MINT = object()  # only this module mints an EmittedId
 
 
 def process_source_id() -> str:
@@ -280,49 +281,83 @@ def process_source_id() -> str:
         return _PROCESS_SOURCE[0]
 
 
+class EmittedId(str):
+    """An id Fabric emitted or minted (049 §2.9), as returned to callers: a run or source
+    id a recorder pins, a call, operation or attempt id it minted. It is recognised by its
+    type and issuer, never by its shape or by a lookup (Sol P0-A round 6 #1): passed back
+    to a recorder of the same issuer it is kept as is, so ids pass through more than one
+    layer and a ``parent_call_id`` joins its parent's ``call_id`` for as long as the value
+    lives. A plain ``str`` is always caller input and always mapped, even an ``r-``/``s-``/
+    ``lbl-``-shaped one; an id that lost its type (serialised and read back) is a plain
+    string again. Only :mod:`fabric._sequence` mints one."""
+
+    _issuer: str
+
+    def __new__(cls, value: str, issuer: str, token: object = None) -> EmittedId:
+        if token is not _MINT:
+            raise TypeError("emitted ids are minted by Fabric recorders only")
+        minted = super().__new__(cls, value)
+        minted._issuer = issuer
+        return minted
+
+    def __reduce__(self) -> tuple[object, ...]:
+        return _remint, (str(self), self._issuer)
+
+    def __copy__(self) -> EmittedId:
+        return self
+
+    def __deepcopy__(self, memo: object) -> EmittedId:
+        return self
+
+    def issued_by(self, issuer: str) -> bool:
+        return self._issuer == issuer
+
+
+def _remint(value: str, issuer: str) -> EmittedId:  # unpickling and copying
+    return EmittedId(value, issuer, _MINT)
+
+
 class GeneratedIds:
     """Emitted ids when no value derived from a caller-supplied id may leave the process
     (049 §2.9 rule 5: the production profile without ``FABRIC_WIRE_ID_KEY``). The source id
     is :func:`process_source_id`; a run id is its generated source fallback
     (``source:<source>:<epoch>``); any other caller id is a random ``g-`` id generated on
-    first sight and kept (at most 65536) so one recorder's records still join. A generated
-    value maps to itself, so ids may pass through more than one layer."""
+    first sight and remembered (at most 65536 values; beyond that a value gets a new one
+    each time) so one recorder's records still join. An :class:`EmittedId` of this
+    instance maps to itself, so ids may pass through more than one layer."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._ids: dict[str, str] = {}
-        self._generated: set[str] = set()
+        self._ids: dict[str, EmittedId] = {}
+        self._issuer = "gen-" + uuid.uuid4().hex
 
-    def source(self, value: str) -> str:  # nothing is derived from the value
-        return process_source_id()
+    def _mine(self, value: str) -> bool:
+        return isinstance(value, EmittedId) and value.issued_by(self._issuer)
 
-    def run(self, value: str, epoch: int) -> str:  # nothing is derived from the value
-        return encode_opaque_id(f"source:{process_source_id()}:{epoch}")
+    def mint(self, value: str) -> EmittedId:
+        """A Fabric-minted id (a call id) as this instance's: it maps to itself."""
+        return EmittedId(value, self._issuer, _MINT)
 
-    def agent(self, value: str) -> str:
+    def source(self, value: str) -> EmittedId:  # nothing is derived from the value
+        return self.mint(process_source_id())
+
+    def run(self, value: str, epoch: int) -> EmittedId:  # nothing is derived from the value
+        return value if self._mine(value) else (  # type: ignore[return-value]
+            self.mint(encode_opaque_id(f"source:{process_source_id()}:{epoch}")))  # fmt: skip
+
+    def agent(self, value: str) -> EmittedId:
         return self.other(value)
 
-    def keep(self, value: str) -> str:
-        """Mark a Fabric-generated id (a call id) as generated: it maps to itself."""
+    def other(self, value: str) -> EmittedId:
+        if self._mine(value):
+            return value  # type: ignore[return-value]
         with self._lock:
-            if len(self._generated) < 2 * _MAX_GENERATED_IDS:
-                self._generated.add(value)
-        return value
-
-    def other(self, value: str) -> str:
-        with self._lock:
-            if value in self._generated:
-                return value
             if (found := self._ids.get(value)) is not None:
                 return found
-            generated = "g-" + uuid.uuid4().hex
+            generated = self.mint("g-" + uuid.uuid4().hex)
             if len(self._ids) < _MAX_GENERATED_IDS:
                 self._ids[value] = generated
-                self._generated.add(generated)
             return generated
-
-
-_AGENT_PSEUDONYM_RE = re.compile(r"^agt-[0-9a-f]{32}$")
 
 
 class KeyedIds:
@@ -334,48 +369,45 @@ class KeyedIds:
     049 §2.3) is the keyed v1 operator label ``lbl-``. Deterministic, so records join
     across recorders, processes and restarts that hold the key.
 
-    Provenance, never shape, decides what passes through (Sol P0-A round 4 #1): an id
-    this instance minted (:meth:`keep`, a call id) or emitted (an ``agt-``/``lbl-`` value
-    it derived) maps to itself, so ids pass through more than one layer and a
-    ``parent_call_id`` joins its parent's ``call_id``; every caller value, even a 32-hex
-    or ``lbl-``-shaped one, is mapped. The registry is bounded (oldest first out); a value
-    that aged out is mapped again, which can break a join but never leaks it."""
+    Provenance, never shape, decides what passes through (Sol P0-A rounds 4-6): every
+    result is an :class:`EmittedId` issued under this key, and such a value maps to itself
+    (in any recorder holding the key), so ids pass through more than one layer and a
+    ``parent_call_id`` joins its parent's ``call_id``; every plain string, even a 32-hex
+    or ``r-``/``s-``/``lbl-``-shaped one, is mapped. Nothing is cached, so no amount of
+    traffic changes an id a live caller holds. Continuity across processes comes from
+    passing the same clear id, never an emitted one."""
 
-    __slots__ = ("_emitted", "_key", "_lock")
+    __slots__ = ("_issuer", "_key")
 
     def __init__(self, key: bytes) -> None:
         self._key = key
-        self._lock = threading.Lock()
-        self._emitted: dict[str, None] = {}  # insertion-ordered: a FIFO-bounded set
+        self._issuer = key_id(key)
 
     def __repr__(self) -> str:  # the key is a secret
         return "KeyedIds()"
 
-    def source(self, value: str) -> str:
-        return source_label(value, self._key)
+    def _mine(self, value: str) -> bool:
+        return isinstance(value, EmittedId) and value.issued_by(self._issuer)
 
-    def run(self, value: str, epoch: int) -> str:  # the same in every epoch
-        return value if RUN_PSEUDONYM_RE.fullmatch(value) else run_pseudonym(value, self._key)
+    def mint(self, value: str) -> EmittedId:
+        """A Fabric-minted id (a call id) as this key's: it maps to itself."""
+        return EmittedId(value, self._issuer, _MINT)
 
-    def agent(self, value: str) -> str:
-        with self._lock:
-            if value in self._emitted:
-                return value
-        return self.keep(cast("str", pseudonym_v2("agt", value, self._key)))
+    def source(self, value: str) -> EmittedId:
+        return value if self._mine(value) else self.mint(source_label(value, self._key))  # type: ignore[return-value]
 
-    def keep(self, value: str) -> str:
-        """Register a Fabric-minted or emitted id: it maps to itself from now on."""
-        with self._lock:
-            self._emitted[value] = None
-            if len(self._emitted) > 2 * _MAX_GENERATED_IDS:
-                del self._emitted[next(iter(self._emitted))]
-        return value
+    def run(self, value: str, epoch: int) -> EmittedId:  # the same in every epoch
+        return value if self._mine(value) else self.mint(run_pseudonym(value, self._key))  # type: ignore[return-value]
 
-    def other(self, value: str) -> str:
-        with self._lock:
-            if value in self._emitted:
-                return value
-        return self.keep(label_pseudonym("lbl-", value, self._key))
+    def agent(self, value: str) -> EmittedId:
+        if self._mine(value):
+            return value  # type: ignore[return-value]
+        return self.mint(cast("str", pseudonym_v2("agt", value, self._key)))
+
+    def other(self, value: str) -> EmittedId:
+        if self._mine(value):
+            return value  # type: ignore[return-value]
+        return self.mint(label_pseudonym("lbl-", value, self._key))
 
 
 EmittedIds = GeneratedIds | KeyedIds

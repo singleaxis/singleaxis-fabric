@@ -256,3 +256,51 @@ export class IdentityPolicy {
 export function resetIdentityWarningsForTesting(): void {
   warnedMissingKey = false;
 }
+
+const MINT = Symbol("fabric.emitted-id");
+const ISSUERS = new WeakMap<EmittedId, string>();
+
+/**
+ * An id a Fabric recorder emitted or minted (spec 049 §2.9; Sol P0-A round 6 #1), in
+ * parity with Python `fabric._sequence.EmittedId`. Provenance is carried by the value's
+ * type, never looked up in a bounded cache: the recorder that issued it (or one holding
+ * the same id key) passes it through unchanged for as long as the caller holds it, so
+ * joins never drift. A plain string is always caller input and is always mapped, whatever
+ * its shape. Only Fabric mints these; `String(id)`, `` `${id}` `` and JSON give the value.
+ */
+export class EmittedId {
+  readonly #value: string;
+
+  constructor(token: symbol, value: string, issuer: string) {
+    if (token !== MINT)
+      throw new Error("EmittedId values are minted by Fabric; pass caller ids as plain strings");
+    this.#value = value;
+    ISSUERS.set(this, issuer);
+  }
+
+  get value(): string {
+    return this.#value;
+  }
+
+  toString(): string {
+    return this.#value;
+  }
+
+  valueOf(): string {
+    return this.#value;
+  }
+
+  toJSON(): string {
+    return this.#value;
+  }
+}
+
+/** Mint an {@link EmittedId} for `issuer` (internal: not exported from the package). */
+export function mintEmittedId(value: string, issuer: string): EmittedId {
+  return new EmittedId(MINT, value, issuer);
+}
+
+/** Whether `value` is an {@link EmittedId} issued by `issuer` (internal). */
+export function issuedBy(value: unknown, issuer: string): value is EmittedId {
+  return value instanceof EmittedId && ISSUERS.get(value) === issuer;
+}

@@ -19,16 +19,18 @@ from jsonschema import Draft202012Validator
 
 from fabric._roles import ROLES
 from fabric.deployment_policy import DeploymentPolicy
+from fabric.redaction import RedactionService, Transformation
 from fabric.wire._policy import LOCAL_DEFAULT, CapturePolicy
 from fabric.wire._protect import (
     Protector,
     SideResult,
-    Transformation,
     find_parts,
     skeleton_of,
     sniff_media_type,
 )
 
+from . import transforms
+from .redaction_server import RedactionServer
 from .test_wire_helpers import content_validator, production_policy
 
 REPO = Path(__file__).resolve().parents[3]
@@ -56,11 +58,25 @@ def _policy(**modes: str) -> CapturePolicy:
     )
 
 
-T = "tests.transforms:"
-REDACT = Transformation("acme-redactor", "3", T + "redact_secret")
+REDACT = Transformation("acme-redactor", "3")
+_ENDPOINT: list[str] = []
 
 
-def _protector(policy: CapturePolicy, *, max_body: int = 1 << 20, **kwargs: Any) -> Protector:
+@pytest.fixture(autouse=True)
+def _service(redaction_server: RedactionServer) -> None:
+    """The customer redaction service of these tests (contracts/redaction/v1)."""
+    redaction_server.behaviours |= {"acme-redactor": transforms.redact_secret,
+                                    "acme-part-mask": transforms.masked_part}  # fmt: skip
+    _ENDPOINT[:] = [redaction_server.endpoint]
+
+
+def _protector(
+    policy: CapturePolicy, *, max_body: int = 1 << 20, timeout_s: float = 5.0,
+    max_in_flight: int = 2, **kwargs: Any,
+) -> Protector:  # fmt: skip
+    if kwargs.get("transformations"):
+        kwargs["redaction"] = RedactionService(_ENDPOINT[0], timeout_s=timeout_s,
+                                               max_in_flight=max_in_flight)  # fmt: skip
     return Protector(policy, max_body_bytes=max_body, part_min_bytes=64, **kwargs)
 
 
@@ -195,18 +211,17 @@ def test_original_plus_masked_links_a_review_copy() -> None:
 # --- failure withholds (§7.7 rule 4) --------------------------------------------------
 
 
-@pytest.mark.parametrize("transform", [
-    None,
-    Transformation("x", "1", T + "raises"),
-    Transformation("x", "1", T + "not_bytes"),
-    Transformation("x", "1", T + "huge"),
-    Transformation("x", "1", T + "hang", timeout_s=0.01),
-])  # fmt: skip
+# An error status, a redirect, an oversized answer, no answer, an unknown transformation.
+FAILING = [Transformation(name, "1") for name in ("raises", "redirects", "huge", "hang",
+                                                   "unknown-transformation")]  # fmt: skip
+
+
+@pytest.mark.parametrize("transform", [None, *FAILING])
 def test_a_failed_transformation_withholds_never_raw(transform: Transformation | None) -> None:
     data = b'{"q":"' + SECRET + b'"}'
-    transforms = {REQUEST: transform} if transform is not None else {}
+    mapping = {REQUEST: transform} if transform is not None else {}
     result = _side(_protector(_policy(model_exchange_request="redact"), max_body=4096,
-                              transformations=transforms), data)  # fmt: skip
+                              timeout_s=0.2, transformations=mapping), data)  # fmt: skip
     (obj,) = result.objects
     assert result.primary is None and result.reason == "protection_failed"
     assert obj.descriptor["status_reason"] == "protection_failed"
@@ -215,19 +230,15 @@ def test_a_failed_transformation_withholds_never_raw(transform: Transformation |
     _canary_free(result, data)
 
 
-@pytest.mark.parametrize("transform", [
-    None,
-    Transformation("x", "1", T + "raises"),
-    Transformation("x", "1", T + "not_bytes"),
-    Transformation("x", "1", T + "hang", timeout_s=0.01),
-])  # fmt: skip
+@pytest.mark.parametrize("transform", [None, *FAILING])
 def test_a_failed_review_copy_withholds_the_original_too(transform: Transformation | None) -> None:
     """Sol P0-A #1: ``original_plus_masked`` admits nothing until both objects exist; a
     failed masked copy withholds the original as well, with no digest and no length."""
     data = b'{"q":"' + SECRET + b'"}'
-    transforms = {REQUEST: transform} if transform is not None else {}
+    mapping = {REQUEST: transform} if transform is not None else {}
     result = _side(_protector(_policy(model_exchange_request="original_plus_masked"),
-                              max_body=4096, transformations=transforms), data)  # fmt: skip
+                              max_body=4096, timeout_s=0.2, transformations=mapping),
+                   data)  # fmt: skip
     original, review = result.objects
     assert result.primary is None and result.reason == "protection_failed"
     for obj in (original, review):
@@ -242,33 +253,29 @@ def test_a_failed_review_copy_withholds_the_original_too(transform: Transformati
     _canary_free(result, data)
 
 
-def test_a_hung_transformation_is_killed_at_its_timeout() -> None:
-    """Sol P0-A #6 / round 2 #2: the timeout bounds execution. A transformation that
-    never returns is killed at its timeout (out of process: the side is withheld and the
-    caller continues); a new child serves the next side."""
-    protector = _protector(_policy(model_exchange_request="redact"),
-                           transformations={REQUEST: Transformation(
-                               "hang", "1", T + "hang", timeout_s=0.05)})  # fmt: skip
+def test_a_service_that_never_answers_is_abandoned_at_its_timeout() -> None:
+    """049 §7.7 rule 4: the timeout bounds every call. A service that never answers is
+    abandoned at the timeout (the side is withheld, the worker continues)."""
+    protector = _protector(_policy(model_exchange_request="redact"), timeout_s=0.05,
+                           transformations={REQUEST: Transformation("hang", "1")})  # fmt: skip
     data = b'{"q":"' + SECRET + b'"}'
     try:
-        _side(protector, data)  # the first side also starts the child
         started = time.monotonic()
         results = [_side(protector, data) for _ in range(3)]
-        assert time.monotonic() - started < 3 * (0.05 + 1.0)  # timeout plus a child start
+        assert time.monotonic() - started < 3 * (0.05 + 0.5)
         for result in results:
             assert result.primary is None and result.reason == "protection_failed"
             _canary_free(result, data)
-        assert protector.stats()["transform_timeouts"] == 4
+        assert protector.stats()["redaction_timeouts"] == 3
     finally:
         assert protector.close()
 
 
-def test_a_shared_transformation_reserves_capacity_across_threads() -> None:
-    """Sol P0-A round 2 #5: concurrent sides of one transformation reserve capacity
-    before they start; beyond two busy calls a side is withheld at once (counted)."""
-    protector = _protector(_policy(model_exchange_request="redact"),
-                           transformations={REQUEST: Transformation(
-                               "hang", "1", T + "hang", timeout_s=1.0)})  # fmt: skip
+def test_the_in_flight_bound_is_shared_across_threads() -> None:
+    """Sol P0-A round 2 #5: concurrent sides share one bound of in-flight service calls;
+    beyond two a side is withheld at once (counted), never queued."""
+    protector = _protector(_policy(model_exchange_request="redact"), timeout_s=1.0,
+                           transformations={REQUEST: Transformation("hang", "1")})  # fmt: skip
     data, barrier = b'{"q":"' + SECRET + b'"}', threading.Barrier(6)
     results: list[SideResult] = []
 
@@ -284,7 +291,7 @@ def test_a_shared_transformation_reserves_capacity_across_threads() -> None:
             thread.join(30.0)
         assert all(r.reason == "protection_failed" for r in results) and len(results) == 6
         stats = protector.stats()
-        assert (stats["transform_timeouts"], stats["transform_saturated"]) == (2, 4)
+        assert (stats["redaction_timeouts"], stats["redaction_saturated"]) == (2, 4)
     finally:
         assert protector.close()
 
@@ -306,13 +313,23 @@ def test_a_cut_side_is_never_transformed() -> None:
 
 def test_transformation_settings_are_validated() -> None:
     with pytest.raises(ValueError, match="opaque"):
-        Transformation("bad id", "1", T + "redact_secret")
-    with pytest.raises(ValueError, match="in-process transformation callables"):
-        Transformation("x", "1", lambda data: data)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="module reference"):
-        Transformation("x", "1", "not a reference")
-    with pytest.raises(ValueError, match="timeout"):
-        Transformation("x", "1", T + "redact_secret", timeout_s=0)
+        Transformation("bad id", "1")
+    docs = "redaction service.*docs/wire-capture-deployment.md#redaction-service"
+    with pytest.raises(ValueError, match=docs):  # a module reference: removed
+        Transformation("x", "1", "tests.transforms:redact_secret")
+    with pytest.raises(ValueError, match=docs):  # a callable: never run by Fabric
+        Transformation(lambda data: data, "1")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="timeout_s"):  # RedactionService.timeout_s now
+        Transformation("x", "1", timeout_s=1.0)  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match=docs):
+        _protector(_policy(model_exchange_request="redact"),
+                   transformations={REQUEST: "tests.transforms:redact_secret"})  # fmt: skip
+    with pytest.raises(TypeError, match="transform_env_allowlist"):  # deleted setting
+        Protector(_policy(model_exchange_request="redact"), max_body_bytes=64,
+                  transform_env_allowlist=("HOME",))  # type: ignore[call-arg]  # fmt: skip
+    with pytest.raises(ValueError, match="FABRIC_REDACTION_ENDPOINT"):
+        Protector(_policy(model_exchange_request="redact"), max_body_bytes=64,
+                  transformations={REQUEST: REDACT})  # fmt: skip
 
 
 # --- truncation keeps today's prefix ----------------------------------------------------
@@ -427,7 +444,7 @@ def test_original_plus_masked_parts_get_a_masked_review_copy() -> None:
     data = _big_request([PNG])
     policy = _policy(model_exchange_request="retain_original",
                      model_exchange_part="original_plus_masked")  # fmt: skip
-    mask = Transformation("acme-part-mask", "2", T + "masked_part")
+    mask = Transformation("acme-part-mask", "2")
     result = _side(_protector(policy, max_body=1100, transformations={PART: mask}), data)
     skeleton, part, review = result.objects
     assert result.primary is skeleton and result.reason is None
@@ -448,11 +465,7 @@ def test_original_plus_masked_parts_get_a_masked_review_copy() -> None:
     _node_rules(result)
 
 
-@pytest.mark.parametrize("transform", [
-    None,
-    Transformation("x", "1", T + "raises"),
-    Transformation("x", "1", T + "not_bytes"),
-])  # fmt: skip
+@pytest.mark.parametrize("transform", [None, *FAILING])
 def test_a_failed_part_review_copy_withholds_the_part_too(
     transform: Transformation | None,
 ) -> None:
@@ -463,8 +476,9 @@ def test_a_failed_part_review_copy_withholds_the_part_too(
     data = _big_request([PNG])
     policy = _policy(model_exchange_request="retain_original",
                      model_exchange_part="original_plus_masked")  # fmt: skip
-    transforms = {PART: transform} if transform is not None else {}
-    result = _side(_protector(policy, max_body=1100, transformations=transforms), data)
+    mapping = {PART: transform} if transform is not None else {}
+    result = _side(_protector(policy, max_body=1100, timeout_s=0.2, transformations=mapping),
+                   data)  # fmt: skip
     skeleton, part, review = result.objects
     assert result.primary is skeleton and result.reason == "protection_failed"
     for obj in (part, review):

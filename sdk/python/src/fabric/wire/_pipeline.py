@@ -68,7 +68,6 @@ _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
 _BATCH_ITEMS, _BATCH_BYTES = 64, 8 * 1024 * 1024
 _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are left to reconstruct
 _STOP = object()
-_REAP_INTERVAL_S = 0.25  # the worker reaps exited transformation children this often
 _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
 _IDS = RandomIdGenerator()
 _LOG = logging.getLogger("fabric.wire")
@@ -98,7 +97,7 @@ def protector_for(config: WireConfig, gate: ContentGate | None) -> Protector | N
         policy, max_body_bytes=config.max_body_bytes,
         max_retain_bytes=config.max_retain_bytes, part_min_bytes=config.part_min_bytes,
         transformations=config.transformations, tokenization_key=config.tokenization_key,
-        transform_env_allowlist=config.transform_env_allowlist,
+        redaction=config.redaction,
     )  # fmt: skip
 
 
@@ -304,7 +303,7 @@ class CapturePipeline:
         self._queue.put(_STOP)
         if drained and self._worker is not threading.current_thread():
             self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
-        if self._protector is not None:  # its transformation child processes (Sol #6)
+        if self._protector is not None:  # its redaction service connections
             self._protector.close(max(0.0, deadline - time.monotonic()))
         return drained and not lost and not current
 
@@ -325,18 +324,8 @@ class CapturePipeline:
             return self._current.pop(id(job), None) is not None
 
     def _run(self) -> None:  # the worker is the only writer of its own counters
-        next_reap = 0.0
         while True:
-            # Reap exited transformation children on a time cadence, idle or not: steady
-            # traffic must not postpone it (Sol P0-A round 3 #3, round 4 #2).
-            if self._protector is not None and (now := time.monotonic()) >= next_reap:
-                next_reap = now + _REAP_INTERVAL_S
-                with contextlib.suppress(Exception):
-                    self._protector.reap()
-            try:
-                job = self._queue.get(timeout=_REAP_INTERVAL_S)
-            except queue.Empty:
-                continue
+            job = self._queue.get()
             if job is _STOP:
                 return
             jobs, stop = self._batch(job)

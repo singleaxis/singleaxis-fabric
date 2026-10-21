@@ -193,9 +193,10 @@ def _inject_blocking(request_sleep_s: float, chunk_sleep_s: float) -> None:
 
 def _protect_rig(tmp: Path) -> Rig:
     """049 §7.7: a local store with every protecting mode in play on the worker: a redact
-    transformation that sleeps and then raises (``protection_failed``), and tokenize."""
+    call to the redaction service (``FABRIC_REDACTION_ENDPOINT``) that sleeps and then
+    fails (``protection_failed``), and tokenize."""
     from fabric.deployment_policy import DeploymentPolicy  # noqa: PLC0415
-    from fabric.wire import Transformation  # noqa: PLC0415
+    from fabric.wire import RedactionService, Transformation  # noqa: PLC0415
 
     from .test_wire_helpers import production_policy  # noqa: PLC0415
 
@@ -203,9 +204,8 @@ def _protect_rig(tmp: Path) -> Rig:
     return make_rig(
         tmp, queue_max_items=65536, tenant_id="tenant-a",
         capture_policy=DeploymentPolicy(production_policy(privacy=privacy, profile="local")),
-        transformations={"model.exchange.request": Transformation(
-            "t", "1", "tests.transforms:slow_failure")},
-        tokenization_key=b"k" * 32,
+        transformations={"model.exchange.request": Transformation("slow_failure", "1")},
+        redaction=RedactionService.from_env(os.environ), tokenization_key=b"k" * 32,
     )  # fmt: skip
 
 
@@ -306,8 +306,12 @@ def test_tee_overhead_is_within_budget(measured: dict[str, Any], scenario: str) 
 
 
 @pytest.fixture(scope="module")
-def measured_protect() -> dict[str, Any]:
-    return _measured(protect=True)
+def measured_protect() -> Iterator[dict[str, Any]]:
+    from .redaction_server import RedactionServer  # noqa: PLC0415
+
+    with RedactionServer() as server, pytest.MonkeyPatch.context() as patch:
+        patch.setenv("FABRIC_REDACTION_ENDPOINT", server.endpoint)
+        yield _measured(protect=True)
 
 
 @pytest.mark.parametrize("scenario", ["non_match", "matched", "chunk"])
@@ -406,7 +410,9 @@ def test_streamed_chunks_keep_identity_and_order(rig: Rig) -> None:
     assert all(got is sent for got, sent in zip(seen, CHUNKS, strict=True))
 
 
-def test_failing_and_slow_protection_never_reaches_the_caller(tmp_path: Path) -> None:
+def test_failing_and_slow_protection_never_reaches_the_caller(
+    tmp_path: Path, redaction: object
+) -> None:
     """049 §7.1: results and exceptions are unchanged when the PROTECT stage fails."""
     rig = _protect_rig(tmp_path)
     error = httpx.ConnectError("refused")

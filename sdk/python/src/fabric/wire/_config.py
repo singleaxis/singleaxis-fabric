@@ -15,9 +15,9 @@ from urllib.parse import unquote, urlsplit
 
 from .._model_names import parse_model_allowlist
 from .._sequence import OPAQUE_ID_RE, Labels, check_id_key, id_key_from_env, labels_from_env
-from .._transform_runner import check_env_allowlist
 from ..content_store.s3 import S3ContentStore  # boto3 stays lazy
 from ..deployment_policy import DeploymentPolicy
+from ..redaction import RedactionService, Transformation
 from ..tracing import check_content_endpoint_url
 from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import EndpointMatcher
@@ -25,7 +25,6 @@ from ._policy import policy_from_env
 from ._protect import (
     DEFAULT_MAX_RETAIN_BYTES,
     DEFAULT_PART_MIN_BYTES,
-    Transformation,
     check_transformations,
 )
 
@@ -122,13 +121,14 @@ class WireConfig:
     # 049 §2.7/§7.3: the capture policy (FABRIC_CAPTURE_POLICY, deployment-policy/v1);
     # None = from the environment at install, else fabric.local-default (local profile).
     capture_policy: DeploymentPolicy | None = None
-    # 049 §7.7: customer transformations for redact / masked_only / review copies, by role.
+    # 049 §7.7: customer transformations for redact / masked_only / review copies, by role,
+    # performed by the customer-run redaction service (contracts/redaction/v1).
     transformations: Mapping[str, Transformation] = field(
         default_factory=lambda: MappingProxyType({}), repr=False
     )
-    # Environment variables a transformation child may read, beyond PATH and locale
-    # variables (never a FABRIC_*KEY* one; Sol P0-A round 3).
-    transform_env_allowlist: tuple[str, ...] = ()
+    # The redaction service (FABRIC_REDACTION_ENDPOINT[, _TOKEN_FILE]); None = from the
+    # environment at install. Needed when ``transformations`` is set.
+    redaction: RedactionService | None = None
     # Tenant-scoped tokenization key (FABRIC_TOKENIZATION_KEY[_FILE]); a secret.
     tokenization_key: bytes | None = field(default=None, repr=False)
     # AES-256-GCM spool envelope key (049 §7.8; FABRIC_WIRE_SPOOL_KEY[_FILE]); a secret.
@@ -171,9 +171,8 @@ class WireConfig:
         ):  # fmt: skip
             raise ValueError("the capture policy belongs to another tenant")
         check_transformations(self.transformations)
-        object.__setattr__(
-            self, "transform_env_allowlist", check_env_allowlist(self.transform_env_allowlist)
-        )
+        if self.redaction is not None and not isinstance(self.redaction, RedactionService):
+            raise ValueError("redaction must be a RedactionService")
         key = self.tokenization_key
         if key is not None and (not isinstance(key, bytes) or len(key) < TOKEN_KEY_MIN_BYTES):
             raise ValueError(f"tokenization_key must be at least {TOKEN_KEY_MIN_BYTES} bytes")
@@ -338,6 +337,7 @@ def config_from_env(
                                          minimum=TOKEN_KEY_MIN_BYTES),
         "spool_key": key_from_env(environ, "FABRIC_WIRE_SPOOL_KEY", exact=SPOOL_KEY_BYTES),
         "spool_migrate_plaintext": migrate_plaintext_from_env(environ),
+        "redaction": RedactionService.from_env(environ),
     }  # fmt: skip
     kwargs["patch_aiohttp"] = aiohttp_from_env(environ)
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
