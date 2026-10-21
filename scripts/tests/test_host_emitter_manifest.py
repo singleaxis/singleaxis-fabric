@@ -111,3 +111,41 @@ def test_broad_node_schedule_and_public_credential_mode_fail() -> None:
     failures = check_manifest(manifest, IMAGE)
     assert any("all-node toleration" in item for item in failures)
     assert any("mode 0400" in item for item in failures)
+
+
+def test_emit_endpoint_names_the_chart_node_service() -> None:
+    """EMIT_ENDPOINT must address the Service the chart actually renders for
+    the documented install (release ``fabric`` in ``fabric-system``)."""
+    import shutil
+    import subprocess
+
+    if shutil.which("helm") is None:
+        pytest.skip("helm not installed")
+    template = yaml.safe_load(
+        (ROOT / "deploy/kubernetes/host-emitter-daemonset.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    env = {
+        item["name"]: item.get("value")
+        for item in template["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    host, port = env["EMIT_ENDPOINT"].rsplit(":", 1)
+    name, namespace, svc, *domain = host.split(".")
+    assert (svc, domain) == ("svc", ["cluster", "local"])
+    assert namespace == template["metadata"]["namespace"]
+    rendered = subprocess.run(
+        ["helm", "template", "fabric", str(ROOT / "charts/fabric"), "-n", namespace],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    services = [
+        doc
+        for doc in yaml.safe_load_all(rendered)
+        if doc and doc["kind"] == "Service"
+    ]
+    node = [doc for doc in services if doc["metadata"]["name"] == name]
+    assert node, f"chart renders no Service {name!r}: {[s['metadata']['name'] for s in services]}"
+    grpc = [p for p in node[0]["spec"]["ports"] if p["name"] == "otlp-grpc"]
+    assert grpc and grpc[0]["port"] == int(port)
