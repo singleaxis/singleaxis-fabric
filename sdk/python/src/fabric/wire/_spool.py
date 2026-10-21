@@ -57,6 +57,19 @@ ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record
 # number is bounded too (oldest first), as is their age.
 RECEIPT_OVERHEAD, DEFAULT_MAX_RECEIPTS, RECEIPT_TTL_S = 128, 4096, 3600.0
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+
+
+def _iov_max() -> int:
+    """The most vectors one ``writev`` accepts (``EINVAL`` above it); 1024 if unknown."""
+    try:
+        value = os.sysconf("SC_IOV_MAX")
+    except (AttributeError, OSError, ValueError):
+        return 1024
+    return value if value > 0 else 1024
+
+
+_IOV_MAX = _iov_max()
+
 # The spool's directory barrier (spec 048 §2): present once a walk fsync'd every directory
 # from the spool's parent up to the durable boundary (see Spool.establish_barrier).
 BARRIER_MARKER = ".barrier"
@@ -778,8 +791,8 @@ class Spool:
                 fd = fds.pop(index)
                 try:
                     views = [memoryview(piece) for piece in prepared[index][1]]
-                    while views:
-                        written = os.writev(fd, views)
+                    while views:  # at most IOV_MAX vectors per call (a batch has more)
+                        written = os.writev(fd, views[:_IOV_MAX])
                         while views and written >= len(views[0]):
                             written -= len(views.pop(0))
                         if views:
