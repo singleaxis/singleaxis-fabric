@@ -319,6 +319,66 @@ service name) is already opaque.
   never need the key: without `--run`, `fabric.reconstruct` reports every
   run by its pseudonym.
 
+### Redaction service
+
+Fabric ships no PII detector and never runs your code: no imported module,
+callable, child process or worker thread. When the capture policy uses
+`redact` or `masked_only`, or the review copy of `original_plus_masked`,
+the masking is done by a **redaction service you run** beside the
+application, and Fabric calls it. `tokenize`, `omit`, `metadata_only` and
+`retain_original` need no service. The protocol is
+[`contracts/redaction/v1`](../contracts/redaction/v1/README.md): one
+`POST /v1/transform` per object, the raw bytes in, the masked bytes out.
+[`examples/redaction-service/`](../examples/redaction-service/README.md) is a
+small reference service with Compose and Kubernetes sidecar snippets. It is an
+example, not part of the recorder release.
+
+```bash
+export FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock   # or http://127.0.0.1:8181
+export FABRIC_REDACTION_TOKEN_FILE=/run/secrets/fabric-redaction-token  # optional, mode 0600
+```
+
+Only a Unix socket path or a loopback address (`127.0.0.1`, `[::1]`) with an
+explicit port is accepted; anything else fails at `install()` or recorder
+construction. Fabric never uses a proxy or follows a redirect for these calls.
+Name the transformation per role in code; Fabric records its id and version on
+every stored object and sends them with each call:
+
+```python
+import dataclasses
+import os
+
+from fabric import wire
+from fabric.wire import Transformation
+from fabric.wire._config import config_from_env
+
+config, _ = config_from_env(os.environ)   # reads FABRIC_REDACTION_ENDPOINT
+mask = Transformation("example-mask", "1")
+wire.install(dataclasses.replace(config, transformations={
+    "model.exchange.request": mask, "model.exchange.response": mask,
+}))
+```
+
+The explicit line takes the same identity: `ContentProtector(policy,
+transformations={role: Transformation(...)}, redaction=RedactionService(...))`
+or `BytePrivacyPolicy(mode="masked_only", transformation_id=...,
+transformation_version=...)` in Python, and `new ContentProtector(policy,
+{ transformations: { role: { id, version } }, redaction: { endpoint } })` in
+TypeScript. Module references and functions, used by earlier releases, raise
+at construction with a pointer here.
+
+Calls run only on the recorder's worker, never on the application's thread or
+event loop. Each call is bounded: a 5 s timeout (`timeout_s` /
+`timeoutMs`, at most 300 s) and two calls in flight per recorder
+(`max_in_flight` / `maxInFlight`). Any failure (a status other than 200, a
+redirect, a timeout, an answer above the object cap, a connection error, or
+the in-flight bound reached) withholds the object as
+`not_captured(protection_failed)` and sets
+`fabric.wire.store_reason=protection_failed`. Fabric never stores raw bytes
+instead. The wire handle's `stats()` counts `redaction_timeouts`,
+`redaction_saturated` and `redaction_failures`. A slow or absent service loses
+content; it never delays or fails the monitored call.
+
 ## 2. Run a Fabric Node
 
 The Node has two separate paths. Telemetry: `otlp` (4317 gRPC, 4318 HTTP)

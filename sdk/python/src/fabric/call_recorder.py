@@ -247,13 +247,13 @@ class CallRecorder:
         call_id = uuid.uuid4().hex
         if (ids := self._ids) is not None:  # 049 §2.9: emitted, never the caller's clear id
             # Fabric's own ids map to themselves (a parent call id of this recorder too).
-            call_id = ids.keep(call_id)
+            call_id = ids.mint(call_id)
             if parent_call_id is not None:
                 parent_call_id = ids.other(_identifier(parent_call_id))
             if agent_id is not None:
                 agent_id = ids.agent(_identifier(agent_id))
             operation_id, attempt_id = (
-                ids.other(_identifier(value)) if value is not None else ids.keep(uuid.uuid4().hex)
+                ids.other(_identifier(value)) if value is not None else ids.mint(uuid.uuid4().hex)
                 for value in (operation_id, attempt_id)
             )
         fields = {

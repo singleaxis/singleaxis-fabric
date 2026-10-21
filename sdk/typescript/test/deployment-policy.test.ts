@@ -4,7 +4,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   ByteEvidenceRecorder,
   ContentProtector,
@@ -15,10 +15,28 @@ import {
 } from "../src/index.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../../..");
-const FIXTURES = path.join(import.meta.dirname, "fixtures/redactors");
-/** A customer redactor module (run in a worker thread): replaces the object. */
-const MASK = { module: path.join(FIXTURES, "mask.mjs") };
-const redactorModule = (name: string) => ({ module: path.join(FIXTURES, name) });
+import { mask, startService, status, type TestService } from "./redaction-service.js";
+
+/** Customer redaction services (contracts/redaction/v1): masking, and always failing. */
+let MASK: TestService;
+let FAIL: TestService;
+let REDIRECT: TestService;
+beforeAll(async () => {
+  [MASK, FAIL, REDIRECT] = await Promise.all([
+    startService(mask),
+    startService(status(500)),
+    startService(status(307, { Location: "http://127.0.0.1:1/" })),
+  ]);
+});
+afterAll(async () => {
+  for (const service of [MASK, FAIL, REDIRECT]) await service?.close();
+});
+const TRANSFORMATION = { id: "test-mask", version: "1" };
+/** Options routing the masked role through `service` (replaces the object: `[redacted]`). */
+const service = (target: TestService) => ({
+  transformations: { "terminal.stdout": TRANSFORMATION },
+  redaction: { endpoint: target.endpoint },
+});
 const SECRET = Buffer.from("sensitive-value");
 const DIGEST = "sha256:777dda0c14d100c2c6728b2e3858f53c55cd62fdf3c1c3ced5decee0a5f36ea6";
 const TOKEN = "fabric.token.v1:a603512146debdb7ec03d124e146fbd4ae088f64c32642b950877829a632a31d";
@@ -136,7 +154,7 @@ describe("ContentProtector", () => {
     );
     expect(JSON.stringify(original)).not.toContain("sensitive-value");
     const redacted = await new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": MASK },
+      ...service(MASK),
     }).protectAsync("terminal.stdout", SECRET);
     expect(redacted.status).toBe("redacted");
     expect(redacted.originalDigest).toBeNull();
@@ -149,26 +167,26 @@ describe("ContentProtector", () => {
   it("stores only the masked copy for masked_only and withholds original_plus_masked", async () => {
     // Spec 049 §7.5/§7.7, parity with Python test_deployment_policy.py.
     const protector = new ContentProtector(policyFor("masked_only"), {
-      redactors: { "terminal.stdout": MASK },
+      ...service(MASK),
     });
     const masked = await protector.protectAsync("terminal.stdout", SECRET);
     expect(masked.status).toBe("redacted");
     expect(masked.mode).toBe("masked_only");
     expect(Buffer.from(masked.protectedBytes!).toString()).toBe("[redacted]");
-    // The customer redactor never runs on the caller's thread: protect() fails closed.
+    // The service is never called on the caller's path: protect() fails closed.
     const sync = protector.protect("terminal.stdout", SECRET);
     expect(sync.status).toBe("unsupported");
     expect(sync.metadata.reason).toBe("redaction_requires_protect_async");
     expect(sync.protectedBytes).toBeNull();
     expect(masked.originalDigest).toBeNull();
     expect(masked.metadata.source_byte_length).toBeUndefined();
-    expect(() => new ContentProtector(policyFor("masked_only"))).toThrow("redactor");
+    expect(() => new ContentProtector(policyFor("masked_only"))).toThrow("transformation");
     expect(
       () =>
         new ContentProtector(policyFor("original_plus_masked"), {
-          redactors: { "terminal.stdout": MASK },
+          ...service(MASK),
         }),
-    ).toThrow("redactors must match");
+    ).toThrow("transformations must match");
     const both = new ContentProtector(policyFor("original_plus_masked")).protect(
       "terminal.stdout",
       SECRET,
@@ -178,7 +196,28 @@ describe("ContentProtector", () => {
     expect(both.originalDigest).toBeNull();
   });
   it("rejects absent transforms and keys before capture", () => {
-    expect(() => new ContentProtector(policyFor("redact"))).toThrow("redactor");
+    expect(() => new ContentProtector(policyFor("redact"))).toThrow("transformation");
+    expect(
+      () =>
+        new ContentProtector(policyFor("redact"), {
+          transformations: { "terminal.stdout": TRANSFORMATION },
+        }),
+    ).toThrow("FABRIC_REDACTION_ENDPOINT");
+    for (const legacy of [
+      { redactors: { "terminal.stdout": { module: "/abs/mask.mjs" } } },
+      { transformTimeoutMs: 5 },
+      { transformations: { "terminal.stdout": { module: "/abs/mask.mjs" } } },
+      { transformations: { "terminal.stdout": () => new Uint8Array() } },
+    ])
+      expect(() => new ContentProtector(policyFor("redact"), legacy as never)).toThrow(
+        "docs/wire-capture-deployment.md#redaction-service",
+      );
+    expect(
+      () =>
+        new ContentProtector(policyFor("omit"), {
+          redaction: { endpoint: "http://example.com:80" },
+        }),
+    ).toThrow("FABRIC_REDACTION_ENDPOINT must be");
     expect(() => new ContentProtector(policyFor("tokenize"))).toThrow("caller-supplied key");
     expect(
       () => new ContentProtector(policyFor("tokenize"), { tokenizationKey: Buffer.from("weak") }),
@@ -186,7 +225,7 @@ describe("ContentProtector", () => {
     expect(
       () =>
         new ContentProtector(policyFor("omit"), {
-          redactors: { "terminal.stdout": MASK },
+          ...service(MASK),
         }),
     ).toThrow("explicitly");
   });
@@ -222,7 +261,7 @@ describe("ContentProtector", () => {
   });
   it("makes failed, unsupported and oversized transformations explicit without error text", async () => {
     const protector = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": redactorModule("throws.mjs") },
+      ...service(FAIL),
     });
     const result = await protector.protectAsync("terminal.stdout", SECRET);
     expect(result.status).toBe("lost");
@@ -230,16 +269,20 @@ describe("ContentProtector", () => {
     expect(JSON.stringify(result)).not.toContain("sensitive-value");
     expect(result.protectedBytes).toBeNull();
     const bad = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": redactorModule("not-bytes.mjs") },
+      ...service(REDIRECT),
     });
-    expect((await bad.protectAsync("terminal.stdout", SECRET)).status).toBe("unsupported");
+    // A redirect is a failure: never followed (contracts/redaction/v1).
+    expect((await bad.protectAsync("terminal.stdout", SECRET)).metadata.reason).toBe(
+      "protection_failed",
+    );
     const oversized = new ContentProtector(policyFor("redact"), {
-      redactors: { "terminal.stdout": MASK },
+      ...service(MASK),
       payloadMaxBytes: 2,
     });
+    // A response above the cap is a failed call (contracts/redaction/v1): withheld.
     expect(
       (await oversized.protectAsync("terminal.stdout", Buffer.from("x"))).metadata.reason,
-    ).toBe("protected_payload_too_large");
+    ).toBe("protection_failed");
     expect((await oversized.protectAsync("terminal.stdout", SECRET)).metadata.reason).toBe(
       "payload_too_large",
     );
@@ -294,7 +337,7 @@ describe("Deployment-protected byte recorder", () => {
     const derivative = store(policy.tenant_id);
     const masking = mode === "redact" || mode === "masked_only";
     const contentProtector = new ContentProtector(policy, {
-      redactors: masking ? { "terminal.stdout": MASK } : undefined,
+      ...(masking ? service(MASK) : {}),
       tokenizationKey: Buffer.alloc(32, "k"),
     });
     const recorder = new ByteEvidenceRecorder({
@@ -372,7 +415,7 @@ describe("Deployment-protected byte recorder", () => {
     const policy = policyFor("redact");
     const original = store(policy.tenant_id);
     const contentProtector = new ContentProtector(policy, {
-      redactors: { "terminal.stdout": MASK },
+      ...service(MASK),
     });
     expect(
       () =>
@@ -411,7 +454,7 @@ describe("Deployment-protected byte recorder", () => {
       policy.tenant_id,
     );
     const contentProtector = new ContentProtector(policy, {
-      redactors: { "terminal.stdout": MASK },
+      ...service(MASK),
     });
     expect(
       () =>
@@ -425,7 +468,7 @@ describe("Deployment-protected byte recorder", () => {
   });
 });
 
-it("bounds token output and keeps failing redactors from ever storing input", async () => {
+it("bounds token output and keeps a failing redaction service from ever storing input", async () => {
   const token = new ContentProtector(policyFor("tokenize"), {
     tokenizationKey: Buffer.alloc(32, "k"),
     payloadMaxBytes: 2,
@@ -437,7 +480,7 @@ it("bounds token output and keeps failing redactors from ever storing input", as
   const original = store(policy.tenant_id);
   const derivative = store(policy.tenant_id);
   const contentProtector = new ContentProtector(policy, {
-    redactors: { "terminal.stdout": redactorModule("throws.mjs") },
+    ...service(FAIL),
   });
   const recorder = new ByteEvidenceRecorder({
     store: original,
@@ -452,7 +495,7 @@ it("bounds token output and keeps failing redactors from ever storing input", as
     sourceEpoch: 0,
     sourceSequence: 1,
   });
-  // The redactor runs in a Worker behind the handoff (Sol P0-A #5); its failure withholds.
+  // The service is called behind the handoff (Sol P0-A #5); its failure withholds.
   expect(initial.status).toBe("pending");
   await recorder.flush();
   const item = recorder.get(initial.object_id)!;
@@ -474,7 +517,7 @@ it("rechecks the recorder payload cap after deferred redaction", async () => {
   const original = store(policy.tenant_id);
   const derivative = store(policy.tenant_id);
   const contentProtector = new ContentProtector(policy, {
-    redactors: { "terminal.stdout": MASK }, // "[redacted]": 10 bytes
+    ...service(MASK), // "[redacted]": 10 bytes
     payloadMaxBytes: 1024,
   });
   const recorder = new ByteEvidenceRecorder({

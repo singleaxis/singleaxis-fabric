@@ -45,10 +45,11 @@ def _schemas(
 
 def test_all_pinned_data_plane_contracts_validate() -> None:
     validated = validate_data_plane_contracts(REPO_ROOT)
-    assert len(validated) == 14
+    assert len(validated) == 18
     assert "activity/valid/shadow-execution.json" in validated
     assert "privacy/valid/metadata-only-assertion.json" in validated
     assert "delivery/valid/audit-delivery.json" in validated
+    assert "redaction/valid/unknown-transformation.json" in validated
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import base64
 import json
@@ -403,11 +404,9 @@ def test_node_emitted_protected_descriptors_conform(tmp_path: Path) -> None:
     entry = REPO_ROOT / "sdk/typescript/dist/index.js"
     if not node or not entry.is_file():
         pytest.skip("Build the Node SDK to verify emitted protected descriptors")
-    # A customer redactor is a module run in a worker thread, never a function.
-    redactor = tmp_path / "redactor.mjs"
-    redactor.write_text(
-        "export function redact() { return new TextEncoder().encode('[redacted]'); }\n"
-    )
+    # Customer redaction is a customer-run service (contracts/redaction/v1).
+    from _redaction_service import reference_service
+
     script = r"""
 import fs from 'node:fs';
 import path from 'node:path';
@@ -421,7 +420,9 @@ for (const mode of ['retain_original', 'omit', 'metadata_only', 'redact', 'token
   const original = new LocalFilesystemContentStore(path.join(root, mode, 'original'), policy.tenant_id);
   const review = new LocalFilesystemContentStore(path.join(root, mode, 'review'), policy.tenant_id);
   const protector = new ContentProtector(policy, {
-    redactors: mode === 'redact' ? {'terminal.stdout': {module: process.argv[4]}} : undefined,
+    transformations: mode === 'redact'
+      ? {'terminal.stdout': {id: 'contract-mask', version: '1'}} : undefined,
+    redaction: mode === 'redact' ? {endpoint: process.argv[4]} : undefined,
     tokenizationKey: Buffer.alloc(32, 'k'),
   });
   const recorder = new ByteEvidenceRecorder({store: original, reviewStore: review,
@@ -438,22 +439,23 @@ for (const mode of ['retain_original', 'omit', 'metadata_only', 'redact', 'token
 }
 process.stdout.write(JSON.stringify(records));
 """
-    result = subprocess.run(
-        [
-            node,
-            "--input-type=module",
-            "-e",
-            script,
-            entry.as_uri(),
-            str(REPO_ROOT / "examples/enterprise/policy.local.json"),
-            str(tmp_path),
-            str(redactor),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    with reference_service({"contract-mask": [(".+", "[redacted]")]}) as endpoint:
+        result = subprocess.run(
+            [
+                node,
+                "--input-type=module",
+                "-e",
+                script,
+                entry.as_uri(),
+                str(REPO_ROOT / "examples/enterprise/policy.local.json"),
+                str(tmp_path),
+                endpoint,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     descriptors = json.loads(result.stdout)
     assert len(descriptors) == 20
     assert {item["privacy_mode"] for item in descriptors} == {
@@ -507,13 +509,43 @@ def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) ->
         )
         for plane in ("original", "derivative")
     ]
-    protector = ContentProtector(
-        policy,
-        redactors={"terminal.stdout": "_redactors:redacted"}
+    from fabric.redaction import RedactionService, Transformation
+
+    from _redaction_service import reference_service
+
+    service = (
+        reference_service({"contract-mask": [("sensitive", "[masked]")]})
         if mode == "redact"
-        else None,
-        tokenization_key=b"k" * 32,
+        else contextlib.nullcontext(None)
     )
+    with service as endpoint:
+        _governed_descriptors_conform(
+            ByteEvidenceRecorder,
+            ByteEvidenceConfig,
+            stores,
+            policy,
+            mode,
+            ContentProtector(
+                policy,
+                transformations={
+                    "terminal.stdout": Transformation("contract-mask", "1")
+                }
+                if mode == "redact"
+                else None,
+                redaction=RedactionService(endpoint) if endpoint else None,
+                tokenization_key=b"k" * 32,
+            ),
+        )
+
+
+def _governed_descriptors_conform(
+    ByteEvidenceRecorder: Any,  # noqa: N803 - the SDK classes, imported late
+    ByteEvidenceConfig: Any,  # noqa: N803
+    stores: list[Any],
+    policy: Any,
+    mode: str,
+    protector: Any,
+) -> None:
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=stores[0],

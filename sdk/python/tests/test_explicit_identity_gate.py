@@ -411,12 +411,18 @@ def test_prefixed_caller_run_and_source_ids_are_pseudonymised(
             run_pseudonym(PREFIXED_RUN, other_key),
             source_label(PREFIXED_SOURCE, other_key),
         )
-        # Values this recorder emitted pass through unchanged (layered callers).
-        again = capture(first, PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)
+        # Values this recorder emitted pass through unchanged (layered callers): they are
+        # typed (Sol P0-A round 6 #1), never recognised by shape or by a lookup.
+        run_label = first.emitted_run_id(PREFIXED_RUN)
+        source_label_ = first.emitted_source_id(PREFIXED_SOURCE)
+        again = capture(first, run_label, source_label_)
         assert (again["run_id"], again["source_id"]) == (  # type: ignore[index]
             PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)  # fmt: skip
-        # ... but not in another recorder, which never emitted them.
-        foreign = capture(rotated, PREFIXED_RUN_LABEL, PREFIXED_SOURCE_LABEL)
+        # The same text as a plain string is caller input: mapped again.
+        plain = capture(first, str(run_label), str(source_label_))
+        assert plain["run_id"] == run_pseudonym(PREFIXED_RUN_LABEL, KEY)  # type: ignore[index]
+        # ... and another key's recorder never emitted them.
+        foreign = capture(rotated, run_label, source_label_)
         assert foreign["run_id"] == run_pseudonym(PREFIXED_RUN_LABEL, other_key)  # type: ignore[index]
 
         calls = CallRecorder(first, run_id=PREFIXED_RUN, agent_id="agent-private-bob",

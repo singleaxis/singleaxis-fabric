@@ -12,9 +12,13 @@ import { sha256BytesPrefixed as digest } from "./hash.js";
 
 import type { GovernedStore } from "./content-store.js";
 import {
+  EmittedId,
   checkIdentityMode,
   identityModeFromEnv,
+  issuedBy,
+  keyId,
   labelPseudonym,
+  mintEmittedId,
   type IdentityMode,
 } from "./identity.js";
 import {
@@ -123,32 +127,43 @@ export function contentGate(
 let processSource: string | undefined;
 const MAX_GENERATED_IDS = 65536;
 
+/** A caller id, or an id a Fabric recorder emitted (passed through by its issuer). */
+export type CallerId = string | EmittedId;
+
 /**
  * Emitted ids when no value derived from a caller-supplied id may leave the process
  * (spec 049 §2.9 rule 5: the production profile without the id key), in parity with
  * Python `fabric._sequence.GeneratedIds`. The source id is random per process (`s-` + 32
  * hex), a run id its generated source fallback (`source:<source>:<epoch>`), and any
- * other caller id a random `g-` id generated on first sight and kept (bounded) so one
- * recorder's records still join.
+ * other caller id a random `g-` id generated on first sight (a bounded cache, so one
+ * recorder's records still join; past it a new id is minted). An {@link EmittedId} this
+ * instance issued passes through unchanged: provenance is the value's type, never a
+ * cache lookup (Sol P0-A round 6 #1).
  */
 class GeneratedIds {
+  readonly #issuer = "gen-" + randomUUID();
   readonly #ids = new Map<string, string>();
 
-  source(): string {
+  source(value: CallerId): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
     processSource ??= "s-" + randomUUID().replaceAll("-", "");
-    return processSource;
+    return mintEmittedId(processSource, this.#issuer);
   }
 
-  run(_value: string, epoch: number): string {
-    return `source:${this.source()}:${epoch}`;
+  run(value: CallerId, epoch: number): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    return mintEmittedId(`source:${String(this.source(""))}:${epoch}`, this.#issuer);
   }
 
-  other(value: string): string {
-    const found = this.#ids.get(value);
-    if (found !== undefined) return found;
-    const generated = "g-" + randomUUID().replaceAll("-", "");
-    if (this.#ids.size < MAX_GENERATED_IDS) this.#ids.set(value, generated);
-    return generated;
+  other(value: CallerId): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    const text = String(value);
+    let found = this.#ids.get(text);
+    if (found === undefined) {
+      found = "g-" + randomUUID().replaceAll("-", "");
+      if (this.#ids.size < MAX_GENERATED_IDS) this.#ids.set(text, found);
+    }
+    return mintEmittedId(found, this.#issuer);
   }
 }
 
@@ -158,45 +173,40 @@ class GeneratedIds {
  * them: the run id `r-` and the source id `s-` (function v1, keyed); any other caller id
  * (operation, attempt, stream: step labels, 049 §2.3) the keyed v1 operator label `lbl-`.
  * Deterministic, so records join across recorders and processes holding the key.
- * Provenance, never shape, decides what passes through (Sol P0-A rounds 4 and 5 #1):
- * only an `r-`/`s-`/`lbl-` value this instance emitted maps to itself; every caller
- * value, even a 32-hex or `r-`/`s-`/`lbl-`-shaped one, is mapped. Continuity across
- * processes comes from passing the same clear id, never an emitted one. The registry is
- * bounded (least recently used first out), as in Python.
+ * Provenance, never shape, decides what passes through (Sol P0-A rounds 4-6): only an
+ * {@link EmittedId} issued under the same key (its issuer is the key id) maps to itself,
+ * for as long as the caller holds it; every plain string, even a 32-hex or
+ * `r-`/`s-`/`lbl-`-shaped one, is mapped. No registry: nothing ages out.
  */
 class KeyedIds {
   readonly #key: Uint8Array;
-  readonly #emitted = new Set<string>(); // insertion-ordered: a FIFO-bounded set
+  readonly #issuer: string;
 
   constructor(key: Uint8Array) {
     this.#key = key;
+    this.#issuer = keyId(key);
   }
 
-  source(value: string): string {
+  source(value: CallerId): EmittedId {
     return this.#map("s", value);
   }
 
-  run(value: string): string {
+  run(value: CallerId): EmittedId {
     return this.#map("r", value);
   }
 
-  other(value: string): string {
+  other(value: CallerId): EmittedId {
     return this.#map("lbl", value);
   }
 
-  #map(prefix: string, value: string): string {
-    if (this.#emitted.delete(value)) {
-      this.#emitted.add(value); // still in use: least recently used ages out first
-      return value;
-    }
-    const label = labelPseudonym(prefix, value, this.#key);
-    this.#emitted.delete(label);
-    this.#emitted.add(label);
-    if (this.#emitted.size > 2 * MAX_GENERATED_IDS)
-      this.#emitted.delete(this.#emitted.values().next().value as string);
-    return label;
+  #map(prefix: string, value: CallerId): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    return mintEmittedId(labelPseudonym(prefix, String(value), this.#key), this.#issuer);
   }
 }
+
+/** Ids as given (the clear mode, or local without the key): typed, never mapped. */
+const CLEAR_ISSUER = "clear";
 
 export interface ByteEvidenceDescriptor {
   schema_version: "fabric.content-object/v2";
@@ -218,6 +228,8 @@ export interface ByteEvidenceDescriptor {
   workload_id?: string;
   protection_status?: ProtectionStatus;
   transformations?: ("redact" | "tokenize")[];
+  transformation_id?: string;
+  transformation_version?: string;
   source_byte_length?: number;
   source_sha256?: string;
   stored_byte_length?: number;
@@ -233,18 +245,38 @@ export interface ByteEvidenceDescriptor {
   status_reason?: string;
 }
 
+/**
+ * One capture. Id fields take a caller id (a plain string: always mapped as the
+ * recorder emits caller ids) or an {@link EmittedId} the recorder returned (passed
+ * through unchanged by the recorder, or one holding the same id key, that issued it).
+ */
 export interface ByteEvidenceCapture {
   role: string;
   boundary: string;
-  sourceId: string;
+  sourceId: CallerId;
   sourceEpoch: number;
   sourceSequence: number;
   mediaType?: string;
+  runId?: CallerId;
+  operationId?: CallerId;
+  attemptId?: CallerId;
+  streamId?: CallerId;
+  chunkIndex?: number;
+}
+
+type PlainCapture = Omit<
+  ByteEvidenceCapture,
+  "sourceId" | "runId" | "operationId" | "attemptId" | "streamId"
+> & {
+  sourceId: string;
   runId?: string;
   operationId?: string;
   attemptId?: string;
   streamId?: string;
-  chunkIndex?: number;
+};
+
+function plain(value: CallerId | undefined): string | undefined {
+  return value instanceof EmittedId ? value.value : (value as string | undefined);
 }
 
 export interface ByteEvidenceConfig {
@@ -288,7 +320,7 @@ interface WorkItem {
   descriptor: ByteEvidenceDescriptor;
   bytes: Uint8Array;
   store: GovernedStore;
-  /** A customer redaction deferred from capture(): runs in drain(), in a Worker. */
+  /** A customer redaction deferred from capture(): the redaction service, in drain(). */
   redactRole?: string;
 }
 
@@ -425,8 +457,18 @@ export class ByteEvidenceRecorder {
    * `ByteEvidenceRecorder.emitted_run_id`: never the clear value unless ids are emitted
    * as given.
    */
-  emittedRunId(runId: string): string {
-    return this.emittedIds === undefined ? runId : this.emittedIds.run(runId, 0);
+  emittedRunId(runId: CallerId): EmittedId {
+    if (this.emittedIds !== undefined) return this.emittedIds.run(runId, 0);
+    return runId instanceof EmittedId ? runId : mintEmittedId(runId, CLEAR_ISSUER);
+  }
+
+  /**
+   * `sourceId` as this recorder emits it: pass the returned value back (as
+   * `sourceId`) and it is never mapped again, however many ids the recorder sees.
+   */
+  emittedSourceId(sourceId: CallerId): EmittedId {
+    if (this.emittedIds !== undefined) return this.emittedIds.source(sourceId);
+    return sourceId instanceof EmittedId ? sourceId : mintEmittedId(sourceId, CLEAR_ISSUER);
   }
 
   status(): ByteEvidenceStatus {
@@ -471,8 +513,19 @@ export class ByteEvidenceRecorder {
    * No content bytes are put on OTLP. Caller must retain the returned
    * descriptor (or persist it separately); this slice has no run manifest.
    */
-  capture(data: Uint8Array, options: ByteEvidenceCapture): ByteEvidenceDescriptor {
+  capture(data: Uint8Array, input: ByteEvidenceCapture): ByteEvidenceDescriptor {
     if (!(data instanceof Uint8Array)) throw new TypeError("byte evidence requires Uint8Array");
+    if (input === null || typeof input !== "object") throw new TypeError("invalid capture options");
+    let options: PlainCapture = {
+      ...input,
+      sourceId: plain(input.sourceId)!,
+      runId: plain(input.runId),
+      operationId: plain(input.operationId),
+      attemptId: plain(input.attemptId),
+      streamId: plain(input.streamId),
+    };
+    for (const name of ["runId", "operationId", "attemptId", "streamId"] as const)
+      if (options[name] === undefined) delete options[name];
     this.validateOptions(options);
     const key = JSON.stringify([options.sourceId, options.sourceEpoch]);
     const previous = this.highWater.get(key);
@@ -483,18 +536,19 @@ export class ByteEvidenceRecorder {
     if (!sourceRegistryFull) this.highWater.set(key, options.sourceSequence);
     const ids = this.emittedIds;
     if (ids !== undefined) {
-      // Spec 049 §2.9: no clear caller id leaves the process.
+      // Spec 049 §2.9: no clear caller id leaves the process; an EmittedId this recorder
+      // issued passes through by its type (never a bounded registry, Sol P0-A round 6 #1).
       options = {
         ...options,
-        sourceId: ids.source(options.sourceId),
-        ...(options.runId !== undefined
-          ? { runId: ids.run(options.runId, options.sourceEpoch) }
+        sourceId: ids.source(input.sourceId).value,
+        ...(input.runId !== undefined
+          ? { runId: ids.run(input.runId, options.sourceEpoch).value }
           : {}),
-        ...(options.operationId !== undefined
-          ? { operationId: ids.other(options.operationId) }
+        ...(input.operationId !== undefined
+          ? { operationId: ids.other(input.operationId).value }
           : {}),
-        ...(options.attemptId !== undefined ? { attemptId: ids.other(options.attemptId) } : {}),
-        ...(options.streamId !== undefined ? { streamId: ids.other(options.streamId) } : {}),
+        ...(input.attemptId !== undefined ? { attemptId: ids.other(input.attemptId).value } : {}),
+        ...(input.streamId !== undefined ? { streamId: ids.other(input.streamId).value } : {}),
       };
     }
     const descriptor: ByteEvidenceDescriptor = {
@@ -548,12 +602,13 @@ export class ByteEvidenceRecorder {
       this.counts.not_captured += 1;
       return descriptor;
     }
-    // Customer redaction never runs on the caller's path (spec 049 §7.1, §7.7): it is
-    // deferred behind the handoff, to a Worker, before persistence; failure withholds.
-    const deferred = this.protector?.runsCustomerCode(options.role) === true;
+    // The redaction service is never called on the caller's path (spec 049 §7.1, §7.7):
+    // it is deferred behind the handoff, before persistence; failure withholds.
+    const deferred = this.protector?.needsRedactionService(options.role) === true;
     const protectedContent = deferred ? undefined : this.protector?.protect(options.role, data);
     if (deferred) {
       const policy = this.protector!.policy;
+      const transformation = this.protector!.transformationFor(options.role)!;
       Object.assign(descriptor, {
         privacy_mode: policy.privacy[options.role],
         protection_status: "redacted",
@@ -561,6 +616,8 @@ export class ByteEvidenceRecorder {
         policy_id: policy.policy_id,
         policy_version: policy.policy_version,
         workload_id: policy.workload_id,
+        transformation_id: transformation.id,
+        transformation_version: transformation.version,
       });
     }
     if (protectedContent !== undefined) {
@@ -607,7 +664,7 @@ export class ByteEvidenceRecorder {
     const bytes = new Uint8Array(data); // immutable capture snapshot
     let targetStore = this.store;
     if (deferred) {
-      descriptor.representation = "redacted"; // pending the Worker's redaction
+      descriptor.representation = "redacted"; // pending the redaction service
       descriptor.transformations = ["redact"];
       targetStore = this.reviewStore!;
     } else if (
@@ -634,7 +691,7 @@ export class ByteEvidenceRecorder {
     return descriptor;
   }
 
-  private validateOptions(options: ByteEvidenceCapture): void {
+  private validateOptions(options: PlainCapture): void {
     if (typeof options.sourceId !== "string" || !OPAQUE_ID.test(options.sourceId)) {
       throw new Error("sourceId must be an opaque identifier");
     }
@@ -772,8 +829,11 @@ export class ByteEvidenceRecorder {
     return this.stats();
   }
 
+  /** Settle accepted writes, then close the redaction service connection pool. */
   async close(timeoutMs = 10_000): Promise<Record<string, number>> {
     this.closed = true;
-    return this.flush(timeoutMs);
+    const stats = await this.flush(timeoutMs);
+    await this.protector?.close();
+    return stats;
   }
 }

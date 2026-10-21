@@ -29,11 +29,11 @@ from .._sequence import (
     run_scope,
     source_label,
 )
+from ..redaction import RedactionService, Transformation
 from ._config import DEFAULT_ENDPOINTS, WireConfig, migrate_plaintext_from_env
 from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
 from ._policy import ContentGate, decide, policy_from_env
-from ._protect import Transformation
 
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
@@ -44,7 +44,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_ENDPOINTS", "AsyncWireTransport", "CaptureJob", "CapturedBody", "EndpointMatcher",
-    "ExchangeSink", "Transformation", "WireConfig", "WireHandle", "WireStats", "WireTransport",
+    "ExchangeSink", "RedactionService", "Transformation", "WireConfig", "WireHandle",
+    "WireStats", "WireTransport",
     "current_handle",
     "flush", "install", "install_from_env", "run", "uninstall",
 ]  # fmt: skip
@@ -100,12 +101,12 @@ class WireStats:
     spool_undecryptable: int = 0
     # Plaintext spool records sealed in place by the explicit local migration (049 §7.8).
     spool_migrated: int = 0
-    # Customer transformations (049 §7.7 rule 4), run out of process: calls whose child
-    # was killed at their timeout, calls withheld while the capacity bound was reached,
-    # killed children not yet reaped.
-    transform_timeouts: int = 0
-    transform_saturated: int = 0
-    transform_abandoned: int = 0
+    # Calls to the customer-run redaction service (049 §7.7 rule 4; contracts/redaction/v1)
+    # that timed out, were refused at the in-flight bound, or failed otherwise; each
+    # withheld its content (protection_failed).
+    redaction_timeouts: int = 0
+    redaction_saturated: int = 0
+    redaction_failures: int = 0
 
 
 class WireHandle:
@@ -294,8 +295,9 @@ def install(
 
 
 def _protection_from_env(config: WireConfig) -> WireConfig:
-    """Fill the capture policy and keys an explicit config left unset from ``FABRIC_*``
-    (049 §7.3, §7.7, §7.8); a malformed value raises (fixed text, never the value)."""
+    """Fill the capture policy, keys and redaction service an explicit config left unset
+    from ``FABRIC_*`` (049 §7.3, §7.7, §7.8); a malformed value raises (fixed text, never
+    the value)."""
     env = os.environ
     changes: dict[str, Any] = {}
     if config.capture_policy is None and (policy := policy_from_env(env)) is not None:
@@ -310,6 +312,8 @@ def _protection_from_env(config: WireConfig) -> WireConfig:
             changes["spool_key"] = spool
     if not config.spool_migrate_plaintext and migrate_plaintext_from_env(env):
         changes["spool_migrate_plaintext"] = True
+    if config.redaction is None and (service := RedactionService.from_env(env)) is not None:
+        changes["redaction"] = service
     return dataclasses.replace(config, **changes) if changes else config
 
 

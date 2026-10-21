@@ -1,16 +1,22 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Customer transformations for the tests, loaded by reference (``tests.transforms:name``)
-in a child process (:mod:`fabric._transform_runner`): never called in the test process."""
+"""Behaviours of the in-test redaction service (:mod:`tests.redaction_server`), chosen by
+the ``X-Fabric-Transformation`` id of each call: ``Transformation("upper", "1")`` is
+:func:`upper`. They run in the service, never in Fabric (contracts/redaction/v1)."""
 
 from __future__ import annotations
 
-import os
-import re
 import time
-from pathlib import Path
 
 SECRET = b"canary-ssn-078-05-1120"
+
+
+class ServiceError(Exception):
+    """The service answers this status (and no transformed bytes)."""
+
+    def __init__(self, status: int = 500) -> None:
+        super().__init__(status)
+        self.status = status
 
 
 def upper(data: bytes) -> bytes:
@@ -62,15 +68,19 @@ def sixty_four(data: bytes) -> bytes:
 
 
 def raises(data: bytes) -> bytes:
-    raise ValueError(data.decode(errors="replace"))  # would echo content: never kept
+    raise ServiceError(500)  # an error status: the body never echoes content
 
 
-def not_bytes(data: bytes) -> str:
-    return "not bytes"
+def redirects(data: bytes) -> bytes:
+    raise ServiceError(307)
 
 
 def huge(data: bytes) -> bytes:
     return data * 10_000
+
+
+def oversize_129(data: bytes) -> bytes:
+    return b"x" * 129
 
 
 def slow(data: bytes) -> bytes:
@@ -85,86 +95,7 @@ def slow_redacted(data: bytes) -> bytes:
 
 def slow_failure(data: bytes) -> bytes:
     time.sleep(0.001)
-    raise RuntimeError("customer transformation failed")
+    raise ServiceError(500)
 
 
-def hang(data: bytes) -> bytes:
-    time.sleep(3600)
-    return data
-
-
-def catastrophic(data: bytes) -> bytes:
-    """Sol P0-A round 2 #2: a catastrophic regex holds the GIL for its whole run."""
-    return re.sub(rb"(a+)+$", b"x", data)
-
-
-def pid(data: bytes) -> bytes:
-    return str(os.getpid()).encode()
-
-
-def writes_stdout(data: bytes) -> bytes:
-    print("customer output")
-    os.write(1, b"raw fd 1 output\n")
-    return data
-
-
-def touch(data: bytes) -> bytes:
-    """Records that it ran (the path is the input), for tests across processes."""
-    Path(data.decode()).write_bytes(b"ran")
-    return b"[ran]"
-
-
-not_callable = 42
-
-
-def oversize_129(data: bytes) -> bytes:
-    return b"x" * 129
-
-
-def gated(data: bytes) -> bytes:
-    """Signals ``entered`` and waits (at most 3 s) for ``release`` in the directory named
-    by ``FABRIC_TEST_GATE_DIR``: cross-process coordination for the tests."""
-    gate = Path(os.environ["FABRIC_TEST_GATE_DIR"])
-    (gate / "entered").write_bytes(b"")
-    deadline = time.monotonic() + 3.0
-    while not (gate / "release").exists() and time.monotonic() < deadline:
-        time.sleep(0.005)
-    return b"safe"
-
-
-def spawn_sleeper(data: bytes) -> bytes:
-    """Starts an external tool that keeps running, records its pid at the path given as
-    input, then waits for it (Sol P0-A round 3 #5)."""
-    import subprocess  # noqa: PLC0415
-
-    tool = subprocess.Popen(["/bin/sleep", "3600"])
-    Path(data.decode()).write_text(str(tool.pid))
-    tool.wait()
-    return data
-
-
-def environment(data: bytes) -> bytes:
-    """The child's environment, as JSON (Sol P0-A round 3 environment isolation)."""
-    import json  # noqa: PLC0415
-
-    return json.dumps(dict(os.environ)).encode()
-
-
-def leave_sleeper(data: bytes) -> bytes:
-    """Starts an external tool that keeps running, records its pid at the path given as
-    input, and returns without waiting for it (Sol P0-A round 4 #3)."""
-    import subprocess  # noqa: PLC0415
-
-    tool = subprocess.Popen(["/bin/sleep", "120"])
-    Path(data.decode()).write_text(str(tool.pid))
-    return b"safe"
-
-
-def sleeper_then_spin(data: bytes) -> bytes:
-    """Starts an external tool, records its pid at the path given as input, then holds
-    the GIL in a catastrophic regex (Sol P0-A round 4 #3)."""
-    import subprocess  # noqa: PLC0415
-
-    tool = subprocess.Popen(["/bin/sleep", "120"])
-    Path(data.decode()).write_text(str(tool.pid))
-    return catastrophic(b"a" * 48 + b"!")
+HANG = "hang"  # the service never answers (until it stops)

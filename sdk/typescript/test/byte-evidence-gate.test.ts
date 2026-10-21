@@ -251,7 +251,7 @@ describe("the explicit input's identity with the id key", () => {
       for (const canary of canaries) expect(text).not.toContain(canary);
       expect(first).toMatchObject(expected);
       expect(second).toMatchObject(expected); // deterministic: recorders and processes join
-      expect(recorders[0]!.emittedRunId("private-case-123")).toBe(expected.run_id);
+      expect(String(recorders[0]!.emittedRunId("private-case-123"))).toBe(expected.run_id);
       // nothing written outside content carries a clear caller id
       for (const root of roots)
         for (const name of fs.readdirSync(root, { recursive: true })) {
@@ -264,7 +264,7 @@ describe("the explicit input's identity with the id key", () => {
     },
   );
 
-  it("maps a hex-shaped or unregistered lbl- caller id; only its own emitted ids pass", async () => {
+  it("maps every plain-string caller id, lbl--shaped or emitted-looking", async () => {
     // Sol P0-A round 4 #1: shape never proves provenance. Values computed by the Python SDK.
     vi.stubEnv("FABRIC_IDENTITY_MODE", "");
     vi.stubEnv("FABRIC_WIRE_ID_KEY", ID_KEY.toString());
@@ -286,11 +286,11 @@ describe("the explicit input's identity with the id key", () => {
       ...options,
       sourceSequence: 2,
       operationId: "lbl-" + "f".repeat(32),
-      attemptId: label, // emitted by this recorder: it maps to itself
+      attemptId: label, // a plain string is caller input: mapped, even this recorder's output
     });
     expect(forged).toMatchObject({
       operation_id: "lbl-39de82a31fdc6362cccd1d7479f54e0c",
-      attempt_id: label,
+      attempt_id: "lbl-f77100d2c1d7f75c933203b3d0b8f8ac",
     });
     await recorder.flush();
     expect(JSON.stringify([first, forged, recorder.drainSettled()])).not.toContain(hex);
@@ -303,7 +303,7 @@ describe("the explicit input's identity with the id key", () => {
     await recorder.close();
   });
 
-  it("maps r-/s--shaped caller run and source ids; only its own emitted ids pass", async () => {
+  it("maps r-/s--shaped caller run and source ids; only its typed emitted ids pass", async () => {
     // Sol P0-A round 5 #1: a caller run/source id is always mapped through the keyed
     // function, whatever its shape. Values computed by the Python SDK (cross-SDK parity).
     vi.stubEnv("FABRIC_IDENTITY_MODE", "");
@@ -323,7 +323,7 @@ describe("the explicit input's identity with the id key", () => {
       run_id: "r-115b7affde7a19e0990d1c3dfab4e0d4",
       source_id: "s-5db24377fab0ff85a785a1cd798c29c4",
     };
-    expect(first.emittedRunId("r-" + hex)).toBe(mapped.run_id);
+    expect(String(first.emittedRunId("r-" + hex))).toBe(mapped.run_id);
     expect(first.capture(SECRET, prefixed)).toMatchObject(mapped);
     expect(rotated.capture(SECRET, prefixed)).toMatchObject({
       run_id: "r-e9a42cbfd07ef0f60230aa4eaef84ffb",
@@ -332,11 +332,21 @@ describe("the explicit input's identity with the id key", () => {
     const emitted = {
       ...options,
       sourceSequence: 2,
-      runId: mapped.run_id,
-      sourceId: mapped.source_id,
+      runId: first.emittedRunId("r-" + hex),
+      sourceId: first.emittedSourceId("s-" + hex),
     };
-    expect(first.capture(SECRET, emitted)).toMatchObject(mapped); // emitted here: unchanged
-    expect(rotated.capture(SECRET, emitted).run_id).not.toBe(mapped.run_id); // never emitted there
+    expect(first.capture(SECRET, emitted)).toMatchObject(mapped); // issued here: unchanged
+    // issued under another key: mapped there
+    expect(rotated.capture(SECRET, emitted).run_id).not.toBe(mapped.run_id);
+    // the same values as plain strings are caller input: mapped again
+    expect(
+      first.capture(SECRET, {
+        ...options,
+        sourceSequence: 3,
+        runId: mapped.run_id,
+        sourceId: mapped.source_id,
+      }),
+    ).not.toMatchObject({ run_id: mapped.run_id });
     for (const target of [first, rotated]) {
       await target.flush();
       expect(JSON.stringify(target.drainSettled())).not.toContain(hex);
@@ -357,7 +367,7 @@ describe("the explicit input's identity with the id key", () => {
       run_id: "private-case-123",
       operation_id: "op-private-7",
     });
-    expect(recorder.emittedRunId("private-case-123")).toBe("private-case-123");
+    expect(String(recorder.emittedRunId("private-case-123"))).toBe("private-case-123");
     await recorder.close();
     expect(
       () =>
