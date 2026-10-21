@@ -17,9 +17,10 @@ an earlier prompt variable does not establish the final provider request.
    work passes. Supply exact bytes after your application's serialization.
 2. Configure a tenant-scoped content store and explicitly select permitted
    content roles. Choose original, omitted, masked-only or original plus
-   masked review copy as required. A transformation is customer code, named by
-   module reference (`"package.module:function"`) and run in a child process;
-   Fabric does not provide an automatic, infallible PII detector.
+   masked review copy as required. Masking is done by a redaction service you
+   run beside the application ([`contracts/redaction/v1`](../contracts/redaction/v1/README.md));
+   Fabric runs no customer code and does not provide an automatic, infallible
+   PII detector.
 3. Give each run and agent a stable identifier. Each physical retry has its
    own attempt identifier; a retry does not overwrite an earlier partial
    response. Nested calls and parallel tasks retain causal parent links.

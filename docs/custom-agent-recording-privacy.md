@@ -6,18 +6,17 @@ transformation. Fabric does not include a PII detector or claim that masking
 finds every sensitive value. Validate the transformation against the customer's
 data and policy before enabling it.
 
-A transformation is named by **module reference** (`"package.module:function"`),
-never passed as a function: it runs out of process (see below).
-
-```python
-# acme_privacy/masks.py: an importable module of the customer's application
-def customer_mask(data: bytes) -> bytes:
-    # Synthetic illustration only; use an approved transformation in deployment.
-    return data.replace(b"synthetic-secret", b"[masked]")
-```
+The masked copy is made by a **redaction service the customer runs** beside the
+application ([`contracts/redaction/v1`](../contracts/redaction/v1/README.md);
+[`examples/redaction-service/`](../examples/redaction-service/README.md) is a
+reference). Fabric never runs customer code: the policy names only the
+transformation's id and version, which Fabric records and sends to the service
+with each object. Module references and functions raise at construction (see
+[Redaction service](wire-capture-deployment.md#redaction-service)).
 
 ```python
 from fabric import ByteEvidenceConfig, BytePrivacyPolicy, LocalFilesystemContentStore
+from fabric.redaction import RedactionService
 
 config = ByteEvidenceConfig(
     store=LocalFilesystemContentStore("/approved/original", tenant_id="tenant-a"),
@@ -26,11 +25,13 @@ config = ByteEvidenceConfig(
     role_policies={
         "model.request.messages": BytePrivacyPolicy(mode="original"),
         "tool.call.result": BytePrivacyPolicy(
-            mode="original_plus_masked", transform="acme_privacy.masks:customer_mask",
+            mode="original_plus_masked",
             transformation_id="customer-mask", transformation_version="1",
         ),
         "database.rows": BytePrivacyPolicy(mode="omit"),
     },
+    # or FABRIC_REDACTION_ENDPOINT (and FABRIC_REDACTION_TOKEN_FILE)
+    redaction=RedactionService("unix:///run/fabric/redaction.sock"),
 )
 ```
 
@@ -59,32 +60,26 @@ independent IAM permissions, encryption, retention, or authorization on a
 deployed customer store; those require actual deployment tests. On a laptop,
 both directories may remain readable by the same operating-system account.
 
-Transformations execute **out of process**: each is loaded by its module reference
-in a dedicated child interpreter (a fresh `python -I`, never a fork of the
-application, started with the application's `sys.path` and environment) and called
-with the bytes of one object over a pipe. The child sees only those bytes, never the
-spool, a store, a key or the network; its stdout and stderr go to `/dev/null`. Raw
+Masking calls run on the recorder's worker thread, never the caller's thread, over
+one connection pool per recorder to the configured endpoint (a Unix socket or a
+loopback port, nothing else; no proxy, no redirect). The service receives only the
+bytes of one object and the transformation id, version, content role and mode. Raw
 memory is queued inside the approved capture boundary; it is not a durable spool.
-Queue length, individual payload length, transformation input and output, and
-retained descriptor count are bounded. A transform that raises, returns non-bytes,
-or exceeds the configured output size withholds the object
-(`not_captured(protection_failed)`), with no raw fallback and no exception text in
-records or logs. In dual-view mode transformation succeeds before either write
-begins. A later review-store write failure can leave a valid original and a failed
-review descriptor; this is reported, not rolled back.
-
-Each call is bounded by `timeout_s` (default 5 s): past it the child process is
-killed (`SIGKILL`), the object is withheld as `protection_failed`, and a new child
-serves the next call. Because the transformation never shares the application's
-interpreter, even one that holds the GIL (a catastrophic regular expression, a C
-extension) cannot stall the application's threads. Capacity is reserved before a
-call starts: at most two calls of one transformation are busy at once, and a call
-beyond that is withheld at once (counted as saturated), never queued. Idle children
-exit after 60 s; `recorder.close()` stops them, and the recorder's worker thread.
-Platforms without `poll` (Windows) withhold every transformation. There is no
-secure memory erasure or crash-safe recovery of queued content. Independent run
+Queue length, individual payload length, service output and retained descriptor
+count are bounded. Each call is bounded by the service timeout (`timeout_s`,
+default 5 s, at most 300 s), and at most `max_in_flight` calls (default 2) are in
+flight per recorder; a call beyond that is withheld at once (counted as
+saturated), never queued. A status other than 200 (a redirect included), a
+timeout, an answer above the payload cap or a connection error withholds the
+object (`not_captured(protection_failed)`), with no raw fallback and no error body
+or exception text in records or logs. `recorder.redaction_stats()` counts
+timeouts, saturation and other failures. In dual-view mode the masked copy exists
+before either write begins. A later review-store write failure can leave a valid
+original and a failed review descriptor; this is reported, not rolled back.
+`recorder.close()` stops the worker and closes the service connections. There is
+no secure memory erasure or crash-safe recovery of queued content. Independent run
 records are needed to identify losses before persistence. The recorder does not
-await transformations or storage while the monitored action runs.
+await the service or storage while the monitored action runs.
 
 The legacy Fabric governed-content configuration now rejects raw tracing
 capture for model/tool/retrieval/memory operations. This check occurs before

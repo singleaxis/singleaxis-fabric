@@ -3,8 +3,9 @@
 """Spec 049 P0-A exit gate, with real processes, on the built Node image.
 
     application (_p0a_gate_agent.py: fabric.wire.install() in node mode, a capture
-    policy, the id key, a sealed spool; customer transformations where the mode
-    needs them) -> production Fabric Node (fabric-gate, collector-production.yaml +
+    policy, the id key, a sealed spool; transformations where the mode needs them,
+    performed by the reference customer redaction service, run by this test as a
+    subprocess on a Unix socket) -> production Fabric Node (fabric-gate, collector-production.yaml +
     the content path, source binding, sealed content queue)
         -> customer store: the Node's sealed directory (file backend) and the
            S3-compatible evaluation store (SeaweedFS, SSE, GetObject-only reader)
@@ -57,6 +58,7 @@ from typing import Any
 import pytest
 import test_wire_capture_node_e2e as node_e2e
 import test_wire_capture_s3_eval_e2e as s3_e2e
+from _redaction_service import reference_service
 from _wire_capture_common import (
     build_image,
     capture_protection,
@@ -80,6 +82,19 @@ PART_ROLE = "model.exchange.part"
 pytestmark = pytest.mark.skipif(
     not compose_available(), reason="docker compose unavailable — env-dependent gate"
 )
+_REDACTION: list[str] = []  # the reference service's endpoint, while the module runs
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _redaction_service() -> Iterator[None]:
+    """The customer redaction service (contracts/redaction/v1): ``gate-mask`` replaces
+    the canary with ``[masked]``; ``gate-fail`` is not implemented (a failed call)."""
+    with reference_service(
+        {"gate-mask": [(re.escape(CANARY), "[masked]")]}
+    ) as endpoint:
+        _REDACTION[:] = [endpoint]
+        yield
+    _REDACTION.clear()
 
 
 def _sha(data: bytes) -> str:
@@ -96,7 +111,8 @@ def _without_autoload(env: dict[str, str]) -> dict[str, str]:
 def _run(env: dict[str, str], model_url: str, root: Path, *args: str) -> dict[str, Any]:
     result = subprocess.run(  # noqa: S603
         [sys.executable, str(GATE_AGENT), "--model-url", model_url, *args],
-        env={**env, "E2E_GATE_CANARY": CANARY}, cwd=root, capture_output=True, text=True,
+        env={**env, "E2E_GATE_CANARY": CANARY, "FABRIC_REDACTION_ENDPOINT": _REDACTION[0]},
+        cwd=root, capture_output=True, text=True,
         timeout=900, check=False,
     )  # fmt: skip
     # The application is never affected: it exits normally with its model answer.

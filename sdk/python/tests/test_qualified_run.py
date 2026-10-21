@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from fabric._sequence import KeyedIds
 from fabric.byte_evidence import ByteEvidenceConfig, ByteEvidenceRecorder
 from fabric.byte_resolver import ByteEvidenceResolver
 from fabric.call_reconcile import RouteDeclaration
@@ -60,8 +61,20 @@ class _NativeResolver:
         return value
 
 
-@pytest.fixture
-def proven(tmp_path: Path) -> Any:
+_ID_KEY = b"fabric-test-id-key-not-a-secret"
+
+
+@pytest.fixture(params=["clear", "pseudonymous"])
+def proven(tmp_path: Path, request: pytest.FixtureRequest) -> Any:
+    # Spec 049 §2.9: in the pseudonymous mode the recorder, its journal, the receipts and
+    # every binding carry the keyed pseudonyms; the witness and expectations use them too.
+    mode = request.param
+    ids = KeyedIds(_ID_KEY) if mode == "pseudonymous" else None
+    run, source, op, attempt = (
+        (ids.run("run", 0), ids.source("source"), ids.other("op"), ids.other("try"))
+        if ids is not None
+        else ("run", "source", "op", "try")
+    )
     private = Ed25519PrivateKey.generate()
     key = EvidenceTrustKey(
         "fixture",
@@ -77,7 +90,7 @@ def proven(tmp_path: Path) -> Any:
             "statement_type": kind,
             "issuer_id": "fixture",
             "tenant_id": "tenant",
-            "run_id": "run",
+            "run_id": run,
             "scope_sha256": _sha(b"approved scope"),
             "subject_kind": "source" if kind == "source_binding" else "evidence_set",
             "subject_id": subject,
@@ -101,11 +114,13 @@ def proven(tmp_path: Path) -> Any:
         ByteEvidenceConfig(
             store=store,
             roles=frozenset({"tool.call.arguments", "tool.call.result"}),
+            id_key=_ID_KEY,
+            identity_mode=mode,
         )
     )
     root = tmp_path / "spool"
     root.mkdir(mode=0o700)
-    spool = SyntheticSourceSpool(str(root), tenant_id="tenant", run_id="run")
+    spool = SyntheticSourceSpool(str(root), tenant_id="tenant", run_id=writer.emitted_run_id("run"))
     recorder = CallRecorder(
         writer, run_id="run", agent_id="agent", source_id="source", source_spool=spool
     )
@@ -117,14 +132,15 @@ def proven(tmp_path: Path) -> Any:
     )
     assert recorder.seal_source()["status"] == "sealed"
     snapshot = recorder.snapshot()
+    assert (snapshot["run_id"], recorder.source_id) == (run, source)
     wanted = IndependentFeedExpectation(
         "feed",
         "tenant",
-        "run",
+        run,
         _sha(b"approved scope"),
         "tool-route",
         "v1",
-        "source",
+        source,
         0,
         "tool",
         "native",
@@ -133,8 +149,8 @@ def proven(tmp_path: Path) -> Any:
         "fixture",
         (
             ExpectedAttempt(
-                "op",
-                "try",
+                op,
+                attempt,
                 {"result_status": "ok"},
                 (
                     ExpectedRole("tool.call.arguments"),
@@ -145,9 +161,9 @@ def proven(tmp_path: Path) -> Any:
     )
     expectation = QualifiedRunExpectation(
         "tenant",
-        "run",
+        run,
         wanted.scope_sha256,
-        "source",
+        source,
         0,
         (RouteDeclaration("tool-route", "v1", "tool"),),
         (wanted,),
@@ -161,8 +177,8 @@ def proven(tmp_path: Path) -> Any:
         {
             "cursor": 0,
             "kind": "operation",
-            "operation_id": "op",
-            "attempt_id": "try",
+            "operation_id": op,
+            "attempt_id": attempt,
             "outcome": {"result_status": "ok"},
         }
     ]
@@ -175,8 +191,8 @@ def proven(tmp_path: Path) -> Any:
             {
                 "cursor": cursor,
                 "kind": "byte",
-                "operation_id": "op",
-                "attempt_id": "try",
+                "operation_id": op,
+                "attempt_id": attempt,
                 "role": role,
                 "chunk_index": None,
                 "byte_length": len(data),
@@ -188,11 +204,11 @@ def proven(tmp_path: Path) -> Any:
         "schema_version": "fabric.independent-feed/v1",
         "feed_id": "feed",
         "tenant_id": "tenant",
-        "run_id": "run",
+        "run_id": run,
         "scope_sha256": wanted.scope_sha256,
         "route_id": "tool-route",
         "route_version": "v1",
-        "source_id": "source",
+        "source_id": source,
         "source_epoch": 0,
         "boundary": "tool",
         "cursor_domain": "native",
@@ -219,7 +235,7 @@ def proven(tmp_path: Path) -> Any:
         "resolver": resolver,
         "source_spool": spool,
         "source_binding_attestation": sign(
-            "source_binding", "source", _sha(source_binding_subject_bytes(expectation))
+            "source_binding", source, _sha(source_binding_subject_bytes(expectation))
         ),
         "route_closure_attestation": sign(
             "route_closure", "routes", _sha(route_closure_subject_bytes(expectation))

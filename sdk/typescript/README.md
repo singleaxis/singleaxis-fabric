@@ -176,15 +176,15 @@ This limitation differs from the Python local store's directory-handle checks.
 Pass a validated `DeploymentPolicy` as `deploymentPolicy`, or a
 `ContentProtector` as `contentProtector`, to `ByteEvidenceRecorder`. The policy
 tenant must match the store. Fabric's own protection runs before bytes enter the
-delivery queue; a customer redaction runs behind it, in a worker thread, before
-anything is stored (below). Roles absent from the policy are omitted. These options apply only to
+delivery queue; a customer redaction is requested from your redaction service
+behind it, before anything is stored (below). Roles absent from the policy are omitted. These options apply only to
 this explicit byte-capture interface, not automatically to every SDK content
 path or third-party integration.
 
 - `omit` records no original bytes, digest, or length
 - `metadata_only` records the original length without bytes or an original digest
-- `redact` and `masked_only` require a customer redactor module for each selected
-  role (below)
+- `redact` and `masked_only` require a transformation `{ id, version }` for each
+  selected role and a customer-run redaction service (below)
 - `tokenize` produces an irreversible, whole-object HMAC pseudonym using a
   customer-supplied key of at least 32 bytes; it is scoped to policy, tenant,
   workload, and role
@@ -198,20 +198,33 @@ original digest or length. Policy ID, version, digest, and workload bind the loc
 descriptor to its configured capture policy; they do not prove independent
 authorization, encryption, residency, delivery, or completeness.
 
-A redactor is a customer **module**, never a function: `redactors: {"terminal.stdout":
-{ module: "/abs/path/redactor.mjs", exportName: "redact" }}` (an absolute path or
-`file:` URL; `exportName` defaults to `redact`). Its export maps the object's bytes
-(`Uint8Array`) to their masked replacement (`Uint8Array`, or a promise of one). It is
-loaded in a `worker_threads` Worker, so it never runs on, or blocks, the application's
-event loop: `capture()` returns a `pending` descriptor at once. Each call is bounded by
-`transformTimeoutMs` (default 5000): on timeout the Worker is terminated. An error, a
-timeout, a non-bytes or oversized result withholds the object (`not_captured`,
-`protection_status: withheld`, `status_reason: protection_failed`). At most two calls
-per redactor run at once and at most two timed-out Workers may still be terminating;
-beyond either bound content is withheld at once (`ContentProtector.stats()` counts
-timeouts and saturation). In-process redactor functions are rejected at construction.
+Fabric never runs customer redaction code in your process. A masking role is sent to
+a **redaction service you run** beside the application (a sidecar), over a Unix socket
+or loopback HTTP only, using the public protocol in
+[`contracts/redaction/v1`](../../contracts/redaction/v1/README.md);
+`examples/redaction-service/` is a reference implementation:
+
+```ts
+new ContentProtector(policy, {
+  transformations: { "terminal.stdout": { id: "mask-email", version: "3" } },
+  redaction: { endpoint: "unix:///run/fabric/redaction.sock" }, // or FABRIC_REDACTION_ENDPOINT
+});
+```
+
+The endpoint must be `unix:///absolute/path`, `http://127.0.0.1:<port>` or
+`http://[::1]:<port>`; anything else throws at construction. An optional bearer token
+is read once from `tokenFile` (`FABRIC_REDACTION_TOKEN_FILE`), a `0600` file owned by
+the process user. `capture()` returns a `pending` descriptor at once; the call is made
+behind the handoff and is bounded by `timeoutMs` (default 5000, at most 300000) and
+`maxInFlight` (default 2: a call above it is withheld at once). A non-200 status (a
+redirect included), a timeout, an oversized response or a connection error withholds
+the object (`not_captured`, `protection_status: withheld`, `status_reason:
+protection_failed`); `ContentProtector.stats()` counts `redaction_timeouts`,
+`redaction_saturated` and `redaction_failures`. Stored objects record
+`transformation_id` and `transformation_version`. Functions and module references
+(the removed `redactors` option) are rejected at construction.
 `ContentProtector.protect()` is synchronous and fails closed for masking roles; use
-`protectAsync()`. Call `ContentProtector.close()` to stop idle Workers.
+`protectAsync()`. `ByteEvidenceRecorder.close()` closes the protector's connection pool.
 
 In the production profile (`deployment.profile: production` in the policy) content
 capture also needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`, at least 16 bytes);

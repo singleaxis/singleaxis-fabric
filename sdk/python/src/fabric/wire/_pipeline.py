@@ -93,6 +93,7 @@ def protector_for(config: WireConfig, gate: ContentGate | None) -> Protector | N
         policy, max_body_bytes=config.max_body_bytes,
         max_retain_bytes=config.max_retain_bytes, part_min_bytes=config.part_min_bytes,
         transformations=config.transformations, tokenization_key=config.tokenization_key,
+        redaction=config.redaction,
     )  # fmt: skip
 
 
@@ -297,7 +298,7 @@ class CapturePipeline:
         self._queue.put(_STOP)
         if drained and self._worker is not threading.current_thread():
             self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
-        if self._protector is not None:  # its transformation child processes (Sol #6)
+        if self._protector is not None:  # its redaction service connections
             self._protector.close(max(0.0, deadline - time.monotonic()))
         return drained and not lost and current is None
 
@@ -319,7 +320,10 @@ class CapturePipeline:
             return owned
 
     def _run(self) -> None:  # the worker is the only writer of its own counters
-        while (job := self._queue.get()) is not _STOP:
+        while True:
+            job = self._queue.get()
+            if job is _STOP:
+                return
             with self._cond:
                 self._current = job  # close() may claim it until the worker commits
             try:

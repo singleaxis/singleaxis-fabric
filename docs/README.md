@@ -135,6 +135,7 @@ closure and the four receipt stages.
 - [Recorder configuration](../contracts/recorder/v1/README.md)
 - [Privacy assertion](../contracts/privacy/v1/README.md)
 - [Delivery batch and receipt](../contracts/delivery/v1/README.md)
+- [Redaction service](../contracts/redaction/v1/README.md)
 
 Contract links may appear before a release is published while the release
 candidate is being qualified.
