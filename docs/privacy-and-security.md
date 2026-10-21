@@ -224,9 +224,15 @@ In the production profile every agent batch is bound to one source:
   `fabric-gate` refuses any other receiver).
 - `fabricguard` (`evidence_source_binding`) and `fabriccontent`
   (`source_binding`) require each record's tenant and `fabric.source_id` to
-  equal the binding. A record naming another tenant or source is a forgery
-  signal: the whole batch is refused with `INVALID_ARGUMENT`. A span naming
-  no source is dropped on its own.
+  equal the binding. For spans, a record naming another tenant or source is
+  a forgery signal: the whole batch is refused with `INVALID_ARGUMENT`, and
+  a span naming no source is dropped on its own. Content records are
+  validated after the Node's queue accepts them, so a content upload is
+  acknowledged with HTTP 200 and an invalid record (wrong source or tenant,
+  forged stamp, bad descriptor, digest mismatch) is dropped afterwards and
+  logged (`source_unbound`, `tenant_not_allowed`, `bad_descriptor`,
+  `digest_mismatch`). It never reaches the store, and `fabric.reconstruct`
+  reports the missing object as a gap, never as complete.
 - The Node stamps `fabric.source.authenticated=true` on admitted spans and
   `source_authenticated: true` in every stored descriptor. It strips the
   span attribute when an agent supplies it, and refuses a content record

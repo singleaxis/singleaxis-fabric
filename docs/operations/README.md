@@ -158,10 +158,10 @@ After any change to the Node, the store or the agents:
 
 1. **Ingress.** Compose: `make verify-prod` checks that the container runs
    `fabric-gate`, that health answers, and that unauthenticated span,
-   content and gRPC requests are refused. Its authenticated-span check posts
-   a fixture whose tenant is `harness`; on a source-bound Node that tenant
-   does not match the binding, so expect that step to be refused unless
-   your tenant is `harness`.
+   content and gRPC requests are refused. It then posts a probe span under
+   the bound `FABRIC_TENANT_ID` / `FABRIC_SOURCE_ID` and expects it to be
+   accepted, and the same probe under another source and expects it to be
+   refused, so a Node whose binding is off fails verification.
 2. **Content canary.** A healthy Node does not prove that content reaches
    the store (bucket policy, IRSA or instance role, KMS grants, egress
    peers). With the production agent settings, make one model call inside

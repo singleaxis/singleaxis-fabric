@@ -27,9 +27,11 @@ pseudonyms, encryption), spools it
 durably, and delivers it through the Fabric Node to a file directory or
 S3-compatible store and an OTLP destination that you own. An offline
 verifier, `python -m fabric.reconstruct`, proves whether each run's record
-is complete and unaltered. Fabric never blocks, alters or delays the agent,
-never requires a SingleAxis service, and does not evaluate or control what
-the agent does.
+is complete and unaltered. Fabric never blocks or alters the agent: results
+and exceptions are unchanged, protection and export I/O stay off the
+monitored call path, and the measured overhead is small (about 0.2 ms per
+call in our tests) with a bounded drain at shutdown. It never requires a
+SingleAxis service, and does not evaluate or control what the agent does.
 
 ```text
 CAPTURE  ->  PROTECT  ->  DELIVER
