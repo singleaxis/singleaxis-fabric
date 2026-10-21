@@ -240,6 +240,7 @@
             "part_cap",
             "inflight_budget",
             "queue_full",
+            "disk_full",
             "shutdown",
             "internal_error",
             "span_dropped",

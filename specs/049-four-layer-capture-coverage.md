@@ -699,6 +699,7 @@ revision, never a new status). A reason is required for `not_captured`,
 | `part_cap` | An extracted part exceeded `max_body_bytes`; its digest and length are kept, its bytes are not. |
 | `inflight_budget` | `max_inflight_bytes` was exhausted. |
 | `queue_full` | The capture queue was full (existing loss reason). |
+| `disk_full` | The agent spool's volume or quota was full (`ENOSPC`/`EDQUOT`) before its configured bound; the record could not be persisted (loss reason). |
 | `shutdown` | The process stopped before the record was persisted (existing loss reason). |
 | `internal_error` | Fabric code failed; the application was unaffected (existing loss reason). |
 | `span_dropped` | The telemetry record was refused or sampled out (existing loss reason). |

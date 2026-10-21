@@ -32,7 +32,7 @@ from fabric._loss import LossEmitter
 from fabric._sequence import run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire import WireConfig, _spool
-from fabric.wire._spool import Spool, unframe
+from fabric.wire._spool import Spool, unframe, unframe_all
 
 from .test_wire_helpers import (
     CAPTURE,
@@ -199,7 +199,7 @@ def _stopped(handle: wire.WireHandle) -> None:
 
 
 def headers_of(spool: Path) -> list[dict[str, Any]]:
-    return [unframe(open_record(path))[0] for path in records(spool)]
+    return [doc for path in records(spool) for doc, _ in unframe_all(open_record(path))]
 
 
 def validate_header(doc: dict[str, Any]) -> None:
@@ -352,7 +352,7 @@ def test_corrupt_record_is_quarantined_with_an_internal_error_loss(
     assert not handle.close(1.0)  # the exchange and the final marker stay on disk
     _stopped(handle)  # no export of a batch read before the corruption is still in flight
     exchange = next(
-        p for p in records(spool) if unframe(p.read_bytes())[0]["record_kind"] == "exchange"
+        p for p in records(spool) if unframe_all(p.read_bytes())[0][0]["record_kind"] == "exchange"
     )
     data = bytearray(exchange.read_bytes())
     data[-1] ^= 0xFF  # the trailer no longer matches; the header still parses
@@ -455,11 +455,12 @@ def test_tampered_sealed_record_is_quarantined_and_another_key_is_left(
     handle = install_node(node, spool)
     with model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
+        handle._tee.flush(5.0)  # its own record file, not one batch file with the next
         client.post(OPENAI_CHAT, json={"messages": []})
     assert not handle.close(1.0)
     _stopped(handle)
     first, second = [p for p in records(spool)
-                     if unframe(open_record(p))[0]["record_kind"] == "exchange"]  # fmt: skip
+                     if unframe_all(open_record(p))[0][0]["record_kind"] == "exchange"]  # fmt: skip
     data = bytearray(first.read_bytes())
     data[-1] ^= 0xFF
     first.write_bytes(bytes(data))
@@ -501,7 +502,9 @@ def test_a_plaintext_record_under_a_key_is_quarantined_never_delivered(
     status never reports the spool encrypted while plaintext records remain."""
     spool = tmp_path / "spool"
     plain = _plaintext_spool(node, spool)
-    exchange = next(p for p in plain if unframe(p.read_bytes())[0]["record_kind"] == "exchange")
+    exchange = next(
+        p for p in plain if unframe_all(p.read_bytes())[0][0]["record_kind"] == "exchange"
+    )
     monkeypatch.setenv("FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT", "1")
     node.mode = "ok"
     handle = install_node(node, spool)

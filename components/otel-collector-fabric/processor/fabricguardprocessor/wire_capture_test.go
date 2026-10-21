@@ -560,3 +560,13 @@ func TestCaptureLossAdmitsUninstrumentedClient(t *testing.T) {
 	span := processOne(t, g, "fabric.capture_loss", attrs)
 	assertKeysKept(t, span, attrs)
 }
+
+// A spool whose volume is full records disk_full losses (chaos report D1):
+// admitted like every other reason.
+func TestCaptureLossAdmitsDiskFull(t *testing.T) {
+	g := newTestGuard(t, nil)
+	attrs := wireLossAttrs()
+	attrs["fabric.loss.reason"] = "disk_full"
+	span := processOne(t, g, "fabric.capture_loss", attrs)
+	assertKeysKept(t, span, attrs)
+}

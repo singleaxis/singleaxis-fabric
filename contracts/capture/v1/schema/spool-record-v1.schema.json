@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/spool-record-v1.schema.json",
   "title": "Fabric wire spool record header v1 (draft, spec 048)",
-  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and its content descriptors (spec 049 P0-A: at most 130 — per side a primary object or split skeleton, its extracted parts and a masked review copy — including descriptor-only not_captured bodies of length 0) whose bytes are blob[offset:offset+length]; a record record (spec 049 §2.4, the records input) one sequenced records-input span; a loss record one coalesced range; a marker record a run_start, run_end, segment_seal or final heartbeat, or a manifest (marker kind manifest, carrying the fabric.capture_manifest span attributes). From spec 049 P1 one allocator per (source, epoch) serves both inputs (sequence_unit: record): exchange and record entries take positions from the same counter, and loss ranges, heartbeats and markers count those shared positions. Headers carry no content. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
+  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and its content descriptors (spec 049 P0-A: at most 130 — per side a primary object or split skeleton, its extracted parts and a masked review copy — including descriptor-only not_captured bodies of length 0) whose bytes are blob[offset:offset+length]; a record record (spec 049 §2.4, the records input) one sequenced records-input span; a loss record one coalesced range; a marker record a run_start, run_end, segment_seal or final heartbeat, or a manifest (marker kind manifest, carrying the fabric.capture_manifest span attributes). From spec 049 P1 one allocator per (source, epoch) serves both inputs (sequence_unit: record): exchange and record entries take positions from the same counter, and loss ranges, heartbeats and markers count those shared positions. Headers carry no content. A batch file (spec 048 §2, b'FWSPOOLB' | u32 count | count x (u64 length | frame) | sha256 trailer) holds several exchange records' frames, each with a header of this schema. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
   "type": "object",
   "required": [
     "schema_version",
@@ -484,6 +484,7 @@
             "reason": {
               "enum": [
                 "queue_full",
+                "disk_full",
                 "internal_error",
                 "shutdown",
                 "span_dropped",
@@ -1012,6 +1013,7 @@
             "part_cap",
             "inflight_budget",
             "queue_full",
+            "disk_full",
             "shutdown",
             "internal_error",
             "span_dropped",

@@ -611,6 +611,17 @@ during rolling deploys while the Node is down; a restarted Pod with the
 same claim delivers the earlier records first. Several containers or
 processes may share one spool directory.
 
+*When the volume fills before the bound.* Size the volume above
+`FABRIC_WIRE_SPOOL_MAX_BYTES` plus 1 MiB. If it fills first anyway, new
+exchanges are recorded as `disk_full` losses (`WireStats.disk_full_drops`),
+the host is unaffected, and the loss ranges and run markers that cannot be
+spooled are kept in the spool's preallocated loss ledger (`.ledger`, 260 KiB,
+written when the spool is opened). The next process that drains the spool
+exports a dead process's ledger records (`ledger_recovered`), so a run whose
+exchanges were all lost is still reported (`partial`/`unverified`), never
+missing. On copy-on-write filesystems (btrfs, ZFS) overwriting the ledger
+may itself need free blocks: keep the spool on ext4, xfs or an equivalent.
+
 **Compose.** The image runs as uid/gid 65532. Make the token file and any
 TLS key owned by the operator who runs `make preflight-prod`, with group
 65532 and mode `0440`. Compose publishes 4317, 4318 and 4319 on
