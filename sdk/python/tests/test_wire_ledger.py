@@ -204,3 +204,43 @@ def test_a_batch_file_over_the_bound_falls_back_to_single_records(tmp_path: Path
     kept = [r for r in results if isinstance(r, str)]
     assert len(kept) == 2 and results.count(None) == 2  # as many as fit, the rest refused
     assert len(set(kept)) == 2  # one file each
+
+
+def test_a_failed_fsync_is_retried_before_the_store_reports_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = LossLedger(str(tmp_path))
+    calls: list[int] = []
+    real = os.fsync
+
+    def fsync(fd: int) -> None:
+        calls.append(fd)
+        if len(calls) == 1:
+            raise OSError(errno.EIO, "io")
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    assert not ledger.store([LOSS])  # written, never made durable
+    assert ledger.store([LOSS]) and len(calls) == 2  # the unchanged retry syncs again
+    assert ledger.store([LOSS]) and len(calls) == 2  # durable now: nothing more to sync
+
+
+def test_a_failed_fsync_while_clearing_keeps_the_slot_until_synced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ledger = LossLedger(str(tmp_path))
+    assert ledger.store([LOSS])
+    calls: list[int] = []
+    real = os.fsync
+
+    def fsync(fd: int) -> None:
+        calls.append(fd)
+        if len(calls) == 1:
+            raise OSError(errno.EIO, "io")
+        real(fd)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    assert not ledger.store([])
+    assert ledger.used() == 1  # still held: the cleared slot is not durable yet
+    assert ledger.store([]) and ledger.used() == 0 and len(calls) == 2  # synced, then released
+
