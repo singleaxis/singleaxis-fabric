@@ -63,7 +63,8 @@ Fails closed at render time unless the recorder has:
   production`, pinned). Every batch on the workload ingress, spans and
   content alike, is bound to `workloadAuthentication.tenantId` and
   `workloadAuthentication.sourceId`. `sourceId` is the agents' source id as
-  it travels: `s-<32 hex>` under their pseudonymous labels. A batch that
+  it travels: `s-<32 hex>` under their pseudonymous labels (the render
+  fails on any other form unless `fabric.guard.captureLabels: clear`). A batch that
   names another tenant or source is refused, and admitted spans carry
   `fabric.source.authenticated=true`. A span that names no source is
   dropped on its own.

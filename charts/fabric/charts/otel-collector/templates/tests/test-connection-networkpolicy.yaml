@@ -1,0 +1,73 @@
+{{- /* NetworkPolicies for the helm test pod. They are test hooks themselves:
+   created (weight -10) before the probe pod, removed when the test ends,
+   so production ingress is never widened outside `helm test`. The umbrella
+   deny-default policy otherwise leaves the probe pod no egress at all, and
+   the runtime policy does not open the health port. */ -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "otel-collector.fullname" . }}-test-connection-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: health-test
+  policyTypes:
+    - Egress
+  egress:
+    # DNS for the Service name, as for the Collector.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Only the Collector health port.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "otel-collector.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.health }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "otel-collector.fullname" . }}-test-connection-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "otel-collector.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    # The probe pod of this release, in this namespace, on the health port
+    # only; OTLP ports keep the runtime policy's peers.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: health-test
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.health }}
+{{- end }}

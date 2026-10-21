@@ -209,7 +209,7 @@ Content (opt-in; without it the production Node is telemetry only):
 cd deploy/compose
 make preflight-prod   # checks only
 make up-prod
-make verify-prod      # gate entrypoint, health, unauthenticated requests refused
+make verify-prod      # gate, health, unauthenticated refused, bound source accepted, other source refused
 ```
 
 Ports bind to `127.0.0.1` unless you set `FABRIC_BIND_ADDR`; preflight then

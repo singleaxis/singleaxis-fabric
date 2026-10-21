@@ -84,10 +84,6 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
 - **POSIX only for production.** Node mode needs a POSIX spool (`fcntl`),
   so it does not run on Windows. Local file mode on Windows has no spool
   and exports directly.
-- **`make verify-prod` authenticated check.** It posts a fixture trace whose
-  tenant is `harness`; a source-bound production Node refuses it unless
-  your tenant is `harness`. Its unauthenticated-refusal checks are valid.
-  (Found by reading the code; not yet confirmed on a running Node.)
 - **Host sensors are local-profile only.** A production Node refuses
   them; a production ingress for host sensors is planned for P4 (see
   [host sensors](host-sensors.md)).

@@ -102,7 +102,8 @@ def _warn_if_noop_provider() -> None:
         _LOG.warning(
             "fabric.tracing: no OpenTelemetry TracerProvider is configured; Fabric decision "
             "spans will have zero trace IDs and be dropped. Call fabric.install_default_provider"
-            "(...) or wire OTel yourself before opening a Decision. See docs/quickstart.md step 2."
+            "(...) or wire OTel yourself before opening a Decision. See docs/quickstart.md, "
+            "section 5 (Record app-level activity)."
         )
         _NOOP_PROVIDER_WARNED = True
         return
