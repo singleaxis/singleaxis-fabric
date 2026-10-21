@@ -334,7 +334,7 @@ def test_a_forked_child_never_reads_the_parent_s_pooled_connection(
     client = _client(redaction_server)
     assert _call(client, b"warm", transformation=tag) == b"masked-warm"  # pooled now
     parent, (go_read, go_write) = os.getpid(), os.pipe()
-    real_fill, exit_code = fabric_redaction._Reader._fill, []
+    real_fill, exit_code = fabric_redaction._Reader._fill, list[int]()
 
     def fill(reader: object) -> bool:  # the parent's request is sent: let the child call
         if os.getpid() == parent and not exit_code:

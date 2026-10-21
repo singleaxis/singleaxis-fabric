@@ -256,12 +256,18 @@ def test_a_batch_over_iov_max_is_written_in_os_sized_vectors(tmp_path: Path) -> 
     spool = Spool(str(tmp_path / "spool"), 64 << 20)
     synced: list[int] = []
     real = os.fsync
+
+    def fsync(fd: int) -> None:
+        synced.append(fd)
+        real(fd)
+
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(os, "fsync", lambda fd: (synced.append(fd), real(fd))[1])
+        patch.setattr(os, "fsync", fsync)
         assert all(isinstance(n, str) for n in spool.write_group([many(0), many(1)]))
         small, synced[:] = len(synced), []
         names = spool.write_group([many(sequence) for sequence in range(64)])  # > IOV_MAX
     assert all(isinstance(name, str) for name in names) and len(set(names)) == 1
     assert len(synced) == small  # still one file fsync (and one directory fsync) per batch
+    assert isinstance(names[0], str)
     records = unframe_all(spool.read(names[0]))
     assert len(records) == 64 and bytes(records[63][1]) == b"".join(parts)
