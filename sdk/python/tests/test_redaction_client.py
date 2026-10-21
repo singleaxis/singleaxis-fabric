@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import signal
 import socket
 import tempfile
 import threading
@@ -16,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import fabric.redaction as fabric_redaction
 from fabric.redaction import (
     RedactionClient,
     RedactionService,
@@ -169,9 +171,9 @@ def test_one_connection_is_reused_and_a_stale_one_is_replaced(
     client = _client(redaction_server)
     try:
         assert _call(client) is not None
-        (pooled,) = client._idle
+        ((_, pooled),) = client._idle
         assert _call(client) is not None
-        assert client._idle == [pooled]  # the same connection served the second call
+        assert [sock for _, sock in client._idle] == [pooled]  # the same connection again
         pooled.shutdown(socket.SHUT_RDWR)  # as if the service closed an idle connection
         assert _call(client) == b"a [redacted]"
         assert len(redaction_server.requests) == 3  # the stale send was never answered
@@ -281,7 +283,7 @@ def test_saturation_withholds_at_once_and_is_counted(redaction_server: Redaction
 def test_close_closes_the_pool_and_later_calls_fail(redaction_server: RedactionServer) -> None:
     client = _client(redaction_server)
     assert _call(client) is not None
-    (pooled,) = client._idle
+    ((_, pooled),) = client._idle
     client.close()
     assert pooled.fileno() == -1 and client._idle == []
     assert _call(client) is None
@@ -309,3 +311,111 @@ def test_removed_settings_point_to_the_docs() -> None:
         Transformation(print, "1")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="opaque"):
         Transformation("x", "has space")
+
+
+# --- fork: a child never shares the parent's connections, lock or accounting -----------
+
+_fork = pytest.mark.skipif(not hasattr(os, "fork"), reason="POSIX fork")
+
+
+def _child_exit(pid: int) -> int:
+    _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status)
+
+
+@_fork
+def test_a_forked_child_never_reads_the_parent_s_pooled_connection(
+    redaction_server: RedactionServer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sol's reproduction: one warm keep-alive connection, fork, the parent sends and
+    delays its read while the child calls. Sharing the socket cross-wires the answers."""
+    redaction_server.behaviours["tag"] = lambda data: b"masked-" + data
+    tag = Transformation("tag", "1")
+    client = _client(redaction_server)
+    assert _call(client, b"warm", transformation=tag) == b"masked-warm"  # pooled now
+    parent, (go_read, go_write) = os.getpid(), os.pipe()
+    real_fill, exit_code = fabric_redaction._Reader._fill, []
+
+    def fill(reader: object) -> bool:  # the parent's request is sent: let the child call
+        if os.getpid() == parent and not exit_code:
+            os.write(go_write, b"x")
+            exit_code.append(_child_exit(pid))
+        return real_fill(reader)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(fabric_redaction._Reader, "_fill", fill)
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - the child reports through its exit status
+        code = 3
+        try:
+            signal.alarm(10)
+            os.read(go_read, 1)
+            code = 0 if _call(client, b"child", transformation=tag) == b"masked-child" else 1
+        finally:
+            os._exit(code)
+    try:
+        assert _call(client, b"parent", transformation=tag) == b"masked-parent"
+    finally:
+        os.close(go_read)
+        os.close(go_write)
+        client.close()
+    assert exit_code == [0]
+
+
+@_fork
+def test_a_child_forked_while_the_client_is_busy_starts_with_its_own_state(
+    redaction_server: RedactionServer,
+) -> None:
+    """Forked while another thread held the client's lock with every call slot in use:
+    the child gets a new lock and zeroed accounting, and calls succeed within the bound."""
+    client = _client(redaction_server, timeout_s=0.5, max_in_flight=1)
+    assert _call(client) == b"a [redacted]"
+    client._lock.acquire()
+    client._in_flight = 1
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - the child reports through its exit status
+        code = 3
+        try:
+            signal.alarm(10)
+            started = time.monotonic()
+            ok = _call(client) == b"a [redacted]" and time.monotonic() - started < 0.5
+            ok = ok and client.stats() == dict.fromkeys(client.stats(), 0)
+            client.close()
+            code = 0 if ok else 1
+        finally:
+            os._exit(code)
+    try:
+        assert _child_exit(pid) == 0
+    finally:
+        client._in_flight = 0
+        client._lock.release()
+    assert _call(client) == b"a [redacted]"  # the parent's own pool is untouched
+    client.close()
+
+
+def test_the_deadline_covers_waiting_for_the_client_lock(redaction_server: RedactionServer) -> None:
+    client = _client(redaction_server, timeout_s=0.2)
+    client._lock.acquire()  # e.g. inherited held across fork, or a stuck holder
+    results: list[bytes | None] = []
+    call = threading.Thread(target=lambda: results.append(_call(client)), daemon=True)
+    try:
+        call.start()
+        call.join(1.0)
+        assert results == [None]  # withheld at the deadline, never blocked past it
+    finally:
+        client._lock.release()
+        call.join(10.0)
+    assert client.stats()["redaction_timeouts"] == 1
+    client.close()
+
+
+def test_a_pooled_connection_of_another_process_is_never_reused(
+    redaction_server: RedactionServer,
+) -> None:
+    client = _client(redaction_server)
+    assert _call(client) is not None
+    ((owner, pooled),) = client._idle
+    client._idle = [(owner + 1, pooled)]  # as if pooled by the process this one forked from
+    assert _call(client) == b"a [redacted]"
+    ((_, fresh),) = client._idle
+    assert fresh is not pooled
+    client.close()

@@ -24,6 +24,7 @@ import socket
 import stat
 import threading
 import time
+import weakref
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Literal
@@ -47,6 +48,8 @@ _MAX_HEAD_BYTES = 64 * 1024
 _MAX_TIMEOUT_S = 300
 _MAX_IN_FLIGHT = 64
 _RECV = 64 * 1024
+# Every live client, reset in a forked child (os.register_at_fork, below).
+_CLIENTS: weakref.WeakSet[RedactionClient] = weakref.WeakSet()
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,7 +252,13 @@ class RedactionClient:
     :meth:`transform` blocks its caller (a recorder worker) for at most
     ``service.timeout_s``; it never raises. At most ``service.max_in_flight`` calls run
     at once; a call above the bound returns ``None`` at once (counted). :meth:`close`
-    closes the pool; later calls return ``None``."""
+    closes the pool; later calls return ``None``.
+
+    Fork-safe: a pooled connection is bound to the process that opened it and never used
+    by another, and a forked child starts with a new lock, no calls in flight, zeroed
+    counters and no pooled connection (:meth:`_after_fork_in_child`). Sharing the
+    parent's keep-alive socket would interleave both processes' requests and hand each
+    the other's answer."""
 
     def __init__(self, service: RedactionService, *, max_output_bytes: int) -> None:
         if not isinstance(service, RedactionService):
@@ -258,32 +267,72 @@ class RedactionClient:
         self._kind, self._address = parse_endpoint(service.endpoint)
         host = "localhost" if self._kind == "unix" else service.endpoint[len("http://") :]
         self._host = host.rstrip("/").encode("ascii")
+        self._idle: list[tuple[int, socket.socket]] = []  # (owner pid, connection)
+        self._closed = False
+        self._reset()
+        _CLIENTS.add(self)
+
+    def _reset(self) -> None:
         self._lock = threading.Lock()
-        self._idle: list[socket.socket] = []
-        self._in_flight, self._closed = 0, False
+        self._in_flight = 0
+        # Calls that timed out waiting for _lock, counted under a lock never held long.
+        self._lock_timeouts, self._timeouts_lock = 0, threading.Lock()
         self._stats = dict.fromkeys(
             ("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0
         )
+
+    def _after_fork_in_child(self) -> None:
+        """The child's own client: the parent's lock may have been held at the fork and
+        its in-flight calls run on threads the child does not have. The inherited pooled
+        connections are abandoned: closing the child's copy of a descriptor releases only
+        that copy (the parent's socket stays open and keeps its exchanges); the child
+        opens its own connections."""
+        self._reset()
+        idle, self._idle = self._idle, []
+        for _, sock in idle:
+            with contextlib.suppress(OSError):
+                sock.close()
 
     def stats(self) -> dict[str, int]:
         """Calls that timed out, were refused at the in-flight bound, or failed
         otherwise (counters only, never a value)."""
         with self._lock:
-            return dict(self._stats)
+            stats = dict(self._stats)
+        with self._timeouts_lock:
+            stats["redaction_timeouts"] += self._lock_timeouts
+        return stats
 
     def close(self) -> None:
         """Close every pooled connection; later calls fail (``None``)."""
         with self._lock:
             self._closed, idle, self._idle = True, self._idle, []
-        for sock in idle:
+        for _, sock in idle:
             with contextlib.suppress(OSError):
                 sock.close()
+
+    def _checkout(self) -> socket.socket | None:
+        """A pooled connection this process opened (under the lock); one another process
+        opened is never used (dropped: closing it releases only this process's copy)."""
+        pid = os.getpid()
+        while self._idle:
+            owner, sock = self._idle.pop()
+            if owner == pid:
+                return sock
+            with contextlib.suppress(OSError):
+                sock.close()
+        return None
 
     def transform(
         self, data: bytes, *, transformation: Transformation, role: str, mode: MaskingMode
     ) -> bytes | None:
         """The service's replacement for ``data`` (``None`` on any failure)."""
-        with self._lock:
+        deadline = time.monotonic() + self._service.timeout_s  # waiting for the lock too
+        lock = self._lock
+        if not lock.acquire(timeout=self._service.timeout_s):
+            with self._timeouts_lock:
+                self._lock_timeouts += 1
+            return None
+        try:
             if self._closed:
                 self._stats["redaction_failures"] += 1
                 return None
@@ -291,8 +340,9 @@ class RedactionClient:
                 self._stats["redaction_saturated"] += 1
                 return None
             self._in_flight += 1
-            sock = self._idle.pop() if self._idle else None
-        deadline = time.monotonic() + self._service.timeout_s
+            sock = self._checkout()
+        finally:
+            lock.release()
         outcome, keep = "redaction_failures", None
         try:
             request = self._request(data, transformation, role, mode)
@@ -314,7 +364,7 @@ class RedactionClient:
                     self._stats[outcome] += 1
                 pooled = keep is not None and not self._closed
                 if pooled and keep is not None:  # (narrowing for mypy)
-                    self._idle.append(keep)
+                    self._idle.append((os.getpid(), keep))
             if keep is not None and not pooled:
                 with contextlib.suppress(OSError):
                     keep.close()
@@ -432,3 +482,13 @@ class RedactionClient:
             out += reader.exact(size)
             if reader.exact(2) != b"\r\n":
                 raise _FailureError
+
+
+def _after_fork_in_child() -> None:
+    for client in list(_CLIENTS):
+        with contextlib.suppress(Exception):
+            client._after_fork_in_child()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork_in_child)
