@@ -44,27 +44,47 @@ FORBIDDEN_DECISION_METHODS = {
 
 FORBIDDEN_FABRIC_PARAMETERS = {"guardrail_checkers", "nemo", "presidio"}
 
+FORBIDDEN_FABRIC_METHODS = {"enable_auto_instrumentation"}
+
 FORBIDDEN_EXTRAS = {
     "agent-framework",
+    "anthropic",
     "aws",
+    "bedrock",
     "cedar",
+    "cohere",
     "crewai",
     "deepeval",
     "lakera",
     "langgraph",
     "nats",
     "opa",
+    "openai",
+    "otel-langchain",
     "ragas",
     "redis",
 }
 
 EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/_chain.py",
+    "/src/fabric/_coverage_canary.py",
+    "/src/fabric/_instrumentation_registry.py",
     "/src/fabric/_uds.py",
     "/src/fabric/adapters/agent_framework.py",
+    "/src/fabric/adapters/crewai.py",
     "/src/fabric/adapters/langgraph.py",
+    "/src/fabric/auto_instrument.py",
+    "/src/fabric/capture_capabilities.py",
+    "/src/fabric/capture_identity.py",
+    "/src/fabric/capture_readback.py",
     "/src/fabric/cli.py",
+    "/src/fabric/control_protocol.py",
+    "/src/fabric/coverage_manifest.py",
     "/src/fabric/deployment.py",
+    "/src/fabric/deployment_state.py",
+    "/src/fabric/distributed_closure.py",
+    "/src/fabric/enterprise.py",
+    "/src/fabric/enterprise_preflight.py",
     "/src/fabric/escalation.py",
     "/src/fabric/eval.py",
     "/src/fabric/guardrail_adapters",
@@ -77,6 +97,7 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/policy_adapters",
     "/src/fabric/presidio.py",
     "/src/fabric/queue_transports",
+    "/src/fabric/reference_receipts.py",
     "/src/fabric/stream.py",
     "/src/fabric/tool_auth.py",
 }
@@ -96,6 +117,7 @@ def test_package_root_is_capture_only() -> None:
 def test_fabric_and_decision_runtime_surfaces_are_recorder_only() -> None:
     assert all(not hasattr(Decision, name) for name in FORBIDDEN_DECISION_METHODS)
     assert FORBIDDEN_FABRIC_PARAMETERS.isdisjoint(signature(Fabric).parameters)
+    assert all(not hasattr(Fabric, name) for name in FORBIDDEN_FABRIC_METHODS)
 
 
 def test_recorder_distribution_has_no_legacy_extras_or_python_cli() -> None:

@@ -47,7 +47,6 @@ jobs:
               - 'scripts/qualification/run_synthetic_agent_pilot.py'
               - 'scripts/qualification/synthetic_agent_tool.py'
               - 'scripts/qualification/verify_synthetic_sink_readback.py'
-              - 'qualification/synthetic-slice/end-to-end-agent-pilot-plan.md'
               - '.github/workflows/e2e.yml'
       # Manual dispatch has no diff context for paths-filter — always run the
       # smoke rather than silently skipping the only end-to-end gate.

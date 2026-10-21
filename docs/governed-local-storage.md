@@ -3,7 +3,7 @@
 The optional Python `fabric.governed_store` module is a customer-local backend for
 Capture → Protect → Deliver. It implements the existing `ContentStore` and
 `ByteEvidenceStore` protocols, and works with `ByteEvidenceConfig`,
-`ByteEvidenceRecorder`, `CallRecorder`, and `PolicyCaptureSession`. It does not
+`ByteEvidenceRecorder`, and `CallRecorder`. It does not
 install hooks or alter authorization of a monitored action. Unscoped legacy
 `put(text)` is refused because it cannot establish a role-specific content policy.
 

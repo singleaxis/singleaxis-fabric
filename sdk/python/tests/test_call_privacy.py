@@ -370,29 +370,3 @@ def test_protected_mode_rejects_raw_paths_before_content_mutation(
     for path in tmp_path.rglob("*"):
         if path.is_file():
             assert SECRET not in path.read_bytes()
-
-
-@pytest.mark.parametrize(
-    "env",
-    [
-        "FABRIC_CAPTURE_LLM_CONTENT",
-        "TRACELOOP_TRACE_CONTENT",
-        "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
-    ],
-)
-def test_protected_auto_instrumentation_rejects_raw_environment(
-    tmp_path: Path,
-    monkeypatch: Any,
-    env: str,
-) -> None:
-    client = Fabric(
-        FabricConfig(tenant_id="tenant-a", agent_id="agent-a"),
-        content_capture=ContentCaptureConfig(store=_store(tmp_path), roles="all"),
-    )
-    monkeypatch.setenv(env, "true")
-    with pytest.raises(ValueError, match="raw span"):
-        client.enable_auto_instrumentation(only=[], capture_content=False)
-    monkeypatch.delenv(env)
-    with pytest.raises(ValueError, match="raw span"):
-        client.enable_auto_instrumentation(only=[], capture_content=True)
-    client.close()
