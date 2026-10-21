@@ -107,7 +107,9 @@ def _child(args: argparse.Namespace) -> None:
     def worker() -> None:
         with httpx.Client(timeout=30) as client:
             while not stop.is_set():
-                client.post(url, content=body, headers={"Content-Type": "application/json"})
+                client.post(
+                    url, content=body, headers={"Content-Type": "application/json"}
+                )
                 with lock:
                     offered[0] += 1
 
@@ -147,10 +149,16 @@ def main() -> int:
         return 0
     _Model.latency_s = args.model_latency_ms / 1000
     model, node = _serve(_Model), _serve(_Node)
-    node_port = 9 if args.no_node else node.server_address[1]  # discard port: unreachable
+    node_port = (
+        9 if args.no_node else node.server_address[1]
+    )  # discard port: unreachable
     with tempfile.TemporaryDirectory(prefix="fabric-bench-") as tmp:
         root = Path(tmp)
-        roles = ("model.exchange.request", "model.exchange.response", "model.exchange.part")
+        roles = (
+            "model.exchange.request",
+            "model.exchange.response",
+            "model.exchange.part",
+        )
         policy = {
             "schema_version": "fabric.deployment-policy/v1", "policy_id": "bench",
             "policy_version": 1, "tenant_id": TENANT, "workload_id": "bench",
@@ -167,7 +175,11 @@ def main() -> int:
             [sys.executable, "-m", "fabric.wire", "--print-autoload-path"],
             check=True, capture_output=True, text=True,
         ).stdout.strip()  # fmt: skip
-        env = {k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "OTEL_"))}
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith(("FABRIC_", "OTEL_"))
+        }
         env |= {
             # An outer PYTHONPATH (e.g. another checkout's src, for before/after) is kept.
             "PYTHONPATH": os.pathsep.join(filter(None, [autoload, os.environ.get("PYTHONPATH")])),
@@ -188,7 +200,9 @@ def main() -> int:
         argv = [sys.executable, __file__, "--child", "--threads", str(args.threads),
                 "--seconds", str(args.seconds), "--body-bytes", str(args.body_bytes),
                 "--drain-timeout", str(0 if args.no_node else args.drain_timeout)]  # fmt: skip
-        done = subprocess.run(argv, env=env, capture_output=True, text=True, check=False)  # noqa: S603
+        done = subprocess.run(
+            argv, env=env, capture_output=True, text=True, check=False
+        )  # noqa: S603
         if done.returncode:
             sys.stderr.write(done.stderr)
             return done.returncode
