@@ -128,13 +128,13 @@ func TestEncryptedDirectoryBackend(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := testSealer(t, envelopeKey)
-	obj := filepath.Join(dir, testTenant, "evidence", testObjectID)
-	meta := filepath.Join(dir, testTenant, "evidence", "meta", testObjectID+".json")
+	obj := shardedObject(dir, testTenant, testObjectID)
+	meta := shardedMeta(dir, testTenant, testObjectID)
 	if got := readSealed(t, s, obj, testTenant+"/evidence/"+testObjectID); !bytes.Equal(got, body) {
 		t.Fatalf("object plaintext = %q", got)
 	}
 	descriptor := readSealed(t, s, meta, testTenant+"/evidence/meta/"+testObjectID+".json")
-	if !strings.Contains(string(descriptor), `"ref": "file://`+obj+`"`) || !strings.Contains(string(descriptor), `"source_authenticated": true`) {
+	if !strings.Contains(string(descriptor), `"ref": "file://`+filepath.Join(dir, testTenant, "evidence", testObjectID)+`"`) || !strings.Contains(string(descriptor), `"source_authenticated": true`) {
 		t.Fatalf("descriptor plaintext = %s", descriptor)
 	}
 	// The body envelope does not open as the descriptor (AAD binds the path).

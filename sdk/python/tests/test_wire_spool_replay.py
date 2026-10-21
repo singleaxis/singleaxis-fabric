@@ -21,7 +21,7 @@ import pytest
 import fabric
 from fabric._sequence import run_pseudonym
 from fabric.wire.__main__ import autoload_path
-from fabric.wire._spool import unframe
+from fabric.wire._spool import unframe_all
 
 from .test_wire_helpers import PRODUCTION_ID_KEY, open_record, production_env
 from .test_wire_spool import FakeNode, records, wait_for
@@ -125,7 +125,7 @@ def test_sigkill_mid_send_then_restart_replays_exactly_the_undelivered(
         if first.poll() is None:
             first.kill()
     delivered_before = set(exchange_ids(node))
-    left = [unframe(open_record(path))[0] for path in records(spool)]
+    left = [doc for path in records(spool) for doc, _ in unframe_all(open_record(path))]
     undelivered = {
         d["span"]["attributes"]["fabric.wire.exchange_id"] for d in left
         if d["record_kind"] == "exchange"

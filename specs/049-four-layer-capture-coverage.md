@@ -699,6 +699,7 @@ revision, never a new status). A reason is required for `not_captured`,
 | `part_cap` | An extracted part exceeded `max_body_bytes`; its digest and length are kept, its bytes are not. |
 | `inflight_budget` | `max_inflight_bytes` was exhausted. |
 | `queue_full` | The capture queue was full (existing loss reason). |
+| `disk_full` | The agent spool's volume or quota was full (`ENOSPC`/`EDQUOT`) before its configured bound; the record could not be persisted (loss reason). |
 | `shutdown` | The process stopped before the record was persisted (existing loss reason). |
 | `internal_error` | Fabric code failed; the application was unaffected (existing loss reason). |
 | `span_dropped` | The telemetry record was refused or sampled out (existing loss reason). |
@@ -2441,6 +2442,15 @@ without a binding — makes the run `unverified(source_unauthenticated)`
 Content log records go through `otlp/content` without fabricguard: the
 `fabriccontent` exporter performs the same binding check and persists
 `source_authenticated` in the descriptor (section 4.3).
+
+**Repeated keys.** The identity check visits every occurrence of a key,
+never only the first. A resource, scope, span, span event or span link that
+carries any `fabric.*` key more than once, and a log resource, scope or
+record that repeats a `fabric.*` key, the event-class key or an AEEP
+evidence key, refuses the whole batch with the same non-retryable
+`INVALID_ARGUMENT`, on bound and unbound ingresses alike (OTLP forbids
+repeated keys; a first-match reader and a last-wins reader would otherwise
+see different sources).
 
 **Trusted readback.** A stamp is a value in a record, so it counts only
 when `fabric.reconstruct` reads the record from a trusted location: the

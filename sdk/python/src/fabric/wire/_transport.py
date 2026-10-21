@@ -124,6 +124,7 @@ class WireTee:
         self.index = EndpointIndex(config.all_endpoints)
         self.closed, self.matched, self.internal_errors = False, 0, 0
         self.deferred_to_explicit = 0  # local counter only; never telemetry
+        self.stranded = 0  # exchanges claimed open at shutdown (``shutdown`` losses)
         self._active: set[Exchange] = set()
         self.forks = ForkLedger()  # what forked children allocate survives their death
         loss.add_beat_source(self._child_beats)
@@ -284,26 +285,33 @@ class WireTee:
         self.internal_errors += reason == "internal_error"
         self.loss.record(self.allocator.source_id, epoch, reason, sequence)
 
+    def shut(self, exchange: Exchange) -> None:
+        """Claim an exchange still open at shutdown (capture closing, or its client
+        unpatched): a ``shutdown`` loss, unless already finished or owned by its live
+        explicit call. Never raises."""
+        with contextlib.suppress(Exception):
+            deferral = getattr(exchange, "deferral", None)
+            if not exchange.detach():
+                return
+            if deferral is None:
+                epoch, sequence = exchange.epoch, exchange.sequence
+            elif deferral.defers:  # its explicit call is still live and owns it
+                self.deferred_to_explicit += 1
+                return
+            else:  # it outlived its explicit call: wire's, and now lost
+                epoch, sequence, _ = self._allocate(None, adopted=True)
+            self.stranded += 1
+            self.lose(epoch, sequence, "shutdown")
+
     def close(self, timeout_s: float) -> bool:
         """Stop capturing; exchanges still open become ``shutdown`` losses, then drain."""
         self.closed = True
         deadline = time.monotonic() + max(0.0, timeout_s)
         drain_reaper(timeout_s / 4)  # streams already finalized still get their span
         # The caller still gets every byte; only exchanges this call claims are lost.
-        stranded: list[tuple[int, int]] = []
         for exchange in list(self._active):
-            deferral = getattr(exchange, "deferral", None)
-            if not exchange.detach():
-                continue
-            if deferral is None:
-                stranded.append((exchange.epoch, exchange.sequence))
-            elif deferral.defers:  # its explicit call is still live and owns it
-                self.deferred_to_explicit += 1
-            else:  # it outlived its explicit call: wire's, and now lost
-                stranded.append(self._allocate(None, adopted=True)[:2])
-        for epoch, sequence in stranded:
-            self.lose(epoch, sequence, "shutdown")
-        closed = self.pipeline.close(max(0.0, deadline - time.monotonic())) and not stranded
+            self.shut(exchange)
+        closed = self.pipeline.close(max(0.0, deadline - time.monotonic())) and not self.stranded
         with contextlib.suppress(Exception):  # children seen so far, then no more
             for beat in self._child_beats():
                 self.loss.queue_beat(beat)

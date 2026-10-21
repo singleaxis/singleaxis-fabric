@@ -119,7 +119,7 @@
       "minItems": 2,
       "maxItems": 2
     },
-    "lossReason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client"]},
+    "lossReason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client", "disk_full"]},
     "api": {
       "enum": [
         "openai.chat_completions", "openai.responses", "openai.completions",

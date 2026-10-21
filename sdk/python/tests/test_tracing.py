@@ -142,3 +142,17 @@ def test_install_default_provider_accepts_meter_provider(
     monkeypatch.setattr(metrics, "set_meter_provider", calls.append)
     install_default_provider(exporter=InMemorySpanExporter(), meter_provider=MeterProvider())
     assert len(calls) == 1
+
+
+def test_get_tracer_noop_warning_points_at_provider_setup(
+    _reset_tracer_provider: None,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The no-provider warning names the quickstart section that configures a
+    tracer provider (section 5, "Record app-level activity")."""
+    with caplog.at_level("WARNING", logger="fabric"):
+        get_tracer()
+    messages = [r.message for r in caplog.records if "no OpenTelemetry" in r.message]
+    assert messages
+    assert "docs/quickstart.md, section 5 (Record app-level activity)" in messages[0]
+    assert "step 2" not in messages[0]

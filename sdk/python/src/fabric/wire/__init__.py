@@ -166,6 +166,13 @@ class WireStats:
     # Model calls sent through a client wire capture does not tee (requests, urllib3): each
     # is an ``uninstrumented_client`` loss (agent matrix D4).
     uninstrumented_calls: int = 0
+    # Exchanges lost because the spool's volume was full (ENOSPC/EDQUOT; ``disk_full``
+    # losses, chaos report D1); run markers not spooled yet (retried, kept in the spool's
+    # loss ledger); loss and marker records a drainer recovered from the ledger slots of
+    # processes that died with them unspooled.
+    disk_full_drops: int = 0
+    markers_held: int = 0
+    ledger_recovered: int = 0
 
 
 class WireHandle:

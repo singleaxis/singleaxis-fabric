@@ -21,7 +21,7 @@ import time
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from opentelemetry import trace
 from opentelemetry.context import Context
@@ -62,6 +62,10 @@ _STATS = (
     "spans_refused",
 )  # fmt: skip
 _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
+# Spool path (D4): the worker takes up to this many queued jobs (and about this many
+# captured bytes) at a time and spools them with one admission, one rename lock and one
+# directory fsync; each record is still fsync'd before it counts as spooled.
+_BATCH_ITEMS, _BATCH_BYTES = 64, 8 * 1024 * 1024
 _METADATA_MAX_BYTES = 256 * 1024  # json.loads holds the GIL; larger bodies are left to reconstruct
 _STOP = object()
 _PIPELINES: weakref.WeakSet[CapturePipeline] = weakref.WeakSet()
@@ -234,7 +238,8 @@ class CapturePipeline:
         self._queue: queue.Queue[Any] = queue.Queue(maxsize=self._max_items)
         self._cond, self._closing = threading.Condition(), threading.Event()
         self._closed, self._pending, self._stats = False, 0, dict.fromkeys(_STATS, 0)
-        self._current: CaptureJob | None = None  # the job in progress until its outcome is claimed
+        # The jobs in progress (by id) until their outcome is claimed.
+        self._current: dict[int, CaptureJob] = {}
         self._worker = threading.Thread(target=self._run, name="fabric-wire-capture", daemon=True)
         self._worker.start()
 
@@ -288,19 +293,19 @@ class CapturePipeline:
                 lost.append(self._queue.get_nowait())
         with self._cond:
             self._pending -= len(lost)
-            current, self._current = self._current, None
-            self._stats["dropped"] += current is not None
+            current, self._current = list(self._current.values()), {}
+            self._stats["dropped"] += len(current)
             self._cond.notify_all()
         for job in lost:
             self._drop(job, "shutdown")
-        if current is not None:  # the worker still releases its bytes when it returns
-            self._lose(current, "shutdown")
+        for job in current:  # the worker still releases their bytes when it returns
+            self._lose(job, "shutdown")
         self._queue.put(_STOP)
         if drained and self._worker is not threading.current_thread():
             self._worker.join(timeout=max(0.0, deadline - time.monotonic()))
         if self._protector is not None:  # its redaction service connections
             self._protector.close(max(0.0, deadline - time.monotonic()))
-        return drained and not lost and current is None
+        return drained and not lost and not current
 
     def stats(self) -> Mapping[str, int]:
         protect = self._protector.stats() if self._protector is not None else {}
@@ -316,28 +321,88 @@ class CapturePipeline:
         ``False`` means ``close`` already reported it as a shutdown loss. Exactly one wins.
         """
         with self._cond:
-            owned, self._current = self._current is job, None
-            return owned
+            return self._current.pop(id(job), None) is not None
 
     def _run(self) -> None:  # the worker is the only writer of its own counters
         while True:
             job = self._queue.get()
             if job is _STOP:
                 return
-            with self._cond:
-                self._current = job  # close() may claim it until the worker commits
+            jobs, stop = self._batch(job)
+            with self._cond:  # close() may claim them until the worker commits
+                self._current.update((id(j), j) for j in jobs)
             try:
-                self._emit(job, *self._prepare(job))
-            except Exception:  # before the commit only: after it the outcome is the span
-                with contextlib.suppress(Exception):
-                    if self._commit(job):
-                        self._stats["internal_errors"] += 1
-                        self._lose(job, "internal_error")
+                if self._sender is not None:
+                    self._spool_batch(self._sender, jobs)
+                else:
+                    self._emit_one(job)
             finally:
-                self._done(job)
+                for done in jobs:
+                    self._done(done)
                 with self._cond:
-                    self._pending -= 1
+                    self._pending -= len(jobs)
                     self._cond.notify_all()
+            if stop:
+                return
+
+    def _batch(self, job: CaptureJob) -> tuple[list[CaptureJob], bool]:
+        """``job`` plus, on the spool path, the jobs already queued behind it (bounded by
+        count and captured bytes); ``True`` when the stop sentinel was taken."""
+        jobs, size = [job], _job_bytes(job)
+        while self._sender is not None and len(jobs) < _BATCH_ITEMS and size < _BATCH_BYTES:
+            try:
+                queued = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            if queued is _STOP:
+                return jobs, True
+            jobs.append(queued)
+            size += _job_bytes(queued)
+        return jobs, False
+
+    def _fail(self, job: CaptureJob) -> None:
+        """An error before the commit: an ``internal_error`` loss (after the commit the
+        outcome is the span or record)."""
+        with contextlib.suppress(Exception):
+            if self._commit(job):
+                self._stats["internal_errors"] += 1
+                self._lose(job, "internal_error")
+
+    def _emit_one(self, job: CaptureJob) -> None:
+        try:
+            self._emit(job, *self._prepare(job))
+        except Exception:
+            self._fail(job)
+
+    def _spool_batch(self, sender: Sender, jobs: Sequence[CaptureJob]) -> None:
+        """Protect each job, commit it, then spool the committed ones in one batch. A record
+        the spool did not take is a loss: ``queue_full`` (over the bound), ``disk_full``
+        (the volume is full) or ``internal_error``."""
+        ready: list[tuple[CaptureJob, dict[str, Any], Any]] = []
+        for job in jobs:
+            try:
+                attrs, staged = self._prepare(job)
+                span = self._span_record(job, attrs)
+            except Exception:
+                self._fail(job)
+                continue
+            if self._commit(job):
+                ready.append((job, span, staged))
+        if not ready:
+            return
+        try:
+            outcomes = sender.spool_exchanges(
+                [(job.source_id, job.source_epoch, span, staged) for job, span, staged in ready]
+            )
+        except Exception:
+            outcomes = ["internal_error"] * len(ready)
+        for (job, _, _), outcome in zip(ready, outcomes, strict=True):
+            if outcome == "spooled":
+                continue
+            if outcome == "internal_error":
+                self._stats["internal_errors"] += 1
+            with contextlib.suppress(Exception):
+                self._lose(job, cast("LossReason", outcome))
 
     def _prepare(self, job: CaptureJob) -> tuple[dict[str, AttributeValue], list[Any]]:
         """Protect, then store (or stage, in node mode) both sides; the span attributes."""
@@ -406,8 +471,8 @@ class CapturePipeline:
                 result.reason = result.reason or "store_failed"
         return ok
 
-    def _spool(self, sender: Sender, job: CaptureJob, attrs: dict[str, Any], bodies: Any) -> None:
-        """Committed: write the exchange record; a full spool is a ``queue_full`` loss."""
+    def _span_record(self, job: CaptureJob, attrs: dict[str, Any]) -> dict[str, Any]:
+        """The exchange record's span (spool path)."""
         ctx = trace.get_current_span(capture_parent(job.parent_context)).get_span_context()
         span: dict[str, Any] = {
             "name": SPAN_EXCHANGE, "kind": "client", "trace_flags": 1,
@@ -419,20 +484,11 @@ class CapturePipeline:
         }  # fmt: skip
         if ctx.is_valid:
             span |= {"parent_span_id": f"{ctx.span_id:016x}", "parent_is_remote": ctx.is_remote}
-        try:
-            if not sender.spool_exchange(job.source_id, job.source_epoch, span, bodies):
-                self._lose(job, "queue_full")
-        except Exception:
-            self._stats["internal_errors"] += 1
-            self._lose(job, "internal_error")
+        return span
 
     def _emit(self, job: CaptureJob, attrs: dict[str, AttributeValue], staged: Any) -> None:
-        """Spool path: commit, then write. Else build the span, then commit: an unended span
-        is never exported, so a job ``close`` claimed meanwhile is dropped here."""
-        if self._sender is not None:
-            if self._commit(job):
-                self._spool(self._sender, job, attrs, staged)
-            return
+        """Build the span, then commit: an unended span is never exported, so a job
+        ``close`` claimed meanwhile is dropped here (the spool path is :meth:`_spool_batch`)."""
         provider = resolve_capture_provider(self._provider, self._fallback)
         if provider is None:  # a protected route would rename it and erase its identifiers
             if self._commit(job):
@@ -491,6 +547,11 @@ class CapturePipeline:
             "captured_at": datetime.fromtimestamp(captured_ns / 1e9, UTC).isoformat(),
             "run_id": job.run_id, "operation_id": job.exchange_id,
         }  # fmt: skip
+
+
+def _job_bytes(job: CaptureJob) -> int:
+    sides = (job.request, job.response)
+    return sum(side.captured_byte_length for side in sides if side is not None)
 
 
 def _is_error(job: CaptureJob) -> bool:

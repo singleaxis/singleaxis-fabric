@@ -77,8 +77,9 @@ processors:
 
 exporters:
   # Content store: the local fabric-content volume, in the SDK store layout
-  # (<dir>/<tenant>/evidence/<object_id> + evidence/meta/<id>.json) that
-  # `fabric.reconstruct --store-root` reads. collector-content-s3.yaml
+  # (<dir>/<tenant>/evidence/<object_id> + evidence/meta/<id>.json, sharded
+  # on disk as evidence/<h0h1>/<h2h3>/ with h = sha256(object_id); alert on
+  # inode use, not only bytes) that `fabric.reconstruct --store-root` reads. collector-content-s3.yaml
   # replaces it in the pipeline with an S3 exporter. Only tenants listed here
   # are written; anything else is dropped with a content-free log line.
   fabriccontent:

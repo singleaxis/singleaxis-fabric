@@ -21,7 +21,7 @@ from typing import Any
 
 from .byte_evidence import _BOUNDARIES, _ROLES
 from .content_store.base import check_safe_identifier
-from .content_store.local import LocalFilesystemContentStore
+from .content_store.local import LocalFilesystemContentStore, node_shard
 
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _FIELDS = frozenset(
@@ -149,6 +149,7 @@ class ByteEvidenceResolver:
         if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
             raise OSError("safe local resolution unavailable")
         directory_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
+        file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
         with ExitStack() as opened:
             descriptors: list[int] = []
             descriptors.append(os.open(self._root.anchor, directory_flags))
@@ -162,11 +163,22 @@ class ByteEvidenceResolver:
                 descriptors.append(os.open(component, directory_flags, dir_fd=descriptors[-1]))
                 opened.callback(os.close, descriptors[-1])
             name = f"{object_id}.json" if metadata else object_id
-            descriptor = os.open(
-                name,
-                os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
-                dir_fd=descriptors[-1],
-            )
+            # The Fabric Node's two-level shard first, then the flat name (this
+            # SDK's writer, and Nodes before sharding) in the same pinned parent.
+            flat = directory = descriptors[-1]
+            for component in node_shard(object_id):
+                try:
+                    directory = os.open(component, directory_flags, dir_fd=directory)
+                except FileNotFoundError:
+                    directory = flat
+                    break
+                opened.callback(os.close, directory)
+            try:
+                descriptor = os.open(name, file_flags, dir_fd=directory)
+            except FileNotFoundError:
+                if directory == flat:
+                    raise
+                descriptor = os.open(name, file_flags, dir_fd=flat)
             opened.callback(os.close, descriptor)
             info = os.fstat(descriptor)
             limit = _MAX_DESCRIPTOR_BYTES if metadata else self.max_object_bytes

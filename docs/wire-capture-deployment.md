@@ -66,7 +66,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 |---|---|---|
 | `FABRIC_WIRE_CONTENT_ENDPOINT` | node mode | Full URL of the Node's content receiver, used as given (`https://node:4319/v1/logs`). Setting it selects node mode. It must be HTTPS (verified; verification cannot be turned off) or plain HTTP to a loopback host only. A URL with user info, a query or a fragment is rejected without echoing it. Redirects are never followed (below). |
 | `FABRIC_WIRE_STORE` | no | Unset: node mode when a content endpoint is set, else metadata only (no bytes stored; runs can only be `unverified`). `node`: node mode explicitly. `file:///absolute/dir`: the agent writes a local store itself (development, offline or single-host; refused together with a content endpoint). `s3://…` is **refused**: S3 is written by the Node. |
-| `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>`. A path prefix chosen by you, not an access boundary; never personal data (see below). |
+| `FABRIC_TENANT_ID` | node and file modes | Tenant id sent with every content record; it must equal the Node's one allowed tenant (one Node per tenant, §2). Objects land at `<prefix><tenant>/evidence/<object-id>` (a Node directory store shards this under `evidence/<h0h1>/<h2h3>/`, `h` = SHA-256 of the id; alert on its filesystem's inode use, not only bytes). A path prefix chosen by you, not an access boundary; never personal data (see below). |
 | `FABRIC_WIRE_SPOOL_DIR` | node mode | Absolute directory for the durable spool (created `0700`; an existing one must be owned by the agent's uid and not a symlink). In local file mode (`FABRIC_WIRE_STORE=file://…`, private tracer, an OTLP endpoint set) the spool is on by default at `<store root>/.fabric-wire-spool/<tenant>`, so a captured call survives the process (a crash, SIGKILL, a terminated worker) and the next process capturing to the same store delivers it; `off` restores direct export. |
 | `FABRIC_WIRE_AIOHTTP` | no | `1` (default) or `0`: capture model calls sent with `aiohttp` (capture point `wire.py.aiohttp`, LiteLLM's and DSPy's default async transport). |
 | `FABRIC_WIRE_SPOOL_DURABLE_BOUNDARY` | no | `FABRIC_WIRE_SPOOL_DIR` or one of its ancestors, provisioned durable by you (like a mount point): the spool's directory barrier fsyncs it and the directories below it, never above. Needed only when an ancestor of the spool cannot be opened by the agent and no earlier walk was recorded; see "The spool". |
@@ -670,6 +670,17 @@ records must also survive Pod deletion and rescheduling, for example
 during rolling deploys while the Node is down; a restarted Pod with the
 same claim delivers the earlier records first. Several containers or
 processes may share one spool directory.
+
+*When the volume fills before the bound.* Size the volume above
+`FABRIC_WIRE_SPOOL_MAX_BYTES` plus 1 MiB. If it fills first anyway, new
+exchanges are recorded as `disk_full` losses (`WireStats.disk_full_drops`),
+the host is unaffected, and the loss ranges and run markers that cannot be
+spooled are kept in the spool's preallocated loss ledger (`.ledger`, 260 KiB,
+written when the spool is opened). The next process that drains the spool
+exports a dead process's ledger records (`ledger_recovered`), so a run whose
+exchanges were all lost is still reported (`partial`/`unverified`), never
+missing. On copy-on-write filesystems (btrfs, ZFS) overwriting the ledger
+may itself need free blocks: keep the spool on ext4, xfs or an equivalent.
 
 **Compose.** The image runs as uid/gid 65532. Make the token file and any
 TLS key owned by the operator who runs `make preflight-prod`, with group
