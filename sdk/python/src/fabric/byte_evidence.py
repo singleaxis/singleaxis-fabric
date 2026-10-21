@@ -23,16 +23,29 @@ import threading
 import time
 import uuid
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
-from ._sequence import GeneratedIds, check_id_key, id_key_from_env
-from ._transform_runner import TransformRunner, check_transform_ref
+from ._sequence import (
+    EmittedIds,
+    IdentityMode,
+    check_id_key,
+    emitted_ids,
+    id_key_from_env,
+    identity_mode_from_env,
+)
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
+from .redaction import (
+    RedactionClient,
+    RedactionService,
+    Transformation,
+    refuse_removed,
+    resolve_service,
+)
 
 _ROLES = frozenset(
     {
@@ -178,33 +191,29 @@ def _validate_capture_args(
 
 @dataclass(frozen=True, slots=True)
 class BytePrivacyPolicy:
-    """Customer-approved content handling; transformations run behind the handoff.
+    """Customer-approved content handling; masking runs behind the handoff.
 
-    A transform is customer code, not a built-in PII detector, named by module
-    reference (``"package.module:function"``). It runs **out of process**, in a dedicated
-    child interpreter (:class:`fabric._transform_runner.TransformRunner`), never on the
-    caller's thread nor the recorder's worker: a call past ``timeout_s`` kills its child
-    and the object (and a review copy) is withheld as ``protection_failed``; while two
-    calls are busy, content needing the transform is withheld at once (spec 049 §7.7
-    rule 4). In-process callables are refused.
+    The masked copy of ``masked_only`` and ``original_plus_masked`` is made by the
+    customer-run redaction service (``ByteEvidenceConfig.redaction``, else
+    ``FABRIC_REDACTION_ENDPOINT``; ``contracts/redaction/v1``), called on the recorder's
+    worker, never the caller's thread, with this transformation identity and version.
+    Fabric runs no customer code and ships no PII detector. A failed, timed-out,
+    oversized or saturated call withholds the object (and a review copy) as
+    ``protection_failed`` (spec 049 §7.7 rule 4).
     Masked descriptors omit the original digest to avoid revealing low-entropy original
     values. Raw queued memory stays inside the customer's approved capture boundary.
     """
 
     mode: str = "original"
-    transform: str | None = None
     transformation_id: str | None = None
     transformation_version: str | None = None
-    timeout_s: float = 5.0
+    transform: InitVar[object] = None  # a module reference: removed, refused with the docs
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, transform: object) -> None:
+        refuse_removed(transform=transform)
         if self.mode not in {"original", "omit", "masked_only", "original_plus_masked"}:
             raise ValueError("unsupported byte privacy mode")
         masked = self.mode in {"masked_only", "original_plus_masked"}
-        if masked and self.transform is None:
-            raise ValueError("masked modes require a customer transformation")
-        if masked:
-            check_transform_ref(self.transform)
         for value in (self.transformation_id, self.transformation_version):
             if masked and (
                 not isinstance(value, str)
@@ -213,17 +222,16 @@ class BytePrivacyPolicy:
             ):
                 raise ValueError("masked modes require opaque transformation identity and version")
         if not masked and any(
-            value is not None
-            for value in (self.transform, self.transformation_id, self.transformation_version)
+            value is not None for value in (self.transformation_id, self.transformation_version)
         ):
             raise ValueError("transformation settings require a masked mode")
-        timeout = self.timeout_s
-        if (
-            isinstance(timeout, bool)
-            or not isinstance(timeout, int | float)
-            or not 0 < timeout <= 300  # noqa: PLR2004
-        ):
-            raise ValueError("timeout_s must be in (0, 300]")
+
+    @property
+    def transformation(self) -> Transformation | None:
+        """The masked modes' transformation identity, sent to the redaction service."""
+        if self.transformation_id is None or self.transformation_version is None:
+            return None
+        return Transformation(self.transformation_id, self.transformation_version)
 
 
 def _role_policies_block(policies: Mapping[str, BytePrivacyPolicy]) -> dict[str, Any]:
@@ -276,8 +284,16 @@ class ByteEvidenceConfig:
     # The id key (049 §7.3; FABRIC_WIRE_ID_KEY when unset): the production profile needs
     # it before any content is captured. A secret: never in repr or logs.
     id_key: bytes | None = field(default=None, repr=False)
+    # The customer-run redaction service for masked role policies (contracts/redaction/v1;
+    # FABRIC_REDACTION_ENDPOINT when unset).
+    redaction: RedactionService | None = None
+    # 049 §2.9 rule 7 (FABRIC_IDENTITY_MODE when unset): caller ids leave as keyed
+    # pseudonyms (``pseudonymous``, the default) or as given (``clear``).
+    identity_mode: IdentityMode | None = None
 
     def __post_init__(self) -> None:  # noqa: PLR0912
+        if self.redaction is not None and not isinstance(self.redaction, RedactionService):
+            raise ValueError("redaction must be a RedactionService")
         if not isinstance(self.store, ByteEvidenceStore) or not self.store.tenant_id:
             raise ValueError("byte evidence requires a tenant-scoped byte evidence store")
         check_safe_identifier("tenant_id", self.store.tenant_id)
@@ -289,6 +305,8 @@ class ByteEvidenceConfig:
         if not self.roles or not isinstance(self.roles, frozenset) or self.roles - _ROLES:
             raise ValueError("roles must be a non-empty frozenset of content-v2 roles")
         check_id_key(self.id_key)
+        if self.identity_mode not in (None, "pseudonymous", "clear"):
+            raise ValueError("identity_mode must be 'pseudonymous' or 'clear'")
         if self.content_protector is not None and self.deployment_policy is None:
             object.__setattr__(self, "deployment_policy", self.content_protector.policy)
         if self.deployment_policy is not None:
@@ -301,7 +319,7 @@ class ByteEvidenceConfig:
             if self.role_policies:
                 raise ValueError("deployment_policy and role_policies cannot be combined")
             protector = self.content_protector or ContentProtector(
-                deployment, payload_max_bytes=self.payload_max_bytes
+                deployment, payload_max_bytes=self.payload_max_bytes, redaction=self.redaction
             )
             if protector.policy.digest != deployment.digest:
                 raise ValueError("content protector must match deployment policy")
@@ -360,15 +378,17 @@ class ByteEvidenceRecorder:
         self._unretained_drops = 0
         self._spool = config.durable_spool
         self._policy_block = _role_policies_block(config.role_policies or {})
-        # One bounded runner per role transform (049 §7.7 rule 4): never on this worker.
-        self._runners = {
-            role: TransformRunner(
-                policy.transform, "fabric-byte-transform",
-                max_output_bytes=config.payload_max_bytes,
-            )
-            for role, policy in (config.role_policies or {}).items()
-            if policy.transform is not None
-        }  # fmt: skip
+        # One connection pool to the redaction service for masked role policies (049
+        # §7.7 rule 3), used only on this recorder's worker.
+        self._redaction: RedactionClient | None = None
+        if any(policy.transformation is not None
+               for policy in (config.role_policies or {}).values()):  # fmt: skip
+            service = resolve_service(config.redaction, os.environ)
+            if service is None:
+                raise ValueError(
+                    "masked modes require a redaction service endpoint (FABRIC_REDACTION_ENDPOINT)"
+                )
+            self._redaction = RedactionClient(service, max_output_bytes=config.payload_max_bytes)
         # 049 §7.3: never blocked, but not silent; a malformed id key still raises here.
         id_key = config.id_key if config.id_key is not None else id_key_from_env(os.environ)
         self._profile, self._gate_reason = content_gate(
@@ -376,10 +396,10 @@ class ByteEvidenceRecorder:
         )
         if self._gate_reason is not None:
             self._log_gate()
-        # 049 §2.9 rule 5: production without the id key exports no caller-derived id.
-        self._generated_ids = (
-            GeneratedIds() if self._profile == "production" and id_key is None else None
-        )
+        # 049 §2.9: caller ids leave as keyed pseudonyms, or, in production without the id
+        # key (rule 5), as generated ids; as given only in the clear mode (or local, no key).
+        mode = config.identity_mode or identity_mode_from_env(os.environ)
+        self._emitted_ids = emitted_ids(self._profile, id_key, mode)
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -411,21 +431,34 @@ class ByteEvidenceRecorder:
             "spool_encrypted": self._spool is not None,
         }
 
-    def transform_stats(self) -> dict[str, int]:
-        """Counters of the role-policy transform runners (never a value)."""
-        totals = dict.fromkeys(
-            ("transform_timeouts", "transform_saturated", "transform_abandoned"), 0
-        )
-        for runner in self._runners.values():
-            for key, value in runner.stats().items():
-                totals[key] += value
-        return totals
+    def redaction_stats(self) -> dict[str, int]:
+        """The redaction service counters (never a value): calls that timed out, were
+        refused at the in-flight bound, or failed otherwise."""
+        if self._redaction is not None:
+            return self._redaction.stats()
+        if (protector := self._config.content_protector) is not None:
+            return protector.stats()
+        return dict.fromkeys(("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0)
 
     @property
-    def generated_ids(self) -> GeneratedIds | None:
-        """The generated ids replacing caller ids (049 §2.9 rule 5) in the production
-        profile without the id key, else ``None`` (caller ids are emitted as given)."""
-        return self._generated_ids
+    def emitted_ids(self) -> EmittedIds | None:
+        """How caller ids are emitted (049 §2.9): keyed pseudonyms, generated ids (the
+        production profile without the id key, rule 5), or ``None`` (as given)."""
+        return self._emitted_ids
+
+    def emitted_run_id(self, run_id: str) -> str:
+        """``run_id`` as this recorder emits it (epoch 0): the id a source spool or a
+        qualified-run expectation for this run is keyed by. Never the clear value unless
+        ids are emitted as given. The result is an :class:`fabric._sequence.EmittedId`:
+        passed back to this recorder it is kept as is, while a plain string is always
+        caller input and mapped again."""
+        ids = self._emitted_ids
+        return run_id if ids is None else ids.run(run_id, 0)
+
+    def emitted_source_id(self, source_id: str) -> str:
+        """``source_id`` as this recorder emits it, like :meth:`emitted_run_id`."""
+        ids = self._emitted_ids
+        return source_id if ids is None else ids.source(source_id)
 
     @property
     def tenant_id(self) -> str:
@@ -471,9 +504,9 @@ class ByteEvidenceRecorder:
             chunk_index=chunk_index,
         )
 
-        if (ids := self._generated_ids) is not None:  # 049 §2.9 rule 5: no caller id leaves
-            source_id = ids.source()
-            run_id = ids.run(source_epoch) if run_id is not None else None
+        if (ids := self._emitted_ids) is not None:  # 049 §2.9: no clear caller id leaves
+            source_id = ids.source(source_id)
+            run_id = ids.run(run_id, source_epoch) if run_id is not None else None
             operation_id, attempt_id, stream_id = (
                 ids.other(value) if value is not None else None
                 for value in (operation_id, attempt_id, stream_id)
@@ -488,7 +521,7 @@ class ByteEvidenceRecorder:
         protector = self._config.content_protector
         # Customer redaction never runs on the caller's thread (spec 049 §7.1, §7.7): it
         # is deferred to the worker, before persistence; failure there withholds.
-        deferred = protector is not None and enabled and protector.runs_customer_code(role)
+        deferred = protector is not None and enabled and protector.needs_redaction_service(role)
         if protector is not None and not gated and not deferred:
             # Fabric's own protection runs before the handoff: only permitted bytes queue.
             protected = protector.protect(role if enabled else "", data)
@@ -540,7 +573,8 @@ class ByteEvidenceRecorder:
             descriptor["source_sha256"] = digest
         if deferred:  # pending the worker's redaction: no digest or length of the original
             deployment = self._config.deployment_policy
-            if deployment is None:  # validated configuration
+            transformation = protector.transformation(role) if protector is not None else None
+            if deployment is None or transformation is None:  # validated configuration
                 raise ValueError("missing deployment policy")
             descriptor.update(
                 workload_id=deployment.workload_id,
@@ -551,6 +585,8 @@ class ByteEvidenceRecorder:
                 protection_status="redacted",
                 representation="redacted",
                 transformations=["redact"],
+                transformation_id=transformation.transformation_id,
+                transformation_version=transformation.version,
             )
         if protected is not None:
             deployment = self._config.deployment_policy
@@ -784,23 +820,22 @@ class ByteEvidenceRecorder:
         return self._spool.health() if self._spool is not None else {"enabled": False}
 
     def close(self, timeout_s: float = 10.0) -> bool:
-        """Settle accepted writes, stop the worker and every transformation child process
-        (the role-policy runners and the content protector's; Sol P0-A round 2 #6), and
-        close the durable spool, all within ``timeout_s``."""
+        """Settle accepted writes, stop the worker, close the redaction service
+        connections (the role policies' and the content protector's) and the durable
+        spool, all within ``timeout_s``."""
         deadline = time.monotonic() + max(0.0, timeout_s)
         with self._condition:
             self._closed = True
         complete = self.flush(max(0.0, deadline - time.monotonic()))
         self._worker.join(max(0.0, deadline - time.monotonic()))
-        runners: list[Any] = list(self._runners.values())
+        if self._redaction is not None:
+            self._redaction.close()
         if self._config.content_protector is not None:
-            runners.append(self._config.content_protector)
-        # every runner is closed (no short circuit)
-        stopped = all([r.close(max(0.0, deadline - time.monotonic())) for r in runners])  # noqa: C419
+            self._config.content_protector.close()
         if self._spool is not None:
             spooled = self._spool.close(max(0.0, deadline - time.monotonic()))
-            return complete and stopped and spooled and not self._worker.is_alive()
-        return complete and stopped
+            return complete and spooled and not self._worker.is_alive()
+        return complete
 
     def _run(self) -> None:
         while True:
@@ -847,7 +882,7 @@ class ByteEvidenceRecorder:
             return
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
         transformed = None
-        if policy.transform is not None:
+        if policy.transformation is not None:
             transformed = self._role_transform(role, policy, data)
             if transformed is None:
                 # Spec 049 §7.7 rule 4: a failed transformation withholds; never raw bytes.
@@ -866,21 +901,21 @@ class ByteEvidenceRecorder:
             self._write_record(derivative_id, transformed, self._config.review_store)
 
     def _role_transform(self, role: str, policy: BytePrivacyPolicy, data: bytes) -> bytes | None:
-        """A role policy's transform, out of process; ``None`` when it raised, timed
-        out, was refused while the capacity bound is reached, or returned no usable bytes."""
-        if policy.transform is None:
+        """A role policy's masked copy from the redaction service; ``None`` when the call
+        failed, timed out, was refused at the in-flight bound or returned too much."""
+        transformation = policy.transformation
+        if transformation is None or self._redaction is None:
             return None
-        outcome, out = self._runners[role].run(data, policy.timeout_s)
-        if outcome != "ok" or out is None:
-            return None
-        return out if len(out) <= self._config.payload_max_bytes else None
+        return self._redaction.transform(
+            data, transformation=transformation, role=role, mode="masked_only"
+        )
 
     def _deferred_protection(self, object_id: str, role: str, data: bytes) -> bytes | None:
         """The bytes to persist under a deployment policy. A customer redaction deferred
         from :meth:`capture` runs here (bounded, on its own thread), before persistence;
         any failure withholds the object (spec 049 §7.7 rule 4) and returns ``None``."""
         protector = self._config.content_protector
-        if protector is None or not protector.runs_customer_code(role):
+        if protector is None or not protector.needs_redaction_service(role):
             return data  # already protected before the handoff
         protected = protector.protect(role, data)
         if protected.status != "redacted" or protected.protected_bytes is None:

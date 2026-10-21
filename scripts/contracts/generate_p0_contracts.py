@@ -2273,7 +2273,9 @@ NODE_SCHEMA = "fabric.node-content-envelope/v1"
 
 
 def node_envelope_aad(path: str) -> bytes:
-    return json.dumps([NODE_SCHEMA, path], sort_keys=True, separators=(",", ":")).encode()
+    return json.dumps(
+        [NODE_SCHEMA, path], sort_keys=True, separators=(",", ":")
+    ).encode()
 
 
 def node_envelope_vectors() -> dict[str, Any]:
@@ -2292,14 +2294,20 @@ def node_envelope_vectors() -> dict[str, Any]:
     meta = b'{"object_id": "' + oid.encode() + b'", "tenant_id": "tenant-a"}\n'
 
     def seal(nonce: bytes, plaintext: bytes, path: str) -> bytes:
-        return NODE_MAGIC + nonce + AESGCM(key).encrypt(nonce, plaintext, node_envelope_aad(path))
+        return (
+            NODE_MAGIC
+            + nonce
+            + AESGCM(key).encrypt(nonce, plaintext, node_envelope_aad(path))
+        )
 
     sealed_body = seal(bytes(range(12)), body, body_path)
     sealed_meta = seal(bytes(range(12, 24)), meta, meta_path)
     flipped = sealed_body[:-1] + bytes([sealed_body[-1] ^ 1])
     queue = b"FABRIC-NODE-QUEUE-1\n" + sealed_body[len(NODE_MAGIC) :]
 
-    def case(name: str, path: str, envelope: bytes, plaintext: bytes | None) -> dict[str, Any]:
+    def case(
+        name: str, path: str, envelope: bytes, plaintext: bytes | None
+    ) -> dict[str, Any]:
         return {
             "name": name,
             "key_base64": base64.b64encode(key).decode(),
@@ -2316,7 +2324,7 @@ def node_envelope_vectors() -> dict[str, Any]:
             "Spec 049 §7.8: a Node directory backend configured with a customer key stores every "
             "body object and every descriptor as magic 'FABRIC-NODE-CONTENT-1\\n' | 12-byte nonce | "
             "AES-256-GCM(key, nonce, plaintext, aad) (ciphertext then 16-byte tag), aad = canonical "
-            "JSON [\"fabric.node-content-envelope/v1\", path] with path the object's location below "
+            'JSON ["fabric.node-content-envelope/v1", path] with path the object\'s location below '
             "the content root ('<tenant>/evidence/<id>' or '<tenant>/evidence/meta/<id>.json'). The "
             "plaintext is unchanged (a descriptor keeps its 048 golden bytes). The key file holds 32 "
             "raw bytes or their standard base64 with at most one trailing newline. A reader with the "
@@ -2326,7 +2334,9 @@ def node_envelope_vectors() -> dict[str, Any]:
         "cases": [
             case("body object", body_path, sealed_body, body),
             case("descriptor", meta_path, sealed_meta, meta),
-            case("body envelope opened as its descriptor", meta_path, sealed_body, None),
+            case(
+                "body envelope opened as its descriptor", meta_path, sealed_body, None
+            ),
             case("flipped tag", body_path, flipped, None),
             case("queue magic", body_path, queue, None),
         ],
@@ -2664,8 +2674,8 @@ def render_go_roles(reg: dict[str, Any]) -> str:
     for row in table["roles"]:
         cap = 0 if row["cap"] == "max_body_bytes" else CAP_BYTES[row["cap"]]
         out.append(
-            f'\t{(json.dumps(row["role"]) + ":").ljust(width)} {{boundary: {strs(row["boundary"])}, '
-            f'provenance: {strs(row["provenance"])}, media: {strs(row["media_types"])}, '
+            f"\t{(json.dumps(row['role']) + ':').ljust(width)} {{boundary: {strs(row['boundary'])}, "
+            f"provenance: {strs(row['provenance'])}, media: {strs(row['media_types'])}, "
             f"capBytes: {cap}}},\n"
         )
     out += [
@@ -2677,7 +2687,7 @@ def render_go_roles(reg: dict[str, Any]) -> str:
     ]
     width = max(len(json.dumps(r["value"])) + 1 for r in reg["vocab"]["reason"])
     out += [
-        f'\t{(json.dumps(r["value"]) + ":").ljust(width)} true,\n'
+        f"\t{(json.dumps(r['value']) + ':').ljust(width)} true,\n"
         for r in reg["vocab"]["reason"]
     ]
     out += ["}\n"]

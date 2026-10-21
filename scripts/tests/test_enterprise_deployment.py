@@ -206,7 +206,11 @@ def test_production_rejects_tags_without_full_digest(
         ("receiver.workloadAuthentication.tenantId", "", "tenantId"),
         ("receiver.workloadAuthentication.workloadId", "", "workloadId"),
         # Spec 049 §7.9 (P0-A): the bound source id is required.
-        ("receiver.workloadAuthentication.sourceId", "", "workloadAuthentication.sourceId"),
+        (
+            "receiver.workloadAuthentication.sourceId",
+            "",
+            "workloadAuthentication.sourceId",
+        ),
         (
             "receiver.workloadAuthentication.identityAttestationRef",
             "",

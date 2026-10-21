@@ -8,6 +8,10 @@ Order: capture -> extract (split) -> protect each object -> digest per mode -> l
 original body's digest and the parts' ``byte_range`` exist only under ``retain_original``
 (``original_plus_masked`` stores the original the same way); no digest of the original is
 computed under ``redact``, ``tokenize``, ``masked_only`` or ``metadata_only``.
+
+``redact``, ``masked_only`` and the review copy of ``original_plus_masked`` are made by
+the customer-run redaction service (``contracts/redaction/v1``), called here on the
+capture worker; Fabric runs no customer code.
 """
 
 from __future__ import annotations
@@ -24,9 +28,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .._roles import ROLES, admits, part_object_id
-from .._sequence import OPAQUE_ID_RE
-from .._transform_runner import TransformRunner, check_transform_ref
 from ..deployment_policy import TOKEN_TRANSFORMATION, token_bytes
+from ..redaction import (
+    MaskingMode,
+    RedactionClient,
+    RedactionService,
+    Transformation,
+)
+from ..redaction import check_transformations as _check_transformations
 from ._policy import CapturePolicy
 
 PART_ROLE = "model.exchange.part"
@@ -49,40 +58,10 @@ _MAGIC: tuple[tuple[bytes, int, str], ...] = (
 )  # fmt: skip
 
 
-@dataclass(frozen=True, slots=True)
-class Transformation:
-    """A customer-supplied, versioned transformation for ``redact``, ``masked_only`` and
-    the review copy of ``original_plus_masked`` (Fabric ships no PII detector). ``ref``
-    names a function by module reference (``"package.module:function"``) that gets the
-    bytes of one object and returns its replacement. It runs **out of process**, in a
-    dedicated child interpreter (:class:`fabric._transform_runner.TransformRunner`),
-    never on the host's thread nor the capture worker, so even a callback that holds the
-    GIL cannot stall the application. An exception, a non-bytes result, an oversized
-    result or a run longer than ``timeout_s`` (the child is killed) withholds the object
-    (``protection_failed``); while two calls are busy, content needing this
-    transformation is withheld at once. In-process callables are refused."""
-
-    transformation_id: str
-    version: str
-    ref: str
-    timeout_s: float = 5.0
-
-    def __post_init__(self) -> None:
-        if not all(isinstance(v, str) and OPAQUE_ID_RE.fullmatch(v)
-                   for v in (self.transformation_id, self.version)):  # fmt: skip
-            raise ValueError("transformation_id and version must be opaque ids")
-        check_transform_ref(self.ref)
-        timeout = self.timeout_s
-        if isinstance(timeout, bool) or not isinstance(timeout, int | float) or not (
-            0 < timeout <= 300  # noqa: PLR2004
-        ):  # fmt: skip
-            raise ValueError("transformation timeout_s must be in (0, 300]")
-
-
 def check_transformations(value: Mapping[str, Transformation]) -> None:
-    if not isinstance(value, Mapping) or any(
-        role not in ROLES or not isinstance(t, Transformation) for role, t in value.items()
-    ):
+    """Raise unless ``value`` maps content roles to :class:`Transformation` objects (a
+    callable or a module reference is refused with a pointer to the docs)."""
+    if any(role not in ROLES for role in _check_transformations(value)):
         raise ValueError("transformations map content roles to Transformation objects")
 
 
@@ -217,36 +196,38 @@ class Protector:
         max_retain_bytes: int = DEFAULT_MAX_RETAIN_BYTES,
         part_min_bytes: int = DEFAULT_PART_MIN_BYTES,
         transformations: Mapping[str, Transformation] | None = None,
+        redaction: RedactionService | None = None,
         tokenization_key: bytes | None = None,
     ) -> None:  # fmt: skip
         self.policy, self.max_body, self.max_retain = policy, max_body_bytes, max_retain_bytes
         self.part_min, self._transforms = part_min_bytes, dict(transformations or {})
+        check_transformations(self._transforms)
         self._token_key = tokenization_key
-        # One bounded runner per distinct transformation (049 §7.7 rule 4; Sol P0-A #6).
-        runners: dict[Transformation, TransformRunner] = {}
-        for transform in self._transforms.values():
-            if transform not in runners:
-                runners[transform] = TransformRunner(
-                    transform.ref, "fabric-wire-transform", max_output_bytes=max_body_bytes
-                )
-        self._runners = {role: runners[t] for role, t in self._transforms.items()}
-        self._saturated_logged: set[int] = set()
+        if self._transforms and redaction is None:
+            raise ValueError(
+                "transformations require a redaction service endpoint (FABRIC_REDACTION_ENDPOINT)"
+            )
+        # One connection pool per recorder (049 §7.7 rule 4), used on the capture worker.
+        self._client = (
+            RedactionClient(redaction, max_output_bytes=max_body_bytes)
+            if redaction is not None else None
+        )  # fmt: skip
+        self._saturated_logged = False
 
     def close(self, timeout_s: float = 2.0) -> bool:
-        """Stop the transformation child processes (a later side starts new ones)."""
-        runners = {id(r): r for r in self._runners.values()}.values()
-        return all([runner.close(timeout_s) for runner in runners])  # noqa: C419 - close each
+        """Close the redaction service connections (later masked content is withheld)."""
+        if self._client is not None:
+            self._client.close()
+        return True
 
     def stats(self) -> dict[str, int]:
-        """Counters of the transformation runners (never a value): calls whose child was
-        killed at their timeout, calls withheld while the capacity bound was reached, and
-        killed children not yet reaped."""
-        totals = dict.fromkeys(("transform_timeouts", "transform_saturated",
-                                "transform_abandoned"), 0)  # fmt: skip
-        for runner in {id(r): r for r in self._runners.values()}.values():
-            for key, value in runner.stats().items():
-                totals[key] += value
-        return totals
+        """The redaction service counters (never a value): calls that timed out, were
+        refused at the in-flight bound, or failed otherwise."""
+        if self._client is None:
+            return dict.fromkeys(
+                ("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0
+            )
+        return self._client.stats()
 
     # -- one side -----------------------------------------------------------
 
@@ -469,17 +450,19 @@ class Protector:
         self, base: Mapping[str, Any], role: str, mode: str, data: bytes, *, split: bool
     ) -> Obj:
         transform = self._transforms.get(role)
-        if transform is None:  # no configured transformation: withheld
+        if transform is None or self._client is None:  # no configured transformation
             return self._withheld(base, role, mode, "protection_failed")
-        runner = self._runners[role]
-        outcome, out = runner.run(data, transform.timeout_s)
-        if outcome == "saturated" and id(runner) not in self._saturated_logged:
-            self._saturated_logged.add(id(runner))  # once per runner, by class only
-            _LOG.warning("fabric.wire: a transformation is not returning; content needing it "
-                         "is withheld (protection_failed)")  # fmt: skip
-        if outcome != "ok":  # error, timeout or saturated: withheld, never raw bytes
-            return self._withheld(base, role, mode, "protection_failed")
+        before = self._client.stats()["redaction_saturated"]
+        masking: MaskingMode = "redact" if mode == "redact" else "masked_only"
+        out = self._client.transform(data, transformation=transform, role=role, mode=masking)
+        if out is None and not self._saturated_logged and (
+            self._client.stats()["redaction_saturated"] > before
+        ):  # fmt: skip
+            self._saturated_logged = True  # once per recorder, by class only
+            _LOG.warning("fabric.wire: the redaction service is not keeping up; content "
+                         "needing it is withheld (protection_failed)")  # fmt: skip
         cap = ROLES[role].cap_bytes(self.max_body)
+        # failed, timed out, saturated or oversized: withheld, never raw bytes
         if out is None or len(out) > min(cap, self.max_body):
             return self._withheld(base, role, mode, "protection_failed")
         steps = ["extract_parts", "redact"] if split else ["redact"]

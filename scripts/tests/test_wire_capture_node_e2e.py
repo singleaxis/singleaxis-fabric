@@ -147,9 +147,13 @@ def unseal_store(sealed: Path, plain: Path) -> None:
             continue
         data = path.read_bytes()
         assert data.startswith(NODE_MAGIC), f"{rel} is not sealed at rest"
-        aad = json.dumps(["fabric.node-content-envelope/v1", rel], separators=(",", ":")).encode()
+        aad = json.dumps(
+            ["fabric.node-content-envelope/v1", rel], separators=(",", ":")
+        ).encode()
         body = AESGCM(CONTENT_KEY).decrypt(
-            data[len(NODE_MAGIC) : len(NODE_MAGIC) + 12], data[len(NODE_MAGIC) + 12 :], aad
+            data[len(NODE_MAGIC) : len(NODE_MAGIC) + 12],
+            data[len(NODE_MAGIC) + 12 :],
+            aad,
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(body)
@@ -647,7 +651,9 @@ def _assert_capture_spans(
     assert {s["name"] for s in spans} <= CAPTURE_SPAN_NAMES, {s["name"] for s in spans}
     for span in spans:
         # Spec 049 §7.9: the bound production Node stamps every span it admits.
-        assert span["attributes"].get("fabric.source.authenticated") is True, span["name"]
+        assert span["attributes"].get("fabric.source.authenticated") is True, span[
+            "name"
+        ]
         extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS - NODE_STAMPS
         assert not extra, f"{span['name']} carries non-allowlisted keys {extra}"
         assert span["scope"] == "", (
@@ -896,7 +902,9 @@ def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -
     sealed = b"".join(path.read_bytes() for path in spool_records(bad.spool))
     for marker in CONTENT_MARKERS:
         assert marker.encode() not in sealed, f"{marker} is in clear in the agent spool"
-    spooled = b"".join(open_spool_record(path, SPOOL_KEY) for path in spool_records(bad.spool))
+    spooled = b"".join(
+        open_spool_record(path, SPOOL_KEY) for path in spool_records(bad.spool)
+    )
     assert pseudonym("s-", source_of(bad.service), ID_KEY).encode() in spooled
     for label in (bad.service, source_of(bad.service)):
         assert label.encode() not in spooled, f"clear label {label} was spooled"

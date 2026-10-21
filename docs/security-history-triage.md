@@ -81,6 +81,16 @@ remote branch, so unmerged branches are scanned too. The unmerged branch
 | `abc48f0…` `scripts/tests/test_compose_content_path.py:33` | Synthetic privacy canary string that the test asserts is absent from rendered compose output. Grants no access. |
 | `abc48f0…` `sdk/python/tests/test_reconstruct_inputs.py:326` | Deliberate UUIDv1 literal proving a non-v4 run scope id is rejected. Not a key. |
 | `db4dc94…` `sdk/python/tests/gateway_fixtures/*.json` (8 lines) | Recorded LiteLLM gateway payloads. `user_api_key_hash` is the SHA-256 of `sk-1234`, LiteLLM's documented placeholder master key; it is a digest, not a credential. |
+| `937301c…` `sdk/python/tests/test_wire_p0a_privacy.py:43` | planted privacy canary `canary-ssn-078-05-1120` (synthetic, the well-known invalid SSN pattern) in the P0-A privacy canary test (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `4254dfd…` `sdk/typescript/test/identity.test.ts:247` | planted identity canary `CANARY-MKEY-q8z` in the TypeScript pseudonym test (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `9771866…` `scripts/tests/test_coverage_contracts.py:335` | test key label `fabric-test-id-key-not-a-secret` and a fake provider id in the coverage contract test (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `.github/workflows/e2e-production-profile.yml:279` | a curl invocation using a test CA and client certificate paths from the CI-generated cert dir; no credential value (rule `curl-auth-header`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `benchmarks/fabric-comparison/run.py:20` | synthetic canary `SYNTHETIC-PRIVATE-CANARY-3742` in a benchmark (benchmark since removed) (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `docs/protected-byte-spool.md:19` | the documentation keyword argument `encryption_key=customer_spool_key`; a variable name, no value (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `examples/enterprise-reference/run.py:79` | a type annotation naming the Ed25519 private-key class, with no value (example since removed) (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `sdk/python/tests/test_deployment_policy.py:22` | golden HMAC test vector `fabric.token.v1:…` computed from the fixed test key in the deployment-policy tests (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `sdk/python/tests/test_span_protection.py:24` | synthetic canary `SYNTHETIC-PRIVATE-CANARY-3742` in the span protection test (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
+| `3762850…` `sdk/typescript/test/deployment-policy.test.ts:20` | golden HMAC test vector `fabric.token.v1:…` computed from the fixed test key in the deployment-policy tests (rule `generic-api-key`). Found by the all-branches scan; baselined by exact fingerprint. |
 
 The current branch tree for PR #185 contains none of these matches (the
 canary is built at runtime and the gateway fixtures are not carried), so the

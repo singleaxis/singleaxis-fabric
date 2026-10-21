@@ -1115,9 +1115,19 @@ class _Run:
             response.content_encoding if response is not None else None,
             response.truncated if response is not None else False,
             id_key=self.verifier.key,
+            response_cut=exchange.response_state != "complete",
         )
         status = keys.request_parse_status
         response_status = keys.response_parse_status
+        if response_status == "truncated" and response is not None and not response.truncated:
+            # 049 §2.6, §6.2 R4: a response the transport did not finish whose bytes do not
+            # prove their own end is truncated (a gap: partial), streamed or not.
+            reason = (
+                "stream_closed_early"
+                if exchange.response_state == "closed_early"
+                else "transport_incomplete"
+            )
+            self._gap(exchange, "truncated", side="response", reason=reason)
         if status == "ok" and response_status not in ("ok", "not_parsed"):
             http_error = exchange.http_status is not None and exchange.http_status >= _HTTP_ERROR
             status = "ok" if http_error and response_status != "truncated" else response_status

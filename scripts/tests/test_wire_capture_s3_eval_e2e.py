@@ -1099,6 +1099,7 @@ def test_content_exists_only_in_the_store_and_the_agent_spool(stack: Stack) -> N
         assert marker.encode() in spooled, f"{marker} is not in the undelivered spool"
     for secret in SECRET_MARKERS:
         assert secret.encode() not in spooled, f"{secret} was written to the spool"
+
     # No spool this session wrote (records, quarantine, leftovers) names a
     # clear run id or the key.
     def opened(path: Path) -> bytes:  # a record opened where it can be, else as is

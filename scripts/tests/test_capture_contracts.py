@@ -60,7 +60,11 @@ def test_report_records_telemetry_origin_and_source_authentication() -> None:
     assert inputs["profile"]["enum"] == ["local", "production"]
     assert "source_unauthenticated" in schema["$defs"]["gapType"]["enum"]
     report = _json("fixtures/valid/run-reconstruction-production-imported.json")
-    (gap,) = [g for g in report["runs"][0]["gaps"] if g["gap_type"] == "source_unauthenticated"]
+    (gap,) = [
+        g
+        for g in report["runs"][0]["gaps"]
+        if g["gap_type"] == "source_unauthenticated"
+    ]
     assert gap["effect"] == "unverified" and gap["reason"] == "imported_telemetry"
 
 
@@ -620,5 +624,7 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
     """Spec 049 §2.9 rule 4: keyed p- + 32 hex, legacy p- + 16 hex stays readable."""
     import re  # noqa: PLC0415
 
-    pattern = _json("schema/run-reconstruction-v1.schema.json")["$defs"]["pseudonym"]["pattern"]
+    pattern = _json("schema/run-reconstruction-v1.schema.json")["$defs"]["pseudonym"][
+        "pattern"
+    ]
     assert (re.fullmatch(pattern, pseudonym) is not None) is valid

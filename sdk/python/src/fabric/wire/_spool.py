@@ -840,17 +840,21 @@ class Spool:
         """Rebuild the ledger from disk (pending, temp and quarantined records and receipts
         of all writers). The drainer removes temp files and receipts older than an hour (a
         writer that exited), finishes an interrupted receipt truncation and expires the
-        oldest receipts over the count. Own writes in flight, and entries set while the
-        directory was read, keep their newer ledger values. When a file cannot be observed
-        (an error other than its absence) no entry is released: the scan only adds and
-        updates, and a later complete scan settles the rest."""
+        oldest receipts over the count. Own writes in flight at any point of the scan, and
+        entries set while the directory was read, keep their newer ledger values: a write
+        that ends during the scan (even failing without a ledger update) may have renamed
+        its record after the listing. A write's temp file is skipped only while the write is
+        charged under its own name; a failed write whose temp file stayed moved its charge
+        there, before it leaves ``_writing``. When a file cannot be observed (an error
+        other than its absence) no entry is released: the scan only adds and updates, and a
+        later complete scan settles the rest."""
         with self._scan_lock:
             self._rescan()
         self._trim()
 
     def _rescan(self) -> None:
-        with self._lock:
-            self._touched = set()
+        with self._lock:  # a write in flight now is newer than the scan, however it ends
+            self._touched = set(self._writing)
         scanned: dict[str, int] = {}
         unknown = False
         stale = time.time() - RECEIPT_TTL_S
@@ -879,8 +883,8 @@ class Spool:
                 for name, size in self._files.items():
                     scanned.setdefault(name, size)
             newer = touched | self._writing
-            for name in newer:  # an own write: counted at its full size, not its temp file
-                scanned.pop(".tmp-" + name, None)
+            for name in newer & self._files.keys():  # charged under its name: an own write
+                scanned.pop(".tmp-" + name, None)  # is not counted again as its temp file
             for name in newer:  # then the newer entries (a failed write's charge may have
                 if name in self._files:  # moved to its temp file meanwhile)
                     scanned[name] = self._files[name]

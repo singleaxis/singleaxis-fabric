@@ -268,8 +268,17 @@ def _validate_content_protection(document: Mapping[str, Any]) -> None:
         "masked_only": {"redacted"},
         "original_plus_masked": {"retained", "redacted"},
     }
-    byte_storing = {"retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"}
-    failed = protection == "withheld" and document.get("status_reason") == "protection_failed"
+    byte_storing = {
+        "retain_original",
+        "redact",
+        "tokenize",
+        "masked_only",
+        "original_plus_masked",
+    }
+    failed = (
+        protection == "withheld"
+        and document.get("status_reason") == "protection_failed"
+    )
     # Spec 049 §7.5: under redact or masked_only, a binary part no part transformation
     # applies to is withheld by the policy itself (descriptor only, no digest or length).
     binary_part = (
@@ -283,12 +292,18 @@ def _validate_content_protection(document: Mapping[str, Any]) -> None:
     )
     valid = mode in expected and (
         protection in expected[mode] | {"lost", "unsupported"}
-        or failed and mode in byte_storing
+        or failed
+        and mode in byte_storing
         or binary_part
     )
     if failed:
         # Only a mode that stores bytes has a transformation to fail.
-        valid = valid and mode in byte_storing and status == "not_captured" and "source_sha256" not in document
+        valid = (
+            valid
+            and mode in byte_storing
+            and status == "not_captured"
+            and "source_sha256" not in document
+        )
     if protection == "lost":
         valid = valid and status in {"failed", "dropped"}
     elif protection == "unsupported":
@@ -314,11 +329,16 @@ def _validate_content_protection(document: Mapping[str, Any]) -> None:
             valid = valid and document.get("transformations") == [mode]
         if mode == "original_plus_masked" and protection == "redacted":
             valid = valid and any(
-                link.get("relation") == "derived_from" for link in document.get("links", [])
+                link.get("relation") == "derived_from"
+                for link in document.get("links", [])
             )
     elif status == "truncated":
         # retain_original keeps the 047 truncation (spec 049 §7.4 rule 4).
-        valid = valid and protection == "retained" and document["representation"] == "truncated"
+        valid = (
+            valid
+            and protection == "retained"
+            and document["representation"] == "truncated"
+        )
     else:
         valid = valid and status in {"failed", "dropped"}
     if not valid:
@@ -743,17 +763,31 @@ def _validate_node_envelope_vector(document: Mapping[str, Any]) -> None:
             "evidence.envelope.unverifiable", "$", "cryptography is required"
         ) from exc
     if set(document) != {"schema_version", "rule", "cases"} or not document["cases"]:
-        raise EvidenceContractError("evidence.envelope.shape", "$", "closed vector fields")
-    fields = {"name", "key_base64", "path", "aad", "plaintext_base64", "envelope_base64", "valid"}
+        raise EvidenceContractError(
+            "evidence.envelope.shape", "$", "closed vector fields"
+        )
+    fields = {
+        "name",
+        "key_base64",
+        "path",
+        "aad",
+        "plaintext_base64",
+        "envelope_base64",
+        "valid",
+    }
     for index, case in enumerate(document["cases"]):
         where = f"$.cases[{index}]"
         if not isinstance(case, dict) or set(case) != fields:
-            raise EvidenceContractError("evidence.envelope.shape", where, "closed case fields")
+            raise EvidenceContractError(
+                "evidence.envelope.shape", where, "closed case fields"
+            )
         aad = json.dumps(
             [NODE_ENVELOPE_SCHEMA, case["path"]], sort_keys=True, separators=(",", ":")
         )
         if case["aad"] != aad:
-            raise EvidenceContractError("evidence.envelope.aad", where, "aad is not the canonical form")
+            raise EvidenceContractError(
+                "evidence.envelope.aad", where, "aad is not the canonical form"
+            )
         key = base64.b64decode(case["key_base64"], validate=True)
         envelope = base64.b64decode(case["envelope_base64"], validate=True)
         header = len(NODE_ENVELOPE_MAGIC) + 12
@@ -761,9 +795,13 @@ def _validate_node_envelope_vector(document: Mapping[str, Any]) -> None:
             if not envelope.startswith(NODE_ENVELOPE_MAGIC):
                 raise InvalidTag
             plaintext = AESGCM(key).decrypt(
-                envelope[len(NODE_ENVELOPE_MAGIC) : header], envelope[header:], aad.encode()
+                envelope[len(NODE_ENVELOPE_MAGIC) : header],
+                envelope[header:],
+                aad.encode(),
             )
-            opened = plaintext == base64.b64decode(case["plaintext_base64"], validate=True)
+            opened = plaintext == base64.b64decode(
+                case["plaintext_base64"], validate=True
+            )
         except InvalidTag:
             opened = False
         if opened != case["valid"]:

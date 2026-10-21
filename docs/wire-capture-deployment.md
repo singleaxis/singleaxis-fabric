@@ -77,7 +77,7 @@ export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://fabric-node:4318/v1/traces
 | `FABRIC_WIRE_MODEL_ALLOWLIST` | no | Comma-separated model names emitted as is, in addition to the built-in public families. An exact entry matches only that name; a `prefix*` entry matches only a version-like suffix (§3). Any other model name is emitted as `m-` + a hash. |
 | `FABRIC_WIRE_ID_KEY` | recommended in production | Secret key for identifier pseudonyms: a run id passed to `fabric.wire.run(run_id)` is emitted as `r-` + 32 hex of `HMAC-SHA256(key, run_id)`, and (by default, see `FABRIC_WIRE_LABELS`) the source id as `s-` + 32 hex and `service.name` as `svc-` + 32 hex of the same function. Unset, an unkeyed SHA-256 that anyone who can guess the value can recompute. Never logged. See "The id key" below. |
 | `FABRIC_WIRE_LABELS` | no | Unset or `pseudonymous` (default): source id and `service.name` leave the agent only as `s-`/`svc-` pseudonyms. `clear`: they are emitted unchanged; **operator-chosen labels are exported unchanged; you guarantee they contain no personal data**. Any other value is a configuration error. Run ids are pseudonymised in both modes. |
-| `FABRIC_SOURCE_ID` | no | Id of this capture source, emitted as its `s-` pseudonym (clear only with `FABRIC_WIRE_LABELS=clear`). Default `wire-` + 16 hex derived from host name and `service.name`. |
+| `FABRIC_SOURCE_ID` | no | Id of this capture source, emitted as its `s-` pseudonym whatever its shape, even an `s-`-shaped value (clear only with `FABRIC_WIRE_LABELS=clear`). Default `wire-` + 16 hex derived from host name and `service.name`. |
 | `FABRIC_WIRE_ENDPOINTS` | no | JSON array of extra endpoint matchers (vLLM, Ollama, an internal proxy); schema and example below. OpenAI, Anthropic and Azure OpenAI are matched by default. |
 | `FABRIC_WIRE_MAX_BODY_BYTES`, `FABRIC_WIRE_QUEUE_MAX_ITEMS` | no | Per-body retention cap (default 8 MiB; at most 63 MiB in node mode so one record fits the Node's 64 MiB request bound) and capture-queue entry cap (default 16384; the queue is bounded by bytes through the 256 MiB in-flight budget, the entry cap only bounds per-entry overhead). |
 | `FABRIC_WIRE_TRACER` | no | `private` (default, and required in node mode). `global` sends exchange spans through the agent's own provider without the spool; it is refused in node mode (see "Global mode" below). |
@@ -320,6 +320,66 @@ service name) is already opaque.
   to clear ids, which is a deliberate way to end that linkage. Verdicts
   never need the key: without `--run`, `fabric.reconstruct` reports every
   run by its pseudonym.
+
+### Redaction service
+
+Fabric ships no PII detector and never runs your code: no imported module,
+callable, child process or worker thread. When the capture policy uses
+`redact` or `masked_only`, or the review copy of `original_plus_masked`,
+the masking is done by a **redaction service you run** beside the
+application, and Fabric calls it. `tokenize`, `omit`, `metadata_only` and
+`retain_original` need no service. The protocol is
+[`contracts/redaction/v1`](../contracts/redaction/v1/README.md): one
+`POST /v1/transform` per object, the raw bytes in, the masked bytes out.
+[`examples/redaction-service/`](../examples/redaction-service/README.md) is a
+small reference service with Compose and Kubernetes sidecar snippets. It is an
+example, not part of the recorder release.
+
+```bash
+export FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock   # or http://127.0.0.1:8181
+export FABRIC_REDACTION_TOKEN_FILE=/run/secrets/fabric-redaction-token  # optional, mode 0600
+```
+
+Only a Unix socket path or a loopback address (`127.0.0.1`, `[::1]`) with an
+explicit port is accepted; anything else fails at `install()` or recorder
+construction. Fabric never uses a proxy or follows a redirect for these calls.
+Name the transformation per role in code; Fabric records its id and version on
+every stored object and sends them with each call:
+
+```python
+import dataclasses
+import os
+
+from fabric import wire
+from fabric.wire import Transformation
+from fabric.wire._config import config_from_env
+
+config, _ = config_from_env(os.environ)   # reads FABRIC_REDACTION_ENDPOINT
+mask = Transformation("example-mask", "1")
+wire.install(dataclasses.replace(config, transformations={
+    "model.exchange.request": mask, "model.exchange.response": mask,
+}))
+```
+
+The explicit line takes the same identity: `ContentProtector(policy,
+transformations={role: Transformation(...)}, redaction=RedactionService(...))`
+or `BytePrivacyPolicy(mode="masked_only", transformation_id=...,
+transformation_version=...)` in Python, and `new ContentProtector(policy,
+{ transformations: { role: { id, version } }, redaction: { endpoint } })` in
+TypeScript. Module references and functions, used by earlier releases, raise
+at construction with a pointer here.
+
+Calls run only on the recorder's worker, never on the application's thread or
+event loop. Each call is bounded: a 5 s timeout (`timeout_s` /
+`timeoutMs`, at most 300 s) and two calls in flight per recorder
+(`max_in_flight` / `maxInFlight`). Any failure (a status other than 200, a
+redirect, a timeout, an answer above the object cap, a connection error, or
+the in-flight bound reached) withholds the object as
+`not_captured(protection_failed)` and sets
+`fabric.wire.store_reason=protection_failed`. Fabric never stores raw bytes
+instead. The wire handle's `stats()` counts `redaction_timeouts`,
+`redaction_saturated` and `redaction_failures`. A slow or absent service loses
+content; it never delays or fails the monitored call.
 
 ## 2. Run a Fabric Node
 

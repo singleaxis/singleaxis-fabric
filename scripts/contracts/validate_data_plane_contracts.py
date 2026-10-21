@@ -46,6 +46,10 @@ CONTRACTS = {
         "root": Path("contracts/delivery/v1"),
         "identity": ("singleaxis.fabric.delivery", "1.0.0"),
     },
+    "redaction": {
+        "root": Path("contracts/redaction/v1"),
+        "identity": ("singleaxis.fabric.redaction", "1.0.0"),
+    },
 }
 
 
@@ -575,6 +579,7 @@ def validate_data_plane_contracts(repo_root: Path) -> list[str]:
             activity_schema=schemas["activity"],
             privacy_schema=schemas["privacy"],
         ),
+        "redaction": lambda doc: _validate_schema(doc, schemas["redaction"]),
     }
     validated: list[str] = []
     for name in CONTRACTS:

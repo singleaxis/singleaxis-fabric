@@ -42,12 +42,14 @@ __all__ = [
 ]
 
 _KEPT_RUN_ID = re.compile(r"^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40})$")
+_SOURCE_PSEUDONYM = re.compile(r"^s-[0-9a-f]{32}$")
 _SOURCE_RUN_ID = re.compile(r"^source:(.+):([0-9]{1,20})$")
 
 
 def report_source_id(value: str, key: bytes | None = None) -> str:
-    """A source id as the report shows it: ``s-`` pseudonym (an ``s-`` value is kept)."""
-    return source_label(value, key)
+    """A source id as the report shows it: ``s-`` pseudonym (an ``s-`` value, as capture
+    emits it, is kept)."""
+    return value if _SOURCE_PSEUDONYM.fullmatch(value) else source_label(value, key)
 
 
 def report_run_id(value: str, key: bytes | None = None) -> str:
