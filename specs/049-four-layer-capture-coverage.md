@@ -2442,6 +2442,15 @@ Content log records go through `otlp/content` without fabricguard: the
 `fabriccontent` exporter performs the same binding check and persists
 `source_authenticated` in the descriptor (section 4.3).
 
+**Repeated keys.** The identity check visits every occurrence of a key,
+never only the first. A resource, scope, span, span event or span link that
+carries any `fabric.*` key more than once, and a log resource, scope or
+record that repeats a `fabric.*` key, the event-class key or an AEEP
+evidence key, refuses the whole batch with the same non-retryable
+`INVALID_ARGUMENT`, on bound and unbound ingresses alike (OTLP forbids
+repeated keys; a first-match reader and a last-wins reader would otherwise
+see different sources).
+
 **Trusted readback.** A stamp is a value in a record, so it counts only
 when `fabric.reconstruct` reads the record from a trusted location: the
 Node's telemetry export or destination and the configured content store
