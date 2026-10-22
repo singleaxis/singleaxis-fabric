@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### v0.8.1 release notes (draft)
+
+Fabric v0.8.1 fixes privacy and passivity defects in the v0.8 decision line
+(`fabric.decision()` / `fabric.decision(...)` in TypeScript and the Python MCP
+wrapper). Spec 051 (P2) takes these fixes forward.
+
+**Passivity (spec 049 §7.1, §7.2)**
+
+- MCP inventory: `InstrumentedMCPSession` no longer makes requests of its own.
+  When the application calls `list_tools()`, `list_resources()` or
+  `list_prompts()` through the proxy, the call is forwarded unchanged and its
+  returned value is recorded as the `fabric.mcp.inventory` event.
+  **Deprecated:** `InstrumentedMCPSession.snapshot_inventory()` used to call
+  `list_tools()`, `list_resources()` and `list_prompts()` itself. It is now a
+  no-op that records nothing and returns the last inventory recorded from an
+  observed listing, or `None` (return type `MCPInventory | None`), with a
+  `DeprecationWarning`. It will be removed in a later minor release. To keep
+  recording inventories, call `list_tools()` (and the others) through the
+  proxy.
+
 ### v0.8.0 release notes (draft)
 
 Fabric v0.8 is a passive recorder for AI agents: CAPTURE -> PROTECT ->

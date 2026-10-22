@@ -32,8 +32,11 @@ recorded in the clear.
 from __future__ import annotations
 
 import contextlib
+import functools
+import inspect
 import json
 import logging
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -51,7 +54,7 @@ from fabric._crosscut import apply_cross_cutting
 from .._hashes import sha256_hex
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from fabric.baseline import BaselineCheck
     from fabric.decision import Decision
@@ -122,8 +125,8 @@ def _result_hashable_view(result: Any) -> str:
 class MCPInventory:
     """The normalized result of an MCP inventory snapshot.
 
-    Returned by :func:`record_mcp_inventory` (and
-    :meth:`InstrumentedMCPSession.snapshot_inventory`) so a caller can
+    Returned by :func:`record_mcp_inventory` (and recorded by
+    :class:`InstrumentedMCPSession` from observed ``list_*`` results) so a caller can
     assert / diff what was captured. Carries only metadata + hashes — no
     raw tool description or input schema — mirroring exactly what lands on
     the ``fabric.mcp.inventory`` span event. ``server`` / ``transport``
@@ -386,6 +389,10 @@ async def _traced_call(
     return result
 
 
+# The listings the proxy observes (spec 051 §4.8): method -> the result field it carries.
+_OBSERVED_LISTS = {"list_tools": "tools", "list_resources": "resources", "list_prompts": "prompts"}
+
+
 class InstrumentedMCPSession:
     """Thin proxy that traces every ``call_tool`` through Fabric.
 
@@ -395,6 +402,14 @@ class InstrumentedMCPSession:
     every other attribute passes straight through to the wrapped session
     via :meth:`__getattr__`, so it remains a drop-in stand-in for the
     real session for everything except the instrumented hot path.
+
+    Passive inventory (spec 049 §7.2, 051 §4.8): when the application calls
+    ``list_tools()`` / ``list_resources()`` / ``list_prompts()`` through the
+    proxy, the call is forwarded unchanged and its *returned* value is
+    recorded as a ``fabric.mcp.inventory`` event (the latest observed tools,
+    resources and prompts; each observed page is recorded as observed). The
+    proxy never issues a request of its own, and a recording failure never
+    changes what the application receives.
     """
 
     def __init__(
@@ -409,6 +424,8 @@ class InstrumentedMCPSession:
         self._decision = decision
         self._server_name = server_name
         self._transport = transport
+        self._observed: dict[str, tuple[Any, ...]] = {}
+        self._last_inventory: MCPInventory | None = None
 
     async def call_tool(
         self,
@@ -425,56 +442,65 @@ class InstrumentedMCPSession:
             server_name=self._server_name, transport=self._transport,
         )  # fmt: skip
 
-    async def snapshot_inventory(self) -> MCPInventory:
-        """Capture the wrapped server's advertised surface as an event.
+    async def snapshot_inventory(self) -> MCPInventory | None:
+        """Deprecated no-op: returns the last inventory recorded from an observed
+        ``list_*`` result, or ``None``; records nothing.
 
-        Auto-capture wrapper around the session's ``list_tools()`` (and
-        ``list_resources()`` / ``list_prompts()`` when the session exposes
-        them): awaits each listing, then forwards the definitions to
-        :func:`record_mcp_inventory`, which hashes them and emits the
-        ``fabric.mcp.inventory`` event onto the bound decision's span.
-        Call after connecting (and again later to detect the server's
-        tools changing underneath the agent). Raw tool descriptions /
-        schemas never land on the span — only names + hashes.
-
-        Returns:
-            The :class:`MCPInventory` describing what was recorded.
+        It used to call the server's ``list_tools()`` / ``list_resources()`` /
+        ``list_prompts()`` itself, and a passive recorder must not generate traffic
+        (spec 049 §7.2). Call ``list_tools()`` (and the others) through this proxy
+        instead: their results are recorded as the application receives them.
         """
-        # ``list_tools`` is not part of the minimal ``MCPSessionLike``
-        # contract (which only declares ``call_tool``), so reach it via
-        # ``getattr`` and fail loud if the wrapped session cannot list.
-        list_tools = getattr(self._session, "list_tools", None)
-        if list_tools is None:
-            raise AttributeError(
-                "wrapped MCP session has no list_tools(); cannot snapshot inventory"
-            )
-        tools_result = await list_tools()
-        tools = getattr(tools_result, "tools", tools_result)
-
-        resources: Any | None = None
-        list_resources = getattr(self._session, "list_resources", None)
-        if list_resources is not None:
-            resources_result = await list_resources()
-            resources = getattr(resources_result, "resources", resources_result)
-
-        prompts: Any | None = None
-        list_prompts = getattr(self._session, "list_prompts", None)
-        if list_prompts is not None:
-            prompts_result = await list_prompts()
-            prompts = getattr(prompts_result, "prompts", prompts_result)
-
-        return record_mcp_inventory(
-            self._decision,
-            server=self._server_name,
-            transport=self._transport,
-            tools=tools,
-            resources=resources,
-            prompts=prompts,
+        warnings.warn(
+            "InstrumentedMCPSession.snapshot_inventory() is deprecated and records nothing; "
+            "call list_tools() through the proxy and its result is recorded",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        return self._last_inventory
+
+    def _observe(self, field: str, result: Any) -> None:
+        """Record an observed listing (fail-open: never raises, never alters ``result``)."""
+        try:
+            self._observed[field] = tuple(getattr(result, field, result))
+            tools = self._observed.get("tools")
+            if tools is None:  # an inventory starts from the tool surface
+                return
+            self._last_inventory = record_mcp_inventory(
+                self._decision,
+                server=self._server_name,
+                transport=self._transport,
+                tools=tools,
+                resources=self._observed.get("resources"),
+                prompts=self._observed.get("prompts"),
+            )
+        except Exception:
+            _LOG.debug("fabric.mcp: observed listing not recorded")
+
+    def _observed_list(self, field: str, target: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(target)
+        def observed(*args: Any, **kwargs: Any) -> Any:
+            value = target(*args, **kwargs)
+            if not inspect.isawaitable(value):
+                self._observe(field, value)
+                return value
+
+            async def settle() -> Any:
+                result = await value
+                self._observe(field, result)
+                return result
+
+            return settle()
+
+        return observed
 
     def __getattr__(self, item: str) -> Any:
         # Reached only for attributes not set on the proxy itself, so
         # pass them through to the wrapped session. Guarded names
         # (``_session`` etc.) are real instance attributes and never
-        # land here.
-        return getattr(self._session, item)
+        # land here. The three listings are observed, never issued.
+        target = getattr(self._session, item)
+        field = _OBSERVED_LISTS.get(item)
+        if field is None or not callable(target):
+            return target
+        return self._observed_list(field, target)
