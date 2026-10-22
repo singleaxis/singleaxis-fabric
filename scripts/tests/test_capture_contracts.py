@@ -46,7 +46,8 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 107  # + WP-30 run-reconstruction attempts (valid, invalid)
+    # + WP-30 run-reconstruction attempts (valid, invalid); + WP-14 enriched exchange (1.4.0)
+    assert len(validated) == 109
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -631,8 +632,48 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_3_0() -> None:
-    assert _json("manifest.json")["version"] == "1.3.0"
+def test_capture_family_is_version_1_4_0() -> None:
+    assert _json("manifest.json")["version"] == "1.4.0"
+
+
+# ------------------------------------------------------------------ capture/v1 1.4.0 (spec 050 §3.9)
+def test_an_enriched_exchange_carries_only_registry_placed_keys() -> None:
+    """WP-14: every exchange-span key added in 1.4.0 has a telemetry-keys row placed on
+    exchanges, with the registry's check; an unknown key (fabric.tenant_id) is refused."""
+    registry = json.loads(
+        (REPO_ROOT / "contracts/coverage/v1/registry/telemetry-keys-v1.json").read_text(
+            "utf-8"
+        )
+    )
+    rows = {row["key"]: row for row in registry["keys"]}
+    schema = _json("schema/spool-record-v1.schema.json")
+    props = schema["oneOf"][0]["properties"]["span"]["properties"]["attributes"]
+    assert props["additionalProperties"] is False
+    added = (
+        "fabric.capture.point", "fabric.capture.source", "fabric.step.kind",
+        "fabric.actor.type", "fabric.step.lifecycle_state", "fabric.step.status",
+        "fabric.error.domain", "fabric.wire.first_chunk_offset_ns", "fabric.wire.endpoint_id",
+        "fabric.wire.provider_request_id", "fabric.agent_id", "fabric.system_id",
+        "fabric.deployment_id", "fabric.release_id", "fabric.environment",
+    )  # fmt: skip
+    for key in added:
+        row, prop = rows[key], props["properties"][key]
+        assert "exchange" in row["placement"], key
+        check = row.get("capture_check") or row["check"]
+        if check["type"] == "enum":
+            assert prop["enum"] == check["values"], key
+        elif check["type"] == "string":
+            assert prop["pattern"] == check["pattern"], key
+        else:
+            assert (prop["type"], prop["minimum"]) == (
+                "integer",
+                check.get("min", 0),
+            ), key
+    assert "fabric.tenant_id" not in props["properties"]
+    enriched = _json("fixtures/valid/spool-record-exchange-enriched.json")
+    validate_document(enriched, _schemas())
+    # an ok step: everything but the error domain
+    assert set(added) - {"fabric.error.domain"} <= set(enriched["span"]["attributes"])
 
 
 def test_exchange_bodies_bound_is_260_and_record_bodies_8() -> None:

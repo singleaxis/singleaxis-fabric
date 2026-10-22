@@ -2254,6 +2254,37 @@ def generate_capture(w: Writer) -> None:
             ),
         ),
     )
+    # capture/v1 1.4.0 (spec 050 §3.9, WP-14): the wire enrichment of an exchange span;
+    # every key has a telemetry-keys row placed on exchanges and a fabricguard admission.
+    enriched = copy.deepcopy(shared)
+    label = lambda name: "lbl-" + hashlib.sha256(name.encode()).hexdigest()[:32]  # noqa: E731
+    enriched["span"]["attributes"].update(
+        {
+            "fabric.capture.point": "wire.py.httpx@0.9.0",
+            "fabric.capture.source": "observed",
+            "fabric.step.kind": "model_call",
+            "fabric.actor.type": "agent",
+            "fabric.step.lifecycle_state": "completed",
+            "fabric.step.status": "ok",
+            "fabric.wire.first_chunk_offset_ns": 182000,
+            "fabric.wire.endpoint_id": "openai.default",
+            "fabric.wire.provider_request_id": "p-"
+            + hashlib.sha256(b"provider-request").hexdigest()[:32],
+            "fabric.agent_id": label("support-agent"),
+            "fabric.system_id": label("helpdesk"),
+            "fabric.deployment_id": label("eu-1"),
+            "fabric.release_id": label("2026.10.1"),
+            "fabric.environment": label("prod"),
+        }
+    )
+    put("valid/spool-record-exchange-enriched.json", enriched)
+    put(
+        "invalid/spool-record-exchange-unknown-attribute.json",
+        mutate(
+            enriched,
+            lambda d: d["span"]["attributes"].update({"fabric.tenant_id": "tenant-a"}),
+        ),
+    )
     record = {
         "schema_version": "fabric.wire-spool-record/v1",
         "record_kind": "record",
@@ -5014,6 +5045,8 @@ INVALID = {
         "fixtures/invalid/spool-record-record-structured-value.json": "capture.schema",
         "fixtures/invalid/spool-record-record-wrong-input.json": "capture.schema",
         "fixtures/invalid/spool-record-segment-seal-without-run.json": "capture.schema",
+        # capture/v1 1.4.0 (spec 050 §3.9, WP-14)
+        "fixtures/invalid/spool-record-exchange-unknown-attribute.json": "capture.schema",
         # capture/v1 1.3.0 (spec 050 §4.2)
         "fixtures/invalid/loss-record-bad-segment-id.json": "capture.schema",
         "fixtures/invalid/loss-record-id-basis-on-seal.json": "capture.schema",
@@ -5045,7 +5078,7 @@ INVALID = {
         "invalid/split-without-extract-parts.json": "evidence.schema",
     },
 }
-VERSIONS = {COVERAGE: "1.1.0", CAPTURE: "1.3.0", CONTENT: "2.3.0"}
+VERSIONS = {COVERAGE: "1.1.0", CAPTURE: "1.4.0", CONTENT: "2.3.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
