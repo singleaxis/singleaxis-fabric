@@ -998,6 +998,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         # (the decision's rule; standalone, only the clear identity mode keeps digests).
         self._retains_original = retains_original or (lambda _role: self._identity.clear)
         self._on_error = on_recording_error or log_recording_error
+        self._emitted_name: str | None = None
         self._span: SafeSpan | None = None
         self._cm: SpanScope | None = None
         self._started_at: float | None = None
@@ -1019,18 +1020,22 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 "(do not nest `with tool:` on the same instance)"
             )
         # As LLMCall: the OTel exception default only in the clear identity mode.
+        # 049 §4.2: the tool name is an operator label (``lbl-`` when pseudonymous, as
+        # given with FABRIC_WIRE_LABELS=clear); without a key the span is "execute_tool".
+        self._emitted_name = self._identity.label(self._name)
         self._cm = SpanScope(self._on_error)  # fail-open (049 §7.1)
         self._span = self._cm.enter(
             self._tracer,
-            self._name,
+            self._emitted_name or "execute_tool",
             kind=SpanKind.INTERNAL,
             record_exception=self._identity.clear,
             set_status_on_exception=self._identity.clear,
         )
         self._started_at = time.perf_counter()
         self._span.set_attribute(GEN_AI_OPERATION_NAME, "execute_tool")
-        self._span.set_attribute(GEN_AI_TOOL_NAME, self._name)
-        self._span.set_attribute(FABRIC_TOOL_NAME, self._name)
+        if self._emitted_name is not None:
+            self._span.set_attribute(GEN_AI_TOOL_NAME, self._emitted_name)
+            self._span.set_attribute(FABRIC_TOOL_NAME, self._emitted_name)
         if self._tool_type is not None:
             self._span.set_attribute(GEN_AI_TOOL_TYPE, self._tool_type)
             self._span.set_attribute(FABRIC_TOOL_KIND, self._tool_type)
@@ -1081,9 +1086,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                     record_exception(span, exc, clear=self._identity.clear)
                     span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
         if self._duration_histogram is not None and self._started_at is not None:
-            attrs: dict[str, str] = {
-                GEN_AI_TOOL_NAME: self._name,
-            }
+            attrs: dict[str, str] = {}
+            if self._emitted_name is not None:
+                attrs[GEN_AI_TOOL_NAME] = self._emitted_name
             if self._tool_type is not None:
                 attrs[GEN_AI_TOOL_TYPE] = self._tool_type
             if self._agent_name is not None:

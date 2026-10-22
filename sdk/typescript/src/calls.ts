@@ -750,7 +750,7 @@ export function startLlmSpan(
 export function startToolSpan(
   tracer: Tracer,
   name: string,
-  options: ToolCallOptions & { extraAttributes?: Attributes },
+  options: ToolCallOptions & { extraAttributes?: Attributes; emitToolName?: boolean },
 ): Span {
   if (!name) {
     throw new Error("toolCall: name is required");
@@ -758,8 +758,10 @@ export function startToolSpan(
   validateStepMetadata(options);
   const span = safeStartSpan(tracer, name, { kind: SpanKind.INTERNAL });
   span.setAttribute(GEN_AI_OPERATION_NAME, "execute_tool");
-  span.setAttribute(GEN_AI_TOOL_NAME, name);
-  span.setAttribute(FABRIC_TOOL_NAME, name);
+  if (options.emitToolName !== false) {
+    span.setAttribute(GEN_AI_TOOL_NAME, name);
+    span.setAttribute(FABRIC_TOOL_NAME, name);
+  }
   if (options.type !== undefined) {
     span.setAttribute(GEN_AI_TOOL_TYPE, options.type);
     span.setAttribute(FABRIC_TOOL_KIND, options.type);

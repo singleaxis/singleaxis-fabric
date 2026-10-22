@@ -148,6 +148,8 @@ function governedFabric(root: string, overrides: Partial<ContentCaptureConfig> =
     tenantId: "acme",
     agentId: "agent-g",
     profile: "permissive-dev",
+    // v0.8 span names and ids: pinned to the clear identity mode, which reproduces them.
+    identityMode: "clear",
     contentCapture: {
       store: store(root),
       roles: "all",

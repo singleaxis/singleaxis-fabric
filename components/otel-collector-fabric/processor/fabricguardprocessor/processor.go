@@ -905,6 +905,11 @@ func activityCategory(name string, attrs pcommon.Map) string {
 			return "fabric.tool_call"
 		}
 	}
+	// v0.8.1: a pseudonymous SDK without an id key omits the tool name; the
+	// GenAI operation still marks the span as a tool call.
+	if operation, ok := attrs.Get("gen_ai.operation.name"); ok && operation.Str() == "execute_tool" {
+		return "fabric.tool_call"
+	}
 	for _, key := range []string{"fabric.llm.system", "gen_ai.request.model", "fabric.wire.exchange_id"} {
 		if _, ok := attrs.Get(key); ok {
 			return "fabric.model_call"
