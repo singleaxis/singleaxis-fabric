@@ -99,7 +99,7 @@ def test_install_patches_default_transports_and_uninstall_restores(
     spans = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"]
     assert len(spans) == 2
     assert {attrs(s)["fabric.source_id"] for s in spans} == {handle.allocator.source_id}
-    assert handle.allocator.component == "wire"
+    assert handle.allocator.component == "process"  # 050 §3.3: the one process allocator
     assert handle.stats().matched == 2
     assert handle.stats().spans_emitted == 2
     assert len(fake_network) == 3

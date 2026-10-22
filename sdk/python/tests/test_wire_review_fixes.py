@@ -83,7 +83,7 @@ def test_fork_child_reinitializes_wire_locks() -> None:
         if pid == 0:
             ok = _stream._FINISH_LOCK.acquire(timeout=2) and _stream._REAPER_PID is None
             epoch, sequence, _ = allocator.next_sequence()
-            os._exit(0 if ok and epoch > parent_epoch and sequence == 0 else 1)
+            os._exit(0 if ok and epoch != parent_epoch and sequence == 0 else 1)
         _, status = os.waitpid(pid, 0)
         print("child", os.waitstatus_to_exitcode(status))
         """

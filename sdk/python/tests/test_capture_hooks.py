@@ -336,7 +336,8 @@ def test_install_attaches_and_close_detaches_the_p1_hooks(monkeypatch: pytest.Mo
     monkeypatch.setattr(_segments, "new_run_table", lambda: table)
     handle = wire.install(tracer_provider=provider, patch_httpx=False, patch_aiohttp=False)
     allocator = handle.allocator
-    assert handle.registration is None  # WP-10
+    assert handle.registration is not None  # direct mode: no spool to register on
+    assert handle.registration.status == "unregistered_direct"
     assert isinstance(handle.records, _records.RecordsInput)
     assert _records.records_input(handle) is handle.records
     assert allocator.segments is table
@@ -434,8 +435,8 @@ def test_seal_manifest_and_registration_stubs() -> None:
     _manifest.capture_point_changed(handle, "wire.py.aiohttp", "failed")
     with pytest.raises(NotImplementedError):
         _manifest.manifest_digest({})
-    assert _registration.register(None, "s-a", 1) is None
-    assert _registration.scan_orphans(handle) == []
+    assert _registration.register(None, "s-a", 1).status == "unregistered_direct"
+    assert _registration.scan_orphans(handle) == []  # not a spool: fails open
     registration = _registration.Registration("registered", 1, "s-a")
     registration.mirror(5)
     registration.final()

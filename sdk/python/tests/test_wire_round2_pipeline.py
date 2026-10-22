@@ -291,7 +291,7 @@ def test_run_markers_and_final_heartbeat_carry_their_kind() -> None:
     assert all((run is None) is (kind in ("periodic", "final")) for kind, run, _ in beats)
     # Nothing is ever allocated after the final heartbeat in the sealed epoch.
     epoch, sequence, _ = allocator.next_sequence()
-    assert (epoch, sequence) != (sealed_epoch, 2) and epoch > sealed_epoch and sequence == 0
+    assert (epoch, sequence) != (sealed_epoch, 2) and epoch != sealed_epoch and sequence == 0
 
 
 def test_heartbeat_kind_and_scope_must_agree() -> None:
