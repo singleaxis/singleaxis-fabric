@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ._descriptors import open_descriptor
 from .byte_evidence import _BOUNDARIES, _ROLES
 from .content_store.base import check_safe_identifier
 from .content_store.local import LocalFilesystemContentStore, node_shard
@@ -151,35 +152,40 @@ class ByteEvidenceResolver:
         directory_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
         file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
         with ExitStack() as opened:
-            descriptors: list[int] = []
-            descriptors.append(os.open(self._root.anchor, directory_flags))
-            opened.callback(os.close, descriptors[-1])
+            descriptors = [
+                opened.enter_context(open_descriptor(self._root.anchor, directory_flags))
+            ]
             for component in (
                 *self._root.parts[1:],
                 self.tenant_id,
                 "evidence",
                 *(("meta",) if metadata else ()),
             ):
-                descriptors.append(os.open(component, directory_flags, dir_fd=descriptors[-1]))
-                opened.callback(os.close, descriptors[-1])
+                descriptors.append(
+                    opened.enter_context(
+                        open_descriptor(component, directory_flags, dir_fd=descriptors[-1])
+                    )
+                )
             name = f"{object_id}.json" if metadata else object_id
             # The Fabric Node's two-level shard first, then the flat name (this
             # SDK's writer, and Nodes before sharding) in the same pinned parent.
             flat = directory = descriptors[-1]
             for component in node_shard(object_id):
                 try:
-                    directory = os.open(component, directory_flags, dir_fd=directory)
+                    directory = opened.enter_context(
+                        open_descriptor(component, directory_flags, dir_fd=directory)
+                    )
                 except FileNotFoundError:
                     directory = flat
                     break
-                opened.callback(os.close, directory)
             try:
-                descriptor = os.open(name, file_flags, dir_fd=directory)
+                descriptor = opened.enter_context(
+                    open_descriptor(name, file_flags, dir_fd=directory)
+                )
             except FileNotFoundError:
                 if directory == flat:
                     raise
-                descriptor = os.open(name, file_flags, dir_fd=flat)
-            opened.callback(os.close, descriptor)
+                descriptor = opened.enter_context(open_descriptor(name, file_flags, dir_fd=flat))
             info = os.fstat(descriptor)
             limit = _MAX_DESCRIPTOR_BYTES if metadata else self.max_object_bytes
             if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:

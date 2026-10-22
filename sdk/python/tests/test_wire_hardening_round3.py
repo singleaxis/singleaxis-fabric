@@ -182,7 +182,8 @@ def test_flush_and_close_are_false_when_losses_and_markers_cannot_be_spooled(
     assert loss.has_pending_losses() and sender.stats()["markers_held"] >= 1
     assert sender.stats()["ledger_slots"] >= 1
     loss.final(allocator)
-    assert not sender.close(1.0)
+    closed = sender.close(1.0)
+    assert not closed
 
 
 def test_flush_is_false_after_an_exchange_was_lost_then_true_again(
@@ -204,7 +205,8 @@ def test_flush_is_false_after_an_exchange_was_lost_then_true_again(
     assert not handle.flush(10.0)  # its loss is delivered, the exchange is not
     assert records(tmp_path / "spool") == [] and node.named("fabric.capture_loss")
     assert handle.flush(10.0)  # nothing failed since the previous flush
-    assert not handle.close(5.0)  # close answers for the whole lifetime
+    closed = handle.close(5.0)
+    assert not closed  # close answers for the whole lifetime
 
 
 def test_own_record_quarantined_makes_flush_false(tmp_path: Path) -> None:
@@ -290,7 +292,8 @@ def test_content_client_never_follows_a_redirect(status: int, location: str | No
     adapter = _Redirecting(status, location)
     client._session.mount("https://", adapter)
     client._session.mount("http://", adapter)
-    assert client.send(DESCRIPTOR, b"PROMPT") == "retry"  # never success, never resent
+    send_result = client.send(DESCRIPTOR, b"PROMPT")
+    assert send_result == "retry"  # never success, never resent
     assert [url for url, _ in adapter.seen] == ["https://fabric-node.example/v1/logs"]
 
 

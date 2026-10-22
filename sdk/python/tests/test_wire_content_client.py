@@ -97,19 +97,24 @@ def node() -> Any:
 def test_send_results(node: FakeNode, monkeypatch: pytest.MonkeyPatch) -> None:
     descriptor, body = _descriptor("content-log-record-request.json"), b"x" * 73
     client = _client(node, headers={"authorization": "Bearer t"})
-    assert client.send(descriptor, body) == "ok"
+    send_result = client.send(descriptor, body)
+    assert send_result == "ok"
     assert node.content[0][1] == body
     path, headers = node.requests[-1]
     assert path == "/v1/logs" and headers["Content-Type"] == "application/x-protobuf"
     assert headers["authorization"] == "Bearer t"
     node.mode = "reject"
-    assert client.send(descriptor, body) == "rejected"
+    send_result = client.send(descriptor, body)
+    assert send_result == "rejected"
     node.mode = "down"
-    assert client.send(descriptor, body) == "retry"
+    send_result = client.send(descriptor, body)
+    assert send_result == "retry"
     node.close()
-    assert client.send(descriptor, body) == "retry"  # connection refused
+    send_result = client.send(descriptor, body)
+    assert send_result == "retry"  # connection refused
     unencodable = {**descriptor, "stored_byte_length": True}
-    assert client.send(unencodable, body) == "rejected"
+    send_result = client.send(unencodable, body)
+    assert send_result == "rejected"
     client.close()
 
 
@@ -131,7 +136,8 @@ def test_status_mapping(
     client = NodeContentClient("https://node/v1/logs", headers={}, timeout_s=1, verify=True,
                                cert=None, service_name="svc")  # fmt: skip
     monkeypatch.setattr(client._session, "post", lambda *a, **k: Reply())
-    assert client.send(_descriptor("content-log-record-request.json"), b"x" * 73) == expected
+    send_result = client.send(_descriptor("content-log-record-request.json"), b"x" * 73)
+    assert send_result == expected
 
 
 def test_settings_prefer_the_logs_variables(tmp_path: Path) -> None:

@@ -268,7 +268,8 @@ def test_a_service_that_never_answers_is_abandoned_at_its_timeout() -> None:
             _canary_free(result, data)
         assert protector.stats()["redaction_timeouts"] == 3
     finally:
-        assert protector.close()
+        closed = protector.close()
+        assert closed
 
 
 def test_the_in_flight_bound_is_shared_across_threads() -> None:
@@ -293,7 +294,8 @@ def test_the_in_flight_bound_is_shared_across_threads() -> None:
         stats = protector.stats()
         assert (stats["redaction_timeouts"], stats["redaction_saturated"]) == (2, 4)
     finally:
-        assert protector.close()
+        closed = protector.close()
+        assert closed
 
 
 def test_tokenize_without_a_key_withholds() -> None:
@@ -324,9 +326,10 @@ def test_transformation_settings_are_validated() -> None:
     with pytest.raises(ValueError, match=docs):
         _protector(_policy(model_exchange_request="redact"),
                    transformations={REQUEST: "tests.transforms:redact_secret"})  # fmt: skip
+    deleted_setting: dict[str, Any] = {"transform_env_allowlist": ("HOME",)}
     with pytest.raises(TypeError, match="transform_env_allowlist"):  # deleted setting
         Protector(_policy(model_exchange_request="redact"), max_body_bytes=64,
-                  transform_env_allowlist=("HOME",))  # type: ignore[call-arg]  # fmt: skip
+                  **deleted_setting)  # fmt: skip
     with pytest.raises(ValueError, match="FABRIC_REDACTION_ENDPOINT"):
         Protector(_policy(model_exchange_request="redact"), max_body_bytes=64,
                   transformations={REQUEST: REDACT})  # fmt: skip

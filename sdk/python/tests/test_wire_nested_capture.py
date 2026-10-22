@@ -563,7 +563,8 @@ def test_child_forked_during_a_send_captures_inherited_and_fresh_requests(
     def parent_send() -> None:
         transport = _client_transport(module, how, installed, is_async=False)
         with module.Client(transport=transport, trust_env=False) as client:
-            assert client.send(request).status_code == 200
+            response = client.send(request)
+            assert response.status_code == 200
 
     sender = threading.Thread(target=parent_send)
     sender.start()

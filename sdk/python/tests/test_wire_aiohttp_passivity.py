@@ -83,8 +83,11 @@ def measure(sleep_factor: float = 0.0) -> dict[str, Any]:  # noqa: PLR0915
         try:
 
             class Protocol:
-                def pause_reading(self) -> None: ...
-                def resume_reading(self, resume_parser: bool = True) -> None: ...
+                def pause_reading(self) -> None:
+                    pass  # flow control is a no-op for this in-memory reader
+
+                def resume_reading(self, resume_parser: bool = True) -> None:
+                    pass
 
             def reader() -> Any:
                 return streams.StreamReader(Protocol(), 2**30, loop=loop)  # type: ignore[arg-type]

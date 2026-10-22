@@ -121,7 +121,8 @@ def _recorded(path: Path) -> tuple[LocalFilesystemContentStore, dict[str, Any]]:
     calls = CallRecorder(writer, run_id="run-a", source_id="source-a", agent_id="agent-a")
     calls.call(b"request", lambda _data: b"response bytes", operation_id="op", attempt_id="a")
     snapshot = calls.snapshot()
-    assert writer.close()
+    closed = writer.close()
+    assert closed
     event = next(event for event in snapshot["events"] if event["role"] == _ROLE)
     return store, event
 

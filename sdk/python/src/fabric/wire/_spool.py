@@ -570,15 +570,20 @@ class Spool:
                     except OSError as exc:
                         results[index] = exc
                         continue
+                    reserved = False
                     try:  # its last byte: the file has its full size (sparse below it)
                         os.pwrite(fd, b"\0", size - 1)
-                    except BaseException as exc:
-                        os.close(fd)
-                        with contextlib.suppress(OSError):
-                            os.unlink(tmp)
-                        if not isinstance(exc, Exception):
-                            raise
+                        reserved = True
+                    except Exception as exc:
                         results[index] = exc
+                    finally:
+                        # Any failure, an interrupt included (which then propagates),
+                        # leaves no open descriptor and no half-reserved file behind.
+                        if not reserved:
+                            os.close(fd)
+                            with contextlib.suppress(OSError):
+                                os.unlink(tmp)
+                    if not reserved:
                         continue
                     results[index] = fd
                     total += size
@@ -1030,7 +1035,7 @@ class Spool:
             try:
                 os.unlink(self._path(name))
             except FileNotFoundError:
-                pass
+                pass  # already pruned by another process: still drop it from the count below
             except OSError:
                 continue
             with self._lock:

@@ -145,7 +145,8 @@ def test_a_record_quarantined_by_another_drainer_fails_its_writers_flush_and_clo
     _drain_elsewhere(root)  # a forked drainer quarantines the writer's record
     assert not (root / name).exists() and (root / (name + ".corrupt")).exists()
     assert not sender.flush(2.0)  # sol2 #3 probe: was True
-    assert not sender.close(2.0)
+    closed = sender.close(2.0)
+    assert not closed
 
 
 def test_a_record_delivered_by_another_drainer_is_acknowledged(tmp_path: Path) -> None:
@@ -157,7 +158,8 @@ def test_a_record_delivered_by_another_drainer_is_acknowledged(tmp_path: Path) -
     assert not (root / name).exists() and (root / (name + ".ack")).exists()
     assert sender.flush(2.0)
     assert not (root / (name + ".ack")).exists()  # the receipt was consumed
-    assert sender.close(2.0)
+    closed = sender.close(2.0)
+    assert closed
 
 
 def test_a_record_that_disappears_without_a_receipt_is_not_a_delivery(tmp_path: Path) -> None:
@@ -168,7 +170,8 @@ def test_a_record_that_disappears_without_a_receipt_is_not_a_delivery(tmp_path: 
     (root / name).unlink()  # removed by an operator or a drainer that left no receipt
     assert not sender.flush(2.0)
     assert sender.flush(2.0)  # nothing failed since
-    assert not sender.close(2.0)  # close answers for the whole lifetime
+    closed = sender.close(2.0)
+    assert not closed  # close answers for the whole lifetime
 
 
 # ------------------------------------- sol2 new: the deadline holds while a pump stalls on disk
@@ -231,7 +234,8 @@ def _real_capture_rows(tmp_path: Path, state: str) -> tuple[list[dict[str, Any]]
                 list(response.iter_raw())
         del response
         gc.collect()
-    assert rig.handle.close(5)
+    closed = rig.handle.close(5)
+    assert closed
     rows = []
     for span in rig.exporter.get_finished_spans():
         context = span.context
@@ -434,7 +438,8 @@ def _capture_with_labels(
     transport = wire.WireTransport(httpx.MockTransport(lambda r: httpx.Response(200, json=reply)))
     with wire.run("private-run-Jane-Doe"), httpx.Client(transport=transport) as client:
         client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": []})
-    assert handle.close(5.0)
+    closed = handle.close(5.0)
+    assert closed
     return _sink_rows(sink.spans), store
 
 

@@ -274,7 +274,8 @@ def test_copy_carries_every_slot_across_the_hierarchy() -> None:
     original = leaf("POST", "https://api.openai.com/v1/chat/completions", content=BODY)
     clone = private_copy(original)
     assert clone is not None and type(clone) is leaf
-    assert vars(clone).pop(DELEGATION_MARK) is True
+    popped = vars(clone).pop(DELEGATION_MARK)
+    assert popped is True
     assert vars(clone) == vars(original)
     assert (clone.route, clone.tag(), clone.extensions) == ("customer-route", "leaf-tag", {})
     assert clone.extensions is original.extensions  # shallow: the same objects
@@ -335,14 +336,16 @@ def test_slot_rebound_by_the_transport_is_carried_back(installed: Installed, mod
     if mode == "sync":
         transport: Any = wire.WireTransport(httpx.MockTransport(handler), handle=installed.handle)
         with httpx.Client(transport=transport) as client:
-            assert client.send(request).status_code == 200
+            response = client.send(request)
+            assert response.status_code == 200
     else:
 
         async def run() -> None:
             inner = httpx.MockTransport(handler)
             transport = wire.AsyncWireTransport(inner, handle=installed.handle)
             async with httpx.AsyncClient(transport=transport) as client:
-                assert (await client.send(request)).status_code == 200
+                response = await client.send(request)
+                assert response.status_code == 200
 
         asyncio.run(run())
     assert request.extensions is rebound and request.route == "rebound-route"

@@ -19,10 +19,8 @@ from fabric.call_otlp import project_call_snapshot_batches
 from fabric.content_store.base import ByteEvidenceStore, ContentStore, CorruptedObjectError
 from fabric.deployment_policy import ContentProtector, DeploymentPolicy
 from fabric.governed_store import GovernedLocalContentStore, LocalCapabilityAuthority
-from fabric.redaction import RedactionService, Transformation
+from fabric.redaction import Transformation
 from fabric.source_spool import SyntheticSourceSpool
-
-from .redaction_server import RedactionServer
 
 ALL = {
     "write_original",
@@ -36,10 +34,8 @@ KEY = hashlib.sha256(b"synthetic encryption test key").digest()
 SECRET = b"synthetic local admin test key!!!"
 
 
-@pytest.fixture(autouse=True)
-def _service(redaction_server: RedactionServer, redaction: RedactionService) -> None:
-    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests."""
-    del redaction_server, redaction
+# The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests.
+pytestmark = pytest.mark.usefixtures("redaction_server", "redaction")
 
 
 def policy(**changes: Any) -> DeploymentPolicy:

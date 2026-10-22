@@ -34,7 +34,8 @@ def test_nonloopback_requires_both_protocols_tls(tmp_path, tls_protocols, accept
     for name in ["server.crt", "server.key"]:
         (tmp_path / "tls" / name).write_text("synthetic; not a real certificate")
     # The preflight also refuses a world-readable private key (spec 048 F9).
-    os.chmod(tmp_path / "tls" / "server.key", 0o440)
+    # Owner-only is enough here: the test user stands in for the node user.
+    os.chmod(tmp_path / "tls" / "server.key", 0o400)
     env = _preflight_environment(tmp_path, token)
     env["FABRIC_BIND_ADDR"] = "0.0.0.0"
     result = subprocess.run(

@@ -136,7 +136,8 @@ def test_export_and_post_failures_log_no_secret(
     assert handle.stats().send_retries >= 1
     sender = handle._tee.sender
     assert sender is not None and not sender.pump(every_source=True)  # a failed direct export
-    assert not handle.close(1.0)
+    closed = handle.close(1.0)
+    assert not closed
     assert captured.records, "the failures were not observable at all"
     assert captured.leaks() == []
 

@@ -104,7 +104,8 @@ def test_a_dead_owner_s_records_are_recovered_once(tmp_path: Path) -> None:
     drainer = LossLedger(str(tmp_path))
     ((index, records),) = drainer.orphans()
     assert records == [LOSS, START]
-    assert drainer.clear(index)
+    cleared = drainer.clear(index)
+    assert cleared
     assert drainer.orphans() == []
 
 

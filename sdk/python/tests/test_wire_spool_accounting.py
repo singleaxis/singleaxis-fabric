@@ -123,14 +123,16 @@ def test_a_rescan_during_a_write_keeps_the_write_counted(tmp_path: Path) -> None
         _assert_exact(spool, root)
 
     with patch("os.rename", rename_then_rescan):
-        assert spool.write(_final("own", 0)) is not None
+        written = spool.write(_final("own", 0))
+        assert written is not None
     _assert_exact(spool, root)
     listdir = os.listdir
 
     def listdir_then_write(path: Any) -> list[str]:  # the write lands mid-rescan
         entries = listdir(path)
         with patch("os.listdir", listdir):
-            assert spool.write(_final("own", 1)) is not None
+            written = spool.write(_final("own", 1))
+            assert written is not None
         return entries
 
     with patch("os.listdir", listdir_then_write):
@@ -485,7 +487,8 @@ def test_a_rename_destination_that_cannot_be_observed_stays_charged(
         with patch("os.ftruncate", _enospc):
             sender._drain()
         assert os.path.exists(destination)
-        assert drainer.write(_final("drainer", 99)) is None
+        written = drainer.write(_final("drainer", 99))
+        assert written is None
         total, _ = _on_disk(root)
         assert total <= drainer.bytes <= drainer.max_bytes
     drainer.rescan()  # faults cleared: exact again

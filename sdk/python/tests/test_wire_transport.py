@@ -537,7 +537,8 @@ def test_streamed_request_body_is_retained_as_sent(rig: Rig) -> None:
 
     request = httpx.Request("POST", OPENAI_CHAT, content=gen())
     with rig.client(handler) as client:
-        assert client.send(request).status_code == 200
+        response = client.send(request)
+        assert response.status_code == 200
     assert sent == [b"".join(body)]
     rig.flush()
     (span,) = rig.spans()
@@ -574,7 +575,8 @@ def test_close_reports_stranded_exchanges(tmp_path: Path) -> None:
     rig = make_rig(tmp_path, store=None)
     with rig.client(lambda r: httpx.Response(200, stream=ChunkStream([b"a", b"b"]))) as client:
         response = client.send(client.build_request("POST", OPENAI_CHAT, json={}), stream=True)
-        assert rig.tee.close(0.05) is False
+        closed = rig.tee.close(0.05)
+        assert closed is False
         assert rig.loss_counts() == {"shutdown": 1}
         assert response.read() == b"ab"  # the caller still gets every byte
         response.close()

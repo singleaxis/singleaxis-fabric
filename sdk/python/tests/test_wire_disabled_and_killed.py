@@ -59,7 +59,8 @@ def test_otel_sdk_disabled_disables_capture_loudly(
     assert handle.flush(0.1) is False  # nothing recorded: no delivery claimed
     with wire.run("r1"):
         pass
-    assert handle.close() is False
+    closed = handle.close()
+    assert closed is False
     assert wire.current_handle() is None
 
 

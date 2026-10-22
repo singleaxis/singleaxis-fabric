@@ -248,7 +248,8 @@ def test_timed_out_flushes_during_a_disk_stall_keep_one_helper(tmp_path: Path) -
         time.sleep(0.01)
     assert _flush_helpers() == before
     sender.flush(5.0)  # usable again once the disk recovers
-    assert sender.close(5.0) is False  # the queue_full loss was recorded
+    closed = sender.close(5.0)
+    assert closed is False  # the queue_full loss was recorded
 
 
 def test_pump_waits_for_the_lock_only_until_its_deadline(tmp_path: Path) -> None:
@@ -325,7 +326,8 @@ def test_loopback_content_is_never_sent_through_an_environment_proxy(
                                verify=str(tmp_path / "ca.pem"), cert=("c.pem", "k.pem"),
                                service_name="svc", proxy=explicit)  # fmt: skip
     recorder = _record(client)
-    assert client.send(_descriptor("content-log-record-request.json"), b"x" * 73) == "ok"
+    send_result = client.send(_descriptor("content-log-record-request.json"), b"x" * 73)
+    assert send_result == "ok"
     # direct (even the explicit proxy never applies to loopback); TLS settings unchanged
     assert recorder.seen == [{"proxy": None, "verify": str(tmp_path / "ca.pem"),
                               "cert": ("c.pem", "k.pem"), "auth": "Bearer t"}]  # fmt: skip
@@ -338,7 +340,8 @@ def test_loopback_content_reaches_the_node_with_a_proxy_environment() -> None:
     try:
         client = NodeContentClient(node.url + "/v1/logs", headers={}, timeout_s=5, verify=True,
                                    cert=None, service_name="svc")  # fmt: skip
-        assert client.send(_descriptor("content-log-record-request.json"), b"x" * 73) == "ok"
+        send_result = client.send(_descriptor("content-log-record-request.json"), b"x" * 73)
+        assert send_result == "ok"
         assert len(node.content) == 1
         client.close()
     finally:
@@ -351,11 +354,13 @@ def test_https_content_uses_only_an_explicit_proxy(monkeypatch: pytest.MonkeyPat
     descriptor = _descriptor("content-log-record-request.json")
     direct = content_client_from_env(env)
     recorder = _record(direct)
-    assert direct.send(descriptor, b"x" * 73) == "ok"
+    send_result = direct.send(descriptor, b"x" * 73)
+    assert send_result == "ok"
     assert recorder.seen[0]["proxy"] is None and recorder.seen[0]["verify"] is True
     explicit = content_client_from_env({**env, "FABRIC_WIRE_PROXY": "http://corp.example:3128"})
     recorder = _record(explicit)
-    assert explicit.send(descriptor, b"x" * 73) == "ok"
+    send_result = explicit.send(descriptor, b"x" * 73)
+    assert send_result == "ok"
     assert recorder.seen[0]["proxy"] == "http://corp.example:3128"
     for client in (direct, explicit):
         client.close()

@@ -492,7 +492,8 @@ def test_the_explicit_input_has_the_production_gate(
                 assert SECRET not in path.read_bytes() and digest not in path.read_bytes()
         assert any(reason in r.getMessage() for r in caplog.records)  # never silent
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_the_explicit_gate_reads_the_id_key_from_the_environment(
@@ -508,7 +509,8 @@ def test_the_explicit_gate_reads_the_id_key_from_the_environment(
         assert recorder.status()["content_capture"] == "enabled"
         assert recorder.get(_capture(recorder)["object_id"]) is not None
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", "short")
     with pytest.raises(ValueError, match="FABRIC_WIRE_ID_KEY"):  # malformed: still raises
         ByteEvidenceRecorder(config)
@@ -559,7 +561,8 @@ def test_explicit_masking_runs_off_the_caller_thread(
                 if path.is_file():
                     assert SECRET not in path.read_bytes()
         finally:
-            assert recorder.close()
+            closed = recorder.close()
+            assert closed
 
 
 def test_the_redaction_service_settings_are_validated(tmp_path: Path) -> None:
@@ -595,4 +598,5 @@ def test_deferred_redaction_rechecks_the_recorder_payload_cap(tmp_path: Path) ->
         assert "ref" not in settled and "stored_sha256" not in settled
         assert not [p for p in tmp_path.rglob("*") if p.is_file()]
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed

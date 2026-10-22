@@ -239,7 +239,8 @@ def test_node_mode_delivers_content_then_span_and_empties_the_spool(
     assert {b["fabric.run.scope_id"] for b in scoped} == {span["fabric.run.scope_id"]}
     stats = handle.stats()
     assert stats.delivered >= 3 and stats.spooled >= 3 and stats.spool_bytes == 0
-    assert handle.close(5.0)
+    closed = handle.close(5.0)
+    assert closed
     beats = node.named("fabric.capture_heartbeat")
     finals = [b for b in beats if b["fabric.heartbeat.kind"] == "final"]
     assert len(finals) == 1
@@ -349,7 +350,8 @@ def test_corrupt_record_is_quarantined_with_an_internal_error_loss(
     handle = install_node(node, spool, spool_key=None)  # a plaintext header to recover
     with model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
-    assert not handle.close(1.0)  # the exchange and the final marker stay on disk
+    closed = handle.close(1.0)
+    assert not closed  # the exchange and the final marker stay on disk
     _stopped(handle)  # no export of a batch read before the corruption is still in flight
     exchange = next(
         p for p in records(spool) if unframe_all(p.read_bytes())[0][0]["record_kind"] == "exchange"
@@ -457,7 +459,8 @@ def test_tampered_sealed_record_is_quarantined_and_another_key_is_left(
         client.post(OPENAI_CHAT, json={"messages": []})
         handle._tee.flush(5.0)  # its own record file, not one batch file with the next
         client.post(OPENAI_CHAT, json={"messages": []})
-    assert not handle.close(1.0)
+    closed = handle.close(1.0)
+    assert not closed
     _stopped(handle)
     first, second = [p for p in records(spool)
                      if unframe_all(open_record(p))[0][0]["record_kind"] == "exchange"]  # fmt: skip
@@ -484,7 +487,8 @@ def _plaintext_spool(node: FakeNode, spool: Path) -> list[Path]:
     handle = install_node(node, spool, spool_key=None)
     with model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
-    assert not handle.close(1.0)
+    closed = handle.close(1.0)
+    assert not closed
     _stopped(handle)
     wire.uninstall()
     plain = records(spool)

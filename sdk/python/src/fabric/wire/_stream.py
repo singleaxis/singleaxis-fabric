@@ -17,7 +17,7 @@ import uuid
 import weakref
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from types import MemberDescriptorType, ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -29,7 +29,8 @@ from ._pipeline import capture_parent
 
 if TYPE_CHECKING:
     from .._capture_scope import ExplicitScope
-    from ._transport import WireTee
+    from .._loss import LossReason
+    from .._sequence import SourceAllocator
 
 _FINISH_LOCK = threading.Lock()
 # GC may finalize a stream on any thread, even one holding a capture lock: those paths
@@ -96,6 +97,24 @@ class Budget:
     def release(self, size: int) -> None:
         with self._lock:
             self.used = max(0, self.used - size)
+
+
+class ExchangeOwner(Protocol):
+    """What an :class:`Exchange` needs from the tee that started it (``WireTee`` in
+    ``_transport.py``, which imports this module). Declared here as a structural type so
+    this module never imports ``_transport``: the dependency runs one way only."""
+
+    allocator: SourceAllocator
+    max_body_bytes: int
+    max_retain_bytes: int
+    budget: Budget
+    internal_errors: int
+
+    def adopt(self, exchange: Exchange) -> bool: ...
+    def forget(self, exchange: Exchange) -> None: ...
+    def submit(self, job: CaptureJob) -> None: ...
+    def lose(self, epoch: int, sequence: int, reason: LossReason) -> None: ...
+    def shut(self, exchange: Exchange) -> None: ...
 
 
 class _Side:
@@ -189,7 +208,7 @@ class Exchange:
     (``fabric._capture_scope``): it has no sequence yet. When it finishes, the explicit
     record owns it if that call is still live (the call consumed the response); otherwise
     the response outlived the call (e.g. a lazy stream the call returned) and the tee
-    allocates its sequence then (:meth:`WireTee.adopt`)."""
+    allocates its sequence then (:meth:`ExchangeOwner.adopt`)."""
 
     __slots__ = (
         "__weakref__", "api", "deferral", "done", "epoch", "exchange_id", "finalizer", "handoff",
@@ -198,7 +217,7 @@ class Exchange:
     )  # fmt: skip
 
     def __init__(
-        self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
+        self, tee: ExchangeOwner, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
         scope: RunScope | None = None, *, deferral: ExplicitScope | None = None,
     ) -> None:  # fmt: skip
         self.tee, self.matcher, self.api, self.scope = tee, matcher, api, scope

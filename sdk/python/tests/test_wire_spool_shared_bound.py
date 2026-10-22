@@ -231,18 +231,21 @@ def test_a_crashed_writers_temp_file_counts_against_the_shared_bound(tmp_path: P
     assert survivor.bytes == 0  # the local ledger has not seen it (no rescan yet)
 
     body = b"s" * (30 * 1024)  # fits the local ledger, not the disk
-    assert survivor.write(marker_doc(("survivor", 1, 0, None, None, "final")), [body]) is None
+    written = survivor.write(marker_doc(("survivor", 1, 0, None, None, "final")), [body])
+    assert written is None
     assert survivor.shared_bytes == leftover.stat().st_size
     assert survivor.bytes == 0 and not list(root.glob("[0-9]*.rec"))
     small = b"s" * (8 * 1024)  # what still fits next to the crashed writer's reservation
-    assert survivor.write(marker_doc(("survivor", 1, 1, None, None, "final")), [small])
+    written = survivor.write(marker_doc(("survivor", 1, 1, None, None, "final")), [small])
+    assert written
     assert _on_disk(root) <= limit
 
     os.utime(leftover, (0, 0))  # an hour old: the drainer removes it and space frees
     assert survivor.try_lock()
     survivor.rescan()
     assert not leftover.exists()
-    assert survivor.write(marker_doc(("survivor", 1, 2, None, None, "final")), [body])
+    written = survivor.write(marker_doc(("survivor", 1, 2, None, None, "final")), [body])
+    assert written
     assert _on_disk(root) <= limit
     survivor.release()
 
@@ -260,15 +263,18 @@ def test_admission_lock_is_not_the_drainer_lock_and_a_busy_lock_fails_closed(
     drainer, writer = Spool(str(root), 1 << 20), Spool(str(root), 1 << 20)
     assert drainer.try_lock()  # the drainer lock is held: writers still admit
     doc = marker_doc(("w", 1, 0, None, None, "final"))
-    assert writer.write(doc) is not None
+    written = writer.write(doc)
+    assert written is not None
     holder = os.open(root / ".admit", os.O_RDWR)
     try:
         fcntl.flock(holder, fcntl.LOCK_EX)  # another process stalls holding admission
         monkeypatch.setattr(_spool, "ADMIT_TIMEOUT_S", 0.2)
-        assert writer.write(marker_doc(("w", 1, 1, None, None, "final"))) is None
+        written = writer.write(marker_doc(("w", 1, 1, None, None, "final")))
+        assert written is None
         assert writer.admission_timeouts == 1
     finally:
         os.close(holder)
-    assert writer.write(marker_doc(("w", 1, 2, None, None, "final"))) is not None
+    written = writer.write(marker_doc(("w", 1, 2, None, None, "final")))
+    assert written is not None
     drainer.release()
     writer.release()

@@ -157,7 +157,8 @@ def test_truncated_body_without_prefix_is_not_stored(parts: Any) -> None:
 
 def test_submit_after_close_records_shutdown_loss(parts: Any) -> None:
     pipeline, exporter, _, allocator, loss = parts
-    assert pipeline.close(2.0)
+    closed = pipeline.close(2.0)
+    assert closed
     job = _job(allocator)
     assert pipeline.submit(job) is False
     assert loss.flush(2.0)

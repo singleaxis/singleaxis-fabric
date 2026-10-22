@@ -133,7 +133,8 @@ def test_receipts_count_against_the_bound_for_a_writer_that_never_settles(
     drainer, exporter, sender = _drainer(root, 512)
     for index in range(512):
         writer.rescan()
-        assert writer.write(_final(index)) is not None
+        written = writer.write(_final(index))
+        assert written is not None
         sender._drain()
         writer.rescan()
         assert writer.bytes == _physical(root)[0] <= writer.max_bytes
@@ -188,7 +189,8 @@ def test_a_record_whose_retirement_fails_is_not_exported_again(
     drainer.release()
     assert writer_sender.flush(2.0)  # the writer consumes its receipt: delivered
     assert not (root / (name + ".ack")).exists()
-    assert writer_sender.close(2.0)
+    closed = writer_sender.close(2.0)
+    assert closed
 
 
 def test_an_own_record_being_retired_is_never_a_failure(tmp_path: Path) -> None:
@@ -269,7 +271,8 @@ def test_receipts_expire_oldest_first_and_their_writer_counts_a_failure(
     assert not writer_sender.flush(2.0)  # names[0]: delivered, but no longer provable
     assert not list(root.glob("*.ack"))  # the two remaining receipts were consumed
     assert writer_sender.flush(2.0)
-    assert not writer_sender.close(2.0)
+    closed = writer_sender.close(2.0)
+    assert not closed
 
 
 def test_the_receipt_count_is_configurable(tmp_path: Path) -> None:
@@ -335,7 +338,8 @@ def test_an_actual_capture_hashes_a_digit_run_model_in_telemetry_and_report(
     transport = wire.WireTransport(httpx.MockTransport(lambda r: httpx.Response(200, json=reply)))
     with wire.run("run-1"), httpx.Client(transport=transport) as client:
         client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": []})
-    assert handle.close(5.0)
+    closed = handle.close(5.0)
+    assert closed
     rows: list[dict[str, Any]] = []
     for span in exporter.spans:
         context = span.context

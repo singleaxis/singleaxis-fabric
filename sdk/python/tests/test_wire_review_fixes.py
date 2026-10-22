@@ -152,7 +152,8 @@ def test_close_does_not_wait_out_the_deadline_on_a_stream_awaiting_gc(tmp_path: 
     gc.disable()
     try:
         started = time.monotonic()
-        assert rig.tee.close(2.0) is False
+        closed = rig.tee.close(2.0)
+        assert closed is False
         assert time.monotonic() - started < 1.0
     finally:
         gc.enable()
@@ -169,7 +170,8 @@ def test_close_never_reports_an_exchange_that_finished_after_the_snapshot(rig: R
     exchange = _stream.Exchange.__new__(_stream.Exchange)
     exchange.done, exchange.finalizer = True, None  # already finished and submitted
     rig.tee._active.add(exchange)  # still in close()'s snapshot when it finished
-    assert rig.tee.close(1.0) is True
+    closed = rig.tee.close(1.0)
+    assert closed is True
     assert rig.loss_counts() == {}
     assert len(rig.spans()) == 1 and finished in rig.spans()
 
@@ -207,7 +209,8 @@ def test_close_never_reports_a_job_the_worker_is_still_finishing() -> None:
     with httpx.Client(transport=transport) as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert exporter.entered.wait(5)  # the worker is inside span.end()
-    assert tee.pipeline.close(0.05) is False  # deadline expires mid-emit
+    closed = tee.pipeline.close(0.05)
+    assert closed is False  # deadline expires mid-emit
     exporter.release.set()
     tee.pipeline._worker.join(5)
     assert loss.flush(1.0)

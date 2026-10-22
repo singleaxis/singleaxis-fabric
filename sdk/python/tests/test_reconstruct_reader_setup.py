@@ -71,7 +71,8 @@ def test_missing_boto3_exits_two_with_the_extra_hint_and_no_report(
     react_run(capture)
     monkeypatch.setitem(sys.modules, "boto3", None)  # import boto3 -> ImportError
     out = tmp_path / "report.json"
-    assert main(_s3_argv(capture.write(), out)) == 2
+    exit_code = main(_s3_argv(capture.write(), out))
+    assert exit_code == 2
     captured = capsys.readouterr()
     assert HINT in captured.err
     assert "missing_object" not in captured.err + captured.out
@@ -94,7 +95,8 @@ def test_boto3_lost_mid_run_is_a_setup_error_not_a_gap(
 
     monkeypatch.setattr(client, "get_object", broken)
     out = tmp_path / "report.json"
-    assert main(_s3_argv(capture.write(), out)) == 2
+    exit_code = main(_s3_argv(capture.write(), out))
+    assert exit_code == 2
     err = capsys.readouterr().err
     assert HINT in err
     assert "vendored" not in err
@@ -118,7 +120,8 @@ def test_a_genuine_per_object_read_error_is_still_a_gap(
 
     monkeypatch.setattr(client, "get_object", denied)
     out = tmp_path / "report.json"
-    assert main(_s3_argv(capture.write(), out)) == 1
+    exit_code = main(_s3_argv(capture.write(), out))
+    assert exit_code == 1
     run = only_run(json.loads(out.read_text()))
     assert run["verdict"] == "partial"
     assert [(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"] == [
@@ -346,5 +349,6 @@ def test_wait_for_objects_rejects_bad_values(
 def test_wait_for_objects_needs_a_store(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     capture = Capture(tmp_path)
     react_run(capture)
-    assert main(["--spans", str(capture.write()), "--wait-for-objects", "5"]) == 2
+    exit_code = main(["--spans", str(capture.write()), "--wait-for-objects", "5"])
+    assert exit_code == 2
     assert "--wait-for-objects needs" in capsys.readouterr().err

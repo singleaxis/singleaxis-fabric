@@ -481,7 +481,8 @@ def test_recorder_close_leaves_no_thread_or_connection(
         descriptor = _capture(recorder, b"secret")
         assert recorder.flush(10.0)
         assert recorder.get(descriptor["object_id"])["status"] == "redacted"  # type: ignore[index]
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
         del recorder
     gc.collect()
     assert fabric_threads() == threads

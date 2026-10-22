@@ -462,7 +462,8 @@ def test_cli_internal_errors_name_only_the_exception_class(
         raise RuntimeError(f"failed reading /home/{MARKER}/spans with token SECRET")
 
     monkeypatch.setattr("fabric.reconstruct.__main__.reconstruct", explode)
-    assert main(["--spans", str(capture.write())]) == 2
+    exit_code = main(["--spans", str(capture.write())])
+    assert exit_code == 2
     err = capsys.readouterr().err
     assert "RuntimeError" in err
     assert MARKER not in err
@@ -492,7 +493,8 @@ def test_cli_report_is_written_private(capture: Capture, tmp_path: Path) -> None
     capture.exchange(*TURN)
     capture.heartbeat()
     out = tmp_path / "new-report.json"
-    assert main(["--spans", str(capture.write()), "--out", str(out)]) == 1  # no store
+    exit_code = main(["--spans", str(capture.write()), "--out", str(out)])
+    assert exit_code == 1  # no store
     assert _mode(out) == 0o600
     validate(json.loads(out.read_text()))
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".fabric-reconstruct-")] == []
@@ -532,7 +534,8 @@ def test_cli_failed_report_write_leaves_no_temporary_file(
     capture.heartbeat()
     target = tmp_path / "out"
     target.mkdir()  # os.replace onto a directory fails
-    assert main(["--spans", str(capture.write()), "--out", str(target)]) == 2
+    exit_code = main(["--spans", str(capture.write()), "--out", str(target)])
+    assert exit_code == 2
     assert target.is_dir()
     leftovers = [p for p in tmp_path.iterdir() if p.name.startswith(".fabric-reconstruct-")]
     assert leftovers == []

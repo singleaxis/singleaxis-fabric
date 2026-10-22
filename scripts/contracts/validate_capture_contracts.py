@@ -66,7 +66,6 @@ _INT64_MAX = 9223372036854775807
 _EXPECTATIONS = frozenset(
     {"schema", "valid", "invalid", "digests", "golden", "vectors"}
 )
-_RUN_MARKERS = frozenset({"run_start", "run_end"})
 _SCOPED_MARKERS = frozenset({"run_start", "run_end", "segment_seal"})
 _COMPLETE = "complete_for_declared_scope"
 _COMPLETE_OBSERVED = "complete_for_observed_scopes"

@@ -90,7 +90,8 @@ def test_production_without_the_id_key_exports_no_caller_id(
         assert snapshot["run_id"] == first["run_id"]
         assert list(snapshot["source_high_water"]) == [first["source_id"]]
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_the_local_profile_keeps_the_caller_ids(
@@ -103,7 +104,8 @@ def test_the_local_profile_keeps_the_caller_ids(
         assert (descriptor["source_id"], descriptor["run_id"]) == (
             "customer-alice", "private-case-123")  # fmt: skip
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def _agent_vector() -> dict[str, str]:
@@ -149,8 +151,10 @@ def test_production_with_the_id_key_emits_keyed_pseudonyms(
             assert first[key] == second[key]  # deterministic: recorders and processes join
         assert recorder.emitted_run_id("private-case-123") == first["run_id"]
     finally:
-        assert recorder.close()
-        assert other.close()
+        closed = recorder.close()
+        assert closed
+        closed = other.close()
+        assert closed
 
 
 @pytest.mark.parametrize("profile", ["production", "no_policy"])
@@ -228,7 +232,8 @@ def test_call_recorder_journals_and_projects_only_pseudonyms(
         assert _canaries_in_files(tmp_path) == []  # journal, seal and stored descriptors
     finally:
         journal.close()
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_a_source_spool_keyed_by_the_clear_run_id_is_refused(
@@ -245,7 +250,8 @@ def test_a_source_spool_keyed_by_the_clear_run_id_is_refused(
                          source_id="customer-alice", source_spool=clear)  # fmt: skip
     finally:
         clear.close()
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_synthetic_session_events_match_pseudonymous_descriptors(
@@ -270,7 +276,8 @@ def test_synthetic_session_events_match_pseudonymous_descriptors(
             assert event[key] == event["descriptor"][key]
         assert snapshot["operations"][0]["operation_id"] == event["operation_id"]
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_the_clear_identity_mode_keeps_the_caller_ids(
@@ -291,7 +298,8 @@ def test_the_clear_identity_mode_keeps_the_caller_ids(
             "private-case-123", "agent-private-bob")  # fmt: skip
         assert snapshot["calls"][0]["operation_id"] == "op-private-7"
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 HEX = "0123456789abcdef0123456789abcdef"  # a caller id shaped like a Fabric-minted one
@@ -362,7 +370,8 @@ def test_hex_shaped_caller_ids_are_pseudonymised_everywhere(
         assert hits == []  # descriptors, journal records and seals
     finally:
         journal.close()
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 PREFIXED_RUN = "r-" + HEX  # caller ids shaped like the r-/s- pseudonyms (Sol P0-A round 5 #1)
@@ -450,8 +459,10 @@ def test_prefixed_caller_run_and_source_ids_are_pseudonymised(
         assert hits == []
     finally:
         journal.close()
-        assert first.close()
-        assert rotated.close()
+        closed = first.close()
+        assert closed
+        closed = rotated.close()
+        assert closed
 
 
 def test_the_wire_line_maps_prefixed_run_and_source_ids_like_the_explicit_line(

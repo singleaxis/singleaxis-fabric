@@ -84,7 +84,7 @@ def _original(inner: Any, attr: str) -> Any | None:
         if attr in vars(inner):
             return None
     except TypeError:
-        pass
+        pass  # no instance __dict__ (e.g. __slots__): it cannot shadow the class method
     method = getattr(type(inner), attr, None)
     if getattr(method, "__fabric_wire_patch__", False):
         return getattr(method, "__fabric_wire_original__", None)

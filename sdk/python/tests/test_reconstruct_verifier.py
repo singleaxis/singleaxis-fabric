@@ -1677,7 +1677,8 @@ def test_cli_exit_zero_for_complete_run(capture: Capture, tmp_path: Path) -> Non
 
 def test_cli_exit_one_for_unverified(capture: Capture, capsys: pytest.CaptureFixture[str]) -> None:
     react_run(capture)
-    assert main(["--spans", str(capture.write())]) == 1  # no store: unverified
+    exit_code = main(["--spans", str(capture.write())])
+    assert exit_code == 1  # no store: unverified
     validate(json.loads(capsys.readouterr().out))
 
 
@@ -1973,7 +1974,8 @@ def test_reconstruct_rejects_bad_model_allowlist_entries(
 def _cli_model(capture: Capture, argv: list[str], tmp_path: Path) -> str:
     out = tmp_path / "model-report.json"
     store = ["--store-root", str(tmp_path / "store"), "--tenant", TENANT]
-    assert main(["--spans", str(capture.write()), *store, *argv, "--out", str(out)]) == 0
+    exit_code = main(["--spans", str(capture.write()), *store, *argv, "--out", str(out)])
+    assert exit_code == 0
     document = json.loads(out.read_text())
     validate(document)
     return str(only_run(document)["exchanges"][0]["model"])

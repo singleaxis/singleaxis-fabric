@@ -80,7 +80,8 @@ def test_identities_never_change_for_a_live_recorder_after_131073_registrations(
         assert {(d["run_id"], d["source_id"]) for d in settled} == {(RUN_A, SOURCE_A)}
         assert DRIFTED[0] not in json.dumps(snapshot) and DRIFTED[1] not in json.dumps(snapshot)
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_a_minted_parent_call_id_joins_from_another_thread(tmp_path: Path) -> None:
@@ -112,7 +113,8 @@ def test_a_minted_parent_call_id_joins_from_another_thread(tmp_path: Path) -> No
         parents = [c["parent_call_id"] for c in calls.snapshot()["calls"]]
         assert parents == [None, parent, label_pseudonym("lbl-", str(parent), KEY)]
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
 
 
 def test_provenance_is_by_type_and_issuer_never_by_shape(tmp_path: Path) -> None:
@@ -161,4 +163,5 @@ def test_emitted_run_and_source_ids_round_trip_in_both_modes(tmp_path: Path, mod
                                       source_epoch=0, source_sequence=1, run_id=run)  # fmt: skip
         assert (descriptor["run_id"], descriptor["source_id"]) == expected
     finally:
-        assert recorder.close()
+        closed = recorder.close()
+        assert closed
