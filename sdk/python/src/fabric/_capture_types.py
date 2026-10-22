@@ -502,9 +502,16 @@ class Marker:
             raise ValueError("scope_status outside the S34 vocabulary")
         if self.segment_id is not None and not SEGMENT_ID_RE.fullmatch(self.segment_id):
             raise ValueError("segment_id must be seg- + 32 hex")
-        branches = (*self.declared_branches, *self.branch_ids)
-        if len(branches) > 2 * MAX_BRANCHES or not all(map(BRANCH_ID_RE.fullmatch, branches)):
-            raise ValueError("branch ids must be br- + 32 hex, at most 64 of each")
+        # X46: run_start declares its fork children by segment id, and names the branch
+        # ids of the tokens it started from; each list holds at most 64.
+        if len(self.declared_branches) > MAX_BRANCHES or not all(
+            map(SEGMENT_ID_RE.fullmatch, self.declared_branches)
+        ):
+            raise ValueError("declared_branches must be seg- + 32 hex, at most 64")
+        if len(self.branch_ids) > MAX_BRANCHES or not all(
+            map(BRANCH_ID_RE.fullmatch, self.branch_ids)
+        ):
+            raise ValueError("branch_ids must be br- + 32 hex, at most 64")
 
     def to_beat(self) -> LegacyBeat | None:
         """The legacy ``_Beat`` of a periodic, run or final marker (``None`` for the P1

@@ -191,9 +191,8 @@ def _markers(rng: random.Random) -> list[Marker]:
                manifest_digest=DIGEST, manifest_seq=0, session_id="sess-" + _hex(rng, 32),
                user_id="usr-" + _hex(rng, 32), links=(RUN,), id_basis="caller",
                identity={"agent_id": "billing-agent"}),
-        # declared_branches (seg- ids) are left out: Marker.__post_init__ (WP-01) checks
-        # them against the br- pattern, which the contract gives branch_ids only.
         Marker("run_start", "s-a", 7, 5, RUN, scope, seg, (predecessor,),
+               declared_branches=("seg-" + _hex(rng, 32), "seg-" + _hex(rng, 32)),
                branch_ids=("br-" + _hex(rng, 32),), id_basis="token"),
         Marker("run_end", "s-a", 7, 9, RUN, scope, seg, scope_status="ok",
                outcome="completed", stop_reason="goal_reached", manifest_seq=0),

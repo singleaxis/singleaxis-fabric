@@ -37,6 +37,7 @@ from fabric._capture_types import (
 )
 
 REGISTRY = Path(__file__).resolve().parents[3] / "contracts/coverage/v1/registry"
+CAPTURE_SCHEMAS = Path(__file__).resolve().parents[3] / "contracts/capture/v1/schema"
 SEG = "seg-" + "a" * 32
 BR = "br-" + "b" * 32
 TEST_TYPE = "fabric.test.items/v1"
@@ -433,7 +434,8 @@ def test_marker_placement_rules() -> None:
     _marker("run_end", run_id="r-x", scope_id="s", outcome="completed", stop_reason="goal_reached")
     _marker("run_start", predecessors=("none",), session_id="sess-1", user_id="usr-1",
             parent_run_id="r-p", resumed_from="r-q", links=("r-l",), id_basis="minted",
-            identity={"fabric.agent_id": "agt-1"}, declared_branches=(BR,))  # fmt: skip
+            identity={"fabric.agent_id": "agt-1"}, declared_branches=(SEG,),
+            branch_ids=(BR,))  # fmt: skip
     bad: list[tuple[Any, dict[str, Any]]] = [
         ("final", {"seal": seal}),
         ("segment_seal", {}),
@@ -450,11 +452,33 @@ def test_marker_placement_rules() -> None:
         ("run_end", {"scope_status": "fine"}),
         ("run_start", {"segment_id": "seg-short"}),
         ("run_start", {"branch_ids": ("br-x",)}),
+        ("run_start", {"branch_ids": (SEG,)}),  # branch ids are br- ids
+        ("run_start", {"declared_branches": (BR,)}),  # fork children are seg- ids
         ("heartbeat", {}),
     ]
     for kind, fields in bad:
         with pytest.raises(ValueError):
             _marker(kind, **fields)
+
+
+def test_marker_branch_lists_follow_the_contract_patterns_and_bounds() -> None:
+    """X46 (loss-record-v1, spool-record-v1): ``declared_branches`` names fork children by
+    segment id and ``branch_ids`` names token branches; each holds at most 64."""
+    schema = json.loads((CAPTURE_SCHEMAS / "loss-record-v1.schema.json").read_text("utf-8"))
+    (props,) = [b["properties"] for b in schema["oneOf"] if "heartbeat_kind" in b["properties"]]
+    for name, pattern in (("declared_branches", ct.SEGMENT_ID_RE),
+                          ("branch_ids", ct.BRANCH_ID_RE)):  # fmt: skip
+        items = props[name]["items"]
+        assert (items["pattern"], props[name]["maxItems"]) == (pattern.pattern, ct.MAX_BRANCHES)
+    full = tuple(f"seg-{i:032x}" for i in range(64))
+    branches = tuple(f"br-{i:032x}" for i in range(64))
+    marker = _marker("run_start", predecessors=("none",), declared_branches=full,
+                     branch_ids=branches)  # fmt: skip
+    assert (marker.declared_branches, marker.branch_ids) == (full, branches)
+    with pytest.raises(ValueError, match="declared_branches"):
+        _marker("run_start", predecessors=("none",), declared_branches=(*full, "seg-" + "f" * 32))
+    with pytest.raises(ValueError, match="branch_ids"):
+        _marker("run_start", predecessors=("none",), branch_ids=(*branches, "br-" + "f" * 32))
 
 
 def test_marker_bridges_the_legacy_beat() -> None:
