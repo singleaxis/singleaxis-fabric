@@ -94,7 +94,7 @@ func TestProcessTraces_ProtectsByDefaultWithExactMetadataAllowlist(t *testing.T)
 
 func TestProcessTraces_FiltersResourcesScopesEventsLinksAndStatus(t *testing.T) {
 	g := newTestGuard(t, nil)
-	td := makeTraces(spanFixture{name: "patient Jane Doe bearerToken=secret", attrs: map[string]any{"fabric.tool.name": "ehr_write"}})
+	td := makeTraces(spanFixture{name: "patient Jane Doe bearerToken=secret", attrs: map[string]any{"fabric.tool.name": "lbl-9f86d081884c7d659a2feaa0c55ad015"}})
 	rs := td.ResourceSpans().At(0)
 	rs.SetSchemaUrl("https://schemas.invalid/patient/Jane-Doe?x-api-key=secret")
 	putAttrs(rs.Resource().Attributes(), map[string]any{

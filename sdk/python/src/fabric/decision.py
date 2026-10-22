@@ -409,7 +409,7 @@ class ConcurrentDecisionUseError(RuntimeError):
 class Decision(AbstractContextManager["Decision"]):
     """Per-agent-call context. Enter once, exit once."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915 - one assignment per recorder field
         self,
         *,
         client: _ClientLike,
@@ -486,6 +486,8 @@ class Decision(AbstractContextManager["Decision"]):
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
         self._side_effects: list[SideEffectRecord] = []
+        # Emitted forms of the suppressed side-effect ids, for record_replay_metadata.
+        self._suppressed_effect_ids: list[str] = []
         self._checkpoints: list[CheckpointEvent] = []
         # Agent-surface-logging rolling counters (spec 022). Monotonic
         # totals stamped on the decision span so the Telemetry Bridge can
@@ -1618,43 +1620,74 @@ class Decision(AbstractContextManager["Decision"]):
             self._side_effects.append(record)
             span.set_attribute(ATTR_SIDE_EFFECT_COUNT, len(self._side_effects))
             unique_types = sorted({r.effect_type.value for r in self._side_effects})
-            unique_systems = sorted({r.target_system for r in self._side_effects})
+            # 049 §4.2: target systems and operations are operator labels (``lbl-`` when
+            # pseudonymous, as given with FABRIC_WIRE_LABELS=clear).
+            unique_systems = sorted(set(self._identity.labels(
+                r.target_system for r in self._side_effects
+            )))  # fmt: skip
             span.set_attribute(ATTR_SIDE_EFFECT_TYPES, tuple(unique_types))
             span.set_attribute(ATTR_SIDE_EFFECT_SYSTEMS, tuple(unique_systems))
+            # A minted uuid4 is Fabric's own id; a caller's id is mapped (``lbl-``).
+            effect_id: str | None = (
+                record.side_effect_id
+                if side_effect_id is None
+                else self._identity.opaque(record.side_effect_id)
+            )
+            if effect_id is not None and record.replay_behavior == ReplayBehavior.SUPPRESS:
+                self._suppressed_effect_ids.append(effect_id)
 
-            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-                "fabric.schema_version": SCHEMA_VERSION,
-                "fabric.side_effect.side_effect_id": record.side_effect_id,
-                "fabric.side_effect.type": record.effect_type.value,
-                "fabric.side_effect.target_system": record.target_system,
-                "fabric.side_effect.operation": record.operation,
-                "fabric.side_effect.approval_required": record.approval_required,
-                "fabric.side_effect.committed": record.committed,
-                "fabric.side_effect.rollback_supported": record.rollback_supported,
-                "fabric.side_effect.replay_behavior": record.replay_behavior.value,
-            }
-            # 049 §7.5: computed or caller-supplied, a digest of the original only where
-            # its role retains it.
-            if record.request_hash is not None and self._retains_original(
-                ContentRole.SIDE_EFFECT_REQUEST
-            ):
-                event_attrs["fabric.side_effect.request_hash"] = record.request_hash
-            if record.result_hash is not None and self._retains_original(
-                ContentRole.SIDE_EFFECT_RESULT
-            ):
-                event_attrs["fabric.side_effect.result_hash"] = record.result_hash
-            if record.idempotency_key is not None and (
-                idempotency_key := self._identity.opaque(record.idempotency_key)
-            ):
-                event_attrs["fabric.side_effect.idempotency_key"] = idempotency_key
-            if record.parent_tool_call_id is not None:
-                event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
-            if request_ref is not None:
-                event_attrs[ATTR_CONTENT_REQUEST_REF] = request_ref
-            if result_ref is not None:
-                event_attrs[ATTR_CONTENT_RESULT_REF] = result_ref
+            event_attrs = self._side_effect_attributes(record, effect_id, request_ref, result_ref)
             span.add_event("fabric.side_effect", attributes=event_attrs)
             return record
+
+    def _side_effect_attributes(
+        self,
+        record: SideEffectRecord,
+        effect_id: str | None,
+        request_ref: str | None,
+        result_ref: str | None,
+    ) -> dict[str, str | int | float | bool | tuple[str, ...]]:
+        """The ``fabric.side_effect`` event attributes as emitted (049 §2.9, §4.2, §7.5)."""
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
+        }
+        if effect_id is not None:
+            event_attrs["fabric.side_effect.side_effect_id"] = effect_id
+        event_attrs["fabric.side_effect.type"] = record.effect_type.value
+        if (system := self._identity.label(record.target_system)) is not None:
+            event_attrs["fabric.side_effect.target_system"] = system
+        if (operation := self._identity.label(record.operation)) is not None:
+            event_attrs["fabric.side_effect.operation"] = operation
+        event_attrs |= {
+            "fabric.side_effect.approval_required": record.approval_required,
+            "fabric.side_effect.committed": record.committed,
+            "fabric.side_effect.rollback_supported": record.rollback_supported,
+            "fabric.side_effect.replay_behavior": record.replay_behavior.value,
+        }
+        # 049 §7.5: computed or caller-supplied, a digest of the original only where
+        # its role retains it.
+        if record.request_hash is not None and self._retains_original(
+            ContentRole.SIDE_EFFECT_REQUEST
+        ):
+            event_attrs["fabric.side_effect.request_hash"] = record.request_hash
+        if record.result_hash is not None and self._retains_original(
+            ContentRole.SIDE_EFFECT_RESULT
+        ):
+            event_attrs["fabric.side_effect.result_hash"] = record.result_hash
+        if record.idempotency_key is not None and (
+            idempotency_key := self._identity.opaque(record.idempotency_key)
+        ):
+            event_attrs["fabric.side_effect.idempotency_key"] = idempotency_key
+        # N12: the parent tool-call id is a provider id, its keyed ``p-`` form.
+        if record.parent_tool_call_id is not None and (
+            parent := self._identity.id("p", record.parent_tool_call_id)
+        ):
+            event_attrs["fabric.side_effect.parent_tool_call_id"] = parent
+        if request_ref is not None:
+            event_attrs[ATTR_CONTENT_REQUEST_REF] = request_ref
+        if result_ref is not None:
+            event_attrs[ATTR_CONTENT_RESULT_REF] = result_ref
+        return event_attrs
 
     # -- checkpoints -----------------------------------------------------
 
@@ -1754,11 +1787,7 @@ class Decision(AbstractContextManager["Decision"]):
             span = self.span
 
             checkpoint_ids = tuple(str(c.checkpoint_id) for c in self._checkpoints)
-            suppressed_side_effect_ids = tuple(
-                s.side_effect_id
-                for s in self._side_effects
-                if s.replay_behavior == ReplayBehavior.SUPPRESS
-            )
+            suppressed_side_effect_ids = tuple(self._suppressed_effect_ids)
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
@@ -1889,9 +1918,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = digest
             if payload_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = payload_ref
-            if metadata:
+            if metadata and self._retains_original(ContentRole.INTERACTION_PAYLOAD):
                 # Canonicalize then hash the whole dict — raw metadata
-                # (which may carry secrets) never lands on the span.
+                # (which may carry secrets) never lands on the span; 049 §7.5:
+                # a digest only where the interaction's content is retained.
                 canonical = json.dumps(metadata, sort_keys=True, default=str)
                 event_attrs[ATTR_INTERACTION_METADATA_HASH] = _sha256_hex(canonical)
 

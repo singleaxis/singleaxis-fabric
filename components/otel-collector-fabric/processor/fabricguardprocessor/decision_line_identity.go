@@ -34,6 +34,7 @@ var decisionLineIDKeys = toSet(
 // function as the wire line. The legacy unkeyed p- + 16 hex form is not
 // admitted: an unkeyed hash of an id is not a pseudonym.
 var decisionLineProviderKeys = toSet(
+	"fabric.side_effect.parent_tool_call_id",
 	"gen_ai.response.id",
 	"gen_ai.request.previous_response.id",
 	"gen_ai.tool.call.id",
@@ -48,7 +49,21 @@ var providerPseudonymPattern = pseudonymPattern("p")
 var decisionLineLabelKeys = toSet(
 	"fabric.checkpoint.step_name",
 	"fabric.mcp.tools",
+	"gen_ai.tool.name",
+	"fabric.tool.name",
+	"fabric.side_effect.target_system",
+	"fabric.side_effect.operation",
+	"fabric.side_effect_systems",
 )
+
+// decisionLineMintedOrIDKeys carry an id Fabric minted (uuid4, as is) or a
+// caller's id (lbl- + 32 hex): side-effect ids and the replay list of them.
+var decisionLineMintedOrIDKeys = toSet(
+	"fabric.side_effect.side_effect_id",
+	"fabric.replay.suppressed_side_effect_ids",
+)
+
+var mintedUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 // mcpToolEntryPattern is one fabric.mcp.tools entry under a pseudonymous
 // Node: the tool name's label and the first 12 hex of its definition digest.
@@ -73,7 +88,8 @@ func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, 
 	_, id := decisionLineIDKeys[key]
 	_, label := decisionLineLabelKeys[key]
 	_, provider := decisionLineProviderKeys[key]
-	if !id && !label && !provider {
+	_, minted := decisionLineMintedOrIDKeys[key]
+	if !id && !label && !provider && !minted {
 		return false, false
 	}
 	if g.cfg.IdentityMode == identityModeClear || label && g.clearLabels() {
@@ -82,11 +98,21 @@ func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, 
 	if provider {
 		return matches(providerPseudonymPattern)(value), true
 	}
+	if minted {
+		item := func(v pcommon.Value) bool {
+			return matches(mintedUUIDPattern)(v) || matches(labelPseudonymPattern)(v)
+		}
+		if key == "fabric.replay.suppressed_side_effect_ids" {
+			return sliceOf(1, 1024, false, item)(value), true
+		}
+		return item(value), true
+	}
 	element := labelPseudonymPattern
 	if key == "fabric.mcp.tools" {
 		element = mcpToolEntryPattern
 	}
-	if key == "fabric.mcp.tools" || key == "fabric.retrieval.source_document_ids" {
+	if key == "fabric.mcp.tools" || key == "fabric.retrieval.source_document_ids" ||
+		key == "fabric.side_effect_systems" {
 		if value.Type() != pcommon.ValueTypeSlice {
 			return false, true
 		}

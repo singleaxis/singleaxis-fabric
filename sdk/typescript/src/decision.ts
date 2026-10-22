@@ -1174,14 +1174,18 @@ export class Decision implements DecisionLike {
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {
     const extra: Record<string, AttrValue> = {};
     applyCrossCutting(extra, options, this.labelFn);
+    // 049 §4.2: the tool name is an operator label (`lbl-` when pseudonymous);
+    // without a key the span is "execute_tool" and carries no tool name.
+    const toolName = this.ids.label(name);
     const resolved = {
       ...options,
+      emitToolName: toolName !== undefined,
       // N12: a tool-call id is a provider id, its keyed `p-` form.
       callId: options.callId !== undefined ? this.ids.id("p", options.callId) : undefined,
       agentName: options.agentName ?? this.identity.agentName,
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
-    const span = startToolSpan(this.tracer, name, resolved);
+    const span = startToolSpan(this.tracer, toolName ?? "execute_tool", resolved);
     this.countChildFailures(span);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
@@ -1520,13 +1524,22 @@ export class Decision implements DecisionLike {
 
       this.sideEffectCount += 1;
       this.sideEffectTypes.add(record.effectType);
-      this.sideEffectSystems.add(record.targetSystem);
+      // 049 §4.2: target systems and operations are operator labels (`lbl-`
+      // when pseudonymous, as given with FABRIC_WIRE_LABELS=clear).
+      const system = this.ids.label(record.targetSystem);
+      const operation = this.ids.label(record.operation);
+      if (system !== undefined) this.sideEffectSystems.add(system);
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_COUNT, this.sideEffectCount);
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_TYPES, sortedSet(this.sideEffectTypes));
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_SYSTEMS, sortedSet(this.sideEffectSystems));
+      // A minted uuid4 is Fabric's own id; a caller's id is mapped (`lbl-`).
+      const effectId =
+        options.sideEffectId === undefined
+          ? record.sideEffectId
+          : this.ids.opaque(record.sideEffectId);
 
-      if (record.replayBehavior === "suppress") {
-        this.suppressedSideEffectIds.push(record.sideEffectId);
+      if (record.replayBehavior === "suppress" && effectId !== undefined) {
+        this.suppressedSideEffectIds.push(effectId);
       }
       // Governed capture (spec 028): verbatim payloads to customer
       // storage; the event carries only the references.
@@ -1543,17 +1556,17 @@ export class Decision implements DecisionLike {
         options.resultPayload,
         { bindings: seBindings },
       );
-      const attrs: Record<string, AttrValue> = {
-        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_SE_ID]: record.sideEffectId,
-        [A.ATTR_SE_TYPE]: record.effectType,
-        [A.ATTR_SE_TARGET_SYSTEM]: record.targetSystem,
-        [A.ATTR_SE_OPERATION]: record.operation,
+      const attrs: Record<string, AttrValue> = { [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION };
+      if (effectId !== undefined) attrs[A.ATTR_SE_ID] = effectId;
+      attrs[A.ATTR_SE_TYPE] = record.effectType;
+      if (system !== undefined) attrs[A.ATTR_SE_TARGET_SYSTEM] = system;
+      if (operation !== undefined) attrs[A.ATTR_SE_OPERATION] = operation;
+      Object.assign(attrs, {
         [A.ATTR_SE_APPROVAL_REQUIRED]: record.approvalRequired,
         [A.ATTR_SE_COMMITTED]: record.committed,
         [A.ATTR_SE_ROLLBACK_SUPPORTED]: record.rollbackSupported,
         [A.ATTR_SE_REPLAY_BEHAVIOR]: record.replayBehavior,
-      };
+      });
       // 049 §7.5: computed or caller-supplied, a digest of the original only
       // where its role retains it.
       if (
@@ -1576,9 +1589,12 @@ export class Decision implements DecisionLike {
       if (idempotencyKey !== undefined) {
         attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = idempotencyKey;
       }
-      if (record.parentToolCallId !== undefined) {
-        attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = record.parentToolCallId;
-      }
+      // N12: the parent tool-call id is a provider id, its keyed `p-` form.
+      const parent =
+        record.parentToolCallId !== undefined
+          ? this.ids.id("p", record.parentToolCallId)
+          : undefined;
+      if (parent !== undefined) attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = parent;
       this.span.addEvent(A.EVENT_NAME_SIDE_EFFECT, attrs);
       return record;
     });
@@ -1994,7 +2010,8 @@ export class Decision implements DecisionLike {
       if (payloadRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = payloadRef;
       }
-      if (options.metadata !== undefined) {
+      // 049 §7.5: the metadata digest only where the interaction's content is retained.
+      if (options.metadata !== undefined && retainsPayload) {
         attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
       }
       const resolved = applyCrossCutting(attrs, options, this.labelFn);
