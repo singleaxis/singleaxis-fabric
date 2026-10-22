@@ -145,8 +145,9 @@ class Sender:
         self._wake.set()
         with self._start_lock, contextlib.suppress(RuntimeError):  # interpreter shutdown
             if (self._thread is None or not self._thread.is_alive()) and not self._stop.is_set():
-                self._thread = threading.Thread(target=self._run, name="fabric-spool", daemon=True)
-                self._thread.start()
+                thread = threading.Thread(target=self._run, name="fabric-spool", daemon=True)
+                thread.start()  # published once started: close never joins an unstarted one
+                self._thread = thread
 
     def stats(self) -> Mapping[str, int]:
         dropped = self._stats["markers_dropped"] + self.loss.markers_dropped
@@ -538,7 +539,9 @@ class Sender:
         self.loss.attach(None)  # later losses go to the direct path
         self._stop.set()
         self._wake.set()
-        if (thread := self._thread) is not None and thread is not threading.current_thread():
+        with self._start_lock:  # a wake() already past its stop check has started its thread
+            thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
             thread.join(max(0.0, deadline - time.monotonic()))
         if thread is None:
             self.spool.release()  # else the stopping thread releases it
