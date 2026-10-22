@@ -22,6 +22,7 @@ import {
   type PrivacyMode,
 } from "../src/index.js";
 import { hang, mask, startService, status, type Handler } from "./redaction-service.js";
+import { writtenFiles } from "./written-files.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../../..");
 const CANARY = Buffer.from("canary-4c1d-patient-jane-doe");
@@ -399,15 +400,10 @@ describe("the byte recorder", () => {
       expect(text).not.toContain(CANARY.toString());
       expect(text).not.toContain(CANARY_SHA);
       expect(settled.source_byte_length).toBeUndefined();
-      for (const dir of dirs)
-        for (const name of fs.readdirSync(dir, { recursive: true })) {
-          const file = path.join(dir, String(name));
-          if (fs.lstatSync(file).isFile()) {
-            const bytes = fs.readFileSync(file);
-            expect(bytes.includes(CANARY)).toBe(false);
-            expect(bytes.includes(Buffer.from(CANARY_SHA))).toBe(false);
-          }
-        }
+      for (const bytes of writtenFiles(dirs)) {
+        expect(bytes.includes(CANARY)).toBe(false);
+        expect(bytes.includes(Buffer.from(CANARY_SHA))).toBe(false);
+      }
       await recorder.close();
     },
   );

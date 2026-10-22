@@ -17,6 +17,7 @@ import {
   LocalFilesystemContentStore,
   type DeploymentPolicyData,
 } from "../src/index.js";
+import { writtenFiles } from "./written-files.js";
 
 const ROOT = path.resolve(import.meta.dirname, "../../..");
 const SECRET = Buffer.from("sensitive-value");
@@ -92,14 +93,10 @@ describe("the explicit input's production gate", () => {
         expect(descriptor.source_byte_length).toBeUndefined();
       }
       const hex = Buffer.from(createHash("sha256").update(SECRET).digest("hex"));
-      for (const root of roots)
-        for (const name of fs.readdirSync(root, { recursive: true })) {
-          const file = path.join(root, String(name));
-          if (fs.lstatSync(file).isFile()) {
-            expect(fs.readFileSync(file).includes(SECRET)).toBe(false);
-            expect(fs.readFileSync(file).includes(hex)).toBe(false);
-          }
-        }
+      for (const bytes of writtenFiles(roots)) {
+        expect(bytes.includes(SECRET)).toBe(false);
+        expect(bytes.includes(hex)).toBe(false);
+      }
     }
     await recorder.close();
   });
@@ -253,13 +250,8 @@ describe("the explicit input's identity with the id key", () => {
       expect(second).toMatchObject(expected); // deterministic: recorders and processes join
       expect(String(recorders[0]!.emittedRunId("private-case-123"))).toBe(expected.run_id);
       // nothing written outside content carries a clear caller id
-      for (const root of roots)
-        for (const name of fs.readdirSync(root, { recursive: true })) {
-          const file = path.join(root, String(name));
-          if (fs.lstatSync(file).isFile())
-            for (const canary of canaries)
-              expect(fs.readFileSync(file).includes(Buffer.from(canary))).toBe(false);
-        }
+      for (const bytes of writtenFiles(roots))
+        for (const canary of canaries) expect(bytes.includes(Buffer.from(canary))).toBe(false);
       for (const recorder of recorders) await recorder.close();
     },
   );
@@ -294,12 +286,7 @@ describe("the explicit input's identity with the id key", () => {
     });
     await recorder.flush();
     expect(JSON.stringify([first, forged, recorder.drainSettled()])).not.toContain(hex);
-    for (const root of roots)
-      for (const name of fs.readdirSync(root, { recursive: true })) {
-        const file = path.join(root, String(name));
-        if (fs.lstatSync(file).isFile())
-          expect(fs.readFileSync(file).includes(Buffer.from(hex))).toBe(false);
-      }
+    for (const bytes of writtenFiles(roots)) expect(bytes.includes(Buffer.from(hex))).toBe(false);
     await recorder.close();
   });
 
