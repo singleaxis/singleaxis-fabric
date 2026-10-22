@@ -10,6 +10,9 @@ path; its pre-spool crash window and absent destination proof remain gaps.
 §3.10): ``journal`` with a source spool (unchanged), ``records`` without one while a
 wire handle is installed (each event one sequenced record on the records input; the
 byte writer is not called), ``legacy`` otherwise (plus one ``DeprecationWarning``).
+A contradictory ``mode`` argument raises (a coding error seen on the first run); a byte
+config that disagrees with the install's capture policy only disables the session's
+records (``status()`` ``partial``), raising only under ``FABRIC_RECORDS_STRICT=1``.
 """
 
 from __future__ import annotations
@@ -157,7 +160,7 @@ class SyntheticCaptureSession:
             raise ValueError("recorder store tenant does not match session tenant")
         self.mode: ResolvedMode = resolve_mode(mode, journal=source_spool is not None)
         self._producer = RecordsProducer() if self.mode == "records" else None
-        if self._producer is not None:
+        if self._producer is not None:  # a conflict disables records (raises only if strict)
             self._producer.check_config(recorder)
         if source_id is not None and (
             not isinstance(source_id, str) or _EVIDENCE_ID.match(source_id) is None
@@ -417,6 +420,21 @@ class SyntheticCaptureSession:
                 del self._attempts[next(iter(self._attempts))]
         return found
 
+    def _unemitted_reason(self) -> str:
+        producer = self._producer
+        return "config_conflict" if producer and producer.conflict is not None else (
+            "record_not_emitted")  # fmt: skip
+
+    def status(self) -> dict[str, Any]:
+        """The session's mode and records-mode capture health, as ``CallRecorder.status``:
+        ``partial``/``config_conflict`` (role names only) while a byte config conflict
+        disables its records."""
+        producer = self._producer
+        if producer is None:
+            return {"mode": self.mode, "capture": None, "capture_reason": None,
+                    "conflicting_roles": []}  # fmt: skip
+        return {"mode": self.mode, **producer.status()}
+
     def _phase(self, entry: _SessionAttempt, *, terminal: bool = False) -> Phase:
         with self._lock:
             if entry.ended:
@@ -469,7 +487,7 @@ class SyntheticCaptureSession:
                 event_id=dashed(event["record_id"]), bodies=bodies, status=status,
             )  # fmt: skip
         if not emitted and event.get("status") != "failed":
-            event.update(status="failed", status_reason="record_not_emitted")
+            event.update(status="failed", status_reason=self._unemitted_reason())
 
     def _record_capture(
         self, data: bytes, *, source_id: str, boundary: str, role: str, operation_id: str,
@@ -481,7 +499,7 @@ class SyntheticCaptureSession:
         event = self._record_event(
             source_id=source_id, operation_id=operation_id, attempt_id=attempt_id, entry=entry,
             boundary=admitted_boundary(role, boundary), role=role, status="failed",
-            status_reason="records_inactive",
+            status_reason=self._unemitted_reason(),
         )  # fmt: skip
         bodies: tuple[AnyBody, ...] = ()
         try:
@@ -589,6 +607,8 @@ class SyntheticCaptureSession:
         return {
             "schema_version": "fabric.synthetic-capture/v1",
             "capture_mode": "records",
+            "capture_health": self.status()["capture"],
+            "capture_reason": self.status()["capture_reason"],
             "tenant_id": self.tenant_id,
             "run_id": self.run_id,
             "source_epoch": self.source_epoch,

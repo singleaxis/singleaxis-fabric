@@ -112,6 +112,7 @@ def _harness(monkeypatch: pytest.MonkeyPatch, **modes: str) -> Harness:
     modes = modes or dict.fromkeys(ROLES, "retain_original")
     gate, protector = _policy(**modes)
     handle = Harness(gate=gate, protector=protector, id_key=KEY)
+    handle.gate = gate  # type: ignore[attr-defined]  # the install's capture policy
     monkeypatch.setattr(call_recorder, "installed_records", lambda: handle.input)
     return handle
 
@@ -508,9 +509,19 @@ def _states(handle: Any) -> dict[str, str]:
     return {p["id"]: p["state"] for p in document["capture_points"]}
 
 
-def test_a_byte_config_disagreeing_with_the_capture_policy_raises(
-    installed: Any, tmp_path: Path
-) -> None:
+def _records_of(exporter: InMemorySpanExporter) -> list[dict[str, Any]]:
+    return [dict(s.attributes or {}) for s in exporter.get_finished_spans()
+            if dict(s.attributes or {}).get("fabric.capture.input") == "records"]  # fmt: skip
+
+
+def _point(handle: Any, point: str) -> tuple[str, str | None]:
+    document = _manifest.current_document(handle.allocator)
+    assert document is not None
+    (row,) = [p for p in document["capture_points"] if p["id"] == point]
+    return row["state"], row.get("reason")
+
+
+def test_a_byte_config_conflict_raises_only_under_strict(installed: Any, tmp_path: Path) -> None:
     store = LocalFilesystemContentStore(str(tmp_path / "explicit"), tenant_id="tenant")
     disagree = ByteEvidenceRecorder(ByteEvidenceConfig(
         store=store, roles=ROLES,
@@ -682,3 +693,96 @@ def test_journal_mode_session_is_unchanged(writer: ByteEvidenceRecorder, tmp_pat
     finally:
         spool.close()
     assert harness.spooled() == []  # nothing on the records input
+
+
+def test_a_byte_config_conflict_fails_open_and_disables_the_producer(
+    installed: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:  # fmt: skip
+    """R9 / 049 §7.1: the capture policy may come from the environment, so a conflict never
+    stops the application. The producer emits nothing (never bodies under the conflicting
+    policy), its points are ``disabled`` on the manifest, one warning per process names the
+    roles only, and ``status()`` is ``partial``/``config_conflict``."""
+    monkeypatch.delenv(ct.STRICT_ENV)
+    monkeypatch.setattr(call_recorder, "_CONFLICT_WARNED", [])
+    handle, exporter, _ = installed
+    store = LocalFilesystemContentStore(str(tmp_path / "explicit"), tenant_id="tenant")
+    disagree = ByteEvidenceRecorder(ByteEvidenceConfig(
+        store=store, roles=ROLES,
+        role_policies={"model.request.messages": BytePrivacyPolicy(mode="omit"),
+                       "tool.call.result": BytePrivacyPolicy(mode="omit")},
+    ))  # fmt: skip
+    agree = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=ROLES))
+    try:
+        with caplog.at_level("WARNING", logger="fabric.explicit"):
+            recorder = _recorder(disagree)
+            session = SyntheticCaptureSession(disagree, tenant_id="tenant", run_id="run")
+        assert recorder.mode == session.mode == "records"
+        expected = {
+            "mode": "records", "capture": "partial", "capture_reason": "config_conflict",
+            "conflicting_roles": ["model.request.messages", "tool.call.result"],
+        }  # fmt: skip
+        assert recorder.status() == session.status() == expected
+        warned = [r.getMessage() for r in caplog.records if r.name == "fabric.explicit"]
+        assert warned == ["fabric: explicit producer records disabled: byte evidence role "
+                          "policies disagree with the capture policy for: "
+                          "model.request.messages, tool.call.result"]  # fmt: skip
+        assert _point(handle, "explicit.call_recorder") == (
+            "disabled", call_recorder.CONFLICT_POINT_REASON)  # fmt: skip
+        marker = object()
+        assert recorder.call(SECRET, lambda d: marker, kind="model") is marker
+        missing: dict[str, bytes] = {}
+        with pytest.raises(KeyError):
+            recorder.call(SECRET, lambda d: missing["x"], kind="tool")
+        ByteBoundaryAdapter(session, kind="tool", source_id="tool-1").call(
+            SECRET, lambda d: d, operation_id="t", attempt_id="1")  # fmt: skip
+        assert handle.flush(10.0)
+        assert _records_of(exporter) == []  # nothing emitted, no body under any policy
+        assert handle.allocator.last_sequence()[1] == -1
+        assert _point(handle, "explicit.byte_boundary") == (
+            "disabled", call_recorder.CONFLICT_POINT_REASON)  # fmt: skip
+        view = recorder.snapshot()
+        assert (view["capture_health"], view["capture_reason"]) == ("partial", "config_conflict")
+        assert {e["status_reason"] for e in view["events"]} == {"config_conflict"}
+        assert view["recording_gaps"] > 0
+        assert {e["status_reason"] for e in session.snapshot()["events"]} == {"config_conflict"}
+        # a healthy recorder still records, but does not mark the disabled point active
+        healthy = _recorder(agree)
+        assert healthy.status()["capture"] == "active"
+        healthy.call(b"{}", lambda d: b"{}", kind="tool")
+        assert handle.flush(10.0)
+        assert len(_records_of(exporter)) == 3
+        assert _point(handle, "explicit.call_recorder")[0] == "disabled"
+        _recorder(disagree)  # a second conflict: no second warning
+        assert len([r for r in caplog.records if r.name == "fabric.explicit"]) == 1
+    finally:
+        disagree.close()
+        agree.close()
+
+
+def test_no_body_under_a_conflicting_policy_reaches_the_spool(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The install says ``metadata_only``; the byte config says ``original``. Disabled:
+    the secret never reaches the spool, nor does any record of that producer."""
+    monkeypatch.delenv(ct.STRICT_ENV)
+    handle = _harness(monkeypatch, **{"tool.call.arguments": "metadata_only",
+                                      "tool.call.result": "retain_original"})  # fmt: skip
+    store = LocalFilesystemContentStore(str(tmp_path / "explicit"), tenant_id="tenant")
+    original = ByteEvidenceRecorder(ByteEvidenceConfig(
+        store=store, roles=ROLES,
+        role_policies={"tool.call.arguments": BytePrivacyPolicy(mode="original")},
+    ))  # fmt: skip
+    try:
+        recorder = _recorder(original)
+        assert recorder.status()["conflicting_roles"] == ["tool.call.arguments"]
+        assert recorder.call(SECRET, lambda d: SECRET, kind="tool") == SECRET
+        assert handle.spooled() == []
+        assert SECRET not in handle.spool_bytes()
+        assert store.list_object_uris() == []  # nor through the byte writer
+        monkeypatch.setenv(ct.STRICT_ENV, "1")
+        with pytest.raises(ValueError, match=r"capture policy for: tool\.call\.arguments"):
+            _recorder(original)
+    finally:
+        original.close()
+        handle.close()

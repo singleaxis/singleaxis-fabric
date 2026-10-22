@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import inspect
+import logging
 import math
 import os
 import re
@@ -119,8 +120,17 @@ END_STATUS: Mapping[str, tuple[Lifecycle, ResultStatus, OtlpStatus]] = {
     "deferred": ("deferred", "unknown", "unset"),
 }
 CALL_POINTS: frozenset[str] = frozenset({"explicit.call_recorder", "explicit.final_http"})
+# The manifest reason of a point disabled by a byte-config conflict. ``config_conflict`` is
+# not in the capture-manifest-v1 point-reason enum (contracts/capture/v1, WP-00), so the
+# admitted reason closest to it is used until the registry adds it (one-line change).
+CONFLICT_POINT_REASON = "privacy_policy"
+_LOG = logging.getLogger("fabric.explicit")
 _LEGACY = threading.Lock()
 _LEGACY_WARNED: list[bool] = []
+_CONFLICT_WARNED: list[bool] = []
+# Per install: the points a conflicting producer disabled (another producer's ``active``
+# report does not override them).
+_DISABLED_POINTS: weakref.WeakKeyDictionary[RecordsInput, set[str]] = weakref.WeakKeyDictionary()
 _MEDIA_PREFERENCE = ("application/octet-stream", "application/json", "text/plain")
 
 
@@ -197,39 +207,102 @@ def _max_object_bytes() -> int:
 BodyView = tuple[AnyBody | None, str, str | None]
 
 
+def _warn_conflict(roles: tuple[str, ...]) -> None:
+    """One warning per process for a byte config that disagrees with the capture policy:
+    the role names only (a fixed vocabulary), never a value."""
+    with _LEGACY:
+        if _CONFLICT_WARNED:
+            return
+        _CONFLICT_WARNED.append(True)
+    _LOG.warning(
+        "fabric: explicit producer records disabled: byte evidence role policies disagree "
+        "with the capture policy for: %s",
+        ", ".join(roles) if roles else "(unverifiable configuration)",
+    )
+
+
+def _report_point(records: RecordsInput, point: str, state: str, reason: str | None) -> None:
+    if (handle := records.handle) is not None:
+        from . import _manifest  # noqa: PLC0415
+
+        _manifest.capture_point_changed(handle, point, state, reason)  # type: ignore[arg-type]
+
+
 class RecordsProducer:
     """Records-mode plumbing of one explicit producer (§3.10): the records input in force,
     the capture point it reports ``active`` on that install's manifest (once per install
-    and point), bodies built on the application thread without a copy, and the emit."""
+    and point), bodies built on the application thread without a copy, and the emit.
+
+    A producer whose byte config conflicts with the install's capture policy is
+    ``disabled`` (:attr:`conflict`): it emits nothing on the records input (never bodies
+    under a policy other than the install's) and reports its points ``disabled`` on the
+    manifest; no other producer's ``active`` report overrides that for the install."""
 
     def __init__(self) -> None:
         self.max_object_bytes = _max_object_bytes()
         self._points: dict[str, weakref.ref[RecordsInput]] = {}
         self._last: weakref.ref[RecordsInput] | None = None
+        self.conflict: tuple[str, ...] | None = None  # the conflicting roles, when disabled
 
     def records(self, point: str) -> RecordsInput | None:
-        """The active records input, after reporting ``point`` active on its manifest."""
+        """The active records input, after reporting ``point`` on its manifest: ``active``,
+        or ``disabled`` (and ``None``: nothing is emitted) for a conflicting producer."""
         records = installed_records()
         if records is None:
             return None
-        self._last = weakref.ref(records)
+        if self.conflict is None:
+            self._last = weakref.ref(records)
         seen = self._points.get(point)
         if seen is None or seen() is not records:
             self._points[point] = weakref.ref(records)
-            if (handle := records.handle) is not None:
-                from . import _manifest  # noqa: PLC0415
+            with _LEGACY:
+                disabled = _DISABLED_POINTS.setdefault(records, set())
+                if self.conflict is not None:
+                    disabled.add(point)
+                report = self.conflict is not None or point not in disabled
+            if report:
+                if self.conflict is not None:
+                    _report_point(records, point, "disabled", CONFLICT_POINT_REASON)
+                else:
+                    _report_point(records, point, "active", None)
+        return None if self.conflict is not None else records
 
-                _manifest.capture_point_changed(handle, point, "active")
-        return records
-
-    def check_config(self, recorder: ByteEvidenceRecorder) -> None:
+    def check_config(self, recorder: ByteEvidenceRecorder, point: str | None = None) -> None:
         """§3.10 "Bytes": the byte writer's role policies must agree with the capture
-        policy of the install, which governs the records' bodies (``ValueError``)."""
+        policy of the install, which governs the records' bodies. A conflict raises
+        ``ValueError`` only under ``FABRIC_RECORDS_STRICT=1``; otherwise it never stops the
+        application (R9, 049 §7.1; the capture policy may come from the environment): the
+        producer is disabled (:attr:`conflict`), one warning per process names the roles,
+        and ``point`` (when known) is reported ``disabled`` now."""
         records = installed_records()
         gate = getattr(getattr(records, "handle", None), "gate", None)
         policy = getattr(gate, "policy", None)
-        if policy is not None:
-            recorder.check_capture_policy(policy.mode)
+        if policy is None:
+            return
+        try:
+            conflicts = tuple(recorder.capture_policy_conflicts(policy.mode))
+        except Exception:
+            if strict():
+                raise
+            conflicts = ()  # an unverifiable config is disabled too, never written
+        else:
+            if not conflicts:
+                return
+            if strict():
+                recorder.check_capture_policy(policy.mode)
+        self.conflict = conflicts
+        _warn_conflict(conflicts)
+        if point is not None:
+            with suppress(Exception):
+                self.records(point)
+
+    def status(self) -> dict[str, Any]:
+        """This producer's records-mode health: ``active``, or ``partial`` with the reason
+        ``config_conflict`` and the conflicting role names (never a value)."""
+        if self.conflict is None:
+            return {"capture": "active", "capture_reason": None, "conflicting_roles": []}
+        return {"capture": "partial", "capture_reason": "config_conflict",
+                "conflicting_roles": list(self.conflict)}  # fmt: skip
 
     def source(self, records: RecordsInput | None) -> tuple[str | None, int | None]:
         """The process source and its current epoch (in-memory view only)."""
@@ -353,6 +426,13 @@ class CallRecorder:
     mapped (``fabric.step.id``, ``fabric.step.attempt_id``; the call id when not given),
     and ``source_id``/``source_epoch`` are the process source's. ``seal_source()`` is
     refused (``records_mode``): sealing belongs to qualified-run mode.
+
+    A contradictory ``mode`` argument (journal without a ``source_spool``, an unknown
+    mode) raises ``ValueError``: a deterministic coding error seen on the first run. A
+    byte config that disagrees with the install's capture policy, which may come from the
+    environment, never stops the application: it disables this recorder's records
+    (``status()`` ``partial``/``config_conflict``) and raises only under
+    ``FABRIC_RECORDS_STRICT=1``.
     """
 
     def __init__(
@@ -376,7 +456,7 @@ class CallRecorder:
         self.mode: ResolvedMode = resolve_mode(mode, journal=source_spool is not None)
         self._producer = RecordsProducer() if self.mode == "records" else None
         if self._producer is not None:
-            self._producer.check_config(recorder)
+            self._producer.check_config(recorder, "explicit.call_recorder")
         self.recorder = recorder
         self.tenant_id = recorder.tenant_id
         # 049 §2.9: every caller id is emitted as the recorder emits it (keyed pseudonyms,
@@ -659,6 +739,24 @@ class CallRecorder:
                 raise
             return None
 
+    def _unemitted_reason(self) -> str:
+        """Why a records-mode event has no record: the producer is disabled by a byte
+        config conflict, or the record was not emitted (inactive input, a counted loss)."""
+        producer = self._producer
+        return "config_conflict" if producer and producer.conflict is not None else (
+            "record_not_emitted")  # fmt: skip
+
+    def status(self) -> dict[str, Any]:
+        """This recorder's mode and records-mode capture health (spec 050 §3.10):
+        ``capture`` is ``active``, or ``partial`` with ``capture_reason``
+        ``config_conflict`` and the conflicting role names while a byte config that
+        disagrees with the install's capture policy disables its records."""
+        producer = self._producer
+        if producer is None:
+            return {"mode": self.mode, "capture": None, "capture_reason": None,
+                    "conflicting_roles": []}  # fmt: skip
+        return {"mode": self.mode, **producer.status()}
+
     def _emit(
         self, call: _Call, phase: Phase, record_id: str, bodies: tuple[AnyBody, ...] = (),
         status: tuple[Lifecycle, ResultStatus, OtlpStatus] | None = None,
@@ -686,7 +784,7 @@ class CallRecorder:
         """``value`` as a record body, its in-memory status set on ``event``."""
         attempt, producer = call.attempt, self._producer
         if attempt is None or producer is None:
-            event.update(status="failed", status_reason="records_inactive")
+            event.update(status="failed", status_reason=self._unemitted_reason())
             return ()
         stream = call.fields["call_id"] if chunk_index is not None else None
         body, status, reason = producer.body(
@@ -711,9 +809,9 @@ class CallRecorder:
             self._append(self._events, event)
             if not self._emit(call, "start", start["record_id"], bodies):
                 with self._lock:
-                    start.update(status="failed", status_reason="record_not_emitted")
+                    start.update(status="failed", status_reason=self._unemitted_reason())
                     if event["status"] != "failed":
-                        event.update(status="failed", status_reason="record_not_emitted")
+                        event.update(status="failed", status_reason=self._unemitted_reason())
         except Exception:
             if strict():
                 raise
@@ -737,7 +835,7 @@ class CallRecorder:
             if not self._emit(call, phase, event["record_id"], bodies):
                 with self._lock:
                     if event["status"] != "failed":
-                        event.update(status="failed", status_reason="record_not_emitted")
+                        event.update(status="failed", status_reason=self._unemitted_reason())
         except Exception:
             if strict():
                 raise
@@ -856,7 +954,7 @@ class CallRecorder:
             elif call.records:  # §3.10: the end record, with the three R4 status inputs
                 if not self._emit(call, "end", event["record_id"], status=END_STATUS[result]):
                     with self._lock:
-                        event.update(status="failed", status_reason="record_not_emitted")
+                        event.update(status="failed", status_reason=self._unemitted_reason())
             else:
                 self._journal(event)
             # A snapshot must not see terminal status before the terminal
@@ -947,6 +1045,8 @@ class CallRecorder:
         return {
             "schema_version": "fabric.call-recording/v1",
             "capture_mode": "records",
+            "capture_health": self.status()["capture"],
+            "capture_reason": self.status()["capture_reason"],
             "tenant_id": self.tenant_id,
             "run_id": self.run_id,
             "source_id": self.source_id,
