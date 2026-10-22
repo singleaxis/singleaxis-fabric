@@ -29,6 +29,7 @@ from enum import StrEnum
 from typing import Any
 
 from ._content import SCHEMA_TRANSCRIPT_EXPORT
+from ._safe_log import exc_class, safe_log
 
 _LOG = logging.getLogger(__name__)
 _DESCRIPTOR_STATUSES = frozenset({"stored", "pending", "truncated"})
@@ -223,12 +224,11 @@ class ContentResolver:
                 ref = alias.get("manifest_uri")
                 if isinstance(ref, str):
                     return self.resolve_manifest(ref)
-            except Exception:
-                _LOG.debug(
-                    "fabric.resolver: manifest alias unreadable on store %r",
-                    store,
-                    exc_info=True,
-                )
+            except Exception as exc:
+                safe_log(
+                    _LOG, logging.DEBUG, "fabric.resolver: manifest alias unreadable (%s)",
+                    exc_class(exc),
+                )  # fmt: skip
         return None
 
     # -- transcript export ----------------------------------------------------

@@ -28,6 +28,7 @@ from ._content import (
     _rfc3339_now,
 )
 from ._content_writer import ContentCaptureConfig, ContentWriter
+from ._safe_log import exc_class, safe_log
 from ._version import __version__
 
 if TYPE_CHECKING:
@@ -238,8 +239,8 @@ class ContentSink:
         with self._manifest_lock:
             item = self._manifest.item_for(descriptor.object_id)
             if item is None:
-                _LOG.warning(
-                    "fabric.content: settlement for unregistered object %s", descriptor.object_id
+                safe_log(
+                    _LOG, logging.WARNING, "fabric.content: settlement for an unregistered object"
                 )
                 return
             self._transition(item, status, descriptor=descriptor, locked=True)
@@ -267,11 +268,10 @@ class ContentSink:
             if item.status != ContentStatus.PENDING:
                 # A settlement for an already-terminal item is an SDK bug —
                 # surface it, never silently absorb.
-                _LOG.warning(
-                    "fabric.content: late settlement %s for terminal item %s",
-                    status_value,
-                    item.role,
-                )
+                safe_log(
+                    _LOG, logging.WARNING,
+                    "fabric.content: late settlement %s for a terminal item", status_value,
+                )  # fmt: skip
                 return
             if (
                 status_value == ContentStatus.STORED
@@ -313,10 +313,7 @@ class ContentSink:
             tenant_id=self._manifest.tenant_id,
         )
         if status == ContentStatus.DROPPED:
-            _LOG.warning(
-                "fabric.content: manifest %s handoff dropped (queue full)",
-                self._manifest.manifest_id,
-            )
+            safe_log(_LOG, logging.WARNING, "fabric.content: manifest handoff dropped (queue full)")
 
     def close(
         self,
@@ -345,8 +342,11 @@ class ContentSink:
         if decision_span is not None:
             try:
                 decision_span.set_attribute(ATTR_CONTENT_MANIFEST_REF, uri)
-            except Exception:
-                _LOG.warning("fabric.content: manifest_ref stamp failed", exc_info=True)
+            except Exception as exc:
+                safe_log(
+                    _LOG, logging.WARNING, "fabric.content: manifest_ref stamp failed (%s)",
+                    exc_class(exc),
+                )  # fmt: skip
         return uri
 
     @property
