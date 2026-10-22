@@ -93,3 +93,34 @@ func TestCorrelationIDsRejectClearValuesUnderPseudonymousNode(t *testing.T) {
 		}
 	}
 }
+
+// Sol review (v0.8.1) item 7: the SDK's mapped memory store id and tags are
+// admitted in exactly their pseudonymous forms (they were dropped before);
+// any other value stays dropped, as it always was.
+func TestMappedStoreIDAndTagsAreAdmitted(t *testing.T) {
+	const mst = "mst-9f86d081884c7d659a2feaa0c55ad015"
+	const lbl = "lbl-9f86d081884c7d659a2feaa0c55ad015"
+	clearIdentity := createDefaultConfig()
+	clearIdentity.IdentityMode = identityModeClear
+	for _, g := range []*guard{newTestGuard(t, nil), newTestGuard(t, clearIdentity)} {
+		for _, tc := range []struct {
+			key   string
+			value any
+			kept  bool
+		}{
+			{"gen_ai.memory.store.id", mst, true},
+			{"gen_ai.memory.store.id", "patients-vector-store", false},
+			{"gen_ai.memory.store.id", lbl, false},
+			{"fabric.tags", []any{lbl, lbl}, true},
+			{"fabric.tags", []any{lbl, "owasp:LLM01"}, false},
+			{"fabric.memory.tags", []any{lbl}, true},
+			{"fabric.memory.tags", []any{"jane-doe"}, false},
+			{"fabric.memory.tags", lbl, false},
+		} {
+			v := valueOf(t, tc.value)
+			if got := keptAs(t, g, decisionSpan(tc.key, v), tc.key, v); got != tc.kept {
+				t.Errorf("%s=%v kept=%v, want %v (identity_mode %s)", tc.key, tc.value, got, tc.kept, g.cfg.IdentityMode)
+			}
+		}
+	}
+}
