@@ -67,6 +67,7 @@ from typing import Any
 from urllib.parse import quote
 
 import pytest
+from jsonschema import Draft202012Validator
 from _wire_capture_common import (
     AGENT,
     COMPOSE_DIR,
@@ -215,7 +216,18 @@ CAPTURE_SPAN_NAMES = {
     "fabric.model_call",
     "fabric.capture_heartbeat",
     "fabric.capture_loss",
+    "fabric.capture_manifest",  # manifest 0 of every epoch (spec 049 §2.8, 050 §3.8)
 }
+# Spec 050 §3.5 (WP-11b, admitted by fabricguard per WP-20): a marker's persisted
+# uuid4 event id, identical on every replay.
+MARKER_KEYS = frozenset({"fabric.event_id"})
+# A manifest span's attributes are closed by fabric.capture-manifest-record/v1.
+MANIFEST_RECORD_SCHEMA = json.loads(
+    (
+        Path(__file__).resolve().parents[2]
+        / "contracts/capture/v1/schema/capture-manifest-record-v1.schema.json"
+    ).read_text("utf-8")
+)
 SPAN_KIND_CLIENT = 3
 
 
@@ -656,8 +668,27 @@ def _assert_capture_spans(
         assert span["attributes"].get("fabric.source.authenticated") is True, span[
             "name"
         ]
-        extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS - NODE_STAMPS
-        assert not extra, f"{span['name']} carries non-allowlisted keys {extra}"
+        if span["name"] == "fabric.capture_manifest":
+            # Closed by its own contract, never the exchange/loss allowlist.
+            attributes = {
+                k: v for k, v in span["attributes"].items() if k not in NODE_STAMPS
+            }
+            errors = list(
+                Draft202012Validator(MANIFEST_RECORD_SCHEMA).iter_errors(
+                    {
+                        "schema_version": "fabric.capture-manifest-record/v1",
+                        "name": span["name"],
+                        "attributes": attributes,
+                    }
+                )
+            )
+            assert not errors, errors[0].message
+        else:
+            allowed = CAPTURE_KEYS | REUSED_KEYS | NODE_STAMPS
+            if span["name"] == "fabric.capture_heartbeat":
+                allowed |= MARKER_KEYS
+            extra = set(span["attributes"]) - allowed
+            assert not extra, f"{span['name']} carries non-allowlisted keys {extra}"
         assert span["scope"] == "", (
             "fabricguard must clear the instrumentation scope name"
         )
