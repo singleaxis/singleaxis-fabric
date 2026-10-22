@@ -541,7 +541,7 @@ case-colliding files are unavailable on this filesystem. The
 source-checkout synthetic pilot compared twelve byte objects and five outcomes
 with independent fixture/endpoint/filesystem values and found zero local
 discrepancies; its verdict is still `unverified`. See the
-[local discrepancy report](../qualification/synthetic-slice/local-pilot-report.md).
+[local discrepancy report](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/local-pilot-report.md).
 The follow-up fixture projects all twelve reconciled byte events to offline
 AEEP metadata and verifies their IDs, roles, statuses and digests; the
 focused synthetic suite passed 25/25. This does not constitute live delivery.
@@ -554,7 +554,7 @@ project. A later guard fix clears evidence resource/scope attributes and
 passed `go test -race`; its rebuilt image **could not start the persistent
 queue** in the shared Docker daemon (`no space left on device`), so its
 live privacy probe remains unverified. Exact local digests and commands
-are in the [artifact ledger](../qualification/synthetic-slice/local-artifact-ledger.md).
+are in the [artifact ledger](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/local-artifact-ledger.md).
 No privileged BPF run or customer deployment was performed. The dirty
 worktree has no clean tagged artifact identity, and these tests are not
 target-Linux BPF, target-storage or live-customer-destination proofs.
@@ -593,7 +593,7 @@ The later PR head `c5ca90f` also passed Recorder CI, Linux/kind smoke,
 CodeQL and license checks. Recorder security still fails solely on seven
 history-wide secret-scan findings in old commits; the current tree and PR
 range scans found no new leaks. The smoke still did not run the synthetic
-agent. The [installed-artifact pilot plan](../qualification/synthetic-slice/end-to-end-agent-pilot-plan.md)
+agent. The [installed-artifact pilot plan](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/end-to-end-agent-pilot-plan.md)
 now defines that missing CI step. A newly built local wheel installed in a
 disposable Python 3.11 environment ran a deterministic three-model/two-tool
 agent fixture: 25 required byte objects and 10 outcomes reconciled with
@@ -668,7 +668,7 @@ image IDs between these runs means cross-run reproducibility is **not**
 established. Each run did test its own built artifacts. This was still the
 development chart profile; it did not qualify production-profile TLS.
 
-The [production-profile kind plan](../qualification/synthetic-slice/production-profile-kind-plan.md)
+The [production-profile kind plan](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/synthetic-slice/production-profile-kind-plan.md)
 now has a separate CI implementation that installs the packaged
 `shadow-production` profile with an ephemeral client CA, mTLS ingress,
 authenticated HTTPS export and the same installed-wheel byte/record pilot.
@@ -727,7 +727,7 @@ the synthetic provider response or terminal result; it does **not** prove
 timing non-interference. Local gate `go test -race`, 692 Python SDK tests,
 and 197 repository tests passed (12 repository tests skipped for their
 documented environment prerequisites). The new image/CI result is pending
-at this documentation revision. The [GO decision packet](../qualification/production-go/decision-packet.md)
+at this documentation revision. The [GO decision packet](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/production-go/decision-packet.md)
 lists the exact target evidence and owner approvals still required; neither
 the packet nor a passing CI job grants production approval.
 
@@ -740,7 +740,7 @@ The first two are engineering fixes in the next PR revision. Security must
 classify the intentional test alert; no passing analysis job overrides an
 unresolved alert check.
 
-The [local GO simulation](../qualification/local-go-simulation/README.md)
+The [local GO simulation](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/local-go-simulation/README.md)
 now has a reproducible laptop-kind runner and a fail-closed, unsigned
 decision summary. Its first live local attempt exposed a missing sink
 ingress allowance: the Node accepted/queued the synthetic record, but the
@@ -757,7 +757,7 @@ the clean fixture reconciled 10 operations, 25 required byte objects and
 provider 15, terminal 25 and artifact 6. Direct provider bypass produced
 four discrepancies and `partial`; deletion of one required content object
 produced `partial`. The local deny-then-allow policy probe recovered queued
-delivery after the sink allowance. Its [observed-run report](../qualification/local-go-simulation/observed-run-20260928.md)
+delivery after the sink allowance. Its [observed-run report](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/local-go-simulation/observed-run-20260928.md)
 retains exact artifact IDs and limitations. This is an unsigned simulation
 with `unverified` clean verdict and production `NO_GO`, not a customer pilot.
 The local simulation unit tests and broader installed-wheel repository suite
@@ -1130,10 +1130,10 @@ passed. No owner sign-off or production GO is inferred from CI.
 
 ## GPT-6 Sol subscription-backed laptop stage — NO-GO
 
-The [bounded synthetic Sol stage](../qualification/sol-local-stage/README.md)
+The [bounded synthetic Sol stage](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/sol-local-stage/README.md)
 ran a real `gpt-6-sol` Codex CLI agent through a synthetic policy →
 calculation → local telemetry/DB → Git/file artifact → ticket workflow on the
-laptop. The [observed results](../qualification/sol-local-stage/local-results.md)
+laptop. The [observed results](https://github.com/singleaxis/singleaxis-fabric/blob/4a5c9453296e602d3b0df44607c2fb9e27c34168/qualification/sol-local-stage/local-results.md)
 give exact source/artifact hashes, private evidence locations and commands.
 The completed live run reconciled three independently fsynced service
 operations and the two output artifacts with zero local discrepancies; its
@@ -1151,3 +1151,35 @@ metadata delivery. It does not turn Codex JSONL into the final provider
 request/response or raw ordered terminal streams, establish a passive
 source-authenticated adapter, or qualify customer storage and reachable
 routes. The full-workflow and production decision remain **NO-GO**.
+
+## LLM wire capture (specs 047/048) — separate status
+
+Status: **supervised-pilot review; draft specs, NO_COVERAGE_CLAIM.** This
+section is a separate verdict family. It does not change, and is not changed
+by, any NO-GO above: the explicit evidence line (specs 035–046) keeps its own
+status, and nothing here upgrades it.
+
+- **Scope.** Opt-in zero-code capture of model calls made through
+  httpx/httpx2 to listed endpoints in an instrumented Python process
+  (spec 047), with the agent durable spool and Node content delivery
+  (`otlp/content` → `fabriccontent`, spec 048). Spec 049 is a plan only.
+- **Review evidence.** An independent review of the source branch
+  (`feat/llm-wire-capture` at `aa372eb`) judged it ready for a *supervised
+  customer pilot* on the capture, data-exposure and deployment lenses. That
+  review predates the port onto the evidence line; the combined tree has
+  passed the local SDK, Go, chart, contract and wheel tests listed in its
+  change description, and still needs CI (including CodeQL on the exact head)
+  before the review applies to it.
+- **Verdicts.** `python -m fabric.reconstruct` issues record-integrity
+  verdicts (`complete_for_declared_scope`, `complete_for_observed_scopes`,
+  `partial`, `unverified`) over the exchanges the tee owned. They are not
+  run qualification and never imply spec 046's
+  `verified_complete_for_declared_scope`.
+- **Coexistence.** Inside an explicit model call (`CallRecorder` or
+  `ByteBoundaryAdapter` with `kind="model"`) the tee defers; a
+  Fabric-protected global tracer provider never carries wire spans; each
+  spool owns its own directory. See
+  [Two capture lines](README.md#two-capture-lines).
+- **Not claimed.** Calls through `requests`, `aiohttp`, `boto3`, gRPC, other
+  processes or unlisted endpoints; TypeScript capture; production deployment
+  without the customer's own qualification.

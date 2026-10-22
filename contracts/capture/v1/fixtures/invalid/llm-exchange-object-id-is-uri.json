@@ -1,0 +1,36 @@
+{
+  "schema_version": "fabric.llm-exchange/v1",
+  "exchange_id": "9b3c1d2e-4f5a-4b6c-8d7e-9f0a1b2c3d4e",
+  "api": "openai.chat_completions",
+  "provider_name": "openai",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000,
+    "source_sequence": 1
+  },
+  "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "span_id": "00f067aa0ba902b7",
+  "started_at": "2026-10-08T09:00:01.120Z",
+  "ended_at": "2026-10-08T09:00:02.050Z",
+  "request": {
+    "sha256": "sha256:c84a09757ebaad3dbdc07d455da0b62427fff0f874c83fd5d961f5d4503523a1",
+    "object_id": "s3://customer-bucket/fabric/content/tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
+  },
+  "response": {
+    "sha256": "sha256:9f583f90d69602712456c8f53125962bfce6fdffb320ffa2b34e6adab3d5f195",
+    "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02"
+  },
+  "response_state": "complete",
+  "http_status_code": 200,
+  "model": "gpt-4o-2024-08-06",
+  "finish_reasons": [
+    "tool_calls"
+  ],
+  "usage": {
+    "input_tokens": 212,
+    "output_tokens": 14
+  },
+  "truncated": false,
+  "store_status": "stored"
+}

@@ -10,6 +10,7 @@ so ``close`` is a no-op.
 
 from __future__ import annotations
 
+import importlib
 import json
 import re
 from collections.abc import Mapping
@@ -25,9 +26,10 @@ from fabric.content_store.base import (
     content_hash_bytes,
 )
 
-_IMPORT_HINT = "S3ContentStore requires boto3; install with `pip install boto3`"
+_IMPORT_HINT = 'S3ContentStore requires boto3; install with `pip install "singleaxis-fabric[s3]"`'
 _DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 _BUCKET_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+_ADDRESSING_STYLES = frozenset({None, "auto", "virtual", "path"})
 
 
 @dataclass(slots=True)
@@ -43,7 +45,8 @@ class S3ContentStore:
     ``{prefix}{tenant_id}/manifests/``. ``put_object`` uses a conditional
     write (``If-None-Match: *``) so an existing object is verified, never
     overwritten; stores lacking conditional-write support fall back to a
-    HEAD + digest re-check before writing. ``endpoint_url`` covers
+    HEAD + digest re-check before writing. ``endpoint_url`` and
+    ``addressing_style`` (``"path"`` for MinIO and similar) cover
     S3-compatible backends; ``sse_*`` pass through customer encryption
     settings — retention and access policy remain bucket-level customer
     configuration.
@@ -57,6 +60,7 @@ class S3ContentStore:
     sse_algorithm: str | None = None
     sse_kms_key_id: str | None = None
     storage_class: str | None = None
+    addressing_style: str | None = None
     _client: Any = field(default=None, init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -70,6 +74,8 @@ class S3ContentStore:
             check_safe_identifier("tenant_id", self.tenant_id)
         if self.sse_kms_key_id and not self.sse_algorithm:
             raise ValueError("sse_kms_key_id requires sse_algorithm")
+        if self.addressing_style not in _ADDRESSING_STYLES:
+            raise ValueError("addressing_style must be one of 'auto', 'virtual' or 'path'")
 
     def _get_client(self) -> Any:
         if self._client is not None:
@@ -79,10 +85,19 @@ class S3ContentStore:
         except ImportError as exc:  # pragma: no cover — covered by extras
             raise ImportError(_IMPORT_HINT) from exc
 
+        options: dict[str, Any] = {}
+        if self.addressing_style is not None:
+            config = importlib.import_module("botocore.config").Config  # installed with boto3
+            options["config"] = config(s3={"addressing_style": self.addressing_style})
         self._client = boto3.client(
-            "s3", region_name=self.region_name, endpoint_url=self.endpoint_url
+            "s3", region_name=self.region_name, endpoint_url=self.endpoint_url, **options
         )
         return self._client
+
+    def ensure_client(self) -> None:
+        """Create the boto3 client now: a missing boto3 raises :class:`ImportError` here,
+        before any object is read, instead of failing each read."""
+        self._get_client()
 
     # -- legacy contract ---------------------------------------------------
 

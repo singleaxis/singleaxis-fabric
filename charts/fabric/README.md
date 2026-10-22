@@ -48,8 +48,17 @@ Fails closed at render time unless the recorder has:
 - explicit queue storage selection and a storage-encryption review reference;
 - a non-root pod that cannot escalate privileges or mount an API token;
 - namespace deny-default and explicit Collector ingress/egress policy,
-  where every peer must be non-empty and non-world (`{}` and
-  `0.0.0.0/0`/`::/0` are rejected).
+  where every peer must restrict its sources/destinations (`{}`, an empty or
+  exclusion-only `namespaceSelector` without a narrowing `podSelector`, an
+  empty `podSelector` alone and any prefix-length-0 `ipBlock` such as
+  `0.0.0.0/0`/`::/0` are rejected, in every profile);
+- an `https://` export endpoint with a valid host and port and no user
+  info, query or fragment (credentials go in the export-auth Secret);
+- when wire-capture content is enabled (`otel-collector.content.enabled`):
+  allowed tenants, an s3 backend with server-side encryption (the file
+  backend is refused), an `https://` store endpoint when one is set, the
+  same mTLS on port 4319 and explicit `networkPolicy.contentEgress` peers.
+  See [docs/deployment.md](../../docs/deployment.md#content-delivery-for-llm-wire-capture-optional).
 
 The customer must create the referenced Secrets and identify the exact egress
 peer/port. Example render/install arguments:
@@ -67,14 +76,17 @@ helm upgrade --install fabric-node charts/fabric \
   --set otel-collector.exporter.sendingQueue.persistence.storageClass=customer-encrypted \
   --set otel-collector.exporter.sendingQueue.persistence.encryptionAttestationRef=storage-review-001 \
   --set otel-collector.exporter.endpoint=https://telemetry.customer.example \
-  --set 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
+  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
   --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
   --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
 ```
 
 Label the monitored workload namespace with `fabric.singleaxis.ai/agent=true` or
-replace the ingress selector with an operator-approved peer. The documentation
+replace the ingress selector with an operator-approved peer. Pass label values
+with `--set-string` (or quote them in a values file): Kubernetes types
+`matchLabels` as `map<string,string>`, `--set ...=true` produces a boolean, and
+the chart refuses a non-string label value at render time. The documentation
 CIDR is not a working destination. Replace it with the
 customer's approved backend or egress gateway. Provision these Secrets first:
 
@@ -188,6 +200,7 @@ never relax the Node's metadata-only stripping or production allowlist.
 charts/fabric/tests/test-values-schema.sh
 charts/fabric/tests/schema-validation.sh
 python -m pytest scripts/tests/test_enterprise_deployment.py
+charts/fabric/charts/otel-collector/tests/test-content-delivery.sh
 helm lint charts/fabric
 helm template fabric-node charts/fabric \
   --values charts/fabric/profiles/shadow-dev.yaml

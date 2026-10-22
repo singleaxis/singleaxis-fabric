@@ -4,8 +4,9 @@
 #   ocb --config ocb-config.yaml
 #
 # This produces a custom collector binary at ./dist/otelcol-fabric that
-# includes only the recorder's metadata protection processor alongside the
-# standard contrib receiver, durable storage, and exporter components.
+# includes only the recorder's metadata protection processor, content
+# writer (spec 048) and redirect-refusing client middleware alongside the standard contrib receiver, durable storage,
+# and exporter components.
 
 dist:
   name: otelcol-fabric
@@ -25,6 +26,12 @@ extensions:
   # Terminates token-authenticated OTLP ingress for non-Kubernetes
   # deployments — wired on both receivers by the compose production overlay.
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
+  # HTTP client middleware that refuses redirects (spec 048 H1): every
+  # otlphttp exporter lists it (fabric-gate enforces), so a 3xx from a
+  # destination is a retryable failure, never a re-send of the body and
+  # Authorization header to another location and never a false success.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
+    path: ./extension/noredirectextension
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
@@ -44,13 +51,23 @@ processors:
 exporters:
   - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.150.0
   - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.150.0
+  # Spec 048 content writer: verifies content log records (closed descriptor,
+  # body SHA-256, allowed tenants) and writes body + descriptor to a
+  # directory or S3 with the SDK store layout. Only fabric-gate-approved
+  # logs/content pipelines may use it.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter v0.1.0
+    path: ./exporter/fabriccontentexporter
 
 providers:
   - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.56.0
   - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.56.0
 
-# Resolve the recorder processor to its on-disk source for reproducible builds.
+# Resolve the recorder components to their on-disk sources for reproducible builds.
 replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor => ./processor/fabricguardprocessor
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter => ./exporter/fabriccontentexporter
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension => ./extension/noredirectextension
+  # CVE-2026-63209: klauspost/compress below 1.18.7 (transitive).
+  - github.com/klauspost/compress => github.com/klauspost/compress v1.18.7

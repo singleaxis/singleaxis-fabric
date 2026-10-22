@@ -111,3 +111,6 @@ temp/
 docs/_build/
 docs/.cache/
 site/
+
+# `make export-spans` default output (deploy/compose/Makefile)
+/deploy/compose/fabric-spans/

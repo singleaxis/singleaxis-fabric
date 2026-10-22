@@ -18,12 +18,12 @@
       {"surface": "retrieval", "source": "caller_reported"},
       {"surface": "memory", "source": "caller_reported"},
       {"surface": "side_effect", "source": "caller_reported"},
-      {"surface": "framework_lifecycle", "source": "native_hook"},
+      {"surface": "framework_lifecycle", "source": "caller_reported"},
       {"surface": "generic_interaction", "source": "caller_reported"},
       {"surface": "file_access_metadata", "source": "caller_reported"}
     ],
     "decision_semantics": "native",
-    "coverage_basis": "In-process Decision and child-span context managers plus explicit recorder methods and the shipped CrewAI adapter. The SDK emits protected-by-default OpenTelemetry metadata; it does not materialize Activity Envelope v2."
+    "coverage_basis": "In-process Decision and child-span context managers plus explicit recorder methods, including caller-reported framework hook phases; the SDK ships no framework adapter. The SDK emits protected-by-default OpenTelemetry metadata; it does not materialize Activity Envelope v2."
   },
   "control": {
     "interposition": "in_process",

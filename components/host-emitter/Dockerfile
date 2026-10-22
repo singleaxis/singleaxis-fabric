@@ -6,8 +6,8 @@
 # --privileged, hostPID for process correlation, and read-only mounts for
 # /sys/kernel/btf, /sys/fs/cgroup, /sys/kernel/debug.
 
-ARG GO_VERSION=1.25
-FROM golang:${GO_VERSION}-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS builder
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-bookworm@sha256:fe3da92a5cb2881e4aa75e625cb0b7c50571632fb4cf340cbe53e6ccdcffdd51 AS builder
 
 # Re-declare so the ARG is visible inside the stage (global ARGs end at FROM).
 ARG GO_VERSION

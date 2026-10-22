@@ -9,6 +9,9 @@ extensions:
     directory: /var/lib/otelcol-fabric/storage
     create_directory: true
     fsync: true
+  # Refuses every redirect on the OTLP/HTTP exporter (fabric-gate requires
+  # it): a 3xx is a retryable failure, never a re-send elsewhere.
+  noredirect: {}
 
 receivers:
   otlp:
@@ -30,6 +33,8 @@ processors:
 exporters:
   otlp_http/fabric:
     endpoint: ${env:FABRIC_EXPORT_ENDPOINT}
+    middlewares:
+      - id: noredirect
     headers:
       Authorization: ${env:FABRIC_EXPORT_AUTH}
     tls:
@@ -49,7 +54,7 @@ exporters:
       max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, file_storage/fabric]
+  extensions: [health_check, noredirect, file_storage/fabric]
   pipelines:
     logs:
       receivers: [otlp]

@@ -1,6 +1,12 @@
 # Fabric Node local evaluation configuration.
 # This profile is plaintext and unauthenticated; use the Helm
 # shadow-production profile across a customer trust boundary.
+#
+# Two separate paths (spec 048):
+#   telemetry  otlp (4317/4318) -> memory_limiter -> fabricguard -> test sink
+#   content    otlp/content (4319, HTTP only) -> memory_limiter -> fabriccontent
+# The Node is the only content writer; fabric-gate refuses any configuration
+# that routes content into a telemetry pipeline or the OTLP destination.
 
 receivers:
   otlp:
@@ -9,29 +15,58 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+  otlp/content:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4319
+        read_header_timeout: 5s
+        read_timeout: 120s
+        idle_timeout: 120s
+        max_request_body_size: 67108864 # 64 MiB: one stored body per request
 
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
+  # Spec 048 H1: HTTP client middleware that refuses redirects. Every
+  # otlp_http exporter lists it (fabric-gate refuses one that does not): a
+  # 3xx from the destination is a retryable failure, so the batch and its
+  # Authorization header are never re-sent to another location and a
+  # redirect to a login page is never a successful export.
+  noredirect: {}
   file_storage/fabric:
     directory: /var/lib/fabric-node/queue
     timeout: 1s
     create_directory: true
     fsync: true
+  file_storage/fabric_content:
+    directory: /var/lib/fabric-node/content-queue
+    timeout: 1s
+    create_directory: true
+    # Raw model bytes: created private; fabriccontent tightens an existing
+    # directory and database at start (its queue_directory).
+    directory_permissions: "0700"
+    fsync: true
 
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: 512
+    # Headroom for 64 MiB content requests next to telemetry.
+    limit_mib: 1536
   fabricguard:
     event_class_attribute: event_class
     drop_unknown_classes: true
     max_field_bytes: 8192
+    # Spec 048 J1: capture spans keep fabric.source_id and service.name only
+    # as s-/svc- pseudonyms. Set `clear` only for agents that run with
+    # FABRIC_WIRE_LABELS=clear (you guarantee the labels hold no personal data).
+    capture_labels: pseudonymous
 
 exporters:
   otlp_http/test_sink:
     endpoint: http://test-sink:8080
     timeout: 5s
+    middlewares:
+      - id: noredirect
     tls:
       insecure: true
     sending_queue:
@@ -45,9 +80,31 @@ exporters:
       initial_interval: 1s
       max_interval: 5s
       max_elapsed_time: 0s
+  # Content store: the SDK layout <dir>/<tenant>/evidence/<object_id> plus
+  # evidence/meta/<object_id>.json, readable by `fabric.reconstruct
+  # --store-root`. collector-content-s3.yaml switches to S3.
+  fabriccontent:
+    allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
+    backend: file
+    file:
+      directory: /var/lib/fabric-node/content
+    timeout: 60s
+    # The content queue's file_storage directory, made private at start.
+    queue_directory: /var/lib/fabric-node/content-queue
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 64
+      block_on_overflow: true
+      storage: file_storage/fabric_content
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 0s
 
 service:
-  extensions: [health_check, file_storage/fabric]
+  extensions: [health_check, noredirect, file_storage/fabric, file_storage/fabric_content]
   pipelines:
     traces:
       receivers: [otlp]
@@ -57,6 +114,12 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, fabricguard]
       exporters: [otlp_http/test_sink]
+    # Bodies pass unchanged (no fabricguard); fabriccontent enforces the
+    # closed descriptor, digest, length and tenant itself.
+    logs/content:
+      receivers: [otlp/content]
+      processors: [memory_limiter]
+      exporters: [fabriccontent]
   telemetry:
     logs:
       level: info

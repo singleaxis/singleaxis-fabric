@@ -22,6 +22,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   acceptance runner that records executed checks and unsupported scenarios.
 - Added a controlled HTTP semantics fixture with physical retries, error
   responses, independent effect readback and fresh authorized derivative reads.
+- Added opt-in LLM wire capture (spec 047, draft): an in-process httpx/httpx2
+  tee records the exact request/response bytes of each model call to a
+  customer store, emits one digest-only span per call with sequenced loss
+  records and heartbeats, and `python -m fabric.reconstruct` verifies a run
+  offline. No coverage claim beyond instrumented httpx/httpx2 calls.
+- Added Fabric Node content delivery and the agent durable spool (spec 048,
+  draft): agents spool capture events to disk and deliver bodies to the
+  Node's `fabriccontent` exporter, so only the Node writes to S3, an
+  S3-compatible store or a directory store; run scopes bracket exchanges with
+  run markers. The Compose S3 evaluation overlay is
+  `docker-compose.s3-eval.yml` (`make up-s3-eval`, SeaweedFS), replacing the
+  MinIO overlay whose pinned image is no longer published.
+- Added spec 049 (draft): the four-layer capture coverage plan (context,
+  structure, content, decisions and effects) with phases P0–P5, building on
+  both the explicit evidence line (035–046) and wire capture (047/048).
+  Record-only; no evaluation or enforcement.
+- Added coexistence rules for the two capture lines: inside an explicit model
+  call (`CallRecorder` or `ByteBoundaryAdapter` with `kind="model"`) the wire
+  tee defers (`fabric/_capture_scope.py`, "explicit wins"); a
+  Fabric-protected global tracer provider never carries wire spans; the wire
+  spool refuses a directory another spool owns; `fabric-gate` and the Helm
+  chart refuse the content path on a dedicated evidence ingress and require
+  content receivers to share the telemetry receivers' authenticator.
+
+### Security
+
+- Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter
+  (integer overflow in `LoadCollectionSpecFromReader`).
 
 ### Fixed
 
@@ -61,12 +89,175 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Migration: `fabric-gate` tightenings.** Existing collector configurations
+  that the gate accepted before may now be refused at container start; the
+  shipped Compose, Helm and example configurations already comply:
+  - every `otlphttp`/`otlp_http` exporter must list the `noredirect` client
+    middleware (`middlewares: [{id: noredirect}]`), defined under
+    `extensions` and enabled in `service.extensions`, so a 3xx is never
+    followed (spec 048 J4);
+  - every `traces` and `logs` pipeline must run `fabricguard` itself,
+    followed only by `batch`/`memory_limiter`; a pipeline without
+    processors, or one relying on a sibling pipeline's guard, is refused;
+  - `--feature-gates` is refused (a gate such as
+    `confmap.enableMergeAppendOption` changes how `--config` sources merge);
+  - receivers, protocols, `auth`/`tls` blocks, extensions, processors,
+    pipelines, pipeline component lists and `service.extensions` must be
+    literal YAML (a whole-value `${env:...}` is refused; leaf fields may
+    still use `${env:...}`);
+  - a content receiver must be at least as strict as the telemetry
+    receivers: same authenticator, TLS (no older `min_version`) when they
+    serve TLS, client certificates when they require mTLS.
+  Main's gate tests were updated for the first two rules only (they now add
+  the middleware and a guard to fixtures that lacked them).
+- The Compose production overlay is telemetry only again and starts with an
+  existing `.env`; the content path is the opt-in
+  `docker-compose.content.yml` (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
+  `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's
+  `content.requireServerSideEncryption`).
+- Wire capture resolves its tracer provider at emit time: records are never
+  sent through a Fabric-protected (metadata-only) route; without a private
+  provider they are counted `span_dropped` losses and `flush()` is `False`.
+- Explicit-wins deferral lasts exactly as long as the explicit call; a
+  response that outlives the call is wire-captured, and
+  `fabric.bind_capture_context()` keeps the call's scope on thread-pool
+  workers.
+- Node content upload requires verified HTTPS, or plain HTTP to a loopback
+  host only.
+- `fabricguard` recognises capture records by their marker keys only, so a
+  second guard pass leaves governed LLM spans unchanged.
+- `fabric.reconstruct` validates exchange claims before marker classes and
+  checks each content descriptor against the full content-v2 contract and
+  the exchange identity.
 - Documented Python reference support and the narrower TypeScript capture
   subset, including target-specific production qualification gates.
 - Pinned the optional OpenAI instrumentation dependency combination verified
   by the real-SDK loopback benchmark.
 - Enabled existing CI workflows for the exact #164 parent branch so the
   stacked capture draft receives validation.
+
+### Removed
+
+- **Breaking: removed the CrewAI adapter** (`fabric.adapters.crewai`,
+  `attach_callbacks`). Fabric captures at the LLM wire and through
+  app-reported records, not through framework adapters. Callers that used it
+  should drop the callbacks; `fabric.wire` (zero-code model capture) and the
+  `Decision` record APIs (`record_hook`, `tool_call`, `llm_call`) cover the
+  same activity without framework coupling. The Fabric Node guard
+  (`fabricguard`) no longer allowlists the `fabric.crewai.*` attributes, and
+  `fabric.crewai.step` / `fabric.crewai.task` event names now normalize to
+  `fabric.activity`; telemetry from older SDKs that still emit them loses
+  those attributes. The module is now a forbidden wheel/sdist member in the
+  release policy and wheel qualifier, and the Python SDK connector manifest
+  declares `framework_lifecycle` as `caller_reported`.
+- **Breaking: removed `fabric.capture_capabilities`** (`sdk_capabilities`).
+  The static `fabric.capture-sdk-capabilities/v1` matrix duplicated the
+  connector capability manifests in `contracts/connect/v1/manifests`, which
+  stay the machine-readable declaration. The module is now a forbidden
+  wheel/sdist member.
+- **Breaking: removed `fabric.enterprise` (`PolicyCaptureSession`) and
+  `fabric.enterprise_preflight`** (including `python -m
+  fabric.enterprise_preflight`). The session was a thin wrapper; compose
+  `ByteEvidenceRecorder` (with `ByteEvidenceConfig(deployment_policy=...,
+  content_protector=ContentProtector(...))`) and `CallRecorder` directly.
+  Governed redaction before persistence is unchanged. The preflight's
+  offline checks and fixture canary are gone without a replacement; the
+  session's early refusal of a store bound to a different deployment policy
+  is gone too (`GovernedLocalContentStore` still rejects a write whose
+  descriptor carries another policy binding). Both modules are now forbidden
+  wheel/sdist members.
+- **Breaking: removed the local capture-policy registry and principal
+  binding** (`fabric.deployment_state`: `CapturePolicyRegistry`,
+  `validate_policy`, `RevisionConflictError`; `fabric.capture_identity`:
+  `IdentityBoundAuthority`, `PrincipalBinding`; `fabric.capture_readback`:
+  `CaptureReadback`, `assess_readback`). Policy rollout, approval and
+  readback are management scope, outside the recorder. `DeploymentPolicy`
+  (`fabric.deployment_policy`) still validates and digests the capture
+  configuration. The three modules are now forbidden wheel/sdist members.
+- **Breaking: removed `fabric.control_protocol`** (`FinalBoundaryRequest`,
+  `ExternalControlReply`, `BoundaryOutcomeObservation`,
+  `ExternalFinalBoundaryController`, `correlate_external_exchange`). The
+  contract existed for a future external Control Runtime and was never
+  invoked by the recorder; AGENTS.md keeps any Control Runtime outside the
+  default recorder. `fabric.control_evidence.ControlObservation` (metadata
+  about an external control decision) stays. The module is now a forbidden
+  wheel/sdist member, and `docs/capture-control-compatibility.md` is removed.
+- **Breaking: removed `fabric.reference_receipts`** (`ReferenceReceiptService`,
+  `ReferenceReceiptClient`, `ReferenceByteStore` and `python -m
+  fabric.reference_receipts`). It was an HTTP + SQLite receipt service
+  shipped inside the SDK wheel; a server is outside the recorder package.
+  Qualified-run mode does not depend on it: `receipt_sets`,
+  `evidence_attestation` and `qualified_run` still verify the delivery v1
+  receipt sets and attestations offline. The module is now a forbidden
+  wheel/sdist member.
+- **Breaking: removed `fabric.distributed_closure`** (`ClosureEvidenceStore`,
+  `verify_distributed_closure`, `authenticate_propagated_context` and the
+  signed closure documents). The multi-source closure verifier was used only
+  by the enterprise reference example and is not part of qualified-run mode,
+  whose single-epoch route closure in `qualified_run` is unchanged. The
+  module is now a forbidden wheel/sdist member, and
+  `docs/enterprise-distributed-closure.md` is removed.
+- **Breaking: removed Python auto-instrumentation**
+  (`fabric.auto_instrument`, `Fabric.enable_auto_instrumentation`,
+  `enable_auto_instrumentation_with_manifest`) together with
+  `fabric.coverage_manifest`, `fabric._coverage_canary` and
+  `fabric._instrumentation_registry`, and the `openai`, `anthropic`,
+  `bedrock`, `otel-langchain` and `cohere` extras that pulled the upstream
+  `opentelemetry-instrumentation-*` hooks. Fabric captures model calls at
+  the LLM wire (`fabric.wire`) and through app-reported records
+  (`llm_call`, `tool_call`); the upstream hooks also coupled the SDK to a
+  framework (langchain). `install_default_provider` and
+  `trace_export_protection_status` (the protected managed span export) are
+  unchanged; `docs/python-auto-capture-privacy.md` is now
+  `docs/python-span-export-protection.md`. The modules are forbidden
+  wheel/sdist members and the five extras are forbidden extras; the license
+  scan no longer inventories them.
+- Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
+  it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
+  same check.
+- Removed the `benchmarks/fabric-comparison` SDK instrumentation comparison
+  and its frozen evidence (45,189 lines). No workflow, test or Make target ran
+  it, and its evidence was pinned to `18ec69a`, whose SDK hashes had already
+  drifted. History stays in git.
+- Removed the Codex/Sol laptop-stage rehearsal (`run_sol_local_stage.py`,
+  `project_sol_stage_to_fabric.py`, `verify_sol_sink_readback.py`) and the
+  laptop "local GO" simulation (`run_local_go_simulation.sh`,
+  `summarize_local_go_simulation.py`) with their tests and
+  `qualification/sol-local-stage` and `qualification/local-go-simulation`
+  records. Nothing invoked them. The qualification-status links now point
+  at commit `4a5c945`.
+- Removed `scripts/qualification/run_composed_collector_journey.py` and its
+  `qualification/composed-collector-capture-matrix.json` record. Only docs
+  referred to it; the spec 048 Compose content path and the wire-capture Node
+  E2E tests in `scripts/tests` exercise a real Collector instead.
+- Removed the enterprise examples (`examples/enterprise-orchestration`,
+  `examples/enterprise-reference`, `examples/enterprise/scope.local.json`),
+  the enterprise journeys (`scripts/qualification/run_enterprise_local.py`,
+  `scripts/qualification/enterprise_preflight.py`), their repository tests,
+  and the docs that only described them (`enterprise-testing-quickstart.md`,
+  `enterprise-reference-validation.md`, `enterprise-release-traceability.md`,
+  `specs/enterprise-capture-build.md`). The README and quickstart now point
+  at `examples/wire-capture`. `examples/enterprise/policy.local.json` stays
+  as the deployment-policy test fixture.
+- Removed the C8 network journey (`run_c8_network_journey.py`), the C0–C10
+  acceptance runner (`run_capture_acceptance.py`) and its
+  `capture_measurements.py` helper, with their tests, the
+  `qualification/c8-network-capture-matrix.json` and
+  `capture-level-matrix.json` records, and `docs/evidence-qualification-map.md`.
+  Only their own tests ran them.
+- Removed the historical `qualification/` records (cloud audits, the
+  2026-10-02 cloud run, Python test-contract snapshots, the production GO
+  packet and the synthetic-slice plans and reports) and
+  `docs/cloud-qualification-2026-10-02.md`. No test or release step read
+  them, and nothing verified their source-hash pins. Only the four
+  `qualification/synthetic-slice/kind-production-*.yaml` files that
+  `e2e-production-profile.yml` installs remain. The qualification-status
+  links now point at commit `4a5c945`.
+- Removed the remaining doc references to `PolicyCaptureSession` and
+  `test_auto_instrument.py` outside the SDK, which the SDK cleanup removes.
+- `examples/kind-quickstart/up.sh` no longer installs the removed
+  `anthropic` extra; it installs `singleaxis-fabric[otlp]` and, for a real
+  model run, the `anthropic` client the demo agent imports.
 
 ### Known limitations
 

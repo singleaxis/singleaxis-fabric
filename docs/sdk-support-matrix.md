@@ -17,31 +17,16 @@ build's qualification results.
 | Encrypted durable byte spool/replay | Implemented, `byte_spool.DurableByteSpool`, `ByteEvidenceConfig.durable_spool` | Not implemented |
 | Restartable metadata delivery/ack ledger | Implemented, `metadata_delivery.JournalMetadataSender`, `HTTPMetadataTransport` | Not implemented |
 | Authenticated AES-GCM local governed store | Implemented, `GovernedLocalContentStore` | Not implemented; ordinary stores are not an equivalent |
-| Local desired/approved/applied lifecycle | Implemented, `CapturePolicyRegistry` | Not implemented |
-| Verified principal-to-workload/operator bindings | Adapter implemented, `IdentityBoundAuthority`; verifier supplied by customer | Not implemented |
-| Authenticated configuration readback/drift | Implemented, `CaptureReadback`, registry `readback` | Not implemented |
 | External control observations | Metadata only, `ControlObservation` | Not implemented |
-| Final-boundary external control exchange | Contract only, `control_protocol`; no controller invocation or gate | Not implemented |
-| Independently persisted receipt service | Local reference, `reference_receipts.ReferenceReceiptService` | Not implemented |
-| Registered multi-source/recovered-epoch closure | Local reference, `distributed_closure` | Not implemented |
 | Client portal UI, SSO/fleet rollout service | Not implemented | Not implemented |
 | Action enforcement | Not implemented | Not implemented |
 | Production IAM/KMS, residency, network or native BPF attestation | External target qualification required | External target qualification required |
 
-Machine-readable equivalent:
-
-```python
-from fabric.capture_capabilities import sdk_capabilities
-
-python_support = sdk_capabilities("python")
-typescript_support = sdk_capabilities("typescript")
-```
-
-The v1 documents explicitly identify support as `implemented`, `reference_only`,
-`contract_only`, `not_implemented` or `external_qualification_required`. Their
-`evidence_scope=source_support_declaration`, `active_hook_attestation=false`, and
-`production_qualified=false` are intentional. Do not use this static matrix as
-a workload readback or infer that installed features are enabled.
+The connector capability manifests in
+[`contracts/connect/v1/manifests`](../contracts/connect/v1/manifests) are the
+machine-readable declarations for each released SDK and connector. Do not use
+this static matrix as a workload readback or infer that installed features are
+enabled.
 
 ## Durability and privacy limits
 
@@ -55,12 +40,9 @@ a workload readback or infer that installed features are enabled.
 - Deployment policy protects the explicit ByteEvidenceRecorder path. It does
   not retrofit arbitrary OTel exporters, provider logs, diagnostics or traffic
   that was never submitted to Fabric.
-- A configured policy, bound identity or static capability declaration does not
-  prove live hooks, encryption custody, retention deletion, destination readback
+- A configured policy or static capability declaration does not prove live
+  hooks, encryption custody, retention deletion, destination readback
   or complete coverage of physical attempts.
-
-See [capture/control compatibility](capture-control-compatibility.md) and
-[enterprise capture specification](specs/enterprise-capture-build.md).
 
 ## Runtime and effect boundaries
 
@@ -74,6 +56,7 @@ readback can be added only for effects that need stronger evidence.
 | --- | --- | --- |
 | Existing framework/OTel traces | Node preserves supported supplied identity/correlation; lightweight framework hooks can emit compatible spans | Sampling, absent hooks and bypasses remain unknown; imported spans are not independent completeness proof |
 | Explicit model/tool dispatch | Python `CallRecorder`; real `FinalHTTPAdapter` HTTP/1.1 body tests | Named wrapped calls and physical requests only; no automatic arbitrary framework/SDK interception |
+| Zero-code LLM wire capture (opt-in) | Python httpx/httpx2 tee, agent spool and Node content path (specs 047/048); offline `python -m fabric.reconstruct`; TypeScript not implemented | Only model calls through httpx/httpx2 to listed endpoints in an instrumented process; defers inside explicit model calls ([Two capture lines](README.md#two-capture-lines)); record-integrity verdicts, not run qualification |
 | Bounded local CLI subprocess | `BoundedTerminalAdapter` in the synthetic adapter module; local subprocess return/stdout/stderr and failure tests | Explicit controlled child only; not a universal shell/PTY/session recorder, not qualified for arbitrary descendants |
 | Interactive terminal / PTY | No general qualified PTY adapter | Terminal resize, input timing, interactive sessions and arbitrary nested commands are unsupported/unverified |
 | Shell descendants / detached children | Explicit parent propagation, expected-child closure; optional host exec/connect metadata | Parent success cannot prove unknown children complete; live host correlation requires target evidence |
@@ -83,7 +66,7 @@ readback can be added only for effects that need stronger evidence.
 | Browser / remote sandbox / remote VM | Ordinary supplied telemetry or explicit custom adapter/context propagation | No universal guest/remote instrumentation or session reconstruction; instrumentation/provider evidence must exist inside the relevant boundary |
 | SSH / remote CLI / encrypted traffic | Explicit approved application observations and host connection metadata where configured | Host network metadata does not reconstruct SSH/TLS payloads or remote committed effects |
 | External writes/payments/cloud effects | Caller-supplied effect references and selected destination readback adapters | A successful tool return is not independent proof the external effect committed; authoritative provider readback required |
-| Destination content and metadata | Reference ingress/destination inventories, exact receipts and readback | Local receipt service is not a real OTel Collector, cloud storage SLA, IAM/KMS or replication attestation |
+| Destination content and metadata | Exact receipt sets and attestations checked offline (`receipt_sets`, `evidence_attestation`); destination readback | Receipts are checked, not issued: the SDK ships no receipt service, and a receipt is not a cloud storage SLA, IAM/KMS or replication attestation |
 
 No row establishes “captures everything.” Missing routes, absent sensors,
 unknown child sources and unverified effect readbacks must remain explicit.

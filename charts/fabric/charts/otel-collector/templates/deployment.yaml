@@ -1,3 +1,5 @@
+{{- $contentFileVolume := include "otel-collector.contentFileVolume" . -}}
+{{- $contentS3Creds := and .Values.content.enabled (eq .Values.content.backend "s3") .Values.content.s3.credentialsSecret.name -}}
 apiVersion: apps/v1
 kind: {{ ternary "StatefulSet" "Deployment" .Values.exporter.sendingQueue.persistence.enabled }}
 metadata:
@@ -72,6 +74,11 @@ spec:
             - name: otlp-http
               containerPort: {{ .Values.service.ports.otlpHttp }}
               protocol: TCP
+            {{- if .Values.content.enabled }}
+            - name: otlp-content
+              containerPort: {{ .Values.service.ports.otlpContent }}
+              protocol: TCP
+            {{- end }}
             - name: health
               containerPort: {{ .Values.service.ports.health }}
               protocol: TCP
@@ -113,13 +120,36 @@ spec:
               mountPath: /etc/fabric/exporter-tls
               readOnly: true
             {{- end }}
-          {{- if .Values.exporter.auth.secret.name }}
+            {{- if eq $contentFileVolume "emptyDir" }}
+            # Development only: no queue PVC, so the file content backend
+            # lives on an emptyDir and is lost with the pod.
+            - name: content-store
+              mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
+            {{- end }}
+          {{- if or .Values.exporter.auth.secret.name $contentS3Creds }}
           env:
+            {{- if .Values.exporter.auth.secret.name }}
             - name: FABRIC_EXPORT_AUTH
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.exporter.auth.secret.name }}
                   key: {{ .Values.exporter.auth.secret.key }}
+            {{- end }}
+            {{- if $contentS3Creds }}
+            # Static keys for an S3-compatible content store, read by the
+            # default AWS credential chain. Never rendered into values or the
+            # ConfigMap; on AWS prefer IRSA via serviceAccount.annotations.
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.content.s3.credentialsSecret.name }}
+                  key: {{ .Values.content.s3.credentialsSecret.accessKeyIdKey }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.content.s3.credentialsSecret.name }}
+                  key: {{ .Values.content.s3.credentialsSecret.secretAccessKeyKey }}
+            {{- end }}
           {{- end }}
       volumes:
         - name: config
@@ -174,6 +204,10 @@ spec:
         - name: queue-storage
           persistentVolumeClaim:
             claimName: {{ .Values.exporter.sendingQueue.persistence.existingClaim }}
+        {{- end }}
+        {{- if eq $contentFileVolume "emptyDir" }}
+        - name: content-store
+          emptyDir: {}
         {{- end }}
         {{- if or .Values.exporter.tls.caSecret.name .Values.exporter.tls.clientCertificateSecret.name }}
         - name: exporter-tls

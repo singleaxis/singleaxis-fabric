@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/llm-exchange-v1.schema.json",
+  "title": "Fabric LLM exchange record v1 (draft, spec 047 rev 5, spec 048)",
+  "description": "JSON form of one fabric.model_call span: identity, source position, run, body digests and store object ids, and closed-shape response metadata. It carries no message hashes, tool-call ids, response ids, store paths or content; stitching is derived offline from the stored bytes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "exchange_id", "api", "provider_name", "source",
+    "run_id", "started_at", "ended_at", "request", "response_state", "truncated",
+    "store_status"
+  ],
+  "properties": {
+    "schema_version": {"const": "fabric.llm-exchange/v1"},
+    "exchange_id": {"$ref": "#/$defs/opaqueId"},
+    "api": {"$ref": "#/$defs/api"},
+    "provider_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_id", "source_epoch", "source_sequence"],
+      "properties": {
+        "source_id": {"$ref": "#/$defs/opaqueId"},
+        "source_epoch": {"type": "integer", "minimum": 0},
+        "source_sequence": {"type": "integer", "minimum": 0}
+      }
+    },
+    "run_id": {"$ref": "#/$defs/opaqueId"},
+    "scope_id": {
+      "description": "fabric.run.scope_id (spec 048 §6): the innermost open fabric.wire.run() block the call started in, unique per block entry. Absent when the call started outside every open block.",
+      "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "trace_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "span_id": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "ended_at": {"type": "string", "format": "date-time"},
+    "request": {"$ref": "#/$defs/body"},
+    "response": {"$ref": "#/$defs/body"},
+    "response_state": {"enum": ["complete", "closed_early", "error", "abandoned"]},
+    "http_status_code": {"type": "integer", "minimum": 100, "maximum": 599},
+    "error_type": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
+    "model": {
+      "description": "Spec 048 §7: the provider value as is only when it matches the shared model pattern, contains no '://' and is on the model allowlist; otherwise m- + the first 16 hex of its sha256 (which also matches the pattern). Omitted when not extracted.",
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "pattern": "^(?!.*://)[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+    },
+    "finish_reasons": {
+      "description": "Provider finish reasons mapped onto a closed vocabulary; any other value is recorded as other.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "enum": [
+          "stop", "length", "tool_calls", "content_filter", "function_call",
+          "end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn",
+          "refusal", "completed", "incomplete", "failed", "other"
+        ]
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0}
+      }
+    },
+    "truncated": {"type": "boolean"},
+    "store_status": {"enum": ["stored", "partial", "failed", "disabled"]}
+  },
+  "dependentRequired": {"span_id": ["trace_id"]},
+  "allOf": [
+    {
+      "if": {"properties": {"response_state": {"const": "complete"}}},
+      "then": {"required": ["response"]}
+    },
+    {
+      "if": {"properties": {"response_state": {"const": "error"}}},
+      "then": {"required": ["error_type"]}
+    }
+  ],
+  "$defs": {
+    "opaqueId": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "api": {
+      "enum": [
+        "openai.chat_completions", "openai.responses", "openai.completions",
+        "openai.embeddings", "anthropic.messages"
+      ]
+    },
+    "body": {
+      "description": "One captured body. sha256 covers the captured bytes (the retained prefix when truncated); object_id is present only when those bytes were written to the customer store, and is the store's opaque object id (a lowercase uuid4), never a path, URI or bucket name. Readers resolve it through the store they are configured with.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sha256"],
+      "properties": {
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "object_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        }
+      }
+    }
+  }
+}

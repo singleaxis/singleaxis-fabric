@@ -205,7 +205,7 @@ class ContentWriter:
             # can read content. Failure to enforce the mode is a setup error,
             # never permission to start a worker with an exposed spool.
             with _directory(self._spool_dir, create=True) as directory:
-                os.fchmod(directory, 0o700)
+                os.fchmod(directory, stat.S_IRWXU)  # owner-only directory (0o700)
                 if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
                     raise PermissionError("spool_dir must enforce owner-only permissions")
             self._recover_spool()

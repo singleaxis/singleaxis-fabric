@@ -1,0 +1,14 @@
+{
+  "contract": "singleaxis.fabric.coverage",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "registry/capture-points-v1.json", "sha256": "50a9cbfa78b541d96fc4550bdad395c92f0a7ea1a636f5eb84e3691d82aeafeb", "expectation": "registry", "expected_error": null},
+    {"path": "registry/content-roles-v1.json", "sha256": "668d7d81605a552bec66d4aa88692526f208d383efa29682c2dcface614e11e5", "expectation": "registry", "expected_error": null},
+    {"path": "registry/field-registry-v1.json", "sha256": "ec0267d0bedaa1e66bc0af48c1b37213009995d1933a80e0e7c0fadef9b248bd", "expectation": "registry", "expected_error": null},
+    {"path": "registry/telemetry-keys-v1.json", "sha256": "ec7a82c00751b9b9ccb179e18e11898077afb1865bebda5c3eb0c1e93cad0d47", "expectation": "registry", "expected_error": null},
+    {"path": "registry/vocabularies-v1.json", "sha256": "60ec59a558a2e4cc1c9877e05c0f8303dac7d7435f4b22747a3917f714083041", "expectation": "registry", "expected_error": null},
+    {"path": "schema/capture-manifest-v1.schema.json", "sha256": "5cc313b4b895e35baf99c16ae9f864ee88e33bfd32628d6b5b0f7c4f68e526b4", "expectation": "schema", "expected_error": null},
+    {"path": "schema/step-projection-v1.schema.json", "sha256": "2d1f3a90fcd28dbc202fc4c324ac67759324780c156f82b7fda01e045d81ccac", "expectation": "schema", "expected_error": null}
+  ]
+}

@@ -28,44 +28,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Wire-capture node mode (spec 048) needs no extra entry: this exporter
+# already depends on `requests` and `opentelemetry-proto`, which the content
+# client uses. boto3 is never a wire-capture dependency (the Node writes S3).
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
 ]
-# Auto-instrumentation extras for popular LLM SDK families. Each
-# pulls the upstream `opentelemetry-instrumentation-<lib>` package
-# (Traceloop-authored, jointly maintained with the OTel GenAI WG)
-# alongside Fabric's metadata-only content default. The user pip-installs
-# the LLM SDK itself separately; the Instrumentor hooks whatever
-# version is present at runtime.
-#
-# Enable via `Fabric.enable_auto_instrumentation()` (or the module-level
-# `fabric.auto_instrument.enable_auto_instrumentation()`).
-#
-# Content capture is disabled by default (raw prompts/completions do
-# not land on spans) per Fabric's compliance posture. Override with
-# `FABRIC_CAPTURE_LLM_CONTENT=true` or
-# `enable_auto_instrumentation(capture_content=True)`.
-openai = [
-  # 2.4b0 imports genai.instruments removed in util-genai 1.2b0 and imports
-  # httpx even when the separately installed OpenAI SDK uses httpx2.
-  # Bound to the real-SDK loopback benchmark's verified dependency combination.
-  "opentelemetry-instrumentation-openai-v2==2.4b0",
-  "opentelemetry-util-genai==0.4b0",
-  "httpx>=0.28.1,<1",
-
-]
-anthropic = [
-  "opentelemetry-instrumentation-anthropic>=0.30b0",
-]
-bedrock = [
-  "opentelemetry-instrumentation-bedrock>=0.30b0",
-]
-otel-langchain = [
-  "opentelemetry-instrumentation-langchain>=0.30b0",
-]
-cohere = [
-  "opentelemetry-instrumentation-cohere>=0.30b0",
+# Reader side only: `python -m fabric.reconstruct --store-uri s3://...` and
+# S3ContentStore read the customer's bucket with boto3. Never needed by an
+# agent (the Node writes S3) and never imported by the capture path.
+s3 = [
+  "boto3>=1.34",
 ]
 # Optional MCP (Model Context Protocol) tool-call instrumentation. The
 # `fabric.integrations.mcp` module duck-types the client session via a
@@ -94,6 +68,11 @@ dev = [
   "PyYAML>=6.0.2,<7.0",
   "types-PyYAML>=6.0.12",
   "httpx>=0.27",
+  # Real provider SDKs qualify wire capture end to end (spec 047 §2):
+  # openai>=3 and anthropic>=1 send through httpx2. Dev-only; capture never
+  # depends on them at runtime.
+  "openai>=3.26.1",
+  "anthropic>=1.12.1",
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
   # cryptography exercises the real ed25519 path in the generic
@@ -135,7 +114,21 @@ exclude = [
   "/src/fabric/presidio.py",
   "/src/fabric/stream.py",
   "/src/fabric/tool_auth.py",
+  "/src/fabric/auto_instrument.py",
+  "/src/fabric/coverage_manifest.py",
+  "/src/fabric/_coverage_canary.py",
+  "/src/fabric/_instrumentation_registry.py",
+  "/src/fabric/distributed_closure.py",
+  "/src/fabric/reference_receipts.py",
+  "/src/fabric/control_protocol.py",
+  "/src/fabric/deployment_state.py",
+  "/src/fabric/capture_identity.py",
+  "/src/fabric/capture_readback.py",
+  "/src/fabric/enterprise.py",
+  "/src/fabric/enterprise_preflight.py",
+  "/src/fabric/capture_capabilities.py",
   "/src/fabric/adapters/agent_framework.py",
+  "/src/fabric/adapters/crewai.py",
   "/src/fabric/adapters/langgraph.py",
   "/src/fabric/guardrail_adapters",
   "/src/fabric/judge_adapters",
@@ -160,7 +153,21 @@ exclude = [
   "/src/fabric/presidio.py",
   "/src/fabric/stream.py",
   "/src/fabric/tool_auth.py",
+  "/src/fabric/auto_instrument.py",
+  "/src/fabric/coverage_manifest.py",
+  "/src/fabric/_coverage_canary.py",
+  "/src/fabric/_instrumentation_registry.py",
+  "/src/fabric/distributed_closure.py",
+  "/src/fabric/reference_receipts.py",
+  "/src/fabric/control_protocol.py",
+  "/src/fabric/deployment_state.py",
+  "/src/fabric/capture_identity.py",
+  "/src/fabric/capture_readback.py",
+  "/src/fabric/enterprise.py",
+  "/src/fabric/enterprise_preflight.py",
+  "/src/fabric/capture_capabilities.py",
   "/src/fabric/adapters/agent_framework.py",
+  "/src/fabric/adapters/crewai.py",
   "/src/fabric/adapters/langgraph.py",
   "/src/fabric/guardrail_adapters",
   "/src/fabric/judge_adapters",

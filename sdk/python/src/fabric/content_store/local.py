@@ -75,7 +75,7 @@ def _exists(path: Path) -> bool:
 def _atomic_write_bytes(target: Path, data: bytes) -> None:
     """Write and fsync through pinned directory descriptors, without symlinks."""
     with _directory(target.parent, create=True) as directory:
-        os.fchmod(directory, 0o700)
+        os.fchmod(directory, stat.S_IRWXU)  # owner-only directory (0o700)
         if stat.S_IMODE(os.fstat(directory).st_mode) != stat.S_IRWXU:
             raise PermissionError("content directory must enforce owner-only permissions")
         temporary = ".pending-" + uuid.uuid4().hex

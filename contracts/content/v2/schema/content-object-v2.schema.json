@@ -40,7 +40,8 @@
       "enum": [
         "model.request.instructions", "model.request.messages",
         "model.request.tool_definitions", "model.request.parameters",
-        "model.output.messages", "tool.definition", "tool.call.arguments",
+        "model.output.messages", "model.exchange.request",
+        "model.exchange.response", "tool.definition", "tool.call.arguments",
         "tool.call.result", "retrieval.query", "retrieval.results",
         "memory.write.content", "memory.read.content",
         "side_effect.request", "side_effect.result", "context.file",
@@ -59,6 +60,10 @@
       "maxLength": 128
     },
     "encoding": {"type": "string", "enum": ["utf-8", "binary"]},
+    "content_encoding": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$"
+    },
     "representation": {
       "enum": ["exact", "canonicalized", "assembled", "partial", "truncated", "redacted", "tokenized", "unavailable"]
     },

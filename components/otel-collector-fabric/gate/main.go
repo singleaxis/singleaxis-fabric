@@ -8,6 +8,35 @@
 //   - every service pipeline must be traces or logs; metrics and profiles
 //     pipelines would carry records past the fabricguard processor, which only
 //     runs inside the two signal pipelines it is wired into;
+//   - every traces and logs pipeline must list fabricguard in its own
+//     processors, followed only by batch or memory_limiter, so no record
+//     reaches an exporter unfiltered (processors: [], an overlay that drops
+//     the guard, or a guard in a sibling pipeline only are all refused);
+//   - --set overrides are refused in both spellings (--set=k=v, --set k=v):
+//     the collector merges them after every --config source, so they could
+//     undo a validated pipeline; overrides must go in an additional --config
+//     file, which the gate merges and validates;
+//   - --feature-gates is refused in both spellings: a gate such as
+//     confmap.enableMergeAppendOption changes how --config sources merge, so
+//     the collector would run a configuration the gate never validated;
+//   - receivers, protocols, auth/tls blocks, extensions, processors,
+//     pipelines, pipeline component lists and service.extensions must be
+//     literal YAML: a whole-value ${env:...} would resolve into structure
+//     the gate never saw (leaf fields may still use ${env:...});
+//   - a content receiver is never weaker than the telemetry receivers: same
+//     authenticator, TLS when they serve TLS (no older min_version), and
+//     client certificates when they require them;
+//   - content (spec 048 §5) stays on logs/content pipelines, and all
+//     fabriccontent exporters of the Node together allow one tenant unless
+//     every one of them sets allow_multiple_tenants: true; a fabriccontent or
+//     OTLP/HTTP exporter block must be a literal map the gate can read;
+//   - every OTLP/HTTP exporter lists the noredirect client middleware, so a
+//     redirect is never followed;
+//   - no OTLP exporter endpoint and no fabriccontent S3 endpoint carries user
+//     info, a query or a fragment;
+//
+// Diagnostics name config sources by position (--config #N) and never echo
+// source text, paths, URLs or underlying error text.
 //   - every bearertokenauth extension that reads tokens from a file must point
 //     at a file the pinned extension (v0.150.0) cannot misread: it splits on
 //     newlines and retains empty entries, so a blank line or trailing newline

@@ -14,9 +14,9 @@ annotations at 100; the branch response supplies no per-alert gate membership.
 No alerts were dismissed; no query suites, thresholds, permissions or broad
 suppressions changed. Pending fixes require exact-head rescanning. Protocol,
 lazy import, exception-context and descriptor-ownership findings remain review
-items. The synthetic benchmark raw truth is necessary for disclosure checks;
-hiding it would invalidate the frozen campaign. Security-owner acceptance is
-outstanding. Parent-only source is preserved.
+items. The synthetic benchmark raw truth was necessary for disclosure checks;
+the benchmark has since been removed from the tree (history at `18ec69a`).
+Security-owner acceptance is outstanding. Parent-only source is preserved.
 
 ## Rule inventory
 
@@ -135,7 +135,7 @@ Paths and line numbers refer to the initial source commit.
 | [#881](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/881) | `py/multiple-definition` / [sdk/python/src/fabric/governed_store.py:888](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/src/fabric/governed_store.py#L888) | Absent | Fixed pending scan: retain early authorization, bind claims only after lock and authorization recheck. |
 | [#880](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/880) | `py/multiple-definition` / [sdk/python/src/fabric/governed_store.py:812](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/src/fabric/governed_store.py#L812) | Absent | Fixed pending scan: retain early authorization, bind claims only after lock and authorization recheck. |
 | [#879](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/879) | `py/multiple-definition` / [sdk/python/src/fabric/governed_store.py:699](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/src/fabric/governed_store.py#L699) | Absent | Fixed pending scan: retain early authorization, bind claims only after lock and authorization recheck. |
-| [#878](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/878) | `py/clear-text-storage-sensitive-data` / [benchmarks/fabric-comparison/run.py:230](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/benchmarks/fabric-comparison/run.py#L230) | Absent | Security-owner decision: independent raw truth intentionally writes a synthetic loopback canary. Frozen campaign code/evidence retained; no live inputs or credential. |
+| [#878](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/878) | `py/clear-text-storage-sensitive-data` / [benchmarks/fabric-comparison/run.py:230](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/benchmarks/fabric-comparison/run.py#L230) | Absent | Security-owner decision: independent raw truth intentionally writes a synthetic loopback canary. Frozen campaign code/evidence since removed from the tree; no live inputs or credential. |
 | [#877](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/877) | `js/file-system-race` / [sdk/typescript/test/deployment-policy.test.ts:309](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/typescript/test/deployment-policy.test.ts#L309) | Absent | Fixed pending scan: open with O_NOFOLLOW and inspect/read the same descriptor; 34 focused TS tests pass. |
 | [#876](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/876) | `go/unhandled-writable-file-close` / [components/otel-collector-fabric/receiver/auditreceiver/durable_state.go:179](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/components/otel-collector-fabric/receiver/auditreceiver/durable_state.go#L179) | Absent | Fixed pending scan: retain cleanup/close errors and return durable close errors from receiver Shutdown; Linux regression added. |
 | [#875](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/875) | `go/unhandled-writable-file-close` / [components/otel-collector-fabric/receiver/auditreceiver/durable_state.go:158](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/components/otel-collector-fabric/receiver/auditreceiver/durable_state.go#L158) | Absent | Fixed pending scan: retain cleanup/close errors and return durable close errors from receiver Shutdown; Linux regression added. |
@@ -208,3 +208,29 @@ Paths and line numbers refer to the initial source commit.
 | [#370](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/370) | `py/unreachable-statement` / [sdk/python/tests/test_surface_logging.py:382](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/tests/test_surface_logging.py#L382) | Present | Review: pytest.raises/contextlib.suppress consumes the expected exception; following assertions execute in tests. |
 | [#232](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/232) | `py/import-and-import-from` / [sdk/python/tests/test_tracing.py:34](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/tests/test_tracing.py#L34) | Present | Review: module imports support monkeypatching or installed-module identity; named symbols support calls. |
 | [#226](https://github.com/singleaxis/singleaxis-fabric/security/code-scanning/226) | `py/unused-global-variable` / [sdk/python/src/fabric/tracing.py:105](https://github.com/singleaxis/singleaxis-fabric/blob/18ec69a4ddd6e5fdab7a097b30b34571096e708f/sdk/python/src/fabric/tracing.py#L105) | Present | Inherited globals/context-variable state; parent-only code retained. |
+
+## LLM wire-capture port (specs 047–049)
+
+Status: **CodeQL not yet run on the combined tree; production remains NO_GO.**
+
+The zero-code wire line (specs 047/048, plan 049) was ported onto the
+evidence line without removing any parent source. CodeQL runs only in GitHub
+code scanning (no local CLI was available), so the combined head needs an
+exact-head CodeQL run before this section can list alert numbers. Nothing was
+dismissed or suppressed, and no query suite, threshold or `.semgrepignore`
+entry changed.
+
+A local `semgrep scan --config auto --error` (image pinned in
+`recorder-security.yml`, 551 rules) over the released paths reported, on the
+combined tree:
+
+| Finding | Source | Line | Disposition |
+| --- | --- | --- | --- |
+| `python.lang.security.audit.insecure-file-permissions` | `sdk/python/src/fabric/_content_writer.py` | parent | Also reported on unmodified `origin/main` with the same rules; parent behaviour retained. |
+| `python.lang.security.audit.insecure-file-permissions` | `sdk/python/src/fabric/content_store/local.py` | parent | Also reported on unmodified `origin/main`; `fchmod(..., 0o700)` on a pinned directory descriptor. |
+| `python.lang.security.audit.httpsconnection-detected` | `http_dispatch.py`, `metadata_delivery.py`, `synthetic_otlp.py` | parent | Also reported on unmodified `origin/main`; explicit HTTPS connections the parent line owns. |
+| `python.lang.security.audit.insecure-file-permissions` | `sdk/python/src/fabric/wire/_spool.py` (`_secure_dir`) | wire | **Review (not suppressed):** `os.chmod(target, 0o700)` sets an owner-only *directory* mode after refusing a symlink or a foreign owner; the execute bit is the directory search bit. Same class as the parent `local.py` finding. Security-owner acceptance is open. |
+| `python.lang.security.audit.non-literal-import` | `sdk/python/src/fabric/wire/_transport.py` (`patch_httpx`) | wire | **Fixed:** the transport flavors are now imported by literal name (`_import_flavor`), so no caller-influenced module name reaches an import. |
+
+The five parent findings fail `--error` on `origin/main` as well (registry
+rules drift); they are recorded here only so the wire delta is visible.

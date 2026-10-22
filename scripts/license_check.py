@@ -381,7 +381,12 @@ def parse_pip_licenses(surface: str, path: str) -> list[Dep]:
             raise ValueError("pip version and license must be strings")
         # Skip the package itself if it shows up as first-party.
         lic = row.get("License", "") or ""
-        # pip-licenses joins multiple classifiers with "; ".
+        # pip-licenses joins multiple classifiers with "; ". Read them
+        # conjunctively, the strictest reading: every listed license must be
+        # allowed (python-dateutil: "Apache Software License; BSD License").
+        # An empty or unrecognised part fails the whole label.
+        if ";" in lic:
+            lic = " AND ".join(f"({part.strip()})" for part in lic.split(";"))
         deps.append(Dep(surface, "python", name, row.get("Version", ""), lic))
     return deps
 

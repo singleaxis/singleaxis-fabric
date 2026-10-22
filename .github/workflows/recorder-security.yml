@@ -61,6 +61,12 @@ jobs:
             path: components/otel-collector-fabric/processor/fabricguardprocessor
           - name: audit-receiver
             path: components/otel-collector-fabric/receiver/auditreceiver
+          - name: content-exporter
+            # Spec 048: the Node's content writer (aws-sdk-go-v2 for S3).
+            path: components/otel-collector-fabric/exporter/fabriccontentexporter
+          - name: noredirect-extension
+            # Spec 048 J4: the Node's redirect-refusing HTTP client middleware.
+            path: components/otel-collector-fabric/extension/noredirectextension
           - name: host-emitter
             path: components/host-emitter
           - name: fabricctl
@@ -99,6 +105,8 @@ jobs:
           sdk/typescript/src
           components/otel-collector-fabric/processor/fabricguardprocessor
           components/otel-collector-fabric/receiver/auditreceiver
+          components/otel-collector-fabric/exporter/fabriccontentexporter
+          components/otel-collector-fabric/extension/noredirectextension
           components/host-emitter
           tools/fabricctl/cmd/fabricctl/release_main.go
           tools/fabricctl/internal/recorder
@@ -127,6 +135,8 @@ jobs:
             sdk/typescript
             components/otel-collector-fabric/processor/fabricguardprocessor
             components/otel-collector-fabric/receiver/auditreceiver
+            components/otel-collector-fabric/exporter/fabriccontentexporter
+            components/otel-collector-fabric/extension/noredirectextension
             components/host-emitter
             tools/fabricctl
 

@@ -89,6 +89,7 @@ def _script_root(tmp_path: Path) -> Path:
         "scripts/license_scan.sh",
         "scripts/license_check.py",
         ".github/license-allowlist.txt",
+        "sdk/typescript/package.json",
     ):
         destination = root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +114,11 @@ def test_local_license_scan_requires_complete_toolchain_before_scanning(
     _utilities(bin_dir)
     available = "npm" if missing == "go" else "go"
     # Presence is sufficient for preflight; no fake inventory may be executed.
-    (bin_dir / available).symlink_to("/bin/false")
+    # Resolve `false` from the host: macOS ships it only as /usr/bin/false, and
+    # a dangling /bin/false link would make the available tool look missing.
+    false_bin = shutil.which("false")
+    assert false_bin is not None
+    (bin_dir / available).symlink_to(false_bin)
     result = subprocess.run(
         ["/bin/bash", str(root / "scripts/license_scan.sh")],
         env={**os.environ, "PATH": str(bin_dir)},
@@ -173,7 +178,9 @@ def test_local_license_scan_includes_entrypoint_gate_in_real_policy_check(
         " license=os.environ['FIXTURE_GATE_LICENSE'] if module=='gate' else 'MIT'\n"
         " print(f'example.invalid/{module},https://example.invalid/license,{license}')\n"
         "elif name == 'npx':\n"
-        " print(json.dumps({'fixture-npm@1':{'licenses':'MIT'}}))\n"
+        " start=pathlib.Path(args[args.index('--start')+1]).name\n"
+        " key='@aws-sdk/client-s3@3.0.0' if start=='s3-peer' else 'fixture-npm@1'\n"
+        " print(json.dumps({key:{'licenses':'Apache-2.0'}}))\n"
     )
     driver.chmod(0o700)
     for name in ("python", "go", "npm", "npx"):

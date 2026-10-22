@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
     [
         ("MIT WITH Commons Clause", False),
         ("MIT; Proprietary", False),
+        # pip-licenses joins classifiers with "; ": every one must be allowed.
+        ("Apache Software License; BSD License", True),
+        ("Apache Software License; Not a license", False),
+        ("Apache Software License; GPL", False),
+        ("MIT;", False),
         ("Not MIT licensed", False),
         ("MIT AND", False),
         ("MIT OR", False),
@@ -34,7 +39,9 @@ ROOT = Path(__file__).resolve().parents[2]
         # exact artifact URLs/hashes are retained in the provenance ledger.
         ("3-Clause BSD License", True),
         ("3-Clause BSD License WITH unknown-exception", False),
-        ("MIT-0", False),
+        ("MIT-0", True),
+        # A near-miss of an allowed id must not pass by prefix match.
+        ("MIT-CMU", False),
         ("MIT License (MIT)", True),
     ],
 )
