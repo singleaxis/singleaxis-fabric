@@ -133,7 +133,7 @@ from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
 from ._identity import IdentityPolicy, record_exception
-from ._safe_log import exc_class, safe_log
+from ._safe_log import safe_log
 from ._safe_span import SafeSpan, SpanScope, child_span, log_recording_error
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
@@ -957,26 +957,24 @@ class Decision(AbstractContextManager["Decision"]):
     # raw bytes. Without a store every event stays byte-identical.
 
     def _store_content_ref(self, content: str, *, key_hint: str | None = None) -> str | None:
-        """Write ``content`` to the configured store; return its ref URI.
+        """Queue ``content`` for the configured legacy store; return its ref URI.
 
         ``None`` when no :class:`~fabric.content_store.ContentStore` is
-        configured. ``key_hint`` forwards the caller's logical key (e.g.
-        the memory ``key``) for stores that organize by hint. A store
-        failure warns and returns ``None`` — passive recording must never
-        break the agent's path because the evidence pipeline hiccuped.
+        configured, when the bounded queue is full (the drop is counted) or
+        when the store has no deterministic ``ref_for``. The write itself runs
+        on a background worker: recording never waits on storage, and a store
+        failure is counted and logged class-only, never raised.
         """
-        store = self._client.content_store
-        if store is None:
+        # 049 §7.1: never wait on storage; the write is queued for a background worker.
+        writer = getattr(self._client, "content_store_writer", None)
+        if writer is None:
             return None
         try:
-            return store.put(content, key_hint=key_hint).uri
-        except Exception as exc:  # class only: a store's message can echo the payload
-            safe_log(
-                _LOG, logging.WARNING,
-                "fabric.decision: content store put() failed (%s); emitting the event "
-                "without a content ref", exc_class(exc),
-            )  # fmt: skip
+            ref: str | None = writer.submit(content, key_hint=key_hint)
+        except Exception as exc:  # pragma: no cover - submit never raises
+            self._note_internal_error(exc)
             return None
+        return ref
 
     # -- governed content (spec 028/029) -----------------------------------
     #

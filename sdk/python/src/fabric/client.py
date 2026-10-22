@@ -19,8 +19,11 @@ from ._content import CONTENT_ROLES
 from ._content_writer import ContentCaptureConfig, ContentWriter, FlushResult
 from ._id_validators import check_identifier, warn_if_pii_shaped
 from ._identity import IdentityPolicy
+from ._legacy_store_writer import DEFAULT_QUEUE_ITEMS, LegacyStoreWriter
 from ._sequence import IDENTITY_MODE_ENV, IdentityMode, id_key_from_env, identity_mode_from_env
 from .tracing import get_meter, get_tracer
+
+_LEGACY_SHUTDOWN_FLUSH_S = 10.0
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Meter
@@ -178,8 +181,11 @@ class Fabric:
         content_store: ContentStore | None = None,
         content_capture: ContentCaptureConfig | None = None,
         id_key: bytes | None = None,
+        content_store_queue_items: int = DEFAULT_QUEUE_ITEMS,
     ) -> None:
-        """``id_key``: the pseudonym key (default ``FABRIC_WIRE_ID_KEY``); a secret."""
+        """``id_key``: the pseudonym key (default ``FABRIC_WIRE_ID_KEY``); a secret.
+        ``content_store_queue_items`` bounds the legacy ``content_store``'s background
+        queue: a write beyond it is dropped and counted, never waited for."""
         self._config = config
         self._identity = IdentityPolicy.resolve(config.identity_mode, id_key, os.environ)
         self._tracer = tracer or get_tracer()
@@ -191,6 +197,13 @@ class Fabric:
         # URI on the event — a governed reference, never raw bytes.
         # Default None keeps pure hash-only observability mode unchanged.
         self._content_store = content_store
+        # Spec 049 §7.1: recording never waits on storage. The legacy store is written
+        # by a background worker behind a bounded queue (drops counted).
+        self._content_store_writer = (
+            LegacyStoreWriter(content_store, content_store_queue_items)
+            if content_store is not None
+            else None
+        )
         # Governed content capture (spec 028): explicit opt-in. The only
         # environment influence is restrictive — ``FABRIC_CONTENT_MODE``
         # set to ``metadata`` force-disables a configured capture; it can
@@ -457,12 +470,27 @@ class Fabric:
         :meth:`ContentWriter.flush` for the result semantics — a nonzero
         ``pending`` count is an honest gap, never claimed as delivered.
         """
+        if self._content_store_writer is not None:
+            self._content_store_writer.flush(timeout_s=timeout_s)
         if self._content_writer is None:
             return None
         return self._content_writer.flush(timeout_s=timeout_s)
 
+    @property
+    def content_store_writer(self) -> LegacyStoreWriter | None:
+        """The legacy ``content_store``'s background writer, or ``None``."""
+        return self._content_store_writer
+
+    def content_store_stats(self) -> dict[str, int] | None:
+        """Legacy ``content_store`` delivery counts (``enqueued``, ``stored``, ``dropped``,
+        ``failed``, ``pending``), or ``None`` without a legacy store."""
+        writer = self._content_store_writer
+        return writer.stats() if writer is not None else None
+
     def close(self) -> None:
-        """Flush pending governed content within the shutdown bound, then
-        stop the writer. Idempotent; a no-op in metadata-only mode."""
+        """Flush pending content within the shutdown bound, then stop the governed
+        writer. Idempotent; a no-op in metadata-only mode."""
+        if self._content_store_writer is not None:
+            self._content_store_writer.flush(timeout_s=_LEGACY_SHUTDOWN_FLUSH_S)
         if self._content_writer is not None:
             self._content_writer.close()
