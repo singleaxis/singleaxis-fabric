@@ -24,6 +24,17 @@ GapType = Literal[
     # 049 §7.9, decision 20: in the production profile a record without the Node's
     # fabric.source.authenticated stamp read back from a trusted location.
     "source_unauthenticated",
+    # Spec 050 §3.12 (capture/v1 1.3.0): segments, seals, manifests and run states.
+    "segment_missing",
+    "segment_conflict",
+    "post_terminal_activity",
+    "run_unterminated",
+    "run_open",
+    "seal_mismatch",
+    "unsealed_segment",
+    "unsealed_epoch",
+    "manifest_gap",
+    "clock_uncertain",
 ]
 Effect = Literal["info", "partial", "unverified"]
 Check = Literal["passed", "failed", "skipped", "not_applicable"]
@@ -35,6 +46,9 @@ COMPLETE: Final = "complete_for_declared_scope"
 COMPLETE_OBSERVED: Final = "complete_for_observed_scopes"
 #: Verdicts that make no completeness-blocking statement (CLI exit code 0).
 COMPLETE_VERDICTS: frozenset[str] = frozenset({COMPLETE, COMPLETE_OBSERVED})
+#: Run states (spec 050 §3.12) that do not keep a run from exit code 0: absent (a pre-P1
+#: capture) or ``terminated``. An ``open`` run exits 1 although ``run_open`` is ``info``.
+EXIT_RUN_STATES: frozenset[str | None] = frozenset({None, "terminated"})
 
 SCHEMA_VERSION = "fabric.run-reconstruction/v1"
 _REASON_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -56,6 +70,7 @@ class Gap:
     previous_response_id: str | None = None
     object_role: Literal["request", "response"] | None = None
     reason: str | None = None
+    segment_id: str | None = None  # spec 050 §3.12: the segment a P1 gap is about
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {"gap_type": self.gap_type, "effect": self.effect}
@@ -68,6 +83,7 @@ class Gap:
             "tool_call_id": self.tool_call_id,
             "previous_response_id": self.previous_response_id,
             "object_role": self.object_role,
+            "segment_id": self.segment_id,
             "reason": self.reason if self.reason and _REASON_RE.match(self.reason) else None,
         }
         out.update({key: value for key, value in optional.items() if value is not None})
@@ -90,6 +106,7 @@ def sort_gaps(gaps: Iterable[Gap], order_of: Mapping[str, int]) -> list[Gap]:
             gap.effect,
             gap.exchange_id or "",
             gap.previous_response_id or "",
+            gap.segment_id or "",
         )
 
     return sorted(dict.fromkeys(gaps), key=key)

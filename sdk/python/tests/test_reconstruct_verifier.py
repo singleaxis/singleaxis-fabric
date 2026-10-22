@@ -68,6 +68,26 @@ def _load_validator() -> types.ModuleType:
 
 
 VALIDATOR = _load_validator()
+
+
+def _load_script(name: str) -> types.ModuleType:
+    path = REPO_ROOT / "scripts" / "contracts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault(name, module)
+    spec.loader.exec_module(module)
+    return module
+
+
+# The WP-00 reference rules (spec 050 §3.7, §3.8): the builder seals and writes manifests
+# with these, independently of the SDK, so the verifier is checked against the contract.
+P1_REFERENCE = _load_script("p1_reference")
+COVERAGE = _load_script("validate_coverage_contracts")
+COVERAGE_REGISTRY = COVERAGE.load_registries(REPO_ROOT)
+MANIFEST_VECTOR = json.loads(
+    (REPO_ROOT / "contracts/coverage/v1/fixtures/vectors/manifest-span-v1.json").read_text()
+)
 SCHEMAS = {
     relative: json.loads((CAPTURE_ROOT / relative).read_text(encoding="utf-8"))
     for relative in VALIDATOR.SCHEMAS.values()
@@ -120,6 +140,15 @@ def scope_uuid(number: int) -> str:
     return f"{number:08x}-0000-4000-8000-{number:012x}"
 
 
+def segment_uuid(number: int) -> str:
+    """A deterministic ``fabric.run.segment_id``."""
+
+    return f"seg-{number:032x}"
+
+
+_OPEN: Any = object()  # record()/segment_seal(): the run's open segment
+
+
 class Capture:
     """Plays the capture worker: store byte objects + exchange/loss/heartbeat spans."""
 
@@ -147,6 +176,16 @@ class Capture:
         # Open fabric.wire.run() scopes as (run id, scope id), innermost last.
         self.open_scopes: list[tuple[str, str]] = []
         self.scope_count = 0
+        # Spec 050 (P1): the open segment of each run, segment-attributed losses, the
+        # content digests of each record (by event id) and the manifest in force.
+        self.open_segments: dict[str, str] = {}
+        self.segment_count = 0
+        self.segment_losses: list[dict[str, Any]] = []
+        self.record_content: dict[str, list[str | None]] = {}
+        self.id_count = 0
+        self.manifest_seq = -1
+        self.manifest_id: str | None = None
+        self.manifest_digest: str | None = None
 
     def _ns(self, sequence: int) -> int:
         return BASE_NS + sequence * 1_000_000_000
@@ -267,6 +306,7 @@ class Capture:
         if http_status is not None:
             attrs["http.response.status_code"] = http_status
         attrs.update({} if scope_id is None else {"fabric.run.scope_id": scope_id})
+        attrs.update(self._wire_segment(run_id))
         if response_bytes is not None:
             attrs["fabric.wire.response_sha256"] = sha_hex(response_bytes)
         request_id = response_id = None
@@ -331,18 +371,28 @@ class Capture:
         )
 
     def loss(
-        self, reason: str, first: int, last: int | None = None, count: int | None = None
+        self,
+        reason: str,
+        first: int,
+        last: int | None = None,
+        count: int | None = None,
+        *,
+        segment_id: str | None = None,
     ) -> None:
         last = first if last is None else last
-        self._record(
-            "fabric.capture_loss",
-            {
-                "fabric.loss.reason": reason,
-                "fabric.loss.count": count if count is not None else last - first + 1,
-                "fabric.loss.first_sequence": first,
-                "fabric.loss.last_sequence": last,
-            },
-        )
+        attributes: dict[str, Any] = {
+            "fabric.loss.reason": reason,
+            "fabric.loss.count": count if count is not None else last - first + 1,
+            "fabric.loss.first_sequence": first,
+            "fabric.loss.last_sequence": last,
+        }
+        if segment_id is not None:  # spec 050 R3: a segment-attributed loss
+            attributes["fabric.run.segment_id"] = segment_id
+            self.segment_losses.append(
+                {"reason": reason, "count": attributes["fabric.loss.count"],
+                 "first_sequence": first, "last_sequence": last, "segment_id": segment_id}
+            )  # fmt: skip
+        self._record("fabric.capture_loss", attributes)
 
     def heartbeat(
         self,
@@ -351,6 +401,7 @@ class Capture:
         run_id: str | None = None,
         kind: str | None = "final",
         scope_id: str | None = None,
+        extra: Mapping[str, Any] | None = None,
     ) -> None:
         """A heartbeat; the default is the ``final`` one a clean close writes.
 
@@ -366,6 +417,7 @@ class Capture:
             attributes["fabric.run.id"] = run_id
         if scope_id is not None:
             attributes["fabric.run.scope_id"] = scope_id
+        attributes.update(extra or {})
         self._record("fabric.capture_heartbeat", attributes)
 
     def periodic(self, last: int | None = None) -> None:
@@ -378,13 +430,271 @@ class Capture:
         self.scope_count += 1
         return scope_uuid(self.scope_count + 0x100 * len(self.id_prefix))
 
-    def run_start(self, run_id: str, scope_id: str | None = None) -> str:
-        """Enter a ``fabric.wire.run()`` block: a new scope and its run_start marker."""
+    def run_start(
+        self,
+        run_id: str,
+        scope_id: str | None = None,
+        *,
+        segment_id: str | None = None,
+        predecessors: tuple[str, ...] = ("none",),
+        id_basis: str = "caller",
+    ) -> str:
+        """Enter a ``fabric.wire.run()`` block: a new scope and its run_start marker.
+
+        With ``segment_id`` it is a P1 marker (spec 050 §3.6) opening that segment for the
+        run: later exchanges and records of the run carry it until it is sealed."""
 
         scope_id = scope_id or self.new_scope()
         self.open_scopes.append((run_id, scope_id))
-        self.heartbeat(run_id=run_id, kind="run_start", scope_id=scope_id)
+        extra: dict[str, Any] = {}
+        if segment_id is not None:
+            self.open_segments[run_id] = segment_id
+            extra = {
+                "fabric.run.segment_id": segment_id,
+                "fabric.run.predecessors": list(predecessors),
+                "fabric.run.id_basis": id_basis,
+                "fabric.event_id": self.new_id(),
+                **self._manifest_keys(),
+            }
+        self.heartbeat(run_id=run_id, kind="run_start", scope_id=scope_id, extra=extra)
         return scope_id
+
+    def _wire_segment(self, run_id: str) -> dict[str, Any]:
+        """A P1 exchange's segment keys (spec 050 §3.9): none outside a segment."""
+        if run_id not in self.open_segments:
+            return {}
+        return {"fabric.run.segment_id": self.open_segments[run_id], "fabric.capture.input": "wire"}
+
+    def new_id(self) -> str:
+        """A deterministic dashed uuid4 (event ids, attempt uids, object ids)."""
+        self.id_count += 1
+        return scope_uuid(0x10000 + self.id_count + 0x100000 * len(self.id_prefix))
+
+    def new_segment(self) -> str:
+        self.segment_count += 1
+        return segment_uuid(self.segment_count + 0x1000 * len(self.id_prefix))
+
+    def _manifest_keys(self) -> dict[str, Any]:
+        if self.manifest_id is None:
+            return {}
+        return {
+            "fabric.capture.manifest_id": self.manifest_id,
+            "fabric.capture.manifest_digest": self.manifest_digest,
+            "fabric.capture.manifest_seq": self.manifest_seq,
+        }
+
+    def record(
+        self,
+        kind: str = "tool_call",
+        *,
+        run_id: str | None = RUN,
+        scope_id: Any = _INNERMOST,
+        segment_id: Any = _OPEN,
+        attempt_uid: str | None = None,
+        objects: tuple[bytes | None, ...] = (),
+        status: str = "ok",
+        step_id: str | None = None,
+        attributes: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Capture one records-input record (spec 050 §3.4) at the next sequence. Each of
+        ``objects`` is stored as a content-v2 object (``None``: a descriptor-only object);
+        the record names them in ``fabric.content.object_ids``. Returns the span row."""
+
+        sequence = self.skip()
+        if scope_id is _INNERMOST:
+            scope_id = None if run_id is None else self._innermost(run_id)
+        if segment_id is _OPEN:
+            segment_id = None if run_id is None else self.open_segments.get(run_id)
+        event_id = self.new_id()
+        attrs: dict[str, Any] = {
+            "fabric.capture.input": "records",
+            "fabric.capture.source": "reported",
+            "fabric.capture.point": "sdk.records@0.9.0",
+            "fabric.source_id": self.source_id,
+            "fabric.source.epoch": self.epoch,
+            "fabric.source.sequence": sequence,
+            "fabric.event_id": event_id,
+            "fabric.attempt.uid": attempt_uid or self.new_id(),
+            "fabric.step.kind": kind,
+            "fabric.step.lifecycle_state": "completed",
+            "fabric.step.status": "ok",
+            "fabric.actor.type": "agent",
+        }
+        if run_id is not None:
+            attrs["fabric.run.id"] = run_id
+        if scope_id is not None:
+            attrs["fabric.run.scope_id"] = scope_id
+        if segment_id is not None:
+            attrs["fabric.run.segment_id"] = segment_id
+        if step_id is not None:
+            attrs["fabric.step.id"] = step_id
+        content: list[str | None] = []
+        if objects:
+            object_ids = [self.new_id() for _ in objects]
+            attrs["fabric.content.object_ids"] = object_ids
+            for object_id, data in zip(object_ids, objects, strict=True):
+                content.append(self._put_record_object(object_id, sequence, data))
+        attrs.update(attributes or {})
+        self.record_content[event_id] = content
+        start = self._ns(sequence) + 100_000_000
+        row = {
+            "kind": "span",
+            "trace_id": "b" * 32,
+            "span_id": f"{0x0B00000000000000 + sequence + 0x1000 * len(self.id_prefix):016x}",
+            "parent_span_id": None,
+            "name": "fabric.tool_call",
+            "start_ns": start,
+            "end_ns": start + 1_000_000,
+            "status": status,
+            "attributes": attrs,
+            "resource": {"service.name": "react-agent"},
+        }
+        self.rows.append(row)
+        return row
+
+    def _put_record_object(self, object_id: str, sequence: int, data: bytes | None) -> str | None:
+        """Store one record object; ``None`` data writes a descriptor-only object."""
+        assert self.store is not None
+        descriptor: dict[str, Any] = {
+            "schema_version": "fabric.content-object/v2",
+            "object_id": object_id,
+            "tenant_id": TENANT,
+            "role": "tool.result",
+            "media_type": "application/json",
+            "boundary": "caller",
+            "provenance": "caller_reported",
+            "source_id": self.source_id,
+            "source_epoch": self.epoch,
+            "source_sequence": sequence,
+            "captured_at": stamp(self._ns(sequence)),
+        }
+        if data is None:
+            descriptor.update(status="not_captured", status_reason="payload_too_large",
+                              representation="unavailable")  # fmt: skip
+            meta = self.root / "store" / TENANT / "evidence" / "meta"
+            meta.mkdir(parents=True, exist_ok=True)
+            (meta / f"{object_id}.json").write_text(json.dumps(descriptor), encoding="utf-8")
+            return None
+        digest = "sha256:" + sha_hex(data)
+        descriptor.update(
+            status="stored", representation="exact", stored_byte_length=len(data),
+            stored_sha256=digest, ref=self.store.evidence_ref_for(object_id),
+        )  # fmt: skip
+        self.store.put_bytes_object(descriptor, data)
+        return digest
+
+    def segment_rows(self, segment_id: str) -> list[dict[str, Any]]:
+        """The exchange and record rows that name ``segment_id`` (its seal members)."""
+        return [
+            row for row in self.rows
+            if row["attributes"].get("fabric.run.segment_id") == segment_id
+            and "fabric.source.sequence" in row["attributes"]
+            and row["attributes"].get("fabric.source_id") == self.source_id
+        ]  # fmt: skip
+
+    def seal_digest(self, segment_id: str) -> str:
+        """The seal the agent writes (spec 050 §3.7), by the WP-00 reference rule."""
+        members: list[tuple[int, str]] = []
+        for row in self.segment_rows(segment_id):
+            attrs = row["attributes"]
+            if "fabric.wire.exchange_id" in attrs:
+                content: list[str | None] = [
+                    "sha256:" + attrs[key]
+                    for key in ("fabric.wire.request_sha256", "fabric.wire.response_sha256")
+                    if key in attrs
+                ]
+            else:
+                content = self.record_content[attrs["fabric.event_id"]]
+            digest = P1_REFERENCE.record_digest(
+                name=row["name"], start_ns=row["start_ns"], end_ns=row["end_ns"],
+                status=row.get("status", "unset"), attributes=attrs, content=content,
+            )  # fmt: skip
+            members.append((attrs["fabric.source.sequence"], digest))
+        entries = P1_REFERENCE.seal_entries(members, self.segment_losses, segment_id)
+        return str(P1_REFERENCE.seal_digest(entries))
+
+    def segment_seal(
+        self,
+        run_id: str = RUN,
+        *,
+        segment_id: Any = _OPEN,
+        terminal: bool = True,
+        scope_id: Any = _INNERMOST,
+        digest: str | None = None,
+    ) -> str:
+        """Seal a segment (049 §2.12 rule 4): a ``segment_seal`` heartbeat over everything
+        written for it so far; the run's open segment is closed. Returns the seal digest."""
+        if segment_id is _OPEN:
+            segment_id = self.open_segments.pop(run_id)
+        elif self.open_segments.get(run_id) == segment_id:
+            del self.open_segments[run_id]
+        if scope_id is _INNERMOST:
+            scope_id = self._innermost(run_id)
+        seal = digest or self.seal_digest(segment_id)
+        last = self.sequence - 1
+        extra: dict[str, Any] = {
+            "fabric.run.segment_id": segment_id,
+            "fabric.segment.last_sequence": last,
+            "fabric.segment.seal_digest": seal,
+            "fabric.run.terminal": terminal,
+            "fabric.event_id": self.new_id(),
+        }
+        if self.manifest_digest is not None:
+            extra["fabric.segment.manifest_digest"] = self.manifest_digest
+            extra["fabric.capture.manifest_seq"] = self.manifest_seq
+        self.heartbeat(last, run_id=run_id, kind="segment_seal", scope_id=scope_id, extra=extra)
+        return seal
+
+    def manifest(
+        self,
+        seq: int | None = None,
+        *,
+        after: int | None = None,
+        previous: str | None = None,
+        unsealed_prior: tuple[int, ...] = (),
+        emit: bool = True,
+        **changes: Any,
+    ) -> str:
+        """Write capture manifest ``seq`` (default: the next) of this epoch as its
+        ``fabric.capture_manifest`` span (manifest-span-v1, by the WP-00 mapping) and make it
+        the manifest in force. ``emit=False`` advances the chain without writing the span (a
+        lost manifest). Returns the document's digest."""
+        seq = self.manifest_seq + 1 if seq is None else seq
+        document = json.loads(json.dumps(MANIFEST_VECTOR["cases"][0]["manifest"]))
+        document.update(
+            manifest_id=scope_uuid(0x200000 + 0x100 * seq + self.epoch % 0x100),
+            event_id=self.new_id(),
+            source_id=self.source_id,
+            source_epoch=self.epoch,
+            manifest_seq=seq,
+            after_source_sequence=(-1 if seq == 0 else self.sequence - 1) if after is None
+            else after,
+            unsealed_prior_epochs=list(unsealed_prior),
+            unsealed_prior_epoch_count=len(unsealed_prior),
+            **changes,
+        )  # fmt: skip
+        document.pop("previous_manifest_sha256", None)
+        if seq > 0:
+            document["previous_manifest_sha256"] = previous or self.manifest_digest
+        digest = str(COVERAGE.manifest_digest(document))
+        self.manifest_seq, self.manifest_id, self.manifest_digest = (
+            seq, document["manifest_id"], digest,
+        )  # fmt: skip
+        if emit:
+            ns = self._ns(self.sequence) + 800_000_000
+            self.rows.append(
+                {
+                    "kind": "span",
+                    "trace_id": "c" * 32,
+                    "span_id": f"{0x0C00000000000000 + len(self.rows):016x}",
+                    "name": "fabric.capture_manifest",
+                    "start_ns": ns,
+                    "end_ns": ns,
+                    "attributes": COVERAGE.manifest_to_span(document, COVERAGE_REGISTRY),
+                    "resource": {"service.name": "react-agent"},
+                }
+            )
+        return digest
 
     def run_end(self, run_id: str, scope_id: str | None = None) -> str:
         """Leave a block: by default the innermost open scope of ``run_id``.
@@ -395,7 +705,14 @@ class Capture:
         scope_id = scope_id or self._innermost(run_id) or self.new_scope()
         if (run_id, scope_id) in self.open_scopes:
             self.open_scopes.remove((run_id, scope_id))
-        self.heartbeat(run_id=run_id, kind="run_end", scope_id=scope_id)
+        extra: dict[str, Any] = {}
+        if run_id in self.open_segments:
+            extra = {
+                "fabric.run.segment_id": self.open_segments[run_id],
+                "fabric.event_id": self.new_id(),
+                **self._manifest_keys(),
+            }
+        self.heartbeat(run_id=run_id, kind="run_end", scope_id=scope_id, extra=extra)
         return scope_id
 
     def repeat(self) -> None:
