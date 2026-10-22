@@ -221,6 +221,16 @@ CAPTURE_SPAN_NAMES = {
 # Spec 050 §3.5 (WP-11b, admitted by fabricguard per WP-20): a marker's persisted
 # uuid4 event id, identical on every replay.
 MARKER_KEYS = frozenset({"fabric.event_id"})
+# An exchange span's attributes are closed by spool-record-v1 (oneOf/0); from capture
+# 1.4.0 that set carries the P1 enrichment keys (spec 050 WP-14).
+EXCHANGE_KEYS = frozenset(
+    json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / "contracts/capture/v1/schema/spool-record-v1.schema.json"
+        ).read_text("utf-8")
+    )["oneOf"][0]["properties"]["span"]["properties"]["attributes"]["properties"]
+)
 # A manifest span's attributes are closed by fabric.capture-manifest-record/v1.
 MANIFEST_RECORD_SCHEMA = json.loads(
     (
@@ -685,6 +695,8 @@ def _assert_capture_spans(
             assert not errors, errors[0].message
         else:
             allowed = CAPTURE_KEYS | REUSED_KEYS | NODE_STAMPS
+            if span["name"] == "fabric.model_call":
+                allowed |= EXCHANGE_KEYS
             if span["name"] == "fabric.capture_heartbeat":
                 allowed |= MARKER_KEYS
             extra = set(span["attributes"]) - allowed
