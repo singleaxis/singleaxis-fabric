@@ -172,6 +172,7 @@ class _ActiveExecution:
         "attempt",
         "attempt_id",
         "execution_id",
+        "execution_id_minted",
         "retry_previous_attempt_id",
         "retry_reason",
         "workflow_id",
@@ -186,8 +187,11 @@ class _ActiveExecution:
         attempt: int | None = None,
         retry_reason: str | None = None,
         retry_previous_attempt_id: str | None = None,
+        execution_id_minted: bool = False,
     ) -> None:
         self.execution_id = execution_id
+        # Fabric minted the id (uuid4): emitted as is in every identity mode.
+        self.execution_id_minted = execution_id_minted
         self.workflow_id = workflow_id
         self.attempt_id = attempt_id
         self.attempt = attempt
@@ -241,6 +245,7 @@ class Execution(AbstractContextManager["Execution"]):
         # Host-supplied verbatim, else a freshly minted uuid4 — the
         # correlation anchor inherited by every decision inside.
         self._execution_id = execution_id or str(uuid4())
+        self._execution_id_minted = not execution_id
         self._workflow_id = workflow_id if workflow_id is not None else config.workflow_id
         # Attempt/retry metadata. Each defaults to the corresponding
         # FabricConfig value when not supplied explicitly, so a client
@@ -276,6 +281,13 @@ class Execution(AbstractContextManager["Execution"]):
         self._token: contextvars.Token[_ActiveExecution | None] | None = None
         self._state = "new"
 
+    def _identity(self) -> IdentityPolicy:
+        """The client's identity policy (049 §2.9), else the environment's."""
+        identity = getattr(self._client, "identity", None)
+        if not isinstance(identity, IdentityPolicy):
+            identity = IdentityPolicy.resolve(None, None, os.environ)
+        return identity
+
     # -- context manager --------------------------------------------------
 
     def __enter__(self) -> Self:
@@ -301,23 +313,34 @@ class Execution(AbstractContextManager["Execution"]):
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
-        self._span.set_attribute(ATTR_EXECUTION, self._execution_id)
-        if self._workflow_id is not None:
-            self._span.set_attribute(ATTR_WORKFLOW, self._workflow_id)
+        # 049 §2.9 (round-2 review F4): caller ids are their keyed ``lbl-`` form when
+        # pseudonymous (omitted without a key); a minted execution id stays as is.
+        identity = self._identity()
+        execution = identity.minted_or_opaque(self._execution_id, minted=self._execution_id_minted)
+        if execution is not None:
+            self._span.set_attribute(ATTR_EXECUTION, execution)
+        if (
+            self._workflow_id is not None
+            and (workflow := identity.opaque(self._workflow_id)) is not None
+        ):
+            self._span.set_attribute(ATTR_WORKFLOW, workflow)
         # Stamp the attempt/retry metadata when provided (alongside the
         # execution_id/workflow_id/status), so the execution span carries
         # all seven correlation fields.
-        if self._execution_attempt_id is not None:
-            self._span.set_attribute(ATTR_EXECUTION_ATTEMPT_ID, self._execution_attempt_id)
+        if (
+            self._execution_attempt_id is not None
+            and (attempt_id := identity.opaque(self._execution_attempt_id)) is not None
+        ):
+            self._span.set_attribute(ATTR_EXECUTION_ATTEMPT_ID, attempt_id)
         if self._execution_attempt is not None:
             self._span.set_attribute(ATTR_EXECUTION_ATTEMPT, self._execution_attempt)
         if self._execution_retry_reason is not None:
             self._span.set_attribute(ATTR_EXECUTION_RETRY_REASON, self._execution_retry_reason)
-        if self._execution_retry_previous_attempt_id is not None:
-            self._span.set_attribute(
-                ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-                self._execution_retry_previous_attempt_id,
-            )
+        if (
+            self._execution_retry_previous_attempt_id is not None
+            and (previous := identity.opaque(self._execution_retry_previous_attempt_id)) is not None
+        ):
+            self._span.set_attribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previous)
         for key, value in self._extra_attrs.items():
             self._span.set_attribute(key, value)
         # Publish for decision inheritance. Token-based set so nested /
@@ -330,6 +353,7 @@ class Execution(AbstractContextManager["Execution"]):
                 attempt=self._execution_attempt,
                 retry_reason=self._execution_retry_reason,
                 retry_previous_attempt_id=self._execution_retry_previous_attempt_id,
+                execution_id_minted=self._execution_id_minted,
             )
         )
         return self
@@ -347,10 +371,7 @@ class Execution(AbstractContextManager["Execution"]):
             self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
             # 049 §7.6: class only in the pseudonymous identity mode (no message, no stack).
-            identity = getattr(self._client, "identity", None)
-            if not isinstance(identity, IdentityPolicy):
-                identity = IdentityPolicy.resolve(None, None, os.environ)
-            record_exception(self._span, exc, clear=identity.clear)
+            record_exception(self._span, exc, clear=self._identity().clear)
         else:
             self._span.set_attribute(ATTR_EXECUTION_STATUS, STATUS_COMPLETED)
         self._cm.exit(exc)  # never raises: the application's exception propagates as is

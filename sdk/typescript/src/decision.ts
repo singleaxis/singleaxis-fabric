@@ -88,6 +88,7 @@ import {
   startToolSpan,
   type GovernedCaptureFn,
   type LlmCallOptions,
+  type StepOptions,
   type ToolCallOptions,
 } from "./calls.js";
 import { ContentRole, rfc3339Now, type TranscriptManifest } from "./content.js";
@@ -640,10 +641,14 @@ export class Decision implements DecisionLike {
   private readonly sessionIdStored: string;
   private readonly requestIdStored: string;
   private readonly decisionIdValue: string;
+  /** The decision id as emitted (049 §2.9): minted as is, a caller's mapped. */
+  private readonly emittedDecisionId?: string;
   private readonly userIdStored?: string;
   private readonly conversationCompacted: boolean;
   private readonly resolvedWorkflowId?: string;
   private readonly resolvedExecutionId?: string;
+  /** The resolved execution id as emitted: minted as is, a caller's mapped. */
+  private readonly emittedExecutionId?: string;
   private readonly resolvedExecutionAttemptId?: string;
   private readonly resolvedExecutionAttempt?: number;
   private readonly resolvedExecutionRetryReason?: string;
@@ -698,7 +703,9 @@ export class Decision implements DecisionLike {
     span.setAttribute(ATTR_AGENT, identity.agentId);
     span.setAttribute(ATTR_PROFILE, identity.profile);
     span.setAttribute("gen_ai.operation.name", "invoke_agent");
-    span.setAttribute("gen_ai.agent.name", identity.agentName);
+    // 049 §2.9 (round-2 review F4): the agent name is an agent identity, `agt-`.
+    const agentName = this.ids.id("agt", identity.agentName);
+    if (agentName !== undefined) span.setAttribute("gen_ai.agent.name", agentName);
     span.setAttribute("gen_ai.agent.id", identity.agentId);
     if (session !== undefined) {
       span.setAttribute("gen_ai.conversation.id", session);
@@ -720,8 +727,16 @@ export class Decision implements DecisionLike {
     const active = activeExecution();
     const workflowId = ids.workflowId ?? active?.workflowId ?? identity.workflowId;
     const executionId = ids.executionId ?? active?.executionId ?? identity.executionId;
+    const executionIdMinted =
+      ids.executionId === undefined &&
+      active?.executionId !== undefined &&
+      active.executionIdMinted === true;
     this.resolvedWorkflowId = workflowId;
     this.resolvedExecutionId = executionId;
+    this.emittedExecutionId =
+      executionId !== undefined
+        ? this.ids.mintedOrOpaque(executionId, executionIdMinted)
+        : undefined;
     // The attempt/retry metadata has no per-decision kwarg, so it is inherited
     // from the active execution when present and otherwise the config value.
     this.resolvedExecutionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
@@ -730,22 +745,27 @@ export class Decision implements DecisionLike {
       active?.executionRetryReason ?? identity.executionRetryReason;
     this.resolvedExecutionRetryPreviousAttemptId =
       active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
-    if (workflowId !== undefined) {
-      span.setAttribute(ATTR_WORKFLOW, workflowId);
+    // 049 §2.9 (round-2 review F4): caller ids are their keyed `lbl-` form
+    // when pseudonymous (a minted execution id stays as is).
+    const workflow = this.opaque(workflowId);
+    if (workflow !== undefined) {
+      span.setAttribute(ATTR_WORKFLOW, workflow);
     }
     // `gen_ai.workflow.name` resolves to the supplied name or the workflow
     // id, and is stamped whenever either is present — even without a
     // resolved workflow_id (mirrors Python decision.py:504-506). An empty
-    // name falls back to the id exactly like Python's `or`.
-    const semanticWorkflowName = ids.workflowName || workflowId;
+    // name falls back to the id exactly like Python's `or`. A name is an
+    // operator label (049 §4.2); the fallback is the mapped workflow id.
+    const semanticWorkflowName = ids.workflowName ? this.ids.label(ids.workflowName) : workflow;
     if (semanticWorkflowName !== undefined) {
       span.setAttribute("gen_ai.workflow.name", semanticWorkflowName);
     }
-    if (executionId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION, executionId);
+    if (this.emittedExecutionId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION, this.emittedExecutionId);
     }
-    if (this.resolvedExecutionAttemptId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, this.resolvedExecutionAttemptId);
+    const attemptId = this.opaque(this.resolvedExecutionAttemptId);
+    if (attemptId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, attemptId);
     }
     if (this.resolvedExecutionAttempt !== undefined) {
       span.setAttribute(ATTR_EXECUTION_ATTEMPT, this.resolvedExecutionAttempt);
@@ -753,11 +773,9 @@ export class Decision implements DecisionLike {
     if (this.resolvedExecutionRetryReason !== undefined) {
       span.setAttribute(ATTR_EXECUTION_RETRY_REASON, this.resolvedExecutionRetryReason);
     }
-    if (this.resolvedExecutionRetryPreviousAttemptId !== undefined) {
-      span.setAttribute(
-        ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-        this.resolvedExecutionRetryPreviousAttemptId,
-      );
+    const previousAttempt = this.opaque(this.resolvedExecutionRetryPreviousAttemptId);
+    if (previousAttempt !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previousAttempt);
     }
     this.sessionIdStored = ids.sessionId;
     this.requestIdStored = ids.requestId;
@@ -769,7 +787,15 @@ export class Decision implements DecisionLike {
     const request = this.ids.opaque(ids.requestId);
     if (request !== undefined) span.setAttribute(ATTR_REQUEST, request);
     this.decisionIdValue = ids.decisionId ?? randomUuid();
-    span.setAttribute(ATTR_DECISION_ID, this.decisionIdValue);
+    // 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its
+    // keyed `lbl-` form when pseudonymous; a minted uuid4 stays as is.
+    this.emittedDecisionId = this.ids.mintedOrOpaque(
+      this.decisionIdValue,
+      ids.decisionId === undefined,
+    );
+    if (this.emittedDecisionId !== undefined) {
+      span.setAttribute(ATTR_DECISION_ID, this.emittedDecisionId);
+    }
     const user = ids.userId !== undefined ? this.ids.id("usr", ids.userId) : undefined;
     if (user !== undefined) {
       span.setAttribute(ATTR_USER, user);
@@ -783,8 +809,10 @@ export class Decision implements DecisionLike {
       if (parentAgent !== undefined) {
         span.setAttribute(A.ATTR_PARENT_AGENT_ID, parentAgent);
       }
-      if (ids.context.decisionId !== undefined) {
-        span.setAttribute(A.ATTR_PARENT_DECISION_ID, ids.context.decisionId);
+      // A carrier's decision id is caller input: `lbl-` when pseudonymous.
+      const parentDecision = this.opaque(ids.context.decisionId);
+      if (parentDecision !== undefined) {
+        span.setAttribute(A.ATTR_PARENT_DECISION_ID, parentDecision);
       }
     }
     // Caller-supplied extras sit on top of the client-level
@@ -1057,6 +1085,11 @@ export class Decision implements DecisionLike {
           ? this.ids.id("p", options.previousResponseId)
           : undefined,
       conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
+      // 049 §4.2 (round-2 review F4): prompt name and version are operator labels.
+      promptName: options.promptName !== undefined ? this.ids.label(options.promptName) : undefined,
+      promptVersion:
+        options.promptVersion !== undefined ? this.ids.label(options.promptVersion) : undefined,
+      ...this.stepIds(options),
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startLlmSpan(this.tracer, resolved);
@@ -1182,7 +1215,11 @@ export class Decision implements DecisionLike {
       emitToolName: toolName !== undefined,
       // N12: a tool-call id is a provider id, its keyed `p-` form.
       callId: options.callId !== undefined ? this.ids.id("p", options.callId) : undefined,
-      agentName: options.agentName ?? this.identity.agentName,
+      // Round-2 review F4: the agent name is an agent identity (`agt-`); the
+      // description is free text with no identity value, kept only in clear mode.
+      agentName: this.ids.id("agt", options.agentName ?? this.identity.agentName),
+      description: this.ids.clear ? options.description : undefined,
+      ...this.stepIds(options),
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startToolSpan(this.tracer, toolName ?? "execute_tool", resolved);
@@ -1198,6 +1235,26 @@ export class Decision implements DecisionLike {
       );
       return runAndEnd(span, () => fn(tool));
     });
+  }
+
+  /** A caller id as emitted (049 §2.9): clear, `lbl-`, or `undefined`. */
+  private opaque(value: string | undefined): string | undefined {
+    return value === undefined ? undefined : this.ids.opaque(value);
+  }
+
+  /**
+   * The caller's step and attempt ids as emitted (round-2 review F4): their
+   * keyed `lbl-` form when pseudonymous, omitted without a key. A value that
+   * is not a non-empty string passes through, so validation still rejects it.
+   */
+  private stepIds(options: StepOptions): StepOptions {
+    const map = (value: string | undefined): string | undefined =>
+      typeof value === "string" && value !== "" ? this.ids.opaque(value) : value;
+    return {
+      stepId: map(options.stepId),
+      stepAttemptId: map(options.stepAttemptId),
+      stepRetryPreviousAttemptId: map(options.stepRetryPreviousAttemptId),
+    };
   }
 
   /** The capture callback handed to a child ToolCall. */
@@ -1646,10 +1703,12 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_REPLAY_METADATA_VERSION]: "1",
-        [A.ATTR_REPLAY_DECISION_ID]: this.decisionIdValue,
       };
-      if (this.resolvedExecutionId !== undefined) {
-        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.resolvedExecutionId;
+      if (this.emittedDecisionId !== undefined) {
+        attrs[A.ATTR_REPLAY_DECISION_ID] = this.emittedDecisionId;
+      }
+      if (this.emittedExecutionId !== undefined) {
+        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.emittedExecutionId;
       }
       if (this.checkpointIds.length > 0) {
         attrs[A.ATTR_REPLAY_CHECKPOINT_IDS] = [...this.checkpointIds];
@@ -1741,9 +1800,12 @@ export class Decision implements DecisionLike {
       this.span.setAttribute(A.ATTR_SKILL_COUNT, this.skillCount);
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_SKILL_NAME]: name,
-        [A.ATTR_SKILL_VERSION]: version,
       };
+      // 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+      const skillName = this.ids.label(name);
+      if (skillName !== undefined) attrs[A.ATTR_SKILL_NAME] = skillName;
+      const skillVersion = this.ids.label(version);
+      if (skillVersion !== undefined) attrs[A.ATTR_SKILL_VERSION] = skillVersion;
       if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
       if (options.manifestHash !== undefined) {
         attrs[A.ATTR_SKILL_MANIFEST_HASH] = assertSha256Hex(

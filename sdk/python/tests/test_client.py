@@ -74,6 +74,8 @@ def test_from_env_workflow_and_execution_propagate_to_span(
             "FABRIC_AGENT_ID": "support-bot",
             "FABRIC_WORKFLOW_ID": "env-wf",
             "FABRIC_EXECUTION_ID": "env-exec",
+            # v0.8.1: caller ids are mapped in the default pseudonymous mode.
+            "FABRIC_IDENTITY_MODE": "clear",
         }
     )
     with client.decision(session_id="s", request_id="r"):

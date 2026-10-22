@@ -267,6 +267,15 @@ export class IdentityPolicy {
   }
 
   /**
+   * An id Fabric mints when the caller gives none (decision, execution id)
+   * as emitted: the minted uuid4 as is, a caller's value as {@link opaque}
+   * emits it, whatever its shape (a plain string is always caller input).
+   */
+  mintedOrOpaque(value: string, minted: boolean): string | undefined {
+    return minted ? value : this.opaque(value);
+  }
+
+  /**
    * An operator label (step name, tool name, tag; 049 §4.2) as emitted:
    * clear in `clear` mode or with `FABRIC_WIRE_LABELS=clear`, else the keyed
    * `lbl-` label, or `undefined` without a key.

@@ -6,10 +6,12 @@ A canary is planted in every field the v0.8.1 fixes cover: idempotency keys, doc
 ids, MCP and tool-span tool names, the memory store id, the checkpoint step name, tags,
 exception text, provider and caller correlation ids (previous response, response, tool
 call, request, data source), side-effect ids and labels, interaction metadata, store
-error text and low-entropy payloads (whose digests would reveal them). In the pseudonymous identity
-mode, with and without ``FABRIC_WIRE_ID_KEY``, no canary and no digest of a canary
-payload may appear in telemetry (the in-memory spans and their OTLP projection), in the
-SDK's logs or in the governed content spool and store."""
+error text and low-entropy payloads (whose digests would reveal them), and (round-2 review
+F4) the caller's execution, workflow, decision, parent-decision, attempt and step ids, the
+workflow, prompt and skill names and versions, the tool description and the agent name. In
+the pseudonymous identity mode, with and without ``FABRIC_WIRE_ID_KEY``, no canary and no
+digest of a canary payload may appear in telemetry (the in-memory spans and their OTLP
+projection), in the SDK's logs or in the governed content spool and store."""
 
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from fabric import ContentCaptureConfig, Fabric, FabricConfig, LocalFilesystemContentStore
 from fabric.content_store import ContentRef
 from fabric.integrations.mcp import InstrumentedMCPSession
+from fabric.propagation import FabricContext
 
 KEY = b"fabric-test-id-key-not-a-secret"
 TENANT = "acme"
@@ -50,6 +53,23 @@ CANARIES = {
     "operation": "CANARY-update-jane-q8z",
     "metadata": "CANARY-metadata-q8z",
     "store_error": "CANARY-store-error-q8z",
+    "execution_id": "CANARY-execution-q8z",
+    "workflow_id": "CANARY-workflow-q8z",
+    "workflow_name": "CANARY-workflow-name-q8z",
+    "decision_id": "CANARY-decision-q8z",
+    "parent_decision_id": "CANARY-parent-decision-q8z",
+    "execution_attempt_id": "CANARY-exec-attempt-q8z",
+    "execution_previous_attempt_id": "CANARY-exec-prev-attempt-q8z",
+    "step_id": "CANARY-step-id-q8z",
+    "step_attempt_id": "CANARY-step-attempt-q8z",
+    "step_previous_attempt_id": "CANARY-step-prev-attempt-q8z",
+    "llm_step_id": "CANARY-llm-step-id-q8z",
+    "prompt_name": "CANARY-prompt-name-q8z",
+    "prompt_version": "CANARY-prompt-version-q8z",
+    "tool_description": "CANARY tool description q8z",
+    "skill_name": "CANARY-skill-name-q8z",
+    "skill_version": "CANARY-skill-version-q8z",
+    "agent_name": "CANARY-agent-name-q8z",
 }
 PAYLOADS = ["yes", "no", "CANARY-payload-q8z"]  # low entropy: digests are lookups
 DIGESTS = [hashlib.sha256(p.encode()).hexdigest() for p in PAYLOADS]
@@ -68,11 +88,21 @@ class _Session:
 
 
 def _exercise(client: Fabric) -> None:
+    parent = FabricContext(tenant_id=TENANT, agent_id="upstream",
+                           decision_id=CANARIES["parent_decision_id"])  # fmt: skip
     with (
         pytest.raises(CanaryError),
-        client.execution(),
-        client.decision(session_id="s", request_id=CANARIES["request"]) as dec,
-    ):
+        client.execution(
+            execution_id=CANARIES["execution_id"], workflow_id=CANARIES["workflow_id"],
+            execution_attempt_id=CANARIES["execution_attempt_id"],
+            execution_retry_previous_attempt_id=CANARIES["execution_previous_attempt_id"],
+        ),
+        client.decision(
+            session_id="s", request_id=CANARIES["request"], decision_id=CANARIES["decision_id"],
+            workflow_name=CANARIES["workflow_name"], context=parent,
+        ) as dec,
+    ):  # fmt: skip
+        dec.record_skill(CANARIES["skill_name"], CANARIES["skill_version"])
         dec.record_side_effect(
             "other", target_system=CANARIES["target_system"], operation=CANARIES["operation"],
             idempotency_key=CANARIES["idempotency"], side_effect_id=CANARIES["side_effect_id"],
@@ -82,7 +112,14 @@ def _exercise(client: Fabric) -> None:
         dec.record_replay_metadata()
         with (
             pytest.raises(CanaryError),
-            dec.tool_call(CANARIES["tool_name"], call_id=CANARIES["tool_call"]) as tool,
+            dec.tool_call(
+                CANARIES["tool_name"],
+                call_id=CANARIES["tool_call"],
+                description=CANARIES["tool_description"],
+                step_id=CANARIES["step_id"],
+                step_attempt_id=CANARIES["step_attempt_id"],
+                step_retry_previous_attempt_id=CANARIES["step_previous_attempt_id"],
+            ) as tool,  # fmt: skip
         ):
             tool.set_idempotency(idempotent=True, key=CANARIES["tool_idempotency"])
             tool.set_arguments(PAYLOADS[0])
@@ -91,8 +128,13 @@ def _exercise(client: Fabric) -> None:
         with (
             pytest.raises(CanaryError),
             dec.llm_call(
-                provider="openai", model="m", previous_response_id=CANARIES["previous_response"]
-            ) as llm,
+                provider="openai",
+                model="m",
+                previous_response_id=CANARIES["previous_response"],
+                prompt_name=CANARIES["prompt_name"],
+                prompt_version=CANARIES["prompt_version"],
+                step_id=CANARIES["llm_step_id"],
+            ) as llm,  # fmt: skip
         ):
             llm.set_response(response_id=CANARIES["response"])
             raise CanaryError(CANARIES["exception"])
@@ -113,10 +155,13 @@ def _exercise(client: Fabric) -> None:
         raise CanaryError(CANARIES["exception"])
 
 
-# Governed content keeps its decision bindings (request id, tool-call id) as given: the
-# content store is the customer's protected destination for content, which carries the
-# same ids in its bodies (spec 049 §2.9 line 279, as for the session binding).
-CONTENT_BINDINGS = frozenset({"request", "tool_call"})
+# Governed content keeps its decision bindings (request, tool-call, decision, execution,
+# workflow and step attempt ids) as given: the content store is the customer's protected
+# destination for content, which carries the same ids in its bodies (spec 049 §2.9 line
+# 279, as for the session binding).
+CONTENT_BINDINGS = frozenset(
+    {"request", "tool_call", "decision_id", "execution_id", "workflow_id", "step_attempt_id"}
+)
 
 
 def _assert_clean(
@@ -166,7 +211,8 @@ def test_no_canary_leaves_the_process_in_pseudonymous_mode(
         store=store, roles=frozenset({"model.output.messages"}), durability="spooled",
         spool_dir=str(tmp_path / "spool"),
     )  # fmt: skip
-    config = FabricConfig(tenant_id=TENANT, agent_id="bot", identity_mode="pseudonymous")
+    config = FabricConfig(tenant_id=TENANT, agent_id="bot", identity_mode="pseudonymous",
+                          agent_name=CANARIES["agent_name"])  # fmt: skip
     client = Fabric(config, id_key=KEY if keyed else None, content_capture=capture)
     with caplog.at_level(logging.DEBUG):
         _exercise(client)
@@ -182,7 +228,8 @@ def test_no_canary_leaves_the_process_in_pseudonymous_mode(
 def test_canaries_are_visible_in_clear_mode(span_exporter: InMemorySpanExporter) -> None:
     """The control: the same calls in the clear mode export the v0.8.0 values, so the
     pseudonymous test above is not passing vacuously."""
-    config = FabricConfig(tenant_id=TENANT, agent_id="bot", identity_mode="clear")
+    config = FabricConfig(tenant_id=TENANT, agent_id="bot", identity_mode="clear",
+                          agent_name=CANARIES["agent_name"])  # fmt: skip
     _exercise(Fabric(config, id_key=KEY))
     blob = _telemetry(span_exporter)
     for name, canary in CANARIES.items():

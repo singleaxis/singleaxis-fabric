@@ -189,3 +189,80 @@ func TestToolSpanWithoutNameIsStillAToolCall(t *testing.T) {
 		t.Errorf("span name = %q, want fabric.tool_call", name)
 	}
 }
+
+// Round-2 review F4: the caller's execution, workflow, decision, attempt and
+// step ids, the workflow, prompt and skill names and the agent name are
+// admitted under a pseudonymous Node only in the SDK's mapped forms. Execution
+// and decision ids may also be the uuid4 Fabric mints; names are clear under
+// capture_labels clear; the agent name is agt- (an identity, not a label).
+func TestCallerIDsAndLabelsUnderPseudonymousNode(t *testing.T) {
+	const lbl = "lbl-9f86d081884c7d659a2feaa0c55ad015"
+	const agt = "agt-9f86d081884c7d659a2feaa0c55ad015"
+	const minted = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+	clearIdentity := createDefaultConfig()
+	clearIdentity.IdentityMode = identityModeClear
+	clearLabels := createDefaultConfig()
+	clearLabels.CaptureLabels = captureLabelsClear
+	pseudonymous := newTestGuard(t, nil)
+	identityClear := newTestGuard(t, clearIdentity)
+	labelsClear := newTestGuard(t, clearLabels)
+	type row struct {
+		key, value                         string
+		pseudonymous, identityClear, label bool
+	}
+	rows := []row{}
+	for _, key := range []string{"fabric.execution_id", "fabric.decision_id",
+		"fabric.replay.execution_id", "fabric.replay.decision_id"} {
+		rows = append(rows,
+			row{key, minted, true, true, true},
+			row{key, lbl, true, true, true},
+			row{key, "claim-4711-jane", false, true, false},
+			row{key, agt, false, true, false})
+	}
+	for _, key := range []string{"fabric.workflow_id", "fabric.execution.attempt_id",
+		"fabric.execution.retry.previous_attempt_id", "fabric.step.id", "fabric.step.attempt_id",
+		"fabric.step.retry.previous_attempt_id", "fabric.parent_decision_id"} {
+		rows = append(rows,
+			row{key, lbl, true, true, true},
+			row{key, "claim-4711-jane", false, true, false},
+			row{key, minted, false, true, false})
+	}
+	for _, key := range []string{"gen_ai.workflow.name", "gen_ai.prompt.name",
+		"gen_ai.prompt.version", "fabric.skill.name", "fabric.skill.version"} {
+		rows = append(rows,
+			row{key, lbl, true, true, true},
+			row{key, "jane-claims-prompt", false, true, true})
+	}
+	rows = append(rows,
+		row{"gen_ai.agent.name", agt, true, true, true},
+		row{"gen_ai.agent.name", lbl, false, true, false},
+		row{"gen_ai.agent.name", "Jane's claims bot", false, true, false})
+	for _, tc := range rows {
+		v := valueOf(t, tc.value)
+		for _, g := range []struct {
+			name  string
+			guard *guard
+			want  bool
+		}{
+			{"pseudonymous", pseudonymous, tc.pseudonymous},
+			{"identity_mode clear", identityClear, tc.identityClear},
+			{"capture_labels clear", labelsClear, tc.label},
+		} {
+			if got := keptAs(t, g.guard, decisionSpan(tc.key, v), tc.key, v); got != g.want {
+				t.Errorf("%s Node: %s=%q kept=%v, want %v", g.name, tc.key, tc.value, got, g.want)
+			}
+		}
+	}
+}
+
+// The tool description is free text: no Node admits it.
+func TestToolDescriptionIsNeverAdmitted(t *testing.T) {
+	clearIdentity := createDefaultConfig()
+	clearIdentity.IdentityMode = identityModeClear
+	for _, g := range []*guard{newTestGuard(t, nil), newTestGuard(t, clearIdentity)} {
+		v := valueOf(t, "Looks up the named patient's claim")
+		if keptAs(t, g, decisionSpan("gen_ai.tool.description", v), "gen_ai.tool.description", v) {
+			t.Error("gen_ai.tool.description admitted")
+		}
+	}
+}

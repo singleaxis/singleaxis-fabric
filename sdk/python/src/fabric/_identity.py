@@ -81,6 +81,12 @@ class IdentityPolicy:
             return value
         return label_pseudonym("lbl-", value, self.key) if self.key is not None else None
 
+    def minted_or_opaque(self, value: str, *, minted: bool) -> str | None:
+        """An id Fabric mints when the caller gives none (decision, execution id) as
+        emitted: the minted uuid4 as is, a caller's value as :meth:`opaque` emits it,
+        whatever its shape (a plain string is always caller input)."""
+        return value if minted else self.opaque(value)
+
     def label(self, value: str) -> str | None:
         """An operator label (step name, tool name, tag; 049 §4.2) as emitted: clear in
         the ``clear`` mode or with ``FABRIC_WIRE_LABELS=clear``, else the keyed ``lbl-``

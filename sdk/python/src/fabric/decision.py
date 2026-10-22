@@ -448,6 +448,11 @@ class Decision(AbstractContextManager["Decision"]):
         # Canonical decision identity: host-supplied verbatim, else a
         # freshly minted uuid4. Independent of ``request_id``.
         self._decision_id = decision_id or str(uuid4())
+        # 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its keyed
+        # ``lbl-`` form when pseudonymous; a minted uuid4 stays as is.
+        self._emitted_decision_id = self._identity.minted_or_opaque(
+            self._decision_id, minted=not decision_id
+        )
         # Explicit per-decision overrides for the execution correlation
         # ids. ``None`` means "not supplied" — resolved at enter time with
         # precedence: explicit > active Execution (contextvar) > config.
@@ -459,6 +464,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._workflow_name = workflow_name
         self._conversation_compacted = conversation_compacted
         self._resolved_execution_id: str | None = None
+        self._resolved_execution_id_minted = False
         self._resolved_workflow_id: str | None = None
         # Resolved attempt/retry metadata, cached on enter. There is no
         # per-decision kwarg for these (they belong to the enclosing
@@ -584,6 +590,18 @@ class Decision(AbstractContextManager["Decision"]):
 
     # -- execution-id resolution -----------------------------------------
 
+    def _opaque(self, value: str | None) -> str | None:
+        """A caller id as emitted (049 §2.9): clear, ``lbl-``, or ``None``."""
+        return None if value is None else self._identity.opaque(value)
+
+    def _emitted_execution_id(self) -> str | None:
+        """The resolved execution id as emitted: minted as is, a caller's mapped."""
+        if self._resolved_execution_id is None:
+            return None
+        return self._identity.minted_or_opaque(
+            self._resolved_execution_id, minted=self._resolved_execution_id_minted
+        )
+
     def _resolve_execution_metadata(self) -> None:
         """Resolve and cache the execution-correlation metadata by precedence.
 
@@ -612,10 +630,12 @@ class Decision(AbstractContextManager["Decision"]):
         active = active_execution()
         config = self._client.config
         execution_id = self._execution_id
+        minted = False
         if execution_id is None and active is not None:
-            execution_id = active.execution_id
+            execution_id, minted = active.execution_id, active.execution_id_minted
         if execution_id is None:
             execution_id = config.execution_id
+        self._resolved_execution_id_minted = minted
         workflow_id = self._workflow_id
         if workflow_id is None and active is not None:
             workflow_id = active.workflow_id
@@ -671,12 +691,15 @@ class Decision(AbstractContextManager["Decision"]):
         self._capture_health = capture_health(self._span.inner, self._recording_at_start)
         warn_capture_health(self._capture_health)
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
-        self._span.set_attribute(ATTR_DECISION_ID, self._decision_id)
+        if self._emitted_decision_id is not None:
+            self._span.set_attribute(ATTR_DECISION_ID, self._emitted_decision_id)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
         self._span.set_attribute("gen_ai.operation.name", "invoke_agent")
-        self._span.set_attribute("gen_ai.agent.name", self._client.agent_name)
+        # 049 §2.9 (round-2 review F4): the agent name is an agent identity, ``agt-``.
+        if (agent_name := self._identity.id("agt", self._client.agent_name)) is not None:
+            self._span.set_attribute("gen_ai.agent.name", agent_name)
         self._span.set_attribute("gen_ai.agent.id", self._client.agent_id)
         if (session := self._identity.id("sess", self._session_id)) is not None:
             self._span.set_attribute("gen_ai.conversation.id", session)
@@ -687,23 +710,26 @@ class Decision(AbstractContextManager["Decision"]):
         if self._conversation_compacted:
             self._span.set_attribute("gen_ai.conversation.compacted", True)
         self._resolve_execution_metadata()
-        if self._resolved_workflow_id is not None:
-            self._span.set_attribute(ATTR_WORKFLOW, self._resolved_workflow_id)
-        semantic_workflow_name = self._workflow_name or self._resolved_workflow_id
+        # 049 §2.9 (round-2 review F4): caller ids are their keyed ``lbl-`` form when
+        # pseudonymous (a minted execution id stays as is); the workflow name is an
+        # operator label, and falls back to the mapped workflow id.
+        workflow = self._opaque(self._resolved_workflow_id)
+        if workflow is not None:
+            self._span.set_attribute(ATTR_WORKFLOW, workflow)
+        semantic_workflow_name = (
+            self._identity.label(self._workflow_name) if self._workflow_name else workflow
+        )
         if semantic_workflow_name is not None:
             self._span.set_attribute("gen_ai.workflow.name", semantic_workflow_name)
-        if self._resolved_execution_id is not None:
-            self._span.set_attribute(ATTR_EXECUTION, self._resolved_execution_id)
+        if (execution := self._emitted_execution_id()) is not None:
+            self._span.set_attribute(ATTR_EXECUTION, execution)
         # Attempt/retry metadata, inherited from the active execution when
         # present and otherwise stamped from config (precedence:
         # active Execution > FabricConfig). Resolved in
         # ``_resolve_execution_metadata`` so the introspection properties and
         # cross-service propagation reflect exactly what was stamped here.
-        if self._resolved_execution_attempt_id is not None:
-            self._span.set_attribute(
-                ATTR_EXECUTION_ATTEMPT_ID,
-                self._resolved_execution_attempt_id,
-            )
+        if (attempt_id := self._opaque(self._resolved_execution_attempt_id)) is not None:
+            self._span.set_attribute(ATTR_EXECUTION_ATTEMPT_ID, attempt_id)
         if self._resolved_execution_attempt is not None:
             self._span.set_attribute(
                 ATTR_EXECUTION_ATTEMPT,
@@ -714,11 +740,9 @@ class Decision(AbstractContextManager["Decision"]):
                 ATTR_EXECUTION_RETRY_REASON,
                 self._resolved_execution_retry_reason,
             )
-        if self._resolved_execution_retry_previous_attempt_id is not None:
-            self._span.set_attribute(
-                ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-                self._resolved_execution_retry_previous_attempt_id,
-            )
+        previous_attempt = self._opaque(self._resolved_execution_retry_previous_attempt_id)
+        if previous_attempt is not None:
+            self._span.set_attribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previous_attempt)
         if session is not None:
             self._span.set_attribute(ATTR_SESSION, session)
         # 049 §2.9: the caller's request id (no v2 type yet) as the keyed ``lbl-`` form.
@@ -736,11 +760,9 @@ class Decision(AbstractContextManager["Decision"]):
             )
             if parent_agent is not None:
                 self._span.set_attribute(ATTR_PARENT_AGENT_ID, parent_agent)
-            if self._parent_context.decision_id is not None:
-                self._span.set_attribute(
-                    ATTR_PARENT_DECISION_ID,
-                    self._parent_context.decision_id,
-                )
+            # A carrier's decision id is caller input: ``lbl-`` when pseudonymous.
+            if (parent_decision := self._opaque(self._parent_context.decision_id)) is not None:
+                self._span.set_attribute(ATTR_PARENT_DECISION_ID, parent_decision)
         for key, value in self._extra_attrs.items():
             self._span.set_attribute(key, value)
         return self
@@ -1790,10 +1812,11 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 ATTR_REPLAY_METADATA_VERSION: REPLAY_METADATA_VERSION,
-                ATTR_REPLAY_DECISION_ID: self._decision_id,
             }
-            if self._resolved_execution_id is not None:
-                event_attrs[ATTR_REPLAY_EXECUTION_ID] = self._resolved_execution_id
+            if self._emitted_decision_id is not None:
+                event_attrs[ATTR_REPLAY_DECISION_ID] = self._emitted_decision_id
+            if (execution := self._emitted_execution_id()) is not None:
+                event_attrs[ATTR_REPLAY_EXECUTION_ID] = execution
             if checkpoint_ids:
                 event_attrs[ATTR_REPLAY_CHECKPOINT_IDS] = checkpoint_ids
             if suppressed_side_effect_ids:
@@ -2059,9 +2082,12 @@ class Decision(AbstractContextManager["Decision"]):
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
-                ATTR_SKILL_NAME: name,
-                ATTR_SKILL_VERSION: version,
             }
+            # 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+            if (skill_name := self._identity.label(name)) is not None:
+                event_attrs[ATTR_SKILL_NAME] = skill_name
+            if (skill_version := self._identity.label(version)) is not None:
+                event_attrs[ATTR_SKILL_VERSION] = skill_version
             if source is not None:
                 event_attrs[ATTR_SKILL_SOURCE] = source
             if manifest_hash is not None:

@@ -234,6 +234,7 @@ def _validate_step_metadata(
 def _stamp_step_metadata(
     span: Span,
     *,
+    identity: IdentityPolicy,
     default_step_type: str,
     step_id: str | None,
     step_type: str | None,
@@ -249,19 +250,23 @@ def _stamp_step_metadata(
     that opt out stay byte-identical to the pre-taxonomy emission.
     """
     span.set_attribute(FABRIC_STEP_TYPE, step_type or default_step_type)
-    if step_id is not None:
-        span.set_attribute(FABRIC_STEP_ID, step_id)
-    if step_attempt_id is not None:
-        span.set_attribute(FABRIC_STEP_ATTEMPT_ID, step_attempt_id)
+    # 049 §2.9 (round-2 review F4): the caller's step and attempt ids are their keyed
+    # ``lbl-`` form when pseudonymous, omitted without a key.
+    for key, value in (
+        (FABRIC_STEP_ID, step_id),
+        (FABRIC_STEP_ATTEMPT_ID, step_attempt_id),
+    ):
+        if value is not None and (emitted := identity.opaque(value)) is not None:
+            span.set_attribute(key, emitted)
     if step_attempt is not None:
         span.set_attribute(FABRIC_STEP_ATTEMPT, step_attempt)
     if step_retry_reason is not None:
         span.set_attribute(FABRIC_STEP_RETRY_REASON, step_retry_reason)
-    if step_retry_previous_attempt_id is not None:
-        span.set_attribute(
-            FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID,
-            step_retry_previous_attempt_id,
-        )
+    if (
+        step_retry_previous_attempt_id is not None
+        and (previous := identity.opaque(step_retry_previous_attempt_id)) is not None
+    ):
+        span.set_attribute(FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID, previous)
 
 
 class LLMCall(AbstractContextManager["LLMCall"]):
@@ -432,6 +437,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         # "llm_call"); id + attempt/retry metadata only when supplied.
         _stamp_step_metadata(
             self._span,
+            identity=self._identity,
             default_step_type=_DEFAULT_LLM_STEP_TYPE,
             step_id=self._step_id,
             step_type=self._step_type,
@@ -468,10 +474,17 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self._span.set_attribute(GEN_AI_CONVERSATION_ID, self._conversation_id)
         if self._conversation_compacted:
             self._span.set_attribute(GEN_AI_CONVERSATION_COMPACTED, True)
-        if self._prompt_name is not None:
-            self._span.set_attribute(GEN_AI_PROMPT_NAME, self._prompt_name)
-        if self._prompt_version is not None:
-            self._span.set_attribute(GEN_AI_PROMPT_VERSION, self._prompt_version)
+        # 049 §4.2 (round-2 review F4): the prompt name and version are operator labels.
+        if (
+            self._prompt_name is not None
+            and (prompt_name := self._identity.label(self._prompt_name)) is not None
+        ):
+            self._span.set_attribute(GEN_AI_PROMPT_NAME, prompt_name)
+        if (
+            self._prompt_version is not None
+            and (prompt_version := self._identity.label(self._prompt_version)) is not None
+        ):
+            self._span.set_attribute(GEN_AI_PROMPT_VERSION, prompt_version)
         if self._capture_content:
             if self._system_instructions is not None:
                 self._span.set_attribute(
@@ -994,6 +1007,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         # 049 §2.9: how caller ids leave the process (the decision's policy; standalone,
         # FABRIC_IDENTITY_MODE / FABRIC_WIRE_ID_KEY as a decision without one resolves it).
         self._identity = identity or IdentityPolicy.resolve(None, None, os.environ)
+        self._emitted_agent_name = (
+            None if agent_name is None else self._identity.id("agt", agent_name)
+        )
         # 049 §7.5: whether a role retains the original, so its digest may be emitted
         # (the decision's rule; standalone, only the clear identity mode keeps digests).
         self._retains_original = retains_original or (lambda _role: self._identity.clear)
@@ -1039,14 +1055,17 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if self._tool_type is not None:
             self._span.set_attribute(GEN_AI_TOOL_TYPE, self._tool_type)
             self._span.set_attribute(FABRIC_TOOL_KIND, self._tool_type)
-        if self._description is not None:
+        # Round-2 review F4: the description is free text with no identity value, kept
+        # only in the clear mode; the agent name is an agent identity (``agt-``).
+        if self._description is not None and self._identity.clear:
             self._span.set_attribute(GEN_AI_TOOL_DESCRIPTION, self._description)
-        if self._agent_name is not None:
-            self._span.set_attribute("gen_ai.agent.name", self._agent_name)
+        if self._emitted_agent_name is not None:
+            self._span.set_attribute("gen_ai.agent.name", self._emitted_agent_name)
         # Step taxonomy: ``fabric.step.type`` always (defaults to
         # "tool_call"); id + attempt/retry metadata only when supplied.
         _stamp_step_metadata(
             self._span,
+            identity=self._identity,
             default_step_type=_DEFAULT_TOOL_STEP_TYPE,
             step_id=self._step_id,
             step_type=self._step_type,
@@ -1091,8 +1110,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 attrs[GEN_AI_TOOL_NAME] = self._emitted_name
             if self._tool_type is not None:
                 attrs[GEN_AI_TOOL_TYPE] = self._tool_type
-            if self._agent_name is not None:
-                attrs["gen_ai.agent.name"] = self._agent_name
+            if self._emitted_agent_name is not None:
+                attrs["gen_ai.agent.name"] = self._emitted_agent_name
             if exc is not None:
                 attrs[ERROR_TYPE] = type(exc).__name__
             try:  # fail-open (049 §7.1)

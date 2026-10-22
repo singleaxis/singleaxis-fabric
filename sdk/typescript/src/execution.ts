@@ -66,6 +66,7 @@ import {
 } from "./attributes.js";
 import type { DecisionClientIdentity } from "./decision.js";
 import { randomUuid } from "./hash.js";
+import { IdentityPolicy } from "./identity.js";
 
 /**
  * The execution-correlation metadata published while an execution's `fn`
@@ -75,6 +76,8 @@ import { randomUuid } from "./hash.js";
  */
 export interface ActiveExecution {
   executionId: string;
+  /** Fabric minted the id (uuid4): emitted as is in every identity mode. */
+  executionIdMinted?: boolean;
   workflowId?: string;
   executionAttemptId?: string;
   executionAttempt?: number;
@@ -191,6 +194,7 @@ export function runExecution<T>(
 ): T {
   const active: ActiveExecution = {
     executionId: options.executionId ?? randomUuid(),
+    executionIdMinted: options.executionId === undefined,
     workflowId: options.workflowId ?? identity.workflowId,
     executionAttemptId: options.executionAttemptId ?? identity.executionAttemptId,
     executionAttempt: options.executionAttempt ?? identity.executionAttempt,
@@ -204,24 +208,30 @@ export function runExecution<T>(
   span.setAttribute(ATTR_TENANT, identity.tenantId);
   span.setAttribute(ATTR_AGENT, identity.agentId);
   span.setAttribute(ATTR_PROFILE, identity.profile);
-  span.setAttribute(ATTR_EXECUTION, active.executionId);
-  if (active.workflowId !== undefined) {
-    span.setAttribute(ATTR_WORKFLOW, active.workflowId);
-  }
-  if (active.executionAttemptId !== undefined) {
-    span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, active.executionAttemptId);
-  }
+  // 049 §2.9 (round-2 review F4): caller ids are their keyed `lbl-` form when
+  // pseudonymous (omitted without a key); a minted execution id stays as is.
+  const ids =
+    identity.identityPolicy ??
+    IdentityPolicy.resolve(undefined, undefined, typeof process !== "undefined" ? process.env : {});
+  const executionId = ids.mintedOrOpaque(active.executionId, active.executionIdMinted === true);
+  if (executionId !== undefined) span.setAttribute(ATTR_EXECUTION, executionId);
+  const workflowId = active.workflowId !== undefined ? ids.opaque(active.workflowId) : undefined;
+  if (workflowId !== undefined) span.setAttribute(ATTR_WORKFLOW, workflowId);
+  const attemptId =
+    active.executionAttemptId !== undefined ? ids.opaque(active.executionAttemptId) : undefined;
+  if (attemptId !== undefined) span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, attemptId);
   if (active.executionAttempt !== undefined) {
     span.setAttribute(ATTR_EXECUTION_ATTEMPT, active.executionAttempt);
   }
   if (active.executionRetryReason !== undefined) {
     span.setAttribute(ATTR_EXECUTION_RETRY_REASON, active.executionRetryReason);
   }
-  if (active.executionRetryPreviousAttemptId !== undefined) {
-    span.setAttribute(
-      ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-      active.executionRetryPreviousAttemptId,
-    );
+  const previousAttempt =
+    active.executionRetryPreviousAttemptId !== undefined
+      ? ids.opaque(active.executionRetryPreviousAttemptId)
+      : undefined;
+  if (previousAttempt !== undefined) {
+    span.setAttribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previousAttempt);
   }
   // Caller extras sit on top of the client-level `FabricConfig.extra`
   // defaults (explicit per-execution keys win on collision). Reserved

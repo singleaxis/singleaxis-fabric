@@ -27,6 +27,15 @@ var decisionLineIDKeys = toSet(
 	"fabric.retrieval.source_document_ids",
 	"fabric.request_id",
 	"gen_ai.data_source.id",
+	// Round-2 review F4: the caller's workflow, attempt and step ids, and a
+	// parent decision id (a carrier's value is caller input).
+	"fabric.workflow_id",
+	"fabric.execution.attempt_id",
+	"fabric.execution.retry.previous_attempt_id",
+	"fabric.step.id",
+	"fabric.step.attempt_id",
+	"fabric.step.retry.previous_attempt_id",
+	"fabric.parent_decision_id",
 )
 
 // decisionLineProviderKeys are provider correlation ids (spec 049 §2.9 rule
@@ -54,13 +63,32 @@ var decisionLineLabelKeys = toSet(
 	"fabric.side_effect.target_system",
 	"fabric.side_effect.operation",
 	"fabric.side_effect_systems",
+	// Round-2 review F4: workflow, prompt and skill names and versions.
+	"gen_ai.workflow.name",
+	"gen_ai.prompt.name",
+	"gen_ai.prompt.version",
+	"fabric.skill.name",
+	"fabric.skill.version",
 )
 
+// decisionLineAgentKeys are agent identities: the keyed v2 agt- + 32 hex
+// (round-2 review F4).
+var decisionLineAgentKeys = toSet(
+	"gen_ai.agent.name",
+)
+
+var agentPseudonymPattern = pseudonymPattern("agt")
+
 // decisionLineMintedOrIDKeys carry an id Fabric minted (uuid4, as is) or a
-// caller's id (lbl- + 32 hex): side-effect ids and the replay list of them.
+// caller's id (lbl- + 32 hex): side-effect ids and the replay list of them,
+// and (round-2 review F4) execution and decision ids, also in replay metadata.
 var decisionLineMintedOrIDKeys = toSet(
 	"fabric.side_effect.side_effect_id",
 	"fabric.replay.suppressed_side_effect_ids",
+	"fabric.execution_id",
+	"fabric.decision_id",
+	"fabric.replay.execution_id",
+	"fabric.replay.decision_id",
 )
 
 var mintedUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -89,7 +117,8 @@ func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, 
 	_, label := decisionLineLabelKeys[key]
 	_, provider := decisionLineProviderKeys[key]
 	_, minted := decisionLineMintedOrIDKeys[key]
-	if !id && !label && !provider && !minted {
+	_, agent := decisionLineAgentKeys[key]
+	if !id && !label && !provider && !minted && !agent {
 		return false, false
 	}
 	if g.cfg.IdentityMode == identityModeClear || label && g.clearLabels() {
@@ -97,6 +126,9 @@ func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, 
 	}
 	if provider {
 		return matches(providerPseudonymPattern)(value), true
+	}
+	if agent {
+		return matches(agentPseudonymPattern)(value), true
 	}
 	if minted {
 		item := func(v pcommon.Value) bool {
