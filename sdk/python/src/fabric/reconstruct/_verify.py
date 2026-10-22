@@ -20,33 +20,48 @@ import hashlib
 import os
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from collections.abc import Collection, Iterable, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
+from fabric import _seal
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
 from fabric._sequence import encode_opaque_id
 from fabric._version import __version__
+from fabric.reconstruct._graph import RunGraph, SegmentNode, build_run_graphs
 from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
+    A_OBJECT_IDS,
+    A_REQUEST_SHA256,
+    A_RESPONSE_SHA256,
+    A_STEP_ID,
     ExchangeObs,
     HeartbeatObs,
     LossObs,
     MalformedMarkerObs,
+    ManifestObs,
+    Observation,
     ReconstructInputError,
+    RecordObs,
+    SegmentSealObs,
     SpanFormat,
+    digest_value,
     list_span_inputs,
     object_id_from_ref,
     observe,
+    opaque_id,
+    prefixed_digest,
     read_span_file,
+    uuid4_value,
 )
 from fabric.reconstruct._objects import ObjectResult, StoreReader
 from fabric.reconstruct._report import (
     SCHEMA_VERSION,
     Check,
     Gap,
+    GapType,
     format_datetime,
     format_ns,
     gap_counts,
@@ -78,6 +93,9 @@ _RESPONSE_EXPECTED = frozenset({"complete", "closed_early", "abandoned"})
 # stretch of a source individually; a longer stretch is summarized per reason, so the
 # report grows with runs + distinct ranges, never runs x ranges (spec 047 §9 step 3).
 _LISTED_SEGMENTS = 16
+# Spec 050 §3.12 defaults: --max-clock-uncertainty, and the record cap of a records span.
+DEFAULT_MAX_CLOCK_UNCERTAINTY_NS = 300_000_000_000
+_MAX_RECORD_OBJECTS = 8
 
 
 # --------------------------------------------------------------------------
@@ -118,6 +136,13 @@ class _Source:
     # window holding one can be complete, whichever run the claims name.
     conflicted: set[int] = field(default_factory=set)
     conflicted_sorted: list[int] = field(default_factory=list)
+    # Spec 050 §3.12: the manifests seen (one row per distinct document), epochs declared
+    # unsealed, and sequence windows without a trustworthy manifest (rule R1) as
+    # ``(first, last or None for "to the top", reason)``.
+    manifests: list[ManifestObs] = field(default_factory=list)
+    unsealed_epochs: set[int] = field(default_factory=set)
+    manifestless: list[tuple[int, int | None, str]] = field(default_factory=list)
+    manifest_conflict: bool = False
 
     def finalize(self) -> None:
         self.top = max(
@@ -167,7 +192,7 @@ class _Source:
             return "activity_after_final_heartbeat"
         return None
 
-    def to_json(self, exchanges: int) -> dict[str, Any]:
+    def to_json(self, exchanges: int, *, p1: bool = False) -> dict[str, Any]:
         out: dict[str, Any] = {
             "source_id": self.key[0],
             "source_epoch": self.key[1],
@@ -181,13 +206,21 @@ class _Source:
                     "last_sequence": loss.last_sequence,
                     "count": loss.count,
                 }
+                | ({} if loss.segment_id is None else {"segment_id": loss.segment_id})
                 for loss in sorted(
-                    self.losses, key=lambda x: (x.first_sequence, x.last_sequence, x.reason)
+                    self.losses,
+                    key=lambda x: (x.first_sequence, x.last_sequence, x.reason, x.segment_id or ""),
                 )
             ],
         }
         if self.final is not None:
             out["final_heartbeat_sequence"] = self.final
+        if p1:  # spec 050 §3.12; absent for a pre-P1 capture
+            out["manifests"] = [
+                {"manifest_id": m.manifest_id, "sha256": m.sha256, "manifest_seq": m.manifest_seq}
+                for m in self.manifests
+            ]
+            out["unsealed_epochs"] = sorted(self.unsealed_epochs)
         return out
 
 
@@ -210,19 +243,23 @@ def _segments(first: int, last: int, losses: Sequence[LossObs]) -> list[Segment]
 
 
 ScopeState = Literal["closed", "open", "conflict"]
-Marker = tuple[SourceKey, str, int]  # (source, run id, last_sequence)
+# (source, run id, last_sequence, segment id): a P1 marker names its segment (spec 050).
+Marker = tuple[SourceKey, str, int, str | None]
 
 
 @dataclass(slots=True)
 class _Scope:
     """One ``fabric.wire.run()`` block entry, keyed by its scope id (spec 048 §6).
 
-    Markers pair by scope id only, never by run id or parity: exactly one
-    distinct ``run_start`` and one ``run_end`` on one source epoch, naming
-    the same run, with ``a <= b``, close the scope over ``[a + 1, b]``. A
-    missing marker leaves it ``open``; anything else is a ``conflict``.
-    ``problem`` is ``None`` only for a closed scope whose tagged exchanges
-    (of any run) all carry its run id and lie on its source inside its
+    Markers pair by scope id only, never by run id or parity: the ``run_start``
+    markers of the scope and exactly one distinct ``run_end``, on one source
+    epoch, naming the same run, with ``a <= b``, close the scope over
+    ``[a + 1, b]``. A scope has one ``run_start``, or (spec 050 §9 delta 1) one
+    per segment when segments open inside the block: continuation markers,
+    each naming a distinct segment, whose lowest ``last_sequence`` is ``a``.
+    A missing marker leaves it ``open``; anything else is a ``conflict``.
+    ``problem`` is ``None`` only for a closed scope whose tagged exchanges and
+    records (of any run) all carry its run id and lie on its source inside its
     window.
     """
 
@@ -230,16 +267,30 @@ class _Scope:
     starts: set[Marker] = field(default_factory=set)
     ends: set[Marker] = field(default_factory=set)
     exchanges: list[ExchangeObs] = field(default_factory=list)
+    records: list[RecordObs] = field(default_factory=list)
     state: ScopeState = "open"
     key: SourceKey = ("", 0)
     start: int | None = None
     end: int | None = None
     problem: str | None = None
 
+    def _paired_start(self) -> tuple[SourceKey, str, int] | None:
+        """The scope's entry ``(source, run id, a)`` when its starts pair (delta 1)."""
+        if not self.starts:
+            return None
+        sources = {(key, run_id) for key, run_id, _, _ in self.starts}
+        segments = [segment for *_, segment in self.starts]
+        continuation = None not in segments and len(set(segments)) == len(segments)
+        if len(sources) != 1 or (len(self.starts) > 1 and not continuation):
+            return None
+        ((key, run_id),) = sources
+        return key, run_id, min(last for _, _, last, _ in self.starts)
+
     def finalize(self) -> None:
-        if len(self.starts) == 1 and len(self.ends) == 1:
-            ((start_key, run_id, low),) = self.starts
-            ((end_key, end_run, high),) = self.ends
+        paired = self._paired_start()
+        if paired is not None and len(self.ends) == 1:
+            start_key, run_id, low = paired
+            ((end_key, end_run, high, _),) = self.ends
             if start_key == end_key and run_id == end_run and low <= high:
                 self.state, self.key, self.start, self.end = "closed", start_key, low, high
                 if any(
@@ -249,16 +300,30 @@ class _Scope:
                     for exchange in self.exchanges
                 ):
                     self.problem = "exchange_outside_run_markers"
+                elif any(
+                    record.run_id != run_id
+                    or record.source != start_key
+                    or not low < record.source_sequence <= high
+                    for record in self.records
+                ):
+                    self.problem = "record_outside_run_markers"
                 return
-        if (self.starts and self.ends) or len(self.starts) > 1 or len(self.ends) > 1:
+        if (self.starts and self.ends) or (self.starts and paired is None) or len(self.ends) > 1:
             self.state, self.problem = "conflict", "scope_conflict"
         else:
             self.state, self.problem = "open", "run_not_closed"
         markers = self.starts | self.ends
-        self.key = min([key for key, _, _ in markers] + [x.source for x in self.exchanges])
-        starts = {last for key, _, last in self.starts if key == self.key}
-        ends = {last for key, _, last in self.ends if key == self.key}
-        self.start = next(iter(starts)) if len(starts) == 1 else None
+        self.key = min(
+            [key for key, *_ in markers]
+            + [x.source for x in self.exchanges]
+            + [x.source for x in self.records]
+        )
+        starts = {last for key, _, last, _ in self.starts if key == self.key}
+        ends = {last for key, _, last, _ in self.ends if key == self.key}
+        if paired is not None and paired[0] == self.key:
+            self.start = paired[2]
+        else:
+            self.start = next(iter(starts)) if len(starts) == 1 else None
         self.end = next(iter(ends)) if len(ends) == 1 else None
 
     def to_json(self, exchanges: int) -> dict[str, Any]:
@@ -293,6 +358,10 @@ def reconstruct(
     wait_for_objects_s: float = 0.0,
     profile: Profile | None = None,
     trusted_source: bool = False,
+    evaluated_at: datetime | None = None,
+    clock_uncertainty_ns: int = 0,
+    max_clock_uncertainty_ns: int = DEFAULT_MAX_CLOCK_UNCERTAINTY_NS,
+    graphs_out: list[RunGraph] | None = None,
 ) -> dict[str, Any]:
     """Reconstruct runs from span files and an optional customer store.
 
@@ -317,8 +386,54 @@ def reconstruct(
     configured store. ``profile`` ``None`` means ``production`` when any span carries
     the stamp (only a bound Node writes it), else ``local``. A failed check is a
     ``source_unauthenticated`` gap with effect ``unverified``.
+
+    Run structure (spec 050 §3.12): records-input records fill their source's sequence
+    accounting; ``segment_seal`` markers are recomputed from the records, exchanges and
+    segment-attributed losses naming the segment; manifests are chained per source epoch.
+    ``evaluated_at`` (default ``generated_at``, else now) is when run states and deadlines
+    are evaluated; ``clock_uncertainty_ns`` is added to each segment's declared clock
+    uncertainty and ``max_clock_uncertainty_ns`` bounds it (the segment graph's inputs).
+    ``graphs_out``, when given, receives the per-run segment graphs (the projection's input).
     Raises :class:`ReconstructInputError` for unusable input or options.
     """
+
+    document, graphs = reconstruct_with_graphs(
+        span_paths,
+        store=store,
+        tenant_id=tenant_id,
+        run_ids=run_ids,
+        generated_at=generated_at,
+        model_allowlist=model_allowlist,
+        id_key=id_key,
+        wait_for_objects_s=wait_for_objects_s,
+        profile=profile,
+        trusted_source=trusted_source,
+        evaluated_at=evaluated_at,
+        clock_uncertainty_ns=clock_uncertainty_ns,
+        max_clock_uncertainty_ns=max_clock_uncertainty_ns,
+    )
+    if graphs_out is not None:
+        graphs_out.extend(graphs)
+    return document
+
+
+def reconstruct_with_graphs(
+    span_paths: Sequence[str | os.PathLike[str]],
+    *,
+    store: Any | None = None,
+    tenant_id: str | None = None,
+    run_ids: Collection[str] | None = None,
+    generated_at: datetime | None = None,
+    model_allowlist: Sequence[str] = (),
+    id_key: bytes | None = None,
+    wait_for_objects_s: float = 0.0,
+    profile: Profile | None = None,
+    trusted_source: bool = False,
+    evaluated_at: datetime | None = None,
+    clock_uncertainty_ns: int = 0,
+    max_clock_uncertainty_ns: int = DEFAULT_MAX_CLOCK_UNCERTAINTY_NS,
+) -> tuple[dict[str, Any], list[RunGraph]]:
+    """:func:`reconstruct`, plus the per-run segment graphs the step projection reads."""
 
     if not list(span_paths):
         raise ReconstructInputError("at least one span file is required")
@@ -331,8 +446,13 @@ def reconstruct(
     )
     if profile not in (None, "local", "production"):
         raise ReconstructInputError("profile must be local or production")
+    if clock_uncertainty_ns < 0 or max_clock_uncertainty_ns < 0:
+        raise ReconstructInputError("clock uncertainties are durations of at least 0")
+    now = datetime.now(tz=UTC)
+    generated = generated_at or now
+    evaluated = evaluated_at or generated
     span_files: list[dict[str, Any]] = []
-    verifier = _Verifier(reader, allowlist, id_key)
+    verifier = _Verifier(reader, allowlist, id_key, store=store if reader is not None else None)
     for index, path in enumerate(paths, start=1):
         fmt, records = read_span_file(path, label=f"span file {index}")
         span_files.append(_span_file_entry(path, fmt, len(records)))
@@ -349,28 +469,38 @@ def reconstruct(
     verifier.production = (
         profile == "production" if profile is not None else verifier.stamp_observed
     )
+    graphs = build_run_graphs(
+        verifier.segment_nodes(),
+        evaluated_at=evaluated,
+        clock_uncertainty_ns=clock_uncertainty_ns,
+        max_clock_uncertainty_ns=max_clock_uncertainty_ns,
+    )
+    verifier.graphs = {graph.run_id: graph for graph in graphs}
+    verifier.evaluated_at = format_datetime(evaluated)
     inputs: dict[str, Any] = {
         "span_files": span_files,
         "telemetry_origin": "trusted_readback" if trusted_source else "imported",
         "profile": "production" if verifier.production else "local",
+        "evaluated_at": verifier.evaluated_at,
     }
     if reader is not None:
         tenant = report_tenant_id(reader.tenant_id, id_key)
         inputs["store"] = {"kind": reader.kind, "tenant_id": tenant}
     wanted = None if run_ids is None else {report_run_id(value, id_key) for value in run_ids}
     runs, scopes = verifier.build_runs(wanted)
-    return {
+    document = {
         "schema_version": SCHEMA_VERSION,
-        "generated_at": format_datetime(generated_at or datetime.now(tz=UTC)),
+        "generated_at": format_datetime(generated),
         "verifier": {"name": "fabric.reconstruct", "version": __version__},
         "inputs": inputs,
         "sources": [
-            verifier.sources[key].to_json(verifier.exchange_count[key])
+            verifier.sources[key].to_json(verifier.exchange_count[key], p1=verifier.p1)
             for key in sorted(verifier.sources)
         ],
         "runs": runs,
         "scopes": scopes,
     }
+    return document, graphs
 
 
 def _allowlist(entries: Sequence[str]) -> tuple[str, ...]:
@@ -407,15 +537,116 @@ def _span_file_entry(path: str | os.PathLike[str], fmt: SpanFormat, count: int) 
 
 
 # --------------------------------------------------------------------------
+# Segments (spec 050 §3.12)
+# --------------------------------------------------------------------------
+
+SegmentMember = ExchangeObs | RecordObs
+SegmentState = Literal["sealed", "unsealed", "conflict"]
+SealCheck = Literal["verified", "mismatch", "unverified", "unsealed", "conflict"]
+_DESCRIPTOR_ONLY = frozenset({"not_captured", "unsupported"})
+
+
+@dataclass(slots=True)
+class _Segment:
+    """Everything the record names about one segment: its run markers, its seal(s), the
+    records and exchanges carrying its id, and the losses attributed to it (R3)."""
+
+    segment_id: str
+    starts: set[HeartbeatObs] = field(default_factory=set)
+    ends: set[HeartbeatObs] = field(default_factory=set)
+    seals: set[SegmentSealObs] = field(default_factory=set)
+    members: list[SegmentMember] = field(default_factory=list)
+    losses: set[LossObs] = field(default_factory=set)
+    key: SourceKey = ("", 0)
+    state: SegmentState = "unsealed"
+    check: SealCheck = "unsealed"
+    gaps: list[Gap] = field(default_factory=list)
+
+    def keys(self) -> set[SourceKey]:
+        keys = {(m.source_id, m.source_epoch) for m in self.starts | self.ends}
+        keys |= {seal.source for seal in self.seals} | {m.source for m in self.members}
+        return keys | {(loss.source_id, loss.source_epoch) for loss in self.losses}
+
+    @property
+    def seal(self) -> SegmentSealObs | None:
+        return next(iter(self.seals)) if len(self.seals) == 1 else None
+
+    @property
+    def run_ids(self) -> set[str]:
+        ids = {m.run_id for m in self.starts | self.ends if m.run_id is not None}
+        ids |= {seal.run_id for seal in self.seals if seal.run_id is not None}
+        return ids | {m.run_id for m in self.members if m.run_id is not None}
+
+    @property
+    def scope_ids(self) -> tuple[str, ...]:
+        ids = {m.scope_id for m in self.starts | self.ends if m.scope_id is not None}
+        ids |= {seal.scope_id for seal in self.seals if seal.scope_id is not None}
+        ids |= {m.scope_id for m in self.members if m.scope_id is not None}
+        return tuple(sorted(ids))
+
+    def opening(self) -> HeartbeatObs | None:
+        """The ``run_start`` that opened the segment: the earliest one naming predecessors
+        (an inner block's start in the same segment names none), else the earliest."""
+        starts = sorted(self.starts, key=lambda m: (m.last_sequence, m.scope_id or ""))
+        named = [m for m in starts if m.info is not None and m.info.predecessors]
+        chosen = named or starts
+        return chosen[0] if chosen else None
+
+    def gap(self, gap_type: GapType, effect: Literal["partial", "unverified"], **kw: Any) -> None:
+        self.gaps.append(
+            Gap(gap_type, effect, source_id=self.key[0], source_epoch=self.key[1],
+                segment_id=self.segment_id, **kw)
+        )  # fmt: skip
+
+    def to_json(self) -> dict[str, Any]:
+        """The run's ``segments[]`` entry (the step projection's segment shape)."""
+        opening, seal = self.opening(), self.seal
+        info = opening.info if opening is not None else None
+        out: dict[str, Any] = {
+            "segment_id": self.segment_id,
+            "source_id": self.key[0],
+            "source_epoch": self.key[1],
+        }
+        if seal is not None:
+            out["last_sequence"] = seal.seal_last_sequence
+            if seal.manifest_digest is not None:
+                out["manifest_digest"] = seal.manifest_digest
+            if seal.terminal is not None:
+                out["terminal"] = seal.terminal
+        out["predecessors"] = list(info.predecessors) if info is not None else []
+        out["state"] = self.state
+        if seal is not None:
+            out["seal_digest"] = seal.seal_digest
+            if seal.branch_ids:
+                out["branch_ids"] = list(seal.branch_ids)
+        if info is not None and info.declared_branches:
+            out["declared_branches"] = list(info.declared_branches)
+        if info is not None and info.branch_ids:
+            out["consumes_branch_ids"] = list(info.branch_ids)
+        resumable = seal.resumable if seal is not None else None
+        if resumable is None and info is not None:
+            resumable = info.resumable
+        if resumable is not None:
+            out["resumable"] = resumable
+        return out
+
+
+# --------------------------------------------------------------------------
 # Collection
 # --------------------------------------------------------------------------
 
 
 class _Verifier:
     def __init__(
-        self, reader: StoreReader | None, allowlist: Sequence[str] = (), key: bytes | None = None
+        self,
+        reader: StoreReader | None,
+        allowlist: Sequence[str] = (),
+        key: bytes | None = None,
+        *,
+        store: Any | None = None,
     ) -> None:
         self.reader = reader
+        self.store = store  # the duck-typed store behind ``reader`` (record descriptors)
         self.allowlist = tuple(allowlist)
         self.key = key
         # Every distinct observation per exchange id, in input order. Identical
@@ -440,6 +671,23 @@ class _Verifier:
         self.stamp_observed = False
         self.production = False
         self.trusted_source = False
+        # Spec 050 §3.12: records, segments, seals and manifests.
+        self.records: set[RecordObs] = set()
+        self.run_records: dict[str, list[RecordObs]] = defaultdict(list)
+        self.segments: dict[str, _Segment] = {}
+        self._seals: set[SegmentSealObs] = set()
+        self.manifest_obs: dict[SourceKey, set[ManifestObs]] = defaultdict(set)
+        self.manifest_claims: dict[SourceKey, int] = {}  # highest manifest_seq a marker names
+        # (run id, source, manifest digest, scope id): a run marker or seal names a manifest.
+        self.manifest_refs: set[tuple[str, SourceKey, str, str | None]] = set()
+        self.periodic: set[SourceKey] = set()
+        self.unsealed: dict[SourceKey, str] = {}  # epoch -> why it is unsealed
+        self.run_gaps: dict[str, list[tuple[Gap, tuple[str, ...]]]] = defaultdict(list)
+        self.run_segments: dict[str, list[_Segment]] = defaultdict(list)
+        self.graphs: dict[str, RunGraph] = {}
+        self.evaluated_at: str | None = None
+        self.p1 = False
+        self._descriptors: dict[str, tuple[str | None, bool]] = {}
 
     def _scope(self, scope_id: str, run_id: str) -> _Scope:
         self.run_scopes[run_id].add(scope_id)
@@ -452,11 +700,15 @@ class _Verifier:
             self.sources[key] = _Source(key)
         return self.sources[key]
 
-    def _labels(
-        self, obs: ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None
-    ) -> ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None:
+    def _segment(self, segment_id: str) -> _Segment:
+        if segment_id not in self.segments:
+            self.segments[segment_id] = _Segment(segment_id)
+        return self.segments[segment_id]
+
+    def _labels(self, obs: Observation | None) -> Observation | None:
         """Source and run ids in their report form (decision J1), before any accounting, so
-        legacy clear and pseudonymous records of one source or run are one."""
+        legacy clear and pseudonymous records of one source or run are one. A predecessor
+        entry's source id is projected the same way, so it names the segment's source."""
         if obs is None:
             return None
         if isinstance(obs, MalformedMarkerObs):
@@ -466,11 +718,24 @@ class _Verifier:
         run_id = getattr(obs, "run_id", None)
         if run_id is not None:
             changes["run_id"] = report_run_id(run_id, self.key)
+        if isinstance(obs, HeartbeatObs) and obs.info is not None and obs.info.predecessors:
+            changes["info"] = dataclasses.replace(
+                obs.info, predecessors=tuple(map(self._predecessor, obs.info.predecessors))
+            )
         return dataclasses.replace(obs, **changes)
 
-    def _stamp(self, obs: ExchangeObs | LossObs | HeartbeatObs) -> None:
+    def _predecessor(self, entry: str) -> str:
+        if entry == "none":
+            return entry
+        parts = entry.split("/")
+        parts[1] = report_source_id(parts[1], self.key)
+        return "/".join(parts)
+
+    def _stamp(self, obs: Observation) -> None:
         """Note whether ``obs`` carries the Node's stamp (049 §7.9); any unstamped copy of a
         record counts, whichever copy the accounting keeps."""
+        if isinstance(obs, MalformedMarkerObs):
+            return
         if obs.authenticated:
             self.stamp_observed = True
         elif isinstance(obs, ExchangeObs):
@@ -478,44 +743,102 @@ class _Verifier:
         else:
             self.unstamped_sources.add((obs.source_id, obs.source_epoch))
 
-    def add(self, obs: ExchangeObs | LossObs | HeartbeatObs | MalformedMarkerObs | None) -> None:
+    def _claim_manifest(self, key: SourceKey, manifest_seq: int | None) -> None:
+        if manifest_seq is not None:
+            self.manifest_claims[key] = max(manifest_seq, self.manifest_claims.get(key, -1))
+
+    def add(self, obs: Observation | None) -> None:
         obs = self._labels(obs)
-        if obs is not None and not isinstance(obs, MalformedMarkerObs):
+        if obs is not None:
             self._stamp(obs)
         if isinstance(obs, MalformedMarkerObs):
             self.malformed_scopes.add(obs.scope_id)
             self.add(obs.heartbeat)
         elif isinstance(obs, ExchangeObs):
-            seen = self.observations.setdefault(obs.exchange_id, [])
-            if obs in seen:
-                return  # an identical retry (at-least-once delivery)
-            seen.append(obs)
-            if len(seen) > 1:
-                self.conflicts.add(obs.exchange_id)
-            self._source(obs.source).sequences.add(obs.source_sequence)
-            if (obs.exchange_id, obs.source) not in self._counted:
-                self._counted.add((obs.exchange_id, obs.source))
-                self.exchange_count[obs.source] += 1
-            self.claims[(obs.source, obs.source_sequence)].add(obs.exchange_id)
-            if obs.scope_id is not None:
-                self._scope(obs.scope_id, obs.run_id).exchanges.append(obs)
+            self._add_exchange(obs)
+        elif isinstance(obs, RecordObs):
+            self._add_record(obs)
         elif isinstance(obs, LossObs):
             self._source((obs.source_id, obs.source_epoch)).losses.add(obs)
-        elif isinstance(obs, HeartbeatObs) and obs not in self._heartbeats:
-            # Deduplicated by logical identity (source, epoch, kind, run id,
-            # scope id, last sequence), never by span id: a retried export
-            # re-sends the same record under a new span id and must not count
-            # twice.
-            self._heartbeats.add(obs)
-            key = (obs.source_id, obs.source_epoch)
-            source = self._source(key)
-            source.heartbeat = max(source.heartbeat, obs.last_sequence)
-            if obs.kind == "final":
-                source.final = max(obs.last_sequence, -1 if source.final is None else source.final)
-            elif obs.scope_id is not None and obs.run_id is not None:
-                scope = self._scope(obs.scope_id, obs.run_id)
-                marks = scope.starts if obs.kind == "run_start" else scope.ends
-                marks.add((key, obs.run_id, obs.last_sequence))
+            if obs.segment_id is not None:
+                self._segment(obs.segment_id).losses.add(obs)
+        elif isinstance(obs, SegmentSealObs):
+            self._add_seal(obs)
+        elif isinstance(obs, ManifestObs):
+            self.manifest_obs[obs.source].add(obs)
+            source = self._source(obs.source)
+            # A manifest's after_source_sequence was allocated before it was written.
+            source.heartbeat = max(source.heartbeat, obs.after_source_sequence)
+        elif isinstance(obs, HeartbeatObs):
+            self._add_heartbeat(obs)
+
+    def _add_exchange(self, obs: ExchangeObs) -> None:
+        seen = self.observations.setdefault(obs.exchange_id, [])
+        if obs in seen:
+            return  # an identical retry (at-least-once delivery)
+        seen.append(obs)
+        if len(seen) > 1:
+            self.conflicts.add(obs.exchange_id)
+        self._source(obs.source).sequences.add(obs.source_sequence)
+        if (obs.exchange_id, obs.source) not in self._counted:
+            self._counted.add((obs.exchange_id, obs.source))
+            self.exchange_count[obs.source] += 1
+        self.claims[(obs.source, obs.source_sequence)].add(obs.exchange_id)
+        if obs.scope_id is not None:
+            self._scope(obs.scope_id, obs.run_id).exchanges.append(obs)
+        if obs.segment_id is not None:
+            self._segment(obs.segment_id).members.append(obs)
+
+    def _add_record(self, obs: RecordObs) -> None:
+        """A records-input record fills its position as an exchange does (spec 050 §3.12);
+        a differing record (or an exchange) at the same position is a conflicting claim."""
+        if obs in self.records:
+            return  # an identical retry
+        self.records.add(obs)
+        self._source(obs.source).sequences.add(obs.source_sequence)
+        self.claims[(obs.source, obs.source_sequence)].add("record:" + obs.fingerprint)
+        if obs.run_id is not None:
+            self.run_records[obs.run_id].append(obs)
+        if obs.scope_id is not None and obs.run_id is not None:
+            self._scope(obs.scope_id, obs.run_id).records.append(obs)
+        if obs.segment_id is not None:
+            self._segment(obs.segment_id).members.append(obs)
+
+    def _add_seal(self, obs: SegmentSealObs) -> None:
+        self._claim_manifest(obs.source, obs.manifest_seq)
+        if obs in self._seals:
+            return
+        self._seals.add(obs)
+        source = self._source(obs.source)
+        source.heartbeat = max(source.heartbeat, obs.last_sequence)
+        self._segment(obs.segment_id).seals.add(obs)
+        if obs.manifest_digest is not None and obs.run_id is not None:
+            self.manifest_refs.add((obs.run_id, obs.source, obs.manifest_digest, obs.scope_id))
+
+    def _add_heartbeat(self, obs: HeartbeatObs) -> None:
+        key = (obs.source_id, obs.source_epoch)
+        self._claim_manifest(key, obs.manifest_seq)
+        if obs in self._heartbeats:
+            # Deduplicated by logical identity (source, epoch, kind, run id, scope id,
+            # last sequence, segment), never by span id: a retried export re-sends the
+            # same record under a new span id and must not count twice.
+            return
+        self._heartbeats.add(obs)
+        source = self._source(key)
+        source.heartbeat = max(source.heartbeat, obs.last_sequence)
+        if obs.kind == "final":
+            source.final = max(obs.last_sequence, -1 if source.final is None else source.final)
+        elif obs.kind == "periodic":
+            self.periodic.add(key)
+        elif obs.scope_id is not None and obs.run_id is not None:
+            scope = self._scope(obs.scope_id, obs.run_id)
+            marks = scope.starts if obs.kind == "run_start" else scope.ends
+            marks.add((key, obs.run_id, obs.last_sequence, obs.segment_id))
+            if obs.segment_id is not None:
+                segment = self._segment(obs.segment_id)
+                (segment.starts if obs.kind == "run_start" else segment.ends).add(obs)
+            if obs.info is not None and obs.info.manifest_digest is not None:
+                self.manifest_refs.add((obs.run_id, key, obs.info.manifest_digest, obs.scope_id))
 
     def finalize(self) -> None:
         for source in self.sources.values():
@@ -529,6 +852,274 @@ class _Verifier:
             scope.finalize()
             if scope.scope_id in self.malformed_scopes:  # a malformed marker names it
                 scope.state, scope.problem = "conflict", "malformed_record"
+        self.p1 = bool(self.segments or self.manifest_obs)
+        for key in sorted(set(self.manifest_obs) | set(self.manifest_claims)):
+            self._check_manifests(key)
+        self._unsealed_epochs()
+        for segment_id in sorted(self.segments):
+            self._check_segment(self.segments[segment_id])
+        self._check_manifest_refs()
+
+    # -- manifests (spec 050 §3.12) --------------------------------------------
+
+    def _check_manifests(self, key: SourceKey) -> None:
+        """The chain of one ``(source, epoch)``: contiguous ``manifest_seq`` from 0, each
+        ``previous_manifest_sha256`` the digest of its predecessor, and no heartbeat naming
+        a ``manifest_seq`` above the highest present. A failure records the sequence window
+        as manifest-less (rule R1); two different manifest 0 documents are a conflict."""
+        source = self._source(key)
+        present = sorted(self.manifest_obs.get(key, ()), key=lambda m: (m.manifest_seq, m.sha256))
+        source.manifests = present
+        by_seq: dict[int, list[ManifestObs]] = defaultdict(list)
+        for manifest in present:
+            by_seq[manifest.manifest_seq].append(manifest)
+        source.manifest_conflict = len(by_seq.get(0, ())) > 1
+        # A sequence with two different documents is as good as missing.
+        single = {seq: docs[0] for seq, docs in by_seq.items() if len(docs) == 1}
+        good = sorted(single)
+        top = max([self.manifest_claims.get(key, -1), *by_seq])
+        windows = source.manifestless
+        previous: ManifestObs | None = None
+        expected = 0
+        for index, seq in enumerate(good):
+            manifest = single[seq]
+            low = 0 if previous is None else previous.after_source_sequence + 1
+            if seq > expected:
+                windows.append((low, manifest.after_source_sequence, "manifest_missing"))
+            elif previous is not None and manifest.previous_sha256 != previous.sha256:
+                following = good[index + 1] if index + 1 < len(good) else None
+                high = None if following is None else single[following].after_source_sequence
+                windows.append((low, high, "chain_mismatch"))
+            previous, expected = manifest, seq + 1
+        if top >= expected:
+            low = 0 if previous is None else previous.after_source_sequence + 1
+            windows.append((low, None, "manifest_missing"))
+
+    def _unsealed_epochs(self) -> None:
+        """Epochs declared unsealed by a manifest 0 (``unsealed_prior_epochs``, listed on
+        the declaring source) and orphan epochs: a P1 capture's epoch seen only through
+        periodic heartbeats, without a final heartbeat or a manifest of its own (the
+        drainer's heartbeat for an orphaned registration, 050 §3.2 rule 5)."""
+        for key, manifests in self.manifest_obs.items():
+            for manifest in manifests:
+                for epoch in manifest.unsealed_prior_epochs:
+                    self.sources[key].unsealed_epochs.add(epoch)
+                    self.unsealed.setdefault((key[0], epoch), "unsealed_prior_epoch")
+        if not self.p1:
+            return
+        for key in self.periodic:
+            if self.sources[key].final is None and key not in self.manifest_obs:
+                self.sources[key].unsealed_epochs.add(key[1])
+                self.unsealed.setdefault(key, "orphan_epoch")
+
+    def _check_manifest_refs(self) -> None:
+        """A run marker or seal naming a manifest digest that no manifest of its source
+        epoch has: the configuration it ran under is unknown (``manifest_gap``)."""
+        for run_id, key, digest, scope_id in sorted(self.manifest_refs, key=repr):
+            known = {manifest.sha256 for manifest in self.manifest_obs.get(key, ())}
+            if digest in known:
+                continue
+            gap = Gap("manifest_gap", "unverified", source_id=key[0], source_epoch=key[1],
+                      reason="unknown_manifest" if known else "manifest_missing")  # fmt: skip
+            self.run_gaps[run_id].append((gap, () if scope_id is None else (scope_id,)))
+
+    # -- seals (spec 050 §3.7, 049 §2.12) --------------------------------------
+
+    def _check_segment(self, segment: _Segment) -> None:
+        keys = segment.keys()
+        seal = segment.seal
+        segment.key = seal.source if seal is not None else min(keys)
+        if len(keys) > 1:
+            segment.gap("segment_conflict", "partial", reason="segment_on_two_sources")
+        if len(segment.seals) > 1:
+            segment.gap("segment_conflict", "partial", reason="conflicting_seal")
+        named = {m.info.predecessors for m in segment.starts if m.info and m.info.predecessors}
+        if len(named) > 1:
+            segment.gap("segment_conflict", "partial", reason="conflicting_predecessors")
+        if self.sources[segment.key].manifest_conflict:
+            segment.gap("segment_conflict", "partial", reason="manifest_conflict")
+        if segment.key in self.unsealed:
+            segment.gap("unsealed_epoch", "partial", reason=self.unsealed[segment.key])
+        if seal is not None:
+            segment.check = self._check_seal(segment, seal)
+        elif segment.seals:
+            segment.check = "conflict"
+        elif segment.members or segment.losses:
+            # 049 §2.12 rule 3: a segment with records and no seal (X44).
+            segment.gap("unsealed_segment", "partial", reason="source_lost")
+        conflicted = any(gap.gap_type == "segment_conflict" for gap in segment.gaps)
+        if conflicted or segment.check in ("mismatch", "conflict"):
+            segment.state = "conflict"
+        else:
+            segment.state = "unsealed" if seal is None else "sealed"
+        scopes = segment.scope_ids
+        for run_id in sorted(segment.run_ids):
+            self.run_segments[run_id].append(segment)
+            self.run_gaps[run_id].extend((gap, scopes) for gap in segment.gaps)
+
+    def _check_seal(self, segment: _Segment, seal: SegmentSealObs) -> SealCheck:
+        """Recompute the seal (§3.7) from the records and exchanges of the seal's source
+        naming the segment and the losses naming it (never by sequence range, R3)."""
+        last = seal.seal_last_sequence
+        members = [m for m in segment.members if m.source == seal.source]
+        for sequence in sorted({m.source_sequence for m in members if m.source_sequence > last}):
+            # 049 G1: a record of a sealed segment above its last_sequence.
+            segment.gap("segment_conflict", "partial", first_sequence=sequence,
+                        last_sequence=sequence, reason="record_after_seal")  # fmt: skip
+        entries, problem = self._seal_entries(segment, seal, members)
+        if problem == "inexact_loss_range":
+            segment.gap("seal_mismatch", "partial", reason=problem)
+            return "mismatch"
+        if problem is not None:
+            segment.gap("seal_mismatch", "unverified", reason=problem)
+            return "unverified"
+        if any(len(found) > 1 for found in entries.values()):
+            segment.gap("seal_mismatch", "partial", reason="conflicting_member")
+            return "mismatch"
+        pairs = [(position, next(iter(found))) for position, found in sorted(entries.items())]
+        try:
+            digest = _seal.seal_digest(pairs)
+        except NotImplementedError:
+            segment.gap("seal_mismatch", "unverified", reason="seal_rule_unavailable")
+            return "unverified"
+        if digest != seal.seal_digest:
+            segment.gap("seal_mismatch", "partial", reason="digest_differs")
+            return "mismatch"
+        return "verified"
+
+    def _seal_entries(
+        self, segment: _Segment, seal: SegmentSealObs, members: Sequence[SegmentMember]
+    ) -> tuple[dict[int, set[str]], str | None]:
+        """Every member position's candidate entries, and why they cannot all be computed
+        here (``inexact_loss_range``: a segment-attributed range is always exact)."""
+        entries: dict[int, set[str]] = defaultdict(set)
+        problem: str | None = None
+        for member in members:
+            if member.source_sequence > seal.seal_last_sequence:
+                continue
+            entry, why = self._member_entry(member)
+            if entry is None:
+                problem = problem or why
+            else:
+                entries[member.source_sequence].add(entry)
+        for loss in segment.losses:
+            if (loss.source_id, loss.source_epoch) != seal.source:
+                continue
+            if loss.count != loss.last_sequence - loss.first_sequence + 1:
+                return entries, "inexact_loss_range"
+            for position in range(loss.first_sequence, loss.last_sequence + 1):
+                entries[position].add(_seal.loss_entry(loss.reason))
+        return entries, problem
+
+    def _member_entry(self, member: SegmentMember) -> tuple[str | None, str | None]:
+        """``(record digest, None)``, or ``(None, why)`` when it cannot be computed here."""
+        span = member.span
+        if span is None:  # a P1 exchange always keeps its span
+            return None, "member_unreadable"
+        attributes = span.attributes
+        content: list[str | None]
+        if isinstance(member, ExchangeObs):
+            sides = (attributes.get(A_REQUEST_SHA256), attributes.get(A_RESPONSE_SHA256))
+            content = [digest for digest in map(digest_value, sides) if digest is not None]
+        else:
+            found, why = self._record_content(attributes.get(A_OBJECT_IDS))
+            if why is not None:
+                return None, why
+            if found is None:  # malformed object ids: a value no emitter writes
+                return f"unhashable:{member.source_sequence}", None
+            content = found
+        try:
+            digest = _seal.record_digest(
+                name=span.name, start_ns=span.start_ns, end_ns=span.end_ns, status=span.status,
+                attributes=attributes, content=content,
+            )  # fmt: skip
+        except NotImplementedError:
+            return None, "seal_rule_unavailable"
+        except (ValueError, TypeError):  # a float or map: never what the emitter sealed
+            return f"unhashable:{member.source_sequence}", None
+        return digest, None
+
+    def _record_content(self, object_ids: Any) -> tuple[list[str | None] | None, str | None]:
+        """The ``stored_sha256`` of each object a record names, in list order, ``None``
+        for a descriptor-only object (§3.7). Read from the configured store's descriptors;
+        ``(None, why)`` when there is no store or a descriptor cannot be read."""
+        if object_ids is None:
+            return [], None
+        if (
+            not isinstance(object_ids, list)
+            or not 1 <= len(object_ids) <= _MAX_RECORD_OBJECTS
+            or any(uuid4_value(object_id) is None for object_id in object_ids)
+        ):
+            return None, None
+        if self.store is None or self.reader is None:
+            return None, "no_store"
+        content: list[str | None] = []
+        for object_id in object_ids:
+            if object_id not in self._descriptors:
+                self._descriptors[object_id] = self._stored_digest(object_id)
+            digest, ok = self._descriptors[object_id]
+            if not ok:
+                return None, "content_unavailable"
+            content.append(digest)
+        return content, None
+
+    def _stored_digest(self, object_id: str) -> tuple[str | None, bool]:
+        if self.store is None or self.reader is None:
+            return None, False
+        try:
+            descriptor = self.store.read_descriptor(self.store.evidence_ref_for(object_id))
+        except ImportError:
+            raise  # a missing reader dependency is a setup error
+        except Exception:
+            return None, False
+        if (
+            not isinstance(descriptor, Mapping)
+            or descriptor.get("object_id") != object_id
+            or descriptor.get("tenant_id") != self.reader.tenant_id
+        ):
+            return None, False
+        stored = descriptor.get("stored_sha256")
+        if stored is None and descriptor.get("status") in _DESCRIPTOR_ONLY:
+            return None, True
+        return (stored, True) if prefixed_digest(stored) is not None else (None, False)
+
+    def segment_nodes(self) -> list[SegmentNode]:
+        """The segment graph's input: one node per segment whose run is known."""
+        nodes: list[SegmentNode] = []
+        for segment_id in sorted(self.segments):
+            segment = self.segments[segment_id]
+            opening, seal = segment.opening(), segment.seal
+            run_id = opening.run_id if opening is not None else min(segment.run_ids, default=None)
+            if run_id is None:
+                continue
+            info = opening.info if opening is not None else None
+            nodes.append(
+                SegmentNode(
+                    segment_id=segment_id,
+                    run_id=run_id,
+                    source_id=segment.key[0],
+                    epoch=segment.key[1],
+                    predecessors=info.predecessors if info is not None else (),
+                    id_basis=info.id_basis if info is not None else None,
+                    branch_ids=info.branch_ids if info is not None else (),
+                    declared_branches=info.declared_branches if info is not None else (),
+                    start_ns=info.start_ns if info is not None else None,
+                    last_sequence=seal.seal_last_sequence if seal is not None else None,
+                    terminal=seal.terminal if seal is not None else None,
+                    resumable=seal.resumable if seal is not None else None,
+                    clock_uncertainty_ns=self._clock_uncertainty(segment.key),
+                )
+            )
+        return nodes
+
+    def _clock_uncertainty(self, key: SourceKey) -> int | None:
+        """The declared ``clock.uncertainty_ns`` of the source epoch's latest manifest."""
+        for manifest in reversed(self.sources[key].manifests):
+            clock = manifest.document.get("clock")
+            value = clock.get("uncertainty_ns") if isinstance(clock, Mapping) else None
+            if isinstance(value, int) and not isinstance(value, bool):
+                return value
+        return None
 
     def build_runs(
         self, wanted: set[str] | None
@@ -541,11 +1132,12 @@ class _Verifier:
                 observed[exchange.run_id].append(exchange)
         runs: list[dict[str, Any]] = []
         scopes: list[dict[str, Any]] = []
-        # An epoch that allocated sequences (its heartbeats say so) of which no exchange and
-        # no scope marker arrived (a killed fork worker, wire/_forks.py) is reported as its
-        # source-fallback run, every sequence missing: a loss, never silence.
+        # An epoch that allocated sequences (its heartbeats say so) of which no exchange, no
+        # record and no scope marker arrived (a killed fork worker, wire/_forks.py) is
+        # reported as its source-fallback run, every sequence missing: a loss, never silence.
         seen = {x.source for xs in observed.values() for x in xs}
         seen |= {scope.key for scope in self.scopes.values()}
+        seen |= {record.source for record in self.records}
         silent = {
             encode_opaque_id(f"source:{key[0]}:{key[1]}"): key
             for key, source in self.sources.items()
@@ -604,6 +1196,45 @@ class _Bodies:
     request: ObjectResult
     response: ObjectResult | None
     skipped: bool
+
+
+def _ranges(sequences: Iterable[int]) -> list[list[int]]:
+    """Sorted positions as ``[first, last]`` runs of consecutive sequences."""
+    out: list[list[int]] = []
+    for sequence in sorted(set(sequences)):
+        if out and out[-1][1] + 1 == sequence:
+            out[-1][1] = sequence
+        else:
+            out.append([sequence, sequence])
+    return out
+
+
+def _attempts(records: Iterable[RecordObs]) -> list[dict[str, Any]]:
+    """Every records-input attempt of a run with its complete position set (specs 050 and
+    054: the projection lists at most 64 ``event_ids`` per step; the report keeps all of
+    them): ``attempt_uid``, the step id when the records carry one, the number of
+    positions, and per source epoch the positions as ranges of consecutive sequences."""
+    by_attempt: dict[str, dict[SourceKey, set[int]]] = defaultdict(lambda: defaultdict(set))
+    steps: dict[str, set[str]] = defaultdict(set)
+    for record in records:
+        by_attempt[record.attempt_uid][record.source].add(record.source_sequence)
+        step_id = record.span.attributes.get(A_STEP_ID)
+        if isinstance(step_id, str) and opaque_id(step_id) is not None:
+            steps[record.attempt_uid].add(step_id)
+    out: list[dict[str, Any]] = []
+    for attempt_uid, positions in by_attempt.items():
+        entry: dict[str, Any] = {"attempt_uid": attempt_uid}
+        if len(steps[attempt_uid]) == 1:
+            (entry["step_id"],) = steps[attempt_uid]
+        entry["records"] = sum(len(found) for found in positions.values())
+        entry["sequences"] = [
+            {"source_id": key[0], "source_epoch": key[1], "ranges": _ranges(found)}
+            for key, found in sorted(positions.items())
+        ]
+        out.append(entry)
+    out.sort(key=lambda e: (e["sequences"][0]["source_id"], e["sequences"][0]["source_epoch"],
+                            e["sequences"][0]["ranges"][0][0], e["attempt_uid"]))  # fmt: skip
+    return out
 
 
 def _by_source(exchanges: Iterable[ExchangeObs]) -> dict[SourceKey, list[int]]:
@@ -725,6 +1356,7 @@ class _Run:
 
         key = scope.key
         on_key = [x.source_sequence for x in own if x.source == key]
+        on_key += [x.source_sequence for x in scope.records if x.source == key]
         lows = [*on_key, *([] if scope.start is None else [scope.start + 1])]
         highs = [*on_key, *([] if scope.end is None else [scope.end])]
         low = min(lows) if lows else max(min(highs), 0)
@@ -737,8 +1369,12 @@ class _Run:
             if scope.end is None:
                 self._inside_gaps(key, high + 1, None, "unverified")
         self._tail(key, scope.problem)
-        elsewhere = [x for x in own if x.source != key]
-        for other, sequences in sorted(_by_source(elsewhere).items()):
+        elsewhere: dict[SourceKey, list[int]] = defaultdict(list)
+        members: list[ExchangeObs | RecordObs] = [*own, *scope.records]
+        for member in members:
+            if member.source != key:
+                elsewhere[member.source].append(member.source_sequence)
+        for other, sequences in sorted(elsewhere.items()):
             self.windows.append(_Window(other, min(sequences), max(sequences)))
             self._near_gaps(other, min(sequences), max(sequences))
 
@@ -901,6 +1537,7 @@ class _Run:
         stitched = stitch_run(views)
         for gap in stitched.gaps:
             self._add(gap, self._scopes_of(gap.exchange_id))
+        self._structure_gaps()
         if self.verifier.production:
             self._authentication(bodies)
         for entry in exchanges:
@@ -952,7 +1589,66 @@ class _Run:
                 "checks": checks,
             }
         )
+        out.update(self._structure())
         return out, scope_reports
+
+    # -- run structure (spec 050 §3.12) ---------------------------------------
+
+    def _structure_gaps(self) -> None:
+        """The run's segment, seal, epoch and manifest gaps, and the segment graph's."""
+        verifier = self.verifier
+        for gap, scopes in verifier.run_gaps.get(self.run_id, ()):
+            self._add(gap, scopes)
+        graph = verifier.graphs.get(self.run_id)
+        if graph is not None:
+            for gap in graph.gaps:
+                segment = verifier.segments.get(gap.segment_id or "")
+                self._add(gap, () if segment is None else segment.scope_ids)
+        for window in self.windows:
+            source = verifier.sources[window.key]
+            for low, high, reason in source.manifestless:
+                first = max(low, window.low)
+                last = min(source.top if high is None else high, window.high)
+                if first > last:
+                    continue
+                self._add(
+                    Gap("manifest_gap", "unverified", source_id=window.key[0],
+                        source_epoch=window.key[1], first_sequence=first, last_sequence=last,
+                        reason=reason),
+                    () if window.scope_id is None else (window.scope_id,),
+                )  # fmt: skip
+
+    def _structure(self) -> dict[str, Any]:
+        """``run_state``, ``segments``, ``run_aliases``, ``deadline_at`` and ``evaluated_at``
+        for a run with segments (absent for a pre-P1 capture), and ``attempts``: the full
+        position set of every records-input attempt of the run."""
+        verifier = self.verifier
+        out: dict[str, Any] = {}
+        attempts = _attempts(verifier.run_records.get(self.run_id, ()))
+        if attempts:
+            out["attempts"] = attempts
+        present = verifier.run_segments.get(self.run_id, [])
+        graph = verifier.graphs.get(self.run_id)
+        if not present and graph is None:
+            return out
+        if graph is not None and graph.run_state is not None:
+            out["run_state"] = graph.run_state
+        segments = [segment.to_json() for segment in present]
+        known = {segment.segment_id for segment in present}
+        for node in () if graph is None else graph.segments:
+            if node.segment_id not in known:  # named by the graph, never seen: missing
+                known.add(node.segment_id)
+                segments.append(
+                    {"segment_id": node.segment_id, "predecessors": list(node.predecessors),
+                     "state": "missing"}
+                )  # fmt: skip
+        out["segments"] = segments
+        out["run_aliases"] = [] if graph is None else sorted(graph.run_aliases)
+        if graph is not None and graph.deadline_at is not None:
+            out["deadline_at"] = format_datetime(graph.deadline_at)
+        if verifier.evaluated_at is not None:
+            out["evaluated_at"] = verifier.evaluated_at
+        return out
 
     def _authentication(self, bodies: dict[str, _Bodies]) -> None:
         """049 §7.9 (G6, RR1a; decision 20): in the production profile every record of the

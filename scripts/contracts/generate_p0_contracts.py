@@ -2918,6 +2918,39 @@ def generate_capture_p1(w: Writer) -> None:
         "invalid/run-reconstruction-open-without-deadline.json",
         mutate(report, lambda d: d["runs"][0].update(run_state="open")),
     )
+    # WP-30: the full position set of two interleaved records-input attempts.
+    attempts = copy.deepcopy(report)
+    attempts["runs"][0]["attempts"] = [
+        {
+            "attempt_uid": uid("attempt-a"),
+            "step_id": "stp-" + "1a" * 16,
+            "records": 70,
+            "sequences": [
+                {
+                    "source_id": source["source_id"],
+                    "source_epoch": source["source_epoch"],
+                    "ranges": [[3 + 2 * i, 3 + 2 * i] for i in range(70)],
+                }
+            ],
+        },
+        {
+            "attempt_uid": uid("attempt-b"),
+            "records": 72,
+            "sequences": [
+                {
+                    "source_id": source["source_id"],
+                    "source_epoch": source["source_epoch"],
+                    "ranges": [[4 + 2 * i, 4 + 2 * i] for i in range(69)]
+                    + [[142, 144]],
+                }
+            ],
+        },
+    ]
+    put("valid/run-reconstruction-attempts.json", attempts)
+    put(
+        "invalid/run-reconstruction-attempt-count-mismatch.json",
+        mutate(attempts, lambda d: d["runs"][0]["attempts"][1].update(records=71)),
+    )
     put(
         "invalid/run-reconstruction-segment-bad-predecessor.json",
         mutate(
@@ -4986,6 +5019,7 @@ INVALID = {
         "fixtures/invalid/loss-record-id-basis-on-seal.json": "capture.schema",
         "fixtures/invalid/loss-record-segment-range-not-exact.json": "capture.loss.segment",
         "fixtures/invalid/loss-record-session-on-continuation.json": "capture.marker.root",
+        "fixtures/invalid/run-reconstruction-attempt-count-mismatch.json": "capture.reconstruction.attempts",
         "fixtures/invalid/run-reconstruction-open-without-deadline.json": "capture.reconstruction.run_state",
         "fixtures/invalid/run-reconstruction-run-open-on-terminated.json": "capture.reconstruction.run_state",
         "fixtures/invalid/run-reconstruction-segment-bad-predecessor.json": "capture.reconstruction.segments",

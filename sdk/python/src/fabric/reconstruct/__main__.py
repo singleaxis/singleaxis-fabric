@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """CLI: ``python -m fabric.reconstruct``.
 
-Exit codes (spec 047 §9, decision H5): ``0`` every reported scope and every
-unscoped run is complete (runs are ``complete_for_declared_scope`` or
-``complete_for_observed_scopes``); ``1`` anything is ``partial`` or
-``unverified``, or no run was reconstructed; ``2`` input, usage or internal
-error.
+Exit codes (spec 047 §9, decision H5, spec 050 §3.12): ``0`` every reported
+scope and every unscoped run is complete (runs are ``complete_for_declared_scope``
+or ``complete_for_observed_scopes``) and every run's ``run_state`` is absent (a
+pre-P1 capture) or ``terminated``; ``1`` anything is ``partial`` or
+``unverified``, a run is ``open`` (its ``run_open`` gap is ``info`` and never in
+the verdict, but an open run is not complete) or in another state, or no run was
+reconstructed; ``2`` input, usage or internal error.
 
 Diagnostics are fixed text (spec 047 §9 "Diagnostics"): stderr never carries
 an argument value, a path, a key or an underlying exception's message, only
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -25,14 +28,17 @@ import re
 import sys
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
+from datetime import datetime
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
 from fabric._model_names import parse_model_allowlist
+from fabric.reconstruct._graph import RunGraph
 from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES
 from fabric.reconstruct._inputs import ReconstructInputError
-from fabric.reconstruct._report import COMPLETE, COMPLETE_VERDICTS
+from fabric.reconstruct._project import DEFAULT_COVERAGE_PROFILE, build_projection
+from fabric.reconstruct._report import COMPLETE, COMPLETE_VERDICTS, EXIT_RUN_STATES
 from fabric.reconstruct._verify import reconstruct
 
 EXIT_COMPLETE = 0
@@ -43,6 +49,14 @@ MODEL_ALLOWLIST_ENV = "FABRIC_WIRE_MODEL_ALLOWLIST"
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _PROG = "fabric.reconstruct"
 _MAX_WAIT_S = 3600.0
+_COVERAGE_PROFILE_RE = re.compile(r"^fabric\.profile\.[a-z0-9-]+/v[0-9]+$")
+# A duration: an integer or decimal number with an optional unit (default seconds).
+_DURATION_RE = re.compile(r"^(?P<value>[0-9]{1,15}(?:\.[0-9]{1,9})?)(?P<unit>ns|us|ms|s|m|h)?$")
+_NS_PER_UNIT = {
+    "ns": 1, "us": 1_000, "ms": 1_000_000, "s": 1_000_000_000, "m": 60_000_000_000,
+    "h": 3_600_000_000_000,
+}  # fmt: skip
+_MAX_DURATION_NS = 31_536_000 * 1_000_000_000  # one year
 _S3_DEPENDENCY_HINT = (
     '--store-uri needs boto3, which agents never need: pip install "singleaxis-fabric[s3]"'
 )
@@ -159,6 +173,42 @@ def _parser() -> argparse.ArgumentParser:
         metavar="FILE",
         help="write the report here (atomically, mode 0600) instead of stdout",
     )
+    parser.add_argument(
+        "--projection",
+        metavar="FILE",
+        help="also write the fabric.step-projection/v1 document of the report here "
+        "(atomically, mode 0600; spec 050 §3.13)",
+    )
+    parser.add_argument(
+        "--coverage-profile",
+        dest="coverage_profile",
+        default=DEFAULT_COVERAGE_PROFILE,
+        metavar="ID",
+        help=f"the coverage profile the projection is judged against (default "
+        f"{DEFAULT_COVERAGE_PROFILE})",
+    )
+    parser.add_argument(
+        "--evaluated-at",
+        dest="evaluated_at",
+        metavar="RFC3339",
+        help="the time run states and open-run deadlines are evaluated at (default: now)",
+    )
+    parser.add_argument(
+        "--clock-uncertainty",
+        dest="clock_uncertainty",
+        default="0",
+        metavar="DURATION",
+        help="added to each segment's declared clock uncertainty when segments are ordered "
+        "(e.g. 250ms, 2s; a bare number is seconds; default 0)",
+    )
+    parser.add_argument(
+        "--max-clock-uncertainty",
+        dest="max_clock_uncertainty",
+        default="300s",
+        metavar="DURATION",
+        help="the largest total clock uncertainty accepted before ordering is "
+        "clock_uncertain (default 300s)",
+    )
     return parser
 
 
@@ -256,15 +306,60 @@ def _store(args: argparse.Namespace) -> Any | None:
 
 
 def _exit_code(document: Mapping[str, Any]) -> int:
-    """``0`` iff every reported scope and every unscoped run is complete (H5)."""
+    """``0`` iff every reported scope and every unscoped run is complete (H5) and every
+    run's ``run_state`` is absent or ``terminated`` (spec 050 §3.12, §9 delta 5)."""
 
     runs = document["runs"]
     if not runs:
         return EXIT_INCOMPLETE
-    complete = all(run["verdict"] in COMPLETE_VERDICTS for run in runs) and all(
-        scope["verdict"] == COMPLETE for scope in document.get("scopes", [])
+    complete = (
+        all(run["verdict"] in COMPLETE_VERDICTS for run in runs)
+        and all(run.get("run_state") in EXIT_RUN_STATES for run in runs)
+        and all(scope["verdict"] == COMPLETE for scope in document.get("scopes", []))
     )
     return EXIT_COMPLETE if complete else EXIT_INCOMPLETE
+
+
+def _duration_ns(value: str, option: str) -> int:
+    """A ``--clock-uncertainty``-style duration in nanoseconds; never echoes the value."""
+    match = _DURATION_RE.fullmatch(value.strip())
+    if match is None:
+        raise ReconstructInputError(f"{option} must be a duration such as 250ms, 2s or 5m")
+    whole, _, fraction = match["value"].partition(".")
+    scale = _NS_PER_UNIT[match["unit"] or "s"]
+    nanos = int(whole) * scale
+    if fraction:
+        nanos += int(fraction) * scale // 10 ** len(fraction)
+    if nanos > _MAX_DURATION_NS:
+        raise ReconstructInputError(f"{option} must be at most one year")
+    return nanos
+
+
+def _evaluated_at(value: str | None) -> datetime | None:
+    """``--evaluated-at``: an RFC 3339 time with an offset (``Z`` or ``+hh:mm``)."""
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip())
+    except ValueError:
+        parsed = None
+    if parsed is None or parsed.tzinfo is None:
+        raise ReconstructInputError("--evaluated-at must be an RFC 3339 time with an offset")
+    return parsed
+
+
+def _coverage_profile(value: str) -> str:
+    if not _COVERAGE_PROFILE_RE.fullmatch(value):
+        raise ReconstructInputError("--coverage-profile must name a fabric.profile.*/vN profile")
+    return value
+
+
+def _report_sha256(document: Mapping[str, Any]) -> str:
+    """``sha256:`` of the report bytes exactly as they are written."""
+    digest = hashlib.sha256()
+    for chunk in _report_chunks(document):
+        digest.update(chunk.encode("utf-8"))
+    return "sha256:" + digest.hexdigest()
 
 
 def _model_allowlist(args: argparse.Namespace, environ: Mapping[str, str]) -> tuple[str, ...]:
@@ -351,12 +446,31 @@ def _write_report(path: str, document: Mapping[str, Any]) -> None:
             os.close(directory_fd)
 
 
+def _write_projection(path: str, projection: Mapping[str, Any] | None) -> bool:
+    """Write the ``--projection`` document; ``False`` when the file cannot be written."""
+    if projection is None:
+        # Fixed text: nothing to project, or this build does not build projections yet.
+        _fail("no step projection was built; --projection was not written")
+        return True
+    try:
+        _write_report(path, projection)
+    except OSError:
+        _fail("cannot write the --projection file")
+        return False
+    return True
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
         allowlist = _model_allowlist(args, os.environ)
         key = _id_key(args, os.environ)
         wait = _wait_for_objects(args)
+        evaluated_at = _evaluated_at(args.evaluated_at)
+        clock_uncertainty = _duration_ns(args.clock_uncertainty, "--clock-uncertainty")
+        max_clock = _duration_ns(args.max_clock_uncertainty, "--max-clock-uncertainty")
+        coverage_profile = _coverage_profile(args.coverage_profile)
+        graphs: list[RunGraph] = []
         document = reconstruct(
             args.spans,
             store=_store(args),
@@ -369,6 +483,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             wait_for_objects_s=wait,
             profile=args.profile,
             trusted_source=args.trusted_source,
+            evaluated_at=evaluated_at,
+            clock_uncertainty_ns=clock_uncertainty,
+            max_clock_uncertainty_ns=max_clock,
+            graphs_out=graphs,
+        )
+        projection = (
+            build_projection(
+                document,
+                graphs=graphs,
+                reconstruction_sha256=_report_sha256(document),
+                evaluated_at=evaluated_at
+                or datetime.fromisoformat(
+                    document["inputs"]["evaluated_at"].replace("Z", "+00:00")
+                ),
+                coverage_profile=coverage_profile,
+            )
+            if args.projection
+            else None
         )
     except ReconstructInputError as exc:
         _fail(str(exc))
@@ -394,6 +526,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         for chunk in _report_chunks(document):
             sys.stdout.write(chunk)
+    if args.projection and not _write_projection(args.projection, projection):
+        return EXIT_USAGE
     if not document["runs"]:
         _fail("no runs reconstructed")
     return _exit_code(document)

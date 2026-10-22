@@ -1,0 +1,873 @@
+{
+  "schema_version": "fabric.run-reconstruction/v1",
+  "generated_at": "2026-10-08T09:10:00Z",
+  "verifier": {
+    "name": "fabric.reconstruct",
+    "version": "0.0.0-draft"
+  },
+  "inputs": {
+    "span_files": [
+      {
+        "sha256": "sha256:abababababababababababababababababababababababababababababababab",
+        "format": "sink_jsonl",
+        "records": 6
+      }
+    ],
+    "store": {
+      "kind": "local",
+      "tenant_id": "tenant-a"
+    },
+    "evaluated_at": "2026-10-19T10:00:00Z"
+  },
+  "sources": [
+    {
+      "source_id": "wire-3f9a1c2b7d4e5f60",
+      "source_epoch": 1791331200000000000,
+      "exchanges": 3,
+      "heartbeat_sequence": 2,
+      "missing_sequences": [],
+      "loss_ranges": [],
+      "manifests": [
+        {
+          "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+          "sha256": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
+          "manifest_seq": 0
+        }
+      ],
+      "unsealed_epochs": []
+    }
+  ],
+  "runs": [
+    {
+      "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "verdict": "complete_for_observed_scopes",
+      "declared_scope": {
+        "windows": [
+          {
+            "source_id": "wire-3f9a1c2b7d4e5f60",
+            "source_epoch": 1791331200000000000,
+            "first_sequence": 0,
+            "last_sequence": 2,
+            "heartbeat_sequence": 2,
+            "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+            "closed_by": "run_markers"
+          },
+          {
+            "source_id": "wire-3f9a1c2b7d4e5f60",
+            "source_epoch": 1791331200000000000,
+            "first_sequence": 1,
+            "last_sequence": 1,
+            "heartbeat_sequence": 2,
+            "scope_id": "8c1f0e2d-4a5b-4c6d-9e7f-2a3b4c5d6e7f",
+            "closed_by": "run_markers"
+          }
+        ]
+      },
+      "scopes": [
+        {
+          "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "state": "closed",
+          "start_sequence": -1,
+          "end_sequence": 2,
+          "exchanges": 2
+        },
+        {
+          "scope_id": "8c1f0e2d-4a5b-4c6d-9e7f-2a3b4c5d6e7f",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "state": "closed",
+          "start_sequence": 0,
+          "end_sequence": 1,
+          "exchanges": 1
+        }
+      ],
+      "exchanges": [
+        {
+          "exchange_id": "ex-0",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 0,
+          "api": "openai.chat_completions",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba90200",
+          "started_at": "2026-10-08T09:00:00.100Z",
+          "ended_at": "2026-10-08T09:00:00.900Z",
+          "model": "gpt-4o-2024-08-06",
+          "response_id": "p-847dca5515066fc9",
+          "response_state": "complete",
+          "parse_status": "ok",
+          "thread_id": "thread-0",
+          "input_message_count": 2,
+          "output_message_count": 1,
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [
+            "p-05f49740f9329fd0"
+          ],
+          "objects": {
+            "request": {
+              "object_id": "req0",
+              "sha256": "sha256:f162b493dd9bf56e431f6d9db5dcd9dd2af4e4442f711d454b30f50745621c00",
+              "byte_length": 4,
+              "verification": "verified"
+            },
+            "response": {
+              "object_id": "rsp0",
+              "sha256": "sha256:dadd3f33ead60a412074630603ff9a8782b510b501334869533f5fb642b17857",
+              "byte_length": 4,
+              "verification": "verified"
+            }
+          },
+          "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60"
+        },
+        {
+          "exchange_id": "ex-1",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 1,
+          "api": "openai.chat_completions",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba90201",
+          "started_at": "2026-10-08T09:00:01.120Z",
+          "ended_at": "2026-10-08T09:00:02.050Z",
+          "model": "gpt-4o-2024-08-06",
+          "response_id": "p-c65586eda463e310",
+          "response_state": "complete",
+          "parse_status": "ok",
+          "thread_id": "thread-0",
+          "input_message_count": 4,
+          "output_message_count": 1,
+          "tool_call_ids_consumed": [
+            "p-05f49740f9329fd0"
+          ],
+          "tool_call_ids_emitted": [
+            "p-9d60374e10d0bf8b"
+          ],
+          "objects": {
+            "request": {
+              "object_id": "req1",
+              "sha256": "sha256:c84a09757ebaad3dbdc07d455da0b62427fff0f874c83fd5d961f5d4503523a1",
+              "byte_length": 4,
+              "verification": "verified"
+            },
+            "response": {
+              "object_id": "rsp1",
+              "sha256": "sha256:9f583f90d69602712456c8f53125962bfce6fdffb320ffa2b34e6adab3d5f195",
+              "byte_length": 4,
+              "verification": "verified"
+            }
+          },
+          "continues_exchange_id": "ex-0",
+          "scope_id": "8c1f0e2d-4a5b-4c6d-9e7f-2a3b4c5d6e7f"
+        },
+        {
+          "exchange_id": "ex-2",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 2,
+          "api": "openai.chat_completions",
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+          "span_id": "00f067aa0ba90202",
+          "started_at": "2026-10-08T09:00:02.300Z",
+          "ended_at": "2026-10-08T09:00:03.000Z",
+          "model": "gpt-4o-2024-08-06",
+          "response_id": "p-10e6d76ba6f3ddf2",
+          "response_state": "complete",
+          "parse_status": "ok",
+          "thread_id": "thread-0",
+          "input_message_count": 6,
+          "output_message_count": 1,
+          "tool_call_ids_consumed": [
+            "p-05f49740f9329fd0",
+            "p-9d60374e10d0bf8b"
+          ],
+          "tool_call_ids_emitted": [],
+          "objects": {
+            "request": {
+              "object_id": "req2",
+              "sha256": "sha256:0e3cc730d9c08262b256b2ba943e34c5460dbf5747cc864f0cf8065ad068605c",
+              "byte_length": 4,
+              "verification": "verified"
+            },
+            "response": {
+              "object_id": "rsp2",
+              "sha256": "sha256:0ddacccaf1eefed4c03108590690038c18f2c839f35ecb38eba55b1a9189304f",
+              "byte_length": 4,
+              "verification": "verified"
+            }
+          },
+          "continues_exchange_id": "ex-1",
+          "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60"
+        }
+      ],
+      "threads": [
+        {
+          "thread_id": "thread-0",
+          "exchange_ids": [
+            "ex-0",
+            "ex-1",
+            "ex-2"
+          ]
+        }
+      ],
+      "gaps": [],
+      "counts": {
+        "exchanges": 3,
+        "gaps_by_type": {}
+      },
+      "checks": {
+        "sequence": "passed",
+        "loss": "passed",
+        "tail": "passed",
+        "bytes": "passed",
+        "stitching": "passed"
+      },
+      "run_state": "terminated",
+      "segments": [
+        {
+          "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "last_sequence": 2,
+          "manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
+          "terminal": true,
+          "predecessors": [
+            "none"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      ],
+      "run_aliases": [],
+      "evaluated_at": "2026-10-19T10:00:00Z",
+      "attempts": [
+        {
+          "attempt_uid": "43ae7c73-252b-48cf-a0ab-f89df4c5bccf",
+          "step_id": "stp-1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+          "records": 70,
+          "sequences": [
+            {
+              "source_id": "wire-3f9a1c2b7d4e5f60",
+              "source_epoch": 1791331200000000000,
+              "ranges": [
+                [
+                  3,
+                  3
+                ],
+                [
+                  5,
+                  5
+                ],
+                [
+                  7,
+                  7
+                ],
+                [
+                  9,
+                  9
+                ],
+                [
+                  11,
+                  11
+                ],
+                [
+                  13,
+                  13
+                ],
+                [
+                  15,
+                  15
+                ],
+                [
+                  17,
+                  17
+                ],
+                [
+                  19,
+                  19
+                ],
+                [
+                  21,
+                  21
+                ],
+                [
+                  23,
+                  23
+                ],
+                [
+                  25,
+                  25
+                ],
+                [
+                  27,
+                  27
+                ],
+                [
+                  29,
+                  29
+                ],
+                [
+                  31,
+                  31
+                ],
+                [
+                  33,
+                  33
+                ],
+                [
+                  35,
+                  35
+                ],
+                [
+                  37,
+                  37
+                ],
+                [
+                  39,
+                  39
+                ],
+                [
+                  41,
+                  41
+                ],
+                [
+                  43,
+                  43
+                ],
+                [
+                  45,
+                  45
+                ],
+                [
+                  47,
+                  47
+                ],
+                [
+                  49,
+                  49
+                ],
+                [
+                  51,
+                  51
+                ],
+                [
+                  53,
+                  53
+                ],
+                [
+                  55,
+                  55
+                ],
+                [
+                  57,
+                  57
+                ],
+                [
+                  59,
+                  59
+                ],
+                [
+                  61,
+                  61
+                ],
+                [
+                  63,
+                  63
+                ],
+                [
+                  65,
+                  65
+                ],
+                [
+                  67,
+                  67
+                ],
+                [
+                  69,
+                  69
+                ],
+                [
+                  71,
+                  71
+                ],
+                [
+                  73,
+                  73
+                ],
+                [
+                  75,
+                  75
+                ],
+                [
+                  77,
+                  77
+                ],
+                [
+                  79,
+                  79
+                ],
+                [
+                  81,
+                  81
+                ],
+                [
+                  83,
+                  83
+                ],
+                [
+                  85,
+                  85
+                ],
+                [
+                  87,
+                  87
+                ],
+                [
+                  89,
+                  89
+                ],
+                [
+                  91,
+                  91
+                ],
+                [
+                  93,
+                  93
+                ],
+                [
+                  95,
+                  95
+                ],
+                [
+                  97,
+                  97
+                ],
+                [
+                  99,
+                  99
+                ],
+                [
+                  101,
+                  101
+                ],
+                [
+                  103,
+                  103
+                ],
+                [
+                  105,
+                  105
+                ],
+                [
+                  107,
+                  107
+                ],
+                [
+                  109,
+                  109
+                ],
+                [
+                  111,
+                  111
+                ],
+                [
+                  113,
+                  113
+                ],
+                [
+                  115,
+                  115
+                ],
+                [
+                  117,
+                  117
+                ],
+                [
+                  119,
+                  119
+                ],
+                [
+                  121,
+                  121
+                ],
+                [
+                  123,
+                  123
+                ],
+                [
+                  125,
+                  125
+                ],
+                [
+                  127,
+                  127
+                ],
+                [
+                  129,
+                  129
+                ],
+                [
+                  131,
+                  131
+                ],
+                [
+                  133,
+                  133
+                ],
+                [
+                  135,
+                  135
+                ],
+                [
+                  137,
+                  137
+                ],
+                [
+                  139,
+                  139
+                ],
+                [
+                  141,
+                  141
+                ]
+              ]
+            }
+          ]
+        },
+        {
+          "attempt_uid": "ae9fb915-8cd4-4f8d-af7d-4271670e04c8",
+          "records": 71,
+          "sequences": [
+            {
+              "source_id": "wire-3f9a1c2b7d4e5f60",
+              "source_epoch": 1791331200000000000,
+              "ranges": [
+                [
+                  4,
+                  4
+                ],
+                [
+                  6,
+                  6
+                ],
+                [
+                  8,
+                  8
+                ],
+                [
+                  10,
+                  10
+                ],
+                [
+                  12,
+                  12
+                ],
+                [
+                  14,
+                  14
+                ],
+                [
+                  16,
+                  16
+                ],
+                [
+                  18,
+                  18
+                ],
+                [
+                  20,
+                  20
+                ],
+                [
+                  22,
+                  22
+                ],
+                [
+                  24,
+                  24
+                ],
+                [
+                  26,
+                  26
+                ],
+                [
+                  28,
+                  28
+                ],
+                [
+                  30,
+                  30
+                ],
+                [
+                  32,
+                  32
+                ],
+                [
+                  34,
+                  34
+                ],
+                [
+                  36,
+                  36
+                ],
+                [
+                  38,
+                  38
+                ],
+                [
+                  40,
+                  40
+                ],
+                [
+                  42,
+                  42
+                ],
+                [
+                  44,
+                  44
+                ],
+                [
+                  46,
+                  46
+                ],
+                [
+                  48,
+                  48
+                ],
+                [
+                  50,
+                  50
+                ],
+                [
+                  52,
+                  52
+                ],
+                [
+                  54,
+                  54
+                ],
+                [
+                  56,
+                  56
+                ],
+                [
+                  58,
+                  58
+                ],
+                [
+                  60,
+                  60
+                ],
+                [
+                  62,
+                  62
+                ],
+                [
+                  64,
+                  64
+                ],
+                [
+                  66,
+                  66
+                ],
+                [
+                  68,
+                  68
+                ],
+                [
+                  70,
+                  70
+                ],
+                [
+                  72,
+                  72
+                ],
+                [
+                  74,
+                  74
+                ],
+                [
+                  76,
+                  76
+                ],
+                [
+                  78,
+                  78
+                ],
+                [
+                  80,
+                  80
+                ],
+                [
+                  82,
+                  82
+                ],
+                [
+                  84,
+                  84
+                ],
+                [
+                  86,
+                  86
+                ],
+                [
+                  88,
+                  88
+                ],
+                [
+                  90,
+                  90
+                ],
+                [
+                  92,
+                  92
+                ],
+                [
+                  94,
+                  94
+                ],
+                [
+                  96,
+                  96
+                ],
+                [
+                  98,
+                  98
+                ],
+                [
+                  100,
+                  100
+                ],
+                [
+                  102,
+                  102
+                ],
+                [
+                  104,
+                  104
+                ],
+                [
+                  106,
+                  106
+                ],
+                [
+                  108,
+                  108
+                ],
+                [
+                  110,
+                  110
+                ],
+                [
+                  112,
+                  112
+                ],
+                [
+                  114,
+                  114
+                ],
+                [
+                  116,
+                  116
+                ],
+                [
+                  118,
+                  118
+                ],
+                [
+                  120,
+                  120
+                ],
+                [
+                  122,
+                  122
+                ],
+                [
+                  124,
+                  124
+                ],
+                [
+                  126,
+                  126
+                ],
+                [
+                  128,
+                  128
+                ],
+                [
+                  130,
+                  130
+                ],
+                [
+                  132,
+                  132
+                ],
+                [
+                  134,
+                  134
+                ],
+                [
+                  136,
+                  136
+                ],
+                [
+                  138,
+                  138
+                ],
+                [
+                  140,
+                  140
+                ],
+                [
+                  142,
+                  144
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "scopes": [
+    {
+      "scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+      "source_id": "wire-3f9a1c2b7d4e5f60",
+      "source_epoch": 1791331200000000000,
+      "state": "closed",
+      "start_sequence": -1,
+      "end_sequence": 2,
+      "exchanges": 2,
+      "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "verdict": "complete_for_declared_scope",
+      "gaps": [],
+      "checks": {
+        "sequence": "passed",
+        "loss": "passed",
+        "tail": "passed",
+        "bytes": "passed",
+        "stitching": "passed"
+      }
+    },
+    {
+      "scope_id": "8c1f0e2d-4a5b-4c6d-9e7f-2a3b4c5d6e7f",
+      "source_id": "wire-3f9a1c2b7d4e5f60",
+      "source_epoch": 1791331200000000000,
+      "state": "closed",
+      "start_sequence": 0,
+      "end_sequence": 1,
+      "exchanges": 1,
+      "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "verdict": "complete_for_declared_scope",
+      "gaps": [],
+      "checks": {
+        "sequence": "passed",
+        "loss": "passed",
+        "tail": "passed",
+        "bytes": "passed",
+        "stitching": "passed"
+      }
+    }
+  ]
+}

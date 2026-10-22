@@ -854,6 +854,35 @@ def _check_run_state(run: Mapping[str, Any], path: str) -> None:
             f"{path}.run_aliases",
             "a run is not its own alias",
         )
+    _check_attempts(run, path)
+
+
+def _check_attempts(run: Mapping[str, Any], path: str) -> None:
+    """Spec 050 §3.12 (WP-30): an attempt's membership is exact. Attempt ids are unique,
+    each (source, epoch) is listed once, ranges ascend without overlap or adjacency (one
+    range per stretch of consecutive positions), and ``records`` counts every position."""
+    seen: set[str] = set()
+    for attempt in run.get("attempts", []):
+        keys = [(s["source_id"], s["source_epoch"]) for s in attempt["sequences"]]
+        total, ordered = 0, True
+        for sequences in attempt["sequences"]:
+            previous = -2
+            for first, last in sequences["ranges"]:
+                ordered = ordered and previous + 1 < first <= last
+                previous = last
+                total += last - first + 1
+        if (
+            attempt["attempt_uid"] in seen
+            or len(set(keys)) != len(keys)
+            or not ordered
+            or total != attempt["records"]
+        ):
+            raise CaptureContractError(
+                "capture.reconstruction.attempts",
+                f"{path}.attempts",
+                "an attempt is listed once, with exact, ordered, merged position ranges",
+            )
+        seen.add(attempt["attempt_uid"])
 
 
 def _validate_scope_verdicts(
