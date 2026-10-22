@@ -23,11 +23,13 @@ passes through. The ``clear`` mode (``FABRIC_IDENTITY_MODE=clear``) emits ids as
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import threading
 import uuid
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from types import MappingProxyType
@@ -328,9 +330,18 @@ def category(name_hint: str, attribute_keys: Sequence[str] | Mapping[str, Any]) 
 class RecordsStats:
     """Counters of one records input (``status()`` material; never a value)."""
 
-    __slots__ = ("_lock", "budget_refused", "emitted", "keys_dropped", "not_submitted")
+    __slots__ = (
+        "__weakref__", "_lock", "budget_refused", "emitted", "keys_dropped", "not_submitted",
+    )  # fmt: skip
 
     def __init__(self) -> None:
+        self._init_state()
+        _STATS.add(self)
+
+    def _init_state(self) -> None:
+        """Fresh lock and zero counters: at construction and in a forked child (049 §7.1:
+        ``add`` runs on the app thread, and a parent thread inside ``add``/``snapshot`` at
+        the fork would otherwise hold the child's lock forever)."""
         self._lock = threading.Lock()
         self.emitted = self.keys_dropped = self.budget_refused = self.not_submitted = 0
 
@@ -343,6 +354,19 @@ class RecordsStats:
             return {"records_emitted": self.emitted, "records_keys_dropped": self.keys_dropped,
                     "records_budget_refused": self.budget_refused,
                     "records_not_submitted": self.not_submitted}  # fmt: skip
+
+
+_STATS: weakref.WeakSet[RecordsStats] = weakref.WeakSet()
+
+
+def _after_fork_in_child() -> None:
+    for stats in list(_STATS):
+        with contextlib.suppress(Exception):
+            stats._init_state()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
 def _check_ns(value: object, what: str) -> int:

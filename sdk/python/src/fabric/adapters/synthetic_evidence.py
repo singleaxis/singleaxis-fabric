@@ -57,6 +57,7 @@ from fabric.call_recorder import (
     admitted_boundary,
     admitted_media,
     dashed,
+    fork_safe_lock,
     resolve_mode,
 )
 from fabric.source_spool import SyntheticSourceSpool
@@ -189,7 +190,7 @@ class SyntheticCaptureSession:
 
             epoch = self._producer.source(installed_records())[1]
             self.source_epoch = epoch if epoch is not None else self.source_epoch
-        self._lock = threading.Lock()
+        self._lock = fork_safe_lock(self)
         self._next: dict[str, int] = {}
         self._events: list[dict[str, Any]] = []
         self._operations: list[dict[str, Any]] = []

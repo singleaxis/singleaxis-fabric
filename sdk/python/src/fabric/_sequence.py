@@ -477,9 +477,10 @@ class GeneratedIds:
     instance maps to itself, so ids may pass through more than one layer."""
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # taken on the app thread; replaced in a forked child
         self._ids: dict[str, EmittedId] = {}
         self._issuer = "gen-" + uuid.uuid4().hex
+        _GENERATED.add(self)
 
     def _mine(self, value: str) -> bool:
         return isinstance(value, EmittedId) and value.issued_by(self._issuer)
@@ -561,6 +562,17 @@ class KeyedIds:
 
 
 EmittedIds = GeneratedIds | KeyedIds
+_GENERATED: weakref.WeakSet[GeneratedIds] = weakref.WeakSet()
+
+
+def _reset_generated_ids() -> None:
+    """A forked child: every :class:`GeneratedIds` gets a fresh lock (049 §7.1: ``other``
+    runs on the app thread; a parent thread inside it at the fork would hold the child's
+    lock forever). The ids already generated are kept, so the child's records still join
+    the parent's."""
+    for ids in list(_GENERATED):
+        with contextlib.suppress(Exception):
+            ids._lock = threading.Lock()
 
 
 def emitted_ids(profile: str, key: bytes | None, mode: IdentityMode) -> EmittedIds | None:
@@ -585,6 +597,7 @@ def _after_fork_in_child() -> None:
     for allocator in list(_LIVE):
         allocator._lock, allocator._next, allocator.epoch = threading.Lock(), 0, _new_epoch()
         allocator.registration, allocator._mirror = None, None
+    _reset_generated_ids()
 
 
 if hasattr(os, "register_at_fork"):

@@ -134,6 +134,29 @@ _DISABLED_POINTS: weakref.WeakKeyDictionary[RecordsInput, set[str]] = weakref.We
 _MEDIA_PREFERENCE = ("application/octet-stream", "application/json", "text/plain")
 
 
+# 049 §7.1: explicit producers take their lock on the app thread. A parent thread inside
+# one at a fork would hold it forever in the child, so a forked child gets fresh locks.
+_FORK_LOCKED: weakref.WeakSet[Any] = weakref.WeakSet()
+
+
+def fork_safe_lock(owner: object) -> threading.Lock:
+    """A new lock for ``owner._lock``, replaced in a forked child."""
+    _FORK_LOCKED.add(owner)
+    return threading.Lock()
+
+
+def _after_fork_in_child() -> None:
+    global _LEGACY  # noqa: PLW0603
+    _LEGACY = threading.Lock()
+    for owner in list(_FORK_LOCKED):
+        with suppress(Exception):
+            owner._lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork_in_child)
+
+
 def _warn_legacy() -> None:
     """One ``DeprecationWarning`` per process for the unsequenced legacy journal."""
     with _LEGACY:
@@ -486,7 +509,7 @@ class CallRecorder:
         self.max_events = max_events
         self._tracer = tracer if tracer is not None else get_tracer()
         self._current: ContextVar[_Call | None] = ContextVar("fabric_call", default=None)
-        self._lock = threading.Lock()
+        self._lock = fork_safe_lock(self)
         self._sequence = 0
         self._gaps = 0
         self._events: list[dict[str, Any]] = []

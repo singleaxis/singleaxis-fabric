@@ -20,7 +20,9 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 import threading
+import weakref
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -159,14 +161,24 @@ class SegmentSeals:
     def __init__(
         self, sink: MarkerSink | None = None, *, forced_at: int = FORCED_SEAL_ENTRIES
     ) -> None:
-        self._lock = threading.Lock()
-        self._segments: dict[str, _Segment] = {}
+        self._init_state()
         self._sink = sink
         self._source: Callable[[], _Source | None] | None = None
         self._forced_at = forced_at
         # Called once when a segment reaches ``forced_at`` positions: the run table seals
         # it non-terminally and continues the run in a new local segment (WP-12).
         self.on_forced: Callable[[str], None] | None = None
+        _ACCUMULATORS.add(self)
+
+    def _init_state(self) -> None:
+        """Fresh lock, no segments, zero counters: at construction and in a forked child
+        (049 §7.1: a parent thread inside ``settle``/``request_seal`` at the fork would
+        otherwise hold the child's lock forever, and ``note_allocated`` runs on the app
+        thread under the allocator lock). The parent's segments are the parent's to seal:
+        the child's pipeline starts empty, so their outstanding positions never settle
+        here."""
+        self._lock = threading.Lock()
+        self._segments: dict[str, _Segment] = {}
         self._stats = dict.fromkeys(
             ("sealed", "seal_markers_unqueued", "segment_forced_seal", "late_settles",
              "internal_errors"), 0,
@@ -309,6 +321,19 @@ class SegmentSeals:
             self._stats["sealed"] += 1
             if not queued:  # no sink, or the legacy beat queue (until WP-11b)
                 self._stats["seal_markers_unqueued"] += 1
+
+
+_ACCUMULATORS: weakref.WeakSet[SegmentSeals] = weakref.WeakSet()
+
+
+def _after_fork_in_child() -> None:
+    for accumulator in list(_ACCUMULATORS):
+        with contextlib.suppress(Exception):
+            accumulator._init_state()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
 def new_accumulator(sink: MarkerSink | None = None) -> SealAccumulator:
