@@ -58,9 +58,17 @@ exporters remain the host's responsibility.
 `record_replay_metadata`, `record_interaction`, `record_context`,
 `record_skill`, `delegate`/`adelegate`, `record_hook`, `record_file_access`,
 `set_attribute`. `Fabric.execution(...)` correlates several decisions.
+Recording never raises into the application because one `Decision` is used
+from several threads or tasks: the overlapping call is recorded without
+serialisation and counted (`Decision.concurrent_use_count`,
+`capture_health["status"] == "partial"`); `FABRIC_RECORDS_STRICT=1` raises
+`ConcurrentDecisionUseError` instead, for tests.
 `fabric.integrations.mcp` wraps an MCP client session (`traced_call_tool`,
 `InstrumentedMCPSession`, `record_mcp_inventory`); arguments and results are
-hashed. The emitted span names and GenAI attributes are listed in
+hashed under the digest rule below. `InstrumentedMCPSession` records the
+`list_tools()` (and `list_resources()`, `list_prompts()`) results the
+application receives through it and never makes a request of its own. The
+emitted span names and GenAI attributes are listed in
 [GenAI semantic conventions](genai-semantic-conventions.md).
 
 TypeScript (`@singleaxis/fabric`) uses callbacks:
@@ -88,6 +96,14 @@ include `sess-` (session), `usr-` (user), `conv-`, `mkey-` (memory key),
   identity mode drops a `fabric.session_id` that is not a `sess-` value.
 - `request_id` and the configured `agent_id` are emitted as given; use
   opaque values.
+- Other caller data on decision-line keys (v0.8.1): with the key,
+  `gen_ai.memory.store.id` is `mst-`; idempotency keys
+  (`fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key`) and
+  `fabric.retrieval.source_document_ids` entries are `lbl-` (their types have
+  no v2 prefix yet); checkpoint step names, MCP tool names
+  (`fabric.mcp.tools`) and tags are operator labels, `lbl-`, or as given with
+  `FABRIC_WIRE_LABELS=clear`. Without the key they are omitted. Host spans
+  record only the exception class, never its message or stack trace.
 
 With the id key, `ByteEvidenceRecorder`, `CallRecorder` and
 `SyntheticCaptureSession` emit the run id as `r-`, the source id as `s-`,
@@ -106,7 +122,13 @@ the emitted form; a source spool is keyed by the emitted run id.
 
 ### Content with the decision API
 
-By default the decision API records hashes, not content. Two opt-ins exist:
+By default the decision API records metadata, not content. A `*_hash`
+digest of a payload (query, memory content, side-effect request and result,
+tool arguments and result, interaction payload) is emitted only when the
+payload's content role retains the original: a role in the governed content
+capture below or, in Python without one, the memory and side-effect payloads
+written to a legacy `content_store`. `FABRIC_IDENTITY_MODE=clear` keeps the
+v0.8.0 digests. Two opt-ins exist:
 
 - `Fabric(content_capture=ContentCaptureConfig(...))` writes the content
   that recorder methods receive to a tenant-scoped governed store and stamps

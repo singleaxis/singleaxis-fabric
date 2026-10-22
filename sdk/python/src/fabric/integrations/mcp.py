@@ -32,7 +32,11 @@ recorded in the clear.
 from __future__ import annotations
 
 import contextlib
+import functools
+import inspect
 import json
+import logging
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -44,13 +48,13 @@ from fabric._attributes import (
     ATTR_MCP_TOOLS_HASH,
     SCHEMA_VERSION,
 )
-from fabric._calls import ToolErrorCategory
+from fabric._calls import ToolCall, ToolErrorCategory
 from fabric._crosscut import apply_cross_cutting
 
 from .._hashes import sha256_hex
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from fabric.baseline import BaselineCheck
     from fabric.decision import Decision
@@ -60,6 +64,8 @@ if TYPE_CHECKING:
 # already covered by the ``fabric.tool.*`` keys stamped by
 # :class:`fabric.ToolCall`; these add the MCP server identity and the
 # transport it was reached over.
+_LOG = logging.getLogger("fabric.mcp")  # class-only text: never a name, value or result
+
 FABRIC_MCP_SERVER = "fabric.mcp.server"
 FABRIC_MCP_TRANSPORT = "fabric.mcp.transport"
 
@@ -119,8 +125,8 @@ def _result_hashable_view(result: Any) -> str:
 class MCPInventory:
     """The normalized result of an MCP inventory snapshot.
 
-    Returned by :func:`record_mcp_inventory` (and
-    :meth:`InstrumentedMCPSession.snapshot_inventory`) so a caller can
+    Returned by :func:`record_mcp_inventory` (and recorded by
+    :class:`InstrumentedMCPSession` from observed ``list_*`` results) so a caller can
     assert / diff what was captured. Carries only metadata + hashes — no
     raw tool description or input schema — mirroring exactly what lands on
     the ``fabric.mcp.inventory`` span event. ``server`` / ``transport``
@@ -190,7 +196,9 @@ def record_mcp_inventory(
       than stamped empty)
     * ``fabric.mcp.tool_count`` (int)
     * ``fabric.mcp.tools`` — tuple of ``"<tool_name>:<def_hash[:12]>"``,
-      ordered as supplied
+      ordered as supplied; the tool name is an operator label: ``lbl-`` + 32 hex
+      in the pseudonymous identity mode (omitted without ``FABRIC_WIRE_ID_KEY``),
+      as given in the ``clear`` mode or with ``FABRIC_WIRE_LABELS=clear``
     * ``fabric.mcp.tools_hash`` — hash over the canonical full tool list
     * ``fabric.mcp.resource_count`` / ``fabric.mcp.prompt_count`` — stamped
       only when ``resources`` / ``prompts`` are supplied
@@ -209,8 +217,17 @@ def record_mcp_inventory(
         The :class:`MCPInventory` describing what was recorded.
     """
     definitions = [_tool_definition(t) for t in tools]
-    tool_entries = tuple(f"{d['name']}:{_sha256_hex(_canonical(d))[:12]}" for d in definitions)
+    def_hashes = [_sha256_hex(_canonical(d))[:12] for d in definitions]
+    tool_entries = tuple(f"{d['name']}:{h}" for d, h in zip(definitions, def_hashes, strict=True))
     tools_hash = _sha256_hex(_canonical(definitions))
+    # 049 §4.2: a tool name is an operator label (``lbl-`` when pseudonymous, clear with
+    # FABRIC_WIRE_LABELS=clear); without a key the names are omitted (the count and the
+    # hashes remain). The returned MCPInventory keeps the caller's own view.
+    identity = decision._identity  # the decision's identity policy
+    names = [identity.label(str(d["name"])) for d in definitions]
+    emitted_entries = (
+        None if None in names else tuple(f"{n}:{h}" for n, h in zip(names, def_hashes, strict=True))
+    )
 
     resource_count = None if resources is None else len(resources)
     prompt_count = None if prompts is None else len(prompts)
@@ -218,9 +235,10 @@ def record_mcp_inventory(
     event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
         "fabric.schema_version": SCHEMA_VERSION,
         ATTR_MCP_TOOL_COUNT: len(definitions),
-        ATTR_MCP_TOOLS: tool_entries,
-        ATTR_MCP_TOOLS_HASH: tools_hash,
     }
+    if emitted_entries is not None:
+        event_attrs[ATTR_MCP_TOOLS] = emitted_entries
+    event_attrs[ATTR_MCP_TOOLS_HASH] = tools_hash
     # Server identity / transport are stamped only when identified —
     # empty strings carry no signal and would only pollute the event.
     if server:
@@ -235,7 +253,9 @@ def record_mcp_inventory(
     # Generic cross-cutting (spec 023): the MCP tool set is exactly the kind
     # of hashed artifact a baseline / signature applies to. Stamped only when
     # supplied, so existing inventory calls stay byte-identical.
-    apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+    apply_cross_cutting(
+        event_attrs, tags=tags, baseline=baseline, signature=signature, label=identity.label
+    )
 
     decision.span.add_event("fabric.mcp.inventory", attributes=event_attrs)
 
@@ -265,6 +285,11 @@ async def traced_call_tool(
     awaits ``session.call_tool``, maps the result defensively onto the span,
     and returns the raw result unchanged.
 
+    Passive (spec 049 §7.1): recording never raises into the application.
+    A recording failure before the call still makes the call; a failure
+    after it never replaces the result; an exception from ``call_tool`` is
+    re-raised as the same object.
+
     Args:
         decision: the active :class:`fabric.Decision` (must be entered).
         session: anything satisfying :class:`MCPSessionLike` — typically
@@ -280,9 +305,29 @@ async def traced_call_tool(
     Returns:
         The raw result object returned by ``session.call_tool``.
     """
-    serialized_args = _serialize_arguments(arguments)
+    return await _traced_call(
+        decision, session, tool_name, arguments, (), {},
+        server_name=server_name, transport=transport,
+    )  # fmt: skip
 
-    with decision.tool_call(tool_name) as tc:
+
+def _open_tool_span(
+    decision: Decision,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+    server_name: str | None,
+    transport: str | None,
+) -> ToolCall | None:
+    """Enter the tool span and stamp what is known before the call; ``None`` when that
+    fails (the call is still made). Never raises."""
+    tc: ToolCall | None = None
+    try:
+        tc = decision.tool_call(tool_name)
+        tc.__enter__()
+    except Exception:
+        _LOG.debug("fabric.mcp: tool span not opened; the call proceeds unrecorded")
+        return None
+    try:
         tc.set_kind("mcp")
         # ``fabric.*`` keys are SDK-owned and rejected by the public
         # ``set_attribute`` convenience wrapper, so the integration stamps
@@ -292,24 +337,74 @@ async def traced_call_tool(
         if transport:
             tc.span.set_attribute(FABRIC_MCP_TRANSPORT, transport)
         if arguments is not None:
-            tc.set_arguments(serialized_args)
+            tc.set_arguments(_serialize_arguments(arguments))
+    except Exception:
+        _LOG.debug("fabric.mcp: tool call arguments not recorded")
+    return tc
 
-        result = await session.call_tool(tool_name, arguments)
 
-        # Map the result defensively. We only have a duck-typed ``Any``;
-        # the real CallToolResult exposes ``.isError`` and ``.content``,
-        # but mocks / older shapes may not. ``getattr`` with defaults
-        # keeps this from blowing up on absent attributes.
+def _record_result(tc: ToolCall, result: Any) -> None:
+    """Map the result defensively onto the span. Never raises.
+
+    We only have a duck-typed ``Any``; the real CallToolResult exposes
+    ``.isError`` and ``.content``, but mocks / older shapes may not, and a
+    hostile property may raise: every step is guarded on its own."""
+    try:
         if getattr(result, "isError", False):
             tc.record_error(ToolErrorCategory.SERVER_ERROR)
+    except Exception:
+        _LOG.debug("fabric.mcp: tool error flag not recorded")
+    try:
         content = getattr(result, "content", None)
         if content is not None:
             # ``content`` present but not sized => skip the count.
             with contextlib.suppress(TypeError):
                 tc.set_result_count(len(content))
+    except Exception:
+        _LOG.debug("fabric.mcp: tool result count not recorded")
+    try:
         tc.set_result(_result_hashable_view(result))
+    except Exception:
+        _LOG.debug("fabric.mcp: tool result not recorded")
 
-        return result
+
+def _close_tool_span(tc: ToolCall | None, exc: BaseException | None) -> None:
+    if tc is None:
+        return
+    try:
+        if exc is None:
+            tc.__exit__(None, None, None)
+        else:
+            tc.__exit__(type(exc), exc, exc.__traceback__)
+    except Exception:
+        _LOG.debug("fabric.mcp: tool span not closed cleanly")
+
+
+async def _traced_call(
+    decision: Decision,
+    session: MCPSessionLike,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+    call_args: tuple[Any, ...],
+    call_kwargs: dict[str, Any],
+    *,
+    server_name: str | None,
+    transport: str | None,
+) -> Any:
+    tc = _open_tool_span(decision, tool_name, arguments, server_name, transport)
+    try:
+        result = await session.call_tool(tool_name, arguments, *call_args, **call_kwargs)
+    except BaseException as exc:
+        _close_tool_span(tc, exc)
+        raise
+    if tc is not None:
+        _record_result(tc, result)
+    _close_tool_span(tc, None)
+    return result
+
+
+# The listings the proxy observes (spec 051 §4.8): method -> the result field it carries.
+_OBSERVED_LISTS = {"list_tools": "tools", "list_resources": "resources", "list_prompts": "prompts"}
 
 
 class InstrumentedMCPSession:
@@ -321,6 +416,14 @@ class InstrumentedMCPSession:
     every other attribute passes straight through to the wrapped session
     via :meth:`__getattr__`, so it remains a drop-in stand-in for the
     real session for everything except the instrumented hot path.
+
+    Passive inventory (spec 049 §7.2, 051 §4.8): when the application calls
+    ``list_tools()`` / ``list_resources()`` / ``list_prompts()`` through the
+    proxy, the call is forwarded unchanged and its *returned* value is
+    recorded as a ``fabric.mcp.inventory`` event (the latest observed tools,
+    resources and prompts; each observed page is recorded as observed). The
+    proxy never issues a request of its own, and a recording failure never
+    changes what the application receives.
     """
 
     def __init__(
@@ -335,72 +438,83 @@ class InstrumentedMCPSession:
         self._decision = decision
         self._server_name = server_name
         self._transport = transport
+        self._observed: dict[str, tuple[Any, ...]] = {}
+        self._last_inventory: MCPInventory | None = None
 
     async def call_tool(
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> Any:
-        """Invoke the named tool through :func:`traced_call_tool`."""
-        return await traced_call_tool(
-            self._decision,
-            self._session,
-            name,
-            arguments,
-            server_name=self._server_name,
-            transport=self._transport,
-        )
+        """Invoke the named tool through :func:`traced_call_tool`; any further
+        arguments (``read_timeout_seconds``, ``progress_callback`` ...) are passed to the
+        wrapped session unchanged."""
+        return await _traced_call(
+            self._decision, self._session, name, arguments, args, kwargs,
+            server_name=self._server_name, transport=self._transport,
+        )  # fmt: skip
 
-    async def snapshot_inventory(self) -> MCPInventory:
-        """Capture the wrapped server's advertised surface as an event.
+    async def snapshot_inventory(self) -> MCPInventory | None:
+        """Deprecated no-op: returns the last inventory recorded from an observed
+        ``list_*`` result, or ``None``; records nothing.
 
-        Auto-capture wrapper around the session's ``list_tools()`` (and
-        ``list_resources()`` / ``list_prompts()`` when the session exposes
-        them): awaits each listing, then forwards the definitions to
-        :func:`record_mcp_inventory`, which hashes them and emits the
-        ``fabric.mcp.inventory`` event onto the bound decision's span.
-        Call after connecting (and again later to detect the server's
-        tools changing underneath the agent). Raw tool descriptions /
-        schemas never land on the span — only names + hashes.
-
-        Returns:
-            The :class:`MCPInventory` describing what was recorded.
+        It used to call the server's ``list_tools()`` / ``list_resources()`` /
+        ``list_prompts()`` itself, and a passive recorder must not generate traffic
+        (spec 049 §7.2). Call ``list_tools()`` (and the others) through this proxy
+        instead: their results are recorded as the application receives them.
         """
-        # ``list_tools`` is not part of the minimal ``MCPSessionLike``
-        # contract (which only declares ``call_tool``), so reach it via
-        # ``getattr`` and fail loud if the wrapped session cannot list.
-        list_tools = getattr(self._session, "list_tools", None)
-        if list_tools is None:
-            raise AttributeError(
-                "wrapped MCP session has no list_tools(); cannot snapshot inventory"
-            )
-        tools_result = await list_tools()
-        tools = getattr(tools_result, "tools", tools_result)
-
-        resources: Any | None = None
-        list_resources = getattr(self._session, "list_resources", None)
-        if list_resources is not None:
-            resources_result = await list_resources()
-            resources = getattr(resources_result, "resources", resources_result)
-
-        prompts: Any | None = None
-        list_prompts = getattr(self._session, "list_prompts", None)
-        if list_prompts is not None:
-            prompts_result = await list_prompts()
-            prompts = getattr(prompts_result, "prompts", prompts_result)
-
-        return record_mcp_inventory(
-            self._decision,
-            server=self._server_name,
-            transport=self._transport,
-            tools=tools,
-            resources=resources,
-            prompts=prompts,
+        warnings.warn(
+            "InstrumentedMCPSession.snapshot_inventory() is deprecated and records nothing; "
+            "call list_tools() through the proxy and its result is recorded",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        return self._last_inventory
+
+    def _observe(self, field: str, result: Any) -> None:
+        """Record an observed listing (fail-open: never raises, never alters ``result``)."""
+        try:
+            self._observed[field] = tuple(getattr(result, field, result))
+            tools = self._observed.get("tools")
+            if tools is None:  # an inventory starts from the tool surface
+                return
+            self._last_inventory = record_mcp_inventory(
+                self._decision,
+                server=self._server_name,
+                transport=self._transport,
+                tools=tools,
+                resources=self._observed.get("resources"),
+                prompts=self._observed.get("prompts"),
+            )
+        except Exception:
+            _LOG.debug("fabric.mcp: observed listing not recorded")
+
+    def _observed_list(self, field: str, target: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(target)
+        def observed(*args: Any, **kwargs: Any) -> Any:
+            value = target(*args, **kwargs)
+            if not inspect.isawaitable(value):
+                self._observe(field, value)
+                return value
+
+            async def settle() -> Any:
+                result = await value
+                self._observe(field, result)
+                return result
+
+            return settle()
+
+        return observed
 
     def __getattr__(self, item: str) -> Any:
         # Reached only for attributes not set on the proxy itself, so
         # pass them through to the wrapped session. Guarded names
         # (``_session`` etc.) are real instance attributes and never
-        # land here.
-        return getattr(self._session, item)
+        # land here. The three listings are observed, never issued.
+        target = getattr(self._session, item)
+        field = _OBSERVED_LISTS.get(item)
+        if field is None or not callable(target):
+            return target
+        return self._observed_list(field, target)

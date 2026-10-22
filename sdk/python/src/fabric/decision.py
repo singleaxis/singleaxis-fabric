@@ -10,19 +10,20 @@ evaluation, authorization, policy, escalation or other enforcement behavior.
 Concurrency contract
 --------------------
 
-A :class:`Decision` instance represents a single agent turn and is
-**not** safe to share across threads or asyncio tasks. Open one
-``Decision`` per agent turn; do not pass the same instance into
-parallel coroutines or workers.
+A :class:`Decision` instance represents a single agent turn. Open one
+``Decision`` per agent turn; sharing one instance across threads or
+asyncio tasks is supported only as a degraded mode.
 
-Mutation methods on a single ``Decision`` (``record_retrieval``, ``remember``,
-``record_side_effect`` and ``set_attribute``) are **not** internally
-synchronized. The
+Recording never raises into the application because of concurrent use
+(spec 049 §7.1). Mutating calls on one ``Decision`` are serialised by a
+non-blocking sentinel; a call that overlaps another is still recorded,
+without serialisation, and counted (:attr:`Decision.concurrent_use_count`,
+``capture_health["status"] == "partial"``): its events are kept, but the
 rolling counter attributes (``fabric.retrieval_count``,
-``fabric.memory_write_count``, ``fabric.side_effect_count``) and the
-internal lists they update would race under concurrent access. The
-``Fabric`` client itself is safe to share — only ``Decision`` instances
-have this constraint.
+``fabric.memory_write_count``, ``fabric.side_effect_count`` ...) may be
+off. ``FABRIC_RECORDS_STRICT=1`` restores the old fail-fast
+:class:`ConcurrentDecisionUseError` for tests only. The ``Fabric`` client
+itself is safe to share.
 
 Async usage
 -----------
@@ -44,6 +45,7 @@ managers.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
@@ -131,7 +133,7 @@ from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
-from ._identity import IdentityPolicy
+from ._identity import IdentityPolicy, record_exception
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .memory import MemoryKind, MemoryRecord
@@ -250,6 +252,16 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger("fabric.decision")
+_CONCURRENT_WARNED = threading.Event()  # one class-only warning per process
+# The roles whose payloads the legacy (non-governed) content store receives as given.
+_LEGACY_STORE_ROLES = frozenset(
+    {
+        ContentRole.MEMORY_WRITE_CONTENT.value,
+        ContentRole.MEMORY_READ_CONTENT.value,
+        ContentRole.SIDE_EFFECT_REQUEST.value,
+        ContentRole.SIDE_EFFECT_RESULT.value,
+    }
+)
 
 SPAN_NAME = "fabric.decision"
 
@@ -377,21 +389,19 @@ class DelegationContext:
     carrier: dict[str, str]
 
 
+# Strict test mode (spec 049 §7.1): only when set to "1" does an overlapping mutating call
+# raise ConcurrentDecisionUseError; otherwise it is recorded degraded and counted.
+RECORDS_STRICT_ENV = "FABRIC_RECORDS_STRICT"
+
+
 class ConcurrentDecisionUseError(RuntimeError):
-    """Raised when one :class:`Decision` is mutated concurrently.
+    """Raised for overlapping use of one :class:`Decision`, in strict mode only.
 
-    A :class:`Decision` represents a single agent turn and is not safe
-    to share across threads or asyncio tasks (see the module docstring's
-    concurrency contract). The SDK detects *genuinely overlapping*
-    mutating calls on the same instance via a non-blocking sentinel lock
-    and raises this rather than letting the internal record lists and
-    rolling span-counter attributes race silently.
-
-    Note the async ``a*`` methods are NOT a false trigger: each offloads
-    its sync sibling to a worker thread and is awaited to completion
-    before the next call begins, so sequential ``await`` calls never
-    overlap. Firing two such coroutines concurrently on ONE decision
-    (e.g. via ``asyncio.gather``) is the real footgun this catches.
+    Recording never raises into the application (spec 049 §7.1): by default
+    an overlapping mutating call is recorded without serialisation and
+    counted (:attr:`Decision.concurrent_use_count`). Only with
+    ``FABRIC_RECORDS_STRICT=1`` (a test mode) does the SDK raise this
+    instead, so a test suite can catch a shared ``Decision``.
     """
 
 
@@ -497,11 +507,12 @@ class Decision(AbstractContextManager["Decision"]):
         # Concurrency overlap sentinel. A non-blocking lock that is held
         # only for the duration of a single mutating call. Two operations
         # that genuinely overlap in time on the same instance contend for
-        # it and the loser raises ConcurrentDecisionUseError. Sequential
-        # calls — including the async to_thread offload, where each await
-        # completes before the next starts — never contend. See
-        # ``_exclusive`` and the module concurrency contract.
+        # it; the loser is recorded without serialisation and counted
+        # (never raised, spec 049 §7.1). Sequential calls never contend.
+        # See ``_exclusive`` and the module concurrency contract.
         self._busy = threading.Lock()
+        self._concurrent_use = 0
+        self._concurrent_use_lock = threading.Lock()  # O(1) counter update only
         # Lifecycle flag: "new" before enter, "open" between enter/exit,
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
@@ -517,26 +528,49 @@ class Decision(AbstractContextManager["Decision"]):
 
     @contextmanager
     def _exclusive(self) -> Iterator[None]:
-        """Hold the overlap sentinel for one mutating call, else raise.
+        """Hold the overlap sentinel for one mutating call; never raise on overlap.
 
-        Non-blocking ``acquire`` so a second *concurrent* mutating call
-        fails fast with :class:`ConcurrentDecisionUseError` instead of
-        silently racing the record lists / span counters. The acquire is
-        a couple of microseconds, so the hot path is not meaningfully
-        regressed. Do NOT call a guarded method from inside another
-        guarded method on the same instance — that would self-deadlock
-        on this non-reentrant lock (none of the public methods do).
+        Non-blocking ``acquire``: recording never waits on another thread
+        (spec 049 §7.1). A second *concurrent* mutating call is recorded
+        without serialisation (degraded: its events are kept, the rolling
+        counters may be off) and counted in :attr:`concurrent_use_count`.
+        Only ``FABRIC_RECORDS_STRICT=1`` (a test mode) raises
+        :class:`ConcurrentDecisionUseError` instead. Guarded methods never
+        call each other, so the sentinel is never re-entered by the SDK.
         """
-        if not self._busy.acquire(blocking=False):
+        if self._busy.acquire(blocking=False):
+            try:
+                yield
+            finally:
+                self._busy.release()
+            return
+        if os.environ.get(RECORDS_STRICT_ENV) == "1":
             raise ConcurrentDecisionUseError(
                 "Decision used concurrently from multiple threads/tasks; "
                 "open one Decision per agent turn — see the concurrency "
                 "contract in the module docstring"
             )
-        try:
-            yield
-        finally:
-            self._busy.release()
+        self._note_concurrent_use()
+        yield
+
+    def _note_concurrent_use(self) -> None:
+        """Count one overlapping call and warn once per process (class-only text)."""
+        with self._concurrent_use_lock:
+            self._concurrent_use += 1
+        if not _CONCURRENT_WARNED.is_set():
+            _CONCURRENT_WARNED.set()
+            with contextlib.suppress(Exception):  # logging must not change agent behaviour
+                _LOG.warning(
+                    "fabric: a Decision was used concurrently from several threads or tasks; "
+                    "the overlapping call was recorded without serialisation and the "
+                    "decision's rolling counters may be off (see Decision.capture_health)"
+                )
+
+    @property
+    def concurrent_use_count(self) -> int:
+        """How many mutating calls overlapped another on this decision (degraded, never
+        raised; spec 049 §7.1)."""
+        return self._concurrent_use
 
     # -- execution-id resolution -----------------------------------------
 
@@ -712,14 +746,17 @@ class Decision(AbstractContextManager["Decision"]):
             # which we already record so cancellations stay visible.
             self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
-            self._span.record_exception(exc)
+            # 049 §7.6: class only in the pseudonymous mode (no message, no stack).
+            record_exception(self._span, exc, clear=self._identity.clear)
         # Governed content: write the transcript manifest and stamp its
         # ref before the span ends. Pending items stay pending — honest
         # gap, never claimed delivered (spec 032 §5).
         if self._content_sink is not None:
             self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
         result = self._cm.__exit__(exc_type, exc, tb)
-        self._capture_health = capture_health(self._span, self._recording_at_start)
+        self._capture_health = capture_health(
+            self._span, self._recording_at_start, concurrent_use=self._concurrent_use
+        )
         warn_capture_health(self._capture_health)
         self._span = None
         self._cm = None
@@ -1012,6 +1049,19 @@ class Decision(AbstractContextManager["Decision"]):
         """True when governed content capture is configured on the client."""
         return self._client.content_capture is not None
 
+    def _retains_original(self, role: ContentRole | str) -> bool:
+        """Whether ``role``'s privacy mode retains the original payload (spec 049 §7.5,
+        spec 051 D-14): only then may a ``*_hash`` digest of it leave the process. The
+        governed roles of a configured content capture retain it; without one, the legacy
+        content store retains the memory and side-effect payloads it is given; nothing
+        else does (metadata-only: no digest, since a digest of a low-entropy payload
+        reveals it). The ``clear`` identity mode keeps the v0.8.0 digests."""
+        if self._identity.clear:
+            return True
+        if self.governed_capture:
+            return str(role) in self._client.content_roles
+        return self._client.content_store is not None and str(role) in _LEGACY_STORE_ROLES
+
     def _reject_raw_capture(self, capture_content: bool) -> None:
         if capture_content and self.governed_capture:
             raise ValueError("raw span capture is incompatible with protected content capture")
@@ -1104,13 +1154,20 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.retrieval.source": record.source.value,
-                "fabric.retrieval.query_hash": record.query_hash,
-                "fabric.retrieval.result_count": record.result_count,
             }
-            if record.result_hashes:
+            # 049 §7.5: a digest of the original only where its role retains it.
+            if self._retains_original(ContentRole.RETRIEVAL_QUERY):
+                event_attrs["fabric.retrieval.query_hash"] = record.query_hash
+            event_attrs["fabric.retrieval.result_count"] = record.result_count
+            if record.result_hashes and self._retains_original(ContentRole.RETRIEVAL_RESULTS):
                 event_attrs["fabric.retrieval.result_hashes"] = record.result_hashes
-            if record.source_document_ids:
-                event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
+            document_ids = tuple(
+                emitted
+                for doc_id in record.source_document_ids
+                if (emitted := self._identity.opaque(doc_id)) is not None
+            )
+            if document_ids:
+                event_attrs["fabric.retrieval.source_document_ids"] = document_ids
             if record.latency_ms is not None:
                 event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
             retrieval_ref = results_ref or query_ref
@@ -1217,13 +1274,16 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
             }
-            # from_content always populates content_hash (write side).
-            if record.content_hash is not None:
+            # from_content always populates content_hash (write side); 049 §7.5: emitted
+            # only where the role retains the original.
+            if record.content_hash is not None and self._retains_original(
+                ContentRole.MEMORY_WRITE_CONTENT
+            ):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.key is not None and (memory_key := self._identity.id("mkey", record.key)):
                 event_attrs["fabric.memory.key"] = memory_key
-            if record.tags:
-                event_attrs["fabric.memory.tags"] = record.tags
+            if memory_tags := self._identity.labels(record.tags):
+                event_attrs["fabric.memory.tags"] = memory_tags
             if record.ttl_seconds is not None:
                 event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
             if record.invalidates is not None and (
@@ -1238,8 +1298,8 @@ class Decision(AbstractContextManager["Decision"]):
             ) as memory_span:
                 memory_span.set_attribute("gen_ai.operation.name", "create_memory")
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if key is not None and (record_id := self._identity.id("mkey", key)):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 if provider is not None:
@@ -1313,8 +1373,10 @@ class Decision(AbstractContextManager["Decision"]):
             recalled = record.key if record.key is not None else key
             if memory_key := self._identity.id("mkey", recalled):
                 event_attrs["fabric.memory.key"] = memory_key
-            # from_recall always populates content_hash (read side).
-            if record.content_hash is not None:
+            # from_recall always populates content_hash (read side); 049 §7.5 as above.
+            if record.content_hash is not None and self._retains_original(
+                ContentRole.MEMORY_READ_CONTENT
+            ):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.source is not None:
                 event_attrs["fabric.memory.source"] = record.source
@@ -1328,8 +1390,8 @@ class Decision(AbstractContextManager["Decision"]):
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
                 if capture_content:
@@ -1403,8 +1465,8 @@ class Decision(AbstractContextManager["Decision"]):
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
             return record
@@ -1542,12 +1604,20 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.side_effect.rollback_supported": record.rollback_supported,
                 "fabric.side_effect.replay_behavior": record.replay_behavior.value,
             }
-            if record.request_hash is not None:
+            # 049 §7.5: computed or caller-supplied, a digest of the original only where
+            # its role retains it.
+            if record.request_hash is not None and self._retains_original(
+                ContentRole.SIDE_EFFECT_REQUEST
+            ):
                 event_attrs["fabric.side_effect.request_hash"] = record.request_hash
-            if record.result_hash is not None:
+            if record.result_hash is not None and self._retains_original(
+                ContentRole.SIDE_EFFECT_RESULT
+            ):
                 event_attrs["fabric.side_effect.result_hash"] = record.result_hash
-            if record.idempotency_key is not None:
-                event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
+            if record.idempotency_key is not None and (
+                idempotency_key := self._identity.opaque(record.idempotency_key)
+            ):
+                event_attrs["fabric.side_effect.idempotency_key"] = idempotency_key
             if record.parent_tool_call_id is not None:
                 event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
             if request_ref is not None:
@@ -1597,8 +1667,10 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
-                "fabric.checkpoint.step_name": event.step_name,
             }
+            # 049 §4.2: the step name is an operator label (``lbl-`` when pseudonymous).
+            if (emitted_step := self._identity.label(event.step_name)) is not None:
+                event_attrs["fabric.checkpoint.step_name"] = emitted_step
             if event.state_hash is not None:
                 event_attrs["fabric.checkpoint.state_hash"] = event.state_hash
 
@@ -1770,7 +1842,8 @@ class Decision(AbstractContextManager["Decision"]):
             self._interaction_count += 1
             self._interaction_kinds.add(kind)
             span.set_attribute(ATTR_INTERACTION_COUNT, self._interaction_count)
-            span.set_attribute(ATTR_INTERACTION_KINDS, tuple(sorted(self._interaction_kinds)))
+            kinds = tuple(sorted(self._interaction_kinds.copy()))  # copy: safe when degraded
+            span.set_attribute(ATTR_INTERACTION_KINDS, kinds)
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
@@ -1783,12 +1856,8 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_TARGET] = emitted
             if direction is not None:
                 event_attrs[ATTR_INTERACTION_DIRECTION] = direction
-            if payload_hash is not None:
-                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = require_sha256_hex(
-                    "payload_hash", payload_hash
-                )
-            elif payload is not None:
-                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = _sha256_hex(payload)
+            if (digest := self._payload_digest(payload, payload_hash)) is not None:
+                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = digest
             if payload_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = payload_ref
             if metadata:
@@ -1798,12 +1867,25 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_METADATA_HASH] = _sha256_hex(canonical)
 
             resolved = apply_cross_cutting(
-                event_attrs, tags=tags, baseline=baseline, signature=signature
-            )
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.interaction", attributes=event_attrs)
 
             # Improvement loop: a one-shot, low-rate coverage signal.
             self._emit_coverage_signals(kind, resolved.baseline_status, resolved.has_tags)
+
+    def _payload_digest(self, payload: str | None, payload_hash: str | None) -> str | None:
+        """The interaction payload digest as emitted: only where ``interaction.payload``
+        retains the original (049 §7.5); a caller-supplied digest is validated either way."""
+        checked = (
+            require_sha256_hex("payload_hash", payload_hash) if payload_hash is not None else None
+        )
+        if not self._retains_original(ContentRole.INTERACTION_PAYLOAD):
+            return None
+        if checked is not None:
+            return checked
+        return _sha256_hex(payload) if payload is not None else None
 
     def record_context(
         self,
@@ -1931,7 +2013,10 @@ class Decision(AbstractContextManager["Decision"]):
                 )
             if signed is not None:
                 event_attrs[ATTR_SKILL_SIGNED] = signed
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.skill", attributes=event_attrs)
 
     def _open_delegation(
@@ -1992,7 +2077,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_DELEGATION_TO_AGENT] = agent
             event_attrs[ATTR_DELEGATION_PROTOCOL] = protocol
             event_attrs[ATTR_DELEGATION_DEPTH] = depth
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             self._delegation_count += 1
             self._delegation_depth += 1
             span.set_attribute(ATTR_DELEGATION_COUNT, self._delegation_count)
@@ -2135,7 +2223,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_HOOK_INPUT_HASH] = require_sha256_hex("input_hash", input_hash)
             if output_hash is not None:
                 event_attrs[ATTR_HOOK_OUTPUT_HASH] = require_sha256_hex("output_hash", output_hash)
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.hook", attributes=event_attrs)
 
     def record_file_access(
@@ -2205,7 +2296,10 @@ class Decision(AbstractContextManager["Decision"]):
                 )
             if size_bytes is not None:
                 event_attrs[ATTR_FILE_SIZE_BYTES] = size_bytes
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.file", attributes=event_attrs)
 
     # -- child spans (LLM call / tool call) ------------------------------
@@ -2320,6 +2414,7 @@ class Decision(AbstractContextManager["Decision"]):
             step_attempt=step_attempt,
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
+            identity=self._identity,
         )
 
     def embeddings(
@@ -2385,7 +2480,9 @@ class Decision(AbstractContextManager["Decision"]):
         """
         _ = self.span
         extra: dict[str, str | int | float | bool | tuple[str, ...]] = {}
-        apply_cross_cutting(extra, tags=tags, baseline=baseline, signature=signature)
+        apply_cross_cutting(
+            extra, tags=tags, baseline=baseline, signature=signature, label=self._identity.label
+        )
         return ToolCall(
             tracer=self._client.tracer,
             meter=self._client.meter,
@@ -2403,6 +2500,8 @@ class Decision(AbstractContextManager["Decision"]):
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
             extra_attributes=extra or None,
+            identity=self._identity,
+            retains_original=self._retains_original,
         )
 
     # -- OTel passthrough -------------------------------------------------

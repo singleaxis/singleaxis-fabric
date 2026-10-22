@@ -100,6 +100,7 @@ import {
 import { sha256Hex } from "./hash.js";
 import { ATTR_CONTENT_REQUEST_REF, ATTR_CONTENT_RESULT_REF } from "./attributes.js";
 import { type CrossCuttingOptions } from "./crosscut.js";
+import { type IdentityPolicy } from "./identity.js";
 import {
   assertIntAtLeast,
   assertNonEmpty,
@@ -435,6 +436,10 @@ export class ToolCall {
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly governedCapture?: GovernedCaptureFn,
+    /** The decision's identity policy (049 §2.9); absent: values as given. */
+    private readonly ids?: IdentityPolicy,
+    /** Whether a role retains the original (049 §7.5); absent: digests as before. */
+    private readonly retainsOriginal: (role: string) => boolean = () => true,
   ) {}
 
   /** Record how many results/items the tool returned. */
@@ -453,7 +458,9 @@ export class ToolCall {
    */
   setArguments(payload: string, options: { capture?: boolean } = {}): void {
     assertStringPayload(payload);
-    this.span.setAttribute(FABRIC_TOOL_ARGS_HASH, sha256Hex(payload));
+    if (this.retainsOriginal("tool.call.arguments")) {
+      this.span.setAttribute(FABRIC_TOOL_ARGS_HASH, sha256Hex(payload)); // 049 §7.5
+    }
     if (this.governedCapture !== undefined) {
       const ref = this.governedCapture("tool.call.arguments", payload);
       if (ref !== undefined) {
@@ -467,7 +474,9 @@ export class ToolCall {
   /** Record a SHA-256 hash of the tool call's result. */
   setResult(payload: string, options: { capture?: boolean } = {}): void {
     assertStringPayload(payload);
-    this.span.setAttribute(FABRIC_TOOL_RESULT_HASH, sha256Hex(payload));
+    if (this.retainsOriginal("tool.call.result")) {
+      this.span.setAttribute(FABRIC_TOOL_RESULT_HASH, sha256Hex(payload)); // 049 §7.5
+    }
     if (this.governedCapture !== undefined) {
       const ref = this.governedCapture("tool.call.result", payload);
       if (ref !== undefined) {
@@ -516,7 +525,9 @@ export class ToolCall {
     this.span.setAttribute(FABRIC_TOOL_IDEMPOTENT, options.idempotent);
     if (options.key !== undefined) {
       assertNonEmpty("idempotency key", options.key);
-      this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, options.key);
+      // Caller data: `lbl-` when pseudonymous, omitted without a key.
+      const key = this.ids === undefined ? options.key : this.ids.opaque(options.key);
+      if (key !== undefined) this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key);
     }
   }
 

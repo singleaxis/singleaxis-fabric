@@ -8,6 +8,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### v0.8.1 release notes (draft)
+
+Fabric v0.8.1 fixes privacy and passivity defects in the v0.8 decision line:
+`Fabric.decision()` in both SDKs and the Python MCP wrapper. Spec 051 (P2)
+carries these fixes forward.
+
+**Passivity (spec 049 §7.1, §7.2)**
+
+- Concurrent use of one `Decision` no longer raises `ConcurrentDecisionUseError`
+  into the application (Python `_exclusive`, TypeScript `exclusive`; it could
+  even replace the application's own exception on `delegate()` exit). An
+  overlapping mutating call is recorded without serialisation (its events are
+  kept; the rolling counters may be off), counted in
+  `Decision.concurrent_use_count` / `concurrentUseCount` and reported as
+  `capture_health` status `partial`, with one class-only warning per process.
+  `FABRIC_RECORDS_STRICT=1` restores the old error, as a test mode only.
+- MCP `call_tool`: `traced_call_tool` and `InstrumentedMCPSession.call_tool`
+  never raise because of recording. A recording failure after `call_tool` has
+  returned no longer replaces the result (the application gets exactly the
+  object `call_tool` returned); a failure before it no longer skips the call;
+  an exception from `call_tool` is re-raised as the same object.
+  `InstrumentedMCPSession.call_tool` now passes further arguments
+  (`read_timeout_seconds`, `progress_callback` ...) to the wrapped session.
+- MCP inventory: `InstrumentedMCPSession` no longer makes requests of its own.
+  When the application calls `list_tools()`, `list_resources()` or
+  `list_prompts()` through the proxy, the call is forwarded unchanged and its
+  returned value is recorded as the `fabric.mcp.inventory` event.
+  **Deprecated:** `InstrumentedMCPSession.snapshot_inventory()` used to call
+  `list_tools()`, `list_resources()` and `list_prompts()` itself. It is now a
+  no-op that records nothing and returns the last inventory recorded from an
+  observed listing, or `None` (return type `MCPInventory | None`), with a
+  `DeprecationWarning`. It will be removed in a later minor release. To keep
+  recording inventories, call `list_tools()` (and the others) through the
+  proxy.
+
+**Privacy in the pseudonymous identity mode (spec 049 §2.9, §4.2, §7.5, §7.6)**
+
+These change the default output (`FABRIC_IDENTITY_MODE` unset or
+`pseudonymous`). **To keep the v0.8.0 output exactly, set
+`FABRIC_IDENTITY_MODE=clear`** (Python `FabricConfig(identity_mode="clear")`,
+TypeScript `new Fabric({ identityMode: "clear" })`), and configure the Fabric
+Node with `identity_mode: clear` so it keeps admitting the clear values.
+
+- Caller data on decision-line keys is mapped. With `FABRIC_WIRE_ID_KEY`:
+  `gen_ai.memory.store.id` is `mst-` + 32 hex (pseudonym v2);
+  `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key` and each
+  `fabric.retrieval.source_document_ids` entry are `lbl-` + 32 hex (the keyed
+  generic label: these id types have no v2 prefix yet; spec 051 will assign
+  dedicated ones); `fabric.checkpoint.step_name`, the tool names in
+  `fabric.mcp.tools` (`lbl-<32 hex>:<12 hex>`), `fabric.tags` and
+  `fabric.memory.tags` are operator labels, `lbl-` + 32 hex, or as given with
+  `FABRIC_WIRE_LABELS=clear`. Without the key these values are omitted, like the
+  decision line's other caller ids. Values returned to the application
+  (records, `MCPInventory`) are unchanged.
+- Host spans (`fabric.decision`, LLM and tool call spans, `fabric.execution`)
+  record only the exception class (`exception.type`): no `exception.message`,
+  no `exception.stacktrace`, and no message in the status description. The
+  TypeScript SDK already did this.
+- Payload digests follow the content role's privacy mode: `*_hash` keys that
+  digest an original payload (`fabric.retrieval.query_hash` and
+  `result_hashes`, `fabric.memory.content_hash`,
+  `fabric.side_effect.request_hash` and `result_hash`,
+  `fabric.interaction.payload_hash`, `fabric.tool.arguments_hash` and
+  `result_hash`) are emitted only when the role retains the original: a role
+  captured by governed content capture or, in Python without one, the memory
+  and side-effect payloads written to a legacy `content_store`. Caller-supplied
+  digests follow the same rule. Metadata-only recording therefore carries no
+  payload digest: a digest of a low-entropy payload reveals it.
+- Fabric Node (`fabricguard`): under `identity_mode: pseudonymous` the
+  idempotency keys and document ids are admitted only as `lbl-` + 32 hex, and
+  the checkpoint step name and MCP tool entries only in their `lbl-` form
+  unless `capture_labels` or `identity_mode` is `clear`; a clear value from an
+  older agent is dropped.
+
 ### v0.8.0 release notes (draft)
 
 Fabric v0.8 is a passive recorder for AI agents: CAPTURE -> PROTECT ->

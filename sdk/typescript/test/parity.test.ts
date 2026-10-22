@@ -158,11 +158,29 @@ describe("sub-agent delegation", () => {
     ).toThrow(/inside delegation/);
   });
 
-  it("rejects concurrent mutating calls on one Decision", () => {
-    // A malicious getter that mutates the decision while a guarded method
-    // holds the overlap sentinel trips ConcurrentDecisionUseError. The
-    // getter must live on the options object itself so it fires lazily
-    // inside the guarded region, not eagerly at literal construction.
+  it("records overlapping mutating calls degraded and never throws (049 §7.1)", () => {
+    // A getter that mutates the decision while a guarded method holds the
+    // overlap sentinel. The getter must live on the options object itself
+    // so it fires lazily inside the guarded region, not eagerly at literal
+    // construction. Concurrent use must never throw into the application.
+    vi.stubEnv("FABRIC_RECORDS_STRICT", "");
+    fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
+      const hostile = {
+        get type() {
+          d.recordRetrieval({ source: "rag", query: "q", resultCount: 0 });
+          return "other" as const;
+        },
+        targetSystem: "sys",
+        operation: "o",
+      };
+      expect(() => d.recordSideEffect(hostile)).not.toThrow();
+      expect(d.concurrentUseCount).toBeGreaterThan(0); // the getter runs on every read
+      expect(d.captureHealth.status).toBe("partial");
+    });
+  });
+
+  it("throws ConcurrentDecisionUseError on overlap only in strict mode", () => {
+    vi.stubEnv("FABRIC_RECORDS_STRICT", "1");
     fabric().decision({ sessionId: "s", requestId: "r" }, (d) => {
       const hostile = {
         get type() {

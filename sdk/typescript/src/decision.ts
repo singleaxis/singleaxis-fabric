@@ -16,16 +16,15 @@
  * Concurrency contract
  * --------------------
  *
- * A {@link Decision} instance represents a single agent turn and is
- * **not** safe to share across async tasks. Open one `Decision` per
- * turn; do not pass the same instance into parallel callbacks or
- * workers. Mutation methods on a single `Decision` are not internally
- * synchronized — the rolling counter attributes and the internal record
- * lists they update would race under concurrent access. A genuinely
- * *overlapping* mutating call (a re-entrant mutation from inside another
- * mutating call) raises {@link ConcurrentDecisionUseError} rather than
- * racing silently — the analogue of Python's non-blocking sentinel lock.
- * The `Fabric` client itself is safe to share.
+ * A {@link Decision} instance represents a single agent turn. Open one
+ * `Decision` per turn. Recording never throws into the application
+ * because of concurrent use (spec 049 §7.1): a genuinely *overlapping*
+ * mutating call (a re-entrant mutation from inside another mutating call)
+ * is still recorded and counted ({@link Decision.concurrentUseCount},
+ * `captureHealth.status === "partial"`). Only `FABRIC_RECORDS_STRICT=1`
+ * (a test mode) throws {@link ConcurrentDecisionUseError} instead — the
+ * analogue of Python's non-blocking sentinel lock. The `Fabric` client
+ * itself is safe to share.
  */
 
 import {
@@ -517,17 +516,14 @@ export interface McpInventory {
   readonly promptCount?: number;
 }
 
+/** Strict test mode: only `"1"` makes an overlapping mutating call throw (049 §7.1). */
+export const ENV_RECORDS_STRICT = "FABRIC_RECORDS_STRICT";
+
 /**
- * Raised when one {@link Decision} is mutated concurrently (re-entrantly).
- *
- * A `Decision` represents a single agent turn and is not safe to share
- * across tasks (see the module concurrency contract). The SDK detects
- * *genuinely overlapping* mutating calls on the same instance via a
- * non-blocking sentinel flag and throws this rather than letting the
- * internal record lists and rolling span-counter attributes race
- * silently — the analogue of Python's `ConcurrentDecisionUseError`,
- * which guards a `threading.Lock` held only for the duration of a single
- * mutating call.
+ * Thrown for overlapping (re-entrant) use of one {@link Decision}, in strict
+ * mode only. By default an overlapping call is recorded and counted, never
+ * thrown (spec 049 §7.1); `FABRIC_RECORDS_STRICT=1` (a test mode) throws
+ * this instead — the analogue of Python's `ConcurrentDecisionUseError`.
  */
 export class ConcurrentDecisionUseError extends Error {
   constructor(message?: string) {
@@ -568,6 +564,26 @@ export function resetCoverageRegistry(): void {
 }
 
 const CAPTURE_WARNED = new Set<string>();
+
+function strictRecords(): boolean {
+  return typeof process !== "undefined" && process.env[ENV_RECORDS_STRICT] === "1";
+}
+
+let warnedConcurrentUse = false;
+
+/** One class-only warning per process for overlapping use (never a value). */
+function warnConcurrentUseOnce(): void {
+  if (warnedConcurrentUse) return;
+  warnedConcurrentUse = true;
+  try {
+    console.warn(
+      "singleaxis-fabric: a Decision was used concurrently; the overlapping call was " +
+        "recorded and the decision's rolling counters may be off (see captureHealth).",
+    );
+  } catch {
+    // A host logger must not break the monitored application.
+  }
+}
 
 /** Reset local capture warnings for isolated tests. */
 export function resetCaptureHealthWarnings(): void {
@@ -641,10 +657,12 @@ export class Decision implements DecisionLike {
   private interactionCount = 0;
   private readonly interactionKinds = new Set<string>();
   // Concurrency overlap sentinel. Held only for the duration of a single
-  // mutating call; two operations that genuinely overlap in time on the
-  // same instance contend for it and the loser throws
-  // ConcurrentDecisionUseError. Sequential calls never contend.
+  // mutating call; an operation that overlaps another on the same instance
+  // is recorded anyway and counted (never thrown, 049 §7.1).
   private busy = false;
+  private concurrentUse = 0;
+  // 049 §4.2: operator labels (tags, step names, tool names) as emitted.
+  private readonly labelFn = (value: string): string | undefined => this.ids.label(value);
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
@@ -864,16 +882,20 @@ export class Decision implements DecisionLike {
   // -- concurrency overlap guard ---------------------------------------
 
   /**
-   * Hold the overlap sentinel for one mutating call, else throw.
-   * Non-blocking so a second *concurrent* (re-entrant) mutating call
-   * fails fast with {@link ConcurrentDecisionUseError} instead of
-   * silently racing the record lists / span counters. Do NOT call a
-   * guarded method from inside another guarded method on the same
-   * instance — none of the public methods do.
+   * Hold the overlap sentinel for one mutating call; never throw on overlap.
+   * A second *concurrent* (re-entrant) mutating call is recorded anyway and
+   * counted in {@link concurrentUseCount} (049 §7.1); only
+   * `FABRIC_RECORDS_STRICT=1` throws {@link ConcurrentDecisionUseError}.
+   * None of the public methods call each other.
    */
   private exclusive<T>(fn: () => T): T {
     if (this.busy) {
-      throw new ConcurrentDecisionUseError();
+      if (strictRecords()) {
+        throw new ConcurrentDecisionUseError();
+      }
+      this.concurrentUse += 1;
+      warnConcurrentUseOnce();
+      return fn();
     }
     this.busy = true;
     try {
@@ -881,6 +903,23 @@ export class Decision implements DecisionLike {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Whether `role`'s privacy mode retains the original payload (spec 049
+   * §7.5, spec 051 D-14): only then may a `*_hash` digest of it leave the
+   * process. The governed roles of a configured content capture retain it;
+   * nothing else does (a digest of a low-entropy payload reveals it). The
+   * clear identity mode keeps the v0.8.0 digests.
+   */
+  private retainsOriginal(role: string): boolean {
+    if (this.ids.clear) return true;
+    return this.contentSink !== undefined && (this.identity.contentRoles?.has(role) ?? false);
+  }
+
+  /** How many mutating calls overlapped another on this decision (recorded, never thrown). */
+  get concurrentUseCount(): number {
+    return this.concurrentUse;
   }
 
   // -- introspection ----------------------------------------------------
@@ -961,7 +1000,7 @@ export class Decision implements DecisionLike {
    */
   llmCall<T>(options: LlmCallOptions, fn: (call: LlmCall) => T): T {
     const extra: Record<string, AttrValue> = {};
-    applyCrossCutting(extra, options);
+    applyCrossCutting(extra, options, this.labelFn);
     // 049 §2.9: the session default carries `sess-`, an explicit
     // conversation id `conv-`; both omitted without a key, clear unchanged.
     const conversationId = options.conversationId
@@ -1085,7 +1124,7 @@ export class Decision implements DecisionLike {
    */
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {
     const extra: Record<string, AttrValue> = {};
-    applyCrossCutting(extra, options);
+    applyCrossCutting(extra, options, this.labelFn);
     const resolved = {
       ...options,
       agentName: options.agentName ?? this.identity.agentName,
@@ -1098,6 +1137,8 @@ export class Decision implements DecisionLike {
         span,
         options.captureContent ?? false,
         this.toolCaptureFn(span, name, options),
+        this.ids,
+        (role) => this.retainsOriginal(role),
       );
       return runAndEnd(span, () => fn(tool));
     });
@@ -1188,20 +1229,27 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_RETRIEVAL_SOURCE]: record.source,
-        [A.ATTR_RETRIEVAL_QUERY_HASH]: record.queryHash,
-        [A.ATTR_RETRIEVAL_RESULT_COUNT]: record.resultCount,
       };
+      // 049 §7.5: a digest of the original only where its role retains it.
+      if (this.retainsOriginal(ContentRole.RETRIEVAL_QUERY)) {
+        attrs[A.ATTR_RETRIEVAL_QUERY_HASH] = record.queryHash;
+      }
+      attrs[A.ATTR_RETRIEVAL_RESULT_COUNT] = record.resultCount;
       if (queryRef !== undefined) {
         attrs[ATTR_CONTENT_REQUEST_REF] = queryRef;
       }
       if (resultsRef !== undefined) {
         attrs[ATTR_CONTENT_RESULT_REF] = resultsRef;
       }
-      if (record.resultHashes.length > 0) {
+      if (record.resultHashes.length > 0 && this.retainsOriginal(ContentRole.RETRIEVAL_RESULTS)) {
         attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...record.resultHashes];
       }
-      if (record.sourceDocumentIds.length > 0) {
-        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = [...record.sourceDocumentIds];
+      // Caller document ids: `lbl-` when pseudonymous, omitted without a key.
+      const documentIds = record.sourceDocumentIds
+        .map((id) => this.ids.opaque(id))
+        .filter((id): id is string => id !== undefined);
+      if (documentIds.length > 0) {
+        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = documentIds;
       }
       if (record.latencyMs !== undefined) {
         attrs[A.ATTR_RETRIEVAL_LATENCY_MS] = record.latencyMs;
@@ -1242,8 +1290,10 @@ export class Decision implements DecisionLike {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "write",
         [A.ATTR_MEMORY_KIND]: record.kind,
-        [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
       };
+      if (this.retainsOriginal(ContentRole.MEMORY_WRITE_CONTENT)) {
+        attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!; // 049 §7.5
+      }
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1251,8 +1301,9 @@ export class Decision implements DecisionLike {
       if (memoryKey !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
-      if (record.tags.length > 0) {
-        attrs[A.ATTR_MEMORY_TAGS] = [...record.tags];
+      const memoryTags = this.ids.labels(record.tags);
+      if (memoryTags.length > 0) {
+        attrs[A.ATTR_MEMORY_TAGS] = memoryTags;
       }
       if (record.ttlSeconds !== undefined) {
         attrs[A.ATTR_MEMORY_TTL_SECONDS] = record.ttlSeconds;
@@ -1300,7 +1351,9 @@ export class Decision implements DecisionLike {
       if (memoryKey !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
-      attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!;
+      if (this.retainsOriginal(ContentRole.MEMORY_READ_CONTENT)) {
+        attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!; // 049 §7.5
+      }
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1449,10 +1502,15 @@ export class Decision implements DecisionLike {
         [A.ATTR_SE_ROLLBACK_SUPPORTED]: record.rollbackSupported,
         [A.ATTR_SE_REPLAY_BEHAVIOR]: record.replayBehavior,
       };
-      if (record.requestHash !== undefined) {
+      // 049 §7.5: computed or caller-supplied, a digest of the original only
+      // where its role retains it.
+      if (
+        record.requestHash !== undefined &&
+        this.retainsOriginal(ContentRole.SIDE_EFFECT_REQUEST)
+      ) {
         attrs[A.ATTR_SE_REQUEST_HASH] = record.requestHash;
       }
-      if (record.resultHash !== undefined) {
+      if (record.resultHash !== undefined && this.retainsOriginal(ContentRole.SIDE_EFFECT_RESULT)) {
         attrs[A.ATTR_SE_RESULT_HASH] = record.resultHash;
       }
       if (requestRef !== undefined) {
@@ -1461,8 +1519,10 @@ export class Decision implements DecisionLike {
       if (resultRef !== undefined) {
         attrs[ATTR_CONTENT_RESULT_REF] = resultRef;
       }
-      if (record.idempotencyKey !== undefined) {
-        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = record.idempotencyKey;
+      const idempotencyKey =
+        record.idempotencyKey !== undefined ? this.ids.opaque(record.idempotencyKey) : undefined;
+      if (idempotencyKey !== undefined) {
+        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = idempotencyKey;
       }
       if (record.parentToolCallId !== undefined) {
         attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = record.parentToolCallId;
@@ -1498,8 +1558,12 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_CHECKPOINT_ID]: event.checkpointId,
-        [A.ATTR_CHECKPOINT_STEP_NAME]: event.stepName,
       };
+      // 049 §4.2: the step name is an operator label (`lbl-` when pseudonymous).
+      const emittedStep = this.ids.label(event.stepName);
+      if (emittedStep !== undefined) {
+        attrs[A.ATTR_CHECKPOINT_STEP_NAME] = emittedStep;
+      }
       if (event.stateHash !== undefined) {
         attrs[A.ATTR_CHECKPOINT_STATE_HASH] = event.stateHash;
       }
@@ -1559,19 +1623,25 @@ export class Decision implements DecisionLike {
           inputSchema: inputSchema ?? null,
         };
       });
-      const tools = definitions.map(
-        (definition) =>
-          `${definition.name}:${sha256Hex(pythonJsonStringify(definition)).slice(0, 12)}`,
+      const defHashes = definitions.map((definition) =>
+        sha256Hex(pythonJsonStringify(definition)).slice(0, 12),
       );
+      const tools = definitions.map((definition, i) => `${definition.name}:${defHashes[i]}`);
       const toolsHash = sha256Hex(pythonJsonStringify(definitions));
+      // 049 §4.2: a tool name is an operator label (`lbl-` when pseudonymous);
+      // without a key the names are omitted (count and hashes remain). The
+      // returned inventory keeps the caller's own view.
+      const names = definitions.map((definition) => this.ids.label(String(definition.name)));
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MCP_SERVER]: options.server,
         [A.ATTR_MCP_TRANSPORT]: options.transport,
         [A.ATTR_MCP_TOOL_COUNT]: definitions.length,
-        [A.ATTR_MCP_TOOLS]: tools,
-        [A.ATTR_MCP_TOOLS_HASH]: toolsHash,
       };
+      if (names.every((name) => name !== undefined)) {
+        attrs[A.ATTR_MCP_TOOLS] = names.map((name, i) => `${name}:${defHashes[i]}`);
+      }
+      attrs[A.ATTR_MCP_TOOLS_HASH] = toolsHash;
       const resourceCount = options.resources === undefined ? undefined : options.resources.length;
       const promptCount = options.prompts === undefined ? undefined : options.prompts.length;
       if (resourceCount !== undefined) {
@@ -1580,7 +1650,7 @@ export class Decision implements DecisionLike {
       if (promptCount !== undefined) {
         attrs[A.ATTR_MCP_PROMPT_COUNT] = promptCount;
       }
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_MCP_INVENTORY, attrs);
       return {
         server: options.server,
@@ -1614,7 +1684,7 @@ export class Decision implements DecisionLike {
         );
       }
       if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
     });
   }
@@ -1735,7 +1805,7 @@ export class Decision implements DecisionLike {
       }
       attrs[A.ATTR_DELEGATION_PROTOCOL] = protocol;
       attrs[A.ATTR_DELEGATION_DEPTH] = depth;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_DELEGATION, attrs);
       return { toAgent, protocol, depth, context, carrier };
     });
@@ -1770,7 +1840,7 @@ export class Decision implements DecisionLike {
           options.outputHash,
         );
       }
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
     });
   }
@@ -1801,7 +1871,7 @@ export class Decision implements DecisionLike {
         );
       }
       if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_FILE, attrs);
     });
   }
@@ -1852,12 +1922,13 @@ export class Decision implements DecisionLike {
       if (options.direction !== undefined) {
         attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
       }
+      // 049 §7.5: a digest of the payload only where its role retains the
+      // original (a caller-supplied digest is still validated).
+      const retainsPayload = this.retainsOriginal(ContentRole.INTERACTION_PAYLOAD);
       if (options.payloadHash !== undefined) {
-        attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = assertSha256Hex(
-          "recordInteraction: payloadHash",
-          options.payloadHash,
-        );
-      } else if (options.payload !== undefined) {
+        const checked = assertSha256Hex("recordInteraction: payloadHash", options.payloadHash);
+        if (retainsPayload) attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = checked;
+      } else if (options.payload !== undefined && retainsPayload) {
         attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = sha256Hex(options.payload);
       }
       if (payloadRef !== undefined) {
@@ -1866,7 +1937,7 @@ export class Decision implements DecisionLike {
       if (options.metadata !== undefined) {
         attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
       }
-      const resolved = applyCrossCutting(attrs, options);
+      const resolved = applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_INTERACTION, attrs);
 
       // Improvement loop: a one-shot, low-rate coverage signal. Two
@@ -1939,7 +2010,7 @@ export class Decision implements DecisionLike {
     const status =
       this.recordingAtStart === false
         ? "disabled"
-        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0
+        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0 || this.concurrentUse > 0
           ? "partial"
           : "unverified";
     if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {

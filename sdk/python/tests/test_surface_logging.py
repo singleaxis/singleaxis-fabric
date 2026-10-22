@@ -181,55 +181,128 @@ class _FakeListResult:
 class _InventorySession:
     """Duck-typed MCP session exposing list_tools / list_resources / list_prompts."""
 
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+
     async def call_tool(self, name: str, arguments: dict[str, Any] | None) -> Any:
         return None
 
-    async def list_tools(self) -> Any:
+    async def list_tools(self, cursor: str | None = None) -> Any:
+        self.requests.append(f"list_tools:{cursor}")
         return _FakeListResult(tools=_tools())
 
     async def list_resources(self) -> Any:
+        self.requests.append("list_resources")
         return _FakeListResult(resources=["weather://stations"])
 
     async def list_prompts(self) -> Any:
+        self.requests.append("list_prompts")
         return _FakeListResult(prompts=["p1", "p2"])
 
 
 class _ToolsOnlySession:
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+
     async def call_tool(self, name: str, arguments: dict[str, Any] | None) -> Any:
         return None
 
     async def list_tools(self) -> Any:
+        self.requests.append("list_tools")
         return _FakeListResult(tools=_tools())
 
 
-def test_snapshot_inventory_auto_captures(span_exporter: InMemorySpanExporter) -> None:
+def test_observed_list_results_are_recorded_and_returned_unchanged(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    """Spec 049 §7.2 / 051 §4.8: the wrapper records the application's own ``list_*``
+    results; it returns them as received and issues no request of its own."""
     client = _client()
     session = _InventorySession()
     with client.decision(session_id="s", request_id="r") as d:
         wrapped = InstrumentedMCPSession(session, d, server_name="weather-mcp", transport="sse")
-        inv = asyncio.run(wrapped.snapshot_inventory())
 
-    assert inv.tool_count == 2
-    assert inv.resource_count == 1
-    assert inv.prompt_count == 2
-    attrs = _event(_decision_span(span_exporter), "fabric.mcp.inventory")
-    assert attrs[FABRIC_MCP_SERVER] == "weather-mcp"
-    assert attrs[FABRIC_MCP_TRANSPORT] == "sse"
+        async def app() -> tuple[Any, Any, Any]:
+            return (
+                await wrapped.list_tools(cursor="c1"),
+                await wrapped.list_resources(),
+                await wrapped.list_prompts(),
+            )
+
+        tools, resources, prompts = asyncio.run(app())
+
+    assert session.requests == ["list_tools:c1", "list_resources", "list_prompts"]
+    assert [t["name"] for t in tools.tools] == ["get_weather", "get_forecast"]
+    assert resources.resources == ["weather://stations"]
+    assert prompts.prompts == ["p1", "p2"]
+    span = _decision_span(span_exporter)
+    inventories = [
+        dict(e.attributes or {}) for e in span.events if e.name == "fabric.mcp.inventory"
+    ]
+    assert len(inventories) == 3
+    last = inventories[-1]
+    assert last["fabric.mcp.tool_count"] == 2
+    assert last["fabric.mcp.resource_count"] == 1
+    assert last["fabric.mcp.prompt_count"] == 2
+    assert last[FABRIC_MCP_SERVER] == "weather-mcp"
+    assert last[FABRIC_MCP_TRANSPORT] == "sse"
     assert _SENSITIVE_DESC not in _span_tree_blob(span_exporter)
 
 
-def test_snapshot_inventory_tools_only_session(span_exporter: InMemorySpanExporter) -> None:
+def test_snapshot_inventory_is_a_deprecated_no_op(span_exporter: InMemorySpanExporter) -> None:
+    """A passive recorder generates no traffic: ``snapshot_inventory()`` no longer calls
+    ``list_*``; it records nothing and returns the last inventory observed (or None)."""
+    client = _client()
+    session = _InventorySession()
+    with client.decision(session_id="s", request_id="r") as d:
+        wrapped = InstrumentedMCPSession(session, d, server_name="weather-mcp", transport="sse")
+        with pytest.warns(DeprecationWarning, match="snapshot_inventory"):
+            assert asyncio.run(wrapped.snapshot_inventory()) is None
+        assert session.requests == []
+        asyncio.run(wrapped.list_tools())
+        with pytest.warns(DeprecationWarning):
+            inv = asyncio.run(wrapped.snapshot_inventory())
+    assert session.requests == ["list_tools:None"]
+    assert inv is not None
+    assert inv.tool_count == 2
+    span = _decision_span(span_exporter)
+    assert [e.name for e in span.events].count("fabric.mcp.inventory") == 1
+
+
+def test_observed_tools_only_session(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
     session = _ToolsOnlySession()
     with client.decision(session_id="s", request_id="r") as d:
         wrapped = InstrumentedMCPSession(session, d, server_name="m", transport="stdio")
-        inv = asyncio.run(wrapped.snapshot_inventory())
+        asyncio.run(wrapped.list_tools())
+        assert not hasattr(wrapped, "list_resources")
 
-    assert inv.tool_count == 2
-    assert inv.resource_count is None
-    assert inv.prompt_count is None
     attrs = _event(_decision_span(span_exporter), "fabric.mcp.inventory")
+    assert attrs["fabric.mcp.tool_count"] == 2
     assert "fabric.mcp.resource_count" not in attrs
+    assert "fabric.mcp.prompt_count" not in attrs
+
+
+def test_observed_list_failures_never_alter_the_application() -> None:
+    boom = ConnectionError("server gone")
+
+    class _Session:
+        async def call_tool(self, name: str, arguments: dict[str, Any] | None) -> Any:
+            return None
+
+        async def list_tools(self) -> Any:
+            raise boom
+
+        async def list_prompts(self) -> Any:
+            return 42  # not a listing: recording fails, the value is still returned
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as d:
+        wrapped = InstrumentedMCPSession(_Session(), d)
+        with pytest.raises(ConnectionError) as info:
+            asyncio.run(wrapped.list_tools())
+        assert info.value is boom
+        assert asyncio.run(wrapped.list_prompts()) == 42
 
 
 def test_mcp_inventory_object_tools(span_exporter: InMemorySpanExporter) -> None:

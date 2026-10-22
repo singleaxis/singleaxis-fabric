@@ -291,3 +291,86 @@ def test_inventory_stamps_identified_server_and_transport(
     attrs = dict(event.attributes or {})
     assert attrs[FABRIC_MCP_SERVER] == "fs-mcp"
     assert attrs[FABRIC_MCP_TRANSPORT] == "stdio"
+
+
+# --------------------------------------------------------------------------- #
+# Passivity (spec 049 §7.1): recording never raises around call_tool
+# --------------------------------------------------------------------------- #
+
+
+class _HostileResult:
+    """A result whose attributes raise when the recorder inspects them."""
+
+    @property
+    def isError(self) -> bool:  # noqa: N802 - MCP field name
+        raise RuntimeError("inspecting the result failed")
+
+    @property
+    def content(self) -> list[Any]:
+        raise RuntimeError("inspecting the result failed")
+
+    def __repr__(self) -> str:
+        raise RuntimeError("repr failed")
+
+
+def test_recording_failure_after_call_tool_never_raises(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    client = _client()
+    result = _HostileResult()
+    session = _FakeSession(result=result)
+    with client.decision(session_id="s", request_id="r") as dec:
+        returned = asyncio.run(traced_call_tool(dec, session, "t", {"a": 1}))
+    assert returned is result
+    assert session.calls == [{"name": "t", "arguments": {"a": 1}}]
+
+
+def test_recording_failure_before_call_tool_still_calls_the_tool() -> None:
+    client = _client()
+    session = _FakeSession(result=_FakeResult(content=[]))
+    dec = client.decision(session_id="s", request_id="r")  # never entered: no span
+    returned = asyncio.run(traced_call_tool(dec, session, "t", None))
+    assert returned is session._result
+    assert session.calls == [{"name": "t", "arguments": None}]
+
+
+def test_call_tool_exception_is_reraised_as_the_same_object(
+    span_exporter: InMemorySpanExporter,
+) -> None:
+    boom = ValueError("tool failed")
+
+    class _Raising:
+        async def call_tool(self, name: str, arguments: dict[str, Any] | None) -> Any:
+            raise boom
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        try:
+            asyncio.run(traced_call_tool(dec, _Raising(), "t"))
+        except ValueError as exc:
+            assert exc is boom
+        else:  # pragma: no cover - the failure being tested
+            raise AssertionError("call_tool's exception was swallowed")
+    span = next(
+        s
+        for s in span_exporter.get_finished_spans()
+        if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
+    )
+    assert (span.attributes or {})["error.type"] == "ValueError"
+
+
+def test_instrumented_session_passes_extra_call_tool_arguments() -> None:
+    seen: list[tuple[Any, ...]] = []
+
+    class _Session:
+        async def call_tool(
+            self, name: str, arguments: dict[str, Any] | None = None, *args: Any, **kw: Any
+        ) -> Any:
+            seen.append((name, arguments, args, kw))
+            return "ok"
+
+    client = _client()
+    with client.decision(session_id="s", request_id="r") as dec:
+        wrapped = InstrumentedMCPSession(_Session(), dec)
+        assert asyncio.run(wrapped.call_tool("t", {"x": 1}, read_timeout_seconds=5)) == "ok"
+    assert seen == [("t", {"x": 1}, (), {"read_timeout_seconds": 5})]
