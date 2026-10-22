@@ -272,10 +272,15 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
             heartbeat_kind=a["fabric.heartbeat.kind"],
             last_sequence=a["fabric.heartbeat.last_sequence"],
         )
-        if "fabric.run.id" in a:
-            document["run_id"] = a["fabric.run.id"]
-        if "fabric.run.scope_id" in a:
-            document["scope_id"] = a["fabric.run.scope_id"]
+        for key, value in a.items():  # every run-marker key (spec 050 §4.2, WP-12)
+            if key in _MARKER_BACK:
+                document[_MARKER_BACK[key]] = list(value) if isinstance(value, tuple) else value
+            elif key in _SEAL_BACK:
+                document.setdefault("seal", {})[_SEAL_BACK[key]] = (
+                    list(value) if isinstance(value, tuple) else value
+                )
+            elif key.startswith("fabric.") and key[7:] in _IDENTITY_KEYS:
+                document.setdefault("identity", {})[key[7:]] = value
     else:
         document.update(
             kind="loss",
@@ -284,7 +289,32 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
             first_sequence=a["fabric.loss.first_sequence"],
             last_sequence=a["fabric.loss.last_sequence"],
         )
+        if "fabric.run.segment_id" in a:  # 050 R3: segment-attributed losses
+            document["segment_id"] = a["fabric.run.segment_id"]
     return document
+
+
+# Heartbeat span key -> loss-record-v1 field (the run-marker keys of capture/v1 1.3.0).
+_MARKER_BACK = {
+    "fabric.run.id": "run_id", "fabric.run.scope_id": "scope_id",
+    "fabric.run.segment_id": "segment_id", "fabric.run.predecessors": "predecessors",
+    "fabric.run.resumable": "resumable", "fabric.run.open_deadline_s": "open_deadline_s",
+    "fabric.run.declared_branches": "declared_branches", "fabric.run.branch_ids": "branch_ids",
+    "fabric.run.terminal": "terminal", "fabric.capture.manifest_id": "manifest_id",
+    "fabric.capture.manifest_digest": "manifest_digest",
+    "fabric.capture.manifest_seq": "manifest_seq", "fabric.run.scope_status": "scope_status",
+    "fabric.run.outcome": "outcome", "fabric.run.stop_reason": "stop_reason",
+    "fabric.session_id": "session_id", "fabric.user_id": "user_id",
+    "fabric.run.parent_id": "parent_run_id", "fabric.run.resumed_from": "resumed_from",
+    "fabric.run.links": "links", "fabric.run.id_basis": "id_basis",
+    "fabric.event_id": "event_id",
+}  # fmt: skip
+_SEAL_BACK = {
+    "fabric.segment.last_sequence": "last_sequence",
+    "fabric.segment.manifest_digest": "manifest_digest",
+    "fabric.segment.seal_digest": "seal_digest", "fabric.segment.branch_ids": "branch_ids",
+}  # fmt: skip
+_IDENTITY_KEYS = ("agent_id", "system_id", "deployment_id", "release_id", "environment")
 
 
 def manifest_document(span: ReadableSpan) -> dict[str, Any]:

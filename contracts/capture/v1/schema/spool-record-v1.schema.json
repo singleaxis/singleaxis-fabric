@@ -288,6 +288,140 @@
                 "fabric.run.segment_id": {
                   "type": "string",
                   "pattern": "^seg-[0-9a-f]{32}$"
+                },
+                "fabric.capture.point": {
+                  "description": "fabric.capture.point (X26, spec 050 §3.9): wire.py.httpx@<v> or wire.py.aiohttp@<v>.",
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$"
+                },
+                "fabric.capture.source": {
+                  "description": "fabric.capture.source (X27): an exchange is observed.",
+                  "enum": [
+                    "observed",
+                    "reported"
+                  ]
+                },
+                "fabric.step.kind": {
+                  "description": "fabric.step.kind (S01): embedding for openai.embeddings, else model_call.",
+                  "enum": [
+                    "run",
+                    "agent_turn",
+                    "model_call",
+                    "embedding",
+                    "input",
+                    "message",
+                    "tool_call",
+                    "provider_tool_call",
+                    "mcp_call",
+                    "retrieval",
+                    "memory",
+                    "terminal",
+                    "remote_exec",
+                    "database",
+                    "network",
+                    "file",
+                    "ui_action",
+                    "media_stream",
+                    "delegation",
+                    "workflow_node",
+                    "checkpoint",
+                    "control",
+                    "context_change",
+                    "selection",
+                    "side_effect",
+                    "outcome",
+                    "hook",
+                    "skill",
+                    "interaction",
+                    "extension"
+                  ]
+                },
+                "fabric.actor.type": {
+                  "description": "fabric.actor.type (S03): the SDK stamps agent on every step it emits.",
+                  "enum": [
+                    "user",
+                    "agent",
+                    "sub_agent",
+                    "human_approver",
+                    "human_operator",
+                    "system",
+                    "scheduler",
+                    "external_service",
+                    "provider",
+                    "unknown"
+                  ]
+                },
+                "fabric.step.lifecycle_state": {
+                  "description": "fabric.step.lifecycle_state (S07): completed; cancelled for closed_early.",
+                  "enum": [
+                    "queued",
+                    "running",
+                    "suspended",
+                    "deferred",
+                    "completed",
+                    "cancelled",
+                    "unknown"
+                  ]
+                },
+                "fabric.step.status": {
+                  "description": "fabric.step.status (S08): the spec 049 §2.3 legacy mapping of response_state and the HTTP status.",
+                  "enum": [
+                    "ok",
+                    "error",
+                    "cancelled",
+                    "timeout",
+                    "unknown"
+                  ]
+                },
+                "fabric.error.domain": {
+                  "description": "fabric.error.domain (S09) of an error step: transport (an exception, no HTTP error status) or provider (HTTP >= 400).",
+                  "enum": [
+                    "application",
+                    "transport",
+                    "provider",
+                    "tool",
+                    "recorder"
+                  ]
+                },
+                "fabric.wire.first_chunk_offset_ns": {
+                  "description": "fabric.wire.first_chunk_offset_ns (S30): monotonic ns from request start to the first non-empty response chunk; absent when the response had none.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fabric.wire.endpoint_id": {
+                  "description": "fabric.wire.endpoint_id (C35): a built-in endpoint as <name>.default, a configured one as lbl- + 32 hex of its configured name; never a hostname.",
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$"
+                },
+                "fabric.wire.provider_request_id": {
+                  "description": "fabric.wire.provider_request_id (C40): opt-in (FABRIC_WIRE_PROVIDER_REQUEST_ID=1), the keyed v2 p- pseudonym of one named response header value; omitted without a key.",
+                  "type": "string",
+                  "pattern": "^p-[0-9a-f]{32}$"
+                },
+                "fabric.agent_id": {
+                  "description": "fabric.agent_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.system_id": {
+                  "description": "fabric.system_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.deployment_id": {
+                  "description": "fabric.deployment_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.release_id": {
+                  "description": "fabric.release_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.environment": {
+                  "description": "fabric.environment (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
                 }
               }
             }

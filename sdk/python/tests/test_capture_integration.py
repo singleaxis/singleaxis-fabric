@@ -338,8 +338,10 @@ def test_removed_heartbeats_are_unverified(tmp_path: Path) -> None:
 
     run = _only_run(_verify(spans, store))
 
-    assert run["verdict"] == "unverified"
-    assert "tail_unverified" in _gap_types(run)
+    # The run markers and the segment seal went with them: an unsealed segment with
+    # records is partial(source_lost) (050 §3.12, 049 X44), the tail stays unverified.
+    assert run["verdict"] == "partial"
+    assert {"tail_unverified", "unsealed_segment"} <= set(_gap_types(run))
 
 
 def test_store_outage_is_a_missing_object_not_a_digest_mismatch(tmp_path: Path) -> None:

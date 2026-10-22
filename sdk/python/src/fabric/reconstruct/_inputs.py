@@ -788,6 +788,9 @@ class SegmentSealObs:
     scope_id: str | None = None
     manifest_seq: int | None = None
     authenticated: bool = field(default=False, compare=False)  # 049 §7.9 stamp
+    # Spec 050 §3.12 (WP-31): the seal span's UTC time, for G4's "sealed after T". Not part
+    # of the seal's identity: a re-exported seal is the same seal.
+    sealed_ns: int | None = field(default=None, compare=False)
 
     @property
     def source(self) -> tuple[str, int]:
@@ -884,7 +887,7 @@ def _heartbeat(
     )
     if kind == "segment_seal":
         # A seal whose own fields are malformed still reveals allocated sequences.
-        return None if plain is None else _segment_seal(attrs, plain) or plain
+        return None if plain is None else _segment_seal(attrs, plain, start_ns) or plain
     run_id = opaque_id(attrs.get(A_RUN_ID))
     scope_id = scope_id_value(attrs.get(A_SCOPE_ID))
     segment_id = segment_id_value(attrs.get(A_SEGMENT_ID))
@@ -955,7 +958,9 @@ def _branch_value(value: Any) -> str | None:
     return value if isinstance(value, str) and BRANCH_ID_RE.fullmatch(value) else None
 
 
-def _segment_seal(attrs: Mapping[str, Any], plain: HeartbeatObs) -> SegmentSealObs | None:
+def _segment_seal(
+    attrs: Mapping[str, Any], plain: HeartbeatObs, start_ns: int | None = None
+) -> SegmentSealObs | None:
     """The seal of a ``segment_seal`` heartbeat; ``None`` when its seal fields are malformed."""
     segment_id = segment_id_value(attrs.get(A_SEGMENT_ID))
     seal_last = int_at_least(attrs.get(S_LAST), -1)
@@ -979,6 +984,7 @@ def _segment_seal(attrs: Mapping[str, Any], plain: HeartbeatObs) -> SegmentSealO
         run_id=opaque_id(attrs.get(A_RUN_ID)),
         scope_id=scope_id_value(attrs.get(A_SCOPE_ID)),
         manifest_seq=plain.manifest_seq,
+        sealed_ns=start_ns,
     )
 
 

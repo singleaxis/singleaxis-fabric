@@ -287,7 +287,9 @@ def test_run_markers_and_final_heartbeat_carry_their_kind() -> None:
     assert beats[-1] == ("final", None, 1)
     final = _named(exporter, SPAN_HEARTBEAT)[-1]
     assert final["fabric.source.epoch"] == sealed_epoch
-    assert all(kind in ("periodic", "run_start", "run_end", "final") for kind, _, _ in beats)
+    assert ("segment_seal", run_k, 1) in beats  # 050 §3.6: the run's terminal seal
+    assert all(kind in ("periodic", "run_start", "run_end", "final", "segment_seal")
+               for kind, _, _ in beats)  # fmt: skip
     assert all((run is None) is (kind in ("periodic", "final")) for kind, run, _ in beats)
     # Nothing is ever allocated after the final heartbeat in the sealed epoch.
     epoch, sequence, _ = allocator.next_sequence()

@@ -174,6 +174,20 @@ emitters).**
 python scripts/contracts/validate_capture_contracts.py
 ```
 
+## Version 1.4.0 (spec 050 §3.9, wire enrichment)
+
+- `spool-record-v1`: an exchange span may carry the P1 wire enrichment, each key
+  with its `telemetry-keys-v1.json` check (placement `exchange`):
+  `fabric.capture.point`, `fabric.capture.source`, `fabric.step.kind`,
+  `fabric.actor.type`, `fabric.step.lifecycle_state`, `fabric.step.status`,
+  `fabric.error.domain`, `fabric.wire.first_chunk_offset_ns`,
+  `fabric.wire.endpoint_id` (`<name>.default` or `lbl-` + 32 hex, never a
+  hostname), `fabric.wire.provider_request_id` (opt-in, `p-` + 32 hex) and the
+  X05 keys `fabric.agent_id`, `fabric.system_id`, `fabric.deployment_id`,
+  `fabric.release_id`, `fabric.environment` (operator labels). The attribute
+  set stays closed; `fabric.tenant_id` is not an exchange key. Additive:
+  1.3.0 exchanges stay valid.
+
 ## Version 1.3.0 (spec 050 P1)
 
 - `spool-record-v1`: an exchange holds at most **260** bodies (two sides × one

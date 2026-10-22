@@ -7,10 +7,9 @@ re-entry A -> B -> A, a fork, branch tokens, and a lost middle segment with toke
 spool and span file ("hosts" are distinct spool directories and source ids, §6.2), taking
 its token through ``FABRIC_RUN_RESUME_TOKEN``.
 
-Each scenario is verified now by WP-30's integrity verifier (every segment sealed and its
-seal recomputed, scopes closed, no gap). The run states the segment graph decides (WP-31,
-``reconstruct/_graph.py``) are asserted by ``test_lr1_*_run_state_wp31``, which skip until
-the graph is implemented."""
+Each scenario is verified by WP-30's integrity verifier (every segment sealed and its seal
+recomputed, scopes closed, no gap) and, in ``test_lr1_*_run_state_wp31``, by the run state
+WP-31's segment graph (``reconstruct/_graph.py``) decides."""
 
 from __future__ import annotations
 
@@ -36,27 +35,12 @@ from fabric import _segments, wire
 from fabric._capture_types import COUNTERS, STRICT_ENV
 from fabric._segments import parse_token
 from fabric.reconstruct import reconstruct
-from fabric.reconstruct._graph import SegmentNode, build_run_graphs
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX spool and fork")
 
 SRC = Path(fabric.__file__).resolve().parents[1]
 KEY = "fabric-test-id-key-not-a-secret"
 CANARY = "CANARY-clear-run-4417"
-
-
-def _graph_implemented() -> bool:
-    """WP-31: ``build_run_graphs`` builds graphs (the WP-01 stub returns none)."""
-    node = SegmentNode("seg-" + "1" * 32, "r-" + "2" * 32, "s-a", 7, ("none",))
-    try:
-        return bool(build_run_graphs([node], evaluated_at=datetime.now(UTC)))
-    except Exception:
-        return False
-
-
-WP31 = pytest.mark.skipif(
-    not _graph_implemented(), reason="WP-31 segment graph (reconstruct/_graph.py) not built yet"
-)
 
 
 class JsonlExporter(SpanExporter):
@@ -340,7 +324,6 @@ def test_lr1_same_process_reentry_verifies(tmp_path: Path) -> None:
     assert third[0]["predecessors"] == [b.entry] and third[0]["terminal"] is True
 
 
-@WP31
 def test_lr1_same_process_reentry_run_state_wp31(tmp_path: Path) -> None:
     report, run_id, _ = _reentry(tmp_path)
     (run,) = [r for r in report["runs"] if r["run_id"] == run_id]
@@ -407,14 +390,12 @@ def test_lr1_fork_child_segment_is_declared_and_verifies(tmp_path: Path) -> None
     assert len({s["scope_id"] for s in run["scopes"]}) == 2  # the child's fresh scope id
 
 
-@WP31
 def test_lr1_fork_run_state_wp31(tmp_path: Path) -> None:
     report, run_id = _fork(tmp_path)
     (run,) = [r for r in report["runs"] if r["run_id"] == run_id]
     assert run["run_state"] == "terminated"
 
 
-@WP31
 def test_lr1_fork_child_lost_run_state_wp31(tmp_path: Path) -> None:
     report, run_id = _fork(tmp_path, child_lost=True)
     (run,) = [r for r in report["runs"] if r["run_id"] == run_id]
@@ -447,14 +428,12 @@ def test_lr1_branch_tokens_both_consumed_verify(tmp_path: Path) -> None:
     assert sorted(b for s in consumers for b in s["consumes_branch_ids"]) == branch_ids
 
 
-@WP31
 def test_lr1_branch_tokens_run_state_wp31(tmp_path: Path) -> None:
     out = _branches(tmp_path)
     (run,) = [r for r in out["report"]["runs"] if r["run_id"] == out["run_id"]]
     assert run["run_state"] == "terminated"
 
 
-@WP31
 def test_lr1_branch_token_lost_consumer_run_state_wp31(tmp_path: Path) -> None:
     out = _branches(tmp_path, lose=True)
     (run,) = [r for r in out["report"]["runs"] if r["run_id"] == out["run_id"]]
@@ -462,7 +441,6 @@ def test_lr1_branch_token_lost_consumer_run_state_wp31(tmp_path: Path) -> None:
     assert any(g["gap_type"] == "segment_missing" for g in run["gaps"])
 
 
-@WP31
 def test_lr1_replayed_branch_token_run_state_wp31(tmp_path: Path) -> None:
     out = _branches(tmp_path, replay=True)
     (run,) = [r for r in out["report"]["runs"] if r["run_id"] == out["run_id"]]
@@ -493,7 +471,6 @@ def test_lr1_lost_middle_keeps_one_run_id_and_verifies_a_and_c(tmp_path: Path) -
     assert c["predecessors"] == [b.entry] and c["terminal"] is True  # names lost B
 
 
-@WP31
 def test_lr1_lost_middle_run_state_wp31(tmp_path: Path) -> None:
     out = _lost_middle(tmp_path)
     run_id = parse_token(out["a"]).correlation_id  # type: ignore[union-attr]

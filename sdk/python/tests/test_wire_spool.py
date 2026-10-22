@@ -254,7 +254,8 @@ def test_spooled_headers_match_the_contract(node: FakeNode, tmp_path: Path) -> N
     for doc in docs:
         validate_header(doc)
     kinds = sorted(d["marker"]["kind"] for d in docs if d["record_kind"] == "marker")
-    assert kinds == ["manifest", "run_end", "run_start"]  # manifest 0 of the epoch (049 §2.8)
+    # manifest 0 of the epoch (049 §2.8) and the run's terminal seal (050 §3.6)
+    assert kinds == ["manifest", "run_end", "run_start", "segment_seal"]
     exchange = next(d for d in docs if d["record_kind"] == "exchange")
     assert [b["descriptor"]["role"] for b in exchange["bodies"]] == [
         "model.exchange.request", "model.exchange.response"]  # fmt: skip

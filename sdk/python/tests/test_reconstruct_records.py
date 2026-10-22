@@ -181,7 +181,7 @@ def test_records_interleaved_with_exchanges_verify(capture: Capture) -> None:
     assert entry["manifest_digest"] == capture.manifest_digest
     assert run["run_aliases"] == []
     assert run["evaluated_at"] == document["inputs"]["evaluated_at"]
-    assert "run_state" not in run  # the segment graph (WP-31) states it
+    assert run["run_state"] == "terminated"  # the segment graph (WP-31) states it
     # Each record here is its own attempt; its membership is its one position.
     assert [a["records"] for a in run["attempts"]] == [1, 1, 1]
     assert main(["--spans", str(capture.write()), "--store-root", str(capture.root / "store"),
@@ -301,7 +301,9 @@ def test_seal_mismatch_for_a_record_moved_between_segments(capture: Capture) -> 
     moved = capture.record()
     capture.run_end(RUN)
     capture.segment_seal(RUN, segment_id=first, terminal=False)
-    capture.run_start(RUN, segment_id=second)
+    # WP-31: the second segment continues the first (a second root is G1).
+    entry = f"{first}/{capture.source_id}/{EPOCH}/{capture.sequence - 1}/{capture.manifest_digest}"
+    capture.run_start(RUN, segment_id=second, predecessors=(entry,))
     capture.record()
     capture.run_end(RUN)
     capture.segment_seal(RUN, segment_id=second)

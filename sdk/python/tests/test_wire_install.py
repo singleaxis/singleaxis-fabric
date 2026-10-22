@@ -153,7 +153,9 @@ def test_run_scope_emits_heartbeat_markers_on_entry_and_exit(
     markers = [
         attrs(s)["fabric.heartbeat.last_sequence"]
         for s in exporter.get_finished_spans()
-        if s.name == "fabric.capture_heartbeat" and attrs(s).get("fabric.run.id") == travel
+        if s.name == "fabric.capture_heartbeat"
+        and attrs(s).get("fabric.run.id") == travel
+        and attrs(s)["fabric.heartbeat.kind"] in ("run_start", "run_end")  # not the seal
     ]
     assert markers == [0, 2]  # entry marker m=0 -> window starts at 1; exit marker = 2
     plain = [
