@@ -49,7 +49,7 @@ s3 = [
 # local Protocol, so it imports without this extra; the extra only
 # pulls the real `mcp` package in for users wiring it to a live server.
 mcp = [
-  "mcp>=1.0",
+  "mcp>=1.30.0",
   "PyJWT>=2.15.0",
 ]
 # Optional generic signature verification (spec 023 §4). The
