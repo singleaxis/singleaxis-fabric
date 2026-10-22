@@ -373,7 +373,10 @@ export class ContentWriter {
    * queued, the item is reported `pending`, and the write runs on the next
    * event-loop turn (`setImmediate`); `flush()`/`close()` wait for it. A
    * synchronous store still occupies the event loop while its write runs,
-   * exactly as `process` durability does.
+   * exactly as `process` durability does. The immediate is deliberately not
+   * `unref()`'d: it fires on the next turn anyway, and a process that records
+   * and exits naturally must still deliver the object and the manifest its
+   * span already references.
    */
   private queueInline(task: Task): string {
     if (this.inlineQueue.length >= this.config.queueMaxItems) {
@@ -388,7 +391,6 @@ export class ContentWriter {
         this.inlineTimer = undefined;
         this.drainInline();
       });
-      this.inlineTimer.unref();
     }
     return ContentStatus.PENDING;
   }
