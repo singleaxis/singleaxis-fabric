@@ -248,7 +248,7 @@ def test_a_written_exchange_settles_its_segment(monkeypatch: pytest.MonkeyPatch)
     provider, exporter = _provider()
     loss = LossEmitter()
     pipeline = _pipeline.CapturePipeline(store=None, tracer_provider=provider, loss=loss)
-    assert isinstance(pipeline.seals, NullSealAccumulator)
+    assert isinstance(pipeline.seals, _seal.SegmentSeals)
     allocator = SourceAllocator("node-1", "wire")
     settled: list[tuple[str | None, int, str]] = []
     pipeline.set_settle(lambda segment, sequence, entry: settled.append((segment, sequence, entry)))
@@ -283,15 +283,15 @@ def test_record_entry_lists_stored_digests_in_order(monkeypatch: pytest.MonkeyPa
     assert _pipeline._record_entry(span) == "sha256:" + "a" * 64 + "|sha256:" + "b" * 64
 
 
-@pytest.mark.parametrize("prepared", [False, True])
-def test_a_record_job_before_wp11a_is_an_internal_error_loss(
-    monkeypatch: pytest.MonkeyPatch, prepared: bool
-) -> None:
+def test_a_failing_record_job_is_an_internal_error_loss(monkeypatch: pytest.MonkeyPatch) -> None:
     provider, _ = _provider()
     loss = LossEmitter()
     pipeline = _pipeline.CapturePipeline(store=None, tracer_provider=provider, loss=loss)
-    if prepared:  # past PROTECT, the provider path itself is WP-11a's
-        monkeypatch.setattr(pipeline, "_prepare_record", lambda job: ({}, []))
+
+    def broken(job: Any) -> Any:
+        raise RuntimeError("protect bug")
+
+    monkeypatch.setattr(pipeline, "_prepare_record", broken)
     allocator = SourceAllocator("node-1", "wire")
     settled: list[tuple[str | None, int, str]] = []
     loss.set_settle(lambda segment, sequence, entry: settled.append((segment, sequence, entry)))
@@ -301,30 +301,6 @@ def test_a_record_job_before_wp11a_is_an_internal_error_loss(
     assert pipeline.flush(5.0)
     assert pipeline.stats()["internal_errors"] == 1
     assert settled == [(SEG, job.source_sequence, "loss:internal_error")]
-    pipeline.close(1.0)
-    loss.close(1.0)
-
-
-@pytest.mark.parametrize("prepared", [False, True])
-def test_a_record_job_on_the_spool_path_is_an_internal_error_loss(
-    monkeypatch: pytest.MonkeyPatch, prepared: bool
-) -> None:
-    loss = LossEmitter()
-
-    class _Sender:
-        def spool_exchanges(self, items: Any) -> list[str]:
-            return ["spooled" for _ in items]
-
-    pipeline = _pipeline.CapturePipeline(
-        store=None, tracer_provider=None, loss=loss, sender=_Sender(),  # type: ignore[arg-type]
-    )  # fmt: skip
-    if prepared:  # past PROTECT, the record's span is WP-11a's
-        monkeypatch.setattr(pipeline, "_prepare_record", lambda job: ({}, []))
-    allocator = SourceAllocator("node-1", "wire")
-    assert pipeline.submit(_record_job(allocator))
-    assert pipeline.flush(5.0)
-    assert loss.recorded == 1
-    assert pipeline.stats()["internal_errors"] == 1
     pipeline.close(1.0)
     loss.close(1.0)
 
@@ -387,7 +363,8 @@ def test_the_p1_hooks_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- stubs: typed, fail-open, today's behaviour ----------------------------------------------
 
 
-def test_records_input_stub_emits_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_records_input_without_a_handle_emits_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
     records = _records.RecordsInput()
     assert records.begin("tool_call", "sdk.records") is None
     assert records.begin("not_a_kind", "sdk.records") is None  # type: ignore[arg-type]
@@ -424,12 +401,7 @@ def test_segments_stubs_return_their_not_capturing_values(monkeypatch: pytest.Mo
 
 def test_seal_manifest_and_registration_stubs() -> None:
     assert _seal.loss_entry("queue_full") == "loss:queue_full"
-    assert isinstance(_seal.new_accumulator(), NullSealAccumulator)
-    with pytest.raises(NotImplementedError):
-        _seal.record_digest(name="n", start_ns=0, end_ns=0, status="unset", attributes={},
-                            content=[])  # fmt: skip
-    with pytest.raises(NotImplementedError):
-        _seal.seal_digest([])
+    assert isinstance(_seal.new_accumulator(), _seal.SegmentSeals)
     handle: Any = object()
     assert _manifest.build_manifest(handle, 1, seq=0, after=-1, previous_digest=None) is None
     _manifest.emit_initial(handle)
@@ -444,13 +416,6 @@ def test_seal_manifest_and_registration_stubs() -> None:
     assert _registration.Orphan("s-a", 1, 5).next_sequence == 5
     assert _registration.REG_SIZE == 4096
     assert _registration.OFF_HEADER_SHA256 + 32 == _registration.REG_SIZE
-
-
-def test_evidence_encode_is_wp11a() -> None:
-    from fabric import _evidence  # noqa: PLC0415
-
-    with pytest.raises(NotImplementedError):
-        _evidence.encode(ct.EvidenceDoc("fabric.test.items/v1", ()))
 
 
 def test_reconstruct_stubs() -> None:
