@@ -12,15 +12,16 @@ import hashlib
 import hmac
 import os
 import re
+import secrets
 import socket
+import struct
 import threading
-import time
 import uuid
 import weakref
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Literal, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 from ._capture_types import (
     Allocation,
@@ -30,6 +31,11 @@ from ._capture_types import (
     SealAccumulator,
     SealEntry,
 )
+
+if TYPE_CHECKING:
+    import mmap
+
+    from .wire._registration import Registration
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
@@ -46,11 +52,18 @@ V2_TYPES: Mapping[str, str] = {
     "txn": "db_transaction", "mst": "memory_store", "mkey": "memory_key", "p": "provider",
 }  # fmt: skip
 MIN_ID_KEY_BYTES = 16
-Component = Literal["wire"]
+# 050 §3.3: one allocator per process, shared by the wire and records inputs. ``"wire"`` is
+# accepted as an alias of ``"process"`` for one release.
+Component = Literal["process", "wire"]
+SOURCE_LABEL_PREFIX = "wire"  # the default source label keeps ``wire-`` across the upgrade
+EPOCH_BITS = 63
 _LIVE: weakref.WeakSet[SourceAllocator] = weakref.WeakSet()
 _REGISTRY: dict[str, SourceAllocator] = {}
-_LOCK = threading.Lock()  # guards _LIVE, _REGISTRY and _LAST_EPOCH
-_LAST_EPOCH = 0
+_LOCK = threading.Lock()  # guards _LIVE and _REGISTRY
+# The registration mirror (050 §3.2 rule 3): ``next_sequence`` is a u64 at this offset of
+# the mmap'ed ``.epochs/<epoch>.reg`` file (``wire/_registration.py`` pins the layout).
+MIRROR_OFFSET = 256
+_MIRROR = struct.Struct("<Q")
 
 
 @dataclass(eq=False, slots=True)
@@ -160,31 +173,54 @@ def id_key_from_env(environ: Mapping[str, str], name: str = ID_KEY_ENV) -> bytes
 
 
 def _new_epoch() -> int:
-    """``time.time_ns()`` with the pid in its sub-microsecond digits (two processes may share
-    a source id and a microsecond), nudged to be unique and increasing. Holds ``_LOCK``."""
-    global _LAST_EPOCH  # noqa: PLW0603
-    _LAST_EPOCH = max(time.time_ns() // 1000 * 1000 + os.getpid() % 1000, _LAST_EPOCH + 1)
-    return _LAST_EPOCH
+    """A CSPRNG epoch (050 §3.2 rule 1): 63 random bits, redrawn while 0. Needs no lock
+    (``os.urandom`` is fork-safe); two processes sharing a spool are told apart by
+    registration, never by the clock or the pid."""
+    while not (epoch := secrets.randbits(EPOCH_BITS)):
+        pass  # pragma: no cover - probability 2**-63
+    return epoch
+
+
+def _canonical(component: str) -> str:
+    """``"process"`` for the process component and its ``"wire"`` alias; else ``""``."""
+    return "process" if component in ("process", "wire") else ""
 
 
 class SourceAllocator:
-    """Thread-safe sequence allocator; a forked child gets a new epoch and restarts at 0."""
+    """The process's one sequence allocator (050 §3.3), shared by the wire and records
+    inputs: thread-safe; a forked child gets a new epoch and restarts at 0.
+
+    Every allocation goes through :meth:`allocate` / :meth:`allocate_for`, which return an
+    :class:`Allocation`. Under the allocator lock, and with no I/O or system call, each one
+    resolves the scope, asks the run table for the open segment, stores the next sequence
+    in the registration mirror and in this process's fork-ledger slot (memory stores into
+    shared maps), and counts the position outstanding in the seal accumulator.
+    :meth:`next_sequence` and :meth:`next_sequence_for` are the 3-tuple projection kept for
+    callers that unpack ``(epoch, sequence, scope)``."""
 
     __slots__ = (
-        "__weakref__", "_lock", "_next", "component", "epoch", "seals", "segments", "source_id",
+        "__weakref__", "_fork_note", "_lock", "_mirror", "_next", "component", "epoch",
+        "registration", "seals", "segments", "settle_failures", "settled", "source_id",
     )  # fmt: skip
 
-    def __init__(self, source_id: str, component: Component) -> None:
-        if component != "wire" or not OPAQUE_ID_RE.fullmatch(str(source_id)):
-            raise ValueError("component must be wire and source_id an opaque id")
-        self.source_id, self.component = source_id, component
+    def __init__(self, source_id: str, component: Component = "process") -> None:
+        if not _canonical(component) or not OPAQUE_ID_RE.fullmatch(str(source_id)):
+            raise ValueError("component must be process and source_id an opaque id")
+        self.source_id = source_id
+        self.component: Component = "process"
         self._lock, self._next = threading.Lock(), 0
         # 050 §3.3: the run table opens segments at allocation; the pipeline's seal
-        # accumulator counts outstanding positions. No-ops until WP-12 and WP-11a.
+        # accumulator counts outstanding positions. No-ops until WP-12 and WP-11a attach.
         self.segments: RunTable = NullRunTable()
         self.seals: SealAccumulator = NullSealAccumulator()
+        # 050 §3.2: this epoch's registration and its mmap mirror (``None``: unregistered).
+        self.registration: Registration | None = None
+        self._mirror: mmap.mmap | None = None
+        # The fork ledger (wire/_forks.py): set in a forked child that holds a slot.
+        self._fork_note: Callable[[int, int], None] | None = None
+        self.settled = self.settle_failures = 0  # settlement accounting (worker paths)
+        self.epoch = _new_epoch()
         with _LOCK:
-            self.epoch = _new_epoch()
             _LIVE.add(self)
 
     def attach(
@@ -195,19 +231,58 @@ class SourceAllocator:
             self.segments = segments if segments is not None else NullRunTable()
             self.seals = seals if seals is not None else NullSealAccumulator()
 
+    def bind_registration(
+        self, registration: Registration, mirror: mmap.mmap | None, *, drawn_from: int
+    ) -> bool:
+        """Adopt ``registration`` for this allocator's epoch (050 §3.2 rule 2). The
+        registration may hold a redrawn epoch: it replaces ``drawn_from`` only while nothing
+        was allocated in it, else ``False`` (nothing changes). The mirror is brought up to
+        date at once and on every allocation after."""
+        with self._lock:
+            if self.epoch != drawn_from or (registration.epoch != self.epoch and self._next):
+                return False
+            self.epoch = registration.epoch
+            self.registration, self._mirror = registration, mirror
+            if mirror is not None:
+                with contextlib.suppress(Exception):
+                    _MIRROR.pack_into(mirror, MIRROR_OFFSET, self._next)
+            return True
+
+    def unbind_registration(self, registration: Registration | None = None) -> None:
+        """Stop mirroring (``registration``: only when it is still the bound one)."""
+        with self._lock:
+            if registration is None or self.registration is registration:
+                self.registration, self._mirror = None, None
+
+    def set_fork_note(self, note: Callable[[int, int], None] | None) -> None:
+        """The fork ledger's ``note(epoch, sequence)`` of this child (``None``: none).
+        Called from fork hooks only, while the child runs one thread."""
+        self._fork_note = note
+
     def _allocated(self, scope: RunScope | None) -> Allocation:
-        """One position for ``scope`` (050 §3.3). Holds ``_lock``; no I/O. A failing hook
-        never fails the allocation: the position is then segment-less."""
-        self._next += 1
-        allocation = Allocation(self.epoch, self._next - 1, scope)
+        """One position for ``scope`` (050 §3.3). Holds ``_lock``; no I/O, no system call.
+        A failing hook never fails the allocation: the position is then segment-less."""
+        sequence = self._next
+        self._next = sequence + 1
+        allocation = Allocation(self.epoch, sequence, scope)
         try:
             segment = self.segments.on_allocate(allocation)
         except Exception:
             segment = None
+        if (mirror := self._mirror) is not None:
+            try:  # a memory store into the MAP_SHARED registration file
+                _MIRROR.pack_into(mirror, MIRROR_OFFSET, sequence + 1)
+            except Exception:  # an unmapped mirror: stop mirroring
+                self._mirror = None
+        if (note := self._fork_note) is not None:
+            try:  # a memory store into the installing process's fork ledger
+                note(allocation.epoch, sequence)
+            except Exception:
+                self._fork_note = None
         if segment is not None:
             allocation = allocation._replace(segment_id=segment)
             with contextlib.suppress(Exception):
-                self.seals.note_allocated(segment, allocation.sequence)
+                self.seals.note_allocated(segment, sequence)
         return allocation
 
     def allocate(self) -> Allocation:
@@ -226,14 +301,20 @@ class SourceAllocator:
 
     def settle(self, segment_id: str | None, sequence: int, entry: SealEntry) -> None:
         """A position of ``segment_id`` was written (``entry`` its record digest) or lost
-        (``"loss:<reason>"``): hand it to the seal accumulator (050 §3.3). Worker and loss
-        paths only; never raises; a segment-less position settles nothing."""
-        if segment_id is not None:
-            with contextlib.suppress(Exception):
-                self.seals.settle(segment_id, sequence, entry)
+        (``"loss:<reason>"``): hand it to the seal accumulator, which decrements its
+        outstanding count (050 §3.3). Worker and loss paths only; never raises; a
+        segment-less position settles nothing."""
+        if segment_id is None:
+            return
+        try:
+            self.seals.settle(segment_id, sequence, entry)
+        except Exception:
+            self.settle_failures += 1
+        else:
+            self.settled += 1
 
     def next_sequence(self) -> tuple[int, int, RunScope | None]:
-        """Allocate one sequence: ``(epoch, sequence, innermost open run scope)``."""
+        """:meth:`allocate` as ``(epoch, sequence, innermost open run scope)``."""
         epoch, sequence, scope, _, _ = self.allocate()
         return epoch, sequence, scope
 
@@ -256,31 +337,45 @@ class SourceAllocator:
 
     def seal(self) -> tuple[int, int]:
         """End the epoch: its ``(epoch, last sequence)``; nothing is allocated in it after
-        ``last`` (what makes a ``final`` heartbeat true): later allocations use a new one."""
+        ``last`` (what makes a ``final`` heartbeat true): later allocations use a new,
+        unregistered one (050 §3.2 rule 4), so the sealed epoch's mirror is left as is."""
         with self._lock:
             sealed = self.epoch, self._next - 1
-            with _LOCK:
-                self.epoch = _new_epoch()
-            self._next = 0
+            self.epoch, self._next = _new_epoch(), 0
+            self.registration, self._mirror = None, None
             return sealed
 
 
-def default_source_id(component: Component, service_name: str | None = None) -> str:
-    """``<component>-`` + 16 hex of ``sha256(hostname NUL service.name)``."""
+def default_source_id(component: Component = "process", service_name: str | None = None) -> str:
+    """``wire-`` + 16 hex of ``sha256(hostname NUL service.name)``: the process component
+    keeps the ``wire-`` label (050 §3.3), so source ids are unchanged across the upgrade."""
+    if not _canonical(component):
+        raise ValueError("component must be process")
     name = service_name or os.environ.get("OTEL_SERVICE_NAME") or "unknown"
     seed = f"{socket.gethostname()}\0{name}".encode("utf-8", "surrogatepass")
-    return f"{component}-{hashlib.sha256(seed).hexdigest()[:16]}"
+    return f"{SOURCE_LABEL_PREFIX}-{hashlib.sha256(seed).hexdigest()[:16]}"
 
 
-def get_allocator(component: Component, *, source_id: str | None = None) -> SourceAllocator:
-    """The process allocator for ``component``; ``source_id`` applies on first creation only."""
+def get_allocator(
+    component: Component = "process", *, source_id: str | None = None
+) -> SourceAllocator:
+    """The process allocator (``"wire"`` is an alias of ``"process"``); ``source_id``
+    applies on first creation only."""
+    if not (key := _canonical(component)):
+        raise ValueError("component must be process")
     with _LOCK:
-        if (existing := _REGISTRY.get(component)) is not None:
+        if (existing := _REGISTRY.get(key)) is not None:
             return existing
-    chosen = source_id or os.environ.get("FABRIC_SOURCE_ID") or default_source_id(component)
-    created = SourceAllocator(encode_opaque_id(chosen), component)
+    chosen = source_id or os.environ.get("FABRIC_SOURCE_ID") or default_source_id()
+    created = SourceAllocator(encode_opaque_id(chosen))
     with _LOCK:
-        return _REGISTRY.setdefault(component, created)
+        return _REGISTRY.setdefault(key, created)
+
+
+def live_allocators() -> list[SourceAllocator]:
+    """Every live allocator of this process (registration and fork hooks)."""
+    with _LOCK:
+        return list(_LIVE)
 
 
 @contextmanager
@@ -481,11 +576,15 @@ def emitted_ids(profile: str, key: bytes | None, mode: IdentityMode) -> EmittedI
 
 
 def _after_fork_in_child() -> None:
+    """A forked child: new locks, a new random source id, and for every allocator a new
+    epoch at sequence 0 with no registration (050 §3.2 rule 4: the child never writes the
+    parent's mirror; ``wire/_registration.py`` closes the inherited descriptor and map)."""
     global _LOCK  # noqa: PLW0603
     _LOCK = threading.Lock()  # another parent thread may have held it
     _PROCESS_SOURCE.clear()  # a forked child is a new process: a new random source id
     for allocator in list(_LIVE):
         allocator._lock, allocator._next, allocator.epoch = threading.Lock(), 0, _new_epoch()
+        allocator.registration, allocator._mirror = None, None
 
 
 if hasattr(os, "register_at_fork"):
