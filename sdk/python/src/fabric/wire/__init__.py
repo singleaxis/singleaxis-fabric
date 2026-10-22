@@ -1,7 +1,21 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""In-process LLM wire capture (specs 047, 048). Importing it patches nothing; :func:`install`
-or the env-gated autoload starts capture, which always fails open."""
+"""In-process LLM wire capture (specs 047, 048) and the run structure of the records input
+(spec 050). Importing it patches nothing; :func:`install` or the env-gated autoload starts
+capture, which always fails open.
+
+**Records-only install** (050 §3.1). An application with no model HTTP traffic to tee
+installs with ``install(patch_httpx=False, patch_aiohttp=False)`` (or ``FABRIC_WIRE_HTTPX=0``
+with ``FABRIC_WIRE_AIOHTTP=0``). It gets the same spool, allocator, manifests, segments and
+sender, and therefore the same delivery guarantee, for the records input alone; the capture
+manifest reports the wire points ``installed_inactive``.
+
+**Runs** (050 §3.6). :func:`run` scopes a run; :func:`resume_token` /
+:func:`resume_tokens` seal its open segment and return ``fr3/`` tokens that continue it in
+another process (``run(resume=…)``, env ``FABRIC_RUN_RESUME_TOKEN``, or ``baggage``
+``fabric.resume`` across a service boundary); :func:`end_run` ends a run from its tokens.
+A clear run id is mapped before it is emitted (pseudonymous by default) and is never put in
+a token: only Fabric-emitted tokens cross a process boundary."""
 
 from __future__ import annotations
 
@@ -11,22 +25,27 @@ import dataclasses
 import functools
 import logging
 import os
+import secrets
 import sys
 import threading
 import time
 import uuid
-from collections.abc import Iterator, Mapping
-from typing import TYPE_CHECKING, Any, Literal
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+from .._capture_types import COUNTERS, EndRunStatus, RunOutcome, ScopeStatus, StopReason, strict
 from .._sequence import (
+    OPAQUE_ID_RE,
     RunScope,
     SourceAllocator,
+    current_run_scope,
     default_source_id,
     encode_opaque_id,
     get_allocator,
     id_key_from_env,
     key_id,
     labels_from_env,
+    run_pseudonym,
     run_scope,
     source_label,
 )
@@ -50,7 +69,8 @@ __all__ = [
     "ExchangeSink", "RedactionService", "Transformation", "WireConfig", "WireHandle",
     "WireStats", "WireTransport",
     "current_handle",
-    "flush", "install", "install_from_env", "run", "uninstall",
+    "end_run", "flush", "install", "install_from_env", "resume_token", "resume_tokens", "run",
+    "uninstall",
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.wire")
@@ -224,6 +244,7 @@ class WireHandle:
             plaintext = sender.spool.plaintext_records()
             status["spool_plaintext_records"] = plaintext
             status["spool_encrypted"] = bool(status["spool_encrypted"]) and plaintext == 0
+        status.update(_p1_status(self))
         return status
 
     @property
@@ -286,6 +307,7 @@ class WireHandle:
             timeout = self.config.shutdown_timeout_s if timeout_s is None else timeout_s
             deadline = time.monotonic() + max(0.0, timeout)
             drained = self._tee.close(timeout * _DRAIN_SHARE)
+            _p1_uninstalled(self)  # 050 §3.8: the wire points' state change, before final
             _p1_final(self)  # 050 §3.6: final() seals every open segment first
             self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
             _p1_detach(self)
@@ -331,7 +353,11 @@ def install(
     content_client: NodeContentClient | None = None, **overrides: Any,
 ) -> WireHandle:  # fmt: skip
     """Install the tee (idempotent; invalid config raises first). The spool delivers through
-    ``span_exporter`` and ``content_client`` (defaults: from the environment)."""
+    ``span_exporter`` and ``content_client`` (defaults: from the environment).
+
+    ``patch_httpx=False, patch_aiohttp=False`` is the records-only install (050 §3.1): no
+    model client is teed, and the records input, segments, manifests, spool and sender work
+    exactly as with the tee."""
     global _HANDLE  # noqa: PLW0603
     from .._loss import PrivateFallback, get_loss_emitter  # noqa: PLC0415
     from . import _transport  # noqa: PLC0415
@@ -396,14 +422,14 @@ def install(
         tee = _transport.WireTee(
             config, allocator=allocator, loss=loss, sender=sender, fallback=fallback, gate=gate
         )
-        registration = _p1_attach(allocator, loss, tee)
+        registration = _p1_attach(allocator, loss, tee, config, gate)
         loss.attach(sender.wake if sender is not None else None)
         if sender is not None:  # starts draining: replays what earlier processes left
             sender.wake()
         _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback, gate=gate)
         _p1_installed(_HANDLE, registration)
         _log_gate(gate)
-        _patch_clients(config)
+        _p1_patch(_HANDLE)  # the client tees, and a failed patch's manifest
         _transport._ACTIVE = tee
         atexit.register(_HANDLE._atexit_close)
         if _truthy(os.environ.get("FABRIC_CAPTURE_LLM_CONTENT")):
@@ -415,23 +441,82 @@ def install(
 
 
 def _p1_attach(
-    allocator: SourceAllocator, loss: Any, tee: WireTee
+    allocator: SourceAllocator, loss: Any, tee: WireTee, config: WireConfig | None = None,
+    gate: ContentGate | None = None,
 ) -> Registration | None:  # fmt: skip
     """050 §3.2-§3.3, before the handle is published: register the epoch on the spool and
-    attach the run table, the pipeline's seal accumulator and the settle hooks. Each step
-    fails open (capture continues unregistered); all are no-ops until WP-10/11a/12."""
-    from .._segments import new_run_table  # noqa: PLC0415
+    attach the run table (bound to the allocator, the marker queue and the pipeline's seal
+    accumulator), the seal accumulator and the settle hooks. Each step fails open (capture
+    continues unregistered, or without segments)."""
+    from .. import _segments  # noqa: PLC0415
     from . import _registration  # noqa: PLC0415
 
     registration = None
     with contextlib.suppress(Exception):
         spool = tee.sender.spool if tee.sender is not None else None
         registration = _registration.register(spool, allocator.source_id, allocator.epoch)
+    table = None
     with contextlib.suppress(Exception):
-        allocator.attach(segments=new_run_table(), seals=tee.pipeline.seals)
+        table = _segments.new_run_table()
+        bind = getattr(table, "bind", None)
+        if callable(bind):
+            bind(allocator=allocator, loss=loss, seals=tee.pipeline.seals,
+                 key=config.id_key if config is not None else None,
+                 production=gate is not None and gate.profile == "production")  # fmt: skip
+    with contextlib.suppress(Exception):
+        allocator.attach(segments=table, seals=tee.pipeline.seals)
         tee.pipeline.set_settle(allocator.settle)
         loss.set_settle(allocator.settle)
     return registration
+
+
+def _p1_status(handle: WireHandle) -> dict[str, Any]:
+    """050 status lines (values only): the epoch registration (WP-10), the records input's
+    counters and the fail-open counters (R9), the seal accumulator's and run table's stats."""
+    from .. import _segments  # noqa: PLC0415
+
+    out: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        registration = handle.registration
+        out["registration"] = registration.status if registration is not None else "failed"
+        out.update(COUNTERS.snapshot())
+        if (records := handle.records) is not None:
+            out.update(records.stats.snapshot())
+        stats = getattr(handle._tee.pipeline.seals, "stats", None)
+        if callable(stats):
+            out["seals"] = dict(stats())
+        table = handle.allocator.segments
+        if isinstance(table, _segments.SegmentTable):
+            out["runs"] = table.stats()
+    return out
+
+
+_WIRE_POINTS = ("wire.py.httpx", "wire.py.aiohttp")
+
+
+def _p1_patch(handle: WireHandle) -> None:
+    """Patch the client tees the config enables; 050 §3.8 (WP-13 hand-off): a tee whose
+    patch failed is a capture-point state change (the next chained manifest)."""
+    from .. import _manifest  # noqa: PLC0415
+
+    _patch_clients(handle.config)
+    with contextlib.suppress(Exception):
+        states = _client_status(handle.config)["capture_points"]
+        for point in _WIRE_POINTS:
+            if states.get(point) == "failed":
+                _manifest.capture_point_changed(handle, point, "failed", "internal_error")
+
+
+def _p1_uninstalled(handle: WireHandle) -> None:
+    """050 §3.8 (WP-13 hand-off): ``uninstall()`` is a state change of every wire tee that
+    was active, chained before the epoch's ``final``."""
+    from .. import _manifest  # noqa: PLC0415
+
+    with contextlib.suppress(Exception):
+        document = _manifest.current_document(handle.allocator) or {}
+        for row in document.get("capture_points", ()):
+            if row.get("id") in _WIRE_POINTS and row.get("state") == "active":
+                _manifest.capture_point_changed(handle, row["id"], "disabled", "shutdown")
 
 
 def _p1_installed(handle: WireHandle, registration: Registration | None) -> None:
@@ -621,7 +706,8 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
         )
         from ._config import config_from_env  # noqa: PLC0415
 
-        config, tracer_mode = config_from_env(os.environ if environ is None else environ)
+        env = os.environ if environ is None else environ
+        config, tracer_mode = config_from_env(env)
         if _otel_disabled():
             return install(config)  # disabled: nothing is built
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():
@@ -638,7 +724,11 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
             get_loss_emitter().set_tracer_provider(private)
             if tracer_mode == "private":
                 config = dataclasses.replace(config, tracer_provider=private)
-        return install(config)
+        handle = install(config)
+        from .._segments import intake_environment  # noqa: PLC0415
+
+        intake_environment(handle, env)  # same-host FABRIC_RUN_ID / FABRIC_RUN_RESUME_TOKEN
+        return handle
     except Exception as exc:
         _LOG.warning("fabric.wire: capture not installed (%s)", type(exc).__name__)
         return None
@@ -657,38 +747,159 @@ def flush(timeout_s: float = 5.0) -> bool:
     return _HANDLE.flush(timeout_s) if _HANDLE is not None else True
 
 
+_RUN_LABEL = "fabric-run"  # run_scope's own argument; the scope carries the emitted id
+
+
+def _guarded(call: Callable[..., Any], *args: Any) -> Any:
+    """A run-table hook, fail-open (R9): a Fabric failure is counted, never raised into the
+    block, except under ``FABRIC_RECORDS_STRICT=1``."""
+    try:
+        return call(*args)
+    except Exception:
+        COUNTERS.internal_errors += 1
+        if strict():
+            raise
+        return None
+
+
+def _scope_status(exc: BaseException) -> ScopeStatus:
+    """S34 of a block that raised: ``cancelled`` for cancellation and interpreter exits."""
+    import asyncio  # noqa: PLC0415
+
+    cancelled = (asyncio.CancelledError, KeyboardInterrupt, SystemExit, GeneratorExit)
+    return "cancelled" if isinstance(exc, cancelled) else "error"
+
+
 @contextlib.contextmanager
-def run(run_id: str) -> Iterator[None]:
-    """Scope an explicit run. Each entry is a new scope (``fabric.run.scope_id``) whose
-    ``run_start``/``run_end`` markers bound the calls started inside it (spec 048 §6).
-    ``run_id`` is emitted only as its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``); in
-    the production profile without that key, only the generated source fallback."""
+def run(
+    run_id: str | None = None, *, session_id: str | None = None, user_id: str | None = None,
+    parent_run_id: str | None = None, resumed_from: str | None = None,
+    links: Sequence[str] = (), resume: str | Sequence[str] | None = None,
+    resumable: bool = False, final: bool = False, open_deadline_s: int | None = None,
+) -> Iterator[None]:  # fmt: skip
+    """Scope a run (spec 048 §6, 050 §3.6). Each entry is a new scope
+    (``fabric.run.scope_id``) whose ``run_start``/``run_end`` markers bound the calls and
+    records started inside it, in a segment of the run (``fabric.run.segment_id``).
+
+    The run id is decided by the five run-identity rules (module ``fabric._segments``):
+    ``resume`` tokens (or, for the first outermost block, ``FABRIC_RUN_RESUME_TOKEN``)
+    carry the run's correlation id; else ``run_id`` (or same-host ``FABRIC_RUN_ID``) is
+    mapped by the identity rule: its ``r-`` pseudonym (keyed by ``FABRIC_WIRE_ID_KEY``) in
+    the default pseudonymous mode, any string accepted; as given only in the explicit
+    ``clear`` identity mode; in the production profile without a key, the generated source
+    fallback. Without either a fresh ``r-`` correlation id is minted. ``session_id`` and
+    ``user_id`` become ``sess-``/``usr-`` pseudonyms (omitted without a key);
+    ``parent_run_id``, ``resumed_from`` and ``links`` follow the run-id rule. They ride on
+    the run's root ``run_start``.
+
+    The run's outermost block exit in this process seals its segment: terminal for a run
+    that is not ``resumable`` (or a ``final=True`` block), non-terminal otherwise.
+    ``resumable`` and ``open_deadline_s`` (60..31536000) mark a run that continues
+    elsewhere. Fail-open (R9): a malformed argument is dropped, a non-string ``run_id``
+    runs the block uncaptured; ``FABRIC_RECORDS_STRICT=1`` raises ``ValueError`` instead
+    (also for a run id outside the opaque-id pattern)."""
+    if run_id is not None and not isinstance(run_id, str):
+        COUNTERS.api_misuse += 1
+        if strict():
+            raise ValueError("run_id must be a str")
+        yield  # the block runs uncaptured
+        return
+    if strict() and run_id is not None and not OPAQUE_ID_RE.fullmatch(run_id):
+        raise ValueError("run_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     handle = _HANDLE if _HANDLE is not None and _HANDLE.capturing else None
+    from .. import _segments  # noqa: PLC0415
+
+    table = _guarded(_segments.active_table, handle) if handle is not None else None
+    plan = None
+    if table is not None:
+        plan = _guarded(functools.partial(
+            table.prepare, run_id, session_id=session_id, user_id=user_id,
+            parent_run_id=parent_run_id, resumed_from=resumed_from, links=links,
+            resume=resume, resumable=resumable, final=final,
+            open_deadline_s=open_deadline_s, outermost=current_run_scope() is None,
+        ))  # fmt: skip
+    if table is None or plan is None:
+        with _legacy_run(handle, run_id):
+            yield
+        return
+    with run_scope(_RUN_LABEL, emitted=plan.run_id) as scope:
+        _guarded(table.enter, plan, scope)
+        status: ScopeStatus = "ok"
+        try:
+            yield
+        except BaseException as exc:
+            status = _scope_status(exc)
+            raise
+        finally:
+            _guarded(table.exit, scope, status)
+
+
+@contextlib.contextmanager
+def _legacy_run(handle: WireHandle | None, run_id: str | None) -> Iterator[None]:
+    """A run scope without segments: no handle (the scope only scopes the context), or a
+    run table of the frozen protocol only (its block hooks, plus 048 run markers)."""
 
     def mark(scope: RunScope, kind: Literal["run_start", "run_end"]) -> None:
         if handle is not None:
+            from .. import _segments  # noqa: PLC0415
+
             with contextlib.suppress(Exception):  # capture fails open
-                handle._tee.loss.heartbeat(handle.allocator, kind=kind, scope=scope)
-            with contextlib.suppress(Exception):  # 050 §3.6 block hooks (WP-12)
+                if not isinstance(handle.allocator.segments, _segments.SegmentTable):
+                    # 048 markers; a segment table's own hooks emit the typed ones
+                    handle._tee.loss.heartbeat(handle.allocator, kind=kind, scope=scope)
+            with contextlib.suppress(Exception):  # 050 §3.6 block hooks
                 segments = handle.allocator.segments
                 hook = segments.on_block_enter if kind == "run_start" else segments.on_block_exit
                 hook(scope)
 
     key = handle.config.id_key if handle is not None else None
-    emitted = None
-    if (
+    if run_id is None:
+        emitted = "r-" + secrets.token_hex(16)  # rule 5: minted, no caller input
+    elif (
         handle is not None
         and handle.gate is not None
         and (handle.gate.profile == "production" and key is None)
     ):  # 049 §2.9 rule 5: the generated source fallback, nothing derived from run_id
         allocator = handle.allocator
         emitted = encode_opaque_id(f"source:{allocator.source_id}:{allocator.epoch}")
-    with run_scope(run_id, key, emitted=emitted) as scope:
+    else:
+        emitted = run_pseudonym(run_id, key)
+    with run_scope(_RUN_LABEL, emitted=emitted) as scope:
         mark(scope, "run_start")
         try:
             yield
         finally:
             mark(scope, "run_end")
+
+
+def resume_token() -> str | None:
+    """Seal the current run's open segment (non-terminal, ``resumable=true``) and return its
+    ``fr3/`` token (050 §3.6); ``None`` outside a run or when not capturing. Never raises
+    (except under ``FABRIC_RECORDS_STRICT=1``)."""
+    from .._segments import resume_token as issue  # noqa: PLC0415
+
+    return issue()
+
+
+def resume_tokens(branches: int) -> tuple[str, ...]:
+    """``branches`` (1..64) branch tokens of one seal, each for exactly one consumer;
+    ``()`` outside a run or when not capturing."""
+    from .._segments import resume_tokens as issue  # noqa: PLC0415
+
+    return issue(branches)
+
+
+def end_run(
+    run_id: str | None, outcome: RunOutcome, *, resume: Sequence[str],
+    stop_reason: StopReason | None = None,
+) -> EndRunStatus:  # fmt: skip
+    """End a run from its resume tokens (an orchestrator's call, 050 §3.6): a zero-width
+    terminal segment whose ``run_end`` carries ``outcome``. ``run_id=None`` takes the run id
+    from the tokens. Returns ``ended``, ``refused_no_token``, ``refused_bad_token``,
+    ``refused_conflicting_tokens``, ``not_capturing`` or ``failed``; never raises."""
+    from .._segments import end_run as end  # noqa: PLC0415
+
+    return cast("EndRunStatus", end(run_id, outcome, resume=resume, stop_reason=stop_reason))
 
 
 def __getattr__(name: str) -> Any:

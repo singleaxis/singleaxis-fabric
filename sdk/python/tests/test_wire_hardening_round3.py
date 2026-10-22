@@ -377,6 +377,7 @@ def test_clear_run_id_never_leaves_the_process(
     node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", KEY.decode())  # install() reads it
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     node.mode = "down"
     spool = tmp_path / "spool"
     handle = install_node(node, spool, id_key=None)  # the environment's key

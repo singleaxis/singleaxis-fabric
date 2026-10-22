@@ -201,8 +201,9 @@ def validate_header(doc: dict[str, Any]) -> None:
 
 
 def test_node_mode_delivers_content_then_span_and_empties_the_spool(
-    node: FakeNode, tmp_path: Path
+    node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     handle = install_node(node, tmp_path / "spool")
     with wire.run("run-a"), model_client() as client:
         body = client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": []}).content

@@ -93,6 +93,7 @@ class JsonlSpanExporter(SpanExporter):
 
 @pytest.fixture(autouse=True)
 def _isolated_process_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     emitter = LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
     monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})

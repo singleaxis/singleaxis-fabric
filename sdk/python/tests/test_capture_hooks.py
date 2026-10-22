@@ -386,7 +386,8 @@ def test_records_input_without_a_handle_emits_nothing(monkeypatch: pytest.Monkey
 
 
 def test_segments_stubs_return_their_not_capturing_values(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert isinstance(_segments.new_run_table(), NullRunTable)
+    table = _segments.new_run_table()  # WP-12: unbound until install binds it
+    assert isinstance(table, _segments.SegmentTable) and not table.active
     assert _segments.resume_token() is None
     assert _segments.resume_tokens(2) == ()
     assert _segments.resume_tokens(65) == ()

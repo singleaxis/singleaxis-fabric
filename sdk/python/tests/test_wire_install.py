@@ -134,7 +134,9 @@ def test_wrapper_without_install_is_pass_through() -> None:
 def test_run_scope_emits_heartbeat_markers_on_entry_and_exit(
     provider: tuple[TracerProvider, InMemorySpanExporter],
     fake_network: list[httpx.Request],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     tracer_provider, exporter = provider
     handle = wire.install(tracer_provider=tracer_provider)
     with httpx.Client() as client:
@@ -159,6 +161,7 @@ def test_run_scope_emits_heartbeat_markers_on_entry_and_exit(
         if s.name == "fabric.capture_heartbeat" and "fabric.run.id" not in attrs(s)
     ]  # fmt: skip
     assert attrs(plain[-1])["fabric.heartbeat.last_sequence"] == 2  # flush covers the tail
+    monkeypatch.setenv("FABRIC_RECORDS_STRICT", "1")  # 050 R9: only strict raises
     with pytest.raises(ValueError), wire.run("bad id with spaces"):
         pass
 
