@@ -42,6 +42,42 @@ carries these fixes forward.
   `DeprecationWarning`. It will be removed in a later minor release. To keep
   recording inventories, call `list_tools()` (and the others) through the
   proxy.
+- Recording fails open. A tracer, span or span processor that raises no
+  longer escapes a reporting API (`record_*`, `remember`, `checkpoint`,
+  `set_attribute` ...) and never replaces the application's own exception on
+  exit from a decision, `delegate`, LLM call, tool call or execution block:
+  that exception object always propagates unchanged. Caught failures are
+  counted and make `capture_health` `partial`. A delegation whose carrier
+  injection fails now proceeds with an empty carrier instead of raising.
+  Argument validation errors are unchanged.
+- Recording never waits on storage.
+  - Python legacy `content_store=`: writes go to a bounded background queue
+    (`Fabric(content_store_queue_items=1024)`); a full queue drops the write
+    and counts it (`Fabric.content_store_stats()`), and `flush_content()` /
+    `close()` wait for the queue. The event's `fabric.content.ref` is the
+    store's deterministic `ref_for()` of the content digest, stamped only when
+    the write was accepted; a custom store without `ref_for` gets no ref.
+  - Python governed `durability="inline"`: the write runs on a worker thread
+    and the caller waits at most `ContentCaptureConfig.inline_deadline_ms`
+    (default 50 ms); after that the item stays `pending` and the write settles
+    it in the background.
+  - **Behaviour change, TypeScript governed `durability: "inline"`:** the
+    write never runs on the caller's stack. The record call queues it and
+    returns at once with the item `pending`; the write runs on the next
+    event-loop turn and `flush()` / `close()` wait for it. The caller never
+    waits, but a synchronous store still occupies the event loop while its
+    write runs, as `process` durability does. `inline` therefore no longer
+    means "durable before the call returns": call `flush()` when you need
+    that. (Node runs a synchronous store call to completion, so a deadline on
+    the caller's stack cannot be enforced; Python can, and does.)
+- Diagnostics are class-only and never raise. Fabric's logs carry an
+  exception's class name, never its message or traceback (a store's error can
+  echo the payload), and no id, key or path; a log handler that raises drops
+  the diagnostic instead of reaching the application (this also fixes the MCP
+  wrapper's diagnostics).
+- TypeScript: an exported `ToolCall` or `LlmCall` built outside a decision now
+  resolves the identity mode from the environment, as Python's do, and keeps a
+  payload digest only in the clear mode.
 
 **Privacy in the pseudonymous identity mode (spec 049 §2.9, §4.2, §7.5, §7.6)**
 
@@ -62,6 +98,21 @@ Node with `identity_mode: clear` so it keeps admitting the clear values.
   `FABRIC_WIRE_LABELS=clear`. Without the key these values are omitted, like the
   decision line's other caller ids. Values returned to the application
   (records, `MCPInventory`) are unchanged.
+- Provider and caller correlation ids are mapped. With the key, provider ids
+  (`gen_ai.request.previous_response.id`, `gen_ai.response.id`,
+  `gen_ai.tool.call.id`, `fabric.tool.call.id`,
+  `fabric.side_effect.parent_tool_call_id`) are the keyed v2 `p-` form, the
+  same function as the wire line's provider ids; `fabric.request_id` and, in
+  Python, `gen_ai.data_source.id` (also in the retrieval span's name) are
+  `lbl-`. Without the key they are omitted.
+- Side effects: a caller-supplied `fabric.side_effect.side_effect_id` is `lbl-`
+  (a minted uuid4 stays as is), in the event and in
+  `fabric.replay.suppressed_side_effect_ids`; `target_system`, `operation` and
+  `fabric.side_effect_systems` are operator labels (`lbl-`, or as given with
+  `FABRIC_WIRE_LABELS=clear`).
+- Tool names on tool spans (the span name, `gen_ai.tool.name`,
+  `fabric.tool.name` and the duration metric) are operator labels; without a
+  key the span is named `execute_tool` and carries no tool name.
 - Host spans (`fabric.decision`, LLM and tool call spans, `fabric.execution`)
   record only the exception class (`exception.type`): no `exception.message`,
   no `exception.stacktrace`, and no message in the status description. The
@@ -74,13 +125,45 @@ Node with `identity_mode: clear` so it keeps admitting the clear values.
   `result_hash`) are emitted only when the role retains the original: a role
   captured by governed content capture or, in Python without one, the memory
   and side-effect payloads written to a legacy `content_store`. Caller-supplied
-  digests follow the same rule. Metadata-only recording therefore carries no
+  digests follow the same rule, and `fabric.interaction.metadata_hash` follows
+  the `interaction.payload` role. Metadata-only recording therefore carries no
   payload digest: a digest of a low-entropy payload reveals it.
 - Fabric Node (`fabricguard`): under `identity_mode: pseudonymous` the
   idempotency keys and document ids are admitted only as `lbl-` + 32 hex, and
   the checkpoint step name and MCP tool entries only in their `lbl-` form
   unless `capture_labels` or `identity_mode` is `clear`; a clear value from an
-  older agent is dropped.
+  older agent is dropped. The same holds for the provider ids (`p-` + 32 hex
+  only, never the unkeyed 16-hex form), `fabric.request_id` and
+  `gen_ai.data_source.id` (`lbl-`), side-effect ids (uuid4 or `lbl-`), side
+  effect target systems and operations, and tool names (`lbl-` unless labels
+  are clear). Clear values from third-party instrumentation under these keys
+  are dropped by a pseudonymous Node too. The Node now admits the SDK's
+  `mst-` `gen_ai.memory.store.id` and `lbl-` lists under `fabric.tags` and
+  `fabric.memory.tags` (they were dropped before; other values still are), and
+  categorises a tool span without a tool name as a tool call.
+
+**Known limitations (deferred to spec 051, P2)**
+
+- Dedicated v2 prefixes: idempotency keys, document ids, request ids, data
+  source ids and caller side-effect ids use the generic keyed `lbl-` until
+  spec 051 assigns `idk-`, `eff-` and others; the fabricguard rules for the
+  legacy decision-line keys are hand-written until they move into the
+  generated telemetry-key registry.
+- Digests without a content role are still emitted as given in every mode:
+  caller-supplied `fabric.checkpoint.state_hash`, `fabric.replay.state_hash`,
+  `fabric.replay.tool_result_hashes`, `fabric.hook.input_hash` /
+  `output_hash`, `fabric.file.content_hash` and `fabric.skill.manifest_hash`;
+  the SDK's `fabric.interaction.target_hash` and `fabric.file.path_hash`
+  (unkeyed SHA-256 of the target or path, spec 049 N46); and the MCP
+  `fabric.mcp.tools_hash` and per-tool definition digests. A digest of a
+  low-entropy value reveals it: avoid putting personal data in these inputs.
+- Governed content keeps its decision bindings (session, request and
+  tool-call ids) as given in descriptors and manifests: the content store is
+  the customer's destination for content, whose bodies carry the same ids.
+- The concurrent-use and fail-open counters are local
+  (`capture_health`, `concurrent_use_count`); no telemetry key reports them
+  yet.
+- LLM span names carry the request model (`{operation} {model}`) as given.
 
 ### v0.8.0 release notes (draft)
 

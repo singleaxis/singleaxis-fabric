@@ -58,8 +58,13 @@ exporters remain the host's responsibility.
 `record_replay_metadata`, `record_interaction`, `record_context`,
 `record_skill`, `delegate`/`adelegate`, `record_hook`, `record_file_access`,
 `set_attribute`. `Fabric.execution(...)` correlates several decisions.
-Recording never raises into the application because one `Decision` is used
-from several threads or tasks: the overlapping call is recorded without
+Recording never raises into the application: a failing tracer, span or
+store is caught and counted (`capture_health` `partial`), the application's
+own exception always propagates unchanged, and no recording call waits on
+storage (the legacy `content_store` is written by a bounded background queue;
+governed `inline` durability waits at most 50 ms in Python and never in
+TypeScript, where `flush()` is the durability point). When one `Decision` is
+used from several threads or tasks, the overlapping call is recorded without
 serialisation and counted (`Decision.concurrent_use_count`,
 `capture_health["status"] == "partial"`); `FABRIC_RECORDS_STRICT=1` raises
 `ConcurrentDecisionUseError` instead, for tests.
@@ -94,16 +99,20 @@ include `sess-` (session), `usr-` (user), `conv-`, `mkey-` (memory key),
 - `FABRIC_IDENTITY_MODE=clear` emits the ids unchanged. Use it only with
   ids that are not personal data. A Node in its default pseudonymous
   identity mode drops a `fabric.session_id` that is not a `sess-` value.
-- `request_id` and the configured `agent_id` are emitted as given; use
-  opaque values.
+- The configured `agent_id` is emitted as given; use an opaque value. From
+  v0.8.1 `request_id` is a caller id like the others (`lbl-`, omitted
+  without the key).
 - Other caller data on decision-line keys (v0.8.1): with the key,
   `gen_ai.memory.store.id` is `mst-`; idempotency keys
   (`fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key`) and
   `fabric.retrieval.source_document_ids` entries are `lbl-` (their types have
   no v2 prefix yet); checkpoint step names, MCP tool names
-  (`fabric.mcp.tools`) and tags are operator labels, `lbl-`, or as given with
-  `FABRIC_WIRE_LABELS=clear`. Without the key they are omitted. Host spans
-  record only the exception class, never its message or stack trace.
+  (`fabric.mcp.tools`), tool names on tool spans, side-effect target systems
+  and operations, and tags are operator labels, `lbl-`, or as given with
+  `FABRIC_WIRE_LABELS=clear`. Provider ids (response, previous response, tool
+  call, parent tool call) are the keyed `p-` form. Without the key they are
+  omitted. Host spans record only the exception class, never its message or
+  stack trace.
 
 With the id key, `ByteEvidenceRecorder`, `CallRecorder` and
 `SyntheticCaptureSession` emit the run id as `r-`, the source id as `s-`,
