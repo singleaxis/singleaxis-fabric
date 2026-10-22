@@ -12,17 +12,15 @@ semantics (same gap types, effects, reasons and verdicts) and the budget.
 
 from __future__ import annotations
 
-import json
 import random
-import subprocess
-import sys
 import textwrap
-from pathlib import Path
 from typing import Any
 
 from fabric._sequence import source_label
 from fabric.reconstruct._inputs import ExchangeObs, HeartbeatObs, LossObs
 from fabric.reconstruct._verify import _LISTED_SEGMENTS, _segments, _Source, _Verifier
+
+from .test_wire_passivity import _fresh_interpreter
 
 SOURCE = source_label("wire-scale")
 EPOCH = 7
@@ -155,14 +153,15 @@ def test_many_later_segments_are_one_gap_per_reason_with_the_same_verdict() -> N
 _SCALE_SCRIPT = textwrap.dedent(
     """
     import json, resource, sys, time
-    sys.path.insert(0, sys.argv[1])
-    from test_reconstruct_scale import EPOCH, SOURCE, _exchange, _run_id
+    from tests.test_reconstruct_scale import EPOCH, SOURCE, _exchange, _run_id
+    from tests.test_wire_passivity import calibrate, scale_for
     from fabric.reconstruct._inputs import HeartbeatObs, LossObs
     from fabric.reconstruct.__main__ import _report_chunks
     from fabric.reconstruct._verify import _Verifier
 
     total, block, runs, open_every = 1_000_000, 4, 10_000, 10
-    started = time.perf_counter()
+    before = calibrate()
+    started, cpu_started = time.perf_counter(), time.process_time()
     verifier = _Verifier(None)
     kept = range(0, total, block)
     per_run = len(kept) // runs
@@ -180,11 +179,15 @@ _SCALE_SCRIPT = textwrap.dedent(
     sources = [verifier.sources[k].to_json(verifier.exchange_count[k]) for k in verifier.sources]
     document = {"sources": sources, "runs": built, "scopes": scopes}
     report_bytes = sum(len(chunk.encode()) for chunk in _report_chunks(document))  # as the CLI
-    elapsed = time.perf_counter() - started
+    cpu, elapsed = time.process_time() - cpu_started, time.perf_counter() - started
+    calibration = max(before, calibrate())  # the slower machine state of the two
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     peak_bytes = peak if sys.platform == "darwin" else peak * 1024
     print(json.dumps({
         "seconds": elapsed,
+        "cpu_seconds": cpu,
+        "calibration_ns": calibration,
+        "scale": scale_for(calibration),
         "peak_bytes": peak_bytes,
         "report_bytes": report_bytes,
         "ranges": len(sources[0]["missing_sequences"]),
@@ -198,28 +201,37 @@ _SCALE_SCRIPT = textwrap.dedent(
 )
 
 
+# CPU seconds on the reference hardware (the 047 passivity calibration's machine); the
+# budget is scaled by this machine's calibration, at most MAX_SCALE times.
+SCALE_BUDGET_S = 60
+
+
 def test_million_sequences_fragmented_loss_ten_thousand_runs_within_budget() -> None:
-    """1M sequences, 250k missing ranges (500k segments), 10k runs: < 60 s, < 1.5 GiB.
+    """1M sequences, 250k missing ranges (500k segments), 10k runs: < 60 CPU s on the
+    reference machine, < 1.5 GiB.
 
     Measured on a laptop: ~13 s, ~1.0 GB peak RSS (mostly the 250k exchange
     observations and their report entries), ~55k gaps. The quadratic verifier
     wrote one gap per later segment per run (~1.25e9 gaps here); at 500 runs x
     5,000 ranges it already took 18 s, 4.2 GB RSS and a 784 MB report.
+
+    Load tolerance: the time judged is the verifier process's CPU time (time spent
+    descheduled by a loaded host is not the verifier's cost), against a budget scaled
+    by the machine's speed measured before and after the run with the passivity
+    calibration (``scale_for``, capped at ``MAX_SCALE``), in a fresh interpreter with
+    no coverage tracer. Even the capped budget is far below the quadratic verifier's
+    cost here, and the gap, report and memory bounds do not depend on the machine.
     """
 
-    here = str(Path(__file__).resolve().parent)
-    completed = subprocess.run(  # noqa: S603 - fixed interpreter and inline script
-        [sys.executable, "-c", _SCALE_SCRIPT, here],
-        capture_output=True,
-        text=True,
-        timeout=180,
-        check=True,
-    )
-    result = json.loads(completed.stdout)
+    result = _fresh_interpreter(_SCALE_SCRIPT)  # runs from the SDK root: ``tests`` imports
     assert result["ranges"] >= 250_000
     assert result["runs"] == 10_000
     assert result["verdicts"] == ["partial"]
-    assert result["seconds"] < 60
+    budget = SCALE_BUDGET_S * result["scale"]
+    assert result["cpu_seconds"] < budget, (
+        f"{result['cpu_seconds']:.1f} CPU s ({result['seconds']:.1f} s wall) > {budget:.0f} s "
+        f"({SCALE_BUDGET_S} s x scale {result['scale']:.2f})"
+    )
     assert result["peak_bytes"] < 1.5 * 1024**3
     # Gaps grow with runs, never runs x ranges; the report with runs, exchanges and
     # the source's range list (listed once).
