@@ -38,13 +38,21 @@ def _counter(span: object | None, name: str) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
-def capture_health(span: object | None, recording: bool | None) -> DecisionCaptureHealth:
+def capture_health(
+    span: object | None, recording: bool | None, *, concurrent_use: int = 0
+) -> DecisionCaptureHealth:
+    """``concurrent_use``: mutating calls recorded degraded because they overlapped another
+    on the same decision (spec 049 §7.1); any makes the snapshot ``partial``."""
     events = _counter(span, "dropped_events")
     attributes = _counter(span, "dropped_attributes")
     status: Literal["unverified", "disabled", "partial"] = "unverified"
     if recording is False:
         status = "disabled"
-    elif (events is not None and events > 0) or (attributes is not None and attributes > 0):
+    elif (
+        (events is not None and events > 0)
+        or (attributes is not None and attributes > 0)
+        or concurrent_use > 0
+    ):
         status = "partial"
     return {
         "status": status,

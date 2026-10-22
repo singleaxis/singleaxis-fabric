@@ -10,19 +10,20 @@ evaluation, authorization, policy, escalation or other enforcement behavior.
 Concurrency contract
 --------------------
 
-A :class:`Decision` instance represents a single agent turn and is
-**not** safe to share across threads or asyncio tasks. Open one
-``Decision`` per agent turn; do not pass the same instance into
-parallel coroutines or workers.
+A :class:`Decision` instance represents a single agent turn. Open one
+``Decision`` per agent turn; sharing one instance across threads or
+asyncio tasks is supported only as a degraded mode.
 
-Mutation methods on a single ``Decision`` (``record_retrieval``, ``remember``,
-``record_side_effect`` and ``set_attribute``) are **not** internally
-synchronized. The
+Recording never raises into the application because of concurrent use
+(spec 049 §7.1). Mutating calls on one ``Decision`` are serialised by a
+non-blocking sentinel; a call that overlaps another is still recorded,
+without serialisation, and counted (:attr:`Decision.concurrent_use_count`,
+``capture_health["status"] == "partial"``): its events are kept, but the
 rolling counter attributes (``fabric.retrieval_count``,
-``fabric.memory_write_count``, ``fabric.side_effect_count``) and the
-internal lists they update would race under concurrent access. The
-``Fabric`` client itself is safe to share — only ``Decision`` instances
-have this constraint.
+``fabric.memory_write_count``, ``fabric.side_effect_count`` ...) may be
+off. ``FABRIC_RECORDS_STRICT=1`` restores the old fail-fast
+:class:`ConcurrentDecisionUseError` for tests only. The ``Fabric`` client
+itself is safe to share.
 
 Async usage
 -----------
@@ -44,6 +45,7 @@ managers.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import math
@@ -250,6 +252,7 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger("fabric.decision")
+_CONCURRENT_WARNED = threading.Event()  # one class-only warning per process
 
 SPAN_NAME = "fabric.decision"
 
@@ -377,21 +380,19 @@ class DelegationContext:
     carrier: dict[str, str]
 
 
+# Strict test mode (spec 049 §7.1): only when set to "1" does an overlapping mutating call
+# raise ConcurrentDecisionUseError; otherwise it is recorded degraded and counted.
+RECORDS_STRICT_ENV = "FABRIC_RECORDS_STRICT"
+
+
 class ConcurrentDecisionUseError(RuntimeError):
-    """Raised when one :class:`Decision` is mutated concurrently.
+    """Raised for overlapping use of one :class:`Decision`, in strict mode only.
 
-    A :class:`Decision` represents a single agent turn and is not safe
-    to share across threads or asyncio tasks (see the module docstring's
-    concurrency contract). The SDK detects *genuinely overlapping*
-    mutating calls on the same instance via a non-blocking sentinel lock
-    and raises this rather than letting the internal record lists and
-    rolling span-counter attributes race silently.
-
-    Note the async ``a*`` methods are NOT a false trigger: each offloads
-    its sync sibling to a worker thread and is awaited to completion
-    before the next call begins, so sequential ``await`` calls never
-    overlap. Firing two such coroutines concurrently on ONE decision
-    (e.g. via ``asyncio.gather``) is the real footgun this catches.
+    Recording never raises into the application (spec 049 §7.1): by default
+    an overlapping mutating call is recorded without serialisation and
+    counted (:attr:`Decision.concurrent_use_count`). Only with
+    ``FABRIC_RECORDS_STRICT=1`` (a test mode) does the SDK raise this
+    instead, so a test suite can catch a shared ``Decision``.
     """
 
 
@@ -497,11 +498,12 @@ class Decision(AbstractContextManager["Decision"]):
         # Concurrency overlap sentinel. A non-blocking lock that is held
         # only for the duration of a single mutating call. Two operations
         # that genuinely overlap in time on the same instance contend for
-        # it and the loser raises ConcurrentDecisionUseError. Sequential
-        # calls — including the async to_thread offload, where each await
-        # completes before the next starts — never contend. See
-        # ``_exclusive`` and the module concurrency contract.
+        # it; the loser is recorded without serialisation and counted
+        # (never raised, spec 049 §7.1). Sequential calls never contend.
+        # See ``_exclusive`` and the module concurrency contract.
         self._busy = threading.Lock()
+        self._concurrent_use = 0
+        self._concurrent_use_lock = threading.Lock()  # O(1) counter update only
         # Lifecycle flag: "new" before enter, "open" between enter/exit,
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
@@ -517,26 +519,49 @@ class Decision(AbstractContextManager["Decision"]):
 
     @contextmanager
     def _exclusive(self) -> Iterator[None]:
-        """Hold the overlap sentinel for one mutating call, else raise.
+        """Hold the overlap sentinel for one mutating call; never raise on overlap.
 
-        Non-blocking ``acquire`` so a second *concurrent* mutating call
-        fails fast with :class:`ConcurrentDecisionUseError` instead of
-        silently racing the record lists / span counters. The acquire is
-        a couple of microseconds, so the hot path is not meaningfully
-        regressed. Do NOT call a guarded method from inside another
-        guarded method on the same instance — that would self-deadlock
-        on this non-reentrant lock (none of the public methods do).
+        Non-blocking ``acquire``: recording never waits on another thread
+        (spec 049 §7.1). A second *concurrent* mutating call is recorded
+        without serialisation (degraded: its events are kept, the rolling
+        counters may be off) and counted in :attr:`concurrent_use_count`.
+        Only ``FABRIC_RECORDS_STRICT=1`` (a test mode) raises
+        :class:`ConcurrentDecisionUseError` instead. Guarded methods never
+        call each other, so the sentinel is never re-entered by the SDK.
         """
-        if not self._busy.acquire(blocking=False):
+        if self._busy.acquire(blocking=False):
+            try:
+                yield
+            finally:
+                self._busy.release()
+            return
+        if os.environ.get(RECORDS_STRICT_ENV) == "1":
             raise ConcurrentDecisionUseError(
                 "Decision used concurrently from multiple threads/tasks; "
                 "open one Decision per agent turn — see the concurrency "
                 "contract in the module docstring"
             )
-        try:
-            yield
-        finally:
-            self._busy.release()
+        self._note_concurrent_use()
+        yield
+
+    def _note_concurrent_use(self) -> None:
+        """Count one overlapping call and warn once per process (class-only text)."""
+        with self._concurrent_use_lock:
+            self._concurrent_use += 1
+        if not _CONCURRENT_WARNED.is_set():
+            _CONCURRENT_WARNED.set()
+            with contextlib.suppress(Exception):  # logging must not change agent behaviour
+                _LOG.warning(
+                    "fabric: a Decision was used concurrently from several threads or tasks; "
+                    "the overlapping call was recorded without serialisation and the "
+                    "decision's rolling counters may be off (see Decision.capture_health)"
+                )
+
+    @property
+    def concurrent_use_count(self) -> int:
+        """How many mutating calls overlapped another on this decision (degraded, never
+        raised; spec 049 §7.1)."""
+        return self._concurrent_use
 
     # -- execution-id resolution -----------------------------------------
 
@@ -719,7 +744,9 @@ class Decision(AbstractContextManager["Decision"]):
         if self._content_sink is not None:
             self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
         result = self._cm.__exit__(exc_type, exc, tb)
-        self._capture_health = capture_health(self._span, self._recording_at_start)
+        self._capture_health = capture_health(
+            self._span, self._recording_at_start, concurrent_use=self._concurrent_use
+        )
         warn_capture_health(self._capture_health)
         self._span = None
         self._cm = None
@@ -1770,7 +1797,8 @@ class Decision(AbstractContextManager["Decision"]):
             self._interaction_count += 1
             self._interaction_kinds.add(kind)
             span.set_attribute(ATTR_INTERACTION_COUNT, self._interaction_count)
-            span.set_attribute(ATTR_INTERACTION_KINDS, tuple(sorted(self._interaction_kinds)))
+            kinds = tuple(sorted(self._interaction_kinds.copy()))  # copy: safe when degraded
+            span.set_attribute(ATTR_INTERACTION_KINDS, kinds)
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,

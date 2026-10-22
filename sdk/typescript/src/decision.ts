@@ -16,16 +16,15 @@
  * Concurrency contract
  * --------------------
  *
- * A {@link Decision} instance represents a single agent turn and is
- * **not** safe to share across async tasks. Open one `Decision` per
- * turn; do not pass the same instance into parallel callbacks or
- * workers. Mutation methods on a single `Decision` are not internally
- * synchronized — the rolling counter attributes and the internal record
- * lists they update would race under concurrent access. A genuinely
- * *overlapping* mutating call (a re-entrant mutation from inside another
- * mutating call) raises {@link ConcurrentDecisionUseError} rather than
- * racing silently — the analogue of Python's non-blocking sentinel lock.
- * The `Fabric` client itself is safe to share.
+ * A {@link Decision} instance represents a single agent turn. Open one
+ * `Decision` per turn. Recording never throws into the application
+ * because of concurrent use (spec 049 §7.1): a genuinely *overlapping*
+ * mutating call (a re-entrant mutation from inside another mutating call)
+ * is still recorded and counted ({@link Decision.concurrentUseCount},
+ * `captureHealth.status === "partial"`). Only `FABRIC_RECORDS_STRICT=1`
+ * (a test mode) throws {@link ConcurrentDecisionUseError} instead — the
+ * analogue of Python's non-blocking sentinel lock. The `Fabric` client
+ * itself is safe to share.
  */
 
 import {
@@ -517,17 +516,14 @@ export interface McpInventory {
   readonly promptCount?: number;
 }
 
+/** Strict test mode: only `"1"` makes an overlapping mutating call throw (049 §7.1). */
+export const ENV_RECORDS_STRICT = "FABRIC_RECORDS_STRICT";
+
 /**
- * Raised when one {@link Decision} is mutated concurrently (re-entrantly).
- *
- * A `Decision` represents a single agent turn and is not safe to share
- * across tasks (see the module concurrency contract). The SDK detects
- * *genuinely overlapping* mutating calls on the same instance via a
- * non-blocking sentinel flag and throws this rather than letting the
- * internal record lists and rolling span-counter attributes race
- * silently — the analogue of Python's `ConcurrentDecisionUseError`,
- * which guards a `threading.Lock` held only for the duration of a single
- * mutating call.
+ * Thrown for overlapping (re-entrant) use of one {@link Decision}, in strict
+ * mode only. By default an overlapping call is recorded and counted, never
+ * thrown (spec 049 §7.1); `FABRIC_RECORDS_STRICT=1` (a test mode) throws
+ * this instead — the analogue of Python's `ConcurrentDecisionUseError`.
  */
 export class ConcurrentDecisionUseError extends Error {
   constructor(message?: string) {
@@ -568,6 +564,26 @@ export function resetCoverageRegistry(): void {
 }
 
 const CAPTURE_WARNED = new Set<string>();
+
+function strictRecords(): boolean {
+  return typeof process !== "undefined" && process.env[ENV_RECORDS_STRICT] === "1";
+}
+
+let warnedConcurrentUse = false;
+
+/** One class-only warning per process for overlapping use (never a value). */
+function warnConcurrentUseOnce(): void {
+  if (warnedConcurrentUse) return;
+  warnedConcurrentUse = true;
+  try {
+    console.warn(
+      "singleaxis-fabric: a Decision was used concurrently; the overlapping call was " +
+        "recorded and the decision's rolling counters may be off (see captureHealth).",
+    );
+  } catch {
+    // A host logger must not break the monitored application.
+  }
+}
 
 /** Reset local capture warnings for isolated tests. */
 export function resetCaptureHealthWarnings(): void {
@@ -641,10 +657,10 @@ export class Decision implements DecisionLike {
   private interactionCount = 0;
   private readonly interactionKinds = new Set<string>();
   // Concurrency overlap sentinel. Held only for the duration of a single
-  // mutating call; two operations that genuinely overlap in time on the
-  // same instance contend for it and the loser throws
-  // ConcurrentDecisionUseError. Sequential calls never contend.
+  // mutating call; an operation that overlaps another on the same instance
+  // is recorded anyway and counted (never thrown, 049 §7.1).
   private busy = false;
+  private concurrentUse = 0;
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
@@ -864,16 +880,20 @@ export class Decision implements DecisionLike {
   // -- concurrency overlap guard ---------------------------------------
 
   /**
-   * Hold the overlap sentinel for one mutating call, else throw.
-   * Non-blocking so a second *concurrent* (re-entrant) mutating call
-   * fails fast with {@link ConcurrentDecisionUseError} instead of
-   * silently racing the record lists / span counters. Do NOT call a
-   * guarded method from inside another guarded method on the same
-   * instance — none of the public methods do.
+   * Hold the overlap sentinel for one mutating call; never throw on overlap.
+   * A second *concurrent* (re-entrant) mutating call is recorded anyway and
+   * counted in {@link concurrentUseCount} (049 §7.1); only
+   * `FABRIC_RECORDS_STRICT=1` throws {@link ConcurrentDecisionUseError}.
+   * None of the public methods call each other.
    */
   private exclusive<T>(fn: () => T): T {
     if (this.busy) {
-      throw new ConcurrentDecisionUseError();
+      if (strictRecords()) {
+        throw new ConcurrentDecisionUseError();
+      }
+      this.concurrentUse += 1;
+      warnConcurrentUseOnce();
+      return fn();
     }
     this.busy = true;
     try {
@@ -881,6 +901,11 @@ export class Decision implements DecisionLike {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** How many mutating calls overlapped another on this decision (recorded, never thrown). */
+  get concurrentUseCount(): number {
+    return this.concurrentUse;
   }
 
   // -- introspection ----------------------------------------------------
@@ -1939,7 +1964,7 @@ export class Decision implements DecisionLike {
     const status =
       this.recordingAtStart === false
         ? "disabled"
-        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0
+        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0 || this.concurrentUse > 0
           ? "partial"
           : "unverified";
     if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {
