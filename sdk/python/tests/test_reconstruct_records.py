@@ -6,9 +6,9 @@ The ``Capture`` builder of ``test_reconstruct_verifier`` plays the P1 capture wo
 records-input records, segment-tagged exchanges, segment-attributed losses, segment seals
 computed by the WP-00 reference rule (``scripts/contracts/p1_reference.py``) and capture
 manifests written through the WP-00 manifest-span mapping. The verifier recomputes seals
-through ``fabric._seal``; until WP-11a lands its rule, the ``seal_rule`` fixture puts the
-reference rule behind that interface (it changes nothing once ``_seal`` is real). Every
-report is validated against the run-reconstruction schema and its semantic rules.
+through the SDK's own rule, ``fabric._seal`` (WP-11a), never the reference: a seal the
+capture side computed by the reference verifies only because the two agree byte for byte.
+Every report is validated against the run-reconstruction schema and its semantic rules.
 """
 
 from __future__ import annotations
@@ -50,14 +50,12 @@ from tests.test_reconstruct_verifier import (
 RUN_B = "r-" + "b" * 32
 
 
-@pytest.fixture(autouse=True)
-def seal_rule(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The reference seal rule behind ``fabric._seal`` while WP-11a's is a stub."""
-    try:
-        _seal.seal_digest([])
-    except NotImplementedError:
-        monkeypatch.setattr(_seal, "seal_digest", P1_REFERENCE.seal_digest)
-        monkeypatch.setattr(_seal, "record_digest", P1_REFERENCE.record_digest)
+def test_the_verifier_recomputes_seals_with_the_sdk_rule() -> None:
+    """The WP-30 fallback to the reference rule is gone: ``fabric._seal`` is WP-11a's own
+    implementation, which the verifier calls, and not the reference module's functions."""
+    assert _seal.seal_digest is not P1_REFERENCE.seal_digest
+    assert _seal.record_digest is not P1_REFERENCE.record_digest
+    assert _seal.seal_digest([]) == P1_REFERENCE.seal_digest([])
 
 
 @pytest.fixture
@@ -728,7 +726,7 @@ def test_durations(text: str, nanos: int) -> None:
     assert _duration_ns(text, "--clock-uncertainty") == nanos
 
 
-def test_reference_rule_reproduces_the_seal_vectors() -> None:
+def test_the_sdk_seal_rule_reproduces_the_seal_vectors() -> None:
     """The verifier's seal rule (``fabric._seal``) reproduces the WP-00 vectors."""
     vectors = json.loads(
         (Path(__file__).resolve().parents[3]
