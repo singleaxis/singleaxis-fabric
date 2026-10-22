@@ -905,6 +905,18 @@ export class Decision implements DecisionLike {
     }
   }
 
+  /**
+   * Whether `role`'s privacy mode retains the original payload (spec 049
+   * §7.5, spec 051 D-14): only then may a `*_hash` digest of it leave the
+   * process. The governed roles of a configured content capture retain it;
+   * nothing else does (a digest of a low-entropy payload reveals it). The
+   * clear identity mode keeps the v0.8.0 digests.
+   */
+  private retainsOriginal(role: string): boolean {
+    if (this.ids.clear) return true;
+    return this.contentSink !== undefined && (this.identity.contentRoles?.has(role) ?? false);
+  }
+
   /** How many mutating calls overlapped another on this decision (recorded, never thrown). */
   get concurrentUseCount(): number {
     return this.concurrentUse;
@@ -1126,6 +1138,7 @@ export class Decision implements DecisionLike {
         options.captureContent ?? false,
         this.toolCaptureFn(span, name, options),
         this.ids,
+        (role) => this.retainsOriginal(role),
       );
       return runAndEnd(span, () => fn(tool));
     });
@@ -1216,16 +1229,19 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_RETRIEVAL_SOURCE]: record.source,
-        [A.ATTR_RETRIEVAL_QUERY_HASH]: record.queryHash,
-        [A.ATTR_RETRIEVAL_RESULT_COUNT]: record.resultCount,
       };
+      // 049 §7.5: a digest of the original only where its role retains it.
+      if (this.retainsOriginal(ContentRole.RETRIEVAL_QUERY)) {
+        attrs[A.ATTR_RETRIEVAL_QUERY_HASH] = record.queryHash;
+      }
+      attrs[A.ATTR_RETRIEVAL_RESULT_COUNT] = record.resultCount;
       if (queryRef !== undefined) {
         attrs[ATTR_CONTENT_REQUEST_REF] = queryRef;
       }
       if (resultsRef !== undefined) {
         attrs[ATTR_CONTENT_RESULT_REF] = resultsRef;
       }
-      if (record.resultHashes.length > 0) {
+      if (record.resultHashes.length > 0 && this.retainsOriginal(ContentRole.RETRIEVAL_RESULTS)) {
         attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...record.resultHashes];
       }
       // Caller document ids: `lbl-` when pseudonymous, omitted without a key.
@@ -1274,8 +1290,10 @@ export class Decision implements DecisionLike {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "write",
         [A.ATTR_MEMORY_KIND]: record.kind,
-        [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
       };
+      if (this.retainsOriginal(ContentRole.MEMORY_WRITE_CONTENT)) {
+        attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!; // 049 §7.5
+      }
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1333,7 +1351,9 @@ export class Decision implements DecisionLike {
       if (memoryKey !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
-      attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!;
+      if (this.retainsOriginal(ContentRole.MEMORY_READ_CONTENT)) {
+        attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!; // 049 §7.5
+      }
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1482,10 +1502,15 @@ export class Decision implements DecisionLike {
         [A.ATTR_SE_ROLLBACK_SUPPORTED]: record.rollbackSupported,
         [A.ATTR_SE_REPLAY_BEHAVIOR]: record.replayBehavior,
       };
-      if (record.requestHash !== undefined) {
+      // 049 §7.5: computed or caller-supplied, a digest of the original only
+      // where its role retains it.
+      if (
+        record.requestHash !== undefined &&
+        this.retainsOriginal(ContentRole.SIDE_EFFECT_REQUEST)
+      ) {
         attrs[A.ATTR_SE_REQUEST_HASH] = record.requestHash;
       }
-      if (record.resultHash !== undefined) {
+      if (record.resultHash !== undefined && this.retainsOriginal(ContentRole.SIDE_EFFECT_RESULT)) {
         attrs[A.ATTR_SE_RESULT_HASH] = record.resultHash;
       }
       if (requestRef !== undefined) {
@@ -1897,12 +1922,13 @@ export class Decision implements DecisionLike {
       if (options.direction !== undefined) {
         attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
       }
+      // 049 §7.5: a digest of the payload only where its role retains the
+      // original (a caller-supplied digest is still validated).
+      const retainsPayload = this.retainsOriginal(ContentRole.INTERACTION_PAYLOAD);
       if (options.payloadHash !== undefined) {
-        attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = assertSha256Hex(
-          "recordInteraction: payloadHash",
-          options.payloadHash,
-        );
-      } else if (options.payload !== undefined) {
+        const checked = assertSha256Hex("recordInteraction: payloadHash", options.payloadHash);
+        if (retainsPayload) attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = checked;
+      } else if (options.payload !== undefined && retainsPayload) {
         attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = sha256Hex(options.payload);
       }
       if (payloadRef !== undefined) {

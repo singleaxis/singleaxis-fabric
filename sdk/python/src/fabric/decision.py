@@ -253,6 +253,15 @@ __all__ = [
 
 _LOG = logging.getLogger("fabric.decision")
 _CONCURRENT_WARNED = threading.Event()  # one class-only warning per process
+# The roles whose payloads the legacy (non-governed) content store receives as given.
+_LEGACY_STORE_ROLES = frozenset(
+    {
+        ContentRole.MEMORY_WRITE_CONTENT.value,
+        ContentRole.MEMORY_READ_CONTENT.value,
+        ContentRole.SIDE_EFFECT_REQUEST.value,
+        ContentRole.SIDE_EFFECT_RESULT.value,
+    }
+)
 
 SPAN_NAME = "fabric.decision"
 
@@ -1040,6 +1049,19 @@ class Decision(AbstractContextManager["Decision"]):
         """True when governed content capture is configured on the client."""
         return self._client.content_capture is not None
 
+    def _retains_original(self, role: ContentRole | str) -> bool:
+        """Whether ``role``'s privacy mode retains the original payload (spec 049 §7.5,
+        spec 051 D-14): only then may a ``*_hash`` digest of it leave the process. The
+        governed roles of a configured content capture retain it; without one, the legacy
+        content store retains the memory and side-effect payloads it is given; nothing
+        else does (metadata-only: no digest, since a digest of a low-entropy payload
+        reveals it). The ``clear`` identity mode keeps the v0.8.0 digests."""
+        if self._identity.clear:
+            return True
+        if self.governed_capture:
+            return str(role) in self._client.content_roles
+        return self._client.content_store is not None and str(role) in _LEGACY_STORE_ROLES
+
     def _reject_raw_capture(self, capture_content: bool) -> None:
         if capture_content and self.governed_capture:
             raise ValueError("raw span capture is incompatible with protected content capture")
@@ -1132,10 +1154,12 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.retrieval.source": record.source.value,
-                "fabric.retrieval.query_hash": record.query_hash,
-                "fabric.retrieval.result_count": record.result_count,
             }
-            if record.result_hashes:
+            # 049 §7.5: a digest of the original only where its role retains it.
+            if self._retains_original(ContentRole.RETRIEVAL_QUERY):
+                event_attrs["fabric.retrieval.query_hash"] = record.query_hash
+            event_attrs["fabric.retrieval.result_count"] = record.result_count
+            if record.result_hashes and self._retains_original(ContentRole.RETRIEVAL_RESULTS):
                 event_attrs["fabric.retrieval.result_hashes"] = record.result_hashes
             document_ids = tuple(
                 emitted
@@ -1250,8 +1274,11 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
             }
-            # from_content always populates content_hash (write side).
-            if record.content_hash is not None:
+            # from_content always populates content_hash (write side); 049 §7.5: emitted
+            # only where the role retains the original.
+            if record.content_hash is not None and self._retains_original(
+                ContentRole.MEMORY_WRITE_CONTENT
+            ):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.key is not None and (memory_key := self._identity.id("mkey", record.key)):
                 event_attrs["fabric.memory.key"] = memory_key
@@ -1346,8 +1373,10 @@ class Decision(AbstractContextManager["Decision"]):
             recalled = record.key if record.key is not None else key
             if memory_key := self._identity.id("mkey", recalled):
                 event_attrs["fabric.memory.key"] = memory_key
-            # from_recall always populates content_hash (read side).
-            if record.content_hash is not None:
+            # from_recall always populates content_hash (read side); 049 §7.5 as above.
+            if record.content_hash is not None and self._retains_original(
+                ContentRole.MEMORY_READ_CONTENT
+            ):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.source is not None:
                 event_attrs["fabric.memory.source"] = record.source
@@ -1575,9 +1604,15 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.side_effect.rollback_supported": record.rollback_supported,
                 "fabric.side_effect.replay_behavior": record.replay_behavior.value,
             }
-            if record.request_hash is not None:
+            # 049 §7.5: computed or caller-supplied, a digest of the original only where
+            # its role retains it.
+            if record.request_hash is not None and self._retains_original(
+                ContentRole.SIDE_EFFECT_REQUEST
+            ):
                 event_attrs["fabric.side_effect.request_hash"] = record.request_hash
-            if record.result_hash is not None:
+            if record.result_hash is not None and self._retains_original(
+                ContentRole.SIDE_EFFECT_RESULT
+            ):
                 event_attrs["fabric.side_effect.result_hash"] = record.result_hash
             if record.idempotency_key is not None and (
                 idempotency_key := self._identity.opaque(record.idempotency_key)
@@ -1821,12 +1856,8 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_TARGET] = emitted
             if direction is not None:
                 event_attrs[ATTR_INTERACTION_DIRECTION] = direction
-            if payload_hash is not None:
-                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = require_sha256_hex(
-                    "payload_hash", payload_hash
-                )
-            elif payload is not None:
-                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = _sha256_hex(payload)
+            if (digest := self._payload_digest(payload, payload_hash)) is not None:
+                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = digest
             if payload_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = payload_ref
             if metadata:
@@ -1843,6 +1874,18 @@ class Decision(AbstractContextManager["Decision"]):
 
             # Improvement loop: a one-shot, low-rate coverage signal.
             self._emit_coverage_signals(kind, resolved.baseline_status, resolved.has_tags)
+
+    def _payload_digest(self, payload: str | None, payload_hash: str | None) -> str | None:
+        """The interaction payload digest as emitted: only where ``interaction.payload``
+        retains the original (049 §7.5); a caller-supplied digest is validated either way."""
+        checked = (
+            require_sha256_hex("payload_hash", payload_hash) if payload_hash is not None else None
+        )
+        if not self._retains_original(ContentRole.INTERACTION_PAYLOAD):
+            return None
+        if checked is not None:
+            return checked
+        return _sha256_hex(payload) if payload is not None else None
 
     def record_context(
         self,
@@ -2458,6 +2501,7 @@ class Decision(AbstractContextManager["Decision"]):
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
             extra_attributes=extra or None,
             identity=self._identity,
+            retains_original=self._retains_original,
         )
 
     # -- OTel passthrough -------------------------------------------------

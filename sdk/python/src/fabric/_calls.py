@@ -938,6 +938,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         step_retry_previous_attempt_id: str | None = None,
         extra_attributes: dict[str, str | int | float | bool | tuple[str, ...]] | None = None,
         identity: IdentityPolicy | None = None,
+        retains_original: Callable[[str], bool] | None = None,
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
@@ -975,6 +976,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         # 049 §2.9: how caller ids leave the process (the decision's policy; standalone,
         # FABRIC_IDENTITY_MODE / FABRIC_WIRE_ID_KEY as a decision without one resolves it).
         self._identity = identity or IdentityPolicy.resolve(None, None, os.environ)
+        # 049 §7.5: whether a role retains the original, so its digest may be emitted
+        # (the decision's rule; standalone, only the clear identity mode keeps digests).
+        self._retains_original = retains_original or (lambda _role: self._identity.clear)
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
         self._started_at: float | None = None
@@ -1127,7 +1131,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         The tenant serializes their arguments (e.g. a dict) to a string
         and passes it here. The raw payload is hashed locally; only
         ``fabric.tool.arguments_hash`` lands on the span — raw args
-        never touch the trace stream. Under governed mode the serialized
+        never touch the trace stream — and only when the
+        ``tool.call.arguments`` role retains the original (spec 049 §7.5;
+        always in the ``clear`` identity mode). Under governed mode the serialized
         payload is stored verbatim (``tool.call.arguments`` role) and the
         span carries ``fabric.content.request_ref``.
         """
@@ -1135,7 +1141,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
         if capture and self._governed_capture is not None:
             raise ValueError("raw span capture is incompatible with protected content capture")
-        self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
+        if self._retains_original("tool.call.arguments"):  # 049 §7.5
+            self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
         if self._governed_capture is not None:
             ref = self._governed_capture(
                 "tool.call.arguments",
@@ -1154,7 +1161,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
 
         Same privacy contract as :meth:`set_arguments` — the tenant
         serializes the result to a string; only the hash
-        (``fabric.tool.result_hash``) lands on the span. Under governed
+        (``fabric.tool.result_hash``) lands on the span, and only when the
+        ``tool.call.result`` role retains the original. Under governed
         mode the serialized payload is stored verbatim
         (``tool.call.result`` role) and the span carries
         ``fabric.content.result_ref``.
@@ -1163,7 +1171,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
         if capture and self._governed_capture is not None:
             raise ValueError("raw span capture is incompatible with protected content capture")
-        self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
+        if self._retains_original("tool.call.result"):  # 049 §7.5
+            self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
         if self._governed_capture is not None:
             ref = self._governed_capture(
                 "tool.call.result",
