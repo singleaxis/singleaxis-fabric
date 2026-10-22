@@ -131,7 +131,14 @@ def test_production_renders_workload_auth_without_evidence_only_rejection(
         "require_single_token": True,
     }
     assert "bearertokenauth/workload" in config["service"]["extensions"]
-    assert "evidence_source_binding" not in config["processors"]["fabricguard"]
+    # Spec 049 §7.9 (P0-A): the production profile binds the workload ingress
+    # to its tenant and source; the evidence-only authenticator stays absent.
+    guard = config["processors"]["fabricguard"]
+    assert guard["profile"] == "production"
+    assert guard["evidence_source_binding"] == {
+        "tenant_id": binding["tenantId"],
+        "source_id": binding["sourceId"],
+    }
     assert "bearertokenauth/evidence_source" not in config["extensions"]
     for signal in ("logs", "traces"):
         assert config["service"]["pipelines"][signal]["processors"] == [
@@ -198,6 +205,12 @@ def test_production_rejects_tags_without_full_digest(
         ("receiver.workloadAuthentication.tenantId", "other-tenant", "match tenant.id"),
         ("receiver.workloadAuthentication.tenantId", "", "tenantId"),
         ("receiver.workloadAuthentication.workloadId", "", "workloadId"),
+        # Spec 049 §7.9 (P0-A): the bound source id is required.
+        (
+            "receiver.workloadAuthentication.sourceId",
+            "",
+            "workloadAuthentication.sourceId",
+        ),
         (
             "receiver.workloadAuthentication.identityAttestationRef",
             "",

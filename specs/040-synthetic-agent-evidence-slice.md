@@ -42,7 +42,7 @@ verifier foundation for G05, and security remediation for G07/G08. These
 additions do not close pre-fsync loss, generate durable receipts, authenticate
 fixture witnesses, or approve customer storage. The current control/coverage
 status and local versus live evidence are maintained in the
-[qualification ledger](../docs/recorder-v1-qualification-status.md#current-closure-work--2026-09-30--no-go).
+[qualification ledger](../docs/archive/recorder-v1-qualification-status.md#current-closure-work--2026-09-30--no-go).
 G01–G03 and excluded routes are unchanged; G04/G05 remain incomplete until
 their deployment and full-chain proofs are supplied.
 

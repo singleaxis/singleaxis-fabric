@@ -11,8 +11,9 @@ release is not approved for promotion.
 ## What the release gate checks
 
 The release tag must point to a commit on `main` with successful exact-SHA runs
-for Recorder CI, recorder security, CodeQL, recorder license compliance, and
-the live kind E2E workflow.
+for every workflow listed in `required_workflows` of the release policy:
+Recorder CI, recorder security, CodeQL, recorder license compliance, the live
+kind E2E workflow and the production-profile E2E workflow.
 Artifact qualification then checks:
 
 - one coordinated version across the Python SDK, TypeScript SDK, chart,
@@ -20,8 +21,10 @@ Artifact qualification then checks:
 - the Python wheel and TypeScript package expose only their recorder surfaces;
 - the default `fabricctl` binary does not link management, assurance, policy,
   judge, or runtime-control commands;
-- the Helm chart packages only Fabric Node and the Node binary contains only
-  the qualified recorder processor set;
+- the Helm chart packages only Fabric Node, and the Node's build manifest
+  (`ocb-config.yaml`) and image configuration contain only the qualified
+  recorder component set (checked on the source manifest and image config,
+  not by inspecting the published binary);
 - public contract families and versions are explicitly allowlisted and every
   JSON member is pinned by SHA-256;
 - archive paths are safe and contain no duplicate or compiled cache members;
@@ -42,12 +45,18 @@ sha256sum --check fabricctl-SHA256SUMS
 ```
 
 Calculate SDK and chart hashes and compare them with
-`release-qualification.json` and the TypeScript qualification metadata:
+`release-qualification.json` and the TypeScript qualification metadata
+(`SHA256SUMS.typescript` is a release asset):
 
 ```bash
+sha256sum --check SHA256SUMS.typescript
 sha256sum singleaxis_fabric-*.whl singleaxis_fabric-*.tar.gz \
   singleaxis-fabric-*.tgz fabric-*.tgz
 ```
+
+The GitHub release is created as a draft and promoted by a maintainer;
+release-candidate tags are marked prerelease. The npm package is published
+with npm provenance under the `beta` dist-tag.
 
 Confirm that the qualification report names the selected tag and full commit,
 has `qualified: true`, records each required workflow as completed and
@@ -72,6 +81,10 @@ cosign verify ghcr.io/singleaxis/fabric-otelcol@sha256:IMAGE_DIGEST \
   --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
 
+cosign verify ghcr.io/singleaxis/fabric-host-emitter@sha256:EMITTER_DIGEST \
+  --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
+
 cosign verify ghcr.io/singleaxis/charts/fabric:VERSION@sha256:CHART_DIGEST \
   --certificate-identity="https://github.com/singleaxis/singleaxis-fabric/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}" \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com'
@@ -85,11 +98,16 @@ gh attestation verify \
   oci://ghcr.io/singleaxis/fabric-otelcol@sha256:IMAGE_DIGEST \
   --repo singleaxis/singleaxis-fabric
 
+gh attestation verify \
+  oci://ghcr.io/singleaxis/fabric-host-emitter@sha256:EMITTER_DIGEST \
+  --repo singleaxis/singleaxis-fabric
+
 gh attestation verify fabricctl_VERSION_linux_amd64.tar.gz \
   --repo singleaxis/singleaxis-fabric
 ```
 
-The image build emits artifact-specific SBOM and provenance attestations. The
+The image builds emit artifact-specific SBOM and provenance attestations.
+The chart is cosign-signed but has no GitHub build-provenance attestation. The
 GitHub repository's automatic source snapshot is public source, not a qualified
 recorder binary and not evidence that historical source modules ship at runtime.
 

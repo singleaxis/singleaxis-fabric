@@ -34,6 +34,9 @@ dependencies = [
 otlp = [
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
+  # Spec 049 §7.8: node mode (the production profile) seals the agent spool with an
+  # AES-256-GCM customer-key envelope.
+  "cryptography>=49",
 ]
 # Reader side only: `python -m fabric.reconstruct --store-uri s3://...` and
 # S3ContentStore read the customer's bucket with boto3. Never needed by an
@@ -79,6 +82,7 @@ dev = [
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.
   "cryptography>=49",
+  "aiohttp>=3.9",
 ]
 
 [project.urls]

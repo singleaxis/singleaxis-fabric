@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,9 +74,20 @@ func validateArgs(args []string) ([]tokenFile, error) {
 // The bearer extension authenticates possession but returns no identity in
 // client.Auth, so this gate establishes the one-credential-to-one-source
 // deployment mapping. This does not prove exclusive credential ownership.
+//
+// Two shapes are accepted. The dedicated evidence ingress (spec 043) is
+// telemetry only, behind bearertokenauth/evidence_source with TLS on both
+// protocols. The production profile (spec 049 §7.9) binds every agent batch
+// — trace spans on the telemetry receiver and content log records on
+// otlp/content — to the same single-token authenticator, which the content
+// receiver must share; its fabriccontent exporters carry the same binding.
+// Receiver TLS for the production shape follows the general rules (rule 9,
+// compose preflight, the Helm chart), because a loopback-only Node may run a
+// bearer token without TLS.
 func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) error {
 	processors, _ := cfg["processors"].(map[string]any)
 	bound := false
+	var binding map[string]any
 	for name, node := range processors {
 		processor, _ := node.(map[string]any)
 		if _, ok := processor["evidence_source_binding"]; ok {
@@ -83,28 +95,60 @@ func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) erro
 				return fmt.Errorf("dedicated evidence ingress requires the fabricguard processor")
 			}
 			identity, ok := processor["evidence_source_binding"].(map[string]any)
-			if !ok || !safeEvidenceIdentity(identity["tenant_id"]) || !safeEvidenceIdentity(identity["source_id"]) {
+			if !ok {
 				return fmt.Errorf("dedicated evidence ingress requires valid tenant and source identities")
 			}
-			bound = true
+			// Identities may come from the environment (compose sets them from
+			// .env); the gate checks the values the collector will resolve.
+			resolved := map[string]any{}
+			for _, key := range []string{"tenant_id", "source_id"} {
+				value, _ := identity[key].(string)
+				resolved[key] = expandEnvRefs(value)
+				if !safeEvidenceIdentity(resolved[key]) {
+					return fmt.Errorf("dedicated evidence ingress requires valid tenant and source identities")
+				}
+			}
+			bound, binding = true, resolved
 		}
+	}
+	production, err := declaredProduction(cfg)
+	if err != nil {
+		return err
+	}
+	if production && !bound {
+		return fmt.Errorf("production profile rejects unauthenticated sources: fabricguard requires evidence_source_binding (spec 049 §7.9)")
 	}
 	if !bound {
 		return nil
 	}
-	// The evidence-bound Node is logs/traces telemetry only; content (spec 048)
-	// needs a separate, content-capable Node.
-	if carriesContentPath(cfg) {
+	if production {
+		if err := checkProductionContent(cfg, binding); err != nil {
+			return err
+		}
+	} else if carriesContentPath(cfg) {
+		// The evidence-bound Node is logs/traces telemetry only; content (spec
+		// 048) needs a content-capable Node in the production profile.
 		return fmt.Errorf("dedicated evidence ingress cannot carry the content path")
 	}
-	const authName = "bearertokenauth/evidence_source"
+	receivers, _ := cfg["receivers"].(map[string]any)
+	otlp, ok := receivers["otlp"].(map[string]any)
+	authName := "bearertokenauth/evidence_source"
+	if production {
+		authName = protocolAuthenticator(otlp, "http")
+		if authName == "" {
+			authName = protocolAuthenticator(otlp, "grpc")
+		}
+		if authName != "bearertokenauth" && !strings.HasPrefix(authName, "bearertokenauth/") {
+			return fmt.Errorf("production profile requires a single-token bearer authenticator on the OTLP receiver")
+		}
+	}
 	extensions, _ := cfg["extensions"].(map[string]any)
-	auth, ok := extensions[authName].(map[string]any)
-	if !ok {
+	auth, isMap := extensions[authName].(map[string]any)
+	if !isMap {
 		return fmt.Errorf("dedicated evidence ingress requires its bearer authenticator")
 	}
-	filename, ok := auth["filename"].(string)
-	if !ok || filename == "" {
+	filename, isString := auth["filename"].(string)
+	if !isString || filename == "" {
 		return fmt.Errorf("dedicated evidence ingress requires a token file")
 	}
 	if _, inline := auth["tokens"]; inline {
@@ -114,7 +158,7 @@ func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) erro
 		return fmt.Errorf("dedicated evidence ingress requires fail-closed singleton token reload")
 	}
 	path := expandEnvRefs(filename)
-	if err := checkDedicatedTokenFile(path); err != nil {
+	if err := checkDedicatedTokenFile(authName, path); err != nil {
 		return err
 	}
 	marked := false
@@ -132,23 +176,31 @@ func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) erro
 	if !onlyContains(activeExtensions, authName) {
 		return fmt.Errorf("dedicated evidence ingress authenticator is not active")
 	}
-	receivers, _ := cfg["receivers"].(map[string]any)
-	otlp, ok := receivers["otlp"].(map[string]any)
-	if !ok || len(receivers) != 1 {
+	wantReceivers := 1
+	if production && receivers["otlp/content"] != nil {
+		wantReceivers = 2
+	}
+	if !ok || len(receivers) != wantReceivers {
 		return fmt.Errorf("dedicated evidence ingress requires sole OTLP receiver")
 	}
 	protocols, _ := otlp["protocols"].(map[string]any)
-	if len(protocols) != 2 {
+	if len(protocols) != 2 && !production || len(protocols) == 0 {
 		return fmt.Errorf("dedicated evidence ingress requires HTTP and gRPC")
 	}
 	for _, protocol := range []string{"grpc", "http"} {
-		settings, ok := protocols[protocol].(map[string]any)
-		if !ok {
+		settings, present := protocols[protocol].(map[string]any)
+		if !present && production && protocols[protocol] == nil {
+			continue
+		}
+		if !present {
 			return fmt.Errorf("dedicated evidence ingress requires authenticated HTTP and gRPC")
 		}
 		authSettings, _ := settings["auth"].(map[string]any)
 		if authSettings["authenticator"] != authName {
 			return fmt.Errorf("dedicated evidence ingress requires bearer authentication on both protocols")
+		}
+		if production {
+			continue
 		}
 		tls, _ := settings["tls"].(map[string]any)
 		cert, certOK := tls["cert_file"].(string)
@@ -157,23 +209,43 @@ func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) erro
 			return fmt.Errorf("dedicated evidence ingress requires receiver TLS on both protocols")
 		}
 	}
-	pipelines, _ := service["pipelines"].(map[string]any)
-	if len(pipelines) != 2 {
-		return fmt.Errorf("dedicated evidence ingress requires only logs and traces pipelines")
+	if production && wantReceivers == 2 && protocolAuthenticator(receivers["otlp/content"], "http") != authName {
+		return fmt.Errorf("production profile requires the content receiver to share the bound authenticator")
 	}
-	for _, signal := range []string{"logs", "traces"} {
-		pipeline, ok := pipelines[signal].(map[string]any)
-		if !ok || !exactStringList(pipeline["receivers"], []string{"otlp"}) || !exactStringList(pipeline["exporters"], []string{"otlp_http/fabric"}) {
+	pipelines, _ := service["pipelines"].(map[string]any)
+	telemetry := 0
+	for name, node := range pipelines {
+		pipeline, _ := node.(map[string]any)
+		if production && isContentPipeline(name) {
+			if !exactStringList(pipeline["receivers"], []string{"otlp/content"}) {
+				return fmt.Errorf("production profile content pipelines receive only from the bound otlp/content receiver")
+			}
+			continue
+		}
+		if name != "logs" && name != "traces" {
+			return fmt.Errorf("dedicated evidence ingress requires only logs and traces pipelines")
+		}
+		telemetry++
+		if !exactStringList(pipeline["receivers"], []string{"otlp"}) || !exactStringList(pipeline["exporters"], []string{"otlp_http/fabric"}) {
 			return fmt.Errorf("dedicated evidence ingress has an unapproved pipeline route")
 		}
-		steps, ok := stringList(pipeline["processors"])
-		if !ok || !approvedEvidenceProcessors(steps) {
+		steps, isList := stringList(pipeline["processors"])
+		if !isList || !approvedEvidenceProcessors(steps) {
 			return fmt.Errorf("dedicated evidence ingress requires guard before batching")
 		}
 	}
+	if telemetry != 2 {
+		return fmt.Errorf("dedicated evidence ingress requires only logs and traces pipelines")
+	}
 	exporters, _ := cfg["exporters"].(map[string]any)
 	exporter, ok := exporters["otlp_http/fabric"].(map[string]any)
-	if !ok || len(exporters) != 1 {
+	others := 0
+	for id := range exporters {
+		if id != "otlp_http/fabric" && !(production && componentType(id) == "fabriccontent") {
+			others++
+		}
+	}
+	if !ok || others != 0 {
 		return fmt.Errorf("dedicated evidence ingress requires one approved OTLP exporter")
 	}
 	endpoint, _ := exporter["endpoint"].(string)
@@ -182,6 +254,108 @@ func checkDedicatedEvidenceIngress(cfg map[string]any, watched []tokenFile) erro
 		return fmt.Errorf("dedicated evidence ingress requires verified HTTPS export")
 	}
 	return nil
+}
+
+// declaredProduction reads the Node profile (spec 049 §7.3) from every
+// fabricguard processor and fabriccontent exporter. All of them must agree:
+// a production Node cannot carry a component that still runs the local
+// profile.
+func declaredProduction(cfg map[string]any) (bool, error) {
+	seen := map[bool]bool{}
+	for _, section := range []string{"processors", "exporters"} {
+		components, _ := cfg[section].(map[string]any)
+		for id, node := range components {
+			if t := componentType(id); t != "fabricguard" && t != "fabriccontent" {
+				continue
+			}
+			component, _ := node.(map[string]any)
+			profile, _ := component["profile"].(string)
+			if component["profile"] != nil && (strings.Contains(profile, "$") || profile != "local" && profile != "production") {
+				return false, fmt.Errorf("component %q must declare profile literally as local or production", id)
+			}
+			seen[profile == "production"] = true
+		}
+	}
+	if seen[true] && seen[false] {
+		return false, fmt.Errorf("every fabricguard processor and fabriccontent exporter must declare the same profile; a production Node cannot carry a local component")
+	}
+	return seen[true], nil
+}
+
+// checkProductionContent applies spec 049 §7.8-§7.9 to every fabriccontent
+// exporter of a production Node: the same source binding as fabricguard,
+// allowed_tenants exactly the bound tenant, the persistent queue on a
+// fabricenvelope storage extension with a key file, and the directory
+// backend's envelope key. S3 keeps its mandatory SSE (the exporter refuses
+// an S3 backend without it).
+func checkProductionContent(cfg map[string]any, binding map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	extensions, _ := cfg["extensions"].(map[string]any)
+	service, _ := cfg["service"].(map[string]any)
+	active, _ := service["extensions"].([]any)
+	for _, id := range sortedKeys(exporters) {
+		if componentType(id) != "fabriccontent" {
+			continue
+		}
+		exporter, _ := exporters[id].(map[string]any)
+		own, _ := exporter["source_binding"].(map[string]any)
+		tenant, _ := own["tenant_id"].(string)
+		source, _ := own["source_id"].(string)
+		if own == nil || expandEnvRefs(tenant) != binding["tenant_id"] || expandEnvRefs(source) != binding["source_id"] {
+			return fmt.Errorf("exporter %q must carry fabricguard's source_binding in the production profile (spec 049 §7.9)", id)
+		}
+		if tenants := tenantList(exporter["allowed_tenants"]); len(tenants) != 1 || tenants[0] != binding["tenant_id"] || configTrue(exporter["allow_multiple_tenants"]) {
+			return fmt.Errorf("exporter %q must allow exactly the bound tenant in the production profile", id)
+		}
+		queue, _ := exporter["sending_queue"].(map[string]any)
+		storage, _ := queue["storage"].(string)
+		if componentType(storage) != "fabricenvelope" || (queue["enabled"] != nil && !configTrue(queue["enabled"])) {
+			return fmt.Errorf("exporter %q must queue content on a fabricenvelope storage extension in the production profile (encrypted at rest, spec 049 §7.8)", id)
+		}
+		envelope, _ := extensions[storage].(map[string]any)
+		if !onlyContains(active, storage) || envelope == nil {
+			return fmt.Errorf("extension %q (exporter %q's encrypted queue) is not configured and active", storage, id)
+		}
+		keyFile, _ := envelope["key_file"].(string)
+		if err := checkKeyFile(storage, keyFile); err != nil {
+			return err
+		}
+		backend, _ := exporter["backend"].(string)
+		if backend == "file" {
+			file, _ := exporter["file"].(map[string]any)
+			key, _ := file["encryption_key_file"].(string)
+			if err := checkKeyFile(id, key); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkKeyFile requires a literal, absolute key-file path whose file is a
+// regular file without group-write or other access holding 32 raw bytes or
+// their base64 (one trailing newline allowed). The key is never a config
+// literal and never echoed.
+func checkKeyFile(component, path string) error {
+	if !literalCleanPath(path) {
+		return fmt.Errorf("component %q must name its encryption key file as a literal absolute path (a mounted Secret), spec 049 §7.8", component)
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o027 != 0 {
+		return fmt.Errorf("component %q encryption key file is missing or its permissions are unsafe", component)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("component %q encryption key file cannot be read", component)
+	}
+	if len(data) == 32 {
+		return nil
+	}
+	text := strings.TrimSuffix(string(data), "\n")
+	if decoded, err := base64.StdEncoding.Strict().DecodeString(text); err == nil && len(text) == 44 && len(decoded) == 32 {
+		return nil
+	}
+	return fmt.Errorf("component %q encryption key file must hold 32 raw bytes or their base64", component)
 }
 
 func safeEvidenceIdentity(raw any) bool {
@@ -263,8 +437,8 @@ func approvedEvidenceProcessors(steps []string) bool {
 	return guardIndex >= 0 && (len(steps) == 1 || steps[len(steps)-1] != "batch" || guardIndex < len(steps)-1)
 }
 
-func checkDedicatedTokenFile(path string) error {
-	if err := checkTokenFile("bearertokenauth/evidence_source", path); err != nil {
+func checkDedicatedTokenFile(extension, path string) error {
+	if err := checkTokenFile(extension, path); err != nil {
 		return err
 	}
 	info, err := os.Stat(path)
@@ -950,6 +1124,16 @@ func checkContentQueueStorage(cfg map[string]any) error {
 		}
 		if storage == "" || (queue["enabled"] != nil && !configTrue(queue["enabled"])) {
 			continue // in memory: nothing on disk
+		}
+		if componentType(storage) == "fabricenvelope" {
+			// Spec 049 §7.8: the encrypted queue wraps a file_storage
+			// extension, which keeps every rule below.
+			wrapper, ok := extensions[storage].(map[string]any)
+			inner, isString := wrapper["storage"].(string)
+			if !ok || !isString || strings.Contains(inner, "$") || hasNonEnvReference(extensions[storage]) {
+				return fmt.Errorf("extension %q (exporter %q's encrypted queue) must name its file_storage literally", storage, id)
+			}
+			storage = inner
 		}
 		if componentType(storage) != "file_storage" {
 			return fmt.Errorf("exporter %q queues content in %q; a content queue must use a file_storage extension", id, storage)

@@ -18,12 +18,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import os
 import re
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
@@ -89,6 +90,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--tenant", metavar="ID", help="tenant id of the content store")
     parser.add_argument(
+        "--content-key-file",
+        metavar="PATH",
+        help="the Node directory backend's content key (32 raw bytes or their base64), to "
+        "open its sealed objects under --store-root (spec 049 §7.8); never logged",
+    )
+    parser.add_argument(
         "--s3-endpoint-url",
         metavar="URL",
         help="S3-compatible endpoint (e.g. MinIO) for --store-uri; credentials come from "
@@ -130,6 +137,22 @@ def _parser() -> argparse.ArgumentParser:
         help="re-read objects absent from the store until this many seconds after the start "
         f"(at most {_MAX_WAIT_S:.0f}) before reporting them missing: content can still be in "
         "flight to the store just after a run (default 0: no wait)",
+    )
+    parser.add_argument(
+        "--trusted-source",
+        dest="trusted_source",
+        action="store_true",
+        help="the --spans files are the Node's own telemetry export or destination, read "
+        "from a location you trust (spec 049 §7.9): only then does a record's "
+        "fabric.source.authenticated stamp count; otherwise the spans are imported and "
+        "authenticate nothing",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=("local", "production"),
+        help="the deployment profile (spec 049 §7.3); production requires every record to "
+        "be authenticated (default: production when any span carries the Node's stamp, "
+        "else local)",
     )
     parser.add_argument(
         "--out",
@@ -195,7 +218,11 @@ def _store(args: argparse.Namespace) -> Any | None:
 
             if not Path(args.store_root).is_dir():
                 raise ReconstructInputError("--store-root is not a directory")
-            return LocalFilesystemContentStore(root=args.store_root, tenant_id=args.tenant)
+            return LocalFilesystemContentStore(
+                root=args.store_root, tenant_id=args.tenant, envelope_key=_content_key(args)
+            )
+        if args.content_key_file is not None:
+            raise ReconstructInputError("--content-key-file applies to --store-root")
         from fabric.content_store.s3 import S3ContentStore  # noqa: PLC0415
 
         uri = str(args.store_uri)
@@ -252,6 +279,18 @@ def _model_allowlist(args: argparse.Namespace, environ: Mapping[str, str]) -> tu
         ) from None
 
 
+def _content_key(args: argparse.Namespace) -> bytes | None:
+    """The Node content key named by ``--content-key-file``; fixed-text errors."""
+    if args.content_key_file is None:
+        return None
+    from fabric.wire._keys import key_from_env  # noqa: PLC0415
+
+    try:
+        return key_from_env({"CONTENT_KEY_FILE": args.content_key_file}, "CONTENT_KEY", exact=32)
+    except ValueError:
+        raise ReconstructInputError("--content-key-file must hold a 32-byte key") from None
+
+
 def _id_key(args: argparse.Namespace, environ: Mapping[str, str]) -> bytes | None:
     """The run-id key (decision H3); never echoed. An explicitly named variable must be set."""
 
@@ -269,8 +308,16 @@ def _id_key(args: argparse.Namespace, environ: Mapping[str, str]) -> bytes | Non
     return key
 
 
-def _write_report(path: str, text: str) -> None:
-    """Write ``text`` to ``path`` atomically, readable by the owner only.
+def _report_chunks(document: Mapping[str, Any]) -> Iterator[str]:
+    """The report as ``json.dumps(document, ensure_ascii=False, indent=2) + "\\n"``, in
+    pieces: a large report is never held as one string next to its document (D6)."""
+
+    yield from json.JSONEncoder(ensure_ascii=False, indent=2).iterencode(document)
+    yield "\n"
+
+
+def _write_report(path: str, document: Mapping[str, Any]) -> None:
+    """Write the report for ``document`` to ``path`` atomically, owner-readable only.
 
     A private temporary file in the target directory is written, fsync'd and
     renamed over the target, so a reader never sees a partial report and an
@@ -284,7 +331,11 @@ def _write_report(path: str, text: str) -> None:
     try:
         with os.fdopen(fd, "wb") as stream:
             os.fchmod(stream.fileno(), 0o600)
-            stream.write(text.encode("utf-8"))
+            writer = io.TextIOWrapper(stream, encoding="utf-8", newline="", write_through=False)
+            for chunk in _report_chunks(document):
+                writer.write(chunk)
+            writer.flush()
+            writer.detach()
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, target)
@@ -316,6 +367,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             model_allowlist=allowlist,
             id_key=key,
             wait_for_objects_s=wait,
+            profile=args.profile,
+            trusted_source=args.trusted_source,
         )
     except ReconstructInputError as exc:
         _fail(str(exc))
@@ -326,10 +379,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:  # fixed text: a message can carry paths or secrets
         _fail(f"internal error ({type(exc).__name__})")
         return EXIT_USAGE
-    text = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
     if args.out:
         try:
-            _write_report(args.out, text)
+            _write_report(args.out, document)
         except OSError:
             _fail("cannot write the --out report file")
             return EXIT_USAGE
@@ -340,7 +392,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 file=sys.stderr,
             )
     else:
-        sys.stdout.write(text)
+        for chunk in _report_chunks(document):
+            sys.stdout.write(chunk)
     if not document["runs"]:
         _fail("no runs reconstructed")
     return _exit_code(document)

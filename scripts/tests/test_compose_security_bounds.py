@@ -95,6 +95,8 @@ esac
             # image's nonroot 65532 (tests below exercise the real default).
             "FABRIC_NODE_UID": str(os.getuid()),
             "FABRIC_NODE_GID": str(os.getgid()),
+            "FABRIC_TENANT_ID": "tenant-a",
+            "FABRIC_SOURCE_ID": "s-c5aedfd8a3ee415e277e335bf1517ff4",
         }
     )
     return env
@@ -127,6 +129,12 @@ def _write_collector_config(
         f"{http_limit}"
         "processors:\n"
         "  batch: {}\n"
+        # Spec 049 §7.9: the production profile binds every batch.
+        "  fabricguard:\n"
+        "    profile: production\n"
+        "    evidence_source_binding:\n"
+        "      tenant_id: ${env:FABRIC_TENANT_ID}\n"
+        "      source_id: ${env:FABRIC_SOURCE_ID}\n"
         "exporters:\n"
         "  otlp_http:\n"
         "    middlewares:\n"
@@ -281,6 +289,10 @@ def _write_ca_config(tmp_path: Path) -> None:
         "receivers:\n"
         "  otlp: {}\n"
         "processors:\n"
+        "  fabricguard:\n"
+        "    evidence_source_binding:\n"
+        "      tenant_id: ${env:FABRIC_TENANT_ID}\n"
+        "      source_id: ${env:FABRIC_SOURCE_ID}\n"
         "  batch: {}\n"
         "exporters:\n"
         "  otlp_http:\n"

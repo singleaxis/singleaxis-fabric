@@ -43,6 +43,7 @@ COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
 COPY receiver/auditreceiver ./receiver/auditreceiver
 COPY exporter/fabriccontentexporter ./exporter/fabriccontentexporter
 COPY extension/noredirectextension ./extension/noredirectextension
+COPY extension/fabricenvelopeextension ./extension/fabricenvelopeextension
 COPY gate ./gate
 COPY upstream/bearertokenauth-empty-tokens.patch upstream/bearertokenauth_empty_tokens_test.go upstream/build-patched-bearertokenauth.sh ./upstream/
 

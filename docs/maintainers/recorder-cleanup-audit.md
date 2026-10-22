@@ -38,7 +38,7 @@ merged-on-main evidence module needs owner sign-off.
   their qualification apparatus). Merging or deleting it needs owner
   sign-off. Each OWNER row carries a recommendation (`rec:`).
 
-#164 and #165 were large squashes. They also carried code for older specs
+PRs #164 and #165 were large squashes. They also carried code for older specs
 (022–034: records surface, governed content). That code is classified on its
 merits, not as OWNER.
 
@@ -654,4 +654,3 @@ recommendation; the per-row reasoning is in sections 3–7.
   unit (G5).
 - `qualification/synthetic-slice/kind-production-*.yaml` and the spec 040
   pilot scripts: keep until a wire/records kind e2e replaces them.
-

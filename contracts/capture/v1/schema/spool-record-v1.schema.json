@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/spool-record-v1.schema.json",
   "title": "Fabric wire spool record header v1 (draft, spec 048)",
-  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and up to two content descriptors whose bytes are blob[offset:offset+length]; a loss record one coalesced range; a marker record a run_start, run_end or final heartbeat. Headers carry no content. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
+  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and its content descriptors (spec 049 P0-A: at most 130 — per side a primary object or split skeleton, its extracted parts and a masked review copy — including descriptor-only not_captured bodies of length 0) whose bytes are blob[offset:offset+length]; a record record (spec 049 §2.4, the records input) one sequenced records-input span; a loss record one coalesced range; a marker record a run_start, run_end, segment_seal or final heartbeat, or a manifest (marker kind manifest, carrying the fabric.capture_manifest span attributes). From spec 049 P1 one allocator per (source, epoch) serves both inputs (sequence_unit: record): exchange and record entries take positions from the same counter, and loss ranges, heartbeats and markers count those shared positions. Headers carry no content. A batch file (spec 048 §2, b'FWSPOOLB' | u32 count | count x (u64 length | frame) | sha256 trailer) holds several exchange records' frames, each with a header of this schema. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
   "type": "object",
   "required": [
     "schema_version",
@@ -18,6 +18,7 @@
     "record_kind": {
       "enum": [
         "exchange",
+        "record",
         "loss",
         "marker"
       ]
@@ -133,7 +134,6 @@
                 "fabric.source.epoch",
                 "fabric.source.sequence",
                 "fabric.wire.api",
-                "fabric.wire.request_sha256",
                 "fabric.wire.response_state",
                 "fabric.wire.truncated",
                 "fabric.wire.store_status",
@@ -204,6 +204,21 @@
                     "disabled"
                   ]
                 },
+                "fabric.wire.store_reason": {
+                  "enum": [
+                    "no_store",
+                    "missing_capture_policy",
+                    "missing_id_key",
+                    "missing_spool_key",
+                    "privacy_policy",
+                    "protection_failed",
+                    "explicit_withheld",
+                    "store_failed",
+                    "body_cap",
+                    "inflight_budget",
+                    "transport_incomplete"
+                  ]
+                },
                 "gen_ai.operation.name": {
                   "enum": [
                     "chat",
@@ -263,6 +278,16 @@
                 "gen_ai.usage.output_tokens": {
                   "type": "integer",
                   "minimum": 0
+                },
+                "fabric.capture.input": {
+                  "const": "wire"
+                },
+                "fabric.event_id": {
+                  "$ref": "#/$defs/uuid4"
+                },
+                "fabric.run.segment_id": {
+                  "type": "string",
+                  "pattern": "^seg-[0-9a-f]{32}$"
                 }
               }
             }
@@ -275,7 +300,7 @@
         },
         "bodies": {
           "type": "array",
-          "maxItems": 2,
+          "maxItems": 130,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -298,6 +323,137 @@
                 "minimum": 0
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": [
+        "span"
+      ],
+      "properties": {
+        "schema_version": true,
+        "record_kind": {
+          "const": "record"
+        },
+        "source": true,
+        "order": true,
+        "written_at_unix_nano": true,
+        "service_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+        },
+        "span": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "kind",
+            "trace_id",
+            "span_id",
+            "trace_flags",
+            "start_time_unix_nano",
+            "end_time_unix_nano",
+            "status",
+            "attributes"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+            },
+            "kind": {
+              "enum": [
+                "internal",
+                "client",
+                "server",
+                "producer",
+                "consumer"
+              ]
+            },
+            "trace_id": {
+              "type": "string",
+              "pattern": "^(?!0{32}$)[0-9a-f]{32}$"
+            },
+            "span_id": {
+              "type": "string",
+              "pattern": "^(?!0{16}$)[0-9a-f]{16}$"
+            },
+            "parent_span_id": {
+              "type": "string",
+              "pattern": "^(?!0{16}$)[0-9a-f]{16}$"
+            },
+            "parent_is_remote": {
+              "type": "boolean"
+            },
+            "trace_flags": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "start_time_unix_nano": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "end_time_unix_nano": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "status": {
+              "enum": [
+                "unset",
+                "ok",
+                "error"
+              ]
+            },
+            "attributes": {
+              "description": "The emitter-owned attributes of one records-input span (spec 049 §2.4): the sequencing keys below, plus the metadata keys the span carries. Values are scalars or arrays of scalars; the Fabric Node's exact-key allowlist closes them on export. Content never travels here; record bodies join the spool with the role table in spec 049 P0-A.",
+              "type": "object",
+              "required": [
+                "fabric.capture.input",
+                "fabric.source_id",
+                "fabric.source.epoch",
+                "fabric.source.sequence",
+                "fabric.event_id",
+                "fabric.attempt.uid"
+              ],
+              "properties": {
+                "fabric.capture.input": {
+                  "const": "records"
+                },
+                "fabric.source_id": {
+                  "$ref": "#/$defs/opaqueId"
+                },
+                "fabric.source.epoch": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fabric.source.sequence": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fabric.event_id": {
+                  "$ref": "#/$defs/uuid4"
+                },
+                "fabric.attempt.uid": {
+                  "$ref": "#/$defs/uuid4"
+                },
+                "fabric.run.segment_id": {
+                  "type": "string",
+                  "pattern": "^seg-[0-9a-f]{32}$"
+                },
+                "fabric.source.authenticated": false
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/attributeValue"
+              }
+            }
+          },
+          "dependentRequired": {
+            "parent_is_remote": [
+              "parent_span_id"
+            ]
           }
         }
       }
@@ -328,9 +484,11 @@
             "reason": {
               "enum": [
                 "queue_full",
+                "disk_full",
                 "internal_error",
                 "shutdown",
-                "span_dropped"
+                "span_dropped",
+                "uninstrumented_client"
               ]
             },
             "count": {
@@ -374,7 +532,9 @@
               "enum": [
                 "run_start",
                 "run_end",
-                "final"
+                "segment_seal",
+                "final",
+                "manifest"
               ]
             },
             "last_sequence": {
@@ -386,27 +546,273 @@
             },
             "scope_id": {
               "$ref": "#/$defs/uuid4"
+            },
+            "segment_id": {
+              "description": "fabric.run.segment_id (X43): the immutable segment the marker belongs to.",
+              "type": "string",
+              "pattern": "^seg-[0-9a-f]{32}$"
+            },
+            "predecessors": {
+              "description": "fabric.run.predecessors (X41), run_start only: 'none' for the run's root, else one <segment_id>/<source_id>/<epoch>/<last_sequence>/sha256:<manifest digest at seal> entry per sealed segment this segment continues.",
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^(none|seg-[0-9a-f]{32}/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}/[1-9][0-9]{0,18}/(-1|0|[1-9][0-9]{0,18})/sha256:[0-9a-f]{64})$"
+              }
+            },
+            "resumable": {
+              "description": "fabric.run.resumable (X42): on the root run_start, and on a token-issuing segment_seal.",
+              "type": "boolean"
+            },
+            "open_deadline_s": {
+              "description": "fabric.run.open_deadline_s (X42), honoured on the root run_start only.",
+              "type": "integer",
+              "minimum": 60,
+              "maximum": 31536000
+            },
+            "declared_branches": {
+              "description": "fabric.run.declared_branches (X46), run_start only: fork children declared by segment id.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^seg-[0-9a-f]{32}$"
+              }
+            },
+            "branch_ids": {
+              "description": "fabric.run.branch_ids (X46), run_start only: the branch ids of the tokens this segment started from.",
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "string",
+                "pattern": "^br-[0-9a-f]{32}$"
+              }
+            },
+            "terminal": {
+              "description": "fabric.run.terminal (X42), segment_seal only: whether this seal terminates the run.",
+              "type": "boolean"
+            },
+            "seal": {
+              "description": "fabric.segment.* (X44, X46), segment_seal only: the segment's last sequence, the manifest digest at seal, the portable seal digest (spec 049 §2.12) and the branch ids minted by resume_token(branches=n).",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "last_sequence",
+                "manifest_digest",
+                "seal_digest"
+              ],
+              "properties": {
+                "last_sequence": {
+                  "type": "integer",
+                  "minimum": -1
+                },
+                "manifest_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "seal_digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                "branch_ids": {
+                  "type": "array",
+                  "maxItems": 64,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^br-[0-9a-f]{32}$"
+                  }
+                }
+              }
+            },
+            "manifest_id": {
+              "description": "fabric.capture.manifest_id (X34), run_start / run_end only: the manifest in force.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "manifest_digest": {
+              "description": "fabric.capture.manifest_digest (X34), run_start / run_end only.",
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "manifest_seq": {
+              "description": "fabric.capture.manifest_seq (X39), any heartbeat: the latest manifest of the source epoch, so a lost trailing manifest is detectable.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "scope_status": {
+              "description": "fabric.run.scope_status (S34), run_end only: how the fabric.wire.run() block exited.",
+              "enum": [
+                "ok",
+                "error",
+                "cancelled"
+              ]
+            },
+            "manifest": {
+              "description": "Marker kind manifest only (spec 049 §2.8, rev 6.3): the closed attributes of the fabric.capture_manifest span this marker exports, as contracts/capture/v1/schema/capture-manifest-record-v1.schema.json defines them (checked by the validator). last_sequence is the manifest's after_source_sequence; a manifest never occupies a position.",
+              "type": "object"
             }
           },
-          "if": {
-            "properties": {
-              "kind": {
-                "const": "final"
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "run_start",
+                      "run_end"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "run_id",
+                  "scope_id"
+                ]
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "final"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "run_id": false,
+                  "scope_id": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "run_start"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "terminal": false,
+                  "seal": false,
+                  "scope_status": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "run_end"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "predecessors": false,
+                  "resumable": false,
+                  "open_deadline_s": false,
+                  "declared_branches": false,
+                  "branch_ids": false,
+                  "terminal": false,
+                  "seal": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "segment_seal"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "run_id",
+                  "segment_id",
+                  "terminal",
+                  "seal"
+                ],
+                "properties": {
+                  "predecessors": false,
+                  "open_deadline_s": false,
+                  "declared_branches": false,
+                  "branch_ids": false,
+                  "manifest_id": false,
+                  "manifest_digest": false,
+                  "scope_status": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "periodic",
+                      "final"
+                    ]
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "segment_id": false,
+                  "predecessors": false,
+                  "resumable": false,
+                  "open_deadline_s": false,
+                  "declared_branches": false,
+                  "branch_ids": false,
+                  "terminal": false,
+                  "seal": false,
+                  "manifest_id": false,
+                  "manifest_digest": false,
+                  "scope_status": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "manifest"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "manifest"
+                ],
+                "properties": {
+                  "run_id": false,
+                  "scope_id": false,
+                  "segment_id": false,
+                  "predecessors": false,
+                  "resumable": false,
+                  "open_deadline_s": false,
+                  "declared_branches": false,
+                  "branch_ids": false,
+                  "terminal": false,
+                  "seal": false,
+                  "manifest_id": false,
+                  "manifest_digest": false,
+                  "scope_status": false,
+                  "manifest_seq": false
+                }
+              },
+              "else": {
+                "properties": {
+                  "manifest": false
+                }
               }
             }
-          },
-          "then": {
-            "properties": {
-              "run_id": false,
-              "scope_id": false
-            }
-          },
-          "else": {
-            "required": [
-              "run_id",
-              "scope_id"
-            ]
-          }
+          ]
         }
       }
     }
@@ -427,7 +833,7 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "descriptor": {
-      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref). Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
+      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref to an object with bytes), as widened by spec 049 §4.3 (P0-A): every role of contracts/coverage/v1/registry/content-roles-v1.json (boundary, provenance, media type and cap per row are checked by the validator and the Node), the privacy fields, split parts and review copies, and descriptor-only not_captured records (no stored bytes, digest or ref; status_reason from the coverage reason vocabulary). source_authenticated is receiver-owned and never part of it. Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
       "type": "object",
       "required": [
         "schema_version",
@@ -441,9 +847,6 @@
         "provenance",
         "boundary",
         "status",
-        "stored_byte_length",
-        "stored_sha256",
-        "source_byte_length",
         "source_id",
         "source_epoch",
         "source_sequence",
@@ -456,8 +859,7 @@
           "const": "fabric.content-object/v2"
         },
         "object_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          "$ref": "#/$defs/uuid4"
         },
         "tenant_id": {
           "type": "string",
@@ -465,8 +867,77 @@
         },
         "role": {
           "enum": [
+            "model.request.instructions",
+            "model.request.messages",
+            "model.request.tool_definitions",
+            "model.request.parameters",
+            "model.output.messages",
             "model.exchange.request",
-            "model.exchange.response"
+            "model.exchange.response",
+            "tool.definition",
+            "tool.call.arguments",
+            "tool.call.result",
+            "retrieval.query",
+            "retrieval.results",
+            "memory.write.content",
+            "memory.read.content",
+            "side_effect.request",
+            "side_effect.result",
+            "context.file",
+            "interaction.payload",
+            "terminal.argv",
+            "terminal.stdin",
+            "terminal.stdout",
+            "terminal.stderr",
+            "remote.request",
+            "remote.result",
+            "remote.stream",
+            "database.query",
+            "database.parameters",
+            "database.rows",
+            "database.mutation",
+            "network.request",
+            "network.response",
+            "network.stream",
+            "sandbox.config",
+            "sandbox.output",
+            "artifact.before",
+            "artifact.after",
+            "service.receipt",
+            "model.exchange.part",
+            "model.output.reasoning",
+            "actor.identity",
+            "run.trigger",
+            "run.goal",
+            "run.input",
+            "run.permissions",
+            "run.configuration",
+            "run.environment",
+            "run.outcome",
+            "outcome.delivery",
+            "step.error",
+            "tool.inventory",
+            "agent.handoff",
+            "checkpoint.state",
+            "workflow.definition",
+            "mcp.request",
+            "mcp.response",
+            "mcp.notification",
+            "mcp.server",
+            "computer.action",
+            "computer.snapshot",
+            "control.checked",
+            "control.reason",
+            "control.approval",
+            "selection.decision",
+            "context.change",
+            "terminal.context",
+            "artifact.diff",
+            "asset.bytes",
+            "media.frames",
+            "media.events",
+            "media.transcript",
+            "artifact.locator"
           ]
         },
         "media_type": {
@@ -481,26 +952,102 @@
           "enum": [
             "exact",
             "partial",
-            "truncated"
+            "truncated",
+            "split",
+            "redacted",
+            "tokenized",
+            "unavailable"
           ]
         },
         "transformations": {
           "type": "array",
-          "maxItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
           "items": {
-            "const": "truncate"
+            "enum": [
+              "truncate",
+              "extract_parts",
+              "redact",
+              "tokenize"
+            ]
           }
         },
         "provenance": {
-          "const": "protocol"
+          "enum": [
+            "native",
+            "protocol",
+            "caller_reported",
+            "inferred"
+          ]
         },
         "boundary": {
-          "const": "provider_bound"
+          "enum": [
+            "caller",
+            "provider_bound",
+            "tool",
+            "terminal",
+            "sandbox",
+            "remote",
+            "host",
+            "service"
+          ]
         },
         "status": {
           "enum": [
             "stored",
-            "truncated"
+            "truncated",
+            "redacted",
+            "not_captured"
+          ]
+        },
+        "status_reason": {
+          "enum": [
+            "not_instrumented",
+            "hook_disabled",
+            "not_configured",
+            "unsupported_api",
+            "unsupported_runtime",
+            "unsupported_version",
+            "parse_failed",
+            "body_cap",
+            "part_cap",
+            "inflight_budget",
+            "queue_full",
+            "disk_full",
+            "shutdown",
+            "internal_error",
+            "span_dropped",
+            "store_failed",
+            "destination_rejected",
+            "transport_incomplete",
+            "stream_closed_early",
+            "privacy_policy",
+            "protection_failed",
+            "missing_capture_policy",
+            "missing_id_key",
+            "missing_spool_key",
+            "provider_redacted",
+            "provider_encrypted",
+            "provider_summarised",
+            "provider_not_returned",
+            "provider_held",
+            "caller_omitted",
+            "deferred_to_explicit",
+            "explicit_withheld",
+            "not_exposed",
+            "source_lost",
+            "segment_missing",
+            "segment_conflict",
+            "run_unterminated",
+            "post_terminal_activity",
+            "clock_uncertain",
+            "source_unauthenticated",
+            "unsealed_epoch",
+            "seal_mismatch",
+            "uninstrumented_client",
+            "sampling",
+            "retention_expired",
+            "deleted"
           ]
         },
         "stored_byte_length": {
@@ -535,10 +1082,344 @@
           "$ref": "#/$defs/opaqueId"
         },
         "captured_at": {
-          "type": "string",
-          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+          "$ref": "#/$defs/timestamp"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "workload_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "stream_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "privacy_mode": {
+          "enum": [
+            "retain_original",
+            "redact",
+            "tokenize",
+            "masked_only",
+            "original_plus_masked",
+            "metadata_only",
+            "omit"
+          ]
+        },
+        "policy_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "protection_status": {
+          "enum": [
+            "retained",
+            "redacted",
+            "tokenized",
+            "withheld"
+          ]
+        },
+        "transformation_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "transformation_version": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "links": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "relation",
+              "object_id"
+            ],
+            "properties": {
+              "relation": {
+                "enum": [
+                  "part_of",
+                  "derived_from"
+                ]
+              },
+              "object_id": {
+                "$ref": "#/$defs/uuid4"
+              },
+              "byte_range": {
+                "description": "part_of only: the half-open [start, end) byte offsets of the part in the original body (spec 049 §7.4).",
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "if": {
+              "properties": {
+                "relation": {
+                  "const": "part_of"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "byte_range"
+                ]
+              }
+            }
+          }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "not_captured"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status_reason"
+            ],
+            "properties": {
+              "representation": {
+                "const": "unavailable"
+              },
+              "transformations": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "stored_byte_length"
+                  ]
+                },
+                {
+                  "required": [
+                    "stored_sha256"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "stored_byte_length",
+              "stored_sha256"
+            ],
+            "not": {
+              "required": [
+                "status_reason"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "stored",
+                  "truncated"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source_byte_length"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "redacted"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "privacy_mode",
+              "policy_id",
+              "policy_version",
+              "policy_digest",
+              "protection_status"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "source_sha256"
+                  ]
+                },
+                {
+                  "required": [
+                    "source_byte_length"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "privacy_mode"
+                ]
+              },
+              {
+                "required": [
+                  "policy_id"
+                ]
+              },
+              {
+                "required": [
+                  "policy_version"
+                ]
+              },
+              {
+                "required": [
+                  "policy_digest"
+                ]
+              },
+              {
+                "required": [
+                  "protection_status"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "privacy_mode",
+              "policy_id",
+              "policy_version",
+              "policy_digest",
+              "protection_status"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "transformation_id"
+                ]
+              },
+              {
+                "required": [
+                  "transformation_version"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "transformation_id",
+              "transformation_version",
+              "privacy_mode",
+              "policy_id",
+              "policy_version",
+              "policy_digest",
+              "protection_status"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "chunk_index"
+            ]
+          },
+          "then": {
+            "required": [
+              "stream_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "stream_id"
+            ]
+          },
+          "then": {
+            "required": [
+              "chunk_index"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "source_sha256"
+            ]
+          },
+          "then": {
+            "required": [
+              "source_byte_length"
+            ]
+          }
+        }
+      ]
+    },
+    "attributeValue": {
+      "oneOf": [
+        {
+          "type": [
+            "string",
+            "integer",
+            "number",
+            "boolean"
+          ]
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": [
+              "string",
+              "integer",
+              "number",
+              "boolean"
+            ]
+          }
+        }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
     }
   }
 }

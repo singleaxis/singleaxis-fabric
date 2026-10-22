@@ -1,132 +1,200 @@
 # Quickstart
 
-This walkthrough runs the passive recorder locally:
+Two short exercises, both offline with a fake model (no API key, nothing
+leaves your machine):
+
+1. **Offline example** (about 2 minutes, Python only): capture a ReAct
+   agent's model calls, verify the run, then break the record and watch the
+   verdict change.
+2. **Zero-code capture** (about 5 minutes, needs Docker): record an
+   unmodified OpenAI SDK program through a local Fabric Node.
+
+Requirements: Python 3.11+, git; Docker with Compose for part 2.
+
+## 1. Install
+
+The v0.8.0 Python package is published to PyPI as `singleaxis-fabric` at
+release. Until then, and to run the examples, install from a clone:
+
+```bash
+git clone https://github.com/singleaxis/singleaxis-fabric.git
+cd singleaxis-fabric
+python3 -m venv .venv && . .venv/bin/activate
+pip install "./sdk/python[otlp]" httpx
+```
+
+## 2. Run the offline example
+
+```bash
+python examples/wire-capture/react_agent.py --out-dir /tmp/fabric-demo
+```
+
+A plain `httpx` ReAct loop asks a fake OpenAI-compatible model (an
+`httpx.MockTransport`) for two tool calls and an answer. `fabric.wire`
+tees each request and response into a local content store
+(`/tmp/fabric-demo/store`), writes one metadata-only span per call to
+`/tmp/fabric-demo/spans.jsonl`, and then runs the verifier:
 
 ```text
-your OTLP trace -> Fabric Node -> metadata protection -> fsync test sink
+agent answer: It is 65.3 F in Paris.
+...
+run r-73312ae07246b3a81a3c4f7073ae3a4f: verdict=complete_for_observed_scopes
+  scope …: verdict=complete_for_declared_scope
+  thread-0: exchanges=['…', '…', '…']
+reconstruct exit code: 0
 ```
 
-It does not run guardrails, judges, red teams, policy enforcement, or a
-SingleAxis management service.
+The run id `react-demo-1` never appears in the record, only its `r-`
+pseudonym; `--run react-demo-1` asks the verifier to compute it.
 
-For an existing Python codebase or a Docker-free local start, run the
-[wire-capture example](../examples/wire-capture/README.md). It records each
-model call's exact bytes at the HTTP client, without a framework adapter, and
-verifies the run offline with `python -m fabric.reconstruct`.
+## 3. Break the record
 
-See [agent developer best practices](agent-developer-best-practices.md) for
-retry/context/privacy/shutdown conventions using the same runnable example.
-
-## Prerequisites
-
-- Docker with Compose
-- Python 3.11+ when using the optional Python SDK
-
-## 1. Start the evaluation harness
+Re-run the verifier yourself:
 
 ```bash
-cd deploy/compose
-make up
-make status
+python -m fabric.reconstruct --spans /tmp/fabric-demo/spans.jsonl \
+  --store-root /tmp/fabric-demo/store --tenant demo-tenant --run react-demo-1
 ```
 
-Fabric Node receives OTLP/gRPC on `localhost:4317` and OTLP/HTTP on
-`localhost:4318`. The controlled test sink stores received requests on a Docker
-volume and acknowledges only after fsync.
+Then try:
 
-This harness is plaintext and unauthenticated. Never use it across a trust
-boundary.
+- delete one `"fabric.model_call"` line from `spans.jsonl` → `partial`
+  (`sequence_gap`);
+- flip one byte in an object file directly under
+  `store/demo-tenant/evidence/` (not in `meta/`) → `partial`
+  (`digest_mismatch`);
+- delete the `fabric.capture_heartbeat` lines → `unverified`
+  (`tail_unverified`).
 
-## 2. Send one recorded operation
+The exit code is `0` only when everything is complete. See
+[reconstruct and verdicts](reconstruct.md).
 
-Install the SDK with its OTLP exporter:
+## 4. Capture an unmodified program (zero code)
+
+Start a local Fabric Node and its test sink (plaintext, loopback only):
 
 ```bash
-pip install "singleaxis-fabric[otlp]==0.8.0rc1"
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+make -C deploy/compose up
+pip install openai
 ```
+
+Save a fake OpenAI-compatible server as `fake_llm.py`:
 
 ```python
-import os
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
+
+class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        data = json.dumps({
+            "id": "chatcmpl-demo", "object": "chat.completion", "created": 0,
+            "model": body["model"],
+            "choices": [{"index": 0, "finish_reason": "stop",
+                         "message": {"role": "assistant", "content": "Hello from the fake model."}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 6, "total_tokens": 11},
+        }).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *args):
+        pass
+
+
+HTTPServer(("127.0.0.1", 8000), Handler).serve_forever()
+```
+
+and an ordinary program as `app.py`. It does not import Fabric:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://127.0.0.1:8000/v1", api_key="not-a-real-key")
+for question in ("What is Fabric?", "And what does it record?"):
+    reply = client.chat.completions.create(
+        model="gpt-4o-mini", messages=[{"role": "user", "content": question}]
+    )
+    print(reply.choices[0].message.content)
+```
+
+Run it with capture switched on by environment only:
+
+```bash
+python fake_llm.py &
+
+export PYTHONPATH="$(python -m fabric.wire --print-autoload-path)"
+export FABRIC_WIRE_AUTOLOAD=1
+export FABRIC_TENANT_ID=demo
+export FABRIC_WIRE_STORE="file://$PWD/store"
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+# The fake server is not a default model host, so list it:
+export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"local-llm","dialect":"openai","hosts":["127.0.0.1"],"ports":[8000],"schemes":["http"]}]'
+
+python app.py
+unset PYTHONPATH FABRIC_WIRE_AUTOLOAD
+```
+
+The bodies went to `./store`; the spans went through the Node to its test
+sink. Give the Node a few seconds to deliver them, then export and verify:
+
+```bash
+sleep 5
+make -C deploy/compose export-spans OUT="$PWD/spans"
+python -m fabric.reconstruct --spans spans --store-root store --tenant demo
+```
+
+```text
+source:s-…:…: complete_for_declared_scope (2 exchanges, 0 gaps)
+```
+
+If a run reports `unverified` with `tail_unverified` (`no_final_heartbeat`),
+its closing heartbeat did not reach the Node within the 2-second exit budget
+(we saw this once, on the first run after starting the Node). With an OTLP
+endpoint set, `file://` mode spools every record first, in
+`store/.fabric-wire-spool/demo`: the next process capturing to the same
+store (run `python app.py` again) delivers what is left. The verifier never
+reads that directory.
+
+Without `fabric.wire.run(...)` each process is one run, named after its
+source and epoch. Stop the stack with `make -C deploy/compose reset`
+and the fake server with `kill %1`.
+
+Real providers (`api.openai.com`, `api.anthropic.com`,
+`*.openai.azure.com`) need no `FABRIC_WIRE_ENDPOINTS`. Anything that sends
+model calls through `httpx`, `httpx2` or `aiohttp` is captured the same way,
+including the official OpenAI and Anthropic SDKs, LiteLLM and DSPy, and
+frameworks built on them. A model call through `requests` or `urllib3` is
+not captured; it is recorded as an `uninstrumented_client` loss, so its run
+is `partial`. See [limitations](limitations-and-roadmap.md).
+
+## 5. Record app-level activity (optional)
+
+Wire capture sees only model HTTP traffic. To record decisions, tool calls
+and other activity, report them with the [explicit APIs](explicit-apis.md).
+Configure a tracer provider before opening a decision:
+
+```python
 from fabric import Fabric, FabricConfig, install_default_provider
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
-install_default_provider(
-    service_name="example-agent",
-    # Explicit endpoint must include the signal path — bare host:port
-    # posts to "/" and gets a 404 on some exporter versions.
-    exporter=OTLPSpanExporter(
-        endpoint=os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] + "/v1/traces"
-    ),
-)
+install_default_provider(service_name="my-agent")  # exporter from OTEL_EXPORTER_OTLP_ENDPOINT
 
-fabric = Fabric(FabricConfig(tenant_id="example", agent_id="example-agent"))
+fabric = Fabric(FabricConfig(tenant_id="demo", agent_id="my-agent"))
 
 with fabric.decision(session_id="session-1", request_id="request-1") as decision:
-    with decision.llm_call(provider="example", model="example-model") as call:
-        # Replace this with the model invocation you already use.
-        result = "example response"
-        call.set_usage(input_tokens=5, output_tokens=2, finish_reason="stop")
-
-print(result)
+    with decision.tool_call("lookup_order", call_id="tool-1") as tool:
+        tool.set_arguments('{"order_id": "order-123"}')
+        tool.set_result('{"status": "shipped"}')
 ```
 
-You can skip the Fabric SDK when the monitored system already emits compatible
-OpenTelemetry. Point its exporter at `http://localhost:4318` instead.
-
-## 3. Check delivery
-
-```bash
-cd deploy/compose
-make smoke
-```
-
-The sink count should increase. Fabric exports approved metadata; raw prompt,
-response, tool-payload, header, token, and credential fields are removed by the
-default protection processor.
-
-## 4. Exercise outage and restart recovery
-
-```bash
-cd deploy/compose
-make qualify
-```
-
-The qualification harness checks that a known trace is protected, queued while
-the destination is unavailable, retained across a Fabric Node restart, and
-delivered after the sink returns.
-
-At-least-once delivery can produce duplicates after ambiguous acknowledgements.
-Destinations must deduplicate using preserved trace/span identity or identities
-added by an upstream or destination adapter.
-
-## 5. Prepare a recorder configuration
-
-With the standalone Go `fabricctl` binary:
-
-```bash
-fabricctl init
-fabricctl recorder validate fabric-recorder.yaml
-fabricctl recorder digest fabric-recorder.yaml
-```
-
-Initialization writes `fabric-recorder.yaml` and
-`recorder-init-receipt.json`. The receipt says `not-installed`: preparation is
-not a deployment mutation.
+Without `FABRIC_WIRE_ID_KEY`, session and user ids are omitted from
+telemetry (one warning); see [privacy and security](privacy-and-security.md#pseudonyms-keyed-pseudonym-v2).
 
 ## Next
 
-- Read [deployment](deployment.md) before crossing a trust boundary.
-- Choose an [integration model](integration-models.md) for an existing system.
-- Review [architecture](architecture.md) and the
-  [recorder-v1 release gates](../specs/027-recorder-v1.md).
-
-
-### Python managed span export
-
-For a protected Fabric-managed span export route, follow
-[Python managed span export: protection and limits](python-span-export-protection.md).
-Install the provider before other instrumentation, inspect its current-process
-protection status and test the actual route. Upstream content flags alone do not
-remove raw provider exception text. Existing host exporters remain host-owned.
+- [Deployment](deployment.md): the production profile, Compose and Helm.
+- [Architecture](architecture.md) and [privacy and security](privacy-and-security.md).
+- [Limitations and roadmap](limitations-and-roadmap.md).

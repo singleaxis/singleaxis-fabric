@@ -61,6 +61,8 @@ FABRIC_EXPORT_CA_FILE="$(envget FABRIC_EXPORT_CA_FILE)"
 FABRIC_INGRESS_TLS_CERT_FILE="$(envget FABRIC_INGRESS_TLS_CERT_FILE)"
 FABRIC_INGRESS_TLS_KEY_FILE="$(envget FABRIC_INGRESS_TLS_KEY_FILE)"
 FABRIC_TENANT_ID="$(envget FABRIC_TENANT_ID)"
+FABRIC_SOURCE_ID="$(envget FABRIC_SOURCE_ID)"
+FABRIC_CONTENT_KEY_FILE="$(envget FABRIC_CONTENT_KEY_FILE)"
 FABRIC_CONTENT_BACKEND="$(envget FABRIC_CONTENT_BACKEND)"
 FABRIC_CONTENT_REQUIRE_SSE="$(envget FABRIC_CONTENT_REQUIRE_SSE)"
 FABRIC_CONTENT_S3_BUCKET="$(envget FABRIC_CONTENT_S3_BUCKET)"
@@ -331,7 +333,7 @@ yaml_flatten() {
 # only, exactly the production profile without content.
 CONTENT_CONFIGS=""
 case "${FABRIC_CONTENT_BACKEND:-}" in
-  s3) CONTENT_CONFIGS="collector-config/collector-content.yaml collector-config/collector-content-s3.yaml" ;;
+  s3) CONTENT_CONFIGS="collector-config/collector-content.yaml collector-config/collector-content-s3.yaml collector-config/collector-content-s3-production.yaml" ;;
   file) CONTENT_CONFIGS="collector-config/collector-content.yaml" ;;
 esac
 FLAT_CONFIG="$(yaml_flatten "${COLLECTOR_CONFIG}")"
@@ -539,6 +541,39 @@ else
   fi
 fi
 
+# --- source binding (spec 049 §7.9, P0-A) ---------------------------------------
+# The production profile rejects unauthenticated sources: fabricguard (and the
+# content exporter) bind every batch to FABRIC_TENANT_ID and FABRIC_SOURCE_ID,
+# the agents' source id as it travels (s-<32 hex> under their default
+# pseudonymous labels). A Node configured before P0-A stops here, not in the
+# application.
+source_bound() {
+  printf '%s\n' "${FLAT_CONFIG}" | awk -F '\t' '
+    { n = split($1, k, "|") }
+    k[1] == "processors" && k[2] == "fabricguard" && k[3] == "evidence_source_binding" { found = 1 }
+    END { exit(found ? 0 : 1) }'
+}
+if source_bound; then
+  if [ -z "${FABRIC_TENANT_ID:-}" ]; then
+    bad "FABRIC_TENANT_ID unset; the production profile binds every agent batch to one tenant (spec 049 §7.9)"
+  elif ! matches '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' "${FABRIC_TENANT_ID}"; then
+    bad "FABRIC_TENANT_ID is not a safe tenant id (^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\$)"
+  else
+    ok "bound tenant set"
+  fi
+  if [ -z "${FABRIC_SOURCE_ID:-}" ]; then
+    bad "FABRIC_SOURCE_ID unset; the production profile binds every agent batch to one source (spec 049 §7.9) -- set the agents' source id as it travels (s-<32 hex> under pseudonymous labels)"
+  elif ! matches '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' "${FABRIC_SOURCE_ID}"; then
+    bad "FABRIC_SOURCE_ID is not a safe source id (^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\$)"
+  elif matches '^s-[0-9a-f]{32}$' "${FABRIC_SOURCE_ID}"; then
+    ok "bound source set (pseudonymous s- form)"
+  else
+    warn "FABRIC_SOURCE_ID is not an s-<32 hex> pseudonym; it binds only agents running with FABRIC_WIRE_LABELS=clear (fabricguard capture_labels: clear)"
+  fi
+else
+  bad "fabricguard has no evidence_source_binding; the production profile rejects unauthenticated sources (spec 049 §7.9)"
+fi
+
 # --- content path (spec 048) ---------------------------------------------------
 # The Node is the only content writer. Values are checked for shape; URLs and
 # secrets are never echoed.
@@ -563,6 +598,26 @@ if content_configured; then
     bad "FABRIC_TENANT_ID is not a safe tenant id (^[A-Za-z0-9][A-Za-z0-9._-]{0,255}\$)"
   else
     ok "content tenant set"
+  fi
+  # Spec 049 §7.8: the content queue (and the directory store) are sealed
+  # with the Node-side customer key, a file-backed Compose secret.
+  if [ -z "${FABRIC_CONTENT_KEY_FILE:-}" ]; then
+    bad "FABRIC_CONTENT_KEY_FILE unset; the production content queue and store are encrypted with the Node content key (spec 049 §7.8)"
+  elif [ ! -f "${FABRIC_CONTENT_KEY_FILE}" ]; then
+    bad "FABRIC_CONTENT_KEY_FILE points at a missing file"
+  elif [ ! -r "${FABRIC_CONTENT_KEY_FILE}" ]; then
+    bad "cannot read the content key file (FABRIC_CONTENT_KEY_FILE) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
+  else
+    key_bytes=$(wc -c < "${FABRIC_CONTENT_KEY_FILE}" | tr -d ' ')
+    key_text=$(tr -d '\n' < "${FABRIC_CONTENT_KEY_FILE}" 2>/dev/null || true)
+    if [ "${key_bytes}" = "32" ] \
+      || { { [ "${key_bytes}" = "44" ] || [ "${key_bytes}" = "45" ]; } \
+           && [ "${#key_text}" = "44" ] && matches '^[A-Za-z0-9+/]{43}=$' "${key_text}"; }; then
+      ok "content key file holds a 32-byte key"
+      check_node_secret "content key file" "${FABRIC_CONTENT_KEY_FILE}"
+    else
+      bad "content key file (FABRIC_CONTENT_KEY_FILE) must hold 32 raw bytes or their base64 (openssl rand -base64 32)"
+    fi
   fi
   content_rows=$(printf '%s\n' "${RECEIVERS}" | awk '$1 ~ /^otlp\/content/')
   if [ -z "${content_rows}" ]; then
@@ -649,6 +704,10 @@ if [ "${export_endpoint_ok}" -eq 1 ]; then
     note "SKIP" "nc not installed; skipping reachability probe"
   fi
 fi
+
+# --- spec 049 §7.3: agent-side requirements (048 §1 superseded) --------------
+# Not checkable from the Node: stated on every run so an upgrade cannot miss it.
+note "INFO" "spec 049 P0-A: agents in node mode are the production profile; they record content only with a capture policy (FABRIC_CAPTURE_POLICY) and FABRIC_WIRE_ID_KEY, otherwise metadata only (spec 048 §1 superseded)"
 
 printf '\n'
 if [ "${fail}" -ne 0 ]; then

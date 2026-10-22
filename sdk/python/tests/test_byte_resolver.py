@@ -32,9 +32,19 @@ from fabric.call_reconcile import (
     RouteDeclaration,
     reconcile_call_run,
 )
+from fabric.redaction import RedactionService
+
+from . import transforms
+from .redaction_server import RedactionServer
 
 _RAW = b"synthetic-private-canary-8854\x00\xff"
 _ROLE = "tool.call.result"
+
+
+@pytest.fixture(autouse=True)
+def _service(redaction_server: RedactionServer, redaction: RedactionService) -> None:
+    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests."""
+    redaction_server.behaviours["masker"] = transforms.masked
 
 
 def _fixture(path: Path, mode: str = "original_plus_masked") -> dict[str, Any]:
@@ -45,7 +55,6 @@ def _fixture(path: Path, mode: str = "original_plus_masked") -> dict[str, Any]:
         if mode == "original"
         else BytePrivacyPolicy(
             mode=mode,
-            transform=lambda _data: b"[masked]",
             transformation_id="masker",
             transformation_version="1",
         )

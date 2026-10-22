@@ -29,11 +29,16 @@ def schemas():
 @pytest.fixture(
     params=["retain_original", "redact", "tokenize", "metadata_only", "omit"]
 )
-def events(tmp_path, request):
+def events(tmp_path, request, monkeypatch):
+    from _redaction_service import reference_service
+
     helper = runpy.run_path(
         str(ROOT / "sdk/python/tests/test_governed_reconstruction.py")
     )
-    helper["_capture"](tmp_path, mode=request.param)
+    # redact: the customer redaction service (contracts/redaction/v1) masks the content
+    with reference_service({"masked_upper": [("(?s).+", "MASKED")]}) as endpoint:
+        monkeypatch.setenv("FABRIC_REDACTION_ENDPOINT", endpoint)
+        helper["_capture"](tmp_path, mode=request.param)
     records = []
     for path in (tmp_path / "destination").glob("*.json"):
         for record in json.loads(path.read_bytes())["resourceLogs"][0]["scopeLogs"][0][

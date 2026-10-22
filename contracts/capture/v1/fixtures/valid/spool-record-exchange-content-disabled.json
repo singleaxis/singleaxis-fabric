@@ -1,0 +1,45 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "exchange",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "order": 7,
+  "written_at_unix_nano": 1791331202053000000,
+  "service_name": "travel-agent",
+  "span": {
+    "name": "fabric.model_call",
+    "kind": "client",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "a3ce929d0e0e4736",
+    "parent_span_id": "00f067aa0ba902b7",
+    "parent_is_remote": false,
+    "trace_flags": 1,
+    "start_time_unix_nano": 1791331201120000000,
+    "end_time_unix_nano": 1791331202050000000,
+    "status": "unset",
+    "attributes": {
+      "fabric.wire.exchange_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+      "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+      "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+      "fabric.source.epoch": 1791331200000000000,
+      "fabric.source.sequence": 1,
+      "fabric.wire.api": "openai.chat_completions",
+      "fabric.wire.response_state": "complete",
+      "fabric.wire.truncated": false,
+      "fabric.wire.store_status": "disabled",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.provider.name": "openai",
+      "http.request.method": "POST",
+      "http.response.status_code": 200,
+      "gen_ai.response.model": "gpt-4o-2024-08-06",
+      "gen_ai.response.finish_reasons": [
+        "tool_calls"
+      ],
+      "fabric.wire.store_reason": "missing_spool_key"
+    }
+  },
+  "bodies": []
+}

@@ -1,0 +1,199 @@
+{
+  "schema_version": "fabric.resume-token-vectors/v1",
+  "rule": "Spec 049 §2.10: a predecessor entry is <segment_id>/<source_id>/<epoch>/<last_sequence>/sha256:<manifest digest at seal>; source_id is the opaque id as emitted (pseudonymous or a clear label), the epoch a canonical decimal 63-bit CSPRNG value (never 0), last_sequence >= -1. A resume token is 'fr2/' + an entry, optionally '/br-<32 hex>' for a branch token. A join is comma-separated (FABRIC_RUN_RESUME_TOKEN, message attribute fabric.resume); in W3C baggage (fabric.resume) the value is percent-encoded, so a reader percent-decodes before splitting.",
+  "tokens": [
+    {
+      "name": "plain token",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "branch token",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062",
+      "parsed": {
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": "br-064e57314e3f26e664ffcbc1526ac062"
+      }
+    },
+    {
+      "name": "clear source label",
+      "token": "fr2/seg-5456742e692c0b6e5b9590fd8b321b53/billing-agent.prod:7/4611686018427387905/3/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "segment_id": "seg-5456742e692c0b6e5b9590fd8b321b53",
+        "source_id": "billing-agent.prod:7",
+        "epoch": 4611686018427387905,
+        "last_sequence": 3,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "zero-width segment",
+      "token": "fr2/seg-f004c0559e9761ed511e632521c7fa7c/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/-1/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "segment_id": "seg-f004c0559e9761ed511e632521c7fa7c",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": -1,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "largest epoch",
+      "token": "fr2/seg-120bb0cd05d440cdf7a8fdaa1f9675c7/s-b94f348e8d6890782b2af72c847dc77b/9223372036854775807/0/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "segment_id": "seg-120bb0cd05d440cdf7a8fdaa1f9675c7",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 9223372036854775807,
+        "last_sequence": 0,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "rev-3 token prefix",
+      "token": "fr1/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "epoch 0 (never drawn)",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "epoch above 2^63-1",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/9223372036854775808/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "epoch with a leading zero",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/04611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "uppercase segment hex",
+      "token": "fr2/SEG-DC036958C70A72CF420903C9385C1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "bare digest",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "short branch id",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac06",
+      "parsed": null
+    },
+    {
+      "name": "trailing slash",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/",
+      "parsed": null
+    },
+    {
+      "name": "source label with a space",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/billing agent/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "last sequence below -1",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/-2/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "two branch ids",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062/br-b1b9158d0d5d266bdd6f53758fce2fbf",
+      "parsed": null
+    },
+    {
+      "name": "empty",
+      "token": "",
+      "parsed": null
+    }
+  ],
+  "predecessors": [
+    {
+      "name": "root",
+      "entry": "none",
+      "valid": true,
+      "parsed": null
+    },
+    {
+      "name": "sealed segment",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "valid": true,
+      "parsed": {
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab"
+      }
+    },
+    {
+      "name": "token prefix is not an entry",
+      "entry": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "valid": false,
+      "parsed": null
+    },
+    {
+      "name": "branch id is not part of an entry",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062",
+      "valid": false,
+      "parsed": null
+    },
+    {
+      "name": "None is lowercase only",
+      "entry": "None",
+      "valid": false,
+      "parsed": null
+    }
+  ],
+  "carriers": [
+    {
+      "name": "environment join",
+      "carrier": "env",
+      "value": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab,fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf",
+      "tokens": [
+        "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+        "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf"
+      ]
+    },
+    {
+      "name": "baggage, comma encoded",
+      "carrier": "baggage",
+      "value": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab%2Cfr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf",
+      "tokens": [
+        "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+        "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf"
+      ]
+    },
+    {
+      "name": "baggage, fully percent-encoded",
+      "carrier": "baggage",
+      "value": "fr2%2Fseg-dc036958c70a72cf420903c9385c1051%2Fs-b94f348e8d6890782b2af72c847dc77b%2F4611686018427387905%2F41%2Fsha256%3Aabababababababababababababababababababababababababababababababab%2Cfr2%2Fseg-a8639869696e1abb8d4af8e7cac6f0e0%2Fs-f0b46814e5833e0aeceb03bd9f9b9eb4%2F7140025193451802113%2F7%2Fsha256%3Aabababababababababababababababababababababababababababababababab%2Fbr-b1b9158d0d5d266bdd6f53758fce2fbf",
+      "tokens": [
+        "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+        "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf"
+      ]
+    },
+    {
+      "name": "baggage carrying a bad token",
+      "carrier": "baggage",
+      "value": "fr2%2Fseg-dc036958c70a72cf420903c9385c1051%2Fs-b94f348e8d6890782b2af72c847dc77b%2F4611686018427387905%2F41%2Fsha256%3Aabababababababababababababababababababababababababababababababab%2Cfr1%2Fseg-dc036958c70a72cf420903c9385c1051%2Fs-b94f348e8d6890782b2af72c847dc77b%2F4611686018427387905%2F41%2Fsha256%3Aabababababababababababababababababababababababababababababababab",
+      "tokens": null
+    }
+  ]
+}

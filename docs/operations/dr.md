@@ -58,14 +58,18 @@ The same objectives apply to the single-node Compose overlay
 (`deploy/compose/docker-compose.production.yml`). The durable state is the
 `fabric-queue` named volume mounted at `/var/lib/fabric-node/queue`.
 
-With wire capture in node mode ([spec 048](../../specs/048-node-content-delivery-and-agent-spool.md))
+With wire capture in node mode ([deployment](../deployment.md))
 two more volumes hold state: `fabric-content-queue`
 (`/var/lib/fabric-node/content-queue`, the fsync'd queue of content records
 waiting for the store, up to `queue_size` × 64 MiB) and `fabric-content`
 (`/var/lib/fabric-node/content`, the content store itself when the file
 backend is used; empty with the S3 backend). Back them up and restore them
 exactly like `fabric-queue` below, with the Node stopped. The content queue
-holds request/response bodies: protect its backups like the content store. On start the Node
+holds request/response bodies. In the production profile every queued value,
+and every object of the file backend, is sealed with the Node content key
+(`FABRIC_CONTENT_KEY_FILE`): back the key up separately from the volumes,
+because a restored queue or store is unreadable without it. Protect the
+backups like the content store. On start the Node
 tightens a restored content queue to directories `0700` and files `0600`
 and refuses one holding a symlink or special file.
 Agents keep their own durable spool (`FABRIC_WIRE_SPOOL_DIR`) for records

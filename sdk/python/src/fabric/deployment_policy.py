@@ -3,7 +3,8 @@
 """Local, versioned capture privacy configuration and pre-persistence protection.
 
 This is not policy authoring, regulatory certification, secret detection, or an
-execution gate. Explicitly supplied transforms are customer code. Whole-object
+execution gate. Customer redaction is a customer-run redaction service
+(``contracts/redaction/v1``); Fabric runs no customer code. Whole-object
 HMAC tokens are irreversible scoped pseudonyms, not encrypted originals or a vault.
 Keep credentials out of this public configuration and metadata.
 """
@@ -12,17 +13,37 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import inspect
 import json
+import os
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
+from .redaction import (
+    RedactionClient,
+    RedactionService,
+    Transformation,
+    check_transformations,
+    refuse_removed,
+    resolve_service,
+)
+
 POLICY_SCHEMA_VERSION = "fabric.deployment-policy/v1"
-PRIVACY_MODES = frozenset({"metadata_only", "omit", "redact", "tokenize", "retain_original"})
-PrivacyMode = Literal["metadata_only", "omit", "redact", "tokenize", "retain_original"]
+# masked_only and original_plus_masked: spec 049 §7.7 rule 2 (minor, P0-A).
+PRIVACY_MODES = frozenset({
+    "metadata_only", "omit", "redact", "tokenize", "retain_original", "masked_only",
+    "original_plus_masked",
+})  # fmt: skip
+PrivacyMode = Literal[
+    "metadata_only", "omit", "redact", "tokenize", "retain_original", "masked_only",
+    "original_plus_masked",
+]  # fmt: skip
+# Modes whose stored object is a customer-masked copy (049 §7.7 rule 3);
+# original_plus_masked needs two objects and is not a ContentProtector mode (withheld).
+_MASKING = frozenset({"redact", "masked_only"})
+TOKEN_TRANSFORMATION = "hmac_sha256_whole_object_v1"  # noqa: S105 - a transform id
 ProtectionStatus = Literal["withheld", "redacted", "tokenized", "retained", "unsupported", "lost"]
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 _DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
@@ -58,6 +79,16 @@ def _canonical(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
         "ascii"
     )
+
+
+def token_bytes(key: bytes, scope: Mapping[str, Any]) -> bytes:
+    """The whole-object HMAC token (``fabric.token.v1:`` + hex) of ``scope["data"]``, bound
+    to the policy digest, tenant, workload and role in ``scope``: one construction for the
+    explicit line and the wire PROTECT stage (spec 049 §7.7)."""
+    data = scope["data"]
+    bound = _canonical({k: v for k, v in scope.items() if k != "data"})
+    message = len(bound).to_bytes(4, "big") + bound + len(data).to_bytes(8, "big") + data
+    return ("fabric.token.v1:" + hmac.new(key, message, hashlib.sha256).hexdigest()).encode()
 
 
 class DeploymentPolicy:
@@ -225,36 +256,52 @@ class ProtectedContent:
 
 
 class ContentProtector:
-    """Bounded synchronous protection; transform errors become content loss.
+    """Bounded protection; protection errors become content loss.
 
     Unknown roles are omitted. No transform, hash or payload length is produced
-    for omissions. Redaction needs an explicit per-role customer function; no
-    generic detector or silent fallback is supplied. Token keys remain in memory
-    and must be independently generated with >=32 bytes of entropy.
+    for omissions. Redaction needs an explicit per-role :class:`Transformation`,
+    performed by the customer-run redaction service (``redaction``, else
+    ``FABRIC_REDACTION_ENDPOINT``; ``contracts/redaction/v1``); no generic detector or
+    silent fallback is supplied, and Fabric runs no customer code. Token keys remain
+    in memory and must be independently generated with >=32 bytes of entropy.
+
+    A service call is bounded by the service's timeout and in-flight bound; any failure
+    loses the content (spec 049 §7.7 rule 4: ``protection_failed``), never raw bytes.
+    :meth:`needs_redaction_service` names the roles whose protection the byte recorder
+    defers to its worker (never the caller's thread); :meth:`close` closes the service
+    connections.
     """
 
     def __init__(
         self,
         policy: DeploymentPolicy,
         *,
-        redactors: Mapping[str, Callable[[bytes], bytes]] | None = None,
+        transformations: Mapping[str, Transformation] | None = None,
+        redaction: RedactionService | None = None,
         tokenization_key: bytes | None = None,
         payload_max_bytes: int = 1024 * 1024,
+        redactors: object = None,
     ) -> None:
+        refuse_removed(redactors=redactors)  # module references: removed
         if not isinstance(policy, DeploymentPolicy):
             raise ValueError("content protection requires a DeploymentPolicy")
         _positive(payload_max_bytes, _MAX_PAYLOAD)
         self.policy = policy
         self.payload_max_bytes = payload_max_bytes
-        self._redactors = dict(redactors or {})
+        self._transformations = check_transformations(transformations or {})
         roles = policy.privacy
-        if any(
-            roles.get(role) != "redact" or not callable(fn) or inspect.iscoroutinefunction(fn)
-            for role, fn in self._redactors.items()
-        ):
-            raise ValueError("redactors must match explicitly redacted roles")
-        if any(mode == "redact" and role not in self._redactors for role, mode in roles.items()):
-            raise ValueError("redact mode requires an explicit customer redactor for each role")
+        if any(roles.get(role) not in _MASKING for role in self._transformations):
+            raise ValueError("transformations must match explicitly redacted roles")
+        masking = [role for role, mode in roles.items() if mode in _MASKING]
+        if any(role not in self._transformations for role in masking):
+            raise ValueError(
+                "redact mode requires an explicit customer transformation for each role"
+            )
+        service = resolve_service(redaction, os.environ) if masking else None
+        if masking and service is None:
+            raise ValueError(
+                "masking modes require a redaction service endpoint (FABRIC_REDACTION_ENDPOINT)"
+            )
         if tokenization_key is not None and (
             not isinstance(tokenization_key, bytes) or len(tokenization_key) < _MIN_KEY_BYTES
         ):
@@ -263,6 +310,10 @@ class ContentProtector:
             raise ValueError("tokenize mode requires a caller-supplied key")
         self._key = tokenization_key
         self._modes = dict(roles)
+        self._client = (
+            RedactionClient(service, max_output_bytes=payload_max_bytes)
+            if service is not None else None
+        )  # fmt: skip
         self._scope = {
             "schema_version": "fabric.token/v1",
             "policy_digest": policy.digest,
@@ -270,8 +321,32 @@ class ContentProtector:
             "workload_id": policy.workload_id,
         }
 
+    def close(self) -> None:
+        """Close the redaction service connections; later redactions are lost
+        (``protection_failed``)."""
+        if self._client is not None:
+            self._client.close()
+
+    def stats(self) -> dict[str, int]:
+        """The redaction service counters (never a value)."""
+        if self._client is None:
+            return dict.fromkeys(
+                ("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0
+            )
+        return self._client.stats()
+
+    def needs_redaction_service(self, role: str) -> bool:
+        """Whether protecting ``role`` calls the redaction service (``redact``,
+        ``masked_only``): the byte recorder then protects it on its worker thread."""
+        return isinstance(role, str) and self._modes.get(role) in _MASKING
+
+    def transformation(self, role: str) -> Transformation | None:
+        """The configured transformation of a masking ``role``."""
+        return self._transformations.get(role)
+
     def protect(self, role: str, data: bytes) -> ProtectedContent:  # noqa: PLR0911
-        """No exception text or rejected bytes are retained on failure."""
+        """No exception text or rejected bytes are retained on failure. A masking role
+        calls the redaction service: call this on a worker, never the caller's thread."""
         mode = self._modes.get(role, "omit") if isinstance(role, str) else "omit"
         metadata: dict[str, Any] = {"policy_digest": self.policy.digest}
 
@@ -307,23 +382,24 @@ class ContentProtector:
                     data,
                     "sha256:" + hashlib.sha256(data).hexdigest(),
                 )
-            if mode == "redact":
-                payload = self._redactors[role](data)
-                if not isinstance(payload, bytes):
-                    if inspect.iscoroutine(payload):
-                        payload.close()
-                    return result("unsupported", "unsupported_transform_output")
-                if len(payload) > self.payload_max_bytes:
-                    return result("lost", "protected_payload_too_large")
-                metadata["transform"] = "customer_redactor"
+            if mode in _MASKING:  # masked_only: only the masked copy is stored (049 §7.5)
+                transformation = self._transformations[role]
+                payload = None
+                if self._client is not None:
+                    payload = self._client.transform(
+                        data, transformation=transformation, role=role,
+                        mode="masked_only" if mode == "masked_only" else "redact",
+                    )  # fmt: skip
+                if payload is None:  # failed, timed out, oversized or saturated
+                    return result("lost", "protection_failed")
+                metadata |= {
+                    "transform": "redaction_service",
+                    "transformation_id": transformation.transformation_id,
+                    "transformation_version": transformation.version,
+                }
                 return result("redacted", "redacted_by_customer", payload)
             if mode == "tokenize" and self._key is not None:
-                scope = _canonical({**self._scope, "role": role})
-                message = (
-                    len(scope).to_bytes(4, "big") + scope + len(data).to_bytes(8, "big") + data
-                )
-                token = hmac.new(self._key, message, hashlib.sha256).hexdigest()
-                payload = ("fabric.token.v1:" + token).encode("ascii")
+                payload = token_bytes(self._key, {**self._scope, "role": role, "data": data})
                 if len(payload) > self.payload_max_bytes:
                     return result("lost", "protected_payload_too_large")
                 metadata["transform"] = "hmac_sha256_whole_object_v1"

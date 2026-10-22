@@ -15,6 +15,11 @@ share (spec 048 §6-§7). The stitch-digest fixture pins the ``fabric.stitch/v1`
 that ``fabric.reconstruct`` derives offline from stored bytes; the golden
 fixtures pin the exact descriptor bytes and keys a content writer (the
 Fabric Node's ``fabriccontent`` exporter or the SDK local store) produces.
+Spec 049 P0 adds the run-marker rules (``none`` stands alone among
+predecessors, a seal never ends after its source's last position, branch
+tokens make the run resumable), checks that heartbeat spans and spool markers
+define every run-marker key identically, binds a records-input spool entry to
+its source, and closes the generated ``fabric.capture_manifest`` span form.
 This validator does not claim any runtime currently emits these documents.
 """
 
@@ -32,18 +37,37 @@ from typing import Any, Mapping, Sequence
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.0.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.2.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
     "fabric.run-reconstruction/v1": "schema/run-reconstruction-v1.schema.json",
     "fabric.wire-spool-record/v1": "schema/spool-record-v1.schema.json",
     "fabric.content-log-record/v1": "schema/content-log-record-v1.schema.json",
+    "fabric.capture-manifest-record/v1": "schema/capture-manifest-record-v1.schema.json",
 }
+# Spec 049 run-marker keys: identical JSON definitions on fabric.loss-record/v1
+# heartbeats and on spool marker records.
+_MARKER_KEYS = (
+    "segment_id",
+    "predecessors",
+    "resumable",
+    "open_deadline_s",
+    "declared_branches",
+    "branch_ids",
+    "terminal",
+    "seal",
+    "manifest_id",
+    "manifest_digest",
+    "manifest_seq",
+    "scope_status",
+)
+_INT64_MAX = 9223372036854775807
 _EXPECTATIONS = frozenset(
     {"schema", "valid", "invalid", "digests", "golden", "vectors"}
 )
 _RUN_MARKERS = frozenset({"run_start", "run_end"})
+_SCOPED_MARKERS = frozenset({"run_start", "run_end", "segment_seal"})
 _COMPLETE = "complete_for_declared_scope"
 _COMPLETE_OBSERVED = "complete_for_observed_scopes"
 _COMPLETE_VERDICTS = frozenset({_COMPLETE, _COMPLETE_OBSERVED})
@@ -111,9 +135,9 @@ def _schema_error(document: Mapping[str, Any], schema: Mapping[str, Any]) -> Non
 
 
 def _validate_exchange(document: Mapping[str, Any]) -> None:
-    bodies = [document["request"]] + (
-        [document["response"]] if "response" in document else []
-    )
+    # Spec 049 P0-A: a side without a stored object (content disabled,
+    # withheld, omitted) has no body.
+    bodies = [document[side] for side in ("request", "response") if side in document]
     # object_id is closed to a uuid4 by the schema: no path, URI or bucket.
     stored = [("object_id" in body) for body in bodies]
     status = document["store_status"]
@@ -139,14 +163,51 @@ def _validate_exchange(document: Mapping[str, Any]) -> None:
 
 def _validate_loss(document: Mapping[str, Any]) -> None:
     if document["kind"] != "loss":
-        if "scope_id" in document and document["heartbeat_kind"] not in _RUN_MARKERS:
+        if "scope_id" in document and document["heartbeat_kind"] not in _SCOPED_MARKERS:
             raise CaptureContractError(
                 "capture.heartbeat.scope",
                 "$.scope_id",
-                "only run_start / run_end markers carry a scope_id",
+                "only run_start / run_end / segment_seal markers carry a scope_id",
             )
+        _check_marker(document, document["last_sequence"], "$")
         return
     _check_range(document)
+
+
+def _check_marker(marker: Mapping[str, Any], last_sequence: int, path: str) -> None:
+    """Spec 049 run-marker rules a schema cannot express (sections 2.10, 2.12)."""
+
+    predecessors = marker.get("predecessors", [])
+    if "none" in predecessors and predecessors != ["none"]:
+        raise CaptureContractError(
+            "capture.marker.predecessors",
+            f"{path}.predecessors",
+            "'none' marks the run's root and stands alone",
+        )
+    if len(set(predecessors)) != len(predecessors) or any(
+        entry != "none" and int(entry.split("/")[2]) > _INT64_MAX
+        for entry in predecessors
+    ):
+        raise CaptureContractError(
+            "capture.marker.predecessors",
+            f"{path}.predecessors",
+            "entries are distinct and epochs fit 63 bits",
+        )
+    seal = marker.get("seal")
+    if seal is None:
+        return
+    if seal["last_sequence"] > last_sequence:
+        raise CaptureContractError(
+            "capture.marker.seal",
+            f"{path}.seal.last_sequence",
+            "a segment cannot end after the source's last allocated position",
+        )
+    if seal.get("branch_ids") and marker.get("resumable") is not True:
+        raise CaptureContractError(
+            "capture.marker.seal",
+            f"{path}.seal.branch_ids",
+            "issuing branch tokens makes the run resumable (resumable=true on the seal)",
+        )
 
 
 def _check_range(document: Mapping[str, Any]) -> None:
@@ -159,43 +220,191 @@ def _check_range(document: Mapping[str, Any]) -> None:
         )
 
 
-def _check_descriptor(descriptor: Mapping[str, Any], path: str) -> None:
-    """Representation, status, transformations and source digest must agree (spec 048 §3)."""
+_ROLE_TABLE = Path("contracts/coverage/v1/registry/content-roles-v1.json")
+_CAP_BYTES = {"64 KiB": 65536, "256 KiB": 262144, "1 MiB": 1 << 20, "4 MiB": 4 << 20}
+# Spec 049 §7.4: max_body_bytes is the deployment's value, never above 63 MiB
+# in node mode; the contract bound is that ceiling.
+_NODE_MAX_BODY_BYTES = 63 << 20
+_POLICY_FIELDS = (
+    "privacy_mode",
+    "policy_id",
+    "policy_version",
+    "policy_digest",
+    "protection_status",
+)
+_NO_LENGTH_MODES = frozenset({"omit", "redact", "tokenize", "masked_only"})
+_BYTE_MODES = frozenset(
+    {"retain_original", "redact", "tokenize", "masked_only", "original_plus_masked"}
+)
 
-    truncated = descriptor["representation"] == "truncated"
-    if truncated:
-        consistent = (
-            descriptor["status"] == "truncated"
-            and descriptor["transformations"] == ["truncate"]
-            and "source_sha256" not in descriptor
-            and descriptor["source_byte_length"] > descriptor["stored_byte_length"]
+
+def _roles() -> dict[str, Mapping[str, Any]]:
+    root = Path(__file__).resolve().parents[2]
+    table = json.loads((root / _ROLE_TABLE).read_text(encoding="utf-8"))
+    return {row["role"]: row for row in table["roles"]}
+
+
+def _media_allowed(patterns: Sequence[str], media_type: str) -> bool:
+    return any(
+        p == "*"
+        or p == media_type
+        or p.endswith("/*")
+        and media_type.startswith(p[:-1])
+        for p in patterns
+    )
+
+
+def _combination_ok(d: Mapping[str, Any]) -> bool:
+    """Status, representation, transformations and digests (spec 048 §3, 049 §4.3, §7.5)."""
+    status, representation, transformations = (
+        d["status"],
+        d["representation"],
+        d["transformations"],
+    )
+    has_stored, has_source, has_source_sha = (
+        "stored_byte_length" in d,
+        "source_byte_length" in d,
+        "source_sha256" in d,
+    )
+    if status == "not_captured":
+        return (
+            representation == "unavailable"
+            and transformations == []
+            and not has_stored
+            and "status_reason" in d
         )
-    else:
-        consistent = (
-            descriptor["status"] == "stored"
-            and descriptor["transformations"] == []
-            and descriptor.get("source_sha256") == descriptor["stored_sha256"]
-            and descriptor["source_byte_length"] == descriptor["stored_byte_length"]
+    if status == "stored":
+        if representation in {"exact", "partial"}:
+            return (
+                transformations == []
+                and d.get("source_sha256") == d["stored_sha256"]
+                and d.get("source_byte_length") == d["stored_byte_length"]
+                and (
+                    representation == "exact" or d["role"] == "model.exchange.response"
+                )
+            )
+        return (
+            representation == "split"
+            and transformations == ["extract_parts"]
+            and has_source_sha
         )
-    if (
-        descriptor["representation"] == "partial"
-        and descriptor["role"] != "model.exchange.response"
-    ):
-        consistent = False
-    if not consistent:
-        raise CaptureContractError(
-            "capture.content.representation",
-            path,
-            "representation, status, transformations and source fields disagree",
+    if status == "truncated":
+        return (
+            representation == "truncated"
+            and transformations == ["truncate"]
+            and not has_source_sha
+            and has_source
+            and d["source_byte_length"] > d["stored_byte_length"]
         )
+    if status == "redacted" and not (has_source or has_source_sha):
+        kind = {"redacted": "redact", "tokenized": "tokenize"}.get(representation)
+        return kind is not None and transformations in ([kind], ["extract_parts", kind])
+    return False
+
+
+def _protection_ok(d: Mapping[str, Any]) -> bool:
+    """The policy block against the outcome (spec 049 §7.5, §7.7)."""
+    status, reason = d["status"], d.get("status_reason")
+    if not any(key in d for key in _POLICY_FIELDS):
+        return "transformation_id" not in d and status != "redacted"
+    mode, protection = d["privacy_mode"], d["protection_status"]
+    has_source, has_source_sha = "source_byte_length" in d, "source_sha256" in d
+    retains = mode in {"retain_original", "original_plus_masked"}
+    if has_source and mode in _NO_LENGTH_MODES:
+        return False
+    if status == "not_captured":
+        if protection != "withheld":
+            return False
+        if reason == "protection_failed":
+            return mode in _BYTE_MODES and not has_source_sha
+        if reason == "privacy_policy":
+            # Withheld by the mode itself; under redact or masked_only only a binary
+            # part no part transformation applies to (spec 049 §7.5).
+            binary_part = d["role"] == "model.exchange.part" and mode in {
+                "redact",
+                "masked_only",
+            }
+            return (
+                mode in {"metadata_only", "omit"} or binary_part
+            ) and not has_source_sha
+        return retains or not has_source_sha
+    if status in {"stored", "truncated"}:
+        return protection == "retained" and retains
+    if d["representation"] == "tokenized":
+        return mode == "tokenize" and protection == "tokenized"
+    if protection != "redacted" or mode not in {
+        "redact",
+        "masked_only",
+        "original_plus_masked",
+    }:
+        return False
+    return mode != "original_plus_masked" or any(
+        link["relation"] == "derived_from" for link in d.get("links", [])
+    )
+
+
+def _links_ok(d: Mapping[str, Any]) -> bool:
+    links = d.get("links", [])
+    part_of = [link for link in links if link["relation"] == "part_of"]
+    derived = [link for link in links if link["relation"] == "derived_from"]
+    if any(link["object_id"] == d["object_id"] for link in links) or len(derived) > 1:
+        return False
+    for link in part_of:
+        if "byte_range" not in link:
+            continue
+        start, end = link["byte_range"]
+        length = d.get("stored_byte_length", d.get("source_byte_length"))
+        if (
+            d["status"] == "redacted"
+            or start > end
+            or (length is not None and end - start != length)
+        ):
+            return False
+    return len(part_of) == (1 if d["role"] == "model.exchange.part" else 0)
+
+
+def _role_ok(d: Mapping[str, Any]) -> bool:
+    row = _roles().get(d["role"])
+    if row is None:
+        return False
+    cap = _CAP_BYTES.get(row["cap"], _NODE_MAX_BODY_BYTES)
+    return (
+        d["boundary"] in row["boundary"]
+        and d["provenance"] in row["provenance"]
+        and _media_allowed(row["media_types"], d["media_type"])
+        and d.get("stored_byte_length", 0) <= cap
+    )
+
+
+def _check_descriptor(descriptor: Mapping[str, Any], path: str) -> None:
+    """The fabriccontent exporter's closed descriptor rules (spec 049 §4.3), mirrored.
+
+    The Node's parser (components/otel-collector-fabric/exporter/
+    fabriccontentexporter/record.go) applies the same rules; its tests read
+    the content-log-record fixtures of this family.
+    """
+
+    checks = (
+        ("capture.content.representation", _combination_ok),
+        ("capture.content.protection", _protection_ok),
+        ("capture.content.links", _links_ok),
+        ("capture.content.role", _role_ok),
+    )
+    for code, check in checks:
+        if not check(descriptor):
+            raise CaptureContractError(
+                code,
+                path,
+                "descriptor fields disagree with the content-v2 rules of spec 049 §4.3",
+            )
 
 
 def _validate_content(document: Mapping[str, Any]) -> None:
     attributes, body = document["attributes"], document["body"]
-    if (
-        body["byte_length"] != attributes["stored_byte_length"]
-        or body["sha256"] != attributes["stored_sha256"]
-    ):
+    empty = "sha256:" + hashlib.sha256(b"").hexdigest()
+    if body["byte_length"] != attributes.get("stored_byte_length", 0) or body[
+        "sha256"
+    ] != attributes.get("stored_sha256", empty):
         raise CaptureContractError(
             "capture.content.digest",
             "$.body",
@@ -213,6 +422,24 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
     if kind == "loss":
         _check_range(document["loss"])
         return
+    if kind == "marker":
+        _check_marker(
+            document["marker"], document["marker"]["last_sequence"], "$.marker"
+        )
+        return
+    if kind == "record":
+        span, source = document["span"], document["source"]
+        attrs = span["attributes"]
+        if (attrs["fabric.source_id"], attrs["fabric.source.epoch"]) != (
+            source["source_id"],
+            source["source_epoch"],
+        ):
+            raise _spool_inconsistent(
+                "$.span.attributes", "span source differs from the record source"
+            )
+        if span["end_time_unix_nano"] < span["start_time_unix_nano"]:
+            raise _spool_inconsistent("$.span", "span ends before it starts")
+        return
     if kind != "exchange":
         return
     span, source = document["span"], document["source"]
@@ -226,7 +453,8 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
         )
     if span["end_time_unix_nano"] < span["start_time_unix_nano"]:
         raise _spool_inconsistent("$.span", "span ends before it starts")
-    offset, roles = 0, set()
+    offset, primaries, ids = 0, set(), set()
+    descriptors = [body["descriptor"] for body in document["bodies"]]
     for index, body in enumerate(document["bodies"]):
         where = f"$.bodies[{index}]"
         descriptor = body["descriptor"]
@@ -237,23 +465,43 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
             "source_id": attrs["fabric.source_id"],
             "source_epoch": attrs["fabric.source.epoch"],
             "source_sequence": attrs["fabric.source.sequence"],
-            "stored_byte_length": body["length"],
         }
-        if body["offset"] != offset or any(
-            descriptor[k] != v for k, v in expected.items()
+        # A descriptor-only (not_captured) body occupies no blob bytes.
+        if (
+            body["offset"] != offset
+            or body["length"] != descriptor.get("stored_byte_length", 0)
+            or any(descriptor[k] != v for k, v in expected.items())
         ):
             raise _spool_inconsistent(
                 where, "bodies must be contiguous and match the span"
             )
-        role = descriptor["role"]
-        if role in roles or attrs.get(_ROLE_REF[role]) != descriptor["object_id"]:
-            raise _spool_inconsistent(
-                where, "one body per role, named by the span's ref"
-            )
-        roles.add(role)
+        if descriptor["object_id"] in ids:
+            raise _spool_inconsistent(where, "object ids are unique within a record")
+        ids.add(descriptor["object_id"])
         offset += body["length"]
+    by_id = {d["object_id"]: d for d in descriptors}
+    for index, descriptor in enumerate(descriptors):
+        where = f"$.bodies[{index}]"
+        targets = [link["object_id"] for link in descriptor.get("links", [])]
+        if any(target not in by_id for target in targets):
+            raise _spool_inconsistent(
+                where, "a part or review copy links a body of this record"
+            )
+        role = descriptor["role"]
+        # Spec 049 §7.5: only the primary object of a side (no link: the whole
+        # side or its split skeleton) is named by the span's ref; parts link
+        # part_of, review copies derived_from.
+        if role in _ROLE_REF and not targets:
+            if (
+                role in primaries
+                or attrs.get(_ROLE_REF[role]) != descriptor["object_id"]
+            ):
+                raise _spool_inconsistent(
+                    where, "one primary body per side, named by the span's ref"
+                )
+            primaries.add(role)
     for role, key in _ROLE_REF.items():
-        if key in attrs and role not in roles:
+        if key in attrs and role not in primaries:
             raise _spool_inconsistent("$.bodies", f"{key} names no spooled body")
 
 
@@ -558,10 +806,15 @@ def validate_document(
         _validate_loss(document)
     elif version == "fabric.wire-spool-record/v1":
         _validate_spool(document)
+        marker = document.get("marker", {})
+        if marker.get("kind") == "manifest":
+            _check_manifest_marker(marker, schemas)
     elif version == "fabric.content-log-record/v1":
         _validate_content(document)
-    else:
+    elif version == "fabric.run-reconstruction/v1":
         _validate_reconstruction(document)
+    # fabric.capture-manifest-record/v1 is closed by its generated schema; its
+    # semantics are the coverage manifest's (validate_coverage_contracts.py).
 
 
 def validate_digest_fixture(document: Mapping[str, Any], path: Path) -> None:
@@ -850,6 +1103,52 @@ def _pinned_records(root: Path) -> list[dict[str, Any]]:
     return records
 
 
+def _check_manifest_marker(
+    marker: Mapping[str, Any], schemas: Mapping[str, Mapping[str, Any]]
+) -> None:
+    """A spooled manifest carries a valid manifest span and no position (spec 049 §2.8)."""
+
+    record = {
+        "schema_version": "fabric.capture-manifest-record/v1",
+        "name": "fabric.capture_manifest",
+        "attributes": marker["manifest"],
+    }
+    try:
+        _schema_error(record, schemas[SCHEMAS["fabric.capture-manifest-record/v1"]])
+    except CaptureContractError as exc:
+        raise CaptureContractError(
+            "capture.marker.manifest", "$.marker.manifest", exc.message
+        ) from exc
+    if (
+        marker["last_sequence"]
+        != marker["manifest"]["fabric.manifest.after_source_sequence"]
+    ):
+        raise CaptureContractError(
+            "capture.marker.manifest",
+            "$.marker.last_sequence",
+            "a manifest marker's last_sequence is the manifest's after_source_sequence",
+        )
+
+
+def _check_marker_definitions(schemas: Mapping[str, Mapping[str, Any]]) -> None:
+    """Heartbeat spans and spool markers define every run-marker key identically."""
+
+    heartbeat = schemas[SCHEMAS["fabric.loss-record/v1"]]["oneOf"][1]["properties"]
+    spool = schemas[SCHEMAS["fabric.wire-spool-record/v1"]]["oneOf"]
+    marker = next(
+        branch["properties"]["marker"]["properties"]
+        for branch in spool
+        if branch["properties"]["record_kind"] == {"const": "marker"}
+    )
+    for key in _MARKER_KEYS:
+        if key not in heartbeat or heartbeat.get(key) != marker.get(key):
+            raise CaptureContractError(
+                "capture.marker.definition",
+                key,
+                "run-marker key differs between loss-record and spool-record",
+            )
+
+
 def validate_capture_contracts(repo_root: Path) -> list[str]:
     """Validate every pinned capture-v1 artifact and negative fixture."""
 
@@ -866,6 +1165,7 @@ def validate_capture_contracts(repo_root: Path) -> list[str]:
         raise CaptureContractError(
             "capture.manifest.schemas", str(root), f"missing {missing}"
         )
+    _check_marker_definitions(schemas)
     validated: list[str] = []
     for record in records:
         path = root / record["path"]

@@ -11,8 +11,17 @@ deliver the record.
 - retrieval and memory events using hashes instead of raw content;
 - side effects, checkpoints, delegation, MCP inventory, skills, hooks, file
   access and generic interactions;
-- OpenTelemetry propagation and optional framework/provider instrumentation;
+- zero-code capture of model calls at the httpx, httpx2 and aiohttp clients
+  (`fabric.wire`), the PROTECT stage before the durable spool, and delivery
+  to a Fabric Node;
+- exact-byte recording at caller-chosen boundaries (`ByteEvidenceRecorder`,
+  `CallRecorder`, byte-boundary adapters);
+- the offline verifiers `fabric.reconstruct` and qualified-run mode;
+- OpenTelemetry propagation;
 - customer-controlled content references and integrity metadata.
+
+Framework adapters and provider auto-instrumentation are not part of the
+package.
 
 ## Not part of recorder v1
 

@@ -44,16 +44,19 @@ AGENT = textwrap.dedent(
     handle = wire.current_handle()
     assert handle is not None, "autoload did not install"
     sender = handle._tee.pipeline._sender
-    real, seen, block = sender.spool_exchange, [0], int(os.environ["BLOCK_AT"])
+    real, seen, block = sender.spool_exchanges, [0], int(os.environ["BLOCK_AT"])
 
-    def spool_exchange(*args, **kwargs):
-        seen[0] += 1
-        if seen[0] == block:  # the call has returned to the host; nothing is on disk yet
-            print("WINDOW", flush=True)
-            time.sleep(600)
-        return real(*args, **kwargs)
+    def spool_exchanges(items):  # one by one, so the window opens at exactly one exchange
+        outcomes = []
+        for item in items:
+            seen[0] += 1
+            if seen[0] == block:  # the call has returned to the host; nothing is on disk yet
+                print("WINDOW", flush=True)
+                time.sleep(600)
+            outcomes += real([item])
+        return outcomes
 
-    sender.spool_exchange = spool_exchange
+    sender.spool_exchanges = spool_exchanges
     reply = (b'{"id":"r","object":"chat.completion","model":"gpt-4o","choices":[{"index":0,'
              b'"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}')
     respond = lambda request: httpx.Response(200, content=reply,

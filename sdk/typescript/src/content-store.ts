@@ -142,7 +142,9 @@ function checkedEvidenceObject(
   const derivative =
     descriptor["status"] === "redacted" &&
     (representation === "redacted" || representation === "tokenized") &&
-    descriptor["privacy_mode"] === transform &&
+    // masked_only (spec 049 §7.7) stores a customer-masked copy, recorded as redacted.
+    (descriptor["privacy_mode"] === transform ||
+      (transform === "redact" && descriptor["privacy_mode"] === "masked_only")) &&
     descriptor["protection_status"] === representation &&
     policyIdentityValid &&
     !Object.hasOwn(descriptor, "source_sha256") &&

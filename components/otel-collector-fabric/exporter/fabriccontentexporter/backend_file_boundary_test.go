@@ -70,7 +70,7 @@ func TestFileBackend_RestartNeverLaundersAnUnfinishedRootBarrier(t *testing.T) {
 		t.Fatalf("the content root was not created: %v", err)
 	}
 	for attempt := range 2 { // restarts while the parent still refuses
-		_, err := startFileBackend(root, "")
+		_, err := startFileBackend(root, "", nil)
 		var se *storeError
 		if err == nil || !errors.As(err, &se) || strings.Contains(err.Error(), base) {
 			t.Fatalf("restart %d: want a retryable storeError without the path, got %v", attempt, err)
@@ -89,7 +89,7 @@ func TestFileBackend_RestartNeverLaundersAnUnfinishedRootBarrier(t *testing.T) {
 	if err := os.Chmod(base, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	b, err := startFileBackend(root, "")
+	b, err := startFileBackend(root, "", nil)
 	if err != nil {
 		t.Fatalf("start once the parent can be fsync'd: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestFileBackend_RestartNeverLaundersAnUnfinishedRootBarrier(t *testing.T) {
 	}
 	// Recorded: the same refusal later is the operator's boundary.
 	unreadableParent(t, base)
-	b, err = startFileBackend(root, "")
+	b, err = startFileBackend(root, "", nil)
 	if err != nil {
 		t.Fatalf("restart with a recorded walk: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestFileBackend_RestartNeverLaundersAnUnfinishedRootBarrier(t *testing.T) {
 func TestFileBackend_RecreatedRootLosesTheRecord(t *testing.T) {
 	base := physicalTempDir(t)
 	root := filepath.Join(base, "content")
-	if _, err := startFileBackend(root, ""); err != nil {
+	if _, err := startFileBackend(root, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	key := filepath.ToSlash(filepath.Join(root, "tenant", "evidence", "0b1c2d3e-0000-4000-8000-000000000022"))
@@ -133,7 +133,7 @@ func TestFileBackend_RecreatedRootLosesTheRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	unreadableParent(t, base)
-	if _, err := startFileBackend(root, ""); err == nil {
+	if _, err := startFileBackend(root, "", nil); err == nil {
 		t.Fatal("a recreated root inherited the old root's record")
 	}
 }
@@ -148,16 +148,16 @@ func TestFileBackend_ConfiguredDurableBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	unreadableParent(t, base)
-	if _, err := startFileBackend(root, ""); err == nil {
+	if _, err := startFileBackend(root, "", nil); err == nil {
 		t.Fatal("without a boundary the unreadable parent must refuse")
 	}
 	// The boundary is the unreadable parent: it is still fsync'd, and refuses.
-	if _, err := startFileBackend(root, base); err == nil {
+	if _, err := startFileBackend(root, base, nil); err == nil {
 		t.Fatal("a boundary is fsync'd itself; an unreadable one must refuse")
 	}
 	fail := false
 	synced := syncLog(t, "", &fail)
-	b, err := startFileBackend(root, root)
+	b, err := startFileBackend(root, root, nil)
 	if err != nil {
 		t.Fatalf("start with the root as the boundary: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestFileBackend_RootMarkerIsNeverFollowed(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = startFileBackend(root, "")
+			_, err = startFileBackend(root, "", nil)
 			var se *storeError
 			if err == nil || !errors.As(err, &se) {
 				t.Fatalf("want a retryable layout error, got %v", err)
@@ -216,7 +216,7 @@ func TestFileBackend_RootMarkerIsNeverFollowed(t *testing.T) {
 // The marker is private and is never mistaken for a temp file.
 func TestFileBackend_RootMarkerIsPrivateAndSurvivesTheSweep(t *testing.T) {
 	root := physicalTempDir(t)
-	if _, err := startFileBackend(root, ""); err != nil {
+	if _, err := startFileBackend(root, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Lstat(filepath.Join(root, rootMarkerName))
@@ -226,7 +226,7 @@ func TestFileBackend_RootMarkerIsPrivateAndSurvivesTheSweep(t *testing.T) {
 	if isTempName(rootMarkerName) {
 		t.Fatal("the sweep would remove the marker")
 	}
-	if _, err := startFileBackend(root, ""); err != nil {
+	if _, err := startFileBackend(root, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	if !markerPresent(t, root) {
@@ -269,7 +269,7 @@ func TestFileBackend_SymlinkedAncestorWalksThePhysicalParent(t *testing.T) {
 		t.Fatal("put through the alias acknowledged while the physical parent cannot be fsync'd")
 	}
 	for attempt := range 2 {
-		if _, err := startFileBackend(root, ""); err == nil {
+		if _, err := startFileBackend(root, "", nil); err == nil {
 			t.Fatalf("restart %d: Start accepted an unfinished physical barrier", attempt)
 		}
 		if err := newFileBackend(root).put(context.Background(), key, body); err == nil {
@@ -287,7 +287,7 @@ func TestFileBackend_SymlinkedAncestorWalksThePhysicalParent(t *testing.T) {
 	}
 	fail := false
 	synced := syncLog(t, "", &fail)
-	b, err := startFileBackend(root, "")
+	b, err := startFileBackend(root, "", nil)
 	if err != nil {
 		t.Fatalf("start once the physical parent can be fsync'd: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestFileBackend_StaleMarkerRequiresAFreshPhysicalWalk(t *testing.T) {
 		t.Fatal("a v1 marker was taken as a record of a physical walk")
 	}
 	unreadableParent(t, physical)
-	if _, err := startFileBackend(root, ""); err == nil {
+	if _, err := startFileBackend(root, "", nil); err == nil {
 		t.Fatal("a v1 marker let Start treat the refused physical parent as the boundary")
 	}
 	key := filepath.ToSlash(filepath.Join(root, "tenant", "evidence", "0b1c2d3e-0000-4000-8000-000000000031"))
@@ -328,7 +328,7 @@ func TestFileBackend_StaleMarkerRequiresAFreshPhysicalWalk(t *testing.T) {
 	if err := os.Chmod(physical, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := startFileBackend(root, ""); err != nil {
+	if _, err := startFileBackend(root, "", nil); err != nil {
 		t.Fatalf("start once the physical parent can be fsync'd: %v", err)
 	}
 	got, err := os.ReadFile(marker)
@@ -337,7 +337,7 @@ func TestFileBackend_StaleMarkerRequiresAFreshPhysicalWalk(t *testing.T) {
 	}
 	// Now recorded: the same refusal is the boundary.
 	unreadableParent(t, physical)
-	if _, err := startFileBackend(root, ""); err != nil {
+	if _, err := startFileBackend(root, "", nil); err != nil {
 		t.Fatalf("restart with a current record: %v", err)
 	}
 }
@@ -349,17 +349,17 @@ func TestFileBackend_BoundaryMustBeAPhysicalAncestor(t *testing.T) {
 	physical, root := symlinkedRoot(t)
 	alias := filepath.Dir(root)
 	base := filepath.Dir(physical)
-	_, err := startFileBackend(root, base) // an ancestor of both spellings
+	_, err := startFileBackend(root, base, nil) // an ancestor of both spellings
 	if err != nil {
 		t.Fatalf("base is a physical ancestor too: %v", err)
 	}
 	if err := (FileConfig{Directory: root, DurableBoundary: alias}).validate(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := startFileBackend(root, alias); err != nil {
+	if _, err := startFileBackend(root, alias, nil); err != nil {
 		t.Fatalf("the alias resolves to the root's physical parent: %v", err)
 	}
-	if _, err := startFileBackend(root, filepath.Join(physical, "a")); err != nil {
+	if _, err := startFileBackend(root, filepath.Join(physical, "a"), nil); err != nil {
 		t.Fatalf("the physical spelling of the root's parent: %v", err)
 	}
 	// elsewhere/link -> physical/a: lexically below elsewhere, physically not.
@@ -374,7 +374,7 @@ func TestFileBackend_BoundaryMustBeAPhysicalAncestor(t *testing.T) {
 	if err := (FileConfig{Directory: viaLink, DurableBoundary: elsewhere}).validate(); err != nil {
 		t.Fatal(err)
 	}
-	_, err = startFileBackend(viaLink, elsewhere)
+	_, err = startFileBackend(viaLink, elsewhere, nil)
 	if err == nil || !strings.Contains(err.Error(), "durable_boundary") || strings.Contains(err.Error(), base) {
 		t.Fatalf("want a path-free durable_boundary configuration error, got %v", err)
 	}

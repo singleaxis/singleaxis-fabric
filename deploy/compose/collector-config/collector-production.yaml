@@ -11,6 +11,12 @@
 #   * Egress TLS verification stays on (no insecure / insecure_skip_verify).
 #   * OTLP and health ports publish on 127.0.0.1 unless FABRIC_BIND_ADDR is
 #     deliberately widened.
+#   * Production profile (spec 049 §7.3, §7.9): every agent batch is bound to
+#     one tenant and source. fabricguard refuses a batch whose spans name
+#     another tenant or source (FABRIC_TENANT_ID, FABRIC_SOURCE_ID: the wire
+#     form of the agents' FABRIC_SOURCE_ID, s-<32 hex> under the default
+#     pseudonymous labels) and stamps fabric.source.authenticated=true on the
+#     rest. The bearer token above is that source's single credential.
 #
 # Ingress receiver TLS is OPTIONAL-BUT-SUPPORTED: the `tls:` stanzas below are
 # commented out. Uncomment them (and drop cert/key into FABRIC_INGRESS_TLS_DIR,
@@ -109,6 +115,16 @@ processors:
     # as s-/svc- pseudonyms. Set `clear` only for agents that run with
     # FABRIC_WIRE_LABELS=clear (you guarantee the labels hold no personal data).
     capture_labels: pseudonymous
+    # Spec 049 §2.9 rule 7: externally meaningful ids only in their keyed
+    # prefix form (fabric.session_id as sess-<32 hex>). Set `clear` only for
+    # agents that run with FABRIC_IDENTITY_MODE=clear.
+    identity_mode: pseudonymous
+    # Spec 049 §7.3/§7.9: the production profile rejects unauthenticated
+    # sources; fabric-gate enforces the bound single-token ingress.
+    profile: production
+    evidence_source_binding:
+      tenant_id: ${env:FABRIC_TENANT_ID}
+      source_id: ${env:FABRIC_SOURCE_ID}
 
 exporters:
   otlp_http/fabric:

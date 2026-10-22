@@ -1,0 +1,33 @@
+{
+  "schema_version": "fabric.content-log-record/v1",
+  "body": {
+    "byte_length": 0,
+    "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "attributes": {
+    "event_class": "content",
+    "schema_version": "fabric.content-object/v2",
+    "object_id": "8c3d4e5f-6a7b-4c8d-ae9f-1a2b3c4d5e6f",
+    "tenant_id": "tenant-a",
+    "role": "model.exchange.request",
+    "media_type": "application/json",
+    "content_encoding": "identity",
+    "representation": "unavailable",
+    "transformations": [],
+    "provenance": "protocol",
+    "boundary": "provider_bound",
+    "status": "not_captured",
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000,
+    "source_sequence": 1,
+    "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+    "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+    "captured_at": "2026-10-07T00:00:01.120000+00:00",
+    "status_reason": "protection_failed",
+    "privacy_mode": "redact",
+    "protection_status": "withheld",
+    "policy_id": "acme-capture",
+    "policy_version": 3,
+    "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+  }
+}

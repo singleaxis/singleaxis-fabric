@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 from contracts.validate_capture_contracts import (  # noqa: E402
     SCHEMAS,
     CaptureContractError,
+    _check_marker_definitions,
     validate_capture_contracts,
     validate_digest_fixture,
     validate_document,
@@ -45,9 +46,26 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 33
+    assert len(validated) == 80
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
+
+
+def test_report_records_telemetry_origin_and_source_authentication() -> None:
+    """Spec 049 §7.9, decision 20: the report says where its telemetry came from and
+    names an unauthenticated production record as its own gap type."""
+    schema = _json("schema/run-reconstruction-v1.schema.json")
+    inputs = schema["properties"]["inputs"]["properties"]
+    assert inputs["telemetry_origin"]["enum"] == ["trusted_readback", "imported"]
+    assert inputs["profile"]["enum"] == ["local", "production"]
+    assert "source_unauthenticated" in schema["$defs"]["gapType"]["enum"]
+    report = _json("fixtures/valid/run-reconstruction-production-imported.json")
+    (gap,) = [
+        g
+        for g in report["runs"][0]["gaps"]
+        if g["gap_type"] == "source_unauthenticated"
+    ]
+    assert gap["effect"] == "unverified" and gap["reason"] == "imported_telemetry"
 
 
 def test_exchange_record_carries_no_content_or_stitching_keys() -> None:
@@ -294,6 +312,21 @@ CONTENT_ATTRIBUTES = {
     "run_id",
     "operation_id",
     "captured_at",
+    # spec 049 §4.3 rule 6 (P0-A)
+    "status_reason",
+    "observed_at",
+    "workload_id",
+    "attempt_id",
+    "stream_id",
+    "chunk_index",
+    "privacy_mode",
+    "policy_id",
+    "policy_version",
+    "policy_digest",
+    "protection_status",
+    "transformation_id",
+    "transformation_version",
+    "links",
 }
 
 
@@ -305,11 +338,13 @@ def test_spool_and_content_share_one_descriptor_definition() -> None:
     assert (
         "ref" not in content["properties"] and "encoding" not in content["properties"]
     )
+    # Receiver-owned: never part of what an agent sends (spec 049 §4.3 rule 6).
+    assert "source_authenticated" not in content["properties"]
 
 
 def test_content_log_record_attribute_set_is_closed() -> None:
     document = _json("fixtures/valid/content-log-record-request.json")
-    assert set(document["attributes"]) == CONTENT_ATTRIBUTES
+    assert set(document["attributes"]) <= CONTENT_ATTRIBUTES
     for key in ("ref", "content", "path", "bucket"):
         broken = copy.deepcopy(document)
         broken["attributes"][key] = "x"
@@ -436,3 +471,160 @@ def test_scoped_exchange_must_lie_in_its_scope_window() -> None:
         "8c1f0e2d-4a5b-4c6d-9e7f-2a3b4c5d6e7f"
     )
     _assert_error(document, "capture.reconstruction.scope")
+
+
+# ---------------------------------------------------------------- spec 049 P0 (capture/v1 1.1.0)
+def test_shared_allocator_spool_kinds_and_inputs() -> None:
+    schema = _json("schema/spool-record-v1.schema.json")
+    assert schema["properties"]["record_kind"]["enum"] == [
+        "exchange",
+        "record",
+        "loss",
+        "marker",
+    ]
+    record = _json("fixtures/valid/spool-record-record.json")
+    attributes = record["span"]["attributes"]
+    assert attributes["fabric.capture.input"] == "records"
+    exchange = _json("fixtures/valid/spool-record-exchange-shared-allocator.json")
+    # One allocator per (source, epoch): both inputs take positions from one counter.
+    assert exchange["source"] == record["source"]
+    assert (
+        attributes["fabric.source.sequence"]
+        == exchange["span"]["attributes"]["fabric.source.sequence"] + 1
+    )
+    for key in ("fabric.source.sequence", "fabric.event_id", "fabric.attempt.uid"):
+        broken = copy.deepcopy(record)
+        del broken["span"]["attributes"][key]
+        _assert_error(broken, "capture.schema")
+
+
+def test_records_input_span_never_carries_content_or_the_node_stamp() -> None:
+    record = _json("fixtures/valid/spool-record-record.json")
+    for key, value in (
+        ("fabric.source.authenticated", True),
+        ("fabric.tool.arguments", {"query": "Jane Doe"}),
+    ):
+        broken = copy.deepcopy(record)
+        broken["span"]["attributes"][key] = value
+        _assert_error(broken, "capture.schema")
+
+
+def test_segment_seal_is_a_heartbeat_kind_with_its_own_keys() -> None:
+    seal = _json("fixtures/valid/loss-record-segment-seal.json")
+    assert seal["heartbeat_kind"] == "segment_seal"
+    validate_document(seal, _schemas())
+    for key in ("segment_id", "terminal", "seal", "run_id"):
+        broken = copy.deepcopy(seal)
+        del broken[key]
+        _assert_error(broken, "capture.schema")
+    for key, value in (
+        ("predecessors", ["none"]),
+        ("scope_status", "ok"),
+        ("open_deadline_s", 600),
+    ):
+        broken = copy.deepcopy(seal)
+        broken[key] = value
+        _assert_error(broken, "capture.schema")
+
+
+def test_run_marker_keys_stay_on_their_kinds() -> None:
+    start = _json("fixtures/valid/loss-record-run-start-continuation.json")
+    for kind in ("periodic", "final"):
+        broken = copy.deepcopy(start)
+        broken["heartbeat_kind"] = kind
+        broken.pop("scope_id")
+        _assert_error(broken, "capture.schema")
+    end = copy.deepcopy(start)
+    end["heartbeat_kind"] = "run_end"
+    _assert_error(end, "capture.schema")
+    root = _json("fixtures/valid/spool-record-run-start-root.json")
+    assert root["marker"]["predecessors"] == ["none"]
+    root["marker"]["terminal"] = True
+    _assert_error(root, "capture.schema")
+
+
+def test_predecessor_entries_are_exact() -> None:
+    start = _json("fixtures/valid/loss-record-run-start-continuation.json")
+    entry = start["predecessors"][0]
+    start["predecessors"] = [entry, entry]
+    _assert_error(start, "capture.marker.predecessors")
+    segment, source, _epoch, last, digest = entry.split("/")
+    start["predecessors"] = [f"{segment}/{source}/9223372036854775808/{last}/{digest}"]
+    _assert_error(start, "capture.marker.predecessors")
+    start["predecessors"] = [f"{segment}/{source}/0/{last}/{digest}"]
+    _assert_error(start, "capture.schema")
+
+
+def test_run_marker_keys_are_defined_identically_on_both_forms() -> None:
+    schemas = _schemas()
+    _check_marker_definitions(schemas)
+    tampered = copy.deepcopy(schemas)
+    heartbeat = tampered["schema/loss-record-v1.schema.json"]["oneOf"][1]["properties"]
+    heartbeat["open_deadline_s"]["maximum"] = 10**12
+    with pytest.raises(CaptureContractError) as caught:
+        _check_marker_definitions(tampered)
+    assert caught.value.code == "capture.marker.definition"
+
+
+def test_manifest_record_is_the_generated_span_form() -> None:
+    from contracts.validate_coverage_contracts import (
+        load_registries,
+        render_manifest_record_schema,
+    )
+
+    manifest_schema = json.loads(
+        (
+            REPO_ROOT / "contracts/coverage/v1/schema/capture-manifest-v1.schema.json"
+        ).read_text()
+    )
+    rendered = render_manifest_record_schema(
+        load_registries(REPO_ROOT), manifest_schema
+    )
+    assert _json("schema/capture-manifest-record-v1.schema.json") == rendered
+    record = _json("fixtures/valid/capture-manifest-record-local.json")
+    for marker in (
+        "fabric.wire.exchange_id",
+        "fabric.heartbeat.last_sequence",
+        "fabric.loss.reason",
+    ):
+        assert marker not in rendered["properties"]["attributes"]["properties"]
+        broken = copy.deepcopy(record)
+        broken["attributes"][marker] = "x"
+        _assert_error(broken, "capture.schema")
+
+
+def test_manifest_is_spooled_as_a_marker_without_a_position() -> None:
+    marker = _json("fixtures/valid/spool-record-manifest.json")
+    attributes = marker["marker"]["manifest"]
+    assert marker["marker"]["kind"] == "manifest"
+    assert (
+        marker["marker"]["last_sequence"]
+        == attributes["fabric.manifest.after_source_sequence"]
+    )
+    assert "fabric.capture.input" not in attributes
+    broken = copy.deepcopy(marker)
+    broken["marker"]["manifest"]["fabric.capture.input"] = "wire"
+    _assert_error(broken, "capture.marker.manifest")
+    broken = copy.deepcopy(marker)
+    broken["marker"]["manifest_seq"] = 0
+    _assert_error(broken, "capture.schema")
+
+
+@pytest.mark.parametrize(
+    ("pseudonym", "valid"),
+    [
+        ("p-0123456789abcdef", True),
+        ("p-0123456789abcdef0123456789abcdef", True),
+        ("p-0123456789abcdef0", False),
+        ("p-0123456789ABCDEF", False),
+        ("resp_abc123", False),
+    ],
+)
+def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> None:
+    """Spec 049 §2.9 rule 4: keyed p- + 32 hex, legacy p- + 16 hex stays readable."""
+    import re  # noqa: PLC0415
+
+    pattern = _json("schema/run-reconstruction-v1.schema.json")["$defs"]["pseudonym"][
+        "pattern"
+    ]
+    assert (re.fullmatch(pattern, pseudonym) is not None) is valid

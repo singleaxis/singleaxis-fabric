@@ -1,0 +1,274 @@
+{
+  "schema_version": "fabric.pseudonym-vectors/v2",
+  "rule": "Spec 049 §2.9 (rev 6.3): function v2 is prefix- + the first 32 lowercase hex of HMAC-SHA256(k_type, value) with k_type = HMAC-SHA256(key, UTF-8 of 'fabric-id/v2/' + type); key = FABRIC_WIRE_ID_KEY as UTF-8; value = the caller's string exactly as given, UTF-8 with surrogatepass. Prefix -> type: sess session, usr user, act actor, conv conversation, turn turn, trg trigger, dsp dispatch, agt agent, tgt target, hst host, sbx sandbox, mcps mcp_session, rpc jsonrpc, dbn db_namespace, txn db_transaction, mst memory_store, mkey memory_key, p provider. Without a key a v2 id is omitted (null). The legacy unkeyed provider form p- + 16 hex of SHA-256 stays readable. Function v1 (r-, s-, svc-, lbl-) is unchanged; contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json pins it and this family re-verifies it. key_id = 'kid-' + 8 hex of HMAC-SHA256(key, 'fabric-id/v2/kid'). Each 'distinct' pair differs in its hex: v2 is domain-separated between types, from v1 and between keys.",
+  "cases": [
+    {
+      "name": "sess- (session)",
+      "function": "v2",
+      "prefix": "sess",
+      "type": "session",
+      "value": "session-8c1f",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "sess-59ed1f5d6b14409a864fc485d982decf"
+    },
+    {
+      "name": "usr- (user)",
+      "function": "v2",
+      "prefix": "usr",
+      "type": "user",
+      "value": "jane.doe@example.com",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "usr-ba0f37872e36c3cfe3692a57a52c7a62"
+    },
+    {
+      "name": "act- (actor)",
+      "function": "v2",
+      "prefix": "act",
+      "type": "actor",
+      "value": "agent:planner",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "act-f79d2cfa074774827d30a8646461ebc8"
+    },
+    {
+      "name": "conv- (conversation)",
+      "function": "v2",
+      "prefix": "conv",
+      "type": "conversation",
+      "value": "conv_42",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "conv-cea7fae13721376b249e46774122c7aa"
+    },
+    {
+      "name": "turn- (turn)",
+      "function": "v2",
+      "prefix": "turn",
+      "type": "turn",
+      "value": "turn-7",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "turn-822e9f3a1135d3cc7189402cf79ea586"
+    },
+    {
+      "name": "trg- (trigger)",
+      "function": "v2",
+      "prefix": "trg",
+      "type": "trigger",
+      "value": "TICKET-1234",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "trg-57d4bd4ff206daca85e34c8244b2d6f7"
+    },
+    {
+      "name": "dsp- (dispatch)",
+      "function": "v2",
+      "prefix": "dsp",
+      "type": "dispatch",
+      "value": "job-77",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "dsp-ee5a1678311672ad0def29488a84e8ff"
+    },
+    {
+      "name": "agt- (agent)",
+      "function": "v2",
+      "prefix": "agt",
+      "type": "agent",
+      "value": "billing-agent",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "agt-9155b54c2ec713a9cf5c16ce8cbd5b13"
+    },
+    {
+      "name": "tgt- (target)",
+      "function": "v2",
+      "prefix": "tgt",
+      "type": "target",
+      "value": "#support-escalations",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "tgt-762ddcb6b0fb91ec56e08e230f9d416a"
+    },
+    {
+      "name": "hst- (host)",
+      "function": "v2",
+      "prefix": "hst",
+      "type": "host",
+      "value": "ip-10-0-3-17.ec2.internal",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "hst-466906bac144dd39b4d5874e3048264d"
+    },
+    {
+      "name": "sbx- (sandbox)",
+      "function": "v2",
+      "prefix": "sbx",
+      "type": "sandbox",
+      "value": "sandbox-3",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "sbx-6f622fea7d8fe5413f868fe1d4334d21"
+    },
+    {
+      "name": "mcps- (mcp_session)",
+      "function": "v2",
+      "prefix": "mcps",
+      "type": "mcp_session",
+      "value": "mcp-session-1",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "mcps-eafec6a429e665e82081b796c6ebb15d"
+    },
+    {
+      "name": "rpc- (jsonrpc)",
+      "function": "v2",
+      "prefix": "rpc",
+      "type": "jsonrpc",
+      "value": "42",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "rpc-b0316cd1a601006ad77d60278c1c6dae"
+    },
+    {
+      "name": "dbn- (db_namespace)",
+      "function": "v2",
+      "prefix": "dbn",
+      "type": "db_namespace",
+      "value": "orders",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "dbn-93e43f3638face23c95d908679816a9d"
+    },
+    {
+      "name": "txn- (db_transaction)",
+      "function": "v2",
+      "prefix": "txn",
+      "type": "db_transaction",
+      "value": "tx-9001",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "txn-59dd2aab519d198bf7462e1039284eb0"
+    },
+    {
+      "name": "mst- (memory_store)",
+      "function": "v2",
+      "prefix": "mst",
+      "type": "memory_store",
+      "value": "vector-store-main",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "mst-3890e0ffc087062a906d592dead353d5"
+    },
+    {
+      "name": "mkey- (memory_key)",
+      "function": "v2",
+      "prefix": "mkey",
+      "type": "memory_key",
+      "value": "user:42:preferences",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "mkey-e9686c7937396299d907191384769920"
+    },
+    {
+      "name": "p- (provider)",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "p-46c753d96c8744369a1800c04ba4ef0b"
+    },
+    {
+      "name": "user, same value as session",
+      "function": "v2",
+      "prefix": "usr",
+      "type": "user",
+      "value": "shared-value-1",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "usr-472cf8a6e704469fd71809eb7528b99d"
+    },
+    {
+      "name": "session, same value as user",
+      "function": "v2",
+      "prefix": "sess",
+      "type": "session",
+      "value": "shared-value-1",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "sess-e784f388a42c54d6ac37cde9986f49d3"
+    },
+    {
+      "name": "provider id, key 2",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "another-test-key",
+      "pseudonym": "p-68958a201fea104672969e5909acbbef"
+    },
+    {
+      "name": "user id exactly as given (no case folding)",
+      "function": "v2",
+      "prefix": "usr",
+      "type": "user",
+      "value": "Jane.Doe@Example.com ",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "usr-c72bef7dbd8d3e7fbfbb403e09160f66"
+    },
+    {
+      "name": "non-ASCII key and value",
+      "function": "v2",
+      "prefix": "conv",
+      "type": "conversation",
+      "value": "conversación-Ω",
+      "key": "clé-de-test-fabric",
+      "pseudonym": "conv-1ab9eb35fbe3c3e6bb48e60b85d72ce0"
+    },
+    {
+      "name": "provider id without a key is omitted",
+      "function": "v2",
+      "prefix": "p",
+      "type": "provider",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": null,
+      "pseudonym": null
+    },
+    {
+      "name": "v1 run pseudonym of the same value and key",
+      "function": "v1",
+      "prefix": "r",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "r-3e841cd275e900778bf62828d06e637c"
+    },
+    {
+      "name": "v1 operator label",
+      "function": "v1",
+      "prefix": "lbl",
+      "value": "refund-approvals",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "lbl-3ab255bccb3f3a3f062d1380dcc10b1c"
+    },
+    {
+      "name": "legacy unkeyed provider id",
+      "function": "legacy_provider",
+      "prefix": "p",
+      "value": "chatcmpl-9AbCdEfGhIjKlMn",
+      "key": null,
+      "pseudonym": "p-2ae804b614b4110c"
+    }
+  ],
+  "key_ids": [
+    {
+      "key": "fabric-test-id-key-not-a-secret",
+      "key_id": "kid-b2a0080c"
+    },
+    {
+      "key": "another-test-key",
+      "key_id": "kid-d5e3fcd2"
+    },
+    {
+      "key": "clé-de-test-fabric",
+      "key_id": "kid-bc7230c9"
+    }
+  ],
+  "distinct": [
+    [
+      "user, same value as session",
+      "session, same value as user"
+    ],
+    [
+      "p- (provider)",
+      "provider id, key 2"
+    ],
+    [
+      "p- (provider)",
+      "v1 run pseudonym of the same value and key"
+    ]
+  ]
+}

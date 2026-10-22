@@ -14,11 +14,12 @@ fully offline. In a deployment the agent runs in **node mode** instead: it
 spools capture events to disk and delivers the bodies to the Fabric Node,
 which is the only writer of the content store (a directory or S3) and holds
 the only store credentials. See
-[Deploying LLM wire capture](../../docs/wire-capture-deployment.md).
+[Deployment](../../docs/deployment.md).
 
 ```bash
-# from the repository root
-sdk/python/.venv/bin/python examples/wire-capture/react_agent.py
+# from the repository root, in the environment where the SDK is installed
+# (see docs/quickstart.md)
+python examples/wire-capture/react_agent.py
 ```
 
 Expected tail of the output:
@@ -68,7 +69,7 @@ compute the same pseudonym.
 You can re-run the verifier yourself:
 
 ```bash
-sdk/python/.venv/bin/python -m fabric.reconstruct \
+python -m fabric.reconstruct \
   --spans examples/wire-capture/output/spans.jsonl \
   --store-root examples/wire-capture/output/store --tenant demo-tenant \
   --run react-demo-1
@@ -89,8 +90,10 @@ unaltered and stitched without gaps. A run made of scopes is at best
 `complete_for_observed_scopes`: it vouches for every scope that left a
 record, and makes no claim about a block whose every record was lost
 before reaching disk (for example when the process is killed). It does not judge the agent. It also does
-not cover calls made through other clients (`requests`, `aiohttp`, gRPC),
-other processes or unlisted endpoints.
+not capture calls made through clients wire capture does not instrument
+(gRPC), other processes or unlisted endpoints. httpx, httpx2 and aiohttp are
+instrumented; a matched model call sent with `requests` or `urllib3` is
+recorded as an `uninstrumented_client` loss, so the run is `partial`.
 
 ## Passivity
 

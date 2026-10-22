@@ -35,6 +35,7 @@ from fabric import (
 )
 from fabric import __file__ as fabric_package_file
 from fabric.call_recorder import CallRecorder
+from fabric.redaction import RedactionService
 from fabric.byte_resolver import ByteEvidenceResolver
 from fabric.call_reconcile import (
     CallByteWitness,
@@ -338,9 +339,6 @@ def main() -> int:
         if missing["verdict"] != "partial" or corrupted["verdict"] != "partial":
             raise AssertionError("missing or corrupted evidence did not lower verdict")
 
-        def failed_mask(_data: bytes) -> bytes:
-            raise RuntimeError(CANARY.decode())
-
         privacy_store = LocalFilesystemContentStore(
             str(root / "privacy-protected"), tenant_id="synthetic"
         )
@@ -352,12 +350,14 @@ def main() -> int:
                 role_policies={
                     role: BytePrivacyPolicy(
                         mode="masked_only",
-                        transform=failed_mask,
                         transformation_id="fixture-mask",
                         transformation_version="1",
                     )
                     for role in privacy_roles
                 },
+                # A customer redaction service that is not running (spec 049 §7.7
+                # rule 4): every masked object is withheld, never stored raw.
+                redaction=RedactionService("unix://" + str(root / "absent.sock")),
             )
         )
         privacy_run = run_id + "-privacy"

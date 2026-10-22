@@ -42,6 +42,7 @@ regulatory certification and not proof that a destination persisted a batch.
       "otel-collector.exporter.retry.enabled" true
       "otel-collector.exporter.retry.maxElapsedTime" "0s"
       "otel-collector.content.requireServerSideEncryption" true
+      "otel-collector.fabric.profile" "production"
       "otel-collector.debugExporter.enabled" false
       "otel-collector.batch.enabled" false
       "otel-collector.networkPolicy.enabled" true

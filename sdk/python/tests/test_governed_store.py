@@ -19,7 +19,10 @@ from fabric.call_otlp import project_call_snapshot_batches
 from fabric.content_store.base import ByteEvidenceStore, ContentStore, CorruptedObjectError
 from fabric.deployment_policy import ContentProtector, DeploymentPolicy
 from fabric.governed_store import GovernedLocalContentStore, LocalCapabilityAuthority
+from fabric.redaction import RedactionService, Transformation
 from fabric.source_spool import SyntheticSourceSpool
+
+from .redaction_server import RedactionServer
 
 ALL = {
     "write_original",
@@ -31,6 +34,12 @@ ALL = {
 }
 KEY = hashlib.sha256(b"synthetic encryption test key").digest()
 SECRET = b"synthetic local admin test key!!!"
+
+
+@pytest.fixture(autouse=True)
+def _service(redaction_server: RedactionServer, redaction: RedactionService) -> None:
+    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests."""
+    del redaction_server, redaction
 
 
 def policy(**changes: Any) -> DeploymentPolicy:
@@ -538,7 +547,7 @@ def test_existing_call_recorder_records_actual_encrypted_bytes(setup: Any) -> No
     store = store_for(setup, encryption_key=KEY)
     protector = ContentProtector(
         store.policy,
-        redactors={"artifact.after": lambda _: b"safe"},
+        transformations={"artifact.after": Transformation("safe", "1")},
         tokenization_key=b"t" * 32,
     )
     recorder = ByteEvidenceRecorder(
@@ -671,7 +680,9 @@ def test_public_policy_capture_routes_original_and_derivative_planes(setup: Any)
     derivative = store_for(setup, plane="derivative", encryption_key=KEY)
     config = original.policy
     protector = ContentProtector(
-        config, redactors={"artifact.after": lambda _: b"[REDACTED]"}, tokenization_key=b"t" * 32
+        config,
+        transformations={"artifact.after": Transformation("redacted_upper", "1")},
+        tokenization_key=b"t" * 32,
     )
     writer = ByteEvidenceRecorder(
         ByteEvidenceConfig(
@@ -729,9 +740,6 @@ def test_policy_capture_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
     spool_root.mkdir(mode=0o700)
     spool = SyntheticSourceSpool(str(spool_root), tenant_id=config.tenant_id, run_id="run")
 
-    def broken_redactor(_: bytes) -> bytes:
-        raise RuntimeError(secret.decode())
-
     failure = RuntimeError(secret.decode())
 
     def delegate(request: bytes) -> bytes:
@@ -748,7 +756,9 @@ def test_policy_capture_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
             deployment_policy=config,
             content_protector=ContentProtector(
                 config,
-                redactors={"tool.call.arguments": broken_redactor} if mode == "redact" else {},
+                transformations={"tool.call.arguments": Transformation("raises", "1")}
+                if mode == "redact"
+                else {},
                 tokenization_key=b"t" * 32,
             ),
         )
@@ -770,8 +780,9 @@ def test_policy_capture_preserves_delegate_and_keeps_withheld_secrets_out_of_evi
         first = snapshot["events"][0]["descriptor"]
         assert "source_sha256" not in first
         assert ("source_byte_length" in first) == (mode == "metadata_only")
-        if mode == "redact":
-            assert first["status"] == "failed" and first["protection_status"] == "lost"
+        if mode == "redact":  # the redactor runs on the writer thread (Sol P0-A #5)
+            assert first["status"] == "not_captured" and first["protection_status"] == "withheld"
+            assert first["status_reason"] == "protection_failed"
         evidence = [json.dumps(snapshot).encode()]
         evidence.extend(payload for payload, _ in project_call_snapshot_batches(snapshot))
         evidence.extend(path.read_bytes() for path in root.parent.rglob("*") if path.is_file())

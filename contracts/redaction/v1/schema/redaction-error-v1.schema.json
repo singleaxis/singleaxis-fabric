@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singleaxis.dev/fabric/redaction/v1/redaction-error-v1.schema.json",
+  "title": "Fabric redaction service error body v1",
+  "description": "The optional JSON body of a non-200 response from a customer redaction service. A closed code, never free text: an error message could echo the content being redacted. Fabric treats every non-200 response as a failure whatever its body.",
+  "type": "object",
+  "required": ["contract", "version", "error"],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {"const": "singleaxis.fabric.redaction-error"},
+    "version": {"const": "1.0.0"},
+    "error": {
+      "enum": [
+        "invalid_request",
+        "unauthorized",
+        "unknown_transformation",
+        "unsupported_media",
+        "payload_too_large",
+        "internal_error"
+      ]
+    }
+  }
+}

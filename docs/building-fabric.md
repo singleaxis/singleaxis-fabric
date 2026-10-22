@@ -40,6 +40,7 @@ python scripts/contracts/validate_data_plane_contracts.py
 python scripts/verify_release_identity.py --json
 ```
 
-SDK, Go, Helm, and live delivery checks are documented in
-[qualification status](recorder-v1-qualification-status.md). Docker/kind checks
+SDK, Go, Helm, and live delivery checks run in the workflows under
+`.github/workflows` (`recorder-ci.yml`, `e2e.yml`,
+`e2e-production-profile.yml`). Docker/kind checks
 must run in the tagged CI environment before promotion when unavailable locally.

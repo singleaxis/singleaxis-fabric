@@ -179,9 +179,9 @@ def _inject_blocking(request_sleep_s: float, chunk_sleep_s: float) -> None:
 
     begin, add = _transport.WireTee.begin, _stream.Exchange.add
 
-    def slow_begin(self: Any, request: Any) -> Any:
+    def slow_begin(self: Any, request: Any, **kwargs: Any) -> Any:
         time.sleep(request_sleep_s)
-        return begin(self, request)
+        return begin(self, request, **kwargs)
 
     def slow_add(self: Any, chunk: bytes) -> None:
         time.sleep(chunk_sleep_s)
@@ -191,7 +191,27 @@ def _inject_blocking(request_sleep_s: float, chunk_sleep_s: float) -> None:
     _stream.Exchange.add = slow_add  # type: ignore[method-assign]
 
 
-def measure(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) -> dict[str, Any]:
+def _protect_rig(tmp: Path) -> Rig:
+    """049 §7.7: a local store with every protecting mode in play on the worker: a redact
+    call to the redaction service (``FABRIC_REDACTION_ENDPOINT``) that sleeps and then
+    fails (``protection_failed``), and tokenize."""
+    from fabric.deployment_policy import DeploymentPolicy  # noqa: PLC0415
+    from fabric.wire import RedactionService, Transformation  # noqa: PLC0415
+
+    from .test_wire_helpers import production_policy  # noqa: PLC0415
+
+    privacy = {"model.exchange.request": "redact", "model.exchange.response": "tokenize"}
+    return make_rig(
+        tmp, queue_max_items=65536, tenant_id="tenant-a",
+        capture_policy=DeploymentPolicy(production_policy(privacy=privacy, profile="local")),
+        transformations={"model.exchange.request": Transformation("slow_failure", "1")},
+        redaction=RedactionService.from_env(os.environ), tokenization_key=b"k" * 32,
+    )  # fmt: skip
+
+
+def measure(
+    request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0, protect: bool = False
+) -> dict[str, Any]:
     """Every scenario's round overheads per unit (ns), the calibration and the rig's
     counters. A sleep factor injects a sleep of that many *scaled* matched (request
     path) or chunk (chunk path) budgets; with one, fewer samples (a blocked tee is
@@ -203,7 +223,8 @@ def measure(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) 
         _inject_blocking(request_sleep_factor * NON_STREAM_BUDGET_NS * scale / 1e9,
                          chunk_sleep_factor * CHUNK_BUDGET_NS * scale / 1e9)  # fmt: skip
     with tempfile.TemporaryDirectory() as tmp:
-        rig = make_rig(Path(tmp), store=None, queue_max_items=65536)
+        rig = (_protect_rig(Path(tmp)) if protect
+               else make_rig(Path(tmp), store=None, queue_max_items=65536))  # fmt: skip
         try:
             out: dict[str, Any] = {}
             for name, (baseline, teed, units) in _scenarios(rig).items():
@@ -234,13 +255,16 @@ def _fresh_interpreter(code: str, *args: str) -> Any:
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
-def _measured(request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0) -> dict[str, Any]:
+def _measured(
+    request_sleep_factor: float = 0.0, chunk_sleep_factor: float = 0.0, protect: bool = False
+) -> dict[str, Any]:
     """:func:`measure` in a fresh interpreter, with no coverage measurement."""
     code = (
         "import json, sys; from tests.test_wire_passivity import measure; "
-        "print(json.dumps(measure(float(sys.argv[1]), float(sys.argv[2]))))"
+        "print(json.dumps(measure(float(sys.argv[1]), float(sys.argv[2]), sys.argv[3] == '1')))"
     )
-    return dict(_fresh_interpreter(code, str(request_sleep_factor), str(chunk_sleep_factor)))
+    flag = "1" if protect else "0"
+    return dict(_fresh_interpreter(code, str(request_sleep_factor), str(chunk_sleep_factor), flag))
 
 
 def calibrate_untraced_and_traced(runs: int = 5) -> tuple[int, int, bool]:
@@ -279,6 +303,28 @@ def test_tee_overhead_is_within_budget(measured: dict[str, Any], scenario: str) 
         f"(spec budget {BUDGETS[scenario]} ns x scale {calibration['scale']:.2f}; "
         f"calibration {calibration['ns']} ns vs reference {REFERENCE_CALIBRATION_NS} ns)"
     )
+
+
+@pytest.fixture(scope="module")
+def measured_protect() -> Iterator[dict[str, Any]]:
+    from .redaction_server import RedactionServer  # noqa: PLC0415
+
+    with RedactionServer() as server, pytest.MonkeyPatch.context() as patch:
+        patch.setenv("FABRIC_REDACTION_ENDPOINT", server.endpoint)
+        yield _measured(protect=True)
+
+
+@pytest.mark.parametrize("scenario", ["non_match", "matched", "chunk"])
+def test_protect_stage_keeps_the_tee_within_budget(
+    measured_protect: dict[str, Any], scenario: str
+) -> None:
+    """049 §7.1/§7.7: PROTECT runs on the capture worker; a slow, failing customer
+    transformation and tokenization never add host latency beyond the 047 budgets."""
+    rounds, calibration = measured_protect[scenario], measured_protect["calibration"]
+    budget = BUDGETS[scenario] * calibration["scale"]
+    assert min(rounds) <= budget, (scenario, rounds, budget)
+    stats = measured_protect["stats"]
+    assert stats["dropped"] == 0 or stats["dropped"] < stats["matched"]
 
 
 def test_budget_scaling_is_bounded_and_never_tightens() -> None:
@@ -362,3 +408,26 @@ def test_streamed_chunks_keep_identity_and_order(rig: Rig) -> None:
     seen = list(response.stream)
     response.stream.close()
     assert all(got is sent for got, sent in zip(seen, CHUNKS, strict=True))
+
+
+def test_failing_and_slow_protection_never_reaches_the_caller(
+    tmp_path: Path, redaction: object
+) -> None:
+    """049 §7.1: results and exceptions are unchanged when the PROTECT stage fails."""
+    rig = _protect_rig(tmp_path)
+    error = httpx.ConnectError("refused")
+    try:
+        inner = httpx.MockTransport(lambda r: httpx.Response(200, content=REPLY))
+        wrapped = WireTransport(inner, handle=rig.handle)
+        response = wrapped.handle_request(httpx.Request("POST", OPENAI_CHAT, content=BODY))
+        assert response.read() == REPLY
+        failing = WireTransport(httpx.MockTransport(lambda r: (_ for _ in ()).throw(error)),
+                                handle=rig.handle)  # fmt: skip
+        with pytest.raises(httpx.ConnectError) as raised:
+            failing.handle_request(httpx.Request("POST", OPENAI_CHAT, content=BODY))
+        assert raised.value is error
+        rig.flush()
+        reasons = {dict(s.attributes or {}).get("fabric.wire.store_reason") for s in rig.spans()}
+        assert reasons == {"protection_failed"}
+    finally:
+        rig.close()

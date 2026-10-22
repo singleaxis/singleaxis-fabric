@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from opentelemetry import trace
 
 from ._capture_scope import ExplicitScope, explicit_model_call
+from ._sequence import GeneratedIds
 from .byte_evidence import ByteEvidenceRecorder
 from .content_join import CONTENT_JOIN_FIELDS, capture_content_binding
 from .source_spool import _MAX_SEAL_TIMEOUT_S, SyntheticSourceSpool
@@ -111,6 +112,17 @@ class CallRecorder:
             raise ValueError("max_events must be a positive integer")
         self.recorder = recorder
         self.tenant_id = recorder.tenant_id
+        # 049 §2.9: every caller id is emitted as the recorder emits it (keyed pseudonyms,
+        # or generated ids in production without the id key). A source spool journals the
+        # emitted ids, so it is keyed by the emitted run id (``recorder.emitted_run_id``);
+        # generated run ids do not survive a restart, so then the spool is unused.
+        self._ids = recorder.emitted_ids
+        if self._ids is not None:
+            self.run_id = self._ids.run(self.run_id, 0)
+            self.source_id = self._ids.source(self.source_id)
+            self.agent_id = self._ids.agent(self.agent_id)
+            if isinstance(self._ids, GeneratedIds):
+                source_spool = recovery_resolver = None
         if source_spool is not None and (
             source_spool.tenant_id != self.tenant_id or source_spool.run_id != self.run_id
         ):
@@ -232,8 +244,20 @@ class CallRecorder:
             raise ValueError("kind must be model, tool, database or agent")
         boundary, input_role, output_role = _KINDS[kind]
         parent = self._current.get()
+        call_id = uuid.uuid4().hex
+        if (ids := self._ids) is not None:  # 049 §2.9: emitted, never the caller's clear id
+            # Fabric's own ids map to themselves (a parent call id of this recorder too).
+            call_id = ids.mint(call_id)
+            if parent_call_id is not None:
+                parent_call_id = ids.other(_identifier(parent_call_id))
+            if agent_id is not None:
+                agent_id = ids.agent(_identifier(agent_id))
+            operation_id, attempt_id = (
+                ids.other(_identifier(value)) if value is not None else ids.mint(uuid.uuid4().hex)
+                for value in (operation_id, attempt_id)
+            )
         fields = {
-            "call_id": uuid.uuid4().hex,
+            "call_id": call_id,
             "parent_call_id": _identifier(parent_call_id)
             if parent_call_id is not None
             else parent.fields["call_id"]

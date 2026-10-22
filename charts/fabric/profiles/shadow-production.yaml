@@ -10,6 +10,10 @@
 #   exporterEgress.to and exporterEgress.ports matching that destination
 #   an approved full sha256 Collector image digest (tags are insufficient)
 #   workloadAuthentication tenant/workload identity, token Secret and review ref
+#   workloadAuthentication.sourceId: the agents' source id as it travels
+#     (s-<32 hex> under their pseudonymous labels). Spec 049 §7.9: this is a
+#     production-profile Node; every batch is bound to that tenant and source
+#     and a batch naming another is refused. One Node per agent source.
 #   a suitable encrypted StorageClass (or existing customer-owned PVC), plus
 #   encryptionAttestationRef naming the independent storage/KMS review
 #
@@ -20,6 +24,15 @@
 #     (aws:kms + kmsKeyId, or AES256) -- the file backend is refused here
 #   the Node writer role via otel-collector.serviceAccount.annotations (IRSA)
 #   networkPolicy.contentEgress.to/ports for the store (and STS for IRSA)
+#   the Node content key Secret otel-collector.content.encryption.keySecret
+#     (32 random bytes or their base64): spec 049 §7.8 seals the persistent
+#     content queue with it
+#
+# Spec 049 P0-A supersedes spec 048 §1: agents in node mode record content
+# only with a capture policy (FABRIC_CAPTURE_POLICY) and FABRIC_WIRE_ID_KEY;
+# without them they record metadata only. Upgrading a Node installed before
+# P0-A fails this chart's render until sourceId (and, with content, the key
+# Secret) are set; the agents are never affected.
 # Agents then reach 4319 with the same client certificate as 4317/4318.
 #
 # Delivery is at least once. A successful OTLP acknowledgement proves remote
@@ -54,6 +67,8 @@ otel-collector:
       # Supply tenantId equal to tenant.id, and the single approved workload.
       tenantId: ""
       workloadId: ""
+      # Spec 049 §7.9: the bound source id (supply it; required).
+      sourceId: ""
       identityAttestationRef: ""
       tokenSecret:
         name: ""
@@ -67,8 +82,11 @@ otel-collector:
         name: fabric-node-client-ca
         key: ca.crt
   fabric:
+    # Spec 049 §7.3: production profile (source binding, encrypted content).
+    profile: production
     guard:
       dropUnknownClasses: true
+      identityMode: pseudonymous
   exporter:
     requireEndpoint: true
     requireTLS: true
@@ -99,6 +117,10 @@ otel-collector:
   content:
     enabled: false
     requireServerSideEncryption: true
+    encryption:
+      keySecret:
+        name: fabric-node-content-key
+        key: key
   debugExporter:
     enabled: false
   batch:

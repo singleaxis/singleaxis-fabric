@@ -20,12 +20,19 @@ from fabric.deployment_policy import ContentProtector, DeploymentPolicy
 from fabric.governed_reconstruction import GovernedEvidenceResolver
 from fabric.governed_store import GovernedLocalContentStore, LocalCapabilityAuthority
 from fabric.metadata_delivery import JournalMetadataSender, MetadataHTTPResponse
+from fabric.redaction import RedactionService, Transformation
 from fabric.source_spool import SyntheticSourceSpool
 
 _KEY = hashlib.sha256(b"synthetic reconstruction encryption key").digest()
 _SECRET = hashlib.sha256(b"synthetic reconstruction authority key").digest()
 _INPUT = b"RECONSTRUCTION-PRIVACY-CANARY\x00\xff"
 _OUTPUT = b"synthetic-result"
+
+
+@pytest.fixture(autouse=True)
+def _service(redaction: RedactionService) -> None:
+    """The customer redaction service (``FABRIC_REDACTION_ENDPOINT``) of these tests. No
+    relative import here: ``scripts/tests`` runs this module with ``runpy``."""
 
 
 def _policy(mode: str = "retain_original") -> DeploymentPolicy:
@@ -121,7 +128,7 @@ def _capture(
     review = _store(root, policy, plane="derivative", permissions={"write_derivative"})
     protector = ContentProtector(
         policy,
-        redactors={role: lambda _data: b"MASKED" for role in policy.privacy}
+        transformations=dict.fromkeys(policy.privacy, Transformation("masked_upper", "1"))
         if mode == "redact"
         else None,
         tokenization_key=_KEY,

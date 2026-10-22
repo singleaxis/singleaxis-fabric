@@ -20,6 +20,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.sampling import ALWAYS_ON
 
+from fabric.redaction import RedactionService
+from tests.redaction_server import RedactionServer
+
 if TYPE_CHECKING:
     from opentelemetry.sdk.trace import ReadableSpan
 
@@ -44,3 +47,35 @@ def _clear_exporter(span_exporter: InMemorySpanExporter) -> Iterator[None]:
 def finished_spans(span_exporter: InMemorySpanExporter) -> list[ReadableSpan]:
     """Spans finished in the current test so far."""
     return list(span_exporter.get_finished_spans())
+
+
+@pytest.fixture(autouse=True)
+def _clear_identity_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Spec 049 §2.9: ``decision()`` ids are pseudonymous by default. The pre-049 suites
+    run with ``FABRIC_IDENTITY_MODE=clear``, which must reproduce the pre-049 output
+    exactly; pseudonymous behaviour is pinned by ``test_identity_pseudonyms.py``, which
+    sets the mode explicitly on its clients."""
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "clear")
+
+
+@pytest.fixture(autouse=True)
+def _clear_redaction_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No ambient redaction service: a test that needs one asks for ``redaction``."""
+    monkeypatch.delenv("FABRIC_REDACTION_ENDPOINT", raising=False)
+    monkeypatch.delenv("FABRIC_REDACTION_TOKEN_FILE", raising=False)
+
+
+@pytest.fixture()
+def redaction_server() -> Iterator[RedactionServer]:
+    """The in-test customer redaction service (contracts/redaction/v1), on a Unix socket."""
+    with RedactionServer() as server:
+        yield server
+
+
+@pytest.fixture()
+def redaction(
+    redaction_server: RedactionServer, monkeypatch: pytest.MonkeyPatch
+) -> RedactionService:
+    """The in-test service as a :class:`RedactionService`, and as ``FABRIC_REDACTION_ENDPOINT``."""
+    monkeypatch.setenv("FABRIC_REDACTION_ENDPOINT", redaction_server.endpoint)
+    return RedactionService(redaction_server.endpoint)

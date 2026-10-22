@@ -24,6 +24,7 @@ GOVERNED_BINDING_FIELDS = frozenset(
     }
 )
 CONTENT_JOIN_FIELDS = GOVERNED_BINDING_FIELDS | {"content_sha256", "content_byte_length"}
+_UNBOUND_MODES = frozenset({"masked_only", "original_plus_masked"})
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _MAX_INT64 = 2**63 - 1
@@ -69,8 +70,13 @@ def validate_content_join(event: Mapping[str, Any]) -> None:
 
 
 def capture_content_binding(descriptor: Mapping[str, Any]) -> dict[str, Any]:
-    """Keep prequeue policy bindings and only policy-permitted fingerprints."""
-    if "policy_digest" not in descriptor:
+    """Keep prequeue policy bindings and only policy-permitted fingerprints.
+
+    The binding is evidence-event v1's, which has no masked modes: a ``masked_only`` or
+    ``original_plus_masked`` object (spec 049 §7.7) keeps its policy block on the content
+    descriptor and binds nothing on the journal event.
+    """
+    if "policy_digest" not in descriptor or descriptor.get("privacy_mode") in _UNBOUND_MODES:
         return {}
     result = {key: descriptor[key] for key in sorted(GOVERNED_BINDING_FIELDS) if key in descriptor}
     if descriptor.get("representation") == "exact":

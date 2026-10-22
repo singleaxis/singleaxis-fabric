@@ -99,12 +99,18 @@ class Budget:
 
 
 class _Side:
-    __slots__ = ("chunks", "encoding", "media_type", "observed", "retained", "truncated")
+    __slots__ = (
+        "chunks", "cut", "encoding", "media_type", "observed", "prefix", "retained", "truncated",
+    )  # fmt: skip
 
     def __init__(self, headers: Mapping[str, str]) -> None:
         self.chunks: list[bytes | bytearray] = []
         self.observed = self.retained = 0
         self.truncated = False
+        self.cut: str | None = None  # why retention stopped early (a store_reason)
+        # Bytes in the whole chunks that fit max_body_bytes, once a chunk crossed it: the
+        # stored prefix when the worker cannot keep the side whole (047, 049 §7.4).
+        self.prefix: int | None = None
         self.media_type = headers.get("content-type", "application/octet-stream")
         self.encoding = headers.get("content-encoding", "identity")
 
@@ -122,7 +128,12 @@ class _Side:
         """The retained chunks; ownership of the list (coalescing buffers included) moves to
         the job. No copy here: the capture worker joins them off the host's thread."""
         chunks, self.chunks = self.chunks, []
-        return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding)
+        return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding,
+                            self.cut if self.truncated else None, self.prefix)  # fmt: skip
+
+    def stop(self, reason: str) -> None:
+        """End retention (the first reason is kept)."""
+        self.truncated, self.cut = True, self.cut or reason
 
 
 def _tee_types(response: Any) -> tuple[type[Any], type[Any], type[Any]]:
@@ -235,7 +246,7 @@ class Exchange:
             self.request_tee, self.request_sent = kind(request.stream, self), False
             private.stream = self.request_tee  # yields the same chunks, on the copy only
         else:  # not an httpx byte stream: sent as is, unretained
-            side.truncated = True
+            side.stop("transport_incomplete")
         self.handoff = (request, private, _instance_state(private))
         self.outgoing = private
 
@@ -247,7 +258,7 @@ class Exchange:
         handoff, self.handoff, self.outgoing = self.handoff, None, None
         try:
             if self.request_tee is not None and not self.request_sent:
-                self.request.truncated = True
+                self.request.stop("transport_incomplete")
             self.request_tee = None
             if handoff is not None:
                 _carry_back(*handoff)
@@ -261,14 +272,18 @@ class Exchange:
         side.observed += size
         if side.truncated or self.done:
             return
-        # Whole chunks only: a chunk that does not fit ends retention without slicing it,
-        # so the host's thread never copies a large prefix (the stored prefix = the whole
-        # chunks retained before it).
-        if size <= self.tee.max_body_bytes - side.retained and self.tee.budget.try_reserve(size):
+        # Whole chunks only, by reference (049 §7.4): a chunk that does not fit ends
+        # retention without slicing it, so the host's thread never copies a large prefix.
+        # The worker stores, splits or cuts what was retained (up to max_retain_bytes).
+        if side.prefix is None and size > self.tee.max_body_bytes - side.retained:
+            side.prefix = side.retained
+        if size > self.tee.max_retain_bytes - side.retained:
+            side.stop("body_cap")
+        elif self.tee.budget.try_reserve(size):
             side.retained += size  # counted first: detach() releases what was reserved
             side.keep(chunk)
         else:
-            side.truncated = True
+            side.stop("inflight_budget")
 
     def add(self, chunk: bytes) -> None:
         try:

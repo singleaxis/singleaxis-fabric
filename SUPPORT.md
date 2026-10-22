@@ -26,8 +26,10 @@ is available from SingleAxis.
 
 Contact: **bryan@singleaxis.ai** · https://fabric.singleaxis.ai
 
-## Enterprise readiness
+## Security and deployment review
 
-For a procurement / security-team overview of Fabric's security model,
-supply chain, compliance posture, and data handling, see
-[`docs/enterprise-readiness.md`](docs/enterprise-readiness.md).
+For a security-team overview of Fabric's protection model, encryption,
+source authentication and limits, see
+[`docs/privacy-and-security.md`](docs/privacy-and-security.md),
+[`docs/deployment.md`](docs/deployment.md) and
+[`docs/limitations-and-roadmap.md`](docs/limitations-and-roadmap.md).

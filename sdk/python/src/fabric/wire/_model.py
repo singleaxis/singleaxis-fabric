@@ -37,6 +37,7 @@ class WireAttr:
     REQUEST_SHA256, RESPONSE_SHA256 = "fabric.wire.request_sha256", "fabric.wire.response_sha256"
     RESPONSE_STATE, TRUNCATED = "fabric.wire.response_state", "fabric.wire.truncated"
     STORE_STATUS, SCOPE_ID = "fabric.wire.store_status", "fabric.run.scope_id"
+    STORE_REASON = "fabric.wire.store_reason"  # 049 X40
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,11 @@ class CapturedBody:
     truncated: bool
     media_type: str = "application/octet-stream"
     content_encoding: str = "identity"
+    # Why retention stopped early (049 store_reason: body_cap, inflight_budget,
+    # transport_incomplete); None when nothing was cut at capture.
+    cut_reason: str | None = None
+    # The whole-chunk prefix length within max_body_bytes, when the side outgrew it.
+    prefix_length: int | None = None
 
     @property
     def captured_byte_length(self) -> int:
