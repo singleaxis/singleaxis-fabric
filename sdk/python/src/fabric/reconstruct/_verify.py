@@ -24,7 +24,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, Protocol, cast
 
 from fabric import _seal
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
@@ -47,6 +47,7 @@ from fabric.reconstruct._inputs import (
     RecordObs,
     SegmentSealObs,
     SpanFormat,
+    SpanRecord,
     digest_value,
     list_span_inputs,
     object_id_from_ref,
@@ -74,6 +75,28 @@ from fabric.reconstruct._stitch_check import StitchView, stitch_run
 
 SourceKey = tuple[str, int]
 Segment = tuple[int, int, str | None]
+
+
+class ProjectionSink(Protocol):
+    """What the step projection (spec 050 §3.13, WP-32) collects while the verifier runs:
+    the verifier itself (attached first; read only once the report is built), every
+    observation with the span it came from (ids in report form), and each reported
+    exchange's verified bodies and stitch view, while one run's bodies are in memory. Called
+    only when a projection is requested; the report never depends on it."""
+
+    def attach(self, verifier: Any) -> None: ...
+
+    def observed(self, obs: Observation, span: SpanRecord) -> None: ...
+
+    def exchange_read(
+        self,
+        exchange: ExchangeObs,
+        request: ObjectResult,
+        response: ObjectResult | None,
+        view: StitchView,
+    ) -> None: ...
+
+
 Profile = Literal["local", "production"]
 Side = Literal["request", "response"]
 
@@ -362,6 +385,7 @@ def reconstruct(
     clock_uncertainty_ns: int = 0,
     max_clock_uncertainty_ns: int = DEFAULT_MAX_CLOCK_UNCERTAINTY_NS,
     graphs_out: list[RunGraph] | None = None,
+    projection_sink: ProjectionSink | None = None,
 ) -> dict[str, Any]:
     """Reconstruct runs from span files and an optional customer store.
 
@@ -393,7 +417,8 @@ def reconstruct(
     ``evaluated_at`` (default ``generated_at``, else now) is when run states and deadlines
     are evaluated; ``clock_uncertainty_ns`` is added to each segment's declared clock
     uncertainty and ``max_clock_uncertainty_ns`` bounds it (the segment graph's inputs).
-    ``graphs_out``, when given, receives the per-run segment graphs (the projection's input).
+    ``graphs_out``, when given, receives the per-run segment graphs (the projection's input);
+    ``projection_sink`` collects what the step projection needs (WP-32).
     Raises :class:`ReconstructInputError` for unusable input or options.
     """
 
@@ -411,6 +436,7 @@ def reconstruct(
         evaluated_at=evaluated_at,
         clock_uncertainty_ns=clock_uncertainty_ns,
         max_clock_uncertainty_ns=max_clock_uncertainty_ns,
+        projection_sink=projection_sink,
     )
     if graphs_out is not None:
         graphs_out.extend(graphs)
@@ -432,6 +458,7 @@ def reconstruct_with_graphs(
     evaluated_at: datetime | None = None,
     clock_uncertainty_ns: int = 0,
     max_clock_uncertainty_ns: int = DEFAULT_MAX_CLOCK_UNCERTAINTY_NS,
+    projection_sink: ProjectionSink | None = None,
 ) -> tuple[dict[str, Any], list[RunGraph]]:
     """:func:`reconstruct`, plus the per-run segment graphs the step projection reads."""
 
@@ -453,6 +480,9 @@ def reconstruct_with_graphs(
     evaluated = evaluated_at or generated
     span_files: list[dict[str, Any]] = []
     verifier = _Verifier(reader, allowlist, id_key, store=store if reader is not None else None)
+    verifier.projection_sink = projection_sink
+    if projection_sink is not None:
+        projection_sink.attach(verifier)
     for index, path in enumerate(paths, start=1):
         fmt, records = read_span_file(path, label=f"span file {index}")
         span_files.append(_span_file_entry(path, fmt, len(records)))
@@ -463,7 +493,7 @@ def reconstruct_with_graphs(
                 raise ReconstructInputError(
                     f"span file {index} span {number}: an exchange span has a malformed identity"
                 ) from None
-            verifier.add(observation)
+            verifier.add(observation, record)
     verifier.finalize()
     verifier.trusted_source = trusted_source
     verifier.production = (
@@ -688,6 +718,7 @@ class _Verifier:
         self.evaluated_at: str | None = None
         self.p1 = False
         self._descriptors: dict[str, tuple[str | None, bool]] = {}
+        self.projection_sink: ProjectionSink | None = None  # WP-32: the step projection
 
     def _scope(self, scope_id: str, run_id: str) -> _Scope:
         self.run_scopes[run_id].add(scope_id)
@@ -747,10 +778,12 @@ class _Verifier:
         if manifest_seq is not None:
             self.manifest_claims[key] = max(manifest_seq, self.manifest_claims.get(key, -1))
 
-    def add(self, obs: Observation | None) -> None:
+    def add(self, obs: Observation | None, span: SpanRecord | None = None) -> None:
         obs = self._labels(obs)
         if obs is not None:
             self._stamp(obs)
+            if self.projection_sink is not None and span is not None:
+                self.projection_sink.observed(obs, span)
         if isinstance(obs, MalformedMarkerObs):
             self.malformed_scopes.add(obs.scope_id)
             self.add(obs.heartbeat)
@@ -1565,6 +1598,11 @@ class _Run:
             exchanges.append(entry)
             views.append(view)
         stitched = stitch_run(views)
+        sink = self.verifier.projection_sink
+        if sink is not None:
+            for exchange, view in zip(self.members, views, strict=True):
+                read = bodies[exchange.exchange_id]
+                sink.exchange_read(exchange, read.request, read.response, view)
         for gap in stitched.gaps:
             self._add(gap, self._scopes_of(gap.exchange_id))
         self._structure_gaps()

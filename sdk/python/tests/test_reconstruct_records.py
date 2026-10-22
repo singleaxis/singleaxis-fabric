@@ -692,13 +692,14 @@ def test_cli_run_structure_flags(cli_capture: list[str], tmp_path: Path) -> None
     assert report["runs"][0]["evaluated_at"] == "2026-10-19T10:00:00Z"
 
 
-def test_cli_projection_before_wp32_writes_nothing(
-    cli_capture: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_cli_projection_is_written(cli_capture: list[str], tmp_path: Path) -> None:
+    """WP-32: ``--projection`` writes the step projection (the WP-30 stub wrote nothing);
+    its contract checks live in ``test_reconstruct_project``."""
     target = tmp_path / "projection.json"
     assert main([*cli_capture, "--projection", str(target)]) == 0
-    assert not target.exists()
-    assert "no step projection was built" in capsys.readouterr().err
+    projection = json.loads(target.read_text())
+    assert projection["schema_version"] == "fabric.step-projection/v1"
+    assert [run["run_state"] for run in projection["runs"]] == ["terminated"]
 
 
 @pytest.mark.parametrize(
