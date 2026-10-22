@@ -2,24 +2,31 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared harness for the spec 050 WP-11a suites: the WP-00 reference implementations
 (loaded from ``scripts/contracts``), the vectors, and a records input on a real capture
-pipeline, allocator and loss emitter behind the WP-01 spool stub (a sender that takes every
-item: WP-11b's spool is not merged yet)."""
+pipeline, allocator and loss emitter writing to the real WP-11b sender and spool (in a
+temporary directory). What a test reads back went through the spool's own framing and
+header check (``unframe_all``/``valid_header``)."""
 
 from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import sys
-from collections.abc import Callable, Iterator
+import tempfile
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any
+
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric._capture_types import Allocation, NullRunTable
 from fabric._loss import LossEmitter
 from fabric._records import RecordsInput
 from fabric._sequence import SourceAllocator
 from fabric.wire._pipeline import CapturePipeline
+from fabric.wire._sender import Sender
+from fabric.wire._spool import Spool, unframe_all
 from fabric.wire._stream import Budget
 
 REPO = Path(__file__).resolve().parents[3]
@@ -54,19 +61,66 @@ def vector(name: str) -> dict[str, Any]:
     return loaded
 
 
-class StubSender:
-    """The WP-01 spool stub: every item is taken (or given ``outcome``) and kept here."""
+Item = tuple[str, int, dict[str, Any], list[tuple[dict[str, Any], bytes]]]
 
-    def __init__(self, outcome: str = "spooled") -> None:
-        self.items: list[tuple[str, int, dict[str, Any], list[tuple[dict[str, Any], bytes]]]] = []
-        self.outcome = outcome
 
-    def spool_exchanges(self, items: Any) -> list[str]:
-        self.items.extend(items)
-        return [self.outcome] * len(items)
+class RecordingContent:
+    """A Node content endpoint that accepts every body and keeps it."""
+
+    def __init__(self) -> None:
+        self.bodies: list[tuple[dict[str, Any], bytes]] = []
+
+    def send(self, descriptor: Mapping[str, Any], data: Any) -> str:
+        self.bodies.append((dict(descriptor), bytes(data)))
+        return "accepted"
+
+
+class SpoolSender(Sender):
+    """The real WP-11b sender on a real spool. Its drainer is held until :meth:`deliver`,
+    so :attr:`items` can read every spooled entry back from disk first."""
+
+    def __init__(self, loss: LossEmitter) -> None:
+        self.directory = tempfile.mkdtemp(prefix="fabric-records-")
+        self.exported = InMemorySpanExporter()
+        self.content_log = RecordingContent()
+        self._drain_held = True
+        super().__init__(
+            Spool(f"{self.directory}/spool", 64 << 20), self.exported, loss,
+            content=self.content_log, service_name="records-harness",  # type: ignore[arg-type]
+        )  # fmt: skip
 
     def wake(self) -> None:
-        return None
+        if not self._drain_held:
+            super().wake()
+
+    def docs(self) -> list[tuple[dict[str, Any], memoryview]]:
+        """Every spooled entry in drain order, through the spool's own frame checks."""
+        return [entry for name in self.spool.names()
+                for entry in unframe_all(self.spool.read(name))]  # fmt: skip
+
+    @property
+    def items(self) -> list[Item]:
+        """The exchange and record entries as ``(source_id, epoch, span, staged)``, the
+        shape the capture pipeline handed the sender (JSON arrays for sequences)."""
+        found: list[Item] = []
+        for doc, blob in self.docs():
+            if doc["record_kind"] not in ("exchange", "record"):
+                continue
+            staged = [(body["descriptor"], bytes(blob[body["offset"]:][: body["length"]]))
+                      for body in doc["bodies"]]  # fmt: skip
+            found.append((doc["source"]["source_id"], doc["source"]["source_epoch"],
+                          doc["span"], staged))  # fmt: skip
+        return found
+
+    def deliver(self, timeout_s: float = 10.0) -> bool:
+        """Release the drainer and deliver everything spooled (bodies, then spans)."""
+        self._drain_held = False
+        return self.flush(timeout_s)
+
+    def shut(self) -> None:
+        self._drain_held = False
+        self.close(5.0)
+        shutil.rmtree(self.directory, ignore_errors=True)
 
 
 class SegmentTable(NullRunTable):
@@ -85,21 +139,20 @@ def alternating(*segments: str) -> Callable[[Allocation], str | None]:
 
 
 class Handle:
-    """A minimal installed handle around a real pipeline (spool stub or provider path)."""
+    """A minimal installed handle around a real pipeline (real spool or provider path)."""
 
     def __init__(
         self, *, node: bool = True, provider: Any = None, budget: int = 1 << 30,
         queue_max_items: int = 1024, protector: Any = None, gate: Any = None,
         labels: str = "pseudonymous", id_key: bytes | None = None,
         segments: Callable[[Allocation], str | None] | None = None,
-        sender: StubSender | None = None,
     ) -> None:  # fmt: skip
         self.loss = LossEmitter()
         self.markers: list[Any] = []
         self.allocator = SourceAllocator(SOURCE, "wire")
-        self.sender = (sender or StubSender()) if node else None
+        self.sender = SpoolSender(self.loss) if node else None
         self.pipeline = CapturePipeline(
-            store=None, tracer_provider=provider, loss=self.loss, sender=self.sender,  # type: ignore[arg-type]
+            store=None, tracer_provider=provider, loss=self.loss, sender=self.sender,
             node_tenant_id="tenant-a" if node else None, queue_max_items=queue_max_items,
             protector=protector, gate=gate,
         )  # fmt: skip
@@ -127,4 +180,6 @@ class Handle:
 
     def close(self) -> None:
         self.pipeline.close(2.0)
+        if self.sender is not None:
+            self.sender.shut()
         self.loss.close(1.0)

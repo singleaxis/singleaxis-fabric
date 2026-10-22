@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Spec 050 §3.4 (WP-11a): the records input. Rule A and rule N against the WP-00 vectors,
 the R4 phase table, R9 strict versus fail-open, the identity rule (R8), descriptor-only
-and string bodies, the in-flight charge, PROTECT on the spool path (behind the WP-01 spool
-stub), content provenance end to end, the provider path (sampled out, D3 refusal) and the
-passivity of ``emit``."""
+and string bodies, the in-flight charge, PROTECT on the spool path (the real WP-11b sender
+and spool), delivery from that spool, content provenance end to end, the provider path
+(sampled out, D3 refusal) and the passivity of ``emit``."""
 
 from __future__ import annotations
 
@@ -314,6 +314,40 @@ def test_observed_records_keep_protocol_provenance_end_to_end(handle: Handle) ->
     assert provenance == [("mcp.notification", "protocol", "stored"),
                           ("mcp.request", "caller_reported", "stored"),
                           ("record.evidence", "protocol", "stored")]  # fmt: skip
+
+
+def test_a_record_is_delivered_from_the_real_spool_bodies_first(handle: Handle) -> None:
+    """050 §3.5 end to end on the WP-11b sender: the record entry passes the spool's header
+    check (span status ``ok`` included), its bodies reach the Node in reference order (a
+    descriptor-only body as its descriptor with no bytes), then its span is exported as the
+    record itself (name, kind, status, ids and attributes as spooled) and the spool empties."""
+    attempt = handle.input.begin("tool_call", "sdk.records")
+    bodies = [
+        RecordBody("tool.call.arguments", b'{"q":1}', JSON, "tool"),
+        DescriptorOnlyBody.for_reason("step.error", "text/plain", "caller", "not_exact_bytes",
+                                      observed_byte_length=7),
+        RecordBody("tool.call.result", b'{"ok":true}', JSON, "tool"),
+    ]  # fmt: skip
+    assert _emit(attempt, bodies=bodies, otlp_status="ok")
+    [(span, staged)] = _items(handle)
+    assert span["status"] == "ok"
+    sender = handle.sender
+    assert sender is not None
+    assert sender.deliver()
+    assert sender.spool.names() == []
+    assert sender.content_log.bodies == staged
+    assert [len(data) for _, data in staged] == [7, 0, 11]
+    [exported] = [s for s in sender.exported.get_finished_spans() if s.name == span["name"]]
+    assert exported.status.status_code is StatusCode.OK
+    assert exported.instrumentation_scope is not None
+    assert exported.instrumentation_scope.name == "fabric.records"
+    assert (f"{exported.context.trace_id:032x}", f"{exported.context.span_id:016x}") == (
+        span["trace_id"], span["span_id"])  # fmt: skip
+    assert (exported.start_time, exported.end_time) == (
+        span["start_time_unix_nano"], span["end_time_unix_nano"])  # fmt: skip
+    attributes = dict(exported.attributes or {})
+    plain = {k: list(v) if isinstance(v, tuple) else v for k, v in attributes.items()}
+    assert plain == span["attributes"]
 
 
 def test_reported_records_cannot_claim_protocol_provenance(
