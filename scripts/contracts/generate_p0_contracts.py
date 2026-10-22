@@ -5558,7 +5558,8 @@ def render_go_evidence(reg: dict[str, Any]) -> str:
             f"\tevidenceMaxRefs       = {ref.EVIDENCE_MAX_REFS}\n",
             ")\n",
             "\n",
-            "// evidenceEnvelopeKeys are the closed top-level keys of the envelope.\n",
+            "// evidenceEnvelopeKeys are the closed top-level keys of the envelope\n",
+            "// (true: required).\n",
             "var evidenceEnvelopeKeys = map[string]bool{\n",
             *[
                 f"\t{(json.dumps(k) + ':').ljust(kwidth)} {str(k in ('schema_version', 'evidence_type', 'items')).lower()},\n"

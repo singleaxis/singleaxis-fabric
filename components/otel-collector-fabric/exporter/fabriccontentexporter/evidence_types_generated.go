@@ -21,7 +21,8 @@ const (
 	evidenceMaxRefs       = 64
 )
 
-// evidenceEnvelopeKeys are the closed top-level keys of the envelope.
+// evidenceEnvelopeKeys are the closed top-level keys of the envelope
+// (true: required).
 var evidenceEnvelopeKeys = map[string]bool{
 	"schema_version": true,
 	"evidence_type":  true,
