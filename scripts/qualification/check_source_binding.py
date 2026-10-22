@@ -355,6 +355,10 @@ def verify(args: argparse.Namespace) -> None:
         raw = path.read_bytes()
         if CANARY in raw or b"file://" in raw:
             raise AssertionError("source-binding private bytes leaked to destination")
+        # The controlled sink names each request by its OTLP signal: span and
+        # metric requests (the bound-ingress span probe) are not log evidence.
+        if path.name.startswith(("traces-", "metrics-")):
+            continue
         request = ExportLogsServiceRequest()
         request.ParseFromString(raw)
         for resource in request.resource_logs:

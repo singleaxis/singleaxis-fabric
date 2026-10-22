@@ -63,6 +63,9 @@ def expected_records(path: Path) -> dict[str, dict[str, object]]:
     return result
 
 
+OTHER_SIGNAL_PREFIXES = ("traces-", "metrics-")
+
+
 def readback(
     directory: Path,
     expected: dict[str, dict[str, object]],
@@ -77,6 +80,11 @@ def readback(
         raw = path.read_bytes()
         if CANARY in raw or b"file://" in raw:
             raise AssertionError("private bytes or local refs escaped to sink")
+        # The controlled sink names each request by its OTLP signal
+        # (deploy/compose/sink/otlp_sink.py): span and metric requests, such
+        # as the bound-ingress span probe, are not log evidence.
+        if path.name.startswith(OTHER_SIGNAL_PREFIXES):
+            continue
         request = ExportLogsServiceRequest()
         request.ParseFromString(raw)
         for resource in request.resource_logs:

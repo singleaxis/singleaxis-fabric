@@ -4,6 +4,7 @@ import importlib.util
 from pathlib import Path
 
 import pytest
+from google.protobuf.message import DecodeError
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
 )
@@ -61,4 +62,17 @@ def test_missing_and_extra_records_fail(tmp_path):
 def test_canary_in_actual_sink_bytes_fails(tmp_path):
     record(tmp_path, "leak.otlp", outcome=pilot.CANARY.decode())
     with pytest.raises(AssertionError, match="private"):
+        pilot.readback(tmp_path, expected())
+
+
+def test_span_requests_at_the_sink_are_not_log_evidence(tmp_path):
+    record(tmp_path, "logs-1.otlp")
+    (tmp_path / "traces-1.otlp").write_bytes(b"\x0a\xff not a logs request")
+    assert pilot.readback(tmp_path, expected()) == 1
+    (tmp_path / "traces-2.otlp").write_bytes(pilot.CANARY)
+    with pytest.raises(AssertionError, match="private"):
+        pilot.readback(tmp_path, expected())
+    (tmp_path / "traces-2.otlp").unlink()
+    (tmp_path / "unnamed.otlp").write_bytes(b"\x0a\xff not a logs request")
+    with pytest.raises(DecodeError):  # an unlabelled request is still parsed as logs
         pilot.readback(tmp_path, expected())

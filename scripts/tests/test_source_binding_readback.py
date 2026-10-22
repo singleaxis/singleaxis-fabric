@@ -70,3 +70,16 @@ def test_readback_differences_never_verify(tmp_path: Path, fault: str) -> None:
     with pytest.raises(AssertionError):
         probe.verify(args)
     assert not json.loads(args.report.read_text()).get("durable_readback_verified")
+
+
+def test_span_requests_at_the_sink_are_skipped_but_still_privacy_checked(
+    tmp_path: Path,
+) -> None:
+    args, request = fixture(tmp_path)
+    (tmp_path / "logs-1.otlp").write_bytes(request.SerializeToString())
+    (tmp_path / "traces-1.otlp").write_bytes(b"\x0a\xff not a logs request")
+    probe.verify(args)
+    assert json.loads(args.report.read_text())["durable_readback_verified"] is True
+    (tmp_path / "traces-2.otlp").write_bytes(probe.CANARY)
+    with pytest.raises(AssertionError, match="leaked"):
+        probe.verify(args)
