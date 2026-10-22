@@ -54,9 +54,22 @@ var decisionLineLabelKeys = toSet(
 // Node: the tool name's label and the first 12 hex of its definition digest.
 var mcpToolEntryPattern = regexp.MustCompile(`^lbl-[0-9a-f]{32}:[0-9a-f]{12}$`)
 
+// decisionLineMappedOnlyKeys were never admitted clear: the Node admits them
+// only in the SDK's mapped form, whatever its identity_mode (v0.8.1 Sol
+// review item 7): the memory store id as mst- (pseudonym v2) and tags as
+// lists of lbl- operator labels.
+var decisionLineMappedOnlyKeys = map[string]func(pcommon.Value) bool{
+	"gen_ai.memory.store.id": matches(pseudonymPattern("mst")),
+	"fabric.tags":            sliceOf(1, 256, false, matches(labelPseudonymPattern)),
+	"fabric.memory.tags":     sliceOf(1, 256, false, matches(labelPseudonymPattern)),
+}
+
 // validDecisionLineValue closes a decision-line key's value; ok is false when
 // the key is not one of them.
 func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, ok bool) {
+	if check, mappedOnly := decisionLineMappedOnlyKeys[key]; mappedOnly {
+		return check(value), true
+	}
 	_, id := decisionLineIDKeys[key]
 	_, label := decisionLineLabelKeys[key]
 	_, provider := decisionLineProviderKeys[key]
