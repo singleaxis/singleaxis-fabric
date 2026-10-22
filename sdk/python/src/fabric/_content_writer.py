@@ -5,8 +5,10 @@
 Moves object-store I/O off the agent's execution path. Three durability
 modes:
 
-- ``inline``: write on the caller's thread (legacy ``content_store=``
-  semantics; no loss window but store latency is on the agent path).
+- ``inline``: the write runs on a worker thread and the caller waits for
+  it at most ``inline_deadline_ms`` (default 50 ms, spec 049 §7.1); past
+  the deadline the item is ``pending`` and the write settles it in the
+  background. ``flush``/``close`` wait for it.
 - ``process``: bounded in-process queue + background worker. Process
   death loses queued, unwritten objects — the documented loss window.
 - ``spooled``: fsync'd spool entry on enqueue, then the worker uploads.
@@ -32,6 +34,7 @@ import threading
 import time
 from collections import deque
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -44,11 +47,14 @@ if TYPE_CHECKING:
     from .content_store.base import GovernedStore
 
 _LOG = logging.getLogger("fabric.content_writer")
+_INLINE_CONTEXT = threading.local()  # set on inline worker threads
 
 _DURABILITY_MODES = frozenset({"inline", "process", "spooled"})
 _QUEUE_MAX_CAP = 65536
 _PAYLOAD_MAX_CAP = 16 * 1024 * 1024
 _ENQUEUE_TIMEOUT_CAP_MS = 100
+_INLINE_DEADLINE_CAP_MS = 5000
+_INLINE_WORKERS = 4
 _SPOOL_VERSION = "fabric.content-spool/v2"
 _LEGACY_SPOOL_VERSION = 1
 _SPOOL_SUFFIX = ".corrupt"
@@ -76,6 +82,9 @@ class ContentCaptureConfig:
     retry_max_elapsed_s: float = 300.0
     worker_flush_interval_ms: int = 250
     shutdown_flush_timeout_s: float = 10.0
+    # Spec 049 §7.1: the most an ``inline`` write may hold the caller before the item is
+    # reported ``pending`` and the write completes in the background.
+    inline_deadline_ms: int = 50
 
     def __post_init__(self) -> None:
         if self.store is None:
@@ -90,6 +99,7 @@ class ContentCaptureConfig:
         if self.durability == "spooled" and not self.spool_dir:
             raise ValueError("ContentCaptureConfig: spooled durability requires spool_dir")
         for name, value, cap in (
+            ("inline_deadline_ms", self.inline_deadline_ms, _INLINE_DEADLINE_CAP_MS),
             ("queue_max_items", self.queue_max_items, _QUEUE_MAX_CAP),
             ("payload_max_bytes", self.payload_max_bytes, _PAYLOAD_MAX_CAP),
             ("enqueue_timeout_ms", self.enqueue_timeout_ms, _ENQUEUE_TIMEOUT_CAP_MS),
@@ -191,6 +201,8 @@ class ContentWriter:
         # spool record or reach the destination.
         self._manifest_revisions: dict[str, int] = {}
         self._manifest_revision_counters: dict[str, int] = {}
+        self._inline_pool: ThreadPoolExecutor | None = None
+        self._inline_in_flight = 0
         self._worker: threading.Thread | None = None
         self._wake = threading.Event()
         self._spool_dir: Path | None = None
@@ -344,7 +356,7 @@ class ContentWriter:
         self._wake.set()
         return ContentStatus.PENDING
 
-    def _submit_inline(self, task: _Task) -> str:
+    def _deliver_inline(self, task: _Task) -> str:
         try:
             return self._deliver(task)
         except _RetryLaterError:
@@ -353,6 +365,55 @@ class ContentWriter:
             self._stats["failed"] += 1
             self._settle(task, ContentStatus.FAILED)
             return ContentStatus.FAILED
+
+    def _submit_inline(self, task: _Task) -> str:
+        """Spec 049 §7.1: an inline write runs on a worker thread; the caller waits at
+        most ``inline_deadline_ms``, after which the item is ``pending`` and the write
+        settles it in the background (``flush``/``close`` wait for it). A settlement
+        callback already on a worker thread delivers directly."""
+        if getattr(_INLINE_CONTEXT, "worker", False):
+            return self._deliver_inline(task)
+        with self._pending_lock:
+            if self._inline_in_flight >= self._config.queue_max_items:
+                self._stats["dropped"] += 1
+                return ContentStatus.DROPPED
+            self._inline_in_flight += 1
+            self._pending[task.key] = task
+        done = threading.Event()
+        outcome: list[str] = []
+
+        def run() -> None:
+            _INLINE_CONTEXT.worker = True
+            try:
+                outcome.append(self._deliver_inline(task))
+            except Exception:  # _deliver settles every outcome; never escape the worker
+                outcome.append(ContentStatus.FAILED)
+            finally:
+                with self._pending_lock:
+                    self._inline_in_flight -= 1
+                    if self._pending.get(task.key) is task:
+                        self._pending.pop(task.key, None)
+                done.set()
+
+        try:
+            self._inline_executor().submit(run)
+        except RuntimeError:  # executor shut down: the writer is closing
+            with self._pending_lock:
+                self._inline_in_flight -= 1
+                self._pending.pop(task.key, None)
+            self._stats["failed"] += 1
+            return ContentStatus.FAILED
+        if done.wait(self._config.inline_deadline_ms / 1000.0) and outcome:
+            return outcome[0]
+        return ContentStatus.PENDING
+
+    def _inline_executor(self) -> ThreadPoolExecutor:
+        with self._pending_lock:
+            if self._inline_pool is None:
+                self._inline_pool = ThreadPoolExecutor(
+                    max_workers=_INLINE_WORKERS, thread_name_prefix="fabric-content-inline"
+                )
+            return self._inline_pool
 
     # -- spool --------------------------------------------------------------
 
@@ -798,6 +859,8 @@ class ContentWriter:
         self.flush(timeout_s=self._config.shutdown_flush_timeout_s)
         self._closed = True
         self._wake.set()
+        if self._inline_pool is not None:
+            self._inline_pool.shutdown(wait=False)
         if self._worker is not None:
             self._worker.join(timeout=5.0)
         close = getattr(self._store, "close", None)

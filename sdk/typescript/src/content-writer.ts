@@ -14,6 +14,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { setImmediate } from "node:timers";
 import { randomUUID } from "node:crypto";
 import { sha256BytesHex } from "./hash.js";
 
@@ -46,9 +47,13 @@ export interface ContentCaptureConfig {
   store: GovernedStore;
   /** Role filter: `"all"` or an explicit subset of CONTENT_ROLES. */
   roles: "all" | ReadonlySet<string>;
-  /** `inline` (sync store write on the caller path), `process`
-   * (in-memory queue + event-loop drain), or `spooled` (fsync'd local
-   * handoff first). `inline` requires a synchronous store. */
+  /** `inline` (the write runs on the next event-loop turn, never on the
+   * caller's stack: the item is `pending` until it settles, and `flush()`
+   * waits for it; a synchronous store still occupies the event loop while
+   * it writes, as with `process`), `process` (in-memory queue + timed
+   * event-loop drain), or `spooled` (fsync'd local handoff first). `inline`
+   * requires a synchronous store and no longer means "durable before the
+   * call returns": call `flush()` for that. */
   durability?: "inline" | "process" | "spooled";
   /** Bounded queue capacity; overflow marks the item `dropped`. */
   queueMaxItems?: number;
@@ -202,6 +207,8 @@ export class ContentWriter {
   };
   private closed = false;
   private draining = false;
+  private readonly inlineQueue: Task[] = [];
+  private inlineTimer: ReturnType<typeof setImmediate> | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private readonly spoolDirPath: string | undefined;
   private retryBacklog: Task[] = [];
@@ -340,7 +347,7 @@ export class ContentWriter {
 
   private submitTask(task: Task): string {
     if (this.config.durability === "inline") {
-      return this.deliverInline(task);
+      return this.queueInline(task);
     }
     if (this.config.durability === "spooled") {
       // Durable handoff first: a queue-full or spool-full drop never
@@ -359,6 +366,41 @@ export class ContentWriter {
     this.counters.enqueued += 1;
     this.scheduleDrain();
     return ContentStatus.PENDING;
+  }
+
+  /**
+   * Spec 049 §7.1: an inline write never runs on the caller's stack. It is
+   * queued, the item is reported `pending`, and the write runs on the next
+   * event-loop turn (`setImmediate`); `flush()`/`close()` wait for it. A
+   * synchronous store still occupies the event loop while its write runs,
+   * exactly as `process` durability does.
+   */
+  private queueInline(task: Task): string {
+    if (this.inlineQueue.length >= this.config.queueMaxItems) {
+      this.counters.dropped += 1;
+      return ContentStatus.DROPPED;
+    }
+    this.pending.set(task.key, task);
+    this.inlineQueue.push(task);
+    this.counters.enqueued += 1;
+    if (this.inlineTimer === undefined) {
+      this.inlineTimer = setImmediate(() => {
+        this.inlineTimer = undefined;
+        this.drainInline();
+      });
+      this.inlineTimer.unref();
+    }
+    return ContentStatus.PENDING;
+  }
+
+  /** Deliver every queued inline write (off the caller's stack). */
+  private drainInline(): void {
+    for (;;) {
+      const task = this.inlineQueue.shift();
+      if (task === undefined) return;
+      this.deliverInline(task);
+      if (this.pending.get(task.key) === task) this.pending.delete(task.key);
+    }
   }
 
   private deliverInline(task: Task): string {
@@ -826,6 +868,8 @@ export class ContentWriter {
   async flush(timeoutS?: number): Promise<FlushResult> {
     const deadline = timeoutS === undefined ? undefined : Date.now() + timeoutS * 1000;
     for (;;) {
+      // Inline writes queued on this turn are delivered now (flush waits for them).
+      this.drainInline();
       // Give the drain loop a chance to make progress — bounded by the
       // deadline so a hung store cannot pin close() forever (a pending
       // remainder is the honest gap).
@@ -841,6 +885,7 @@ export class ContentWriter {
       if (
         this.pending.size === 0 &&
         this.queue.length === 0 &&
+        this.inlineQueue.length === 0 &&
         this.retryBacklog.length === 0 &&
         this.recoveryBacklog.length === 0
       ) {

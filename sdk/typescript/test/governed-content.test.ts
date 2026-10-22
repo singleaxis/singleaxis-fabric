@@ -47,6 +47,7 @@ import {
   type ContentDescriptor,
 } from "../src/index.js";
 import { ContentWriter } from "../src/content-writer.js";
+import type { Decision } from "../src/decision.js";
 import type { ContentRef, GovernedStore } from "../src/content-store.js";
 
 /**
@@ -421,7 +422,7 @@ describe("ContentWriter", () => {
     return { descriptor, text: new TextDecoder().decode(data) };
   }
 
-  it("inline durability stores synchronously", async () => {
+  it("inline durability never writes on the caller's stack; flush stores it", async () => {
     const root = tmpRoot();
     const writer = new ContentWriter({
       store: store(root),
@@ -429,7 +430,8 @@ describe("ContentWriter", () => {
       durability: "inline",
     });
     const { descriptor, text } = descriptorFor({ m: 1 });
-    expect(writer.submit(descriptor, text)).toBe(ContentStatus.STORED);
+    // v0.8.1 (spec 049 §7.1): queued and pending; delivered on the next turn.
+    expect(writer.submit(descriptor, text)).toBe(ContentStatus.PENDING);
     const result = await writer.close();
     expect(result.stored).toBe(1);
     expect(result?.pending).toBe(0);
@@ -476,7 +478,8 @@ describe("ContentWriter", () => {
       durability: "inline",
     });
     const { descriptor, text } = descriptorFor({ m: 3 });
-    expect(writer.submit(descriptor, text)).toBe(ContentStatus.FAILED);
+    expect(writer.submit(descriptor, text)).toBe(ContentStatus.PENDING); // settles failed
+
     const result = await writer.close();
     expect(result.failed).toBe(1);
   });
@@ -578,9 +581,13 @@ describe("governed capture surfaces", () => {
     });
     const result = await fabric.flushContent(5);
     // retrieval query+results, memory write+read, side effect req+res,
-    // context file, interaction payload = 8 objects; the writer's
-    // `stored` counter also includes the manifest delivery = 9.
-    expect(result?.stored).toBe(9);
+    // context file, interaction payload = 8 objects. v0.8.1: inline writes
+    // settle after the decision closed, so the writer's `stored` counter
+    // also holds the manifest at close plus one idempotent rewrite per
+    // settlement (spec 032 §5) = 8 + 1 + 8.
+    expect(result?.stored).toBe(17);
+    expect(result?.pending).toBe(0);
+    expect(result?.failed).toBe(0);
     const events = spanByName("fabric.decision").events;
     const retrieval = events.find((e) => e.name === "fabric.retrieval");
     expect(retrieval?.attributes?.["fabric.content.request_ref"]).toBeDefined();
@@ -596,7 +603,7 @@ describe("governed capture surfaces", () => {
     const fabric = governedFabric(root, {
       roles: new Set([ContentRole.MODEL_REQUEST_MESSAGES]),
     });
-    let manifestItems: { role: string; status: string }[] | undefined;
+    let manifest: Decision["contentManifest"];
     fabric.decision({ sessionId: "s1", requestId: "r1" }, (d) => {
       d.llmCall(
         {
@@ -607,9 +614,11 @@ describe("governed capture surfaces", () => {
         },
         () => {},
       );
-      manifestItems = d.contentManifest?.items.map((i) => ({ role: i.role, status: i.status }));
+      manifest = d.contentManifest;
     });
+    // v0.8.1: inline writes settle off the caller's stack; read after flush.
     await fabric.flushContent(5);
+    const manifestItems = manifest?.items.map((i) => ({ role: i.role, status: i.status }));
     const instructions = manifestItems?.find((i) => i.role === "model.request.instructions");
     expect(instructions?.status).toBe(ContentStatus.NOT_CAPTURED);
     const messages = manifestItems?.find((i) => i.role === "model.request.messages");
@@ -619,19 +628,19 @@ describe("governed capture surfaces", () => {
   it("partial output uses representation=assembled with a status reason", async () => {
     const root = tmpRoot();
     const fabric = governedFabric(root);
-    let itemStatus: string | undefined;
-    let repr: string | undefined;
-    let reason: string | undefined;
+    let manifest: Decision["contentManifest"];
     fabric.decision({ sessionId: "s1", requestId: "r1" }, (d) => {
       d.llmCall({ model: "m", provider: "test-provider" }, (call) => {
         call.recordPartialOutput("hel");
       });
-      const item = d.contentManifest?.items.find((i) => i.role === "model.output.messages");
-      itemStatus = item?.status;
-      repr = item?.descriptor?.representation;
-      reason = item?.descriptor?.status_reason;
+      manifest = d.contentManifest;
     });
+    // v0.8.1: inline writes settle off the caller's stack; read after flush.
     await fabric.flushContent(5);
+    const item = manifest?.items.find((i) => i.role === "model.output.messages");
+    const itemStatus = item?.status;
+    const repr = item?.descriptor?.representation;
+    const reason = item?.descriptor?.status_reason;
     expect(itemStatus).toBe(ContentStatus.STORED);
     expect(repr).toBe("assembled");
     expect(reason).toBe("partial output");
