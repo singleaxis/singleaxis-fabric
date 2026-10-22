@@ -52,6 +52,7 @@ from fabric._calls import ToolCall, ToolErrorCategory
 from fabric._crosscut import apply_cross_cutting
 
 from .._hashes import sha256_hex
+from .._safe_log import safe_log
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -325,7 +326,7 @@ def _open_tool_span(
         tc = decision.tool_call(tool_name)
         tc.__enter__()
     except Exception:
-        _LOG.debug("fabric.mcp: tool span not opened; the call proceeds unrecorded")
+        safe_log(_LOG, logging.DEBUG, "fabric.mcp: tool span not opened; the call proceeds")
         return None
     try:
         tc.set_kind("mcp")
@@ -339,7 +340,7 @@ def _open_tool_span(
         if arguments is not None:
             tc.set_arguments(_serialize_arguments(arguments))
     except Exception:
-        _LOG.debug("fabric.mcp: tool call arguments not recorded")
+        safe_log(_LOG, logging.DEBUG, "fabric.mcp: tool call arguments not recorded")
     return tc
 
 
@@ -353,7 +354,7 @@ def _record_result(tc: ToolCall, result: Any) -> None:
         if getattr(result, "isError", False):
             tc.record_error(ToolErrorCategory.SERVER_ERROR)
     except Exception:
-        _LOG.debug("fabric.mcp: tool error flag not recorded")
+        safe_log(_LOG, logging.DEBUG, "fabric.mcp: tool error flag not recorded")
     try:
         content = getattr(result, "content", None)
         if content is not None:
@@ -361,11 +362,11 @@ def _record_result(tc: ToolCall, result: Any) -> None:
             with contextlib.suppress(TypeError):
                 tc.set_result_count(len(content))
     except Exception:
-        _LOG.debug("fabric.mcp: tool result count not recorded")
+        safe_log(_LOG, logging.DEBUG, "fabric.mcp: tool result count not recorded")
     try:
         tc.set_result(_result_hashable_view(result))
     except Exception:
-        _LOG.debug("fabric.mcp: tool result not recorded")
+        safe_log(_LOG, logging.DEBUG, "fabric.mcp: tool result not recorded")
 
 
 def _close_tool_span(tc: ToolCall | None, exc: BaseException | None) -> None:
@@ -377,7 +378,7 @@ def _close_tool_span(tc: ToolCall | None, exc: BaseException | None) -> None:
         else:
             tc.__exit__(type(exc), exc, exc.__traceback__)
     except Exception:
-        _LOG.debug("fabric.mcp: tool span not closed cleanly")
+        safe_log(_LOG, logging.DEBUG, "fabric.mcp: tool span not closed cleanly")
 
 
 async def _traced_call(
@@ -489,7 +490,7 @@ class InstrumentedMCPSession:
                 prompts=self._observed.get("prompts"),
             )
         except Exception:
-            _LOG.debug("fabric.mcp: observed listing not recorded")
+            safe_log(_LOG, logging.DEBUG, "fabric.mcp: observed listing not recorded")
 
     def _observed_list(self, field: str, target: Callable[..., Any]) -> Callable[..., Any]:
         @functools.wraps(target)

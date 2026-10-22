@@ -45,7 +45,6 @@ managers.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import math
@@ -134,6 +133,7 @@ from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
 from ._identity import IdentityPolicy, record_exception
+from ._safe_log import exc_class, safe_log
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .memory import MemoryKind, MemoryRecord
@@ -559,12 +559,12 @@ class Decision(AbstractContextManager["Decision"]):
             self._concurrent_use += 1
         if not _CONCURRENT_WARNED.is_set():
             _CONCURRENT_WARNED.set()
-            with contextlib.suppress(Exception):  # logging must not change agent behaviour
-                _LOG.warning(
-                    "fabric: a Decision was used concurrently from several threads or tasks; "
-                    "the overlapping call was recorded without serialisation and the "
-                    "decision's rolling counters may be off (see Decision.capture_health)"
-                )
+            safe_log(
+                _LOG, logging.WARNING,
+                "fabric: a Decision was used concurrently from several threads or tasks; "
+                "the overlapping call was recorded without serialisation and the "
+                "decision's rolling counters may be off (see Decision.capture_health)",
+            )  # fmt: skip
 
     @property
     def concurrent_use_count(self) -> int:
@@ -948,12 +948,12 @@ class Decision(AbstractContextManager["Decision"]):
             return None
         try:
             return store.put(content, key_hint=key_hint).uri
-        except Exception:
-            _LOG.warning(
-                "fabric.decision: content store put() failed; emitting the "
-                "event without a content ref",
-                exc_info=True,
-            )
+        except Exception as exc:  # class only: a store's message can echo the payload
+            safe_log(
+                _LOG, logging.WARNING,
+                "fabric.decision: content store put() failed (%s); emitting the event "
+                "without a content ref", exc_class(exc),
+            )  # fmt: skip
             return None
 
     # -- governed content (spec 028/029) -----------------------------------

@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from ._content import DESCRIPTOR_STATUSES, ContentDescriptor, ContentStatus
+from ._safe_log import exc_class, safe_log
 from .content_store.local import _directory
 
 if TYPE_CHECKING:
@@ -249,7 +250,9 @@ class ContentWriter:
         Never raises — failures map to ``dropped``/``failed`` statuses.
         """
         if self._closed:
-            _LOG.warning("fabric.content_writer: submit after close; marking failed")
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: submit after close; marking failed"
+            )
             return ContentStatus.FAILED
         task = _Task(
             kind="object",
@@ -279,7 +282,7 @@ class ContentWriter:
         document wins (spec 032 §5).
         """
         if self._closed:
-            _LOG.warning("fabric.content_writer: manifest submit after close")
+            safe_log(_LOG, logging.WARNING, "fabric.content_writer: manifest submit after close")
             return ContentStatus.FAILED
         with self._pending_lock:
             revision = self._manifest_revision_counters.get(manifest_id, 0) + 1
@@ -332,11 +335,10 @@ class ContentWriter:
             if self._config.durability == "spooled":
                 self._remove_spool(task)
             self._stats["dropped"] += 1
-            _LOG.warning(
-                "fabric.content_writer: queue full (%d); dropping %s",
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: queue full (%d); dropping an item",
                 self._config.queue_max_items,
-                task.key,
-            )
+            )  # fmt: skip
             return ContentStatus.DROPPED
         self._stats["enqueued"] += 1
         self._wake.set()
@@ -406,10 +408,7 @@ class ContentWriter:
         with contextlib.suppress(OSError):
             previous_size = path.stat().st_size
         if self._spool_usage() - previous_size + len(entry) > self._config.spool_max_bytes:
-            _LOG.warning(
-                "fabric.content_writer: spool full; dropping %s",
-                task.key,
-            )
+            safe_log(_LOG, logging.WARNING, "fabric.content_writer: spool full; dropping an item")
             return False
         try:
             fd, tmp = tempfile.mkstemp(dir=str(spool_dir), prefix=".spool-", suffix=".tmp")
@@ -428,8 +427,11 @@ class ContentWriter:
             if count:
                 self._stats["spooled"] += 1
             return True
-        except OSError:
-            _LOG.warning("fabric.content_writer: spool write failed", exc_info=True)
+        except OSError as exc:
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: spool write failed (%s)",
+                exc_class(exc),
+            )  # fmt: skip
             return False
 
     def _spool_usage(self) -> int:
@@ -527,11 +529,13 @@ class ContentWriter:
         """Move an unreadable record aside; the explicit outcome is a
         ``corrupt`` stat + ``.corrupt`` marker, never silent loss."""
         self._stats["corrupt"] += 1
-        _LOG.warning("fabric.content_writer: quarantining corrupt spool entry %s", path)
+        safe_log(_LOG, logging.WARNING, "fabric.content_writer: quarantining a corrupt spool entry")
         try:
             os.replace(path, path.with_suffix(path.suffix + _SPOOL_SUFFIX))
         except OSError:
-            _LOG.warning("fabric.content_writer: corrupt entry %s could not be moved", path)
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: a corrupt entry could not be moved"
+            )
 
     # -- delivery -----------------------------------------------------------
 
@@ -558,23 +562,22 @@ class ContentWriter:
                 self._store.put_object(task.descriptor.to_json(), task.content)
                 if not self._has_subscriber(task.key) and task.manifest_id:
                     self._reconcile_recovered_object(task, ContentStatus.STORED)
-        except Exception:
+        except Exception as exc:
             if (
                 task.attempts < self._config.retry_max_attempts
                 and time.time() - task.first_enqueued < self._config.retry_max_elapsed_s
             ):
                 if self._spool_dir is not None and not self._spool(task, count=False):
-                    _LOG.warning(
-                        "fabric.content_writer: could not persist retry metadata for %s",
-                        task.key,
-                    )
+                    safe_log(
+                        _LOG, logging.WARNING,
+                        "fabric.content_writer: could not persist retry metadata",
+                    )  # fmt: skip
                 raise _RetryLaterError from None
             self._stats["failed"] += 1
-            _LOG.warning(
-                "fabric.content_writer: delivery failed permanently for %s",
-                task.key,
-                exc_info=True,
-            )
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: delivery failed permanently (%s)",
+                exc_class(exc),
+            )  # fmt: skip
             if task.kind == "object" and task.manifest_id and not self._has_subscriber(task.key):
                 with contextlib.suppress(Exception):
                     self._reconcile_recovered_object(task, ContentStatus.FAILED)
@@ -584,7 +587,10 @@ class ContentWriter:
             # The destination accepted the write, but source cleanup is not
             # durably settled. Keep the task pending so flush cannot certify
             # a drained source; the spool is recoverable on the next start.
-            _LOG.warning("fabric.content_writer: spool cleanup failed; delivery remains pending")
+            safe_log(
+                _LOG, logging.WARNING,
+                "fabric.content_writer: spool cleanup failed; delivery remains pending",
+            )  # fmt: skip
             return ContentStatus.PENDING
         self._stats["stored"] += 1
         self._settle(task, ContentStatus.STORED)
@@ -610,8 +616,11 @@ class ContentWriter:
         if callback is not None and task.descriptor is not None:
             try:
                 callback(task.descriptor, status)
-            except Exception:
-                _LOG.warning("fabric.content_writer: settled callback failed", exc_info=True)
+            except Exception as exc:
+                safe_log(
+                    _LOG, logging.WARNING, "fabric.content_writer: settled callback failed (%s)",
+                    exc_class(exc),
+                )  # fmt: skip
         # A subscriber may submit a manifest rewrite. Do not let flush see
         # zero pending work until that follow-on publication has finished.
         with self._pending_lock:
@@ -795,8 +804,11 @@ class ContentWriter:
         if callable(close):
             try:
                 close()
-            except Exception:
-                _LOG.warning("fabric.content_writer: store close failed", exc_info=True)
+            except Exception as exc:
+                safe_log(
+                    _LOG, logging.WARNING, "fabric.content_writer: store close failed (%s)",
+                    exc_class(exc),
+                )  # fmt: skip
 
     def stats(self) -> dict[str, int]:
         with self._pending_lock:

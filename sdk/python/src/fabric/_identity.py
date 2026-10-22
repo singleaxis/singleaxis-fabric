@@ -16,6 +16,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ._safe_log import safe_log
 from ._sequence import (
     LABELS_ENV,
     IdentityMode,
@@ -57,10 +58,11 @@ class IdentityPolicy:
         )
         if policy.mode == "pseudonymous" and policy.key is None and not _WARNED.is_set():
             _WARNED.set()  # class-only text, once per process
-            _LOG.warning(
+            safe_log(
+                _LOG, logging.WARNING,
                 "fabric: identity mode is pseudonymous and FABRIC_WIRE_ID_KEY is not set; "
-                "session, user and other caller-supplied ids are omitted from telemetry"
-            )
+                "session, user and other caller-supplied ids are omitted from telemetry",
+            )  # fmt: skip
         return policy
 
     @property
