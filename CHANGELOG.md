@@ -61,10 +61,17 @@ carries these fixes forward.
     and the caller waits at most `ContentCaptureConfig.inline_deadline_ms`
     (default 50 ms); after that the item stays `pending` and the write settles
     it in the background.
+  - Python governed `durability="inline"` runs on a small pool of daemon
+    threads: a forked child (prefork servers, `multiprocessing`) gets fresh
+    workers, and a slow or hung store never holds interpreter exit past
+    `close()`'s bound.
   - **Behaviour change, TypeScript governed `durability: "inline"`:** the
     write never runs on the caller's stack. The record call queues it and
     returns at once with the item `pending`; the write runs on the next
-    event-loop turn and `flush()` / `close()` wait for it. The caller never
+    event-loop turn and `flush()` / `close()` wait for it. The queued write
+    keeps the process alive until it has run, so a process that records and
+    exits without `flush()` still delivers the object and the manifest its
+    span references. The caller never
     waits, but a synchronous store still occupies the event loop while its
     write runs, as `process` durability does. `inline` therefore no longer
     means "durable before the call returns": call `flush()` when you need
@@ -113,6 +120,22 @@ Node with `identity_mode: clear` so it keeps admitting the clear values.
 - Tool names on tool spans (the span name, `gen_ai.tool.name`,
   `fabric.tool.name` and the duration metric) are operator labels; without a
   key the span is named `execute_tool` and carries no tool name.
+- Execution, workflow, decision and step ids and names. With the key, a
+  caller's `fabric.execution_id`, `fabric.workflow_id`, `fabric.decision_id`,
+  `fabric.execution.attempt_id`, `fabric.execution.retry.previous_attempt_id`,
+  `fabric.step.id`, `fabric.step.attempt_id`,
+  `fabric.step.retry.previous_attempt_id` and `fabric.parent_decision_id` are
+  `lbl-`, as are `fabric.replay.execution_id` and `fabric.replay.decision_id`.
+  A decision or execution id the SDK minted (uuid4) is emitted as is; a
+  caller's is mapped whatever its shape. A parent decision id comes from a
+  carrier and is always treated as caller input. `gen_ai.workflow.name`,
+  `gen_ai.prompt.name` / `version` and `fabric.skill.name` / `version` are
+  operator labels (`lbl-`, or as given with `FABRIC_WIRE_LABELS=clear`; a
+  workflow name that falls back to the workflow id is the mapped id).
+  `gen_ai.agent.name` is the keyed v2 `agt-` form, also in the tool duration
+  metric. `gen_ai.tool.description` is free text and is recorded only in the
+  clear mode. Without the key these values are omitted. Propagation carriers
+  still carry the ids as given, so the application can read them back.
 - Host spans (`fabric.decision`, LLM and tool call spans, `fabric.execution`)
   record only the exception class (`exception.type`): no `exception.message`,
   no `exception.stacktrace`, and no message in the status description. The
@@ -140,7 +163,13 @@ Node with `identity_mode: clear` so it keeps admitting the clear values.
   are dropped by a pseudonymous Node too. The Node now admits the SDK's
   `mst-` `gen_ai.memory.store.id` and `lbl-` lists under `fabric.tags` and
   `fabric.memory.tags` (they were dropped before; other values still are), and
-  categorises a tool span without a tool name as a tool call.
+  categorises a tool span without a tool name as a tool call. Execution and
+  decision ids (also in replay metadata) are admitted as a uuid4 or `lbl-`;
+  the workflow, attempt, step and parent decision ids as `lbl-`; workflow,
+  prompt and skill names and versions as `lbl-` unless labels are clear; the
+  agent name as `agt-`. A span, event or log record keeps its category when a
+  clear value under one of these keys is dropped (a third-party tool span
+  with a clear `gen_ai.tool.name` stays `fabric.tool_call`).
 
 **Known limitations (deferred to spec 051, P2)**
 
@@ -157,9 +186,16 @@ Node with `identity_mode: clear` so it keeps admitting the clear values.
   (unkeyed SHA-256 of the target or path, spec 049 N46); and the MCP
   `fabric.mcp.tools_hash` and per-tool definition digests. A digest of a
   low-entropy value reveals it: avoid putting personal data in these inputs.
-- Governed content keeps its decision bindings (session, request and
-  tool-call ids) as given in descriptors and manifests: the content store is
-  the customer's destination for content, whose bodies carry the same ids.
+- Governed content keeps its decision bindings (session, request, tool-call,
+  decision, execution, workflow and step ids) as given in descriptors and
+  manifests: the content store is the customer's destination for content,
+  whose bodies carry the same ids.
+- Cross-service lineage in the pseudonymous mode: a child's
+  `fabric.parent_decision_id` is the `lbl-` form of the carrier's decision id,
+  and an execution id passed on from a carrier is mapped as a caller id. When
+  the parent's id was minted (emitted as is), joining the two needs the id key.
+- Retry reasons (`fabric.execution.retry.reason`, `fabric.step.retry.reason`),
+  `fabric.skill.source` and hook names are still emitted as given.
 - The concurrent-use and fail-open counters are local
   (`capture_health`, `concurrent_use_count`); no telemetry key reports them
   yet.

@@ -101,15 +101,20 @@ include `sess-` (session), `usr-` (user), `conv-`, `mkey-` (memory key),
   identity mode drops a `fabric.session_id` that is not a `sess-` value.
 - The configured `agent_id` is emitted as given; use an opaque value. From
   v0.8.1 `request_id` is a caller id like the others (`lbl-`, omitted
-  without the key).
+  without the key), and so are a caller's `decision_id`, `execution_id`,
+  `workflow_id`, the parent decision id from a carrier, the execution and
+  step attempt and retry ids and `fabric.step.id`. A decision or execution id
+  the SDK minted (uuid4) is emitted as is. The agent name
+  (`gen_ai.agent.name`) is `agt-`.
 - Other caller data on decision-line keys (v0.8.1): with the key,
   `gen_ai.memory.store.id` is `mst-`; idempotency keys
   (`fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key`) and
   `fabric.retrieval.source_document_ids` entries are `lbl-` (their types have
   no v2 prefix yet); checkpoint step names, MCP tool names
   (`fabric.mcp.tools`), tool names on tool spans, side-effect target systems
-  and operations, and tags are operator labels, `lbl-`, or as given with
-  `FABRIC_WIRE_LABELS=clear`. Provider ids (response, previous response, tool
+  and operations, tags, and workflow, prompt and skill names and versions are
+  operator labels, `lbl-`, or as given with `FABRIC_WIRE_LABELS=clear`. A tool
+  description is free text and is recorded only in the clear mode. Provider ids (response, previous response, tool
   call, parent tool call) are the keyed `p-` form. Without the key they are
   omitted. Host spans record only the exception class, never its message or
   stack trace.
