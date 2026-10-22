@@ -1108,9 +1108,27 @@ class _Verifier:
                     terminal=seal.terminal if seal is not None else None,
                     resumable=seal.resumable if seal is not None else None,
                     clock_uncertainty_ns=self._clock_uncertainty(segment.key),
+                    # WP-31: the seal's minted branch ids, digest and time, the segment's
+                    # state, and the run_start's resumable flag and deadline override.
+                    issued_branch_ids=seal.branch_ids if seal is not None else (),
+                    manifest_digest=seal.manifest_digest if seal is not None else None,
+                    state=segment.state,
+                    start_resumable=info.resumable if info is not None else None,
+                    open_deadline_s=info.open_deadline_s if info is not None else None,
+                    manifest_open_run_deadline_s=self._open_run_deadline(segment.key),
+                    sealed_ns=seal.sealed_ns if seal is not None else None,
                 )
             )
         return nodes
+
+    def _open_run_deadline(self, key: SourceKey) -> int | None:
+        """The ``limits.open_run_deadline_s`` of the source epoch's latest manifest."""
+        for manifest in reversed(self.sources[key].manifests):
+            limits = manifest.document.get("limits")
+            value = limits.get("open_run_deadline_s") if isinstance(limits, Mapping) else None
+            if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                return value
+        return None
 
     def _clock_uncertainty(self, key: SourceKey) -> int | None:
         """The declared ``clock.uncertainty_ns`` of the source epoch's latest manifest."""
@@ -1121,15 +1139,27 @@ class _Verifier:
                 return value
         return None
 
+    def run_ids_of(self, run_id: str) -> tuple[str, ...]:
+        """``run_id`` and the run ids the segment graph merged into it (WP-31)."""
+        graph = self.graphs.get(run_id)
+        return (run_id,) if graph is None else graph.member_run_ids()
+
     def build_runs(
         self, wanted: set[str] | None
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """The reported runs and, in run order, the per-scope verdicts of their scopes."""
 
+        # WP-31: a run the segment graph merged (caller_join, legacy) is one report run under
+        # its canonical id; its other run ids are its run_aliases.
+        canonical = {alias: graph.run_id for graph in self.graphs.values()
+                     for alias in graph.run_aliases}  # fmt: skip
         observed: dict[str, list[ExchangeObs]] = defaultdict(list)
         for observations in self.observations.values():
             for exchange in observations:
-                observed[exchange.run_id].append(exchange)
+                observed[canonical.get(exchange.run_id, exchange.run_id)].append(exchange)
+        run_scopes: dict[str, set[str]] = defaultdict(set)
+        for run_id, scope_ids in self.run_scopes.items():
+            run_scopes[canonical.get(run_id, run_id)] |= scope_ids
         runs: list[dict[str, Any]] = []
         scopes: list[dict[str, Any]] = []
         # An epoch that allocated sequences (its heartbeats say so) of which no exchange, no
@@ -1143,10 +1173,10 @@ class _Verifier:
             for key, source in self.sources.items()
             if key not in seen and source.top >= 0
         }
-        for run_id in sorted(set(observed) | set(self.run_scopes) | set(silent)):
-            if wanted is not None and run_id not in wanted:
+        for run_id in sorted(set(observed) | set(run_scopes) | set(silent)):
+            if wanted is not None and not wanted & set(self.run_ids_of(run_id)):
                 continue
-            members = [self.scopes[scope_id] for scope_id in self.run_scopes.get(run_id, ())]
+            members = [self.scopes[scope_id] for scope_id in run_scopes.get(run_id, ())]
             run = _Run(self, run_id, observed.get(run_id, []), members, silent.get(run_id))
             if run.windows:
                 report, scope_reports = run.build()
@@ -1597,8 +1627,9 @@ class _Run:
     def _structure_gaps(self) -> None:
         """The run's segment, seal, epoch and manifest gaps, and the segment graph's."""
         verifier = self.verifier
-        for gap, scopes in verifier.run_gaps.get(self.run_id, ()):
-            self._add(gap, scopes)
+        for run_id in verifier.run_ids_of(self.run_id):
+            for gap, scopes in verifier.run_gaps.get(run_id, ()):
+                self._add(gap, scopes)
         graph = verifier.graphs.get(self.run_id)
         if graph is not None:
             for gap in graph.gaps:
@@ -1624,10 +1655,12 @@ class _Run:
         position set of every records-input attempt of the run."""
         verifier = self.verifier
         out: dict[str, Any] = {}
-        attempts = _attempts(verifier.run_records.get(self.run_id, ()))
+        run_ids = verifier.run_ids_of(self.run_id)
+        attempts = _attempts(r for i in run_ids for r in verifier.run_records.get(i, ()))
         if attempts:
             out["attempts"] = attempts
-        present = verifier.run_segments.get(self.run_id, [])
+        by_id = {s.segment_id: s for i in run_ids for s in verifier.run_segments.get(i, ())}
+        present = sorted(by_id.values(), key=lambda segment: segment.segment_id)
         graph = verifier.graphs.get(self.run_id)
         if not present and graph is None:
             return out
@@ -1644,6 +1677,8 @@ class _Run:
                 )  # fmt: skip
         out["segments"] = segments
         out["run_aliases"] = [] if graph is None else sorted(graph.run_aliases)
+        if graph is not None and graph.id_basis_conflicts:
+            out["id_basis_conflicts"] = [c.to_json() for c in graph.id_basis_conflicts]
         if graph is not None and graph.deadline_at is not None:
             out["deadline_at"] = format_datetime(graph.deadline_at)
         if verifier.evaluated_at is not None:

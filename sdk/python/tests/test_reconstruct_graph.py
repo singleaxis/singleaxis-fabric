@@ -33,7 +33,13 @@ from fabric.reconstruct._graph import (
     build_run_graphs,
     parse_entry,
 )
-from tests.test_reconstruct_verifier import RUN
+from tests.test_reconstruct_verifier import (
+    BASE_NS,
+    GENERATED_AT,
+    RUN,
+    Capture,
+    run_by_id,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COVERAGE = REPO_ROOT / "contracts" / "coverage" / "v1"
@@ -645,3 +651,182 @@ def test_large_chain_is_linear_enough() -> None:
     nodes = [node(1, resumable=True)] + [node(n, n - 1) for n in range(2, 4097)]
     graph = one(*nodes[:-1], node(4096, 4095, terminal=True))
     assert graph.run_state == "terminated"
+
+
+# --------------------------------------------------------------------------
+# End to end through the verifier (WP-30 wiring)
+# --------------------------------------------------------------------------
+
+
+def start(
+    capture: Capture,
+    run_id: str,
+    segment: str,
+    *predecessors: str,
+    id_basis: str = "caller",
+    extra: Mapping[str, Any] | None = None,
+) -> str:
+    """A P1 ``run_start`` with extra run keys (resumable, deadline, branch ids)."""
+    scope = capture.run_start(
+        run_id, segment_id=segment, predecessors=predecessors or ("none",), id_basis=id_basis
+    )
+    capture.rows[-1]["attributes"].update(extra or {})
+    return scope
+
+
+def seal(
+    capture: Capture,
+    run_id: str,
+    segment: str,
+    *,
+    terminal: bool = False,
+    extra: Mapping[str, Any] | None = None,
+) -> str:
+    """Close the block and seal ``segment``; returns its predecessor entry."""
+    capture.record(run_id=run_id)
+    capture.run_end(run_id)
+    capture.segment_seal(run_id, segment_id=segment, terminal=terminal)
+    capture.rows[-1]["attributes"].update(extra or {})
+    last = capture.sequence - 1
+    return f"{segment}/{capture.source_id}/{capture.epoch}/{last}/{capture.manifest_digest}"
+
+
+@pytest.fixture
+def capture(tmp_path: Path) -> Capture:
+    capture = Capture(tmp_path)
+    capture.manifest()
+    return capture
+
+
+def report_gaps(run: Mapping[str, Any]) -> list[tuple[str, str | None]]:
+    return sorted((g["gap_type"], g.get("reason")) for g in run["gaps"])
+
+
+def test_e2e_caller_join_reports_one_run_with_aliases(capture: Capture) -> None:
+    first, second, joined = capture.new_segment(), capture.new_segment(), capture.new_segment()
+    start(capture, RUN_A, first, extra={"fabric.run.resumable": True})
+    a = seal(capture, RUN_A, first, extra={"fabric.run.resumable": True})
+    start(capture, RUN_B, second, extra={"fabric.run.resumable": True})
+    b = seal(capture, RUN_B, second, extra={"fabric.run.resumable": True})
+    start(capture, RUN_C, joined, a, b, id_basis="caller_join")
+    seal(capture, RUN_C, joined, terminal=True)
+    capture.heartbeat()
+    document = capture.reconstruct()
+    (run,) = document["runs"]
+    assert run["run_id"] == RUN_C
+    assert run["run_aliases"] == [RUN_A, RUN_B]
+    assert run["run_state"] == "terminated"
+    assert sorted(s["segment_id"] for s in run["segments"]) == sorted([first, second, joined])
+    assert [a["records"] for a in run["attempts"]] == [1, 1, 1]
+    assert run["verdict"] == "complete_for_observed_scopes"
+    assert len(run["scopes"]) == 3
+    assert {s["run_id"] for s in document["scopes"]} == {RUN_C}
+    # Asking for an alias reports the merged run.
+    assert [r["run_id"] for r in capture.reconstruct(run_ids=[RUN_A])["runs"]] == [RUN_C]
+
+
+def test_e2e_legacy_rotation_reports_one_run(capture: Capture) -> None:
+    first, second = capture.new_segment(), capture.new_segment()
+    start(capture, RUN_B, first, extra={"fabric.run.resumable": True})
+    a = seal(capture, RUN_B, first, extra={"fabric.run.resumable": True})
+    start(capture, RUN_A, second, a, id_basis="legacy")
+    seal(capture, RUN_A, second, terminal=True)
+    capture.heartbeat()
+    (run,) = capture.reconstruct()["runs"]
+    assert (run["run_id"], run["run_aliases"], run["run_state"]) == (RUN_B, [RUN_A], "terminated")
+
+
+def test_e2e_token_conflict_lists_id_basis_conflicts(capture: Capture) -> None:
+    first, second, joined = capture.new_segment(), capture.new_segment(), capture.new_segment()
+    start(capture, RUN_A, first)
+    a = seal(capture, RUN_A, first, extra={"fabric.run.resumable": True})
+    start(capture, RUN_B, second)
+    b = seal(capture, RUN_B, second, extra={"fabric.run.resumable": True})
+    start(capture, RUN_A, joined, a, b, id_basis="token_conflict")
+    seal(capture, RUN_A, joined, terminal=True)
+    capture.heartbeat()
+    document = capture.reconstruct()  # schema + semantic validation
+    run = run_by_id(document, RUN_A)
+    assert run["id_basis_conflicts"] == [{"segment_id": joined, "run_ids": [RUN_A, RUN_B]}]
+    assert run["run_state"] == "conflicted" and run["verdict"] == "partial"
+    assert ("segment_conflict", "token_conflict") in report_gaps(run)
+    assert run_by_id(document, RUN_B)["run_state"] == "open"
+    assert "id_basis_conflicts" not in run_by_id(document, RUN_B)
+
+
+def test_e2e_lost_middle(capture: Capture) -> None:
+    first, lost, last = capture.new_segment(), capture.new_segment(), capture.new_segment()
+    start(capture, RUN, first, extra={"fabric.run.resumable": True})
+    a = seal(capture, RUN, first, extra={"fabric.run.resumable": True})
+    missing = a.replace(first, lost)
+    start(capture, RUN, last, missing, id_basis="token")
+    seal(capture, RUN, last, terminal=True)
+    capture.heartbeat()
+    run = run_by_id(capture.reconstruct(), RUN)
+    assert run["run_state"] == "conflicted" and run["verdict"] == "partial"
+    assert ("segment_missing", "predecessor_missing") in report_gaps(run)
+    assert {s["segment_id"]: s["state"] for s in run["segments"]} == {
+        first: "sealed",
+        lost: "missing",
+        last: "sealed",
+    }
+
+
+def test_e2e_open_then_unterminated_by_the_manifest_deadline(capture: Capture) -> None:
+    first = capture.new_segment()
+    start(capture, RUN, first)
+    seal(capture, RUN, first, extra={"fabric.run.resumable": True})
+    capture.heartbeat()
+    run = run_by_id(capture.reconstruct(), RUN)
+    assert run["run_state"] == "open"
+    assert run["verdict"] == "complete_for_observed_scopes"  # run_open is info
+    assert report_gaps(run) == [("run_open", "before_deadline")]
+    started = datetime.fromtimestamp(BASE_NS // S, tz=UTC) + timedelta(seconds=0.9)
+    deadline = started + timedelta(seconds=DEFAULT_OPEN_RUN_DEADLINE_S)
+    assert datetime.fromisoformat(run["deadline_at"]) == deadline
+    later = capture.reconstruct(evaluated_at=deadline + timedelta(hours=1))
+    run = run_by_id(later, RUN)
+    assert run["run_state"] == "unterminated" and run["verdict"] == "partial"
+    assert report_gaps(run) == [("run_unterminated", "deadline_passed")]
+
+
+def test_e2e_root_deadline_override(capture: Capture) -> None:
+    first = capture.new_segment()
+    start(
+        capture,
+        RUN,
+        first,
+        extra={"fabric.run.resumable": True, "fabric.run.open_deadline_s": 3_600},
+    )
+    seal(capture, RUN, first)
+    capture.heartbeat()
+    run = run_by_id(capture.reconstruct(), RUN)
+    assert run["run_state"] == "unterminated"  # GENERATED_AT is a day after the start
+
+
+def test_e2e_seal_time_and_issued_branches_reach_the_graph(capture: Capture) -> None:
+    from fabric.reconstruct import _verify  # noqa: PLC0415
+
+    first, consumer = capture.new_segment(), capture.new_segment()
+    start(capture, RUN, first)
+    a = seal(
+        capture,
+        RUN,
+        first,
+        extra={"fabric.run.resumable": True, "fabric.segment.branch_ids": [br(1), br(2)]},
+    )
+    start(capture, RUN, consumer, a, id_basis="token", extra={"fabric.run.branch_ids": [br(1)]})
+    seal(capture, RUN, consumer, terminal=True)
+    capture.heartbeat()
+    graphs: list[RunGraph] = []
+    document = _verify.reconstruct(
+        [capture.write()], store=capture.store, generated_at=GENERATED_AT, graphs_out=graphs
+    )
+    (graph,) = graphs
+    issuer = next(n for n in graph.segments if n.segment_id == first)
+    assert issuer.issued_branch_ids == (br(1), br(2)) and issuer.sealed_ns is not None
+    assert issuer.manifest_digest == capture.manifest_digest and issuer.state == "sealed"
+    assert issuer.manifest_open_run_deadline_s == DEFAULT_OPEN_RUN_DEADLINE_S
+    assert graph.run_state == "conflicted"  # br(2) has no consumer (G7)
+    run = run_by_id(document, RUN)
+    assert ("segment_missing", "branch_consumer_missing") in report_gaps(run)
