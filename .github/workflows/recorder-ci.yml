@@ -106,7 +106,9 @@ jobs:
         working-directory: sdk/python
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . pytest pytest-cov jsonschema PyYAML httpx "openai>=3.26.1" "anthropic>=1.12.1" cryptography opentelemetry-exporter-otlp-proto-http build
+          # aiohttp is a test-only driver for the aiohttp capture point; the
+          # SDK patches it only when the application already imports it.
+          python -m pip install -e . pytest pytest-cov jsonschema PyYAML httpx "openai>=3.26.1" "anthropic>=1.12.1" "aiohttp>=3.9" cryptography opentelemetry-exporter-otlp-proto-http build
       - name: Test with recorder coverage floor
         working-directory: sdk/python
         run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=85
@@ -130,7 +132,7 @@ jobs:
         working-directory: sdk/python
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e . pytest ruff==0.13.0 mypy jsonschema types-jsonschema PyYAML types-PyYAML httpx cryptography opentelemetry-exporter-otlp-proto-http
+          python -m pip install -e . pytest ruff==0.13.0 mypy jsonschema types-jsonschema PyYAML types-PyYAML httpx "aiohttp>=3.9" cryptography opentelemetry-exporter-otlp-proto-http
       - name: Ruff
         working-directory: sdk/python
         run: |
