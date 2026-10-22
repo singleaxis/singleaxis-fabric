@@ -35,7 +35,6 @@ from fabric.wire import WireConfig, _spool
 from fabric.wire._spool import Spool, unframe, unframe_all
 
 from .test_wire_helpers import (
-    CAPTURE,
     OPENAI_CHAT,
     PRODUCTION_ID_KEY,
     capture_schemas,
@@ -46,15 +45,7 @@ from .test_wire_helpers import (
 )
 
 VALIDATOR = load_validator()
-SCHEMAS = {
-    **capture_schemas(),
-    **{
-        rel: json.loads((CAPTURE / rel).read_text("utf-8"))
-        for rel in (
-            "schema/spool-record-v1.schema.json", "schema/content-log-record-v1.schema.json"
-        )
-    },
-}  # fmt: skip
+SCHEMAS = capture_schemas()
 SMALL = 4096  # max_body_bytes in these tests
 SPOOL_MIN = 2 * SMALL + 1024 * 1024
 
@@ -262,7 +253,7 @@ def test_spooled_headers_match_the_contract(node: FakeNode, tmp_path: Path) -> N
     for doc in docs:
         validate_header(doc)
     kinds = sorted(d["marker"]["kind"] for d in docs if d["record_kind"] == "marker")
-    assert kinds == ["run_end", "run_start"]
+    assert kinds == ["manifest", "run_end", "run_start"]  # manifest 0 of the epoch (049 §2.8)
     exchange = next(d for d in docs if d["record_kind"] == "exchange")
     assert [b["descriptor"]["role"] for b in exchange["bodies"]] == [
         "model.exchange.request", "model.exchange.response"]  # fmt: skip

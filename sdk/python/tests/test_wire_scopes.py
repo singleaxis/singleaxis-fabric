@@ -30,7 +30,7 @@ from .test_wire_helpers import (
     chat_response,
     exchange_document,
     load_validator,
-    loss_document,
+    marker_span_document,
     validate_exchange_document,
 )
 
@@ -81,8 +81,8 @@ def _validate(exporter: InMemorySpanExporter) -> None:
     for span in exporter.get_finished_spans():
         if span.name == "fabric.model_call":
             validate_exchange_document(exchange_document(span))
-        elif span.name.startswith("fabric.capture_"):
-            validator.validate_document(loss_document(span), schemas)
+        elif span.name.startswith("fabric.capture_"):  # loss, heartbeat or manifest
+            validator.validate_document(marker_span_document(span), schemas)
 
 
 def test_reused_and_serial_run_ids_get_distinct_scopes(
