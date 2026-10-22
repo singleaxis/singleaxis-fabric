@@ -17,7 +17,7 @@ import json
 import zlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 
 from fabric.reconstruct._inputs import pseudonym
 
@@ -40,7 +40,13 @@ WireApi = Literal[
     "anthropic.messages",
 ]
 ParseStatus = Literal[
-    "ok", "not_json", "undecodable_encoding", "unrecognized_shape", "truncated", "not_parsed"
+    "ok",
+    "not_json",
+    "undecodable_encoding",
+    "unrecognized_shape",
+    "truncated",
+    "not_parsed",
+    "parse_failed",
 ]
 
 
@@ -335,19 +341,40 @@ def _decode(data: bytes, encoding: str | None, limit: int | None = None) -> byte
     return data
 
 
-def _load_json(data: bytes) -> Any:
+def _reject_json_constant(value: str) -> NoReturn:
+    raise ValueError("non-finite JSON number")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key")
+        result[key] = value
+    return result
+
+
+def _load_json(data: bytes, *, strict: bool = False) -> Any:
     try:
+        if strict:
+            return json.loads(
+                data.decode("utf-8"),
+                parse_constant=_reject_json_constant,
+                object_pairs_hook=_unique_json_object,
+            )
         return json.loads(data.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise _UnparsedError("not_json") from exc
 
 
-def _sse_events(data: bytes) -> list[Any]:
+def _sse_events(data: bytes, *, strict: bool = False) -> list[Any]:
     """Parse ``text/event-stream`` data payloads into JSON values.
 
     ``[DONE]`` sentinels are skipped. An unparsable final fragment (a stream
     cut short) is ignored; any other unparsable event makes the body
-    ``not_json``.
+    ``not_json``. ``strict`` additionally refuses duplicate keys, non-finite
+    numbers and malformed final fragments for model-field extraction; the
+    legacy stitching behavior is unchanged by default.
     """
     try:
         text = data.decode("utf-8")
@@ -366,9 +393,11 @@ def _sse_events(data: bytes) -> list[Any]:
         if payload.strip() == "[DONE]":
             continue
         try:
-            events.append(json.loads(payload))
-        except (ValueError, RecursionError) as exc:
-            if index == len(blocks) - 1:
+            events.append(
+                _load_json(payload.encode("utf-8"), strict=True) if strict else json.loads(payload)
+            )
+        except (ValueError, RecursionError, _UnparsedError) as exc:
+            if not strict and index == len(blocks) - 1:
                 break
             raise _UnparsedError("not_json") from exc
     return events
