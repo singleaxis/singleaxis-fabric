@@ -34,6 +34,7 @@
  * into one another and async bodies stay isolated.
  */
 
+import { safeStartSpan } from "./safe-span.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 import {
@@ -198,7 +199,7 @@ export function runExecution<T>(
       options.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId,
   };
 
-  const span = tracer.startSpan(SPAN_NAME_EXECUTION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_EXECUTION, { kind: SpanKind.INTERNAL });
   span.setAttribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION);
   span.setAttribute(ATTR_TENANT, identity.tenantId);
   span.setAttribute(ATTR_AGENT, identity.agentId);

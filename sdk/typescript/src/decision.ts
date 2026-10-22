@@ -64,6 +64,7 @@ import { activeExecution } from "./execution.js";
 import { assertSha256Hex, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
 import { warnIfPiiShaped } from "./id-validators.js";
 import { IdentityPolicy } from "./identity.js";
+import { onRecordingError, safeSpan, safeStartSpan, takeStartFailure } from "./safe-span.js";
 import {
   applyCrossCutting,
   type AttrValue,
@@ -661,12 +662,19 @@ export class Decision implements DecisionLike {
   // is recorded anyway and counted (never thrown, 049 §7.1).
   private busy = false;
   private concurrentUse = 0;
+  // Recording failures caught fail-open (049 §7.1 rule 3); any makes capture partial.
+  private internalErrors = 0;
   // 049 §4.2: operator labels (tags, step names, tool names) as emitted.
   private readonly labelFn = (value: string): string | undefined => this.ids.label(value);
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
-    this.span = span;
+    // Fail-open (049 §7.1): every recording call on the span is guarded and counted.
+    this.span = safeSpan(span);
+    onRecordingError(this.span, () => {
+      this.internalErrors += 1;
+    });
+    if (takeStartFailure(span)) this.internalErrors += 1;
     let recording: boolean | null = null;
     try {
       const value = span.isRecording();
@@ -853,6 +861,26 @@ export class Decision implements DecisionLike {
     if (sink === undefined || content === undefined || content === null) {
       return undefined;
     }
+    try {
+      return this.captureWith(sink, role, content, options);
+    } catch {
+      this.internalErrors += 1; // 049 §7.1: a capture failure is a loss, never an error
+      return undefined;
+    }
+  }
+
+  private captureWith(
+    sink: ContentSink,
+    role: string,
+    content: unknown,
+    options: {
+      mediaType?: string;
+      bindings?: Record<string, unknown>;
+      links?: Record<string, unknown>;
+      statusReason?: string;
+      representation?: string;
+    },
+  ): string | undefined {
     const bindings: Record<string, unknown> = {
       decision_id: this.decisionIdValue,
       session_id: this.sessionIdStored,
@@ -876,7 +904,11 @@ export class Decision implements DecisionLike {
    * recording surface.
    */
   closeContent(): void {
-    this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
+    try {
+      this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
+    } catch {
+      this.internalErrors += 1; // 049 §7.1: a capture failure is a loss, never an error
+    }
   }
 
   // -- concurrency overlap guard ---------------------------------------
@@ -915,6 +947,14 @@ export class Decision implements DecisionLike {
   private retainsOriginal(role: string): boolean {
     if (this.ids.clear) return true;
     return this.contentSink !== undefined && (this.identity.contentRoles?.has(role) ?? false);
+  }
+
+  /** Count a child span's recording failures with this decision's (049 §7.1). */
+  private countChildFailures(span: Span): void {
+    if (takeStartFailure(span)) this.internalErrors += 1;
+    onRecordingError(span, () => {
+      this.internalErrors += 1;
+    });
   }
 
   /** How many mutating calls overlapped another on this decision (recorded, never thrown). */
@@ -1013,6 +1053,7 @@ export class Decision implements DecisionLike {
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startLlmSpan(this.tracer, resolved);
+    this.countChildFailures(span);
     // Governed request capture (spec 028): exact request components to
     // customer storage; the span carries only the reference.
     const requestRef = this.captureLlmRequest(span, options);
@@ -1131,6 +1172,7 @@ export class Decision implements DecisionLike {
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startToolSpan(this.tracer, name, resolved);
+    this.countChildFailures(span);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
       const tool = new ToolCall(
@@ -1794,7 +1836,15 @@ export class Decision implements DecisionLike {
         parentAgentId: this.identity.agentId,
       };
       const carrier: Record<string, string> = {};
-      inject(carrier, context, trace.setSpanContext(otelContext.active(), this.span.spanContext()));
+      try {
+        inject(
+          carrier,
+          context,
+          trace.setSpanContext(otelContext.active(), this.span.spanContext()),
+        );
+      } catch {
+        this.internalErrors += 1; // 049 §7.1: the delegation proceeds without a carrier
+      }
 
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -2010,7 +2060,10 @@ export class Decision implements DecisionLike {
     const status =
       this.recordingAtStart === false
         ? "disabled"
-        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0 || this.concurrentUse > 0
+        : (droppedEvents ?? 0) > 0 ||
+            (droppedAttributes ?? 0) > 0 ||
+            this.concurrentUse > 0 ||
+            this.internalErrors > 0
           ? "partial"
           : "unverified";
     if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {
@@ -2162,7 +2215,7 @@ export function runDecision<T>(
   fn: (d: Decision) => T,
 ): T {
   validateIds(ids);
-  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
   const ctx = trace.setSpan(otelContext.active(), span);
   return otelContext.with(ctx, () => {
     const decision = new Decision(tracer, span, identity, ids);
@@ -2204,7 +2257,7 @@ export function startDecision(
   ids: DecisionIds,
 ): Decision {
   validateIds(ids);
-  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
   return new Decision(tracer, span, identity, ids);
 }
 

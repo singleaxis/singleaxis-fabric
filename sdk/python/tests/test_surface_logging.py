@@ -754,12 +754,13 @@ def test_delegate_rejects_empty_identifiers(span_exporter: InMemorySpanExporter)
     assert "fabric.delegation_count" not in dict(span.attributes or {})
 
 
-def test_delegate_counter_not_bumped_when_inject_fails(
+def test_delegate_proceeds_when_inject_fails(
     span_exporter: InMemorySpanExporter,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If propagation injection raises, the delegation counters must not
-    have moved — a failed delegation is not a delegation."""
+    """Spec 049 §7.1 (v0.8.1): if propagation injection raises, the delegation is still
+    recorded and the block runs, with an empty carrier; the failure is counted, never
+    raised into the application."""
     import fabric.decision as decision_module  # noqa: PLC0415
 
     def _boom(carrier: dict[str, str], ctx: object) -> None:
@@ -768,18 +769,19 @@ def test_delegate_counter_not_bumped_when_inject_fails(
     monkeypatch.setattr(decision_module, "inject", _boom)
 
     client = _client()
+    ran = []
     with client.decision(session_id="s", request_id="r") as d:
-        with (
-            pytest.raises(RuntimeError, match="carrier inject failed"),
-            d.delegate("child-agent"),
-        ):
-            pass
+        with d.delegate("child-agent") as sub:
+            assert sub.carrier == {}
+            ran.append(sub.depth)
         monkeypatch.undo()
-        # A subsequent, successful delegation is still counted as #1.
         with d.delegate("child-agent") as sub:
             assert sub.depth == 1
+            assert sub.carrier
 
+    assert ran == [1]
+    assert d.capture_health["status"] == "partial"
     span = _decision_span(span_exporter)
-    assert dict(span.attributes or {})["fabric.delegation_count"] == 1
+    assert dict(span.attributes or {})["fabric.delegation_count"] == 2
     delegations = [e for e in span.events if e.name == "fabric.delegation"]
-    assert len(delegations) == 1
+    assert len(delegations) == 2
