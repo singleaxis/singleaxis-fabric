@@ -5,6 +5,14 @@
 These adapters do not install global hooks or claim universal observation.
 An optional metadata-only source spool persists settled events off the action
 path; its pre-spool crash window and absent destination proof remain gaps.
+
+``SyntheticCaptureSession`` has the three-way mode of ``CallRecorder`` (spec 050
+§3.10): ``journal`` with a source spool (unchanged), ``records`` without one while a
+wire handle is installed (each event one sequenced record on the records input; the
+byte writer is not called), ``legacy`` otherwise (plus one ``DeprecationWarning``).
+A contradictory ``mode`` argument raises (a coding error seen on the first run); a byte
+config that disagrees with the install's capture policy only disables the session's
+records (``status()`` ``partial``), raising only under ``FABRIC_RECORDS_STRICT=1``.
 """
 
 from __future__ import annotations
@@ -25,12 +33,36 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 from urllib.parse import urlsplit
 
+from fabric._capture_types import (
+    AnyBody,
+    DescriptorOnlyBody,
+    Lifecycle,
+    OtlpStatus,
+    Phase,
+    ResultStatus,
+    StepKind,
+    strict,
+)
 from fabric._sequence import GeneratedIds
 from fabric.byte_evidence import ByteEvidenceRecorder
+from fabric.call_recorder import (
+    END_STATUS,
+    NAME_HINT,
+    ProducerMode,
+    RecordsProducer,
+    ResolvedMode,
+    admitted_boundary,
+    admitted_media,
+    dashed,
+    resolve_mode,
+)
 from fabric.source_spool import SyntheticSourceSpool
+
+if TYPE_CHECKING:
+    from fabric._records import Attempt
 
 _MAX_CHUNK_BYTES = 64 * 1024
 _TERMINATE_GRACE_SECONDS = 2
@@ -52,6 +84,20 @@ _OUTCOME_FIELDS = frozenset(
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 # An AEEP evidence identifier, as fabricguard and the OTLP projection accept it.
 _EVIDENCE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
+# Records mode (spec 050 §3.10): outcome fields that end an attempt; the others (artifact
+# observations) are data of a still-running attempt.
+_TERMINAL_OUTCOME = frozenset({"result_status", "returncode", "http_status", "timed_out"})
+# Gaps that are a descriptor-only body (R5); any other gap is a record without a body.
+_GAP_BODIES: dict[tuple[str, str], tuple[str, str]] = {
+    ("unsupported", "not_exact_bytes"): ("unsupported", "not_exact_bytes"),
+    ("truncated", "output_capture_limit"): ("not_captured", "payload_too_large"),
+    ("truncated", "artifact_capture_limit"): ("not_captured", "payload_too_large"),
+}
+_BOUNDARY_KIND: dict[str, StepKind] = {
+    "provider_bound": "model_call", "tool": "tool_call", "caller": "delegation",
+    "service": "database", "terminal": "terminal",
+}  # fmt: skip
+_MAX_ATTEMPTS = 65536
 
 
 def _now() -> str:
@@ -60,6 +106,25 @@ def _now() -> str:
 
 def _opaque_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex}"
+
+
+def _session_step(role: str, boundary: str) -> tuple[StepKind, str]:
+    """An attempt's step kind and capture point from its first event: ``terminal`` at
+    ``explicit.subprocess_artifact`` for the ``terminal.*`` and ``artifact.*`` roles,
+    else by boundary at ``explicit.byte_boundary``."""
+    if boundary == "terminal" or role.startswith(("terminal.", "artifact.")):
+        return "terminal", "explicit.subprocess_artifact"
+    return _BOUNDARY_KIND.get(boundary, "tool_call"), "explicit.byte_boundary"
+
+
+@dataclass(slots=True)
+class _SessionAttempt:
+    """One ``(source, operation, attempt)`` of a records-mode session."""
+
+    attempt: Attempt | None
+    start_ns: int
+    started: bool = False
+    ended: bool = False
 
 
 def _signal_process_group(process: subprocess.Popen[bytes], number: int) -> None:
@@ -89,9 +154,14 @@ class SyntheticCaptureSession:
         run_id: str,
         source_spool: SyntheticSourceSpool | None = None,
         source_id: str | None = None,
+        mode: ProducerMode = "auto",
     ) -> None:
         if recorder.tenant_id != tenant_id:
             raise ValueError("recorder store tenant does not match session tenant")
+        self.mode: ResolvedMode = resolve_mode(mode, journal=source_spool is not None)
+        self._producer = RecordsProducer() if self.mode == "records" else None
+        if self._producer is not None:  # a conflict disables records (raises only if strict)
+            self._producer.check_config(recorder)
         if source_id is not None and (
             not isinstance(source_id, str) or _EVIDENCE_ID.match(source_id) is None
         ):
@@ -114,10 +184,17 @@ class SyntheticCaptureSession:
         self.tenant_id = tenant_id
         self.run_id = run_id
         self.source_epoch = source_spool.epoch if source_spool is not None else 0
+        if self._producer is not None:  # §3.10: the process source's epoch
+            from fabric.call_recorder import installed_records  # noqa: PLC0415
+
+            epoch = self._producer.source(installed_records())[1]
+            self.source_epoch = epoch if epoch is not None else self.source_epoch
         self._lock = threading.Lock()
         self._next: dict[str, int] = {}
         self._events: list[dict[str, Any]] = []
         self._operations: list[dict[str, Any]] = []
+        self._attempts: dict[tuple[str, str, str], _SessionAttempt] = {}
+        self._ordinal = 0
 
     def _emit(self, source_id: str, *ids: str | None) -> tuple[Any, ...]:
         """``source_id`` and the other caller ``ids`` as emitted (spec 049 §2.9)."""
@@ -158,6 +235,12 @@ class SyntheticCaptureSession:
         stream_id: str | None = None,
         chunk_index: int | None = None,
     ) -> dict[str, Any]:
+        if self._producer is not None:
+            return self._record_capture(
+                data, source_id=source_id, boundary=boundary, role=role,
+                operation_id=operation_id, attempt_id=attempt_id, media_type=media_type,
+                stream_id=stream_id, chunk_index=chunk_index,
+            )  # fmt: skip
         source_id, operation_id, attempt_id, stream_id = self._emit(
             source_id, operation_id, attempt_id, stream_id
         )
@@ -218,6 +301,12 @@ class SyntheticCaptureSession:
     ) -> None:
         if status not in {"truncated", "unsupported", "dropped", "failed", "not_captured"}:
             raise ValueError("gap status must be an incomplete evidence state")
+        if self._producer is not None:
+            self._record_gap(
+                source_id=source_id, boundary=boundary, role=role, operation_id=operation_id,
+                attempt_id=attempt_id, status=status, reason=reason,
+            )  # fmt: skip
+            return
         source_id, operation_id, attempt_id = self._emit(source_id, operation_id, attempt_id)
         with self._lock:
             event = {
@@ -276,6 +365,9 @@ class SyntheticCaptureSession:
                 reason="outcome_field_not_allowed",
             )
             return
+        if self._producer is not None:
+            self._record_outcome(source_id, fields, values)
+            return
         source_id, operation_id, attempt_id = self._emit(
             source_id, fields["operation_id"], fields["attempt_id"]
         )
@@ -301,7 +393,240 @@ class SyntheticCaptureSession:
             self._operations.append({**event, **fields})
         self._journal(event)
 
+    # -- records mode (spec 050 §3.10) -----------------------------------------------------
+
+    def _attempt_of(
+        self, source_id: str, operation_id: str, attempt_id: str, role: str, boundary: str
+    ) -> _SessionAttempt:
+        """The attempt of ``(source, operation, attempt)``, begun on its first event."""
+        key = (source_id, operation_id, attempt_id)
+        with self._lock:
+            found = self._attempts.get(key)
+        if found is not None:
+            return found
+        kind, point = _session_step(role, boundary)
+        attempt = None
+        if self._producer is not None:
+            try:
+                records = self._producer.records(point)
+                attempt = records.begin(kind, point) if records is not None else None
+            except Exception:
+                if strict():
+                    raise
+        entry = _SessionAttempt(attempt, time.time_ns())
+        with self._lock:
+            found = self._attempts.setdefault(key, entry)
+            if len(self._attempts) > _MAX_ATTEMPTS:  # bounded: the oldest is forgotten
+                del self._attempts[next(iter(self._attempts))]
+        return found
+
+    def _unemitted_reason(self) -> str:
+        producer = self._producer
+        return "config_conflict" if producer and producer.conflict is not None else (
+            "record_not_emitted")  # fmt: skip
+
+    def status(self) -> dict[str, Any]:
+        """The session's mode and records-mode capture health, as ``CallRecorder.status``:
+        ``partial``/``config_conflict`` (role names only) while a byte config conflict
+        disables its records."""
+        producer = self._producer
+        if producer is None:
+            return {"mode": self.mode, "capture": None, "capture_reason": None,
+                    "conflicting_roles": []}  # fmt: skip
+        return {"mode": self.mode, **producer.status()}
+
+    def _phase(self, entry: _SessionAttempt, *, terminal: bool = False) -> Phase:
+        with self._lock:
+            if entry.ended:
+                return "update"
+            if terminal:
+                entry.started = entry.ended = True
+                return "end"
+            phase: Phase = "data" if entry.started else "start"
+            entry.started = True
+            return phase
+
+    def _record_event(self, **fields: Any) -> dict[str, Any]:
+        """An in-memory event row: this session's ids, the process source, its order."""
+        source_id, operation_id, attempt_id = self._emit(
+            fields.pop("source_id"), fields.pop("operation_id"), fields.pop("attempt_id")
+        )
+        entry: _SessionAttempt = fields.pop("entry")
+        records = entry.attempt.records if entry.attempt is not None else None
+        process, epoch = self._producer.source(records) if self._producer else (None, None)
+        with self._lock:
+            ordinal = self._ordinal
+            self._ordinal += 1
+        return {
+            "record_id": uuid.uuid4().hex,
+            "tenant_id": self.tenant_id,
+            "run_id": self.run_id,
+            "source_id": process if process is not None else source_id,
+            "source_epoch": epoch if epoch is not None else self.source_epoch,
+            "source_sequence": None,
+            "record_ordinal": ordinal,
+            "operation_id": operation_id,
+            "attempt_id": attempt_id,
+            **fields,
+            "observed_at": _now(),
+        }
+
+    def _emit_record(
+        self, entry: _SessionAttempt, phase: Phase, event: dict[str, Any], *,
+        operation_id: str, attempt_id: str, bodies: tuple[AnyBody, ...] = (),
+        status: tuple[Lifecycle, ResultStatus, OtlpStatus] | None = None,
+    ) -> None:  # fmt: skip
+        attempt, producer = entry.attempt, self._producer
+        emitted = False
+        if attempt is not None and producer is not None:
+            now = time.time_ns()
+            emitted = producer.emit(
+                attempt, phase, name_hint=NAME_HINT.get(attempt.kind, "fabric.activity"),
+                attributes={"fabric.step.id": operation_id, "fabric.step.attempt_id": attempt_id},
+                start_ns=entry.start_ns if phase == "end" else now, end_ns=now,
+                event_id=dashed(event["record_id"]), bodies=bodies, status=status,
+            )  # fmt: skip
+        if not emitted and event.get("status") != "failed":
+            event.update(status="failed", status_reason=self._unemitted_reason())
+
+    def _record_capture(
+        self, data: bytes, *, source_id: str, boundary: str, role: str, operation_id: str,
+        attempt_id: str, media_type: str, stream_id: str | None, chunk_index: int | None,
+    ) -> dict[str, Any]:  # fmt: skip
+        """One ``data`` record (``start`` for the attempt's first event, ``update`` after
+        its end) with one body; the byte writer is not called."""
+        entry = self._attempt_of(source_id, operation_id, attempt_id, role, boundary)
+        event = self._record_event(
+            source_id=source_id, operation_id=operation_id, attempt_id=attempt_id, entry=entry,
+            boundary=admitted_boundary(role, boundary), role=role, status="failed",
+            status_reason=self._unemitted_reason(),
+        )  # fmt: skip
+        bodies: tuple[AnyBody, ...] = ()
+        try:
+            if entry.attempt is not None and self._producer is not None:
+                body, status, reason = self._producer.body(
+                    entry.attempt.records, data, role=role, boundary=boundary,
+                    media_type=media_type, stream_id=stream_id, chunk_index=chunk_index,
+                )  # fmt: skip
+                event.pop("status_reason")
+                event["status"] = status
+                if reason is not None:
+                    event["status_reason"] = reason
+                bodies = (body,) if body is not None else ()
+            self._emit_record(entry, self._phase(entry), event, operation_id=operation_id,
+                              attempt_id=attempt_id, bodies=bodies)  # fmt: skip
+        except Exception:
+            if strict():
+                raise
+            event.update(status="failed", status_reason="recorder_exception")
+        with self._lock:
+            self._events.append(event)
+        descriptor = {"object_id": None, "status": event["status"]}
+        if "status_reason" in event:
+            descriptor["status_reason"] = event["status_reason"]
+        return descriptor
+
+    def _record_gap(
+        self, *, source_id: str, boundary: str, role: str, operation_id: str, attempt_id: str,
+        status: str, reason: str,
+    ) -> None:  # fmt: skip
+        """A gap as a record: a descriptor-only body where R5 has the reason (not exact
+        bytes, a capture limit), else a record without a body."""
+        entry = self._attempt_of(source_id, operation_id, attempt_id, role, boundary)
+        event = self._record_event(
+            source_id=source_id, operation_id=operation_id, attempt_id=attempt_id, entry=entry,
+            boundary=admitted_boundary(role, boundary), role=role, status=status,
+            status_reason=reason,
+        )  # fmt: skip
+        try:
+            bodies: tuple[AnyBody, ...] = ()
+            mapped = _GAP_BODIES.get((status, reason))
+            attempt = entry.attempt
+            if mapped is not None and attempt is not None and (
+                attempt.records.mode_of(role) != "omit"
+            ):  # fmt: skip
+                bodies = (DescriptorOnlyBody(
+                    role, admitted_media(role), event["boundary"], mapped[0], mapped[1],  # type: ignore[arg-type]
+                ),)  # fmt: skip
+            self._emit_record(entry, self._phase(entry), event, operation_id=operation_id,
+                              attempt_id=attempt_id, bodies=bodies)  # fmt: skip
+        except Exception:
+            if strict():
+                raise
+            event.update(status="failed", status_reason="recorder_exception")
+        with self._lock:
+            self._events.append(event)
+
+    def _record_outcome(
+        self, source_id: str, fields: dict[str, Any], values: dict[str, Any]
+    ) -> None:
+        """An outcome as the attempt's ``end`` (R4 inputs per §3.10; a timeout is
+        ``cancelled``/``timeout``; otherwise ``unknown``, never inferred as ``ok``), or,
+        for an artifact observation (no terminal field), a record of a running attempt."""
+        operation_id, attempt_id = fields["operation_id"], fields["attempt_id"]
+        boundary = fields["boundary"]
+        phase_hint = values.get("artifact_phase")
+        hint = f"artifact.{phase_hint}" if phase_hint is not None else "operation.outcome"
+        entry = self._attempt_of(source_id, operation_id, attempt_id, hint, boundary)
+        event = self._record_event(
+            source_id=source_id, operation_id=operation_id, attempt_id=attempt_id, entry=entry,
+            boundary=boundary, role="operation.outcome", status="recorded", outcome=values,
+        )  # fmt: skip
+        try:
+            status: tuple[Lifecycle, ResultStatus, OtlpStatus] | None = None
+            terminal = bool(_TERMINAL_OUTCOME & set(values))
+            if terminal:
+                result = values.get("result_status")
+                status = (
+                    END_STATUS[result] if isinstance(result, str) and result in END_STATUS
+                    else ("cancelled", "timeout", "unset") if values.get("timed_out") is True
+                    else ("completed", "unknown", "unset")
+                )  # fmt: skip
+            phase = self._phase(entry, terminal=terminal)
+            self._emit_record(entry, phase, event, operation_id=operation_id,
+                              attempt_id=attempt_id,
+                              status=status if phase == "end" else None)  # fmt: skip
+        except Exception:
+            if strict():
+                raise
+            event.update(status="failed", status_reason="recorder_exception")
+        with self._lock:
+            self._operations.append(event)
+
+    def _records_snapshot(self, settle_timeout_s: float) -> dict[str, Any]:
+        """Records mode: an in-memory view (``writer_settled`` is ``handle.flush()``;
+        body statuses ``pending`` until then, ``settled`` after it)."""
+        settled = self._producer.flush(settle_timeout_s) if self._producer else False
+        with self._lock:
+            events = [dict(event) for event in self._events]
+            operations = [dict(item) for item in self._operations]
+        if settled:
+            for event in events:
+                if event.get("status") == "pending":
+                    event["status"] = "settled"
+        return {
+            "schema_version": "fabric.synthetic-capture/v1",
+            "capture_mode": "records",
+            "capture_health": self.status()["capture"],
+            "capture_reason": self.status()["capture_reason"],
+            "tenant_id": self.tenant_id,
+            "run_id": self.run_id,
+            "source_epoch": self.source_epoch,
+            "source_epoch_persisted": False,
+            "source_identity_authenticated": False,
+            "source_high_water": {},
+            "writer_settled": settled,
+            "source_spool_settled": False,
+            "source_spool_recovered_gaps": [],
+            "pre_spool_crash_window_unverified": True,
+            "unretained_drops": 0,
+            "events": events,
+            "operations": operations,
+        }
+
     def snapshot(self, *, settle_timeout_s: float = 10.0) -> dict[str, Any]:
+        if self._producer is not None:
+            return self._records_snapshot(settle_timeout_s)
         settled = self.recorder.flush(settle_timeout_s)
         spool_settled = (
             self.source_spool.flush(settle_timeout_s) if self.source_spool is not None else False
@@ -511,14 +836,19 @@ class BoundedTerminalAdapter:
             for key, value in approved_env.items()
         ):
             raise ValueError("only SYNTHETIC_ environment keys are approved")
-        argv_bytes = b"\x00".join(os.fsencode(item) for item in argv) + b"\x00"
+        argv_media = "application/octet-stream"
+        if getattr(self.session, "mode", None) == "records":  # terminal.argv is JSON-only
+            argv_bytes = json.dumps(argv, separators=(",", ":")).encode("utf-8")
+            argv_media = "application/json"
+        else:
+            argv_bytes = b"\x00".join(os.fsencode(item) for item in argv) + b"\x00"
         context_bytes = json.dumps(
             {"cwd": str(resolved_cwd), "approved_env": approved_env},
             sort_keys=True,
             separators=(",", ":"),
         ).encode("utf-8")
         for role, data, media_type in (
-            ("terminal.argv", argv_bytes, "application/octet-stream"),
+            ("terminal.argv", argv_bytes, argv_media),
             ("interaction.payload", context_bytes, "application/json"),
         ):
             self.session.capture(
@@ -872,6 +1202,11 @@ class AllowlistedArtifactObserver:
                 artifact_phase=phase,
                 artifact_present=True,
                 artifact_size=len(data),
-                object_id=descriptor["object_id"],
+                # Records mode: the object id is minted on the capture worker, not here.
+                **(
+                    {"object_id": descriptor["object_id"]}
+                    if descriptor.get("object_id") is not None
+                    else {}
+                ),
             )
         return existence

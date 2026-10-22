@@ -4,10 +4,15 @@
 
 The explicit evidence line (``CallRecorder``, ``ByteBoundaryAdapter``) and the
 zero-code wire tee coexist in one process. Inside an explicit *model* call the
-tee allocates no sequence, writes nothing and passes the request through
+tee allocates no exchange, writes nothing and passes the request through
 untouched; the explicit record owns the call. Tool, database and agent calls
 never suppress wire capture. Every request here goes over a real loopback
 socket to :class:`FakeLLM`.
+
+The explicit producers run in records mode (spec 050 §3.10, WP-16): a recorder built
+while the handle is installed emits its journal events as sequenced records on the
+install's records input, so the wire handle's only positions inside an explicit model
+call are that call's records, never an exchange.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from typing import Any
 
 import httpx
 import pytest
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.sdk.trace.id_generator import IdGenerator
@@ -64,15 +69,48 @@ CHAT = {"model": "gpt-fake", "messages": [{"role": "user", "content": "x"}]}
 STREAM = {**CHAT, "stream": True}
 
 
-class Recording:
-    """A CallRecorder writing to its own store, with its own span exporter."""
+def record_spans(exporter: InMemorySpanExporter) -> list[ReadableSpan]:
+    """The records-input spans (spec 050 §3.4) in position order."""
+    found = [s for s in exporter.get_finished_spans()
+             if attrs(s).get("fabric.capture.input") == "records"]  # fmt: skip
+    return sorted(found, key=lambda s: attrs(s)["fabric.source.sequence"])
 
-    def __init__(self, tmp_path: Path, *, id_generator: Any = None) -> None:
+
+def exchanges(installed: Installed) -> list[ReadableSpan]:
+    """The wire exchanges (not the explicit records, also named ``fabric.model_call``)."""
+    assert installed.handle.flush(10.0)
+    found = [s for s in installed.exporter.get_finished_spans()
+             if s.name == "fabric.model_call"
+             and attrs(s).get("fabric.capture.input") != "records"]  # fmt: skip
+    return sorted(found, key=lambda s: attrs(s)["fabric.source.sequence"])
+
+
+def stored_bodies(store: LocalFilesystemContentStore, exporter: InMemorySpanExporter,
+                  role: str) -> list[bytes]:  # fmt: skip
+    """The stored bytes of every record body of ``role``, in position order."""
+    found = []
+    for span in record_spans(exporter):
+        for object_id in attrs(span).get("fabric.content.object_ids", ()):
+            ref = store.evidence_ref_for(object_id)
+            descriptor = store.read_descriptor(ref)
+            if descriptor["role"] == role and descriptor["status"] == "stored":
+                found.append(bytes(store.read(ref)))
+    return found
+
+
+class Recording:
+    """A CallRecorder with its own byte writer and span exporter. Built while a wire handle
+    is installed it runs in records mode: its records and bodies are the install's."""
+
+    def __init__(
+        self, tmp_path: Path, *, id_generator: Any = None, installed: Installed | None = None
+    ) -> None:  # fmt: skip
         self.store = LocalFilesystemContentStore(str(tmp_path / "explicit"), tenant_id="tenant")
         self.writer = ByteEvidenceRecorder(ByteEvidenceConfig(store=self.store, roles=ROLES))
         self.exporter = InMemorySpanExporter()
         self.provider = TracerProvider(sampler=ALWAYS_ON, id_generator=id_generator)
         self.provider.add_span_processor(SimpleSpanProcessor(self.exporter))
+        self.installed = installed
         self.recorder = CallRecorder(
             self.writer,
             run_id="run",
@@ -82,6 +120,10 @@ class Recording:
         )
 
     def stored(self, role: str) -> list[bytes]:
+        if self.recorder.mode == "records":
+            assert self.installed is not None
+            assert self.installed.handle.flush(10.0)
+            return stored_bodies(self.installed.store, self.installed.exporter, role)
         snapshot = self.recorder.snapshot()
         return [
             self.store.read(event["descriptor"]["ref"])
@@ -95,8 +137,10 @@ class Recording:
 
 
 @pytest.fixture
-def recording(tmp_path: Path) -> Iterator[Recording]:
-    rec = Recording(tmp_path)
+def recording(tmp_path: Path, installed: Installed) -> Iterator[Recording]:
+    """Built after ``installed``: records mode."""
+    rec = Recording(tmp_path, installed=installed)
+    assert rec.recorder.mode == "records"
     yield rec
     rec.close()
 
@@ -106,12 +150,13 @@ def _url(fake: FakeLLM) -> str:
 
 
 def _wire_nothing(installed: Installed) -> None:
-    """Wire allocated nothing: no sequence, no exchange span, no loss."""
+    """Wire allocated no exchange (no exchange span, no loss): every position of the
+    handle is an explicit record, numbered from 0 without a gap."""
     assert installed.handle.flush(10.0)
-    assert installed.handle.allocator.last_sequence()[1] == -1
-    assert [
-        s for s in installed.exporter.get_finished_spans() if s.name == "fabric.model_call"
-    ] == []
+    assert exchanges(installed) == []
+    records = record_spans(installed.exporter)
+    assert [attrs(s)["fabric.source.sequence"] for s in records] == list(range(len(records)))
+    assert installed.handle.allocator.last_sequence()[1] == len(records) - 1
     assert installed.losses() == []
 
 
@@ -235,7 +280,7 @@ def test_tool_call_does_not_suppress_wire_capture(
             return bytes(client.post(_url(fake_llm), content=data).content)
 
     recording.recorder.call(json.dumps(CHAT).encode(), tool, kind="tool")
-    assert len(installed.spans()) == 1
+    assert len(exchanges(installed)) == 1
     assert installed.handle.stats().deferred_to_explicit == 0
 
 
@@ -255,7 +300,7 @@ def test_tool_nested_in_model_call_clears_the_flag(
 
     rec.call(json.dumps(CHAT).encode(), model, kind="model")
     assert len(fake_llm.seen) == 2
-    assert len(installed.spans()) == 1
+    assert len(exchanges(installed)) == 1
     assert installed.handle.stats().deferred_to_explicit == 1
 
 
@@ -282,7 +327,7 @@ def test_byte_boundary_model_adapter_defers_and_tool_adapter_does_not(
         _wire_nothing(installed)
         assert installed.handle.stats().deferred_to_explicit == 1
         tool.call(payload, send, operation_id="t", attempt_id="1")
-        assert len(installed.spans()) == 1
+        assert len(exchanges(installed)) == 1
     finally:
         writer.close()
 
@@ -291,7 +336,7 @@ def test_byte_boundary_model_adapter_defers_and_tool_adapter_does_not(
 
 
 def test_wire_transport_wrapper_inside_explicit_model_call_defers(
-    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording
+    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     emitter = LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
@@ -308,6 +353,7 @@ def test_wire_transport_wrapper_inside_explicit_model_call_defers(
             patch_httpx=False,
         )
     )
+    recording = Recording(tmp_path)
     try:
 
         def send(data: bytes) -> bytes:
@@ -315,14 +361,20 @@ def test_wire_transport_wrapper_inside_explicit_model_call_defers(
             with httpx.Client(transport=transport) as client:
                 return bytes(client.post(_url(fake_llm), content=data).content)
 
+        assert recording.recorder.mode == "records"
         recording.recorder.call(json.dumps(CHAT).encode(), send, kind="model")
         assert handle.flush(10.0)
-        assert handle.allocator.last_sequence()[1] == -1
+        records = record_spans(exporter)  # start, data, end: the only positions
+        assert len(records) == 3
+        assert handle.allocator.last_sequence()[1] == 2
         assert handle.stats().deferred_to_explicit == 1
         send(json.dumps(CHAT).encode())  # the same wrapper outside: captured
         assert handle.flush(10.0)
-        assert [s.name for s in exporter.get_finished_spans()].count("fabric.model_call") == 1
+        wired = [s for s in exporter.get_finished_spans() if s.name == "fabric.model_call"
+                 and attrs(s).get("fabric.capture.input") != "records"]  # fmt: skip
+        assert [attrs(s)["fabric.source.sequence"] for s in wired] == [3]
     finally:
+        recording.close()
         wire.uninstall()
         emitter.close(1.0)
 
@@ -353,7 +405,10 @@ def test_install_order_does_not_matter(
         late.recorder.call(json.dumps(CHAT).encode(), send, kind="model")
         late.close()
         assert handle.flush(10.0)
-        assert handle.allocator.last_sequence()[1] == -1
+        # D2 holds in both: wire defers. The mode is chosen at construction (§3.10): the
+        # early recorder keeps the legacy journal, the late one emits 3 records.
+        assert (rec.recorder.mode, late.recorder.mode) == ("legacy", "records")
+        assert handle.allocator.last_sequence()[1] == 2
         assert handle.stats().deferred_to_explicit == 2
     finally:
         rec.close()
@@ -365,7 +420,7 @@ def test_install_order_does_not_matter(
 
 
 def test_reconstruct_over_mixed_run_has_no_false_gap(
-    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording
+    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from .test_capture_integration import JsonlSpanExporter  # noqa: PLC0415
 
@@ -379,6 +434,8 @@ def test_reconstruct_over_mixed_run_has_no_false_gap(
     handle = wire.install(
         WireConfig(store=store, tracer_provider=provider, extra_endpoints=fake_llm.matchers())
     )
+    recording = Recording(tmp_path)
+    assert recording.recorder.mode == "records"
 
     def send(data: bytes) -> bytes:
         with httpx.Client() as client:
@@ -394,17 +451,21 @@ def test_reconstruct_over_mixed_run_has_no_false_gap(
         assert handle.flush(10.0)
     finally:
         handle.close()
+        recording.close()
         emitter.close(1.0)
         provider.shutdown()
     assert len(fake_llm.seen) == 4
     assert handle.stats().deferred_to_explicit == 1
     document = reconstruct([spans_path], store=store, tenant_id="tenant-a")
     (run,) = document["runs"]
-    # Wire sees only the exchanges it owned: no sequence or loss gap. Re-sending
-    # the same conversation is only an informational history note.
+    # Wire sees only the exchanges it owned and the explicit calls are records between
+    # them on the same allocator: no sequence or loss gap. Re-sending the same
+    # conversation is only an informational history note.
     assert [g for g in run["gaps"] if g["effect"] != "info"] == []
     assert {g["gap_type"] for g in run["gaps"]} <= {"prefix_break"}
-    assert [e["source_sequence"] for e in run["exchanges"]] == [0, 1, 2]
+    # 0 exchange; 1-3 the model call's records; 4 exchange; 5 the tool call's start;
+    # 6 the tool's own request; 7-8 the tool call's data and end
+    assert [e["source_sequence"] for e in run["exchanges"]] == [0, 4, 6]
     assert run["verdict"] == "complete_for_observed_scopes"
     assert [s["verdict"] for s in document["scopes"]] == ["complete_for_declared_scope"]
 
@@ -500,7 +561,7 @@ def test_task_spawned_in_explicit_call_is_wire_captured_after_the_call_ends(
     asyncio.run(scenario())
     assert len(fake_llm.seen) == 2
     assert len(recording.stored("model.output.messages")) == 1
-    spans = installed.spans()
+    spans = exchanges(installed)
     assert len(spans) == 1  # the later request: wire's, not the ended call's
     assert installed.handle.stats().deferred_to_explicit == 1
     assert installed.losses() == []
@@ -532,7 +593,7 @@ def test_thread_with_copied_context_stops_deferring_when_the_call_ends(
     recording.recorder.call(payload, delegate, kind="model")
     go.set()
     assert done.wait(10.0)
-    assert len(installed.spans()) == 1
+    assert len(exchanges(installed)) == 1
     assert installed.handle.stats().deferred_to_explicit == 1
 
 
@@ -578,7 +639,7 @@ def test_byte_boundary_tool_adapter_nested_in_model_call_is_wire_captured(
 
         recording.recorder.call(json.dumps(CHAT).encode(), model, kind="model")
         assert len(fake_llm.seen) == 1
-        assert len(installed.spans()) == 1
+        assert len(exchanges(installed)) == 1
         assert installed.handle.stats().deferred_to_explicit == 0
     finally:
         writer.close()
@@ -609,10 +670,12 @@ def test_lazy_stream_returned_by_explicit_model_call_is_wire_captured(
     assert body == fake_llm.seen[0].response
     events = recording.recorder.snapshot()["events"]
     assert [e["status"] for e in events if e["role"] == "model.output.messages"] == ["unsupported"]
-    (span,) = installed.spans()
+    (span,) = exchanges(installed)
     found = attrs(span)
     assert found["fabric.wire.response_state"] == "complete"
-    assert found["fabric.source.sequence"] == 0
+    # Adopted when read, after the call's start, data (not exact bytes) and end records.
+    assert found["fabric.source.sequence"] == 3
+    assert len(record_spans(installed.exporter)) == 3
     assert (
         installed.store.read(installed.store.evidence_ref_for(found["fabric.content.result_ref"]))
         == body
@@ -652,14 +715,14 @@ def test_late_adopted_exchange_leaves_a_run_scope_closed_meanwhile(
         response.close()
     finally:
         client.close()
-    (span,) = installed.spans()
+    (span,) = exchanges(installed)
     found = attrs(span)
     assert "fabric.run.scope_id" not in found
     assert not str(found["fabric.run.id"]).startswith("r-")
 
 
 def test_provisional_exchange_stranded_at_close(
-    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recording: Recording
+    fake_llm: FakeLLM, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """At close, a provisional exchange whose call is still live stays the explicit
     record's (no loss); one that outlived its call is a counted shutdown loss."""
@@ -673,6 +736,8 @@ def test_provisional_exchange_stranded_at_close(
     handle = wire.install(
         WireConfig(store=store, tracer_provider=provider, extra_endpoints=fake_llm.matchers())
     )
+    recording = Recording(tmp_path)
+    assert recording.recorder.mode == "records"
     client = httpx.Client()
     try:
 
@@ -694,6 +759,7 @@ def test_provisional_exchange_stranded_at_close(
         live[0].close()
     finally:
         client.close()
+        recording.close()
         emitter.close(1.0)
     stats = handle.stats()
     assert stats.deferred_to_explicit == 1
@@ -723,7 +789,7 @@ def test_thread_pool_without_context_double_captures_and_bind_fixes_it(
 
     with concurrent.futures.ThreadPoolExecutor(2) as pool:
         recording.recorder.call(payload, lambda p: pool.submit(send, p).result(), kind="model")
-        assert len(installed.spans()) == 1  # the documented duplicate
+        assert len(exchanges(installed)) == 1  # the documented duplicate
         recording.recorder.call(
             payload, lambda p: pool.submit(bind_capture_context(send), p).result(), kind="model"
         )
@@ -737,5 +803,5 @@ def test_thread_pool_without_context_double_captures_and_bind_fixes_it(
             )
 
         asyncio.run(via_executor())
-    assert len(installed.spans()) == 1  # nothing more: both bound requests deferred
+    assert len(exchanges(installed)) == 1  # nothing more: both bound requests deferred
     assert installed.handle.stats().deferred_to_explicit == 2
