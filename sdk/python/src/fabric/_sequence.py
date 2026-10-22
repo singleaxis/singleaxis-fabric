@@ -6,6 +6,7 @@ by default neither does the source id nor the private provider's ``service.name`
 
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import hashlib
 import hmac
@@ -20,6 +21,15 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Literal, cast
+
+from ._capture_types import (
+    Allocation,
+    NullRunTable,
+    NullSealAccumulator,
+    RunTable,
+    SealAccumulator,
+    SealEntry,
+)
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
@@ -160,32 +170,77 @@ def _new_epoch() -> int:
 class SourceAllocator:
     """Thread-safe sequence allocator; a forked child gets a new epoch and restarts at 0."""
 
-    __slots__ = ("__weakref__", "_lock", "_next", "component", "epoch", "source_id")
+    __slots__ = (
+        "__weakref__", "_lock", "_next", "component", "epoch", "seals", "segments", "source_id",
+    )  # fmt: skip
 
     def __init__(self, source_id: str, component: Component) -> None:
         if component != "wire" or not OPAQUE_ID_RE.fullmatch(str(source_id)):
             raise ValueError("component must be wire and source_id an opaque id")
         self.source_id, self.component = source_id, component
         self._lock, self._next = threading.Lock(), 0
+        # 050 §3.3: the run table opens segments at allocation; the pipeline's seal
+        # accumulator counts outstanding positions. No-ops until WP-12 and WP-11a.
+        self.segments: RunTable = NullRunTable()
+        self.seals: SealAccumulator = NullSealAccumulator()
         with _LOCK:
             self.epoch = _new_epoch()
             _LIVE.add(self)
 
-    def next_sequence(self) -> tuple[int, int, RunScope | None]:
-        """Allocate one sequence: ``(epoch, sequence, innermost open run scope)``."""
+    def attach(
+        self, *, segments: RunTable | None = None, seals: SealAccumulator | None = None
+    ) -> None:
+        """Attach the run table and the seal accumulator (``None``: the no-op ones)."""
         with self._lock:
-            self._next += 1
-            return self.epoch, self._next - 1, _open_scope()
+            self.segments = segments if segments is not None else NullRunTable()
+            self.seals = seals if seals is not None else NullSealAccumulator()
 
-    def next_sequence_for(self, scope: RunScope | None) -> tuple[int, int, RunScope | None]:
-        """Allocate one sequence for work begun earlier under ``scope``: ``(epoch, sequence,
-        the innermost of its scopes still open now)``, read under the lock ``run_end`` closes
-        scopes under, so the sequence never lies outside a closed scope's markers."""
+    def _allocated(self, scope: RunScope | None) -> Allocation:
+        """One position for ``scope`` (050 §3.3). Holds ``_lock``; no I/O. A failing hook
+        never fails the allocation: the position is then segment-less."""
+        self._next += 1
+        allocation = Allocation(self.epoch, self._next - 1, scope)
+        try:
+            segment = self.segments.on_allocate(allocation)
+        except Exception:
+            segment = None
+        if segment is not None:
+            allocation = allocation._replace(segment_id=segment)
+            with contextlib.suppress(Exception):
+                self.seals.note_allocated(segment, allocation.sequence)
+        return allocation
+
+    def allocate(self) -> Allocation:
+        """Allocate one position in the innermost open run scope (050 §3.3)."""
         with self._lock:
-            self._next += 1
+            return self._allocated(_open_scope())
+
+    def allocate_for(self, scope: RunScope | None) -> Allocation:
+        """Allocate one position for work begun earlier under ``scope``: the innermost of
+        its scopes still open now, read under the lock ``run_end`` closes scopes under, so
+        the sequence never lies outside a closed scope's markers."""
+        with self._lock:
             while scope is not None and scope.closed:
                 scope = scope.parent
-            return self.epoch, self._next - 1, scope
+            return self._allocated(scope)
+
+    def settle(self, segment_id: str | None, sequence: int, entry: SealEntry) -> None:
+        """A position of ``segment_id`` was written (``entry`` its record digest) or lost
+        (``"loss:<reason>"``): hand it to the seal accumulator (050 §3.3). Worker and loss
+        paths only; never raises; a segment-less position settles nothing."""
+        if segment_id is not None:
+            with contextlib.suppress(Exception):
+                self.seals.settle(segment_id, sequence, entry)
+
+    def next_sequence(self) -> tuple[int, int, RunScope | None]:
+        """Allocate one sequence: ``(epoch, sequence, innermost open run scope)``."""
+        epoch, sequence, scope, _, _ = self.allocate()
+        return epoch, sequence, scope
+
+    def next_sequence_for(self, scope: RunScope | None) -> tuple[int, int, RunScope | None]:
+        """:meth:`allocate_for` as ``(epoch, sequence, scope)``."""
+        epoch, sequence, found, _, _ = self.allocate_for(scope)
+        return epoch, sequence, found
 
     def open_scope(self, scope: RunScope) -> tuple[int, int]:  # its run_start position
         return self.last_sequence()

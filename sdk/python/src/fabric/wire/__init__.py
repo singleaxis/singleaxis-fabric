@@ -40,7 +40,9 @@ if TYPE_CHECKING:
     from opentelemetry.sdk.trace.export import SpanExporter
 
     from .._loss import PrivateFallback
+    from .._records import RecordsInput
     from ._content import NodeContentClient
+    from ._registration import Registration
     from ._transport import AsyncWireTransport, WireTee, WireTransport
 
 __all__ = [
@@ -190,6 +192,10 @@ class WireHandle:
         self.gate = gate
         self._fallback = fallback or PrivateFallback(None)
         self._result: bool | None = None  # set once closed
+        # 050 §3.1-§3.2: the epoch registration and the records input of this install
+        # (``None`` until WP-10 and WP-11a build them).
+        self.registration: Registration | None = None
+        self.records: RecordsInput | None = None
 
     @property
     def _tee(self) -> WireTee:
@@ -280,9 +286,12 @@ class WireHandle:
             timeout = self.config.shutdown_timeout_s if timeout_s is None else timeout_s
             deadline = time.monotonic() + max(0.0, timeout)
             drained = self._tee.close(timeout * _DRAIN_SHARE)
+            _p1_final(self)  # 050 §3.6: final() seals every open segment first
             self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
+            _p1_detach(self)
             remaining = max(0.0, deadline - time.monotonic())
             self._result = self._deliver(remaining, closing=True, exiting=exiting) and drained
+            _p1_closed(self)
         return self._result
 
     def uninstall(self) -> None:
@@ -387,10 +396,12 @@ def install(
         tee = _transport.WireTee(
             config, allocator=allocator, loss=loss, sender=sender, fallback=fallback, gate=gate
         )
+        registration = _p1_attach(allocator, loss, tee)
         loss.attach(sender.wake if sender is not None else None)
         if sender is not None:  # starts draining: replays what earlier processes left
             sender.wake()
         _HANDLE = WireHandle(config, tee, patched=config.patch_httpx, fallback=fallback, gate=gate)
+        _p1_installed(_HANDLE, registration)
         _log_gate(gate)
         _patch_clients(config)
         _transport._ACTIVE = tee
@@ -401,6 +412,62 @@ def install(
                 "wire already stores content off telemetry"
             )
         return _HANDLE
+
+
+def _p1_attach(
+    allocator: SourceAllocator, loss: Any, tee: WireTee
+) -> Registration | None:  # fmt: skip
+    """050 §3.2-§3.3, before the handle is published: register the epoch on the spool and
+    attach the run table, the pipeline's seal accumulator and the settle hooks. Each step
+    fails open (capture continues unregistered); all are no-ops until WP-10/11a/12."""
+    from .._segments import new_run_table  # noqa: PLC0415
+    from . import _registration  # noqa: PLC0415
+
+    registration = None
+    with contextlib.suppress(Exception):
+        spool = tee.sender.spool if tee.sender is not None else None
+        registration = _registration.register(spool, allocator.source_id, allocator.epoch)
+    with contextlib.suppress(Exception):
+        allocator.attach(segments=new_run_table(), seals=tee.pipeline.seals)
+        tee.pipeline.set_settle(allocator.settle)
+        loss.set_settle(allocator.settle)
+    return registration
+
+
+def _p1_installed(handle: WireHandle, registration: Registration | None) -> None:
+    """050 §3.1, §3.8: the handle's records input and manifest 0 of its epoch."""
+    from .. import _manifest  # noqa: PLC0415
+    from .._records import RecordsInput  # noqa: PLC0415
+
+    handle.registration = registration
+    with contextlib.suppress(Exception):
+        handle.records = RecordsInput(handle)
+        _manifest.emit_initial(handle)
+
+
+def _p1_final(handle: WireHandle) -> None:
+    """050 §3.6 ``final()`` trigger: seal the open segments before the ``final`` marker."""
+    with contextlib.suppress(Exception):
+        handle.allocator.segments.on_final()
+    with contextlib.suppress(Exception):
+        if handle.registration is not None:
+            handle.registration.final()
+
+
+def _p1_detach(handle: WireHandle) -> None:
+    """After ``final``: the closed install settles nothing more."""
+    with contextlib.suppress(Exception):
+        handle._tee.loss.set_settle(None)
+        handle._tee.pipeline.set_settle(None)
+        handle.allocator.attach()
+        handle.records = None
+
+
+def _p1_closed(handle: WireHandle) -> None:
+    """After delivery: release the registration (its file goes once ``final`` is spooled)."""
+    with contextlib.suppress(Exception):
+        if handle.registration is not None:
+            handle.registration.close()
 
 
 def _patch_clients(config: WireConfig) -> None:
@@ -602,6 +669,10 @@ def run(run_id: str) -> Iterator[None]:
         if handle is not None:
             with contextlib.suppress(Exception):  # capture fails open
                 handle._tee.loss.heartbeat(handle.allocator, kind=kind, scope=scope)
+            with contextlib.suppress(Exception):  # 050 §3.6 block hooks (WP-12)
+                segments = handle.allocator.segments
+                hook = segments.on_block_enter if kind == "run_start" else segments.on_block_exit
+                hook(scope)
 
     key = handle.config.id_key if handle is not None else None
     emitted = None

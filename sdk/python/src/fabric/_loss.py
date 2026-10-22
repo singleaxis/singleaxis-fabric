@@ -14,7 +14,7 @@ import threading
 import time
 import weakref
 from collections.abc import Callable, Sequence
-from typing import Literal
+from typing import Literal, cast
 
 from opentelemetry import trace
 from opentelemetry.context import Context
@@ -22,6 +22,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import SpanKind
 from opentelemetry.util.types import AttributeValue
 
+from ._capture_types import Marker, Settle, settle_noop
+from ._seal import loss_entry
 from ._sequence import RunScope, SourceAllocator
 from ._version import __version__
 from .tracing import FABRIC_SDK_NAME, has_protected_route
@@ -43,7 +45,7 @@ _RUN_KINDS = ("run_start", "run_end")
 _TICK_S, _MAX_QUEUED_HEARTBEATS, _MAX_PENDING_RANGES = 1.0, 1024, 1024
 _LOG = logging.getLogger("fabric.capture")
 _EMITTERS: weakref.WeakSet[LossEmitter] = weakref.WeakSet()
-_Beat = tuple[str, int, int, str | None, str | None, HeartbeatKind]
+_Beat = tuple[str, int, int, str | None, str | None, HeartbeatKind]  # Marker.to_beat (050 §3.5)
 _Range = tuple[tuple[str, int, str], tuple[int, int, int]]  # (source, epoch, reason), (lo, hi, n)
 
 
@@ -163,6 +165,9 @@ class LossEmitter:
         # Heartbeats of sources this process does not allocate for (forked children's
         # epochs, wire/_forks.py), taken with every drain.
         self._beat_sources: list[Callable[[], list[_Beat]]] = []
+        # 050 §3.3: every loss settles its position's segment (the allocator's settle,
+        # attached at install; a no-op until segments and seals are built).
+        self._settle: Settle = settle_noop
         self._init_state()
         _EMITTERS.add(self)
 
@@ -180,11 +185,22 @@ class LossEmitter:
         self.spans_refused = 0  # records a protected route would have projected
         self.recorded = 0  # exchanges lost before reaching the record (admission failures)
 
-    def record(self, source_id: str, source_epoch: int, reason: LossReason, sequence: int) -> None:
-        """Count one exchange sequence lost before it reached the record."""
+    def record(
+        self, source_id: str, source_epoch: int, reason: LossReason, sequence: int, *,
+        segment_id: str | None = None,
+    ) -> None:  # fmt: skip
+        """Count one sequence lost before it reached the record, and settle it in its
+        segment's seal (050 §3.3: the single loss funnel). ``segment_id`` is ``None`` for a
+        position allocated outside any run."""
         with contextlib.suppress(Exception), self._lock:
             self.recorded += 1
+        with contextlib.suppress(Exception):
+            self._settle(segment_id, sequence, loss_entry(reason))
         self.retain(((source_id, source_epoch, reason), (sequence, sequence, 1)))
+
+    def set_settle(self, settle: Settle | None) -> None:
+        """The settle hook losses call (``None``: none); set at install, cleared at close."""
+        self._settle = settle if settle is not None else settle_noop
 
     def has_pending_losses(self) -> bool:
         """Whether loss ranges wait in memory (not yet spooled or emitted)."""
@@ -229,6 +245,15 @@ class LossEmitter:
     def queue_beat(self, beat: _Beat) -> None:
         """Queue a heartbeat of a source this process does not allocate for."""
         self._queue_beat(beat)
+
+    def queue_marker(self, marker: Marker) -> bool:
+        """Queue a typed marker (050 §3.5). Until WP-11b replaces the legacy beat queue,
+        only the kinds with a legacy form are queued; ``False`` for the others."""
+        beat = marker.to_beat()
+        if beat is None:
+            return False
+        self._queue_beat(cast("_Beat", beat))
+        return True
 
     def _queue_beat(self, beat: _Beat) -> None:
         with self._lock:

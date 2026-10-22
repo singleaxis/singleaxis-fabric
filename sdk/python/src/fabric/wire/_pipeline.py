@@ -36,10 +36,13 @@ from opentelemetry.trace import (
 )  # fmt: skip
 from opentelemetry.util.types import AttributeValue
 
+from .._capture_types import RecordJob, SealAccumulator, SealEntry, Settle, settle_noop
 from .._loss import LossEmitter, LossReason, PrivateFallback, resolve_capture_provider
 from .._model_names import expose_model
+from .._seal import new_accumulator, record_digest
 from .._sequence import OPAQUE_ID_RE
 from .._version import __version__
+from ._attrs import p1_attributes
 from ._match import OPERATION_NAMES
 from ._model import FINISH_REASONS, ROLE_REQUEST, ROLE_RESPONSE, SPAN_EXCHANGE, WireAttr
 from ._policy import LOCAL_DEFAULT, CapturePolicy, ContentGate
@@ -52,6 +55,8 @@ if TYPE_CHECKING:
     from ._config import WireConfig
     from ._model import CapturedBody, CaptureJob, StoreStatus
     from ._sender import Sender
+
+    Job = CaptureJob | RecordJob
 
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
@@ -189,6 +194,8 @@ def exchange_attributes(
         "gen_ai.usage.input_tokens": metadata.get("input_tokens"),
         "gen_ai.usage.output_tokens": metadata.get("output_tokens"),
     }  # fmt: skip
+    with contextlib.suppress(Exception):  # 050 §3.9 P1 keys (WP-14); never costs the record
+        attrs.update(p1_attributes(job))
     return {key: value for key, value in attrs.items() if value is not None}
 
 
@@ -231,6 +238,10 @@ class CapturePipeline:
         )  # fmt: skip
         self._warned_epochs: set[int] = set()  # disabled state logged once per epoch
         self._backoffs: tuple[float, ...] = _BACKOFFS_S
+        # 050 §3.7: the seal accumulator this pipeline owns, and the allocator's settle
+        # (attached at install). Both no-ops until WP-11a and WP-12.
+        self.seals: SealAccumulator = new_accumulator()
+        self._settle: Settle = settle_noop
         self._init_state()
         _PIPELINES.add(self)
 
@@ -239,15 +250,30 @@ class CapturePipeline:
         self._cond, self._closing = threading.Condition(), threading.Event()
         self._closed, self._pending, self._stats = False, 0, dict.fromkeys(_STATS, 0)
         # The jobs in progress (by id) until their outcome is claimed.
-        self._current: dict[int, CaptureJob] = {}
+        self._current: dict[int, Job] = {}
         self._worker = threading.Thread(target=self._run, name="fabric-wire-capture", daemon=True)
         self._worker.start()
 
-    def _lose(self, job: CaptureJob, reason: LossReason) -> None:
-        self._loss.record(job.source_id, job.source_epoch, reason, job.source_sequence)
+    def set_settle(self, settle: Settle | None) -> None:
+        """The allocator's settle (050 §3.3), called once a position is written."""
+        self._settle = settle if settle is not None else settle_noop
 
-    def submit(self, job: CaptureJob) -> bool:
-        """Non-blocking; ``False`` means dropped (``queue_full``/``shutdown``) and recorded."""
+    def _lose(self, job: Job, reason: LossReason) -> None:
+        self._loss.record(
+            job.source_id, job.source_epoch, reason, job.source_sequence,
+            segment_id=_segment_of(job),
+        )  # fmt: skip
+
+    def _settle_written(self, job: Job, span: Mapping[str, Any]) -> None:
+        """050 §3.7: a written position settles its segment with its record digest."""
+        if (segment := _segment_of(job)) is None:
+            return
+        with contextlib.suppress(Exception):
+            self._settle(segment, job.source_sequence, _record_entry(span))
+
+    def submit(self, job: Job) -> bool:
+        """Non-blocking; ``False`` means dropped (``queue_full``/``shutdown``) and recorded.
+        Takes exchange jobs and records-input jobs (050 §3.5)."""
         reason: LossReason = "shutdown"
         with self._cond:
             if not self._closed:
@@ -261,13 +287,15 @@ class CapturePipeline:
         self._drop(job, reason)
         return False
 
-    def _drop(self, job: CaptureJob, reason: LossReason) -> None:
+    def _drop(self, job: Job, reason: LossReason) -> None:
         with self._cond:
             self._stats["dropped"] += 1
         self._lose(job, reason)
         self._done(job)
 
-    def _done(self, job: CaptureJob) -> None:
+    def _done(self, job: Job) -> None:
+        if isinstance(job, RecordJob):  # WP-11a: records-input bytes and their release
+            return
         if self._on_job_done is not None:
             with contextlib.suppress(Exception):
                 self._on_job_done(job)
@@ -287,7 +315,7 @@ class CapturePipeline:
         if already:
             return drained
         self._closing.set()  # interrupts store retry backoff
-        lost: list[CaptureJob] = []
+        lost: list[Job] = []
         with contextlib.suppress(queue.Empty):
             while True:
                 lost.append(self._queue.get_nowait())
@@ -316,7 +344,7 @@ class CapturePipeline:
         """The provider exchange spans go through now; ``None`` when they are refused."""
         return resolve_capture_provider(self._provider, self._fallback)
 
-    def _commit(self, job: CaptureJob) -> bool:
+    def _commit(self, job: Job) -> bool:
         """The job's single terminal transition: ``True`` gives the worker its outcome;
         ``False`` means ``close`` already reported it as a shutdown loss. Exactly one wins.
         """
@@ -345,7 +373,7 @@ class CapturePipeline:
             if stop:
                 return
 
-    def _batch(self, job: CaptureJob) -> tuple[list[CaptureJob], bool]:
+    def _batch(self, job: Job) -> tuple[list[Job], bool]:
         """``job`` plus, on the spool path, the jobs already queued behind it (bounded by
         count and captured bytes); ``True`` when the stop sentinel was taken."""
         jobs, size = [job], _job_bytes(job)
@@ -360,7 +388,7 @@ class CapturePipeline:
             size += _job_bytes(queued)
         return jobs, False
 
-    def _fail(self, job: CaptureJob) -> None:
+    def _fail(self, job: Job) -> None:
         """An error before the commit: an ``internal_error`` loss (after the commit the
         outcome is the span or record)."""
         with contextlib.suppress(Exception):
@@ -368,21 +396,25 @@ class CapturePipeline:
                 self._stats["internal_errors"] += 1
                 self._lose(job, "internal_error")
 
-    def _emit_one(self, job: CaptureJob) -> None:
+    def _emit_one(self, job: Job) -> None:
         try:
-            self._emit(job, *self._prepare(job))
+            if isinstance(job, RecordJob):
+                self._emit_record(job, *self._prepare(job))
+            else:
+                self._emit(job, *self._prepare(job))
         except Exception:
             self._fail(job)
 
-    def _spool_batch(self, sender: Sender, jobs: Sequence[CaptureJob]) -> None:
+    def _spool_batch(self, sender: Sender, jobs: Sequence[Job]) -> None:
         """Protect each job, commit it, then spool the committed ones in one batch. A record
         the spool did not take is a loss: ``queue_full`` (over the bound), ``disk_full``
         (the volume is full) or ``internal_error``."""
-        ready: list[tuple[CaptureJob, dict[str, Any], Any]] = []
+        ready: list[tuple[Job, dict[str, Any], Any]] = []
         for job in jobs:
             try:
                 attrs, staged = self._prepare(job)
-                span = self._span_record(job, attrs)
+                span = (self._record_span(job, attrs) if isinstance(job, RecordJob)
+                        else self._span_record(job, attrs))  # fmt: skip
             except Exception:
                 self._fail(job)
                 continue
@@ -396,16 +428,20 @@ class CapturePipeline:
             )
         except Exception:
             outcomes = ["internal_error"] * len(ready)
-        for (job, _, _), outcome in zip(ready, outcomes, strict=True):
+        for (job, span, _), outcome in zip(ready, outcomes, strict=True):
             if outcome == "spooled":
+                self._settle_written(job, span)
                 continue
             if outcome == "internal_error":
                 self._stats["internal_errors"] += 1
             with contextlib.suppress(Exception):
                 self._lose(job, cast("LossReason", outcome))
 
-    def _prepare(self, job: CaptureJob) -> tuple[dict[str, AttributeValue], list[Any]]:
-        """Protect, then store (or stage, in node mode) both sides; the span attributes."""
+    def _prepare(self, job: Job) -> tuple[dict[str, AttributeValue], list[Any]]:
+        """Protect, then store (or stage, in node mode) both sides; the span attributes.
+        A records-input job takes its own path (050 §3.5)."""
+        if isinstance(job, RecordJob):
+            return self._prepare_record(job)
         sides = [(job.request, ROLE_REQUEST)]
         sides += [] if job.response is None else [(job.response, ROLE_RESPONSE)]
         staged: list[tuple[dict[str, Any], bytes]] = []
@@ -447,6 +483,20 @@ class CapturePipeline:
             truncated=truncated, metadata=response_metadata(job, self._models),
             store_reason=reason,
         ), staged  # fmt: skip
+
+    def _prepare_record(self, job: RecordJob) -> tuple[dict[str, AttributeValue], list[Any]]:
+        """PROTECT a record's bodies and evidence; its span attributes (050 §3.5). Until
+        WP-11a nothing submits a record job; one that arrives is an ``internal_error``
+        loss, never a silent drop."""
+        raise NotImplementedError("records-input jobs land in WP-11a")
+
+    def _record_span(self, job: RecordJob, attrs: dict[str, Any]) -> dict[str, Any]:
+        """A record's span (spool path; 050 §3.4 "Span ids"). WP-11a."""
+        raise NotImplementedError("records-input spans land in WP-11a")
+
+    def _emit_record(self, job: RecordJob, attrs: dict[str, AttributeValue], staged: Any) -> None:
+        """A record through the provider path (050 §3.4 "Without a spool"). WP-11a."""
+        raise NotImplementedError("records-input spans land in WP-11a")
 
     def _warn_disabled(self, job: CaptureJob) -> None:
         """049 §7.3: the disabled state is logged at the first exchange of each epoch, by
@@ -510,6 +560,11 @@ class CapturePipeline:
                 return
             span.end(end_time=max(job.ended_ns, job.started_ns))
             self._stats["spans_emitted"] += 1
+            self._settle_written(job, {
+                "name": SPAN_EXCHANGE, "start_time_unix_nano": job.started_ns,
+                "end_time_unix_nano": max(job.ended_ns, job.started_ns),
+                "status": "error" if _is_error(job) else "unset", "attributes": attrs,
+            })  # fmt: skip
         except Exception:  # committed: never a second outcome for this sequence
             self._stats["internal_errors"] += 1
 
@@ -549,7 +604,29 @@ class CapturePipeline:
         }  # fmt: skip
 
 
-def _job_bytes(job: CaptureJob) -> int:
+def _segment_of(job: Job) -> str | None:
+    """The job's segment (050 §3.3); ``None`` outside a run and until segments exist (an
+    exchange job carries one once WP-12/WP-14 add it)."""
+    segment = getattr(job, "segment_id", None)
+    return segment if isinstance(segment, str) else None
+
+
+def _record_entry(span: Mapping[str, Any]) -> SealEntry:
+    """The seal entry of a written exchange (050 §3.7): the record digest over the span,
+    with the stored request and response digests, in that order, as its content."""
+    attrs = span["attributes"]
+    content = [f"sha256:{digest}" for key in (WireAttr.REQUEST_SHA256, WireAttr.RESPONSE_SHA256)
+               if isinstance(digest := attrs.get(key), str)]  # fmt: skip
+    return record_digest(
+        name=span["name"], start_ns=span["start_time_unix_nano"],
+        end_ns=span["end_time_unix_nano"], status=span["status"], attributes=attrs,
+        content=content,
+    )  # fmt: skip
+
+
+def _job_bytes(job: Job) -> int:
+    if isinstance(job, RecordJob):
+        return job.inflight_charge
     sides = (job.request, job.response)
     return sum(side.captured_byte_length for side in sides if side is not None)
 
