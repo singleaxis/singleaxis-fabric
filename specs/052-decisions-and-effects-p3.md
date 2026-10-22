@@ -2,7 +2,7 @@
 title: P3 build spec — decisions and effects records (record-only)
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 1
+revision: 2
 last_updated: 2026-10-22
 owner: recorder-engineering
 depends_on: 049 (rev 6.3/6.4), 050 (P1), 051 (P2)
@@ -22,6 +22,14 @@ It reuses the records core, update records, entity refs, link carrier,
 timing, never-raise rules, budgets and verifier modules of spec 051; this
 spec only states what P3 adds. Section and assumption numbers `051 §x` /
 `A<n>` refer to spec 051.
+
+**Revision 2** applies the v0.9 spec reviews (Astra, Fable) through the
+main-session decisions R1–R16: assumptions refreshed against spec 050 and
+051 revision 2; one integration owner for `decision.py` and
+`records/__init__.py` (R13, new WP3-I); passivity per R9 (no conversion of
+application objects, every API fails open); the explicit clear-mode rule
+(R8); open decisions follow the reviewers' answers, pending owner
+confirmation.
 
 ---
 
@@ -113,20 +121,24 @@ cost. Artifact tests enforce this (section 6, WP3-7).
 
 ## 3. Assumptions
 
-P3 assumes **all P1 assumptions A1–A16 of spec 051 §3** and the P2
-deliverables below. If spec 050 changes A1–A16, 051 and this spec are
-amended together.
+P3 assumes **all P1 interfaces A1–A18 of spec 051 §3** (written against
+spec 050 rev 2 and its R1/R4/R5 revision) and the P2 deliverables below.
+Revision 1's B6 (requests to 050) is closed: 050 provides eight bodies per
+record, the `update` phase, `mode_of` and `v2`.
 
 | # | Assumption | Source |
 |---|---|---|
-| B1 | 051 records core: `emit`, handles, update records (`fabric.step.update_of`), entity refs, `fabric.step.links`, timing basis, never-raise and strict mode, digest gating, bounded encoder | 051 §4.2, WP2-1 |
+| B1 | 051 records core: `emit` with separate lifecycle, result-status and OTLP-status inputs (R4), handles, update records (`fabric.step.update_of`), entity refs, `fabric.step.links`, timing basis, fail-open and strict mode, digest gating, the bounded walker and descriptor-only bodies (R5, R9) | 051 §4.2, WP2-1a |
 | B2 | WP2-0 already admitted the P3 v2 types (`ctl`, `axn`, `prf`), `fabric.step.update_of` with `ctl-`, and the records-class placement of every P3 key | 051 §5 |
 | B3 | 051 side-effect lifecycle (`with d.side_effect()`, `SideEffectHandle`, `record_side_effect(state=, started_at=, ended_at=, target=)`) exists | 051 §4.5, WP2-4 |
-| B4 | 051 verifier modules (`_records_steps.py`, `_links.py`) and the ref join exist; P3 registers its kinds there | 051 §4.13, WP2-9 |
+| B4 | 051 verifier modules (`_records_classify.py`, `_links.py`, `_records_steps.py`) and the ref join exist; P3 registers its kinds there | 051 §4.13, WP2-9a/9b |
 | B5 | P1 projects D17 (`prefix_break`, tentative) | 049 §8.2 P1 field list; 050 §3.13 |
-| B6 | 051's requests to 050 are accepted: up to 8 bodies per record (R-A; a control record carries three roles, each possibly with a review copy), phase `update` (R-C), `mode_of(role)` (R-D) | 051 §3 |
+| B6 | Run identity follows R1: control resolutions in another service join by the control's clear business id (`ctl-`), never by a propagated run id | 051 §4.2 "Entity refs" |
 
----
+Control, selection and context-change records are instant records: one
+`end` emit with `lifecycle=completed`, `result_status=ok` and OTLP status
+`unset` (R4); the control's own decision is a domain field (D04), never
+the record's result status.
 
 ## 4. Design
 
@@ -160,9 +172,9 @@ fabric.records.record_control(
     decided_by: ActorRef | None = None,            # D07 (record actor; default `unknown`)
     policy: ControlPolicyRef | None = None,        # D08: id → lbl-, version int ≥ 1, digest sha256:
     proof_ref: str | None = None,                  # D09: → prf- on T; clear only inside control.checked
-    checked: object | None = None,                 # D10 → C control.checked
-    reason: str | object | None = None,            # D10 → C control.reason
-    approval: object | None = None,                # D10 → C control.approval (scope, duration, modification)
+    checked: object | None = None,                 # D10 → C control.checked: bytes, str or plain JSON
+    reason: str | None = None,                     # D10 → C control.reason (preformatted text)
+    approval: object | None = None,                # D10 → C control.approval: plain JSON only (051 §4.2)
     observation: ControlObservation | Mapping | None = None,   # fills unset arguments (4.2.4)
     observed_at: int | datetime | None = None,     # record time (basis reported)
     links: Sequence[Link] = (),
@@ -234,10 +246,12 @@ class ControlObservation:            # to_dict() → "fabric.external-control-ob
   `external_service`. Fields v1 made mandatory become optional.
   `to_dict()` emits v2 (`schema_version`
   `fabric.external-control-observation/v2`); `from_dict` reads both.
-- Construction validates like v1 (raises `ValueError` on malformed values:
-  it is a data constructor the caller builds, not a recorder call);
-  `record_control(observation=...)` itself never raises and accepts a
-  mapping, validated without raising.
+- Construction validates like v1 (raises `ValueError` on malformed
+  values): it is a data constructor the caller builds, not a recorder
+  call, and its v1 behaviour is unchanged. Every recorder path is fail-open
+  (R9): `record_control(observation=...)` accepts the object or a plain
+  mapping, validates without raising, and records invalid values as
+  `unknown`/omitted with a counter; only `FABRIC_RECORDS_STRICT=1` raises.
 - `record_control` uses observation values for any argument left `None`;
   explicit arguments win. `reviewed_artifact_digest`, `issuer_id` and the
   clear `proof_ref` go into the `control.checked` body
@@ -319,22 +333,29 @@ fabric.records.record_side_effect_update(side_effect_id: str | EmittedId, *,
 
 ### 4.6 Privacy and identity for every new datum
 
-| Datum | Class | Emitted as (pseudonymous) | No key, production | Clear mode |
+The identity rule is 051 §4.10 (R8): pseudonymous by default, every
+caller id mapped whatever its shape; `clear` only as the explicit,
+manifest-recorded opt-in, which emits ids as given; a pseudonymous Node
+rejects clear values.
+
+| Datum | Class | Pseudonymous (default) | Pseudonymous, no key | Explicit clear mode (R8) |
 |---|---|---|---|---|
 | control id (caller), resolves (caller) | ID | `ctl-` v2 `control`; minted uuid4 as is | minted uuid4 only; caller ids omitted | as given |
 | action id | ID | `axn-` v2 `action` | omitted | as given |
 | proof ref | ID | `prf-` v2 `proof`; clear value only in `control.checked` | omitted | as given |
 | gated step | ID | uuid4 attempt / P1-mapped step id | idem | idem |
 | decided-by actor | ID | `act-`; identity in C `actor.identity` (`off`) | omitted | as given |
-| policy id | LABEL | `lbl-` | `lbl-` | as given |
+| policy id | LABEL | `lbl-` (keyed) | omitted | `lbl-` unless `FABRIC_WIRE_LABELS=clear` |
 | policy / artifact digests | DIGEST | `sha256:<hex>` (artifact digest in content only) | idem | idem |
 | checked, reason, approval, selection decision, affected, receipt | CONTENT | C roles only, after PROTECT | content disabled | idem |
 | kinds, phases, decisions, states, counts | META | as is | idem | idem |
 
 ### 4.7 Passivity
 
-051 §4.11 applies unchanged (budgets, never waits, never alters, fails
-open, no `_exclusive`). P3-specific: no API takes a callback, future,
+051 §4.11 applies unchanged (budgets, never waits, never alters, never
+runs application code, fails open, no `_exclusive`). Bodies follow 051
+§4.2: bytes and strings by reference, plain JSON through the bounded
+walker, any other object a descriptor-only `parse_failed` body. P3-specific: no API takes a callback, future,
 event or timeout; `record_control` with `phase="request"` returns
 immediately; an application that waits for an approval does so in its
 own code, and Fabric records only what it is told.
@@ -348,7 +369,9 @@ receipt, compensates, compensationState, committed?})` with
 `committed` default `undefined` (today `?? true`,
 `decision.ts:1410`), `sideEffect(…, fn)` handle `commit()` and
 `compensation()`, `recordSideEffectUpdate`. Same keys, roles, invariants,
-matrix and goldens as Python; invariants are module constants.
+matrix, identity rule (R8) and goldens as Python; invariants are module
+constants. TS WPs edit TypeScript files only; no Python gate waits for
+them (R13).
 
 ### 4.9 Verifier and projection
 
@@ -413,20 +436,31 @@ covers P2 and P3; the rest are WP3-0.
 
 ## 6. Work packages
 
-WP3-1, WP3-2, WP3-3 run in parallel (disjoint files, B1–B3); WP3-4 runs
-from WP3-0 fixtures in parallel with them; WP3-8 is last.
+**Ownership (R13).** `decision.py` and `fabric/records/__init__.py` have
+one integration owner in P3, **WP3-I**, which lands every P3 public
+signature first, each delegating to a no-op function in the feature
+module. WP3-1, WP3-2 and WP3-3 then edit only their own modules. TS WPs
+edit TypeScript only; no Python exit gate depends on WP3-6.
+
+| Wave | WPs | Rule |
+|---|---|---|
+| A | WP3-0 | first; WP3-4 and WP3-5 may start from its fixtures |
+| B | WP3-I | sequential |
+| C | WP3-1, WP3-2, WP3-3 in parallel; WP3-4 (needs WP2-9b) and WP3-5 alongside | no intra-wave dependency among WP3-1…3-3 |
+| D | WP3-7 after WP3-1…3-3; then WP3-8 | WP3-8 after WP3-0 … WP3-5 and WP3-7 (not WP3-6) |
 
 | WP | Owner area | Depends on | Deliverables | Tests | Exit check |
 |---|---|---|---|---|---|
 | **WP3-0** Contracts | `contracts/coverage/v1/**`, `scripts/contracts/**` | 051 WP2-0 | D36 row, control-observation-v2 schema, P3 golden spans (`fixtures/records/p3/*`) for every E1 scenario | validator; schema fixtures | `validate_coverage_contracts.py` passes |
-| **WP3-1** Controls | `control_evidence.py`, `_rec_controls.py`, `records/__init__.py` (control exports), `decision.py` class header (mixin bases) | WP2-1, WP3-0 | 4.2 | matrix property test; v1→v2 mapping; invariants on fault paths; `ControlRef` surface test; cross-process clear-id join | every E1 scenario emits its golden |
-| **WP3-2** Selection and context change | `_rec_decisions.py`, `records/__init__.py` (exports) | WP2-1 | 4.3, 4.4 | unit; basis not defaulted | goldens match |
-| **WP3-3** Commit and compensation | `_rec_effects.py`, `side_effect.py`, `decision.py` `record_side_effect` region | WP2-4 | 4.5 | emission table rows; receipt never upgrades; legacy key presence; update fold | E3 SDK half |
-| **WP3-4** Verifier | `reconstruct/_controls.py`, `_decisions.py`, `_effects.py` | WP2-9, WP3-0 | 4.9 | fixture-driven; legacy mapping; D36 per scenario; D17 separation; forged `enforced_by_fabric=true` → conflict | E1, E3, E4 from fixtures |
-| **WP3-5** fabricguard checks | `processor/fabricguardprocessor/**` tests | WP2-10 | rejection tests: `enforced_by_fabric=true`, other `authentication` values, clear control ids under a pseudonymous Node | Go tests | C0-4 rows for P3 keys |
-| **WP3-6** TypeScript (non-gating) | `sdk/typescript/src/records*.ts`, `control-evidence.ts` (new), `decision.ts` wiring | WP2-11, WP3-0 | 4.8 | goldens; invariants constant | C3-6 |
-| **WP3-7** OSS boundary | `scripts/tests/test_recorder_release_boundary.py`, `sdk/python/tests/test_records_boundary.py`, TS equivalent | WP3-1…3-3 | artifact and API-surface tests (section 7.3) | — | E5 |
-| **WP3-8** Qualification (last) | `qualification/agent-matrix/**` or `qualification/reference-agents/**`, `qualification/chaos/**`, `sdk/python/tests/e2e/test_p3_*` | all | section 7 | — | E1–E6 |
+| **WP3-I** Integration owner | `decision.py` (mixin bases, `record_side_effect` signature: `commit_state`, `receipt`, `compensates`, `compensation_state`, `committed=None`), `fabric/records/__init__.py` (all P3 exports) | 051 WP2-1b, WP3-0 | every P3 public signature delegating to stubs in `_rec_controls.py`, `_rec_decisions.py`, `_rec_effects.py` | existing suite green with stubs; fail-open for the new arguments | signatures frozen for wave C |
+| **WP3-1** Controls | `control_evidence.py`, `_rec_controls.py` | WP3-I | 4.2 | matrix property test; v1→v2 mapping; invariants on fault paths; `ControlRef` surface test; cross-process clear-id join | every E1 scenario emits its golden |
+| **WP3-2** Selection and context change | `_rec_decisions.py` | WP3-I | 4.3, 4.4 | unit; basis not defaulted | goldens match |
+| **WP3-3** Commit and compensation | `_rec_effects.py` (P3 functions), `side_effect.py` | WP3-I, 051 WP2-4 | 4.5 | emission table rows; receipt never upgrades; legacy key presence; update fold | E3 SDK half |
+| **WP3-4** Verifier | `reconstruct/_controls.py`, `_decisions.py`, `_effects.py` | 051 WP2-9b, WP3-0 | 4.9 | fixture-driven; legacy mapping; D36 per scenario; ambiguous joins preserved; D17 separation; forged `enforced_by_fabric=true` → conflict | E1, E3, E4 from fixtures |
+| **WP3-5** fabricguard checks | `processor/fabricguardprocessor/**` tests | 051 WP2-10 | rejection tests: `enforced_by_fabric=true`, other `authentication` values, clear control ids under a pseudonymous Node | Go tests | C0-4 rows for P3 keys |
+| **WP3-6** TypeScript (non-gating) | `sdk/typescript/src/records*.ts`, `control-evidence.ts` (new), `decision.ts` (TS files only) | 055 WP-08a, 051 WP2-11, WP3-0 | 4.8 | goldens; invariants constant | C3-6 (not a P3 gate) |
+| **WP3-7** OSS boundary | `scripts/tests/test_recorder_release_boundary.py`, `sdk/python/tests/test_records_boundary.py` | WP3-1…3-3 | artifact and API-surface tests (section 7.3) for the Python wheel; the TS scan is added by WP3-6 | — | E5 |
+| **WP3-8** Qualification (last) | `qualification/agent-matrix/**`, `qualification/chaos/**` (both merged to main before this WP, R16), `sdk/python/tests/e2e/test_p3_*` | WP3-0 … WP3-5, WP3-7 | section 7 | — | E1–E6 |
 
 ---
 
@@ -460,7 +494,8 @@ from WP3-0 fixtures in parallel with them; WP3-8 is last.
 
 ### 7.3 OSS boundary (E5, C3-5)
 
-- Wheel and npm content scan (extending `test_recorder_release_boundary.py`):
+- Wheel content scan (extending `test_recorder_release_boundary.py`; the
+  npm scan is WP3-6's):
   no module or public name matching `approve`, `authorize`, `enforce`,
   `evaluate`, `judge`, `score`, `guardrail_engine`, `policy_engine`,
   `wait_for_*`, `block_*` in `fabric.records`, `_rec_*`,
@@ -489,17 +524,25 @@ from WP3-0 fixtures in parallel with them; WP3-8 is last.
 
 ## 8. Risks and open owner decisions
 
-| # | Decision / risk | Recommended default |
+Each default follows the reviewers' recommended answers (Astra §7 and
+Fable §7 approve all seven) and R1–R16, and is **Recommended — pending
+owner confirmation**; build agents follow it unless the owner changes it.
+
+| # | Decision | Default (Recommended — pending owner confirmation) |
 |---|---|---|
-| O3-1 | `committed` default changes from `True` to `None`; the legacy key is no longer emitted when nothing was stated (`SideEffectRecord.committed: bool | None`) | Yes (049 §2.1 calls the default unsafe); release note; TS the same |
-| O3-2 | Control records default their actor to `unknown`, not `agent` (deviation from 049 §2.3 S03 default) | Yes (D-3) |
-| O3-3 | Add D36 `control.resolution_state` as the carrier of 049 §6.3 "pending at run end" | Yes |
-| O3-4 | Invalid phase/decision combinations are recorded as `unknown` (strict mode raises) | Yes |
-| O3-5 | `ControlObservation` is widened in place to v2 (v1 construction and documents still accepted; `to_dict()` now emits v2) | Yes; release-noted for readers of the v1 dict |
-| O3-6 | Proof references are pseudonymised on T (`prf-`), clear only in `control.checked` content — a downstream lookup needs content access | Yes (decision 22) |
-| O3-7 | Cross-run ref joins for `resolves` (approval in another run) | Yes, only when both runs are in the verifier input |
-| R1 | Applications may misread a recorded `allow` as authorisation | `ControlRef` exposes no decision; docs and the D11 invariants say so |
-| R2 | Conflicting clear control ids reused across unrelated approvals join wrongly | Ids are the customer's; ambiguous joins are reported `ambiguous`, never merged |
+| O3-1 | `committed` default | Changes from `True` to `None`; the legacy key is emitted only when stated (`SideEffectRecord.committed` becomes an optional bool, `None` = not stated); release note; TS the same |
+| O3-2 | Control record actor default | `unknown`, not `agent` (deviation from 049 §2.3 S03 default, D-3) |
+| O3-3 | Carrier for "pending at run end" | New field D36 `control.resolution_state` |
+| O3-4 | Invalid phase/decision combinations | Recorded as `unknown`, counted; strict mode raises |
+| O3-5 | `ControlObservation` versioning | Versioned v2 output (`to_dict()`), v1 input compatibility (construction and documents) |
+| O3-6 | Proof references | Pseudonymised on T (`prf-`); clear only in `control.checked` content |
+| O3-7 | Cross-run `resolves` joins | Only within the runs present in the verifier input; ambiguous matches preserved as `ambiguous` with every candidate, never merged |
+
+| # | Risk | Mitigation |
+|---|---|---|
+| K1 | Applications may misread a recorded `allow` as authorisation | `ControlRef` exposes no decision; docs and the D11 invariants say so |
+| K2 | Clear control ids reused across unrelated approvals join wrongly | Ids are the customer's; ambiguous joins are reported `ambiguous`, never merged (O3-7) |
+| K3 | A `checked`/`approval` value that is not plain JSON is not recorded | Descriptor-only `parse_failed` (R9); callers pass bytes, strings or plain JSON |
 
 ---
 
@@ -517,7 +560,8 @@ Line numbers are rev 6.3 (`36f7a89`).
 | D-6 | §3.5 D03/D04 (lines 1494-1495) | phases and decisions listed independently | add the phase × decision matrix (052 §4.2.2) |
 | D-7 | §3.5 D26 (line 1517) | "`compensates` link" | "a `compensates` link on the compensating effect to the original effect (by `eff-` ref or attempt)" |
 | D-8 | §8.2 P3 Entry (line 2686) | "decision 4 confirmed" | "decision 4 approved 2026-10-18 (§9)" — the entry condition is met |
-| D-9 | §8.2 P3 Work (line 2689) | "… run outcome and stop reason on `run_end`" | remove (P2, spec 051 D-9) |
+| D-9 | §8.2 P3 Work (line 2689) | "… run outcome and stop reason on `run_end`" | remove: P1 ships the run-level hook on the outermost `run_end` and `end_run(stop_reason=)` (050 §3.6), P2 the facade and projection (051 D-9) |
 | D-10 | §8.2 P3 | no conformance ids | add C3-1…C3-6 (052 §7.1) |
 | D-11 | §2.9 table | — | add `ctl`/`control`, `axn`/`action`, `prf`/`proof` (with 051 D-17) |
 | D-12 | §4.3 roles | `control.checked` "What an external control checked" | note: also holds the reviewed-artifact digest, issuer and clear proof reference of a `ControlObservation` |
+| D-13 | §3.5 D10 (line 1501) | "control.checked, control.reason, control.approval — bytes" | add: "recorded from bytes, caller-formatted text or plain JSON only; Fabric never converts application objects" (R9) |
