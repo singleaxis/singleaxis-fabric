@@ -37,7 +37,11 @@ from fabric._model_names import parse_model_allowlist
 from fabric.reconstruct._graph import RunGraph
 from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES
 from fabric.reconstruct._inputs import ReconstructInputError
-from fabric.reconstruct._project import DEFAULT_COVERAGE_PROFILE, build_projection
+from fabric.reconstruct._project import (
+    DEFAULT_COVERAGE_PROFILE,
+    ProjectionCollector,
+    build_projection,
+)
 from fabric.reconstruct._report import COMPLETE, COMPLETE_VERDICTS, EXIT_RUN_STATES
 from fabric.reconstruct._verify import reconstruct
 
@@ -449,7 +453,7 @@ def _write_report(path: str, document: Mapping[str, Any]) -> None:
 def _write_projection(path: str, projection: Mapping[str, Any] | None) -> bool:
     """Write the ``--projection`` document; ``False`` when the file cannot be written."""
     if projection is None:
-        # Fixed text: nothing to project, or this build does not build projections yet.
+        # Fixed text: the report holds no run, so there is nothing to project.
         _fail("no step projection was built; --projection was not written")
         return True
     try:
@@ -471,6 +475,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_clock = _duration_ns(args.max_clock_uncertainty, "--max-clock-uncertainty")
         coverage_profile = _coverage_profile(args.coverage_profile)
         graphs: list[RunGraph] = []
+        collector = ProjectionCollector() if args.projection else None
         document = reconstruct(
             args.spans,
             store=_store(args),
@@ -487,6 +492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             clock_uncertainty_ns=clock_uncertainty,
             max_clock_uncertainty_ns=max_clock,
             graphs_out=graphs,
+            projection_sink=collector,
         )
         projection = (
             build_projection(
@@ -498,6 +504,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     document["inputs"]["evaluated_at"].replace("Z", "+00:00")
                 ),
                 coverage_profile=coverage_profile,
+                collector=collector,
             )
             if args.projection
             else None
