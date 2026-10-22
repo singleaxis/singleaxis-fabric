@@ -455,10 +455,11 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self._span.set_attribute(GEN_AI_REQUEST_STREAM, True)
         if self._reasoning_level is not None:
             self._span.set_attribute(GEN_AI_REQUEST_REASONING_LEVEL, self._reasoning_level)
-        if self._previous_response_id is not None:
-            self._span.set_attribute(
-                GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID, self._previous_response_id
-            )
+        # 049 §2.9 rule 4 (C39): a provider id is its keyed ``p-`` form when pseudonymous.
+        if self._previous_response_id is not None and (
+            previous := self._identity.id("p", self._previous_response_id)
+        ):
+            self._span.set_attribute(GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID, previous)
         if self._encoding_formats:
             self._span.set_attribute(GEN_AI_REQUEST_ENCODING_FORMATS, self._encoding_formats)
         if self._output_type is not None:
@@ -720,7 +721,9 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         if response_id is not None:
             if not response_id:
                 raise ValueError("response_id must be non-empty")
-            self.span.set_attribute(GEN_AI_RESPONSE_ID, response_id)
+            # 049 §2.9 rule 4: the provider response id as its keyed ``p-`` form.
+            if (emitted := self._identity.id("p", response_id)) is not None:
+                self.span.set_attribute(GEN_AI_RESPONSE_ID, emitted)
         if model is not None:
             self.set_response_model(model)
         if finish_reasons is not None:
@@ -1047,9 +1050,10 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             step_retry_reason=self._step_retry_reason,
             step_retry_previous_attempt_id=self._step_retry_previous_attempt_id,
         )
-        if self._call_id is not None:
-            self._span.set_attribute(GEN_AI_TOOL_CALL_ID, self._call_id)
-            self._span.set_attribute(FABRIC_TOOL_CALL_ID, self._call_id)
+        # N12: a tool-call id is a provider id, its keyed ``p-`` form when pseudonymous.
+        if self._call_id is not None and (call_id := self._identity.id("p", self._call_id)):
+            self._span.set_attribute(GEN_AI_TOOL_CALL_ID, call_id)
+            self._span.set_attribute(FABRIC_TOOL_CALL_ID, call_id)
         if self._extra_attributes:
             for key, value in self._extra_attributes.items():
                 self._span.set_attribute(key, value)

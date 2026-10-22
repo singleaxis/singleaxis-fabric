@@ -765,7 +765,9 @@ export class Decision implements DecisionLike {
     if (session !== undefined) {
       span.setAttribute(ATTR_SESSION, session);
     }
-    span.setAttribute(ATTR_REQUEST, ids.requestId);
+    // 049 §2.9: the caller's request id (no v2 type yet) as the keyed `lbl-` form.
+    const request = this.ids.opaque(ids.requestId);
+    if (request !== undefined) span.setAttribute(ATTR_REQUEST, request);
     this.decisionIdValue = ids.decisionId ?? randomUuid();
     span.setAttribute(ATTR_DECISION_ID, this.decisionIdValue);
     const user = ids.userId !== undefined ? this.ids.id("usr", ids.userId) : undefined;
@@ -1049,6 +1051,11 @@ export class Decision implements DecisionLike {
     const resolved = {
       ...options,
       conversationId,
+      // 049 §2.9 rule 4 (C39): a provider id as its keyed `p-` form.
+      previousResponseId:
+        options.previousResponseId !== undefined
+          ? this.ids.id("p", options.previousResponseId)
+          : undefined,
       conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
@@ -1067,6 +1074,7 @@ export class Decision implements DecisionLike {
         options.captureContent ?? false,
         options.emitLegacyAttributes ?? true,
         this.llmCaptureFn(span, options),
+        this.ids,
       );
       return runAndEnd(span, () => fn(call));
     });
@@ -1168,6 +1176,8 @@ export class Decision implements DecisionLike {
     applyCrossCutting(extra, options, this.labelFn);
     const resolved = {
       ...options,
+      // N12: a tool-call id is a provider id, its keyed `p-` form.
+      callId: options.callId !== undefined ? this.ids.id("p", options.callId) : undefined,
       agentName: options.agentName ?? this.identity.agentName,
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };

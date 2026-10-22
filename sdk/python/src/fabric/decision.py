@@ -719,7 +719,9 @@ class Decision(AbstractContextManager["Decision"]):
             )
         if session is not None:
             self._span.set_attribute(ATTR_SESSION, session)
-        self._span.set_attribute(ATTR_REQUEST, self._request_id)
+        # 049 §2.9: the caller's request id (no v2 type yet) as the keyed ``lbl-`` form.
+        if (request := self._identity.opaque(self._request_id)) is not None:
+            self._span.set_attribute(ATTR_REQUEST, request)
         if self._user_id is not None and (user := self._identity.id("usr", self._user_id)):
             self._span.set_attribute(ATTR_USER, user)
         # Delegation lineage from a propagated context. ``parent_agent_id``
@@ -1196,14 +1198,16 @@ class Decision(AbstractContextManager["Decision"]):
             if retrieval_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = retrieval_ref
             span.add_event("fabric.retrieval", attributes=event_attrs)
-            semantic_name = f"retrieval {data_source_id}" if data_source_id else "retrieval"
+            # The caller's data-source id (no v2 type yet) as the keyed ``lbl-`` form.
+            data_source = self._identity.opaque(data_source_id) if data_source_id else None
+            semantic_name = f"retrieval {data_source}" if data_source else "retrieval"
             with child_span(
                 self._client.tracer, semantic_name, kind=SpanKind.CLIENT,
                 on_error=self._note_internal_error,
             ) as retrieval_span:  # fmt: skip
                 retrieval_span.set_attribute("gen_ai.operation.name", "retrieval")
-                if data_source_id is not None:
-                    retrieval_span.set_attribute("gen_ai.data_source.id", data_source_id)
+                if data_source is not None:
+                    retrieval_span.set_attribute("gen_ai.data_source.id", data_source)
                 if provider is not None:
                     retrieval_span.set_attribute("gen_ai.provider.name", provider)
                 if top_k is not None:

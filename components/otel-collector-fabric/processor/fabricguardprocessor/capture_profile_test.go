@@ -328,7 +328,7 @@ func TestCaptureProfile_GovernedSpansUnaffected(t *testing.T) {
 	governed := map[string]any{
 		"gen_ai.operation.name":      "chat",
 		"gen_ai.request.model":       "gpt-4o",
-		"gen_ai.response.id":         "chatcmpl-abc123",
+		"gen_ai.response.id":         "p-9f86d081884c7d659a2feaa0c55ad015", // v0.8.1: keyed p- only
 		"fabric.tenant_id":           "acme",
 		"fabric.content.request_ref": "fabric-content://acme/evidence/obj-req",
 		"fabric.content.result_ref":  "fabric-content://acme/evidence/obj-resp",
