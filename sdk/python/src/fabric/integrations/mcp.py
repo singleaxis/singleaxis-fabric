@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
@@ -44,7 +45,7 @@ from fabric._attributes import (
     ATTR_MCP_TOOLS_HASH,
     SCHEMA_VERSION,
 )
-from fabric._calls import ToolErrorCategory
+from fabric._calls import ToolCall, ToolErrorCategory
 from fabric._crosscut import apply_cross_cutting
 
 from .._hashes import sha256_hex
@@ -60,6 +61,8 @@ if TYPE_CHECKING:
 # already covered by the ``fabric.tool.*`` keys stamped by
 # :class:`fabric.ToolCall`; these add the MCP server identity and the
 # transport it was reached over.
+_LOG = logging.getLogger("fabric.mcp")  # class-only text: never a name, value or result
+
 FABRIC_MCP_SERVER = "fabric.mcp.server"
 FABRIC_MCP_TRANSPORT = "fabric.mcp.transport"
 
@@ -265,6 +268,11 @@ async def traced_call_tool(
     awaits ``session.call_tool``, maps the result defensively onto the span,
     and returns the raw result unchanged.
 
+    Passive (spec 049 §7.1): recording never raises into the application.
+    A recording failure before the call still makes the call; a failure
+    after it never replaces the result; an exception from ``call_tool`` is
+    re-raised as the same object.
+
     Args:
         decision: the active :class:`fabric.Decision` (must be entered).
         session: anything satisfying :class:`MCPSessionLike` — typically
@@ -280,9 +288,29 @@ async def traced_call_tool(
     Returns:
         The raw result object returned by ``session.call_tool``.
     """
-    serialized_args = _serialize_arguments(arguments)
+    return await _traced_call(
+        decision, session, tool_name, arguments, (), {},
+        server_name=server_name, transport=transport,
+    )  # fmt: skip
 
-    with decision.tool_call(tool_name) as tc:
+
+def _open_tool_span(
+    decision: Decision,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+    server_name: str | None,
+    transport: str | None,
+) -> ToolCall | None:
+    """Enter the tool span and stamp what is known before the call; ``None`` when that
+    fails (the call is still made). Never raises."""
+    tc: ToolCall | None = None
+    try:
+        tc = decision.tool_call(tool_name)
+        tc.__enter__()
+    except Exception:
+        _LOG.debug("fabric.mcp: tool span not opened; the call proceeds unrecorded")
+        return None
+    try:
         tc.set_kind("mcp")
         # ``fabric.*`` keys are SDK-owned and rejected by the public
         # ``set_attribute`` convenience wrapper, so the integration stamps
@@ -292,24 +320,70 @@ async def traced_call_tool(
         if transport:
             tc.span.set_attribute(FABRIC_MCP_TRANSPORT, transport)
         if arguments is not None:
-            tc.set_arguments(serialized_args)
+            tc.set_arguments(_serialize_arguments(arguments))
+    except Exception:
+        _LOG.debug("fabric.mcp: tool call arguments not recorded")
+    return tc
 
-        result = await session.call_tool(tool_name, arguments)
 
-        # Map the result defensively. We only have a duck-typed ``Any``;
-        # the real CallToolResult exposes ``.isError`` and ``.content``,
-        # but mocks / older shapes may not. ``getattr`` with defaults
-        # keeps this from blowing up on absent attributes.
+def _record_result(tc: ToolCall, result: Any) -> None:
+    """Map the result defensively onto the span. Never raises.
+
+    We only have a duck-typed ``Any``; the real CallToolResult exposes
+    ``.isError`` and ``.content``, but mocks / older shapes may not, and a
+    hostile property may raise: every step is guarded on its own."""
+    try:
         if getattr(result, "isError", False):
             tc.record_error(ToolErrorCategory.SERVER_ERROR)
+    except Exception:
+        _LOG.debug("fabric.mcp: tool error flag not recorded")
+    try:
         content = getattr(result, "content", None)
         if content is not None:
             # ``content`` present but not sized => skip the count.
             with contextlib.suppress(TypeError):
                 tc.set_result_count(len(content))
+    except Exception:
+        _LOG.debug("fabric.mcp: tool result count not recorded")
+    try:
         tc.set_result(_result_hashable_view(result))
+    except Exception:
+        _LOG.debug("fabric.mcp: tool result not recorded")
 
-        return result
+
+def _close_tool_span(tc: ToolCall | None, exc: BaseException | None) -> None:
+    if tc is None:
+        return
+    try:
+        if exc is None:
+            tc.__exit__(None, None, None)
+        else:
+            tc.__exit__(type(exc), exc, exc.__traceback__)
+    except Exception:
+        _LOG.debug("fabric.mcp: tool span not closed cleanly")
+
+
+async def _traced_call(
+    decision: Decision,
+    session: MCPSessionLike,
+    tool_name: str,
+    arguments: dict[str, Any] | None,
+    call_args: tuple[Any, ...],
+    call_kwargs: dict[str, Any],
+    *,
+    server_name: str | None,
+    transport: str | None,
+) -> Any:
+    tc = _open_tool_span(decision, tool_name, arguments, server_name, transport)
+    try:
+        result = await session.call_tool(tool_name, arguments, *call_args, **call_kwargs)
+    except BaseException as exc:
+        _close_tool_span(tc, exc)
+        raise
+    if tc is not None:
+        _record_result(tc, result)
+    _close_tool_span(tc, None)
+    return result
 
 
 class InstrumentedMCPSession:
@@ -340,16 +414,16 @@ class InstrumentedMCPSession:
         self,
         name: str,
         arguments: dict[str, Any] | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> Any:
-        """Invoke the named tool through :func:`traced_call_tool`."""
-        return await traced_call_tool(
-            self._decision,
-            self._session,
-            name,
-            arguments,
-            server_name=self._server_name,
-            transport=self._transport,
-        )
+        """Invoke the named tool through :func:`traced_call_tool`; any further
+        arguments (``read_timeout_seconds``, ``progress_callback`` ...) are passed to the
+        wrapped session unchanged."""
+        return await _traced_call(
+            self._decision, self._session, name, arguments, args, kwargs,
+            server_name=self._server_name, transport=self._transport,
+        )  # fmt: skip
 
     async def snapshot_inventory(self) -> MCPInventory:
         """Capture the wrapped server's advertised surface as an event.
