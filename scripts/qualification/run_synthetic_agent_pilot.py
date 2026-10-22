@@ -58,6 +58,22 @@ TOOL = Path(__file__).with_name("synthetic_agent_tool.py").resolve()
 
 
 @dataclass(frozen=True)
+class PilotBinding:
+    """The tenant and source the pilot records under.
+
+    A production Node ingress admits exactly one tenant and source (spec 049
+    section 7.9); ``source_id`` set binds every adapter to it. ``None`` keeps
+    the per-adapter sources of the unbound spec-040 slice.
+    """
+
+    tenant_id: str = "synthetic-tenant"
+    source_id: str | None = None
+
+    def source(self, adapter_source: str) -> str:
+        return self.source_id or adapter_source
+
+
+@dataclass(frozen=True)
 class PilotTLS:
     node_ca: str | None = None
     node_cert: str | None = None
@@ -257,7 +273,12 @@ def _check_sink(
 
 
 def _run_case(
-    root: Path, fault: str, node_url: str | None, sink_url: str | None, tls: PilotTLS
+    root: Path,
+    fault: str,
+    node_url: str | None,
+    sink_url: str | None,
+    tls: PilotTLS,
+    binding: PilotBinding,
 ) -> dict[str, object]:
     root.mkdir(mode=0o700)
     work = root / "work"
@@ -267,17 +288,18 @@ def _run_case(
     endpoint_journal = root / "provider-truth.jsonl"
     tool_journal = work / "tool-truth.jsonl"
     store = LocalFilesystemContentStore(
-        str(root / "store"), tenant_id="synthetic-tenant"
+        str(root / "store"), tenant_id=binding.tenant_id
     )
     recorder = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=ROLES))
     spool = SyntheticSourceSpool(
-        str(spool_dir), tenant_id="synthetic-tenant", run_id=f"agent-{fault}"
+        str(spool_dir), tenant_id=binding.tenant_id, run_id=f"agent-{fault}"
     )
     session = SyntheticCaptureSession(
         recorder,
-        tenant_id="synthetic-tenant",
+        tenant_id=binding.tenant_id,
         run_id=f"agent-{fault}",
         source_spool=spool,
+        source_id=binding.source_id,
     )
     tool = BoundedTerminalAdapter(session, allowed_cwd_root=str(work), chunk_bytes=3)
     artifact = AllowlistedArtifactObserver(
@@ -395,7 +417,7 @@ def _run_case(
             ):
                 expected.append(
                     ExpectedByteObject(
-                        "provider-http-1",
+                        binding.source("provider-http-1"),
                         "provider_bound",
                         operation,
                         attempt_id,
@@ -430,13 +452,18 @@ def _run_case(
             ):
                 expected.append(
                     ExpectedByteObject(
-                        "terminal-1", "terminal", operation, "try-1", role, data
+                        binding.source("terminal-1"),
+                        "terminal",
+                        operation,
+                        "try-1",
+                        role,
+                        data,
                     )
                 )
             if before is not None:
                 expected.append(
                     ExpectedByteObject(
-                        "artifact-1",
+                        binding.source("artifact-1"),
                         "tool",
                         operation,
                         "try-1",
@@ -446,7 +473,12 @@ def _run_case(
                 )
             expected.append(
                 ExpectedByteObject(
-                    "artifact-1", "tool", operation, "try-1", "artifact.after", after
+                    binding.source("artifact-1"),
+                    "tool",
+                    operation,
+                    "try-1",
+                    "artifact.after",
+                    after,
                 )
             )
             expected_operations.extend(
@@ -487,7 +519,7 @@ def _run_case(
             )
             first_ref = first["descriptor"]["ref"]
             Path(urlsplit(first_ref).path).unlink()
-        resolver = SyntheticByteResolver(store, tenant_id="synthetic-tenant")
+        resolver = SyntheticByteResolver(store, tenant_id=binding.tenant_id)
         report = reconcile_synthetic_run(
             snapshot, expected, resolver, expected_operations=expected_operations
         )
@@ -581,6 +613,16 @@ def main() -> int:
     parser.add_argument("--node-token-file", help="workload token file for HTTPS Node")
     parser.add_argument("--work-dir", type=Path, help="dedicated output directory")
     parser.add_argument(
+        "--tenant-id",
+        default=PilotBinding.tenant_id,
+        help="tenant to record under (a bound Node ingress's tenant)",
+    )
+    parser.add_argument(
+        "--source-id",
+        help="bind every adapter to this source (a bound Node ingress's source, "
+        "spec 049 section 7.9); default: one source per adapter",
+    )
+    parser.add_argument(
         "--report-path", type=Path, help="write full digest/discrepancy report"
     )
     args = parser.parse_args()
@@ -595,18 +637,26 @@ def main() -> int:
     tls = PilotTLS(
         args.node_ca, args.node_cert, args.node_key, args.sink_ca, args.node_token_file
     )
+    binding = PilotBinding(args.tenant_id, args.source_id)
     if args.work_dir is None:
         with tempfile.TemporaryDirectory(prefix="fabric-agent-pilot-") as directory:
             cases = [
                 _run_case(
-                    Path(directory) / fault, fault, args.node_url, args.sink_url, tls
+                    Path(directory) / fault,
+                    fault,
+                    args.node_url,
+                    args.sink_url,
+                    tls,
+                    binding,
                 )
                 for fault in ("clean", "bypass", "missing-object")
             ]
     else:
         args.work_dir.mkdir(mode=0o700, parents=True, exist_ok=False)
         cases = [
-            _run_case(args.work_dir / fault, fault, args.node_url, args.sink_url, tls)
+            _run_case(
+                args.work_dir / fault, fault, args.node_url, args.sink_url, tls, binding
+            )
             for fault in ("clean", "bypass", "missing-object")
         ]
     report = {

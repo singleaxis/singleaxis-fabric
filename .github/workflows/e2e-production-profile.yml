@@ -313,8 +313,12 @@ jobs:
               -H 'Content-Type: application/json' --data-binary "@${CERT_DIR}/probe.json")
             test "${STATUS}" = "${probe##*:}"
           done
+          # The spec-040 pilot exports through the same bound ingress, so it
+          # records every adapter under the bound tenant and source.
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
             scripts/qualification/run_synthetic_agent_pilot.py \
+            --tenant-id synthetic \
+            --source-id dispatcher \
             --node-url https://localhost:14319/v1/logs \
             --node-ca "${CERT_DIR}/ingress-ca.crt" \
             --node-cert "${CERT_DIR}/client.crt" \
