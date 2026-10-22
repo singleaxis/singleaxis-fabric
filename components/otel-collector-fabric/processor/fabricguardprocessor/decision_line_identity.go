@@ -107,6 +107,36 @@ var decisionLineMappedOnlyKeys = map[string]func(pcommon.Value) bool{
 	"fabric.memory.tags":     sliceOf(1, 256, false, matches(labelPseudonymPattern)),
 }
 
+// isDecisionLineKey reports whether key is one of the decision-line keys whose
+// value the Node closes here.
+func isDecisionLineKey(key string) bool {
+	if _, ok := decisionLineMappedOnlyKeys[key]; ok {
+		return true
+	}
+	for _, set := range []map[string]struct{}{
+		decisionLineIDKeys, decisionLineLabelKeys, decisionLineProviderKeys,
+		decisionLineMintedOrIDKeys, decisionLineAgentKeys,
+	} {
+		if _, ok := set[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// decisionLineKeysIn lists the allowed decision-line keys attrs carries,
+// before filtering (see categorise).
+func decisionLineKeysIn(attrs pcommon.Map, allowed map[string]struct{}) []string {
+	var keys []string
+	attrs.Range(func(key string, _ pcommon.Value) bool {
+		if _, ok := allowed[key]; ok && isDecisionLineKey(key) {
+			keys = append(keys, key)
+		}
+		return true
+	})
+	return keys
+}
+
 // validDecisionLineValue closes a decision-line key's value; ok is false when
 // the key is not one of them.
 func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, ok bool) {

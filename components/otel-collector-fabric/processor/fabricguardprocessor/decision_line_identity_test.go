@@ -266,3 +266,29 @@ func TestToolDescriptionIsNeverAdmitted(t *testing.T) {
 		}
 	}
 }
+
+// Round-2 review (minor): the category comes from the keys a span or event
+// carried, not from the values the Node admitted. A third-party tool span with
+// only a clear gen_ai.tool.name loses the name under a pseudonymous Node, but
+// stays a tool call (it was renamed fabric.activity before).
+func TestCategoryIsDerivedBeforeFiltering(t *testing.T) {
+	g := newTestGuard(t, nil)
+	td := makeTraces(spanFixture{name: "lookup_patient", attrs: map[string]any{"gen_ai.tool.name": "lookup_patient"}})
+	event := firstSpan(td).Events().AppendEmpty()
+	event.SetName("tool result for Jane")
+	event.Attributes().PutStr("gen_ai.tool.name", "lookup_patient")
+	out, _ := g.processTraces(context.Background(), td)
+	span := firstSpan(out)
+	if span.Name() != "fabric.tool_call" {
+		t.Errorf("span name = %q, want fabric.tool_call", span.Name())
+	}
+	if _, ok := span.Attributes().Get("gen_ai.tool.name"); ok {
+		t.Error("clear tool name admitted under a pseudonymous Node")
+	}
+	if name := span.Events().At(0).Name(); name != "fabric.tool_call" {
+		t.Errorf("event name = %q, want fabric.tool_call", name)
+	}
+	if _, ok := span.Events().At(0).Attributes().Get("gen_ai.tool.name"); ok {
+		t.Error("clear tool name admitted on the event")
+	}
+}
