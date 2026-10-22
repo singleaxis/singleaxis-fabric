@@ -176,7 +176,8 @@ same way. A channel table in §5 lists only its exceptions.
 | Consumed chunk, fetch, streamed message, intermediate partial output | `data` | `running` | — | `unset` |
 | Content observed after the outcome (cumulative output, a late body piece) | `update` | — | — | `unset` |
 | The monitored API returned | `end` | `completed` | `ok` | `unset` |
-| The monitored API raised | `end` | `completed` | `error`; `timeout` for a qualified timeout class; `cancelled` for cancellation | `error` |
+| The monitored API raised | `end` | `completed` | `error`; `timeout` for a qualified timeout class | `error` |
+| The monitored API raised a cancellation | `end` | `cancelled` | `cancelled` | `unset` |
 | The attempt was abandoned (closed handle, evicted correlation, shutdown) | none | — | — | — |
 
 An attempt with no `end` record projects as result `unknown`. Fabric never
@@ -982,9 +983,15 @@ Host source **markers**, built by the shared library with 050's shapes:
   the enabled syscall classes and digest policy in that row's state, and
   `uncaptured_classes` for disabled classes. No schema change.
 - periodic heartbeat, loss and `final` markers, each with a persisted uuid4
-  `fabric.event_id` (R2). Loss reasons are the existing vocabulary
-  (`disk_full`, `internal_error`, `protection_failed`,
-  `destination_rejected`, `shutdown`). Loss markers carry no `segment_id`.
+  `fabric.event_id` (R2). Loss reasons come from the existing capture/v1
+  loss enum, with no schema change: `disk_full`, `internal_error`,
+  `span_dropped` (a host record the Node refused, §6.2.9) and `shutdown`.
+  `destination_rejected` is not a loss reason: 049 defines it as a refusal
+  of a *content* record and 050 (delta 6, OD-1) removed it as a loss; a host
+  record is a telemetry record, which `span_dropped` ("the telemetry record
+  was refused") covers. A protection failure withholds the field
+  (`not_captured(protection_failed)`), as in 050, and is not a position
+  loss. Loss markers carry no `segment_id`.
 - no `run_start`, `run_end` or `segment_seal`.
 
 All `fabric.sensor.*` keys are new registry rows (WP4-01) with placement
@@ -1091,8 +1098,8 @@ present host evidence, and a sensor can never present agent records.
   TLS flags. It exports traces (host records) instead of audit-class logs.
 - Ring-buffer and rate-limit drops are upstream loss.
 - The spool becomes encrypted (§6.2.5). Partial OTLP success keeps today's
-  quarantine: the batch's positions are declared `destination_rejected`
-  loss, the batch is kept encrypted, and it is never silently deleted. A
+  quarantine: the batch's positions are declared `span_dropped` loss
+  (§6.2.3), the batch is kept encrypted, and it is never silently deleted. A
   record later found in the store supersedes its loss claim; the verifier
   reports the overlap count.
 
@@ -1155,7 +1162,7 @@ Activity Envelope change. No new statuses, step kinds or content roles.
 | `telemetry-keys-v1.json`, new rows | `fabric.file.operation` (N45, enum `open, read, write, append, truncate, rename, delete, stat, create`, `record`); `fabric.file.path_hash` (N45, DIGEST, `record`, digest-gated); `http.request.method` (N43, closed enum, `record`); `http.response.status_code` (N43, int 100..599, `record`); the `fabric.sensor.*` keys of §6.2.3 (`record`) and §6.2.4 (`heartbeat`) |
 | Same, existing process, db, network, remote, mcp, commit and C41 rows | Add placement `record`; keep validators; D23 phase stays `P3 (R), P4 (H)`; D24 phase adds `P4 (H)` |
 | Same, id rows `fabric.db.namespace_id`, `fabric.network.host_id`, `fabric.remote.target_id`, `fabric.execution.host_id`, `.sandbox_id` | Add the clear-mode alternative (opaque id or `h-` form) admitted only under a clear-mode manifest, as 050 does for marker ids |
-| Same, schema | New optional key column `capture_point_kinds` (array of capture-point kinds); the generator emits it to fabricguard and to rule A |
+| Same, schema | New optional key column `capture_point_kinds` (array of capture-point kinds); the generator emits it to fabricguard and to rule A (050 §3.4 rule A). 054 WP5-01 adds the point-level sibling column `capture_points`; a key carrying both is admitted only when both match |
 | `vocabularies-v1.json`, `capture_input` | No change: hooks are covered by the existing `records` meaning ("… or an opt-in hook observes through the SDK"); `wire` stays model traffic |
 | `content-roles-v1.json` | No added role. Use the existing `terminal.*`, `artifact.locator`/`.before`/`.after`/`.diff`, `database.*`, `network.*`, `mcp.*`, `remote.*`, `computer.*` rows with their caps, boundaries and provenance lists |
 
@@ -1236,7 +1243,7 @@ Host and Node work never blocks the Python hooks, and the reverse.
 | `_capture_scope.py` and the three explicit-adapter scope lines | WP4-00 | — |
 | `sdk/python/pyproject.toml` | WP4-00 (lands every P4 extra first) | — |
 | `hooks/db/_common.py` | WP4-04a | WP4-04b imports it |
-| Contracts, registries and generated tables | WP4-01 | serial chain: 050 WP-00 → 051 WP2-0 → 052 WP3-0 → **053 WP4-01** → 054 WP5-01 → 055 WP-01 |
+| Contracts, registries and generated tables | WP4-01 | serial chain: 050 WP-00 → 051 WP2-0 → 052 WP3-0 → **053 WP4-01** → 054 WP5-01 → 055 WP-01 (shared rows; 055's TS-only rows follow 050 WP-00 directly, 055 §8) |
 | `reconstruct/_project.py`, `reconstruct/_evidence.py` | not edited in P4 | WP4-10a and WP4-10b register through 051 WP2-9a's hook; 054 WP5-08b follows 051 WP2-9a |
 | `processor/fabricguardprocessor/**` (non-generated) | WP4-08b (053's last `P/` owner) | next owner 054 WP5-01g |
 | `gate/**` | WP4-08a | — |

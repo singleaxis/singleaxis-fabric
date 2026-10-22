@@ -678,7 +678,8 @@ it held are indexed `body_cap`. A builder decode failure gives
   run-reconstruction report. There is never an unbounded per-message
   `event_ids` list.
 - **Window membership.** Window ordinals come from `continuation.index`.
-  `refs` lists the window evidence locators in ordinal order, at most 1024.
+  `refs` lists the window evidence locators in ordinal order, at most 4096
+  (the step-projection schema bound).
   The singular `ref` locates the `fabric.media.stream/v1` object, which states
   `windows` and `last_window_index`, so listing truncation is never confused
   with capture loss.
@@ -867,7 +868,8 @@ and `error.type` only. Cancellation gives `cancelled`/`cancelled`.
 ## 7. Exact contract deltas
 
 One contract owner serialises changes in the chain 050 WP-00 → 051 WP2-0 →
-052 WP3-0 → 053 WP4-01 → **054 WP5-01** → 055 WP-01.
+052 WP3-0 → 053 WP4-01 → **054 WP5-01** → 055 WP-01 (055's shared rows;
+its TS-only rows follow 050 WP-00 directly, 055 §8).
 - Unspecified row properties are kept.
 - Each changed registry bumps its revision and the family manifest minor, then
   repins consumers and regenerates the generated 049 tables in the owner's
@@ -929,7 +931,7 @@ and `fixtures/vectors/record-evidence-p5.json`:
 - an observed and a reported window with identical items and different
   provenance;
 - a 300-window attempt projection, `projection-media-stream-many-windows.json`
-  (bounded `event_ids`, `refs` ≤ 1024, `collection`);
+  (bounded `event_ids`, `refs` ≤ 4096, `collection`);
 - a missing middle window, a missing final window and a missing `end`, each
   giving `partial`;
 - one fabriccontent pre-ack refusal case per new type (unknown type, bounds).
@@ -961,16 +963,31 @@ and `fixtures/vectors/record-evidence-p5.json`:
 | Same, `asset.bytes`, `media.frames`, `media.events`, `media.transcript`, `computer.*` | No change to defaults, caps, provenance or boundary. In particular `media.frames` and `media.events` stay `protocol`-only, `media.frames` stays off, and `asset.bytes` stays caller-bound |
 
 **`telemetry-keys-v1.json`.**
-- `fabric.wire.api` (C34): add the registry row if the concurrent contract
-  revision has not. `change: changed`, phase P5, `check {type: enum}` equal to
-  the five existing APIs plus every exact API string in §4.1, including
-  `openai.realtime`. Placements `exchange` and `record`. The same closed set
-  generates Python `WireApi`, config dialect validation, Go `captureWireAPIs`
-  and reconstruct's dispatch table.
-- `fabric.wire.endpoint_id` (C35, 050 §4.1): add placement `record`, admitted
-  on records only when `fabric.capture.point` starts with `rt.websocket`.
-- `gen_ai.provider.name` (C34): add placement `record` under the same
-  condition.
+- **Schema: new optional key column `capture_points`** (array of exact
+  capture-point ids). A key row that has it is admitted on a `record` only
+  when the id part of the record's `fabric.capture.point` (before `@`) is in
+  the list. It is the point-level sibling of 053 WP4-01's kind-level
+  `capture_point_kinds`; a row carrying both is admitted only when both match.
+  A kind-level condition cannot express this rule, because `rt.websocket` and
+  `http.nonmodel` are both kind W. The generator emits the column to
+  fabricguard (`P/coverage_keys.go`) and to rule A
+  (`_records_keys_generated.py`), and rule A honours it (050 §3.4 rule A), so
+  the table-equality test (T3) covers it. It conditions only the `record`
+  placement; `exchange` placement is unchanged.
+- `fabric.wire.api` (C34): **add the registry row** (today the key exists
+  only in `P/allowlist.go:128`, with no registry row). `change: changed`,
+  phase P5, `check {type: enum}` equal to the five existing APIs plus every
+  exact API string in §4.1, including `openai.realtime`. Placements
+  `exchange` and `record`, with `capture_points: ["rt.websocket"]`. The same
+  closed set generates Python `WireApi`, config dialect validation, Go
+  `captureWireAPIs` and reconstruct's dispatch table.
+- `fabric.wire.endpoint_id` (C35, 050 §4.1): add placement `record`, with
+  `capture_points: ["rt.websocket"]`.
+- `gen_ai.provider.name` (C34): add placement `record`, with
+  `capture_points: ["rt.websocket"]`.
+- Goldens for the column: each of the three keys kept on an `rt.websocket`
+  record and stripped (counted in `records_keys_dropped`) on an
+  `http.nonmodel` record and on an `sdk.records` record.
 - Each new value and placement gets a positive and a negative key golden.
   Never a free-form software label or hostname.
 - `gen_ai.operation.name` stays `chat`/`text_completion`/`embeddings` for the
@@ -1022,7 +1039,7 @@ it, against stubs; WP5-01g after WP5-01.
 
 | WP | Owner area | Depends on | Deliverables and tests | Exit check |
 |---|---|---|---|---|
-| **WP5-01 Contracts** | `contracts/coverage/v1/**`, `contracts/capture/v1/fixtures/**` (P5 cases), `contracts/content/v2/fixtures/**` (multipart split, P5 pre-ack cases), `scripts/contracts/**`, `scripts/tests/test_coverage_contracts.py`; generated `E/evidence_types_generated.go`, `P/coverage_keys.go` table, `_records_keys_generated.py`, `_roles.py` table, the `WireApi` enum source | **050 WP-00** (carrier, `evidence_types` block, generators); serial chain after **053 WP4-01** | §7 in full: the three evidence types with schemas, pointer maps and the `where` discriminator, registry rows, key placements, withdrawn keys, every §7.1 fixture. Validator and generator tests | `validate_coverage_contracts.py` and `validate_capture_contracts.py` pass; generators pass `--check`; C0-1..C0-5 still pass |
+| **WP5-01 Contracts** | `contracts/coverage/v1/**`, `contracts/capture/v1/fixtures/**` (P5 cases), `contracts/content/v2/fixtures/**` (multipart split, P5 pre-ack cases), `scripts/contracts/**`, `scripts/tests/test_coverage_contracts.py`; generated `E/evidence_types_generated.go`, `P/coverage_keys.go` table, `_records_keys_generated.py`, `_roles.py` table, the `WireApi` enum source | **050 WP-00** (carrier, `evidence_types` block, generators); serial chain after **053 WP4-01** | §7 in full: the three evidence types with schemas, pointer maps and the `where` discriminator, registry rows, key placements, the point-level `capture_points` key column, withdrawn keys, every §7.1 fixture. Validator and generator tests | `validate_coverage_contracts.py` and `validate_capture_contracts.py` pass; generators pass `--check`; C0-1..C0-5 still pass |
 | **WP5-01g Go admission** | `P/**` non-generated (records placements for `fabric.wire.endpoint_id`, `fabric.wire.api`, `gen_ai.provider.name` conditioned on `rt.websocket`; `captureWireAPIs` from the generated source); Go tests | **WP5-01 merged (intra-wave)**; after 053's last `P/` owner (WP4-08 or its split successor) | Go unit tests per admitted and stripped key and API value; records with the keys from any other capture point are stripped; pre-ack evidence-type refusals through the generated list | `go test ./processor/...`; T3 parity vectors unchanged |
 | **WP5-00a Routes and config** | `wire/_match.py`, `wire/_model.py`, `wire/_config.py`, `wire/_routes.py`, `wire/_detect.py`; `wire/__init__.py` (`install()` parameters only); `hooks/_config.py` and the hooks public API (P5 switches only) | 053 WP4-00 merged; WP5-01's `WireApi` source (stub until merged) | §4.1: method templates, per-endpoint `apis`, realtime endpoint matchers and built-in `openai.default`, negative rows, route ownership, API union, unsupported-client detection. Unit and property tests: endpoint confusion and overlap, encoded separators, bogus host suffix, query secrets, D2/D3, full queue, identity canaries | Old chat and embedding goldens unchanged; `endpoint_id` per route golden (C35); P5-HTTP matching budget |
 | **WP5-00b Records extension (I-1)** | `_capture_types.py` (`DeferredBodies`), `_records.py` (`emit(deferred=)`), `wire/_pipeline.py` (`_prepare` builder dispatch), `wire/_protect.py` (multipart split call site, no-op until WP5-02), `hooks/_producer.py` (`deferred=`/`evidence=` passthrough), `fabric/records/__init__.py` (P5 export stubs into `_rec_media.py`) | **050 WP-45** (P1-A exit; last owners WP-42 for `_pipeline.py`, WP-11a for `_records.py`); 051 WP2-1b; 053 WP4-00 | §3 I-1: builder registry with three no-op builders, charge transfer, failure → descriptor-only, fail-open/strict. Tests: 050's seal, records-span and evidence vectors unchanged; a deferred emit yields the same digest as the equivalent eager emit; builder exception → `encoding_failed`; budget refusal → descriptor-only bodies plus evidence | Full existing suite green; I-1 vectors pass |
@@ -1227,7 +1244,7 @@ safely represented optional evidence.
 | OD5-4 | N56 location | Evidence `track` items; the four rev 1 `fabric.media.*` telemetry keys are withdrawn | RPOC |
 | OD5-5 | Job and batch evidence (R7) | `fabric.provider.job/v1` on the carrier from `record_provider_job` (reported); the same schema for offline-parsed job exchanges; batch JSONL items bounded at 4096 per job step with `collection` | RPOC |
 | OD5-6 | `rt.websocket` input class (R7) | `input: records`, `kind: W`, `fabric.capture.source=observed`; no W-class records | RPOC |
-| OD5-7 | C34/C35 on realtime records | `fabric.wire.endpoint_id`, `fabric.wire.api` and `gen_ai.provider.name` placed on `record`, admitted only for `rt.websocket` | RPOC |
+| OD5-7 | C34/C35 on realtime records | `fabric.wire.endpoint_id`, `fabric.wire.api` and `gen_ai.provider.name` placed on `record`, admitted only for `rt.websocket` through the point-level `capture_points` key column (§7.2), which rule A and fabricguard both apply | RPOC |
 | OD5-8 | WebRTC | Excluded from `rt.websocket` and P5; SDP and client-secret endpoints are pinned negatives; WebRTC sessions are covered only by explicit reporting | RPOC |
 | OD5-9 | Inference meaning versus the chat-only `model_call` vocabulary | Approve the additive applicability clarification (§7.2). Until accepted, new inference APIs are optional extensions and claim no model-call profile completeness | RPOC |
 | OD5-10 | Realtime boundary | Logical messages at qualified client boundaries; fragmented iterable sends and unconsumed messages stay declared gaps until an inner hook passes identity and passivity gates | RPOC |

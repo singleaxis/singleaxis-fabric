@@ -31,7 +31,8 @@ run-level hook (R4); one integration owner for `decision.py` and
 `str(exc)`, work-bounded encoders, every API fails open); one clear-mode
 rule (R8); items already fixed by the v0.8.1 hotfix (branch
 `fix/decision-line-privacy`) are marked **landed in v0.8.1 (hotfix)** and
-are not redone here.
+are not redone here; that branch must merge to main first (pre-requisite
+H0, §3).
 
 ---
 
@@ -59,7 +60,7 @@ are not redone here.
 | # | Gate (049) | Tightening in this spec |
 |---|---|---|
 | E1 | `LR-1` repeated with P2 records (trigger, inputs at each resume, checkpoints, run outcome) answers the same questions across all three segments, and the lost-middle variant names the missing segment | Asserted from the step projection only (no telemetry side channel); C01/C05/D30 run fields and every `input`/`checkpoint` step of segments A and C keep their verdicts when B is lost; B's records are reported under `segment_missing`, never silently absent |
-| E2 | Reference agents — ReAct, DAG with join, human reply, queue resume, cross-process hand-off with `parent_run_id`, reused session, configuration change, checkpoint restart — answer "what was it asked, under which rules, what did it deliver" from the record alone | Each agent has a pinned question list mapped to field ids (section 8.2); every answer is a field wrapper with status `captured` or an explicit non-`captured` status with a reason; no answer is inferred from timestamps. Per R1 a clear `parent_run_id` crosses only to same-host child processes (`FABRIC_RUN_ID`); the cross-host hand-off joins through a shared clear hand-off id (`dsp-`, section 4.4), never through a propagated run id |
+| E2 | Reference agents — ReAct, DAG with join, human reply, queue resume, cross-process hand-off with `parent_run_id`, reused session, configuration change, checkpoint restart — answer "what was it asked, under which rules, what did it deliver" from the record alone | Each agent has a pinned question list mapped to field ids (section 8.2); every answer is a field wrapper with status `captured` or an explicit non-`captured` status with a reason; no answer is inferred from timestamps. Per R1 a clear `parent_run_id` crosses only to same-host child processes (`FABRIC_RUN_ID`); the cross-host hand-off joins through a shared clear hand-off id (`dsp-`, section 4.4) or through resume tokens, which carry the run's correlation id (050 §3.6 rule table: the mapped clear id when the caller gives one, otherwise minted), never through a propagated clear run id |
 | E3 | No list or text reaches telemetry | Canary scan (section 8.3) over OTLP telemetry, spool headers, loss records, manifests, logs, diagnostics and the reconstruction report, in `pseudonymous` mode, for every API in this spec **and** the legacy keys of section 4.9; no digest of an original payload under a non-retaining role mode |
 | E4 | A raising recorder in every API never propagates or delays | Fault-injection matrix (section 8.4) over every public API in this spec and every legacy `record_*`; plus the measured budgets of section 4.11 with a stalled worker and a full queue |
 | E5 | — (new) | State fields are never inferred from each other or from exceptions: `D19`, `D28`, `S24`, `C09`, `S20` state (conformance C2-5) |
@@ -168,6 +169,14 @@ as this revision; the rows marked **R1/R4/R5** are written against those
 main-session decisions and must match 050's final text before WP2-1a
 starts.
 
+**Pre-requisite H0: the v0.8.1 hotfix.** Every item this spec marks
+**landed in v0.8.1 (hotfix)** lives on branch `fix/decision-line-privacy`,
+which is not yet on main. It rewrites `decision.py`, `integrations/mcp.py`,
+`_identity.py`, `decision.ts` and `identity.ts`. It must be merged to main
+before 050 WP-15, this spec's WP2-1a and 055 WP-08a start (050 §5
+"Pre-requisites"); WP2-1b, WP2-7 and WP2-8 build on it. If it has not
+merged, those items are not landed and this spec does not redo them.
+
 | # | Interface P2 uses | 050 |
 |---|---|---|
 | A1 | `RecordsInput.begin(kind, point, *, step_id, parent_attempt, aliases) -> Attempt \| None`; `Attempt.emit(phase, …) -> bool` never raises; allocation under the allocator lock, no I/O, `put_nowait`, `queue_full` loss | §3.4 |
@@ -179,10 +188,10 @@ starts.
 | A7 | **R4.** `Attempt.emit` takes three separate frozen inputs: `lifecycle` (049 `lifecycle_state`, incl. `deferred`), `result_status` (`ok`, `error`, `cancelled`, `timeout`, `unknown`) and the OTLP span `status` (`unset`, `ok`, `error`); the phase no longer implies them | R4 (050 revision) |
 | A8 | **R5.** A typed descriptor-only `RecordBody` variant (`status`, `status_reason`, no bytes) for failures found before encoding (`payload_too_large`, `parse_failed`); never an empty captured object | R5 (050 revision) |
 | A9 | Run outcome: P1 ships `_segments.set_run_outcome(outcome, stop_reason=None, *, run_id=None)`, storing on the `RunEntry`; the **outermost** `run_end` of the run in the process carries `fabric.run.outcome`/`fabric.run.stop_reason`; `end_run(…, stop_reason=)` exists | §3.6 "Run outcome hook" |
-| A10 | **R1.** Tokens carry the run's Fabric-minted correlation id (`r-` + 32 hex, CSPRNG, `EmittedId`); `end_run(run_id: str \| None, …, resume=…)` derives the run from the tokens; clear run ids cross only in-process and to same-host children (`FABRIC_RUN_ID`); across services and hosts only tokens travel | R1 (050 revision) |
+| A10 | **R1.** Tokens carry the run's correlation id, which is the root segment's run id by 050's rule table: the mapped clear id (`r-`) when the caller gives a clear `run_id` (rule 4), otherwise a minted `r-` + 32 hex (CSPRNG, `EmittedId`, rule 5); in clear mode (explicit opt-in, R8) rule 4 gives the clear id itself, so tokens then carry it. `end_run(run_id: str \| None, …, resume=…)` derives the run from the tokens; clear run ids are passed only in-process and to same-host children (`FABRIC_RUN_ID`); across services and hosts only tokens travel | §3.6 rule table, OD-7 |
 | A11 | `resume_token()` and `resume_tokens(n)` (branch tokens `…/br-<32hex>`) and a strict token parser | §3.6, delta 4 |
 | A12 | fabricguard records class with placement generated from the registry `check.span: record`; the SDK's rule-A projection drops any key not admitted on records | §3.4 rule A, §3.14 |
-| A13 | CM APIs reuse a host span's ids through `span_ids`, so nested records and wire exchanges resolve X18 (`global` tracer mode: unresolved, 050 R3) | §3.4 "Span ids" |
+| A13 | CM APIs reuse a host span's ids through `span_ids`, so nested records and wire exchanges resolve X18 (`global` tracer mode: unresolved, 050 K3) | §3.4 "Span ids" |
 | A14 | Projection framework: steps by attempt uid, registry-driven wrappers, manifest-driven `unsupported(unsupported_version)` for fields a build does not supply, decision tables as data; `run`-kind **steps** come only from run markers | §3.13 |
 | A15 | Without an installed capture handle, records APIs keep the unsequenced decision-span path; the **records-only install** is `fabric.wire.install(patch_httpx=False, patch_aiohttp=False)` (`WireConfig` overrides, `wire/_config.py:101-103`) (records input, spool and sender without the model tee; documented in P2, Fable §3) | §3.1, OD-2 |
 | A16 | Decision-line content moves to the unified spool in P2 (owned here, WP2-1b) | OD-5 |
@@ -676,8 +685,13 @@ hotfix rows' validators ship with v0.8.1 (fabricguard
   prefix validators), so a clear-mode agent cannot silently feed a
   pseudonymous deployment.
 - Operator labels follow `FABRIC_WIRE_LABELS` (049 §4.2) in both modes.
-- Run ids are not caller ids crossing a boundary: they are mapped (`r-`)
-  in both modes, and only resume tokens cross services and hosts (R1).
+- Run ids follow 050's rule table (§3.6), not this table: the correlation
+  id is the mapped clear id (`r-`) when the caller gives one, otherwise
+  minted; in clear mode it is the clear id as given. Clear run ids are
+  passed only in-process and to same-host children; across services and
+  hosts only resume tokens travel (R1), so in clear mode the token in
+  `baggage` carries the clear id. That is part of the explicit opt-in and
+  is stated in 050's OD-7 docs.
 
 The "clear mode" column below is therefore the explicit opt-in output,
 not a default and not an exception to decision 22.
@@ -813,8 +827,8 @@ into the P1 projection framework (A14).
    steps carry the ref.
 8. **Run fields.** Annotations merge into `runs[].fields`: latest value
    per key plus `items`; C01 with two different kinds → `conflict`. Runs
-   are identified as P1 identifies them (R1: the minted correlation id
-   carried by tokens, plus `run_aliases`). D30: only from `run_end` markers
+   are identified as P1 identifies them (R1: the correlation id of 050's
+   rule table carried by tokens, plus `run_aliases`). D30: only from `run_end` markers
    carrying `fabric.run.outcome` (P1 emits them on the outermost `run_end`
    of each process, and on `end_run`'s zero-width segment); the value of
    the terminal segment wins; differing values within the terminal
@@ -922,14 +936,14 @@ exit gate depends on a TS WP.
 | Wave | WPs | Rule |
 |---|---|---|
 | A | WP2-0 | sequential, first |
-| B | WP2-1a → WP2-1b | sequential; WP2-9a, WP2-10 and WP2-11 may start after WP2-0, in parallel with wave B |
+| B | WP2-1a → WP2-1b | sequential; WP2-1a starts only after H0 (hotfix `fix/decision-line-privacy`) is merged to main (§3); WP2-9a, WP2-10 and WP2-11 may start after WP2-0, in parallel with wave B |
 | C | WP2-2, WP2-3, WP2-4, WP2-5, WP2-6, WP2-8 in parallel; **WP2-7 after WP2-5**; **WP2-9b after WP2-9a** | intra-wave dependencies are the two in bold |
 | D | WP2-12 | after WP2-0 … WP2-10 (not WP2-11) |
 
 | WP | Owner area (may touch) | Depends on | Deliverables | Tests | Exit check |
 |---|---|---|---|---|---|
 | **WP2-0** Contracts | `contracts/coverage/v1/**`, `contracts/capture/v1/fixtures/run-ids/*pseudonym-v2*`, `scripts/contracts/**`, `scripts/tests/test_coverage_contracts.py`, generated block of `coverage_keys.go` | 050 WP-00 | Section 5 rows for P2 **and** spec 052 keys/prefixes; the hotfix validators copied into the registry; new schema; golden spans per API (`contracts/coverage/v1/fixtures/records/p2/*.json`) used by WP2-9/2-10/2-11 | validator + generator tests; vectors for the 6 prefixes | `validate_coverage_contracts.py` passes; 049 generated blocks regenerate (handed to the 049 rev agent) |
-| **WP2-1a** Records core | `fabric/_records_api.py`, `fabric/records/_vocab.py`, `fabric/records/_handles.py`, `fabric/records/_walker.py`, `_sequence.py` `V2_TYPES` rows | WP2-0; 050 A1–A8 (incl. R4/R5 revision) | `emit` (4.2), handles and update records, link/timing/`update_of` encoding, bounded walker, descriptor-only bodies, strict mode, bindings, digest helper | unit; property (link round trip; walker stops within its limits before output for deep, wide, cyclic and huge inputs; id mapping = vectors); fault injection (emitter raises, queue full) | every core call returns a handle under injected faults; budget rows 1–2 |
+| **WP2-1a** Records core | `fabric/_records_api.py`, `fabric/records/_vocab.py`, `fabric/records/_handles.py`, `fabric/records/_walker.py`, `_sequence.py` `V2_TYPES` rows | WP2-0; 050 A1–A8 (incl. R4/R5 revision); **H0** (hotfix `fix/decision-line-privacy` merged to main, §3) | `emit` (4.2), handles and update records, link/timing/`update_of` encoding, bounded walker, descriptor-only bodies, strict mode, bindings, digest helper | unit; property (link round trip; walker stops within its limits before output for deep, wide, cyclic and huge inputs; id mapping = vectors); fault injection (emitter raises, queue full) | every core call returns a handle under injected faults; budget rows 1–2 |
 | **WP2-1b** Integration owner | `decision.py`, `fabric/records/__init__.py`, `_calls.py` (signatures, hook call sites), `client.py` `decision()` params, `wire/__init__.py` `install()` params (C12/C15), `_records_mirror.py` (050) step-kind table | WP2-1a | every P2 public signature (Python) delegating to stubs in `_rec_*.py`; mixin bases; conversation/turn bindings; legacy argument validation fail-open (4.2); decision content on the unified spool (A16); exception text off telemetry in every mode | full existing suite green with stubs; strict-mode tests; legacy fail-open matrix | no behaviour change except 4.2 fail-open and A16; signatures frozen for wave C |
 | **WP2-2** Run annotations and D30 facade | `_rec_run.py`, `_manifest.py` (C12/C15 properties only) | WP2-1b; A9 | 4.3 (facade over P1's hook, no marker changes) | unit; outermost-`run_end` golden; nested scopes; invalid outcome → `unknown`; unset → absent | D30 on P1's outermost `run_end`; manifest carries C12/C15 |
 | **WP2-3** Step lifecycle | `_rec_steps.py`, `checkpoint.py` | WP2-1b | 4.4 incl. the `checkpoint_id` row of 4.9 | unit per API; state-not-inferred tests; dispatch with branch tokens (A11); hand-off join by `dsp-`; async `delegate` | C2-5 for S24/C09/S20/D28 |
@@ -1095,7 +1109,7 @@ Line numbers are rev 6.3 (`36f7a89`); the 049 rev 6.4 agent applies them.
 | D-13 | §8.2 P2 | no conformance ids | add C2-1…C2-7 (051 §8.1) |
 | D-14 | §7.7 rule 6 / §2.1 | P0-A gate states no original digests "for both inputs" | record that the decision-line `*_hash` keys digested originals under every mode in v0.8.0 and were gated in v0.8.1 (hotfix); P2 applies the same rule to new digests |
 | D-15 | §2.1 (rev 6.4 table) | — | add row: "`Decision` raised `ConcurrentDecisionUseError` into the application on overlap (`decision.py:519-541`); fail-open since v0.8.1 (hotfix); legacy `ValueError`s become fail-open in P2" |
-| D-16 | §2.10 resume-contract table (line 1127) | "Run id `r-` + 32 hex as emitted (never the clear id)" | superseded by R1 (spec 050): only tokens, carrying the minted run correlation id, cross services and hosts; P2's cross-service hand-off joins by `dsp-` (051 §4.4) |
+| D-16 | §2.10 resume-contract table (line 1127) | "Run id `r-` + 32 hex as emitted (never the clear id)" | superseded by R1 (spec 050): only tokens, carrying the run correlation id (050 §3.6: mapped clear id or minted), cross services and hosts; P2's cross-service hand-off joins by `dsp-` (051 §4.4) |
 | D-17 | §2.9 table (line 950ff) | 18 prefixes | add `ckp`/`checkpoint`, `eff`/`effect`, `out`/`outcome` (051) and `ctl`/`control`, `axn`/`action`, `prf`/`proof` (052) |
 | D-18 | §4.2 changed rows | — | add the changed validators of 051 §5.2 (legacy decision-line keys) |
 | D-19 | §3.3 S12 (line 1395) | "error.message, stack, cause … Message and stack; never on telemetry" | add: "Recorded automatically only as exception class names and frame file/line/function; message and stack text only when the caller passes preformatted strings (no `str`/`repr` of application objects)" (R9) |
