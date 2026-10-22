@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.25.0"]
+requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -32,22 +32,22 @@ dependencies = [
 # already depends on `requests` and `opentelemetry-proto`, which the content
 # client uses. boto3 is never a wire-capture dependency (the Node writes S3).
 otlp = [
-  "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.1",
   "urllib3>=2.8.0",
 ]
 # Reader side only: `python -m fabric.reconstruct --store-uri s3://...` and
 # S3ContentStore read the customer's bucket with boto3. Never needed by an
 # agent (the Node writes S3) and never imported by the capture path.
 s3 = [
-  "boto3>=1.34",
+  "boto3>=1.43.114",
 ]
 # Optional MCP (Model Context Protocol) tool-call instrumentation. The
 # `fabric.integrations.mcp` module duck-types the client session via a
 # local Protocol, so it imports without this extra; the extra only
 # pulls the real `mcp` package in for users wiring it to a live server.
 mcp = [
-  "mcp>=1.0",
-  "PyJWT>=2.15.0",
+  "mcp>=2.3.0",
+  "PyJWT>=2.15.1",
 ]
 # Optional generic signature verification (spec 023 §4). The
 # `fabric.verify_signature` ed25519 path uses `cryptography` when present
@@ -55,30 +55,30 @@ mcp = [
 # needs nothing here. This extra pulls the real primitive in for users who
 # want ed25519 verification.
 signing = [
-  "cryptography>=49",
+  "cryptography>=50.0.2",
 ]
 [dependency-groups]
 dev = [
-  "pytest>=8.3",
-  "pytest-cov>=5.0",
-  "ruff>=0.6.9",
-  "mypy>=1.11.2",
-  "jsonschema>=4.23",
-  "types-jsonschema>=4.23",
-  "PyYAML>=6.0.2,<7.0",
-  "types-PyYAML>=6.0.12",
-  "httpx>=0.27",
+  "pytest>=9.1.1",
+  "pytest-cov>=7.1.0",
+  "ruff>=0.17.1",
+  "mypy>=2.4.0",
+  "jsonschema>=4.26.0",
+  "types-jsonschema>=4.26.0.20261006",
+  "PyYAML>=6.0.3,<7.0",
+  "types-PyYAML>=6.0.12.20260906",
+  "httpx>=0.28.1",
   # Real provider SDKs qualify wire capture end to end (spec 047 §2):
   # openai>=3 and anthropic>=1 send through httpx2. Dev-only; capture never
   # depends on them at runtime.
-  "openai>=3.26.1",
-  "anthropic>=1.12.1",
-  "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "openai>=3.35.1",
+  "anthropic>=1.15.0",
+  "opentelemetry-exporter-otlp-proto-http>=1.45.1",
   "urllib3>=2.8.0",
   # cryptography exercises the real ed25519 path in the generic
   # signature-verification tests (spec 023); without it ed25519 degrades
   # to verified=False and those asserts are skipped.
-  "cryptography>=49",
+  "cryptography>=50.0.2",
 ]
 
 [project.urls]
