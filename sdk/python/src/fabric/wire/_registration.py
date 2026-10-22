@@ -39,7 +39,6 @@ from typing import TYPE_CHECKING, Any
 
 from .._capture_types import LegacyBeat, RegistrationStatus
 from .._sequence import MIRROR_OFFSET, SourceAllocator, _new_epoch, live_allocators
-from . import _spool
 
 try:
     import fcntl
@@ -268,8 +267,6 @@ def register(
     allocator already allocated in its epoch. Capture continues unregistered in each."""
     if spool is None:
         return Registration("unregistered_direct", epoch, source_id)
-    if not _spool_owns_epochs_dir():
-        return Registration("failed", epoch, source_id, "spool_refuses_epochs_dir")
     if allocator is None:
         matches = (a for a in live_allocators() if (a.source_id, a.epoch) == (source_id, epoch))
         allocator = next(matches, None)
@@ -289,17 +286,6 @@ def register(
         registration.close()
         return Registration("failed", epoch, source_id, "epoch_in_use")
     return registration
-
-
-def _spool_owns_epochs_dir() -> bool:
-    """Whether the spool takes ``.epochs`` for one of its own names. A spool directory
-    holding any other name is refused at open (048 D5), so registering where it does not
-    would make every later process on that spool fail to install: nothing is created and
-    the install continues unregistered (``failed``) until the spool accepts it."""
-    try:
-        return bool(_spool._own_name(EPOCHS_DIR))
-    except Exception:
-        return False
 
 
 def _create(spool_dir: str, source_id: str, epoch: int) -> Registration:

@@ -26,7 +26,6 @@ import fabric._sequence as seq
 from fabric._capture_types import Allocation, NullSealAccumulator
 from fabric._sequence import SourceAllocator, default_source_id, get_allocator
 from fabric.wire import _registration as reg
-from fabric.wire import _spool
 from fabric.wire._forks import ForkLedger
 from fabric.wire._spool import Spool
 
@@ -34,26 +33,6 @@ from .test_wire_passivity import _fresh_interpreter
 
 POSIX = pytest.mark.skipif(not hasattr(os, "fork"), reason="POSIX only")
 SPOOL_MAX = 64 * 1024 * 1024
-
-# WP11B-SEAM: wire/_spool.py (WP-11b) must accept the ``.epochs`` directory as its own
-# name; until that merges, every process sharing a spool patches ``_own_name``. Remove
-# these seams (search "WP11B-SEAM") at integration.
-_SEAM = textwrap.dedent(
-    """
-    from fabric.wire import _spool as _seam_spool  # WP11B-SEAM
-    _seam_own = _seam_spool._own_name
-    _seam_spool._own_name = lambda name: name == ".epochs" or _seam_own(name)
-    """
-)
-
-
-_OWN_NAME = _spool._own_name  # the spool's own rule, before any seam
-
-
-@pytest.fixture(autouse=True)
-def _accept_epochs_dir(monkeypatch: pytest.MonkeyPatch) -> None:  # WP11B-SEAM
-    own = _spool._own_name
-    monkeypatch.setattr(_spool, "_own_name", lambda name: name == ".epochs" or own(name))
 
 
 @pytest.fixture
@@ -358,20 +337,6 @@ def test_a_redraw_after_allocation_is_refused_and_leaves_nothing(spool: Spool) -
     held.close()
 
 
-def test_nothing_is_registered_while_the_spool_refuses_the_epochs_dir(
-    spool: Spool, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Until wire/_spool.py owns ``.epochs`` (WP-11b), creating it would make every later
-    process on the spool fail to open it: the install continues unregistered."""
-    monkeypatch.setattr(_spool, "_own_name", _OWN_NAME)
-    allocator = SourceAllocator("node-1")
-    got = _register(spool, allocator)
-    assert (got.status, got.reason) == ("failed", "spool_refuses_epochs_dir")
-    assert allocator.registration is None
-    assert not (Path(spool.dir) / reg.EPOCHS_DIR).exists()
-    Spool(spool.dir, SPOOL_MAX).release()  # a later process still opens the spool
-
-
 def test_an_epochs_path_that_is_not_a_directory_fails(tmp_path: Path) -> None:
     made = Spool(str(tmp_path / "spool"), SPOOL_MAX)
     (Path(made.dir) / reg.EPOCHS_DIR).write_bytes(b"")
@@ -484,7 +449,7 @@ _ALLOCATE = textwrap.dedent(
 
 @POSIX
 def test_allocation_takes_at_most_3_microseconds(tmp_path: Path) -> None:
-    got = _fresh_interpreter(_SEAM + _ALLOCATE, str(tmp_path / "spool"))
+    got = _fresh_interpreter(_ALLOCATE, str(tmp_path / "spool"))
     assert got["status"] == "registered" and got["mirrored"] == 25 * 2000
     budget = ALLOCATION_BUDGET_NS * got["scale"]
     assert got["median_ns"] <= budget, (
@@ -518,7 +483,7 @@ _INSTALL = textwrap.dedent(
 
 def _python(script: str, *args: str, env: dict[str, str] | None = None) -> subprocess.Popen[str]:
     return subprocess.Popen(  # noqa: S603 - this interpreter and a fixed test script
-        [sys.executable, "-c", _SEAM + script, *args], stdin=subprocess.PIPE,
+        [sys.executable, "-c", script, *args], stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         env={**os.environ, **(env or {})},
     )  # fmt: skip
@@ -560,7 +525,7 @@ _SPAWN_KILL = textwrap.dedent(
     import json, multiprocessing, os, signal, sys
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    def worker(spool_dir, allocations, out):  # the seam above runs again in the child
+    def worker(spool_dir, allocations, out):
         from fabric import wire
         handle = wire.install(spool_dir=spool_dir, span_exporter=InMemorySpanExporter(),
                               patch_httpx=False, patch_aiohttp=False)
@@ -593,7 +558,7 @@ _SPAWN_KILL = textwrap.dedent(
 @POSIX
 def test_a_spawned_worker_sigkilled_after_allocation_is_found_by_a_scan(tmp_path: Path) -> None:
     script = tmp_path / "spawn_kill.py"
-    script.write_text(_SEAM + _SPAWN_KILL, encoding="utf-8")
+    script.write_text(_SPAWN_KILL, encoding="utf-8")
     done = subprocess.run(  # noqa: S603 - this interpreter and a fixed test script
         [sys.executable, str(script), str(tmp_path / "spool")],
         capture_output=True, text=True, timeout=120, check=False,
@@ -695,3 +660,98 @@ def test_a_forked_child_notes_every_allocation_in_its_fork_ledger_slot() -> None
         epoch = int(stream.read())
     assert ledger.children() == [(pid, epoch, 2)]
     assert allocator._fork_note is None  # the parent never notes into a slot
+
+
+# --- integration with the spool's own ``.epochs`` (WP-10 x WP-11b) -----------------------------
+
+# A real spool (no patched ``_own_name``): an install registers, and every later opener of
+# the same directory (a second install, a spawned worker, a plain ``Spool``) accepts the
+# ``.epochs`` directory the first one created (048 D5 refuses foreign names at open).
+_INSTALL_AND_SPAWN = textwrap.dedent(
+    """
+    import json, multiprocessing, os, sys
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    def report(handle):
+        sender = handle._tee.sender
+        registration = handle.registration
+        return {"pid": os.getpid(), "epoch": handle.allocator.epoch,
+                "status": registration.status, "reason": registration.reason,
+                "registered_epoch": registration.epoch, "path": registration.path,
+                "spool": sender.spool.dir if sender is not None else None}
+
+    def install(spool_dir):
+        from fabric import wire
+        return wire.install(spool_dir=spool_dir, span_exporter=InMemorySpanExporter(),
+                            patch_httpx=False, patch_aiohttp=False)
+
+    def worker(spool_dir, out):
+        handle = install(spool_dir)
+        for _ in range(3):
+            handle.allocator.allocate()
+        out.put(report(handle))
+        out.put(handle.close(30.0))
+
+    if __name__ == "__main__":
+        spool_dir = sys.argv[1]
+        handle = install(spool_dir)
+        handle.allocator.allocate()
+        first = report(handle)
+        ctx = multiprocessing.get_context("spawn")
+        out = ctx.Queue()
+        child = ctx.Process(target=worker, args=(spool_dir, out))
+        child.start()
+        spawned, spawned_closed = out.get(timeout=90), out.get(timeout=90)
+        child.join(60)
+        from fabric.wire import _registration
+        from fabric.wire._spool import Spool
+        live = sorted(os.listdir(os.path.join(spool_dir, ".epochs")))
+        orphans = _registration.scan_orphans(handle._tee.sender.spool)
+        closed = handle.close(30.0)
+        print(json.dumps({"first": first, "spawned": spawned, "exit": child.exitcode,
+                          "spawned_closed": spawned_closed, "closed": closed,
+                          "live": live, "orphans": len(orphans),
+                          "left": sorted(os.listdir(os.path.join(spool_dir, ".epochs")))}),
+              flush=True)
+    """
+)
+
+
+@POSIX
+def test_installs_register_on_a_real_spool_and_every_later_opener_accepts_it(
+    tmp_path: Path,
+) -> None:
+    spool_dir = str(tmp_path / "spool")
+    script = tmp_path / "install_and_spawn.py"
+    script.write_text(_INSTALL_AND_SPAWN, encoding="utf-8")
+    # A second install in another process holds the spool while the first runs.
+    second = _python(_INSTALL, spool_dir, "2")
+    try:
+        held = _first_line(second)
+        done = subprocess.run(  # noqa: S603 - this interpreter and a fixed test script
+            [sys.executable, str(script), spool_dir],
+            capture_output=True, text=True, timeout=240, check=False,
+        )  # fmt: skip
+    finally:
+        _end(second)
+    assert done.returncode == 0, done.stderr[-3000:]
+    got = json.loads(done.stdout.strip().splitlines()[-1])
+    first, spawned = got["first"], got["spawned"]
+    assert held["status"] == "registered"
+    for one in (first, spawned):  # registered on the spool, not just tolerated by it
+        assert (one["status"], one["reason"]) == ("registered", None), one
+        assert one["registered_epoch"] == one["epoch"] and one["spool"] == spool_dir
+        assert one["path"] == str(Path(spool_dir) / reg.EPOCHS_DIR / f"{one['epoch']:020d}.reg")
+    assert len({held["epoch"], first["epoch"], spawned["epoch"]}) == 3
+    assert got["exit"] == 0 and got["spawned_closed"] is True and got["closed"] is True
+    # While the spawned worker had closed and the others still lived: two live
+    # registrations, and nothing to declare (a clean close is final, never an orphan).
+    assert got["live"] == sorted(f"{e:020d}.reg" for e in (held["epoch"], first["epoch"]))
+    assert got["orphans"] == 0
+    assert got["left"] == [f"{held['epoch']:020d}.reg"]  # only the still-held install
+    after = Spool(spool_dir, SPOOL_MAX)  # the directory still opens after them all
+    try:
+        assert reg.scan_orphans(after) == []  # the second install exited through close()
+        assert list((Path(spool_dir) / reg.EPOCHS_DIR).iterdir()) == []
+    finally:
+        after.release()
