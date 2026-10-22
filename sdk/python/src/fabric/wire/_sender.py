@@ -2,8 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """The spool sender (spec 048 §2), one daemon thread per process: spools loss and marker
 records, exports periodic heartbeats and, holding the spool lock, drains records in name
-order (an exchange's bodies to the Node, then its span via ``SpanExporter.export``),
-retiring each only after every part succeeded; failures retry with capped backoff."""
+order (an exchange's or a record's bodies to the Node, then its span via
+``SpanExporter.export``), retiring each only after every part succeeded; failures retry
+with capped backoff.
+
+Spec 050 §3.5: records-input entries (``record``) are written and drained as exchanges
+are; typed markers export with their persisted ``fabric.event_id`` (R2), loss spans with
+``fabric.run.segment_id`` (R3), a manifest as its ``fabric.capture_manifest`` span. The
+drainer also declares orphaned epoch registrations (§3.2 rule 5) with a ``periodic``
+heartbeat at their last allocated position."""
 
 from __future__ import annotations
 
@@ -24,7 +31,8 @@ from opentelemetry.sdk.util.instrumentation import InstrumentationScope
 from opentelemetry.trace import SpanContext, SpanKind, Status, StatusCode, TraceFlags, TraceState
 
 from .. import _loss, tracing
-from .._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossEmitter, beat_attributes, loss_attributes
+from .._capture_types import Marker
+from .._loss import SPAN_LOSS, LossEmitter, loss_attributes, marker_fields, marker_span
 from .._version import __version__
 from ._config import WireConfig
 from ._content import NodeContentClient, content_client_from_env
@@ -32,12 +40,14 @@ from ._model import SPAN_EXCHANGE
 from ._spool import (
     SCHEMA,
     CorruptRecordError,
+    OverBoundError,
     Spool,
     UndecryptableRecordError,
     disk_full,
     exchange_doc,
     loss_doc,
     marker_doc,
+    record_doc,
     unframe_all,
     valid_header,
 )
@@ -47,10 +57,17 @@ _BATCH, _RESCAN_S, _LOCK_RETRY_S, _BACKOFF_S, _BACKOFF_CAP_S = 64, 5.0, 5.0, 0.5
 _EXPORT_SPANS = 512  # a drain exports at most about this many spans per request
 _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_rejected",
           "quarantined", "markers_dropped", "spool_undecryptable", "spool_migrated",
-          "disk_full_drops", "ledger_recovered")  # fmt: skip
+          "disk_full_drops", "ledger_recovered", "over_bound_refused", "markers_invalid",
+          "orphan_heartbeats")  # fmt: skip
 # Markers that could not be spooled are held (retried, mirrored to the loss ledger) up to
 # this many; past it one is dropped and counted (its scope stays open: unverified).
 _MAX_HELD_MARKERS = 1024
+_MAX_ORPHAN_BEATS = 4096  # orphan heartbeats awaiting export (registration files are bounded)
+_RECORDS_INPUT = "records"  # fabric.capture.input of a records-input span (X06)
+_SPAN_KIND = {"internal": SpanKind.INTERNAL, "client": SpanKind.CLIENT,
+              "server": SpanKind.SERVER, "producer": SpanKind.PRODUCER,
+              "consumer": SpanKind.CONSUMER}  # fmt: skip
+_STATUS = {"ok": Status(StatusCode.OK), "error": Status(StatusCode.ERROR)}
 _SENDERS: weakref.WeakSet[Sender] = weakref.WeakSet()
 # Delivery objects a forked child replaced: kept referenced, never closed or collected,
 # because closing (or finalizing) them may need a lock a parent thread held at fork.
@@ -101,7 +118,9 @@ class Sender:
         self._sealed_elsewhere: set[str] = set()
         # Run markers not spooled yet (a full spool or disk): retried on every pump and,
         # with the loss ranges still in memory, mirrored to the spool's loss ledger (D1).
-        self._held: list[Any] = []
+        self._held: list[Marker] = []
+        # Heartbeats declaring orphaned epochs (§3.2 rule 5), kept until exported.
+        self._orphan_beats: list[Marker] = []
         # The ledger copy of each held record: (order, written_at) fixed when first held.
         self._ledger_ids: dict[Any, tuple[int, int]] = {}
         self._ledger_order = 0
@@ -159,7 +178,8 @@ class Sender:
                 "ledger_slots": ledger.used() if ledger else 0,
                 "ledger_overflows": ledger.overflows if ledger else 0,
                 "ledger_failures": ledger.failures if ledger else 0,
-                "ledger_corrupt": ledger.corrupt if ledger else 0}  # fmt: skip
+                "ledger_corrupt": ledger.corrupt if ledger else 0,
+                "manifests_unledgered": ledger.manifests_unledgered if ledger else 0}  # fmt: skip
 
     def ensure_durable(self) -> bool:
         """Establish the spool's directory barrier (sender or flush-helper thread only);
@@ -181,7 +201,7 @@ class Sender:
         staged: Sequence[tuple[Mapping[str, Any], bytes]],
     ) -> bool:  # fmt: skip
         """Write one exchange record (capture worker thread); ``False`` when the spool is full."""
-        doc = exchange_doc(source_id, epoch, self.service_name, span, staged)
+        doc = self._entry_doc(source_id, epoch, span, staged)
         if self.spool.write(doc, [data for _, data in staged]) is None:
             self._stats["spool_full_drops"] += 1
             return False
@@ -193,12 +213,13 @@ class Sender:
         self, items: Sequence[tuple[str, int, Mapping[str, Any],
                                     Sequence[tuple[Mapping[str, Any], bytes]]]],
     ) -> list[str]:  # fmt: skip
-        """Write exchange records in one batch (capture worker thread). Per item:
-        ``spooled``, ``queue_full`` (over the bound), ``disk_full`` (ENOSPC/EDQUOT) or
-        ``internal_error``."""
+        """Write exchange and records-input entries in one batch (capture worker thread);
+        a span whose ``fabric.capture.input`` is ``records`` is a ``record`` entry (050
+        §3.5). Per item: ``spooled``, ``queue_full`` (over the bound), ``disk_full``
+        (ENOSPC/EDQUOT) or ``internal_error`` (also an entry over its body bound, 260 or 8,
+        refused before anything was written: R6)."""
         docs = [
-            (exchange_doc(source_id, epoch, self.service_name, span, staged),
-             [data for _, data in staged])
+            (self._entry_doc(source_id, epoch, span, staged), [data for _, data in staged])
             for source_id, epoch, span, staged in items
         ]  # fmt: skip
         outcomes: list[str] = []
@@ -213,10 +234,21 @@ class Sender:
                 self._stats["disk_full_drops"] += 1
                 outcomes.append("disk_full")
             else:
+                self._stats["over_bound_refused"] += isinstance(result, OverBoundError)
                 outcomes.append("internal_error")
         if "spooled" in outcomes:
             self.wake()
         return outcomes
+
+    def _entry_doc(
+        self, source_id: str, epoch: int, span: Mapping[str, Any],
+        staged: Sequence[tuple[Mapping[str, Any], bytes]],
+    ) -> dict[str, Any]:  # fmt: skip
+        """The spool entry of a captured span: ``record`` for the records input, else
+        ``exchange``."""
+        attrs = span.get("attributes") or {}
+        build = record_doc if attrs.get("fabric.capture.input") == _RECORDS_INPUT else exchange_doc
+        return build(source_id, epoch, self.service_name, span, staged)
 
     def _write(self, doc: Mapping[str, Any]) -> bool:
         with contextlib.suppress(Exception):
@@ -240,23 +272,84 @@ class Sender:
                 if not self._write(loss_doc(loss)):
                     self.loss.retain(loss)  # kept in memory, spooled when space frees
                     unspooled.append(loss)
-            markers, self._held = [*self._held, *(b for b in beats if b[-1] != "periodic")], []
-            for beat in markers:
-                if self._write(marker_doc(beat)):
+            held = [m for m in beats if m.kind != "periodic"]
+            markers, self._held = [*self._held, *held], []
+            for marker in markers:
+                if self._spool_marker(marker):
                     continue
                 if len(self._held) < _MAX_HELD_MARKERS:
-                    self._held.append(beat)  # retried on the next pump
+                    self._held.append(marker)  # retried on the next pump
                 else:
                     self._stats["markers_dropped"] += 1  # its scope stays open: unverified
             self._mirror(unspooled, self._held)
             now = time.time_ns()
-            spans = [self._root(SPAN_HEARTBEAT, beat_attributes(b), now, f"{b}{now}")
-                     for b in beats if b[-1] == "periodic"]  # fmt: skip
-            return not spans or self.exporter.export(spans) is SpanExportResult.SUCCESS
+            orphans = list(self._orphan_beats)
+            periodic = [m for m in beats if m.kind == "periodic"] + orphans
+            spans = [self._marker_span(m, now) for m in periodic]
+            exported = not spans or self.exporter.export(spans) is SpanExportResult.SUCCESS
+            if exported and orphans:  # delivered: declared once (its event id kept until then)
+                del self._orphan_beats[: len(orphans)]
+            return exported
         finally:
             self._pump_lock.release()
 
-    def _mirror(self, losses: Sequence[Any], markers: Sequence[Any]) -> None:
+    def _spool_marker(self, marker: Marker) -> bool:
+        """Spool one marker; ``True`` when written, or when it can never be (a marker the
+        reader would refuse: dropped and counted, never written to be quarantined)."""
+        try:
+            doc = marker_doc(marker)
+            checked = {**doc, "schema_version": SCHEMA, "order": 0, "written_at_unix_nano": 0}
+            valid = valid_header(checked, 0)
+        except Exception:
+            valid = False
+        if not valid:
+            self._stats["markers_invalid"] += 1
+            self._stats["markers_dropped"] += 1
+            return True
+        return self._write(doc)
+
+    def _marker_span(self, marker: Marker, at: int) -> ReadableSpan:
+        """A directly exported marker (a periodic heartbeat); its ids derive from its event
+        id, so a retry is identical."""
+        name, attrs = marker_span(marker.source_id, marker.epoch, marker_fields(marker))
+        return self._root(name, attrs, at, f"marker:{marker.event_id}")
+
+    def scan_epochs(self) -> int:
+        """Drainer (050 §3.2 rule 5): declare each orphaned epoch registration (its writer
+        gone without ``final``) with a ``periodic`` heartbeat at its last allocated
+        position, so a killed worker's allocated but unwritten positions become a visible
+        gap. Uses WP-10's orphan scan; the heartbeat is kept and re-exported, with the same
+        event id, until delivered. Returns how many were queued."""
+        if not self.spool.holder:
+            return 0
+        from . import _registration  # noqa: PLC0415 - the registration module imports this one
+
+        try:
+            orphans = _registration.scan_orphans(self.spool)
+        except Exception as exc:
+            _LOG.warning("fabric.wire: epoch orphan scan failed (%s)", type(exc).__name__)
+            return 0
+        queued = 0
+        for orphan in orphans:
+            try:
+                if orphan.next_sequence <= 0:  # nothing allocated: nothing to declare
+                    continue
+                marker = Marker("periodic", orphan.source_id, orphan.epoch,
+                                orphan.next_sequence - 1)  # fmt: skip
+            except Exception:  # a registration no marker can declare: counted, skipped
+                self._stats["markers_dropped"] += 1
+                continue
+            if len(self._orphan_beats) >= _MAX_ORPHAN_BEATS:
+                self._stats["markers_dropped"] += 1
+                continue
+            self._orphan_beats.append(marker)
+            self._stats["orphan_heartbeats"] += 1
+            queued += 1
+        if queued:
+            self.wake()
+        return queued
+
+    def _mirror(self, losses: Sequence[Any], markers: Sequence[Marker]) -> None:
         """Make this process's loss-ledger slots hold exactly the loss ranges and markers
         not spooled now (D1): they then survive a full disk and this process's death (the
         drainer exports a dead process's slots). Each keeps the order and time it was
@@ -264,8 +357,10 @@ class Sender:
         ledger = self.spool.ledger
         if ledger is None:
             return
-        keyed = [(("loss", loss[0]), loss_doc(loss)) for loss in losses]
-        keyed += [(("marker", beat), marker_doc(beat)) for beat in markers]
+        keyed: list[tuple[tuple[Any, ...], dict[str, Any]]] = [
+            (("loss", loss[0], loss[1][0]), loss_doc(loss)) for loss in losses
+        ]
+        keyed += [(("marker", marker.event_id), marker_doc(marker)) for marker in markers]
         ids: dict[Any, tuple[int, int]] = {}
         records = []
         for key, doc in keyed:
@@ -310,12 +405,14 @@ class Sender:
                     self.spool.settle()  # own records drained elsewhere: consume receipts
                     if self.spool.holder:
                         self._recover_orphans()
+                        self.scan_epochs()
                     scanned = now
                 self.pump()
                 if not self.spool.holder and now - locked >= _LOCK_RETRY_S:
                     locked = now
                     if self.spool.try_lock():  # a new drainer: dead processes' ledger first
                         self._recover_orphans()
+                        self.scan_epochs()
                 state = self._drain() if self.spool.holder else "idle"
             except Exception as exc:  # never let the thread die; never log a message
                 _LOG.warning("fabric.wire: spool sender error (%s)", type(exc).__name__)
@@ -360,9 +457,9 @@ class Sender:
                 continue
             sent, base = True, 0
             for doc, blob in records:
-                if doc["record_kind"] == "exchange":
+                if doc["record_kind"] in ("exchange", "record"):
                     sent = self._send_bodies(name, doc, blob, base)
-                    base += len(doc["bodies"])
+                    base += len(doc.get("bodies", ()))
                 if not sent:
                     break
             if not sent:
@@ -405,16 +502,21 @@ class Sender:
                 attrs = doc["span"]["attributes"]
                 keys = ("fabric.source_id", "fabric.source.epoch", "fabric.source.sequence")
                 source, epoch, sequence = (attrs[key] for key in keys)
+                segment = attrs.get("fabric.run.segment_id")
+                segment = segment if isinstance(segment, str) else None
                 if isinstance(source, str) and type(epoch) is int and type(sequence) is int:
-                    # retain, not record: the record existed; it is not an admission failure
-                    self.loss.retain(((source, epoch, "internal_error"), (sequence, sequence, 1)))
+                    # retain, not record: the record existed and is already in its seal as a
+                    # digest (050 §3.7), so this loss settles nothing; partial either way
+                    self.loss.retain(
+                        ((source, epoch, "internal_error", segment), (sequence, sequence, 1))
+                    )
 
     def _send_bodies(
         self, name: str, doc: Mapping[str, Any], blob: memoryview, base: int = 0
     ) -> bool:
         """Post a record's bodies; ``base``: how many bodies the file's earlier records
         hold (progress is counted per file)."""
-        for index, body in enumerate(doc["bodies"], base):
+        for index, body in enumerate(doc.get("bodies", ()), base):
             if index < self._progress.get(name, 0):
                 continue  # already accepted by the Node in an earlier attempt
             data = blob[body["offset"] : body["offset"] + body["length"]]  # copied once, to send
@@ -442,11 +544,12 @@ class Sender:
         if kind == "loss":
             loss = doc["loss"]
             r = (loss["first_sequence"], loss["last_sequence"], loss["count"])
-            return self._root(SPAN_LOSS, loss_attributes(((*ids, loss["reason"]), r)), at, seed)
-        if kind == "marker":
-            m = doc["marker"]
-            beat = (*ids, m["last_sequence"], m.get("run_id"), m.get("scope_id"), m["kind"])
-            return self._root(SPAN_HEARTBEAT, beat_attributes(beat), at, seed)
+            key = (*ids, loss["reason"], loss.get("segment_id"))
+            return self._root(SPAN_LOSS, loss_attributes((key, r)), at, seed)
+        if kind == "marker":  # its persisted event id: identical on every replay (R2)
+            return self._root(*marker_span(*ids, doc["marker"]), at, seed)
+        if kind == "record":
+            return self._record_span(doc)
         span, flags = doc["span"], TraceFlags(doc["span"]["trace_flags"])
         tid = int(span["trace_id"], 16)
         parent = SpanContext(tid, int(span["parent_span_id"], 16),
@@ -459,6 +562,25 @@ class Sender:
             status=Status(StatusCode.ERROR) if span["status"] == "error" else Status(),
             start_time=span["start_time_unix_nano"], end_time=span["end_time_unix_nano"],
             instrumentation_scope=InstrumentationScope("fabric.wire", __version__),
+        )  # fmt: skip
+
+    def _record_span(self, doc: Mapping[str, Any]) -> ReadableSpan:
+        """A records-input entry's span (050 §3.4): its own name, kind and status, the ids
+        the pipeline wrote, identical on every replay."""
+        span, flags = doc["span"], TraceFlags(doc["span"]["trace_flags"])
+        tid = int(span["trace_id"], 16)
+        parent = SpanContext(tid, int(span["parent_span_id"], 16),
+                             bool(span.get("parent_is_remote")), flags, TraceState(),
+                             ) if "parent_span_id" in span else None  # fmt: skip
+        attrs = {k: tuple(v) if isinstance(v, list) else v for k, v in span["attributes"].items()}
+        service = doc.get("service_name", self.service_name)
+        return ReadableSpan(
+            span["name"], SpanContext(tid, int(span["span_id"], 16), False, flags, TraceState()),
+            parent, Resource({"service.name": service}), attrs,
+            kind=_SPAN_KIND.get(span.get("kind", "internal"), SpanKind.INTERNAL),
+            status=_STATUS.get(span["status"], Status()),
+            start_time=span["start_time_unix_nano"], end_time=span["end_time_unix_nano"],
+            instrumentation_scope=InstrumentationScope("fabric.records", __version__),
         )  # fmt: skip
 
     def _admit_pending(self, deadline: float) -> bool:

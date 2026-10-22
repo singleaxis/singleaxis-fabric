@@ -3,9 +3,14 @@
 """Agent durable spool (spec 048 §2): one fsync'd ``<source_epoch:020d>-<pid:010d>-
 <order:012d>.rec`` per capture event (name order = drain order), any process writing,
 the ``.lock`` holder draining. Bytes: ``b"FWSPOOL1" | u32 len | header (canonical JSON,
-spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``. The capture
-worker writes a batch of exchange records as one batch file (``BATCH_MAGIC``: one fsync
-per batch, chaos report D4). A write that fails on a full volume is told apart
+spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``. Record kinds
+(capture/v1 1.3.0): ``exchange`` (a wire exchange), ``record`` (a records-input record,
+spec 050 §3.5, at most 8 bodies), ``loss`` (a range, segment-attributed: R3) and
+``marker`` (typed markers with a persisted uuid4 ``event_id``: R2). The writer refuses an
+exchange over 260 bodies or a record over 8 before writing (:class:`OverBoundError`, an
+``internal_error`` loss for its position: R6). The capture
+worker writes a batch of exchange and record entries as one batch file (``BATCH_MAGIC``:
+one fsync per batch, chaos report D4). A write that fails on a full volume is told apart
 (:func:`disk_full`); loss and marker records that cannot be spooled are kept in the
 preallocated loss ledger (:mod:`._ledger`, D1).
 
@@ -25,6 +30,7 @@ import contextlib
 import errno
 import hashlib
 import json
+import math
 import os
 import re
 import stat
@@ -34,9 +40,24 @@ import time
 from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any
 
-from .._loss import _Beat, _Range
+from .._capture_types import (
+    BRANCH_ID_RE,
+    ID_BASES,
+    MAX_BRANCHES,
+    MAX_RECORD_BODIES,
+    MAX_RUN_LINKS,
+    RUN_OUTCOMES,
+    SCOPE_STATUSES,
+    SEGMENT_ID_RE,
+    STOP_REASONS,
+    UUID4_RE,
+    LegacyBeat,
+    Marker,
+)
+from .._loss import MARKER_FIELDS, _Range, as_marker, loss_key, marker_fields
 from ._ledger import LEDGER, NEW_PREFIX, LossLedger
 from ._ledger import SIZE as LEDGER_BYTES
+from ._registration import EPOCHS_DIR
 
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
 # A batch file (D4): ``b"FWSPOOLB" | u32 count | count x (u64 length | FWSPOOL1 frame) |
@@ -76,19 +97,54 @@ BARRIER_MARKER = ".barrier"
 _BARRIER_CONTENT = b"fabric wire spool barrier v1\n"
 _REFUSED = (errno.EACCES, errno.EPERM, errno.EROFS)  # this process may not sync that dir
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
-_KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
+# Per kind: the keys a header must have, and those it may have (capture/v1 1.3.0).
+_KEYS = {"exchange": {"service_name", "span", "bodies"}, "record": {"span"}, "loss": {"loss"},
+         "marker": {"marker"}}  # fmt: skip
+_OPTIONAL = {"record": {"service_name", "bodies"}}
 _COMMON = {"schema_version", "record_kind", "source", "order", "written_at_unix_nano"}
 _REASONS = ("queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client",
             "disk_full")  # fmt: skip
+_LOSS_KEYS = frozenset({"reason", "count", "first_sequence", "last_sequence", "segment_id"})
 _DISK_FULL = frozenset({errno.ENOSPC, errno.EDQUOT})
-# Objects per exchange record: 2 sides x (primary + 64 parts) + 2 review copies (049 §7.4).
-MAX_BODIES = 130
+# Objects per exchange record (050 R6): 2 sides x (primary + 64 parts + a review copy of
+# each part + a review copy of the side): original_plus_masked gives every part its own.
+MAX_BODIES = 260
+_DESCRIPTOR_ONLY = frozenset({"not_captured", "unsupported"})
+_SPAN_KINDS = frozenset({"internal", "client", "server", "producer", "consumer"})
+_SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
+_OPAQUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+_PREDECESSOR = re.compile(
+    r"^(none|seg-[0-9a-f]{32}/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}/[1-9][0-9]{0,18}/"
+    r"(-1|0|[1-9][0-9]{0,18})/sha256:[0-9a-f]{64})$"
+)
+_ROOT_ONLY = frozenset({"session_id", "user_id", "parent_run_id", "resumed_from", "links"})
+_IDENTITY = frozenset({"agent_id", "system_id", "deployment_id", "release_id", "environment"})
+_IDENTITY_VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+_REQUIRED_MARKER = {"run_start": ("run_id", "scope_id"), "run_end": ("run_id", "scope_id"),
+                    "segment_seal": ("run_id", "segment_id", "terminal", "seal"),
+                    "final": (), "manifest": ("manifest",)}  # fmt: skip
 
 
 def disk_full(exc: BaseException) -> bool:
     """Whether a spool write failed because the volume (or the user's quota) is full: a
     ``disk_full`` loss, distinct from the configured bound (``queue_full``)."""
     return isinstance(exc, OSError) and exc.errno in _DISK_FULL
+
+
+class OverBoundError(ValueError):
+    """A record the writer refuses before writing (050 R6): an exchange with more than 260
+    bodies or a record with more than 8. Its position becomes an ``internal_error`` loss
+    (never a written file a reader later quarantines as corrupt)."""
+
+    def __init__(self) -> None:
+        super().__init__("spool record over its body bound")
+
+
+def over_bound(doc: Mapping[str, Any]) -> bool:
+    """Whether ``doc`` has more bodies than its kind allows (260 exchange, 8 record)."""
+    limits = {"exchange": MAX_BODIES, "record": MAX_RECORD_BODIES}
+    limit = limits.get(str(doc.get("record_kind")))
+    return limit is not None and len(doc.get("bodies") or ()) > limit
 
 
 class UndecryptableRecordError(ValueError):
@@ -212,40 +268,154 @@ def unseal(data: bytes, name: str, cipher: Any, key_id: str | None) -> bytes:
     return plain
 
 
-def _int(value: object, low: int = 0) -> bool:
-    return type(value) is int and value >= low
+def _int(value: object, low: int = 0, high: int | None = None) -> bool:
+    return type(value) is int and value >= low and (high is None or value <= high)
+
+
+def _ids(value: object, pattern: re.Pattern[str], low: int, high: int) -> bool:
+    """A list of ``low..high`` distinct-or-not strings each matching ``pattern``."""
+    return isinstance(value, list) and low <= len(value) <= high and all(
+        isinstance(item, str) and pattern.fullmatch(item) for item in value)  # fmt: skip
+
+
+def _text(value: object, low: int = 1, high: int = 256) -> bool:
+    return isinstance(value, str) and low <= len(value) <= high
+
+
+_MARKER_CHECKS: dict[str, Any] = {
+    "run_id": lambda v: isinstance(v, str) and bool(_OPAQUE.fullmatch(v)),
+    "scope_id": lambda v: isinstance(v, str) and bool(v),
+    "segment_id": lambda v: isinstance(v, str) and bool(SEGMENT_ID_RE.fullmatch(v)),
+    "predecessors": lambda v: _ids(v, _PREDECESSOR, 1, MAX_BRANCHES),
+    "resumable": lambda v: type(v) is bool,
+    "open_deadline_s": lambda v: _int(v, 60, 31536000),
+    "declared_branches": lambda v: _ids(v, SEGMENT_ID_RE, 0, MAX_BRANCHES),
+    "branch_ids": lambda v: _ids(v, BRANCH_ID_RE, 0, MAX_BRANCHES),
+    "terminal": lambda v: type(v) is bool,
+    "manifest_id": lambda v: isinstance(v, str) and bool(UUID4_RE.fullmatch(v)),
+    "manifest_digest": lambda v: isinstance(v, str) and bool(_SHA256.fullmatch(v)),
+    "manifest_seq": _int,
+    "scope_status": lambda v: v in SCOPE_STATUSES,
+    "manifest": lambda v: isinstance(v, dict),
+    "event_id": lambda v: isinstance(v, str) and bool(UUID4_RE.fullmatch(v)),
+    "id_basis": lambda v: v in ID_BASES,
+    "session_id": _text, "user_id": _text,
+    "parent_run_id": lambda v: isinstance(v, str) and bool(_OPAQUE.fullmatch(v)),
+    "resumed_from": lambda v: isinstance(v, str) and bool(_OPAQUE.fullmatch(v)),
+    "links": lambda v: _ids(v, _OPAQUE, 0, MAX_RUN_LINKS),
+    "outcome": lambda v: v in RUN_OUTCOMES,
+    "stop_reason": lambda v: v in STOP_REASONS,
+    "identity": lambda v: isinstance(v, dict) and bool(v) and set(v) <= _IDENTITY and all(
+        isinstance(x, str) and _IDENTITY_VALUE.fullmatch(x) for x in v.values()),
+    "seal": lambda v: isinstance(v, dict) and {"last_sequence", "seal_digest"} <= set(v) <= {
+        "last_sequence", "manifest_digest", "seal_digest", "branch_ids"} and _int(
+        v["last_sequence"], -1) and bool(_SHA256.fullmatch(str(v["seal_digest"]))) and (
+        "manifest_digest" not in v or bool(_SHA256.fullmatch(str(v["manifest_digest"])))) and (
+        "branch_ids" not in v or _ids(v["branch_ids"], BRANCH_ID_RE, 0, MAX_BRANCHES)),
+}  # fmt: skip
+
+
+def _marker_ok(marker: Mapping[str, Any]) -> bool:
+    """The capture/v1 1.3.0 ``marker`` branch: the kind's allowed and required fields, each
+    field's check, root-only fields on a root ``run_start``, and a manifest marker's
+    ``event_id`` and position equal to its manifest's. ``event_id`` is optional on read (a
+    pre-1.3.0 marker stays readable); the writer always sets it."""
+    kind = marker["kind"]
+    allowed = MARKER_FIELDS.get(kind) if kind != "periodic" else None
+    if allowed is None or not _int(marker["last_sequence"], -1):
+        return False
+    fields = set(marker) - {"kind", "last_sequence"}
+    root = not fields & _ROOT_ONLY or marker.get("predecessors") == ["none"]
+    ok = (fields <= allowed and root
+          and all(name in marker for name in _REQUIRED_MARKER[kind])
+          and all(_MARKER_CHECKS[name](marker[name]) for name in fields))  # fmt: skip
+    return ok and (kind != "manifest" or _manifest_ok(marker))
+
+
+def _manifest_ok(marker: Mapping[str, Any]) -> bool:
+    """A manifest marker's ``event_id`` and position are its manifest's (spec 049 §2.8)."""
+    manifest = marker["manifest"]
+    own = manifest.get("fabric.event_id")
+    if "event_id" in marker and own is not None and own != marker["event_id"]:
+        return False
+    after = manifest.get("fabric.manifest.after_source_sequence")
+    return after is None or after == marker["last_sequence"]
+
+
+def _scalar(value: object) -> bool:
+    return isinstance(value, (str, int)) or (isinstance(value, float) and math.isfinite(value))
+
+
+def _attribute_value(value: object) -> bool:
+    """An OTLP attribute value: a scalar, or a list of at most 64 scalars."""
+    return _scalar(value) or (isinstance(value, list) and len(value) <= 64 and all(  # noqa: PLR2004
+        map(_scalar, value)))  # fmt: skip
+
+
+def _span_ok(doc: Mapping[str, Any], blob_length: int, kind: str) -> bool:
+    """The span and bodies of an exchange or record entry. A record (050 §3.5) takes the
+    exchange checks, but carries ``fabric.capture.input == "records"``, a uuid4
+    ``fabric.event_id`` and ``fabric.attempt.uid``, never ``fabric.wire.exchange_id``,
+    and at most 8 bodies, which are its ``fabric.content.object_ids`` in order. A
+    descriptor-only body (R5) has length 0 and no stored length or digest."""
+    span, source = doc["span"], doc["source"]
+    attrs, bodies = span["attributes"], doc.get("bodies", [])
+    record = kind == "record"
+    ok = isinstance(doc.get("service_name", ""), str) and isinstance(bodies, list) and (
+        len(bodies) <= (MAX_RECORD_BODIES if record else MAX_BODIES))  # fmt: skip
+    offset = 0
+    for body in bodies:
+        descriptor = body["descriptor"]
+        ok = ok and body["offset"] == offset and _int(body["length"])
+        # a descriptor-only object (049 §4.3 rule 5, 050 R5) carries no bytes
+        ok = ok and descriptor.get("stored_byte_length", 0) == body["length"]
+        if descriptor.get("status") in _DESCRIPTOR_ONLY:
+            ok = ok and "stored_byte_length" not in descriptor and (
+                "stored_sha256" not in descriptor)  # fmt: skip
+        offset += body["length"]
+    ok = bool(ok and offset == blob_length
+        and _HEX[32].fullmatch(span["trace_id"]) and _HEX[16].fullmatch(span["span_id"])
+        and _HEX[16].fullmatch(span.get("parent_span_id", "1" * 16))
+        and _int(span["start_time_unix_nano"]) and _int(span["end_time_unix_nano"])
+        and _int(span["trace_flags"])
+        and attrs["fabric.source_id"] == source["source_id"]
+        and _int(attrs["fabric.source.sequence"]))  # fmt: skip
+    if not record:
+        return ok and span["status"] in ("unset", "error") and (
+            attrs.get("fabric.capture.input", "wire") == "wire")  # fmt: skip
+    ids = [body["descriptor"].get("object_id") for body in bodies]
+    return bool(ok and span["status"] in ("unset", "ok", "error")
+        and isinstance(span["name"], str) and span.get("kind", "internal") in _SPAN_KINDS
+        and attrs.get("fabric.capture.input") == "records"
+        and attrs.get("fabric.source.epoch") == source["source_epoch"]
+        and UUID4_RE.fullmatch(str(attrs.get("fabric.event_id")))
+        and UUID4_RE.fullmatch(str(attrs.get("fabric.attempt.uid")))
+        and "fabric.wire.exchange_id" not in attrs
+        and "fabric.source.authenticated" not in attrs
+        and all(map(_attribute_value, attrs.values()))
+        and ids == list(attrs.get("fabric.content.object_ids", [])))  # fmt: skip
 
 
 def valid_header(doc: Mapping[str, Any], blob_length: int) -> bool:
     """Structural check of a decoded header (the reader's guard; the schema is normative)."""
     try:
         kind, source = doc["record_kind"], doc["source"]
-        ok = (doc["schema_version"] == SCHEMA and set(doc) == _COMMON | _KEYS[kind]
+        keys = set(doc) - _COMMON
+        ok = (doc["schema_version"] == SCHEMA and set(doc) >= _COMMON
+              and _KEYS[kind] <= keys <= _KEYS[kind] | _OPTIONAL.get(kind, set())
               and isinstance(source["source_id"], str) and _int(source["source_epoch"])
               and _int(doc["order"]) and _int(doc["written_at_unix_nano"]))  # fmt: skip
+        if not ok:
+            return False
         if kind == "loss":
             loss, first = doc["loss"], doc["loss"]["first_sequence"]
-            return ok and loss["reason"] in _REASONS and _int(loss["count"], 1) and _int(
-                first) and _int(loss["last_sequence"], first)  # fmt: skip
+            return set(loss) <= _LOSS_KEYS and loss["reason"] in _REASONS and _int(
+                loss["count"], 1) and _int(first) and _int(loss["last_sequence"], first) and (
+                "segment_id" not in loss or bool(SEGMENT_ID_RE.fullmatch(
+                    str(loss["segment_id"]))))  # fmt: skip
         if kind == "marker":
-            marker, run = doc["marker"], doc["marker"]["kind"] != "final"
-            return ok and marker["kind"] in ("run_start", "run_end", "final") and _int(
-                marker["last_sequence"], -1) and ("run_id" in marker) is run is (
-                "scope_id" in marker)  # fmt: skip
-        span, attrs, offset = doc["span"], doc["span"]["attributes"], 0
-        ok = ok and isinstance(doc["service_name"], str) and len(doc["bodies"]) <= MAX_BODIES
-        for body in doc["bodies"]:
-            ok = ok and body["offset"] == offset and _int(body["length"])
-            # a descriptor-only object (049 §4.3 rule 5: not_captured) carries no bytes
-            ok = ok and body["descriptor"].get("stored_byte_length", 0) == body["length"]
-            offset += body["length"]
-        return bool(ok and offset == blob_length
-            and _HEX[32].fullmatch(span["trace_id"]) and _HEX[16].fullmatch(span["span_id"])
-            and _HEX[16].fullmatch(span.get("parent_span_id", "1" * 16))
-            and _int(span["start_time_unix_nano"]) and _int(span["end_time_unix_nano"])
-            and span["status"] in ("unset", "error") and _int(span["trace_flags"])
-            and attrs["fabric.source_id"] == source["source_id"]
-            and _int(attrs["fabric.source.sequence"]))  # fmt: skip
+            return isinstance(doc["marker"], dict) and _marker_ok(doc["marker"])
+        return _span_ok(doc, blob_length, kind)
     except (KeyError, TypeError, AttributeError):
         return False
 
@@ -255,25 +425,76 @@ def _doc(kind: str, source_id: str, epoch: int, **body: Any) -> dict[str, Any]:
 
 
 def loss_doc(loss: _Range) -> dict[str, Any]:
-    (source_id, epoch, reason), (first, last, count) = loss
-    return _doc("loss", source_id, epoch, loss={"reason": reason, "first_sequence": first,
-                "count": min(count, last - first + 1), "last_sequence": last})  # fmt: skip
+    """The spool ``loss`` entry of a range; ``segment_id`` when segment-attributed (R3)."""
+    key, (first, last, count) = loss
+    source_id, epoch, reason, segment_id = loss_key(key)
+    body = {"reason": reason, "first_sequence": first, "count": min(count, last - first + 1),
+            "last_sequence": last}  # fmt: skip
+    if segment_id is not None:
+        body["segment_id"] = segment_id
+    return _doc("loss", source_id, epoch, loss=body)
 
 
-def marker_doc(beat: _Beat) -> dict[str, Any]:
-    source_id, epoch, last, run_id, scope_id, kind = beat
-    ids = {"run_id": run_id, "scope_id": scope_id} if kind != "final" else {}
-    return _doc("marker", source_id, epoch, marker={"kind": kind, "last_sequence": last, **ids})
+def loss_range(doc: Mapping[str, Any]) -> _Range:
+    """The range of a spool or ledger ``loss`` entry (the inverse of :func:`loss_doc`)."""
+    source, loss = doc["source"], doc["loss"]
+    key = (source["source_id"], source["source_epoch"], loss["reason"], loss.get("segment_id"))
+    return key, (loss["first_sequence"], loss["last_sequence"], loss["count"])
+
+
+def marker_doc(marker: Marker | LegacyBeat) -> dict[str, Any]:
+    """The spool ``marker`` entry of a typed marker (a legacy beat tuple is converted),
+    carrying its persisted ``event_id`` (R2)."""
+    marker = as_marker(marker)
+    return _doc("marker", marker.source_id, marker.epoch, marker=marker_fields(marker))
+
+
+def _bodies(staged: Sequence[tuple[Mapping[str, Any], bytes]]) -> list[dict[str, Any]]:
+    bodies, offset = [], 0
+    for descriptor, data in staged:
+        bodies.append({"descriptor": dict(descriptor), "length": len(data), "offset": offset})
+        offset += len(data)
+    return bodies
 
 
 def exchange_doc(
     source_id: str, epoch: int, service_name: str, span: Mapping[str, Any],
     staged: Sequence[tuple[Mapping[str, Any], bytes]],
 ) -> dict[str, Any]:  # fmt: skip
-    bodies = [{"descriptor": dict(d), "length": len(data), "offset": sum(
-        len(b) for _, b in staged[:i])} for i, (d, data) in enumerate(staged)]  # fmt: skip
     return _doc("exchange", source_id, epoch, service_name=service_name, span=dict(span),
-                bodies=bodies)  # fmt: skip
+                bodies=_bodies(staged))  # fmt: skip
+
+
+def record_doc(
+    source_id: str, epoch: int, service_name: str, span: Mapping[str, Any],
+    staged: Sequence[tuple[Mapping[str, Any], bytes]],
+) -> dict[str, Any]:  # fmt: skip
+    """A records-input entry (050 §3.5), the shape of :func:`exchange_doc`: its bodies (a
+    descriptor-only body has length 0) are the span's ``fabric.content.object_ids``."""
+    return _doc("record", source_id, epoch, service_name=service_name, span=dict(span),
+                bodies=_bodies(staged))  # fmt: skip
+
+
+_Records = Sequence[tuple[Mapping[str, Any], Sequence[bytes]]]
+
+
+def _refusals(records: _Records) -> set[int]:
+    """Indexes of records over their body bound (050 R6), refused before any write."""
+    return {index for index, (doc, _) in enumerate(records) if over_bound(doc)}
+
+
+def _merge_refused(
+    records: _Records, refused: set[int],
+    write: Any,
+) -> list[str | BaseException | None]:  # fmt: skip
+    """Write the records not ``refused`` with ``write``; each refused one's outcome is an
+    :class:`OverBoundError`, in place."""
+    kept = [index for index in range(len(records)) if index not in refused]
+    results: list[str | BaseException | None] = [OverBoundError() for _ in records]
+    written = write([records[index] for index in kept]) if kept else []
+    for index, result in zip(kept, written, strict=True):
+        results[index] = result
+    return results
 
 
 def _secure_dir(path: str) -> list[str]:
@@ -317,7 +538,7 @@ def _mount_point(path: str) -> bool:
 def _own_name(name: str) -> bool:
     """Whether ``name`` is one the wire spool itself creates."""
     return (
-        name in (".lock", ADMIT_LOCK, BARRIER_MARKER, LEDGER)
+        name in (".lock", ADMIT_LOCK, BARRIER_MARKER, LEDGER, EPOCHS_DIR)
         or name.startswith((".tmp-", NEW_PREFIX))
         or name.endswith((".rec", ACK_SUFFIX, QUARANTINE_SUFFIX))
     )
@@ -716,6 +937,8 @@ class Spool:
         one rename and one directory fsync for all of them; each record's outcome is the
         file's (its name, ``None`` or the exception). When the file does not fit under the
         bound, the records are written one per file instead, so as many as fit are kept."""
+        if refused := _refusals(records):
+            return _merge_refused(records, refused, self.write_group)
         if len(records) < 2:  # noqa: PLR2004
             return self.write_batch(records)
         (result,) = self.write_batch(records, group=True)
@@ -754,7 +977,13 @@ class Spool:
         all and one directory fsync makes them durable. A record counts as written (its
         name returned) only after its file and the directory were fsync'd. Per record:
         its name, ``None`` (over the bound, or the admission lock busy) or the exception
-        that failed it (its bytes are charged where they are, as for :meth:`write`)."""
+        that failed it (its bytes are charged where they are, as for :meth:`write`). A
+        record over its body bound is refused before anything is written
+        (:class:`OverBoundError`, 050 R6)."""
+        if refused := _refusals(records):
+            return _merge_refused(
+                records, refused, lambda kept: self.write_batch(kept, reserve=reserve, group=group)
+            )
         prepared = self._prepare(records, group=group)
         limit = self.max_bytes + (self._reserve_bytes if reserve else 0)
         results: list[str | BaseException | None] = [None] * len(prepared)

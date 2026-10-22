@@ -139,6 +139,7 @@ def test_replayed_loss_and_marker_spans_are_identical(tmp_path: Path) -> None:
         "fabric.source_id": "wire-a", "fabric.source.epoch": 7,
         "fabric.heartbeat.last_sequence": 3, "fabric.heartbeat.kind": "run_end",
         "fabric.run.id": "run-a", "fabric.run.scope_id": beat[4],
+        "fabric.event_id": doc["marker"]["event_id"],  # persisted in the record (050 R2)
     }  # fmt: skip
     assert first.start_time == first.end_time == 11 and first.parent is None
 

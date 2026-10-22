@@ -148,8 +148,8 @@ def test_every_loss_settles_its_segment() -> None:
     assert settled == [(SEG, 3, "loss:queue_full"), (None, 4, "loss:shutdown")]
     assert emitter.recorded == 2
     losses, _ = emitter.take(periodic=False)
-    assert sorted(losses) == [(("s-a", 5, "queue_full"), (3, 3, 1)),
-                              (("s-a", 5, "shutdown"), (4, 4, 1))]  # fmt: skip
+    assert sorted(losses, key=str) == [(("s-a", 5, "queue_full", SEG), (3, 3, 1)),
+                                       (("s-a", 5, "shutdown", None), (4, 4, 1))]  # fmt: skip
     emitter.close(1.0)
 
 
@@ -167,13 +167,15 @@ def test_a_failing_settle_never_loses_the_loss() -> None:
     emitter.close(1.0)
 
 
-def test_queue_marker_takes_legacy_kinds_only_until_wp11b() -> None:
+def test_queue_marker_takes_every_kind() -> None:
+    """WP-11b: the typed marker queue replaced the legacy beat queue (050 §3.5)."""
     emitter = LossEmitter()
-    assert emitter.queue_marker(Marker("run_start", "s-a", 5, 2, "r-1", "scope-1"))
+    start = Marker("run_start", "s-a", 5, 2, "r-1", "scope-1")
     seal = SealInfo(2, None, "sha256:" + "0" * 64)
-    assert not emitter.queue_marker(Marker("segment_seal", "s-a", 5, 2, segment_id=SEG, seal=seal))
+    sealed = Marker("segment_seal", "s-a", 5, 2, segment_id=SEG, seal=seal)
+    assert emitter.queue_marker(start) and emitter.queue_marker(sealed)
     _, beats = emitter.take(periodic=False)
-    assert beats == [("s-a", 5, 2, "r-1", "scope-1", "run_start")]
+    assert beats == [start, sealed]  # the same markers: event ids minted once
     emitter.close(1.0)
 
 

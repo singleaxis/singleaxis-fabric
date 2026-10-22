@@ -30,7 +30,7 @@ SPAN_KEYS = {
     "fabric.source_id", "fabric.source.epoch", "fabric.run.id", "fabric.run.scope_id",
     LossAttr.REASON, LossAttr.COUNT,
     LossAttr.FIRST_SEQUENCE, LossAttr.LAST_SEQUENCE, LossAttr.HEARTBEAT_LAST_SEQUENCE,
-    LossAttr.HEARTBEAT_KIND,
+    LossAttr.HEARTBEAT_KIND, LossAttr.EVENT_ID,  # every marker's persisted uuid4 (050 R2)
 }  # fmt: skip
 
 
