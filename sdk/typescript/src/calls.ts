@@ -231,6 +231,8 @@ export class LlmCall {
     private readonly captureContent = false,
     private readonly emitLegacyAttributes = true,
     private readonly governedCapture?: GovernedCaptureFn,
+    /** The decision's identity policy (049 §2.9); absent: values as given. */
+    private readonly ids?: IdentityPolicy,
   ) {}
 
   /**
@@ -282,7 +284,10 @@ export class LlmCall {
       if (options.responseId === "") {
         throw new Error("responseId must be non-empty");
       }
-      this.span.setAttribute(GEN_AI_RESPONSE_ID, options.responseId);
+      // 049 §2.9 rule 4: the provider response id as its keyed `p-` form.
+      const responseId =
+        this.ids === undefined ? options.responseId : this.ids.id("p", options.responseId);
+      if (responseId !== undefined) this.span.setAttribute(GEN_AI_RESPONSE_ID, responseId);
     }
     if (options.model !== undefined) this.setResponseModel(options.model);
     if (options.finishReasons !== undefined) {

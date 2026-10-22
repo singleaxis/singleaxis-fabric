@@ -25,7 +25,22 @@ var decisionLineIDKeys = toSet(
 	"fabric.side_effect.idempotency_key",
 	"fabric.tool.idempotency_key",
 	"fabric.retrieval.source_document_ids",
+	"fabric.request_id",
+	"gen_ai.data_source.id",
 )
+
+// decisionLineProviderKeys are provider correlation ids (spec 049 §2.9 rule
+// 4; N12, C39, C40): the SDK emits the keyed v2 p- + 32 hex form, the same
+// function as the wire line. The legacy unkeyed p- + 16 hex form is not
+// admitted: an unkeyed hash of an id is not a pseudonym.
+var decisionLineProviderKeys = toSet(
+	"gen_ai.response.id",
+	"gen_ai.request.previous_response.id",
+	"gen_ai.tool.call.id",
+	"fabric.tool.call.id",
+)
+
+var providerPseudonymPattern = pseudonymPattern("p")
 
 // decisionLineLabelKeys are operator labels: lbl- + 32 hex unless the Node
 // admits clear labels (capture_labels clear, or identity_mode clear, under
@@ -44,11 +59,15 @@ var mcpToolEntryPattern = regexp.MustCompile(`^lbl-[0-9a-f]{32}:[0-9a-f]{12}$`)
 func (g *guard) validDecisionLineValue(key string, value pcommon.Value) (valid, ok bool) {
 	_, id := decisionLineIDKeys[key]
 	_, label := decisionLineLabelKeys[key]
-	if !id && !label {
+	_, provider := decisionLineProviderKeys[key]
+	if !id && !label && !provider {
 		return false, false
 	}
 	if g.cfg.IdentityMode == identityModeClear || label && g.clearLabels() {
 		return true, true
+	}
+	if provider {
+		return matches(providerPseudonymPattern)(value), true
 	}
 	element := labelPseudonymPattern
 	if key == "fabric.mcp.tools" {

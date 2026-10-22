@@ -56,3 +56,40 @@ func TestDecisionLineKeysRejectClearValuesUnderPseudonymousNode(t *testing.T) {
 		}
 	}
 }
+
+// Sol review (v0.8.1) item 1: provider correlation ids are admitted under a
+// pseudonymous Node only as the keyed p- form (N12/C39/C40), and the
+// caller's request and data-source ids only as lbl-.
+func TestCorrelationIDsRejectClearValuesUnderPseudonymousNode(t *testing.T) {
+	const p = "p-9f86d081884c7d659a2feaa0c55ad015"
+	const lbl = "lbl-9f86d081884c7d659a2feaa0c55ad015"
+	clearIdentity := createDefaultConfig()
+	clearIdentity.IdentityMode = identityModeClear
+	pseudonymous, identityClear := newTestGuard(t, nil), newTestGuard(t, clearIdentity)
+	for _, tc := range []struct {
+		key, value          string
+		pseudonymous, clear bool
+	}{
+		{"gen_ai.response.id", p, true, true},
+		{"gen_ai.response.id", "chatcmpl-CANARY", false, true},
+		{"gen_ai.response.id", "p-9f86d081884c7d65", false, true}, // legacy unkeyed form
+		{"gen_ai.request.previous_response.id", p, true, true},
+		{"gen_ai.request.previous_response.id", "resp_CANARY", false, true},
+		{"gen_ai.tool.call.id", p, true, true},
+		{"gen_ai.tool.call.id", "call_CANARY", false, true},
+		{"fabric.tool.call.id", p, true, true},
+		{"fabric.tool.call.id", lbl, false, true},
+		{"fabric.request_id", lbl, true, true},
+		{"fabric.request_id", "order-4711-jane", false, true},
+		{"gen_ai.data_source.id", lbl, true, true},
+		{"gen_ai.data_source.id", "patients-kb", false, true},
+	} {
+		v := valueOf(t, tc.value)
+		if got := keptAs(t, pseudonymous, decisionSpan(tc.key, v), tc.key, v); got != tc.pseudonymous {
+			t.Errorf("pseudonymous Node: %s=%q kept=%v, want %v", tc.key, tc.value, got, tc.pseudonymous)
+		}
+		if got := keptAs(t, identityClear, decisionSpan(tc.key, v), tc.key, v); got != tc.clear {
+			t.Errorf("clear Node: %s=%q kept=%v, want %v", tc.key, tc.value, got, tc.clear)
+		}
+	}
+}
