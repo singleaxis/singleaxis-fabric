@@ -101,7 +101,16 @@ import { sha256Hex } from "./hash.js";
 import { safeStartSpan } from "./safe-span.js";
 import { ATTR_CONTENT_REQUEST_REF, ATTR_CONTENT_RESULT_REF } from "./attributes.js";
 import { type CrossCuttingOptions } from "./crosscut.js";
-import { type IdentityPolicy } from "./identity.js";
+import { IdentityPolicy } from "./identity.js";
+
+/** The identity policy of a call built outside a decision: from the environment. */
+function environmentIdentity(): IdentityPolicy {
+  return IdentityPolicy.resolve(
+    undefined,
+    undefined,
+    typeof process !== "undefined" ? process.env : {},
+  );
+}
 import {
   assertIntAtLeast,
   assertNonEmpty,
@@ -226,14 +235,18 @@ export interface LlmCacheUsage {
  * (kind=CLIENT). Obtained inside the `d.llmCall(...)` callback.
  */
 export class LlmCall {
+  /** The decision's identity policy (049 §2.9); standalone, resolved from the environment. */
+  private readonly ids: IdentityPolicy;
+
   constructor(
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly emitLegacyAttributes = true,
     private readonly governedCapture?: GovernedCaptureFn,
-    /** The decision's identity policy (049 §2.9); absent: values as given. */
-    private readonly ids?: IdentityPolicy,
-  ) {}
+    ids?: IdentityPolicy,
+  ) {
+    this.ids = ids ?? environmentIdentity();
+  }
 
   /**
    * Attach token counts and finish reason from the LLM response. Writes
@@ -285,8 +298,7 @@ export class LlmCall {
         throw new Error("responseId must be non-empty");
       }
       // 049 §2.9 rule 4: the provider response id as its keyed `p-` form.
-      const responseId =
-        this.ids === undefined ? options.responseId : this.ids.id("p", options.responseId);
+      const responseId = this.ids.id("p", options.responseId);
       if (responseId !== undefined) this.span.setAttribute(GEN_AI_RESPONSE_ID, responseId);
     }
     if (options.model !== undefined) this.setResponseModel(options.model);
@@ -438,15 +450,25 @@ export interface ToolCallOptions extends StepOptions, CrossCuttingOptions {
  * (kind=INTERNAL). Obtained inside the `d.toolCall(...)` callback.
  */
 export class ToolCall {
+  /** The decision's identity policy (049 §2.9); standalone, resolved from the environment. */
+  private readonly ids: IdentityPolicy;
+  /**
+   * Whether a role retains the original (049 §7.5). Standalone: only the
+   * clear identity mode keeps payload digests (as Python's helper does).
+   */
+  private readonly retainsOriginal: (role: string) => boolean;
+
   constructor(
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly governedCapture?: GovernedCaptureFn,
-    /** The decision's identity policy (049 §2.9); absent: values as given. */
-    private readonly ids?: IdentityPolicy,
-    /** Whether a role retains the original (049 §7.5); absent: digests as before. */
-    private readonly retainsOriginal: (role: string) => boolean = () => true,
-  ) {}
+    ids?: IdentityPolicy,
+    retainsOriginal?: (role: string) => boolean,
+  ) {
+    this.ids = ids ?? environmentIdentity();
+    const policy = this.ids;
+    this.retainsOriginal = retainsOriginal ?? (() => policy.clear);
+  }
 
   /** Record how many results/items the tool returned. */
   setResultCount(count: number): void {
@@ -532,7 +554,7 @@ export class ToolCall {
     if (options.key !== undefined) {
       assertNonEmpty("idempotency key", options.key);
       // Caller data: `lbl-` when pseudonymous, omitted without a key.
-      const key = this.ids === undefined ? options.key : this.ids.opaque(options.key);
+      const key = this.ids.opaque(options.key);
       if (key !== undefined) this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key);
     }
   }
