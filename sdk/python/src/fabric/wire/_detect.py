@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import functools
+import importlib
 import importlib.util
 import os
 import sys
@@ -100,6 +101,14 @@ def _wrap_urlopen(original: Callable[..., Any]) -> Callable[..., Any]:
     return urlopen
 
 
+def _urllib3_pool() -> Any:
+    return importlib.import_module("urllib3.connectionpool").HTTPConnectionPool
+
+
+def _requests_adapter() -> Any:
+    return importlib.import_module("requests.adapters").HTTPAdapter
+
+
 def _installed(name: str) -> bool:
     try:
         return importlib.util.find_spec(name) is not None
@@ -113,17 +122,15 @@ def patch_detectors() -> None:
     with _PATCH_LOCK:
         if _PATCHED:
             return
-        plan: list[tuple[str, str, str, Callable[..., Any]]] = [
-            ("urllib3", "urllib3.connectionpool", "HTTPConnectionPool.urlopen", _wrap_urlopen),
-            ("requests", "requests.adapters", "HTTPAdapter.send", _wrap_requests_send),
+        plan: list[tuple[str, Callable[[], Any], str, Callable[..., Any]]] = [
+            ("urllib3", _urllib3_pool, "urlopen", _wrap_urlopen),
+            ("requests", _requests_adapter, "send", _wrap_requests_send),
         ]
-        for package, module_name, target, wrap in plan:
+        for package, load, attr, wrap in plan:
             with contextlib.suppress(Exception):
                 if not _installed(package):
                     continue
-                module = importlib.import_module(module_name)
-                class_name, attr = target.split(".")
-                cls = getattr(module, class_name)
+                cls = load()  # a fixed module: nothing here names one at run time
                 original = vars(cls)[attr]
                 wrapper = wrap(original)
                 wrapper.__fabric_wire_patch__ = True
