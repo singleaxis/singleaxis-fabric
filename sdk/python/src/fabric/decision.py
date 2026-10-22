@@ -133,7 +133,7 @@ from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
-from ._identity import IdentityPolicy
+from ._identity import IdentityPolicy, record_exception
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .memory import MemoryKind, MemoryRecord
@@ -737,7 +737,8 @@ class Decision(AbstractContextManager["Decision"]):
             # which we already record so cancellations stay visible.
             self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
-            self._span.record_exception(exc)
+            # 049 §7.6: class only in the pseudonymous mode (no message, no stack).
+            record_exception(self._span, exc, clear=self._identity.clear)
         # Governed content: write the transcript manifest and stamp its
         # ref before the span ends. Pending items stay pending — honest
         # gap, never claimed delivered (spec 032 §5).
@@ -2370,6 +2371,7 @@ class Decision(AbstractContextManager["Decision"]):
             step_attempt=step_attempt,
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
+            identity=self._identity,
         )
 
     def embeddings(

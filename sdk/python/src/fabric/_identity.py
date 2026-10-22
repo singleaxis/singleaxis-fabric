@@ -14,6 +14,7 @@ import logging
 import threading
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from ._sequence import (
     LABELS_ENV,
@@ -24,6 +25,9 @@ from ._sequence import (
     label_pseudonym,
     pseudonym_v2,
 )
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import Span
 
 _LOG = logging.getLogger("fabric")
 _WARNED = threading.Event()
@@ -84,3 +88,21 @@ class IdentityPolicy:
     def labels(self, values: Iterable[str]) -> tuple[str, ...]:
         """Each of ``values`` as :meth:`label` emits it; the omitted ones dropped."""
         return tuple(emitted for value in values if (emitted := self.label(value)) is not None)
+
+
+def exception_type(exc: BaseException) -> str:
+    """The exception class as OpenTelemetry names it (``module.qualname``; builtins bare)."""
+    cls = type(exc)
+    module = cls.__module__
+    return f"{module}.{cls.__qualname__}" if module and module != "builtins" else cls.__qualname__
+
+
+def record_exception(span: Span, exc: BaseException, *, clear: bool) -> None:
+    """Record ``exc`` on a host span (spec 049 §7.6, spec 051 §4.9): the OpenTelemetry
+    event (message and stack trace included) only in the ``clear`` identity mode; in the
+    pseudonymous mode an ``exception`` event carrying ``exception.type`` alone, since the
+    message and the stack can hold caller data."""
+    if clear:
+        span.record_exception(exc)
+    else:
+        span.add_event("exception", {"exception.type": exception_type(exc)})

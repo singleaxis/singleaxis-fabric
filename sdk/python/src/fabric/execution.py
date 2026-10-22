@@ -53,6 +53,7 @@ emitted span bytes are byte-identical across call styles.
 from __future__ import annotations
 
 import contextvars
+import os
 from contextlib import AbstractContextManager
 from types import TracebackType
 from typing import TYPE_CHECKING, Protocol, Self
@@ -75,6 +76,7 @@ from ._attributes import (
     SCHEMA_VERSION,
     check_attribute_keys,
 )
+from ._identity import IdentityPolicy, record_exception
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
@@ -341,7 +343,11 @@ class Execution(AbstractContextManager["Execution"]):
             self._span.set_attribute(ATTR_EXECUTION_STATUS, STATUS_FAILED)
             self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
             self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
-            self._span.record_exception(exc)
+            # 049 §7.6: class only in the pseudonymous identity mode (no message, no stack).
+            identity = getattr(self._client, "identity", None)
+            if not isinstance(identity, IdentityPolicy):
+                identity = IdentityPolicy.resolve(None, None, os.environ)
+            record_exception(self._span, exc, clear=identity.clear)
         else:
             self._span.set_attribute(ATTR_EXECUTION_STATUS, STATUS_COMPLETED)
         result = self._cm.__exit__(exc_type, exc, tb)
