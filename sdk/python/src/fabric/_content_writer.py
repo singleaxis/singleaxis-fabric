@@ -32,9 +32,9 @@ import stat
 import tempfile
 import threading
 import time
+import weakref
 from collections import deque
 from collections.abc import Callable, Mapping
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -201,7 +201,7 @@ class ContentWriter:
         # spool record or reach the destination.
         self._manifest_revisions: dict[str, int] = {}
         self._manifest_revision_counters: dict[str, int] = {}
-        self._inline_pool: ThreadPoolExecutor | None = None
+        self._inline_workers: _InlineWorkers | None = None
         self._inline_in_flight = 0
         self._worker: threading.Thread | None = None
         self._wake = threading.Event()
@@ -407,13 +407,24 @@ class ContentWriter:
             return outcome[0]
         return ContentStatus.PENDING
 
-    def _inline_executor(self) -> ThreadPoolExecutor:
+    def _inline_executor(self) -> _InlineWorkers:
         with self._pending_lock:
-            if self._inline_pool is None:
-                self._inline_pool = ThreadPoolExecutor(
-                    max_workers=_INLINE_WORKERS, thread_name_prefix="fabric-content-inline"
-                )
-            return self._inline_pool
+            if self._inline_workers is None:
+                self._inline_workers = _InlineWorkers(_INLINE_WORKERS)
+                _FORK_AWARE.add(self)
+            return self._inline_workers
+
+    def _after_fork_in_child(self) -> None:
+        """A forked child has none of the parent's threads: fresh locks and workers.
+        The parent's in-flight inline writes are the parent's to deliver; the child
+        neither waits for them nor reports them as its own pending work."""
+        self._pending_lock = threading.Lock()
+        self._submission_lock = threading.RLock()
+        if self._inline_workers is not None:
+            self._inline_workers.after_fork_in_child()
+        if self._config.durability == "inline":
+            self._pending.clear()
+            self._inline_in_flight = 0
 
     # -- spool --------------------------------------------------------------
 
@@ -859,8 +870,8 @@ class ContentWriter:
         self.flush(timeout_s=self._config.shutdown_flush_timeout_s)
         self._closed = True
         self._wake.set()
-        if self._inline_pool is not None:
-            self._inline_pool.shutdown(wait=False)
+        if self._inline_workers is not None:
+            self._inline_workers.close()
         if self._worker is not None:
             self._worker.join(timeout=5.0)
         close = getattr(self._store, "close", None)
@@ -903,3 +914,77 @@ def _descriptor_from_json(doc: Mapping[str, Any]) -> ContentDescriptor:
 
 class _RetryLaterError(Exception):
     """Internal control flow: delivery failed but retries remain."""
+
+
+class _InlineWorkers:
+    """Up to ``size`` daemon threads running inline writes (spec 049 §7.1).
+
+    Daemon threads, so a slow or hung store never holds interpreter exit past
+    ``close()``'s bound. A forked child starts with fresh state: the parent's threads
+    do not exist there, and its locks may have been held at the fork."""
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+        self._closed = False
+        self._reset()
+
+    def _reset(self) -> None:
+        self._cond = threading.Condition(threading.Lock())
+        self._jobs: deque[Callable[[], None]] = deque()
+        self._live = 0
+        self._idle = 0
+
+    def after_fork_in_child(self) -> None:
+        self._reset()  # the parent's queued jobs are the parent's
+
+    def submit(self, job: Callable[[], None]) -> None:
+        """Queue ``job``; ``RuntimeError`` when closed or no worker can run it."""
+        with self._cond:
+            if self._closed:
+                raise RuntimeError("inline workers closed")
+            self._jobs.append(job)
+            if len(self._jobs) > self._idle and self._live < self._size:
+                try:
+                    threading.Thread(
+                        target=self._run, name="fabric-content-inline", daemon=True
+                    ).start()
+                except RuntimeError:
+                    if self._live == 0:
+                        self._jobs.pop()
+                        raise
+                else:
+                    self._live += 1
+            self._cond.notify()
+
+    def _run(self) -> None:
+        cond = self._cond  # a forked child replaces it; none of these threads exist there
+        while True:
+            with cond:
+                while not self._jobs:
+                    if self._closed:
+                        self._live -= 1
+                        return
+                    self._idle += 1
+                    cond.wait()
+                    self._idle -= 1
+                job = self._jobs.popleft()
+            with contextlib.suppress(BaseException):  # never lose a worker to a job
+                job()  # the job settles every outcome itself
+
+    def close(self) -> None:
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+
+
+# Writers whose inline workers must be rebuilt in a forked child.
+_FORK_AWARE: weakref.WeakSet[ContentWriter] = weakref.WeakSet()
+
+
+def _reset_writers_after_fork() -> None:
+    for writer in list(_FORK_AWARE):
+        writer._after_fork_in_child()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_writers_after_fork)
