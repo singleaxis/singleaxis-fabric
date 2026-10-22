@@ -33,6 +33,7 @@ import functools
 import importlib.util
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -41,9 +42,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from .._sequence import resolve_run_id
+from ._attrs import POINT_AIOHTTP
 from ._stream import _ABANDONED, Exchange, _capture_parent, _ensure_reaper, _Side
 
 if TYPE_CHECKING:
+    from . import WireHandle
     from ._transport import WireTee
 
 _LOG = logging.getLogger("fabric.wire")
@@ -59,17 +62,21 @@ _DECOMPRESS: contextvars.ContextVar[bool] = contextvars.ContextVar(
     "fabric_wire_aiohttp_decompress", default=True
 )
 _DECODED = frozenset({"gzip", "x-gzip", "deflate", "br", "zstd"})
+# The install whose capture manifest records this point's state changes (050 §3.8): the
+# handle that was active when aiohttp was patched (weakly held; cleared at unpatch).
+_OWNER: weakref.ref[WireHandle] | None = None
 
 
 class AiohttpExchange(Exchange):
     """An :class:`Exchange` fed by aiohttp's request and stream reader."""
 
     __slots__ = ("reader",)
+    point = POINT_AIOHTTP  # fabric.capture.point id (050 §3.9)
 
     def start(self, request: Any) -> None:
         """Context, ids and the request body; the request itself is never touched."""
         self.reader = None
-        self.started_ns = time.time_ns()
+        self.started_ns, self.started_mono = time.time_ns(), time.monotonic_ns()
         self.parent_context, self.trace_id = _capture_parent()
         scope = self.scope
         self.run_id = scope.run_id if scope else resolve_run_id(
@@ -88,6 +95,7 @@ class AiohttpExchange(Exchange):
         try:
             self.status_code = response.status
             headers = response.headers
+            self.note_request_id(headers)  # C40, opt-in: one named header, never the block
             encoding = (headers.get("Content-Encoding") or "identity").strip().lower()
             if encoding in _DECODED and _DECOMPRESS.get():
                 encoding = "identity"  # aiohttp hands the reader the decoded body
@@ -239,9 +247,28 @@ def installed() -> bool:
         return False
 
 
+def _installed_handle() -> WireHandle | None:
+    """The installed handle (``fabric.wire._HANDLE``), if any; never imports anything."""
+    return getattr(sys.modules.get(__package__ or ""), "_HANDLE", None)
+
+
+def _point_changed(handle: WireHandle | None, state: Any, reason: str) -> None:
+    """Record a state change of ``wire.py.aiohttp`` in ``handle``'s manifest chain
+    (050 §3.8: an aiohttp patch failure or unpatch); never raises."""
+    if handle is None:
+        return
+    with contextlib.suppress(Exception):
+        from .. import _manifest  # noqa: PLC0415 - _manifest imports fabric.wire
+
+        _manifest.capture_point_changed(handle, POINT_AIOHTTP, state, reason)
+
+
 def patch_aiohttp() -> bool:
     """Patch aiohttp when it is installed; idempotent, inert without an active tee. ``False``
-    when aiohttp is absent or could not be patched (one class-only warning)."""
+    when aiohttp is absent or could not be patched (one class-only warning, and a manifest
+    state change of the installed handle: ``unsupported`` when aiohttp lacks a patched
+    method, else ``failed``)."""
+    global _OWNER  # noqa: PLW0603
     with _PATCH_LOCK:
         if _PATCHED:
             return True
@@ -272,7 +299,13 @@ def patch_aiohttp() -> bool:
         except Exception as exc:
             _restore()
             _LOG.warning("fabric.wire: aiohttp not patched (%s)", type(exc).__name__)
+            if isinstance(exc, AttributeError):  # this aiohttp version lacks a target
+                _point_changed(_installed_handle(), "unsupported", "unsupported_version")
+            else:
+                _point_changed(_installed_handle(), "failed", "internal_error")
             return False
+        handle = _installed_handle()
+        _OWNER = weakref.ref(handle) if handle is not None else None
         return True
 
 
@@ -286,12 +319,18 @@ def _restore() -> None:
 def unpatch_aiohttp() -> None:
     """Restore the originals. Exchanges in progress can no longer be fed (their readers'
     callbacks are gone): each is a ``shutdown`` loss now, and nothing of it (reader,
-    retained bytes, response) stays referenced here."""
+    retained bytes, response) stays referenced here. The handle that patched it records
+    the point ``disabled`` (``shutdown``) in its capture manifest."""
+    global _OWNER
     with _PATCH_LOCK:
+        was_patched = bool(_PATCHED)
         _restore()
         stranded = list(_READERS.values())
         _READERS.clear()
         _SENT.clear()
+        owner, _OWNER = _OWNER, None
+    if was_patched and owner is not None:
+        _point_changed(owner(), "disabled", "shutdown")
     for exchange in stranded:
         exchange.reader = None
         exchange.tee.shut(exchange)

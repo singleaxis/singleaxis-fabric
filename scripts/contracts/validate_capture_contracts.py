@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contracts import p1_reference as ref  # noqa: E402
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.3.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.4.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
