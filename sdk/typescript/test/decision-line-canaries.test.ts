@@ -43,7 +43,18 @@ const CANARIES = {
   tag: "canary:CANARY-tag-q8z",
   memoryTag: "CANARY-memory-tag-q8z",
   exception: "CANARY-exception-text-q8z",
+  previousResponse: "CANARY-prev-q8z",
+  response: "CANARY-response-q8z",
+  toolCall: "CANARY-call-q8z",
+  request: "CANARY-request-q8z",
+  sideEffectId: "CANARY-effect-q8z",
+  targetSystem: "CANARY-patient-crm-q8z",
+  operation: "CANARY-update-jane-q8z",
+  metadata: "CANARY-metadata-q8z",
 };
+/** Governed content keeps its bindings (request, tool call) as given: the
+ * content store is the customer's destination for content (spec 049 §2.9). */
+const CONTENT_BINDINGS = new Set(["request", "toolCall"]);
 const PAYLOADS = ["yes", "no", "CANARY-payload-q8z"]; // low entropy: digests are lookups
 const DIGESTS = PAYLOADS.map((p) => sha256Hex(p));
 const providers: BasicTracerProvider[] = [];
@@ -64,24 +75,35 @@ function exercise(fabric: Fabric): void {
   };
   expect(() =>
     fabric.execution({}, () =>
-      fabric.decision({ sessionId: "s", requestId: "r" }, (d: Decision) => {
+      fabric.decision({ sessionId: "s", requestId: CANARIES.request }, (d: Decision) => {
         d.recordSideEffect({
           type: "other",
-          targetSystem: "crm",
-          operation: "update",
+          targetSystem: CANARIES.targetSystem,
+          operation: CANARIES.operation,
           idempotencyKey: CANARIES.idempotency,
+          sideEffectId: CANARIES.sideEffectId,
+          parentToolCallId: CANARIES.toolCall,
           requestPayload: PAYLOADS[0],
           resultPayload: PAYLOADS[1],
         });
+        d.recordReplayMetadata();
         expect(() =>
-          d.toolCall("lookup", {}, (tool) => {
+          d.toolCall(CANARIES.toolName, { callId: CANARIES.toolCall }, (tool) => {
             tool.setIdempotency({ idempotent: true, key: CANARIES.toolIdempotency });
             tool.setArguments(PAYLOADS[0]!);
             tool.setResult(PAYLOADS[1]!);
             raise();
           }),
         ).toThrow(CanaryError);
-        expect(() => d.llmCall({ provider: "openai", model: "m" }, raise)).toThrow(CanaryError);
+        expect(() =>
+          d.llmCall(
+            { provider: "openai", model: "m", previousResponseId: CANARIES.previousResponse },
+            (llm) => {
+              llm.setResponse({ responseId: CANARIES.response });
+              raise();
+            },
+          ),
+        ).toThrow(CanaryError);
         d.recordRetrieval({
           source: "rag",
           query: PAYLOADS[2]!,
@@ -96,7 +118,11 @@ function exercise(fabric: Fabric): void {
         });
         d.recall({ kind: MemoryKind.SEMANTIC, key: "k", content: PAYLOADS[1]! });
         d.checkpoint(CANARIES.step);
-        d.recordInteraction("message.send", "t", { payload: PAYLOADS[2], tags: [CANARIES.tag] });
+        d.recordInteraction("message.send", "t", {
+          payload: PAYLOADS[2],
+          tags: [CANARIES.tag],
+          metadata: { note: CANARIES.metadata },
+        });
         d.recordMcpInventory({
           server: "srv",
           transport: "stdio",
@@ -132,8 +158,9 @@ function files(root: string): string {
   return out.join("\n");
 }
 
-function assertClean(haystack: string, where: string): void {
+function assertClean(haystack: string, where: string, skip = new Set<string>()): void {
   for (const [name, canary] of Object.entries(CANARIES)) {
+    if (skip.has(name)) continue;
     expect(haystack, `${name} canary in ${where}`).not.toContain(canary);
   }
   for (const digest of DIGESTS) {
@@ -184,7 +211,7 @@ describe("decision-line privacy canaries", () => {
       assertClean(lines.join("\n"), "console output");
       const written = files(h.root);
       expect(written.length).toBeGreaterThan(0);
-      assertClean(written, "spool and store");
+      assertClean(written, "spool and store", CONTENT_BINDINGS);
     });
   }
 
@@ -194,7 +221,8 @@ describe("decision-line privacy canaries", () => {
     await h.fabric.close();
     const blob = telemetry(h.exporter);
     for (const [name, canary] of Object.entries(CANARIES)) {
-      if (name === "exception") continue; // TS never exports exception text, in any mode
+      // TS never exports exception text, and metadata is only ever hashed.
+      if (name === "exception" || name === "metadata") continue;
       expect(blob, name).toContain(canary);
     }
     expect(blob).toContain(DIGESTS[2]);
