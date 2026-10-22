@@ -295,8 +295,10 @@ Put the Node's S3 writer role on `otel-collector.serviceAccount.annotations`
 S3-compatible store. `matchLabels` values must be strings (`"true"`; use
 `--set-string` on the command line).
 
-The chart does not check that `sourceId` has the `s-<32 hex>` form; a wrong
-value renders, and then every agent batch is refused at the Node.
+Under pseudonymous capture labels (the default) the chart refuses a
+`sourceId` that is not `s-<32 hex>`. It cannot check that the value matches
+your agents' key: a well-formed but wrong value renders, and then every agent
+batch is refused at the Node.
 
 Creating the certificates and Secrets with self-managed CAs (use your own
 PKI if you have one; keep CA keys off the cluster):

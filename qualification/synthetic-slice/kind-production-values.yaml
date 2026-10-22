@@ -12,10 +12,20 @@ otel-collector:
     tag: ""
     digest: ""
     pullPolicy: Never
+  # Spec 049 §7.9: the production ingress is bound to one tenant and source.
+  # The custom-agent smoke (scripts/qualification/run_custom_agent_smoke.py)
+  # is an explicit-line recorder that runs without FABRIC_WIRE_ID_KEY and so
+  # emits its ids as given: tenant `synthetic`, source `dispatcher`. Clear
+  # capture labels are the Node counterpart; the labels are synthetic and
+  # hold no personal data.
+  fabric:
+    guard:
+      captureLabels: clear
   receiver:
     workloadAuthentication:
-      tenantId: synthetic-tenant
+      tenantId: synthetic
       workloadId: synthetic-pilot-client
+      sourceId: dispatcher
       identityAttestationRef: synthetic-fixture-credential-review-only
       tokenSecret:
         name: fabric-workload-token
