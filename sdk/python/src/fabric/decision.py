@@ -134,6 +134,7 @@ from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
 from ._identity import IdentityPolicy, record_exception
 from ._safe_log import exc_class, safe_log
+from ._safe_span import SafeSpan, SpanScope, child_span, log_recording_error
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .memory import MemoryKind, MemoryRecord
@@ -481,8 +482,7 @@ class Decision(AbstractContextManager["Decision"]):
         # ``fabric.parent_decision_id`` so the child's spans link back to
         # the delegating parent across the service boundary.
         self._parent_context = parent_context
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        self._span: SafeSpan | None = None
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
         self._side_effects: list[SideEffectRecord] = []
@@ -511,6 +511,9 @@ class Decision(AbstractContextManager["Decision"]):
         # (never raised, spec 049 §7.1). Sequential calls never contend.
         # See ``_exclusive`` and the module concurrency contract.
         self._busy = threading.Lock()
+        # Recording failures caught fail-open (049 §7.1 rule 3); any makes capture partial.
+        self._internal_errors = 0
+        self._scope = SpanScope(self._note_internal_error)
         self._concurrent_use = 0
         self._concurrent_use_lock = threading.Lock()  # O(1) counter update only
         # Lifecycle flag: "new" before enter, "open" between enter/exit,
@@ -565,6 +568,11 @@ class Decision(AbstractContextManager["Decision"]):
                 "the overlapping call was recorded without serialisation and the "
                 "decision's rolling counters may be off (see Decision.capture_health)",
             )  # fmt: skip
+
+    def _note_internal_error(self, exc: BaseException) -> None:
+        """A recording step failed and was skipped (049 §7.1 rule 3): count it, class-only."""
+        self._internal_errors += 1
+        log_recording_error(exc)
 
     @property
     def concurrent_use_count(self) -> int:
@@ -648,16 +656,17 @@ class Decision(AbstractContextManager["Decision"]):
         self._started_at_rfc3339 = _rfc3339_now()
         tracer = self._client.tracer
         # We own exception recording, so disable the tracer's automatic
-        # handler to avoid duplicate exception events.
-        self._cm = tracer.start_as_current_span(
+        # handler to avoid duplicate exception events. Fail-open (049 §7.1):
+        # a failing tracer yields a non-recording span, never an exception.
+        self._span = self._scope.enter(
+            tracer,
             SPAN_NAME,
             kind=SpanKind.INTERNAL,
             record_exception=False,
             set_status_on_exception=False,
         )
-        self._span = self._cm.__enter__()
-        self._recording_at_start = recording_state(self._span)
-        self._capture_health = capture_health(self._span, self._recording_at_start)
+        self._recording_at_start = recording_state(self._span.inner)
+        self._capture_health = capture_health(self._span.inner, self._recording_at_start)
         warn_capture_health(self._capture_health)
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
         self._span.set_attribute(ATTR_DECISION_ID, self._decision_id)
@@ -738,30 +747,39 @@ class Decision(AbstractContextManager["Decision"]):
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool | None:
-        if self._span is None or self._cm is None:  # pragma: no cover
+        span = self._span
+        if span is None:  # pragma: no cover
             return None
+        # Fail-open (049 §7.1): nothing below raises, and the return value is
+        # falsy, so the application's own exception propagates unchanged.
         if exc is not None:
             # ``error.type`` mirrors the GenAI error convention; it also
             # covers non-``Exception`` exits (CancelledError & friends),
             # which we already record so cancellations stay visible.
-            self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
-            self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
+            span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
+            span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
             # 049 §7.6: class only in the pseudonymous mode (no message, no stack).
-            record_exception(self._span, exc, clear=self._identity.clear)
+            record_exception(span, exc, clear=self._identity.clear)
         # Governed content: write the transcript manifest and stamp its
         # ref before the span ends. Pending items stay pending — honest
         # gap, never claimed delivered (spec 032 §5).
         if self._content_sink is not None:
-            self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
-        result = self._cm.__exit__(exc_type, exc, tb)
-        self._capture_health = capture_health(
-            self._span, self._recording_at_start, concurrent_use=self._concurrent_use
-        )
-        warn_capture_health(self._capture_health)
+            try:
+                self._content_sink.close(decision_span=span, closed_at=_rfc3339_now())
+            except Exception as failure:
+                self._note_internal_error(failure)
+        self._scope.exit(exc)
+        try:
+            self._capture_health = capture_health(
+                span.inner, self._recording_at_start,
+                concurrent_use=self._concurrent_use + self._internal_errors,
+            )  # fmt: skip
+            warn_capture_health(self._capture_health)
+        except Exception as failure:  # pragma: no cover - capture_health never raises
+            self._note_internal_error(failure)
         self._span = None
-        self._cm = None
         self._state = "closed"
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #
@@ -1031,18 +1049,22 @@ class Decision(AbstractContextManager["Decision"]):
         """
         if content is None:
             return None
-        sink = self._governed_sink()
-        if sink is None:
+        try:
+            sink = self._governed_sink()
+            if sink is None:
+                return None
+            return sink.capture(
+                role,
+                content,
+                media_type=media_type,
+                bindings=self._content_bindings(bindings),
+                links=links,
+                status_reason=status_reason,
+                representation=representation,
+            )
+        except Exception as exc:  # 049 §7.1: a capture failure is a loss, never an error
+            self._note_internal_error(exc)
             return None
-        return sink.capture(
-            role,
-            content,
-            media_type=media_type,
-            bindings=self._content_bindings(bindings),
-            links=links,
-            status_reason=status_reason,
-            representation=representation,
-        )
 
     @property
     def governed_capture(self) -> bool:
@@ -1175,10 +1197,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_CONTENT_REF] = retrieval_ref
             span.add_event("fabric.retrieval", attributes=event_attrs)
             semantic_name = f"retrieval {data_source_id}" if data_source_id else "retrieval"
-            with self._client.tracer.start_as_current_span(
-                semantic_name,
-                kind=SpanKind.CLIENT,
-            ) as retrieval_span:
+            with child_span(
+                self._client.tracer, semantic_name, kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as retrieval_span:  # fmt: skip
                 retrieval_span.set_attribute("gen_ai.operation.name", "retrieval")
                 if data_source_id is not None:
                     retrieval_span.set_attribute("gen_ai.data_source.id", data_source_id)
@@ -1293,9 +1315,10 @@ class Decision(AbstractContextManager["Decision"]):
             if content_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
-            with self._client.tracer.start_as_current_span(
-                "create_memory", kind=SpanKind.CLIENT
-            ) as memory_span:
+            with child_span(
+                self._client.tracer, "create_memory", kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as memory_span:  # fmt: skip
                 memory_span.set_attribute("gen_ai.operation.name", "create_memory")
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
                 if store_id is not None and (store := self._identity.id("mst", store_id)):
@@ -1383,9 +1406,10 @@ class Decision(AbstractContextManager["Decision"]):
             if content_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
-            with self._client.tracer.start_as_current_span(
-                "search_memory", kind=SpanKind.CLIENT
-            ) as memory_span:
+            with child_span(
+                self._client.tracer, "search_memory", kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as memory_span:  # fmt: skip
                 memory_span.set_attribute("gen_ai.operation.name", "search_memory")
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
@@ -1458,9 +1482,10 @@ class Decision(AbstractContextManager["Decision"]):
             if record.tenant_scope:
                 event_attrs["fabric.memory.tenant_scope"] = True
             span.add_event("fabric.memory", attributes=event_attrs)
-            with self._client.tracer.start_as_current_span(
-                "delete_memory", kind=SpanKind.CLIENT
-            ) as memory_span:
+            with child_span(
+                self._client.tracer, "delete_memory", kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as memory_span:  # fmt: skip
                 memory_span.set_attribute("gen_ai.operation.name", "delete_memory")
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
@@ -2067,7 +2092,10 @@ class Decision(AbstractContextManager["Decision"]):
                 parent_agent_id=self.agent_id,
             )
             carrier: dict[str, str] = {}
-            inject(carrier, context)
+            try:
+                inject(carrier, context)
+            except Exception as exc:  # 049 §7.1: the delegation proceeds without a carrier
+                self._note_internal_error(exc)
 
             depth = self._delegation_depth + 1
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
@@ -2415,6 +2443,7 @@ class Decision(AbstractContextManager["Decision"]):
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
             identity=self._identity,
+            on_recording_error=self._note_internal_error,
         )
 
     def embeddings(
@@ -2502,6 +2531,7 @@ class Decision(AbstractContextManager["Decision"]):
             extra_attributes=extra or None,
             identity=self._identity,
             retains_original=self._retains_original,
+            on_recording_error=self._note_internal_error,
         )
 
     # -- OTel passthrough -------------------------------------------------

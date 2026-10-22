@@ -98,6 +98,7 @@ import {
   GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY,
 } from "./attributes.js";
 import { sha256Hex } from "./hash.js";
+import { safeStartSpan } from "./safe-span.js";
 import { ATTR_CONTENT_REQUEST_REF, ATTR_CONTENT_RESULT_REF } from "./attributes.js";
 import { type CrossCuttingOptions } from "./crosscut.js";
 import { type IdentityPolicy } from "./identity.js";
@@ -649,7 +650,9 @@ export function startLlmSpan(
   validateStepMetadata(options);
   const emitLegacyAttributes = options.emitLegacyAttributes ?? true;
 
-  const span = tracer.startSpan(`${operationName} ${options.model}`, { kind: SpanKind.CLIENT });
+  const span = safeStartSpan(tracer, `${operationName} ${options.model}`, {
+    kind: SpanKind.CLIENT,
+  });
   span.setAttribute(GEN_AI_OPERATION_NAME, operationName);
   span.setAttribute(GEN_AI_PROVIDER_NAME, provider);
   span.setAttribute(GEN_AI_REQUEST_MODEL, options.model);
@@ -726,7 +729,7 @@ export function startToolSpan(
     throw new Error("toolCall: name is required");
   }
   validateStepMetadata(options);
-  const span = tracer.startSpan(name, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, name, { kind: SpanKind.INTERNAL });
   span.setAttribute(GEN_AI_OPERATION_NAME, "execute_tool");
   span.setAttribute(GEN_AI_TOOL_NAME, name);
   span.setAttribute(FABRIC_TOOL_NAME, name);

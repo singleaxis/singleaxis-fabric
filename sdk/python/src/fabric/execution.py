@@ -77,6 +77,7 @@ from ._attributes import (
     check_attribute_keys,
 )
 from ._identity import IdentityPolicy, record_exception
+from ._safe_span import SafeSpan, SpanScope
 
 if TYPE_CHECKING:
     from opentelemetry.trace import Span, Tracer
@@ -270,8 +271,8 @@ class Execution(AbstractContextManager["Execution"]):
         # clobber SDK-owned identity; config-level extras were already
         # validated at ``FabricConfig`` build time.
         self._extra_attrs = check_attribute_keys({**config.extra, **(attributes or {})})
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        self._span: SafeSpan | None = None
+        self._cm: SpanScope | None = None
         self._token: contextvars.Token[_ActiveExecution | None] | None = None
         self._state = "new"
 
@@ -287,13 +288,15 @@ class Execution(AbstractContextManager["Execution"]):
         tracer = self._client.tracer
         # We own status recording (completed/failed), so disable the
         # tracer's auto-record to avoid it clobbering our description.
-        self._cm = tracer.start_as_current_span(
+        # Fail-open (049 §7.1): a failing tracer yields a non-recording span.
+        self._cm = SpanScope()
+        self._span = self._cm.enter(
+            tracer,
             SPAN_NAME,
             kind=SpanKind.INTERNAL,
             record_exception=False,
             set_status_on_exception=False,
         )
-        self._span = self._cm.__enter__()
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
@@ -350,14 +353,14 @@ class Execution(AbstractContextManager["Execution"]):
             record_exception(self._span, exc, clear=identity.clear)
         else:
             self._span.set_attribute(ATTR_EXECUTION_STATUS, STATUS_COMPLETED)
-        result = self._cm.__exit__(exc_type, exc, tb)
+        self._cm.exit(exc)  # never raises: the application's exception propagates as is
         if self._token is not None:
             _ACTIVE_EXECUTION.reset(self._token)
             self._token = None
         self._span = None
         self._cm = None
         self._state = "closed"
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #

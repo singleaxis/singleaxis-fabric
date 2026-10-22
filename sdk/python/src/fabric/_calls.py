@@ -36,6 +36,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from ._attributes import check_attribute_key
 from ._hashes import sha256_hex
 from ._identity import IdentityPolicy, record_exception
+from ._safe_span import SafeSpan, SpanScope, log_recording_error
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, Meter
@@ -310,6 +311,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
         identity: IdentityPolicy | None = None,
+        on_recording_error: Callable[[BaseException], None] | None = None,
     ) -> None:
         if not provider:
             raise ValueError("LLMCall: provider is required (e.g. 'anthropic')")
@@ -361,8 +363,9 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._step_retry_previous_attempt_id = step_retry_previous_attempt_id
         # 049 §2.9/§7.6: the decision's identity policy (standalone: from the environment).
         self._identity = identity or IdentityPolicy.resolve(None, None, os.environ)
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        self._on_error = on_recording_error or log_recording_error
+        self._span: SafeSpan | None = None
+        self._cm: SpanScope | None = None
         self._started_at: float | None = None
         self._response_model: str | None = None
         self._input_tokens: int | None = None
@@ -372,27 +375,30 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._duration_histogram: Histogram | None = None
         self._ttft_histogram: Histogram | None = None
         self._chunk_histogram: Histogram | None = None
-        if meter is not None:
-            self._token_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_TOKEN_USAGE,
-                unit="{token}",
-                description="Number of input and output tokens used.",
-            )
-            self._duration_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_OPERATION_DURATION,
-                unit="s",
-                description="GenAI operation duration.",
-            )
-            self._ttft_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_TIME_TO_FIRST_CHUNK,
-                unit="s",
-                description="Time from request issuance to the first response chunk.",
-            )
-            self._chunk_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_TIME_PER_OUTPUT_CHUNK,
-                unit="s",
-                description="Time elapsed between output chunks.",
-            )
+        try:  # fail-open (049 §7.1): no metrics rather than an error
+            if meter is not None:
+                self._token_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_TOKEN_USAGE,
+                    unit="{token}",
+                    description="Number of input and output tokens used.",
+                )
+                self._duration_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_OPERATION_DURATION,
+                    unit="s",
+                    description="GenAI operation duration.",
+                )
+                self._ttft_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_TIME_TO_FIRST_CHUNK,
+                    unit="s",
+                    description="Time from request issuance to the first response chunk.",
+                )
+                self._chunk_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_TIME_PER_OUTPUT_CHUNK,
+                    unit="s",
+                    description="Time elapsed between output chunks.",
+                )
+        except Exception as failure:
+            self._on_error(failure)
 
     def __enter__(self) -> Self:  # noqa: PLR0912
         if self._cm is not None:
@@ -404,13 +410,14 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             )
         # The OTel default records the message and stack (and the message in the status):
         # only in the clear identity mode; otherwise ``__exit__`` records the class only.
-        self._cm = self._tracer.start_as_current_span(
+        self._cm = SpanScope(self._on_error)  # fail-open (049 §7.1)
+        self._span = self._cm.enter(
+            self._tracer,
             f"{self._operation_name} {self._model}",
             kind=SpanKind.CLIENT,
             record_exception=self._identity.clear,
             set_status_on_exception=self._identity.clear,
         )
-        self._span = self._cm.__enter__()
         self._started_at = time.perf_counter()
         # Standard GenAI conventions
         self._span.set_attribute(GEN_AI_OPERATION_NAME, self._operation_name)
@@ -586,26 +593,30 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 if not isinstance(exc, Exception) or not self._identity.clear:
                     record_exception(span, exc, clear=self._identity.clear)
                     span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
-        if elapsed is not None and self._duration_histogram is not None:
-            self._duration_histogram.record(elapsed, attributes=metric_attrs)
-        if self._token_histogram is not None:
-            if self._input_tokens is not None:
-                self._token_histogram.record(
-                    self._input_tokens,
-                    attributes={**metric_attrs, "gen_ai.token.type": "input"},
-                )
-            if self._output_tokens is not None:
-                self._token_histogram.record(
-                    self._output_tokens,
-                    attributes={**metric_attrs, "gen_ai.token.type": "output"},
-                )
-        if self._ttft_seconds is not None and self._ttft_histogram is not None:
-            self._ttft_histogram.record(self._ttft_seconds, attributes=metric_attrs)
-        result = self._cm.__exit__(exc_type, exc, tb)
+        try:  # fail-open (049 §7.1): a metric failure never reaches the application
+            if elapsed is not None and self._duration_histogram is not None:
+                self._duration_histogram.record(elapsed, attributes=metric_attrs)
+            if self._token_histogram is not None:
+                if self._input_tokens is not None:
+                    self._token_histogram.record(
+                        self._input_tokens,
+                        attributes={**metric_attrs, "gen_ai.token.type": "input"},
+                    )
+                if self._output_tokens is not None:
+                    self._token_histogram.record(
+                        self._output_tokens,
+                        attributes={**metric_attrs, "gen_ai.token.type": "output"},
+                    )
+            if self._ttft_seconds is not None and self._ttft_histogram is not None:
+                self._ttft_histogram.record(self._ttft_seconds, attributes=metric_attrs)
+        except Exception as failure:
+            self._on_error(failure)
+        # Never raises; a falsy return lets the application's exception propagate as is.
+        self._cm.exit(exc)
         self._span = None
         self._cm = None
         self._started_at = None
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #
@@ -860,14 +871,17 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         if elapsed_ms < 0:
             raise ValueError("elapsed_ms must be non-negative")
         if self._chunk_histogram is not None:
-            self._chunk_histogram.record(
-                float(elapsed_ms) / 1000.0,
-                attributes={
-                    GEN_AI_OPERATION_NAME: self._operation_name,
-                    GEN_AI_PROVIDER_NAME: self._provider,
-                    GEN_AI_REQUEST_MODEL: self._model,
-                },
-            )
+            try:  # fail-open (049 §7.1)
+                self._chunk_histogram.record(
+                    float(elapsed_ms) / 1000.0,
+                    attributes={
+                        GEN_AI_OPERATION_NAME: self._operation_name,
+                        GEN_AI_PROVIDER_NAME: self._provider,
+                        GEN_AI_REQUEST_MODEL: self._model,
+                    },
+                )
+            except Exception as failure:
+                self._on_error(failure)
 
     def set_retry(self, *, count: int, reason: str | None = None) -> None:
         """Record per-call provider/transport retries for this LLM call.
@@ -939,6 +953,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         extra_attributes: dict[str, str | int | float | bool | tuple[str, ...]] | None = None,
         identity: IdentityPolicy | None = None,
         retains_original: Callable[[str], bool] | None = None,
+        on_recording_error: Callable[[BaseException], None] | None = None,
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
@@ -979,16 +994,20 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         # 049 §7.5: whether a role retains the original, so its digest may be emitted
         # (the decision's rule; standalone, only the clear identity mode keeps digests).
         self._retains_original = retains_original or (lambda _role: self._identity.clear)
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        self._on_error = on_recording_error or log_recording_error
+        self._span: SafeSpan | None = None
+        self._cm: SpanScope | None = None
         self._started_at: float | None = None
         self._duration_histogram: Histogram | None = None
-        if meter is not None:
-            self._duration_histogram = meter.create_histogram(
-                GEN_AI_EXECUTE_TOOL_DURATION,
-                unit="s",
-                description="Duration of a single tool execution.",
-            )
+        try:  # fail-open (049 §7.1): no metrics rather than an error
+            if meter is not None:
+                self._duration_histogram = meter.create_histogram(
+                    GEN_AI_EXECUTE_TOOL_DURATION,
+                    unit="s",
+                    description="Duration of a single tool execution.",
+                )
+        except Exception as failure:
+            self._on_error(failure)
 
     def __enter__(self) -> Self:
         if self._cm is not None:
@@ -997,13 +1016,14 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 "(do not nest `with tool:` on the same instance)"
             )
         # As LLMCall: the OTel exception default only in the clear identity mode.
-        self._cm = self._tracer.start_as_current_span(
+        self._cm = SpanScope(self._on_error)  # fail-open (049 §7.1)
+        self._span = self._cm.enter(
+            self._tracer,
             self._name,
             kind=SpanKind.INTERNAL,
             record_exception=self._identity.clear,
             set_status_on_exception=self._identity.clear,
         )
-        self._span = self._cm.__enter__()
         self._started_at = time.perf_counter()
         self._span.set_attribute(GEN_AI_OPERATION_NAME, "execute_tool")
         self._span.set_attribute(GEN_AI_TOOL_NAME, self._name)
@@ -1066,15 +1086,19 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 attrs["gen_ai.agent.name"] = self._agent_name
             if exc is not None:
                 attrs[ERROR_TYPE] = type(exc).__name__
-            self._duration_histogram.record(
-                time.perf_counter() - self._started_at,
-                attributes=attrs,
-            )
-        result = self._cm.__exit__(exc_type, exc, tb)
+            try:  # fail-open (049 §7.1)
+                self._duration_histogram.record(
+                    time.perf_counter() - self._started_at,
+                    attributes=attrs,
+                )
+            except Exception as failure:
+                self._on_error(failure)
+        # Never raises; a falsy return lets the application's exception propagate as is.
+        self._cm.exit(exc)
         self._span = None
         self._cm = None
         self._started_at = None
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #
