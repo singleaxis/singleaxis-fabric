@@ -200,6 +200,12 @@ Node with `identity_mode: clear` so it keeps admitting the clear values.
   (`capture_health`, `concurrent_use_count`); no telemetry key reports them
   yet.
 - LLM span names carry the request model (`{operation} {model}`) as given.
+- On a pseudonymous Node, fabricguard does not restrict the values of the
+  bare log envelope keys (`decision_id`, `request_id` and similar). No Fabric
+  SDK emits them; a third-party log source that does is admitted as given.
+- Python `process` and `spooled` durability: the background content worker
+  is not restarted in a forked child. Writes from the child are reported
+  pending or dropped (never as stored); fixed in v0.8.2.
 
 ### v0.8.0 release notes (draft)
 
