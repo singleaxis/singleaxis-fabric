@@ -100,6 +100,7 @@ import {
 import { sha256Hex } from "./hash.js";
 import { ATTR_CONTENT_REQUEST_REF, ATTR_CONTENT_RESULT_REF } from "./attributes.js";
 import { type CrossCuttingOptions } from "./crosscut.js";
+import { type IdentityPolicy } from "./identity.js";
 import {
   assertIntAtLeast,
   assertNonEmpty,
@@ -435,6 +436,8 @@ export class ToolCall {
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly governedCapture?: GovernedCaptureFn,
+    /** The decision's identity policy (049 §2.9); absent: values as given. */
+    private readonly ids?: IdentityPolicy,
   ) {}
 
   /** Record how many results/items the tool returned. */
@@ -516,7 +519,9 @@ export class ToolCall {
     this.span.setAttribute(FABRIC_TOOL_IDEMPOTENT, options.idempotent);
     if (options.key !== undefined) {
       assertNonEmpty("idempotency key", options.key);
-      this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, options.key);
+      // Caller data: `lbl-` when pseudonymous, omitted without a key.
+      const key = this.ids === undefined ? options.key : this.ids.opaque(options.key);
+      if (key !== undefined) this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key);
     }
   }
 

@@ -122,10 +122,15 @@ export interface CrossCuttingResolution {
 export function applyCrossCutting(
   attrs: Record<string, AttrValue>,
   options: CrossCuttingOptions,
+  label?: (tag: string) => string | undefined,
 ): CrossCuttingResolution {
   const tags = normalizeTags(options.tags);
-  if (tags.length > 0) {
-    attrs[ATTR_TAGS] = tags;
+  // 049 §4.2: tags are operator labels (`lbl-` when pseudonymous); a tag
+  // `label` maps to undefined is omitted. No `label` keeps them as given.
+  const emitted =
+    label === undefined ? tags : tags.map(label).filter((tag): tag is string => tag !== undefined);
+  if (emitted.length > 0) {
+    attrs[ATTR_TAGS] = emitted;
   }
 
   let baselineStatus: BaselineStatus | undefined;

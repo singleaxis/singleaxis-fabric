@@ -12,14 +12,16 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ._sequence import (
+    LABELS_ENV,
     IdentityMode,
     check_id_key,
     id_key_from_env,
     identity_mode_from_env,
+    label_pseudonym,
     pseudonym_v2,
 )
 
@@ -33,16 +35,21 @@ class IdentityPolicy:
 
     mode: IdentityMode = "pseudonymous"
     key: bytes | None = field(default=None, repr=False)
+    # ``FABRIC_WIRE_LABELS=clear`` (049 §2.9 rule 7, §4.2): operator labels as chosen.
+    labels_clear: bool = False
 
     @classmethod
     def resolve(
         cls, mode: IdentityMode | None, key: bytes | None, environ: Mapping[str, str]
     ) -> IdentityPolicy:
         """``mode``/``key`` as given, else from ``FABRIC_IDENTITY_MODE`` and
-        ``FABRIC_WIRE_ID_KEY``; an invalid value raises ``ValueError`` (fixed text)."""
+        ``FABRIC_WIRE_ID_KEY``; an invalid value raises ``ValueError`` (fixed text).
+        ``FABRIC_WIRE_LABELS=clear`` keeps operator labels clear; any other value of it is
+        ignored here (the decision line never failed on it)."""
         policy = cls(
             mode if mode is not None else identity_mode_from_env(environ),
             check_id_key(key) if key is not None else id_key_from_env(environ),
+            (environ.get(LABELS_ENV) or "").strip() == "clear",
         )
         if policy.mode == "pseudonymous" and policy.key is None and not _WARNED.is_set():
             _WARNED.set()  # class-only text, once per process
@@ -59,3 +66,21 @@ class IdentityPolicy:
     def id(self, prefix: str, value: str) -> str | None:
         """``value`` as emitted: clear, its v2 pseudonym, or ``None`` (omitted)."""
         return value if self.clear else pseudonym_v2(prefix, value, self.key)
+
+    def opaque(self, value: str) -> str | None:
+        """A caller id whose type has no v2 prefix yet (idempotency key, document id) as
+        emitted: clear, the keyed generic label ``lbl-`` (049 §2.9 rule 3), or ``None``
+        without a key (an unkeyed hash of a low-entropy id is not a pseudonym)."""
+        if self.clear:
+            return value
+        return label_pseudonym("lbl-", value, self.key) if self.key is not None else None
+
+    def label(self, value: str) -> str | None:
+        """An operator label (step name, tool name, tag; 049 §4.2) as emitted: clear in
+        the ``clear`` mode or with ``FABRIC_WIRE_LABELS=clear``, else the keyed ``lbl-``
+        label, or ``None`` without a key."""
+        return value if self.labels_clear else self.opaque(value)
+
+    def labels(self, values: Iterable[str]) -> tuple[str, ...]:
+        """Each of ``values`` as :meth:`label` emits it; the omitted ones dropped."""
+        return tuple(emitted for value in values if (emitted := self.label(value)) is not None)

@@ -1136,8 +1136,13 @@ class Decision(AbstractContextManager["Decision"]):
             }
             if record.result_hashes:
                 event_attrs["fabric.retrieval.result_hashes"] = record.result_hashes
-            if record.source_document_ids:
-                event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
+            document_ids = tuple(
+                emitted
+                for doc_id in record.source_document_ids
+                if (emitted := self._identity.opaque(doc_id)) is not None
+            )
+            if document_ids:
+                event_attrs["fabric.retrieval.source_document_ids"] = document_ids
             if record.latency_ms is not None:
                 event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
             retrieval_ref = results_ref or query_ref
@@ -1249,8 +1254,8 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.key is not None and (memory_key := self._identity.id("mkey", record.key)):
                 event_attrs["fabric.memory.key"] = memory_key
-            if record.tags:
-                event_attrs["fabric.memory.tags"] = record.tags
+            if memory_tags := self._identity.labels(record.tags):
+                event_attrs["fabric.memory.tags"] = memory_tags
             if record.ttl_seconds is not None:
                 event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
             if record.invalidates is not None and (
@@ -1265,8 +1270,8 @@ class Decision(AbstractContextManager["Decision"]):
             ) as memory_span:
                 memory_span.set_attribute("gen_ai.operation.name", "create_memory")
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if key is not None and (record_id := self._identity.id("mkey", key)):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 if provider is not None:
@@ -1355,8 +1360,8 @@ class Decision(AbstractContextManager["Decision"]):
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
                 if capture_content:
@@ -1430,8 +1435,8 @@ class Decision(AbstractContextManager["Decision"]):
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
             return record
@@ -1573,8 +1578,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs["fabric.side_effect.request_hash"] = record.request_hash
             if record.result_hash is not None:
                 event_attrs["fabric.side_effect.result_hash"] = record.result_hash
-            if record.idempotency_key is not None:
-                event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
+            if record.idempotency_key is not None and (
+                idempotency_key := self._identity.opaque(record.idempotency_key)
+            ):
+                event_attrs["fabric.side_effect.idempotency_key"] = idempotency_key
             if record.parent_tool_call_id is not None:
                 event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
             if request_ref is not None:
@@ -1624,8 +1631,10 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
-                "fabric.checkpoint.step_name": event.step_name,
             }
+            # 049 §4.2: the step name is an operator label (``lbl-`` when pseudonymous).
+            if (emitted_step := self._identity.label(event.step_name)) is not None:
+                event_attrs["fabric.checkpoint.step_name"] = emitted_step
             if event.state_hash is not None:
                 event_attrs["fabric.checkpoint.state_hash"] = event.state_hash
 
@@ -1826,8 +1835,9 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_METADATA_HASH] = _sha256_hex(canonical)
 
             resolved = apply_cross_cutting(
-                event_attrs, tags=tags, baseline=baseline, signature=signature
-            )
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.interaction", attributes=event_attrs)
 
             # Improvement loop: a one-shot, low-rate coverage signal.
@@ -1959,7 +1969,10 @@ class Decision(AbstractContextManager["Decision"]):
                 )
             if signed is not None:
                 event_attrs[ATTR_SKILL_SIGNED] = signed
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.skill", attributes=event_attrs)
 
     def _open_delegation(
@@ -2020,7 +2033,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_DELEGATION_TO_AGENT] = agent
             event_attrs[ATTR_DELEGATION_PROTOCOL] = protocol
             event_attrs[ATTR_DELEGATION_DEPTH] = depth
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             self._delegation_count += 1
             self._delegation_depth += 1
             span.set_attribute(ATTR_DELEGATION_COUNT, self._delegation_count)
@@ -2163,7 +2179,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_HOOK_INPUT_HASH] = require_sha256_hex("input_hash", input_hash)
             if output_hash is not None:
                 event_attrs[ATTR_HOOK_OUTPUT_HASH] = require_sha256_hex("output_hash", output_hash)
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.hook", attributes=event_attrs)
 
     def record_file_access(
@@ -2233,7 +2252,10 @@ class Decision(AbstractContextManager["Decision"]):
                 )
             if size_bytes is not None:
                 event_attrs[ATTR_FILE_SIZE_BYTES] = size_bytes
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.file", attributes=event_attrs)
 
     # -- child spans (LLM call / tool call) ------------------------------
@@ -2413,7 +2435,9 @@ class Decision(AbstractContextManager["Decision"]):
         """
         _ = self.span
         extra: dict[str, str | int | float | bool | tuple[str, ...]] = {}
-        apply_cross_cutting(extra, tags=tags, baseline=baseline, signature=signature)
+        apply_cross_cutting(
+            extra, tags=tags, baseline=baseline, signature=signature, label=self._identity.label
+        )
         return ToolCall(
             tracer=self._client.tracer,
             meter=self._client.meter,
@@ -2431,6 +2455,7 @@ class Decision(AbstractContextManager["Decision"]):
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
             extra_attributes=extra or None,
+            identity=self._identity,
         )
 
     # -- OTel passthrough -------------------------------------------------

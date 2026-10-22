@@ -661,6 +661,8 @@ export class Decision implements DecisionLike {
   // is recorded anyway and counted (never thrown, 049 §7.1).
   private busy = false;
   private concurrentUse = 0;
+  // 049 §4.2: operator labels (tags, step names, tool names) as emitted.
+  private readonly labelFn = (value: string): string | undefined => this.ids.label(value);
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
@@ -986,7 +988,7 @@ export class Decision implements DecisionLike {
    */
   llmCall<T>(options: LlmCallOptions, fn: (call: LlmCall) => T): T {
     const extra: Record<string, AttrValue> = {};
-    applyCrossCutting(extra, options);
+    applyCrossCutting(extra, options, this.labelFn);
     // 049 §2.9: the session default carries `sess-`, an explicit
     // conversation id `conv-`; both omitted without a key, clear unchanged.
     const conversationId = options.conversationId
@@ -1110,7 +1112,7 @@ export class Decision implements DecisionLike {
    */
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {
     const extra: Record<string, AttrValue> = {};
-    applyCrossCutting(extra, options);
+    applyCrossCutting(extra, options, this.labelFn);
     const resolved = {
       ...options,
       agentName: options.agentName ?? this.identity.agentName,
@@ -1123,6 +1125,7 @@ export class Decision implements DecisionLike {
         span,
         options.captureContent ?? false,
         this.toolCaptureFn(span, name, options),
+        this.ids,
       );
       return runAndEnd(span, () => fn(tool));
     });
@@ -1225,8 +1228,12 @@ export class Decision implements DecisionLike {
       if (record.resultHashes.length > 0) {
         attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...record.resultHashes];
       }
-      if (record.sourceDocumentIds.length > 0) {
-        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = [...record.sourceDocumentIds];
+      // Caller document ids: `lbl-` when pseudonymous, omitted without a key.
+      const documentIds = record.sourceDocumentIds
+        .map((id) => this.ids.opaque(id))
+        .filter((id): id is string => id !== undefined);
+      if (documentIds.length > 0) {
+        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = documentIds;
       }
       if (record.latencyMs !== undefined) {
         attrs[A.ATTR_RETRIEVAL_LATENCY_MS] = record.latencyMs;
@@ -1276,8 +1283,9 @@ export class Decision implements DecisionLike {
       if (memoryKey !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
-      if (record.tags.length > 0) {
-        attrs[A.ATTR_MEMORY_TAGS] = [...record.tags];
+      const memoryTags = this.ids.labels(record.tags);
+      if (memoryTags.length > 0) {
+        attrs[A.ATTR_MEMORY_TAGS] = memoryTags;
       }
       if (record.ttlSeconds !== undefined) {
         attrs[A.ATTR_MEMORY_TTL_SECONDS] = record.ttlSeconds;
@@ -1486,8 +1494,10 @@ export class Decision implements DecisionLike {
       if (resultRef !== undefined) {
         attrs[ATTR_CONTENT_RESULT_REF] = resultRef;
       }
-      if (record.idempotencyKey !== undefined) {
-        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = record.idempotencyKey;
+      const idempotencyKey =
+        record.idempotencyKey !== undefined ? this.ids.opaque(record.idempotencyKey) : undefined;
+      if (idempotencyKey !== undefined) {
+        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = idempotencyKey;
       }
       if (record.parentToolCallId !== undefined) {
         attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = record.parentToolCallId;
@@ -1523,8 +1533,12 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_CHECKPOINT_ID]: event.checkpointId,
-        [A.ATTR_CHECKPOINT_STEP_NAME]: event.stepName,
       };
+      // 049 §4.2: the step name is an operator label (`lbl-` when pseudonymous).
+      const emittedStep = this.ids.label(event.stepName);
+      if (emittedStep !== undefined) {
+        attrs[A.ATTR_CHECKPOINT_STEP_NAME] = emittedStep;
+      }
       if (event.stateHash !== undefined) {
         attrs[A.ATTR_CHECKPOINT_STATE_HASH] = event.stateHash;
       }
@@ -1584,19 +1598,25 @@ export class Decision implements DecisionLike {
           inputSchema: inputSchema ?? null,
         };
       });
-      const tools = definitions.map(
-        (definition) =>
-          `${definition.name}:${sha256Hex(pythonJsonStringify(definition)).slice(0, 12)}`,
+      const defHashes = definitions.map((definition) =>
+        sha256Hex(pythonJsonStringify(definition)).slice(0, 12),
       );
+      const tools = definitions.map((definition, i) => `${definition.name}:${defHashes[i]}`);
       const toolsHash = sha256Hex(pythonJsonStringify(definitions));
+      // 049 §4.2: a tool name is an operator label (`lbl-` when pseudonymous);
+      // without a key the names are omitted (count and hashes remain). The
+      // returned inventory keeps the caller's own view.
+      const names = definitions.map((definition) => this.ids.label(String(definition.name)));
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MCP_SERVER]: options.server,
         [A.ATTR_MCP_TRANSPORT]: options.transport,
         [A.ATTR_MCP_TOOL_COUNT]: definitions.length,
-        [A.ATTR_MCP_TOOLS]: tools,
-        [A.ATTR_MCP_TOOLS_HASH]: toolsHash,
       };
+      if (names.every((name) => name !== undefined)) {
+        attrs[A.ATTR_MCP_TOOLS] = names.map((name, i) => `${name}:${defHashes[i]}`);
+      }
+      attrs[A.ATTR_MCP_TOOLS_HASH] = toolsHash;
       const resourceCount = options.resources === undefined ? undefined : options.resources.length;
       const promptCount = options.prompts === undefined ? undefined : options.prompts.length;
       if (resourceCount !== undefined) {
@@ -1605,7 +1625,7 @@ export class Decision implements DecisionLike {
       if (promptCount !== undefined) {
         attrs[A.ATTR_MCP_PROMPT_COUNT] = promptCount;
       }
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_MCP_INVENTORY, attrs);
       return {
         server: options.server,
@@ -1639,7 +1659,7 @@ export class Decision implements DecisionLike {
         );
       }
       if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
     });
   }
@@ -1760,7 +1780,7 @@ export class Decision implements DecisionLike {
       }
       attrs[A.ATTR_DELEGATION_PROTOCOL] = protocol;
       attrs[A.ATTR_DELEGATION_DEPTH] = depth;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_DELEGATION, attrs);
       return { toAgent, protocol, depth, context, carrier };
     });
@@ -1795,7 +1815,7 @@ export class Decision implements DecisionLike {
           options.outputHash,
         );
       }
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
     });
   }
@@ -1826,7 +1846,7 @@ export class Decision implements DecisionLike {
         );
       }
       if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_FILE, attrs);
     });
   }
@@ -1891,7 +1911,7 @@ export class Decision implements DecisionLike {
       if (options.metadata !== undefined) {
         attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
       }
-      const resolved = applyCrossCutting(attrs, options);
+      const resolved = applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_INTERACTION, attrs);
 
       // Improvement loop: a one-shot, low-rate coverage signal. Two

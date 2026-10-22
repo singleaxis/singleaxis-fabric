@@ -23,6 +23,7 @@ once the call returns. Setters write to both namespaces.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
@@ -34,6 +35,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._attributes import check_attribute_key
 from ._hashes import sha256_hex
+from ._identity import IdentityPolicy
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, Meter
@@ -930,6 +932,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
         extra_attributes: dict[str, str | int | float | bool | tuple[str, ...]] | None = None,
+        identity: IdentityPolicy | None = None,
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
@@ -964,6 +967,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         # baseline / signing imports. ``None``/empty leaves the span
         # byte-identical to the pre-023 emission (additive).
         self._extra_attributes = extra_attributes
+        # 049 §2.9: how caller ids leave the process (the decision's policy; standalone,
+        # FABRIC_IDENTITY_MODE / FABRIC_WIRE_ID_KEY as a decision without one resolves it).
+        self._identity = identity or IdentityPolicy.resolve(None, None, os.environ)
         self._span: Span | None = None
         self._cm: AbstractContextManager[Span] | None = None
         self._started_at: float | None = None
@@ -1236,7 +1242,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 raise TypeError(f"key must be str, got {type(key).__name__}")
             if not key:
                 raise ValueError("idempotency key must be non-empty")
-            self.span.set_attribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key)
+            # Caller data: ``lbl-`` in the pseudonymous mode, omitted without a key.
+            if (emitted := self._identity.opaque(key)) is not None:
+                self.span.set_attribute(FABRIC_TOOL_IDEMPOTENCY_KEY, emitted)
 
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
         """Set a custom attribute on the tool call span.

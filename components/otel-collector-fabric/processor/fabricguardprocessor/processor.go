@@ -1311,6 +1311,9 @@ func (g *guard) validCaptureValue(key string, value pcommon.Value) bool {
 	if valid, ok := g.validCoverageValue(key, value); ok {
 		return valid
 	}
+	if valid, ok := g.validDecisionLineValue(key, value); ok {
+		return valid
+	}
 	if _, ok := captureNewKeys[key]; !ok {
 		return true
 	}

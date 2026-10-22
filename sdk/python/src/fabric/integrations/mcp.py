@@ -196,7 +196,9 @@ def record_mcp_inventory(
       than stamped empty)
     * ``fabric.mcp.tool_count`` (int)
     * ``fabric.mcp.tools`` — tuple of ``"<tool_name>:<def_hash[:12]>"``,
-      ordered as supplied
+      ordered as supplied; the tool name is an operator label: ``lbl-`` + 32 hex
+      in the pseudonymous identity mode (omitted without ``FABRIC_WIRE_ID_KEY``),
+      as given in the ``clear`` mode or with ``FABRIC_WIRE_LABELS=clear``
     * ``fabric.mcp.tools_hash`` — hash over the canonical full tool list
     * ``fabric.mcp.resource_count`` / ``fabric.mcp.prompt_count`` — stamped
       only when ``resources`` / ``prompts`` are supplied
@@ -215,8 +217,17 @@ def record_mcp_inventory(
         The :class:`MCPInventory` describing what was recorded.
     """
     definitions = [_tool_definition(t) for t in tools]
-    tool_entries = tuple(f"{d['name']}:{_sha256_hex(_canonical(d))[:12]}" for d in definitions)
+    def_hashes = [_sha256_hex(_canonical(d))[:12] for d in definitions]
+    tool_entries = tuple(f"{d['name']}:{h}" for d, h in zip(definitions, def_hashes, strict=True))
     tools_hash = _sha256_hex(_canonical(definitions))
+    # 049 §4.2: a tool name is an operator label (``lbl-`` when pseudonymous, clear with
+    # FABRIC_WIRE_LABELS=clear); without a key the names are omitted (the count and the
+    # hashes remain). The returned MCPInventory keeps the caller's own view.
+    identity = decision._identity  # the decision's identity policy
+    names = [identity.label(str(d["name"])) for d in definitions]
+    emitted_entries = (
+        None if None in names else tuple(f"{n}:{h}" for n, h in zip(names, def_hashes, strict=True))
+    )
 
     resource_count = None if resources is None else len(resources)
     prompt_count = None if prompts is None else len(prompts)
@@ -224,9 +235,10 @@ def record_mcp_inventory(
     event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
         "fabric.schema_version": SCHEMA_VERSION,
         ATTR_MCP_TOOL_COUNT: len(definitions),
-        ATTR_MCP_TOOLS: tool_entries,
-        ATTR_MCP_TOOLS_HASH: tools_hash,
     }
+    if emitted_entries is not None:
+        event_attrs[ATTR_MCP_TOOLS] = emitted_entries
+    event_attrs[ATTR_MCP_TOOLS_HASH] = tools_hash
     # Server identity / transport are stamped only when identified —
     # empty strings carry no signal and would only pollute the event.
     if server:
@@ -241,7 +253,9 @@ def record_mcp_inventory(
     # Generic cross-cutting (spec 023): the MCP tool set is exactly the kind
     # of hashed artifact a baseline / signature applies to. Stamped only when
     # supplied, so existing inventory calls stay byte-identical.
-    apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+    apply_cross_cutting(
+        event_attrs, tags=tags, baseline=baseline, signature=signature, label=identity.label
+    )
 
     decision.span.add_event("fabric.mcp.inventory", attributes=event_attrs)
 
