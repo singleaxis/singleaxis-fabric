@@ -432,8 +432,7 @@ def test_seal_manifest_and_registration_stubs() -> None:
     assert _manifest.build_manifest(handle, 1, seq=0, after=-1, previous_digest=None) is None
     _manifest.emit_initial(handle)
     _manifest.capture_point_changed(handle, "wire.py.aiohttp", "failed")
-    with pytest.raises(NotImplementedError):
-        _manifest.manifest_digest({})
+    assert _manifest.manifest_digest({}).startswith("sha256:")  # built by WP-13
     assert _registration.register(None, "s-a", 1) is None
     assert _registration.scan_orphans(handle) == []
     registration = _registration.Registration("registered", 1, "s-a")
