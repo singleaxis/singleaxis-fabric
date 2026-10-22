@@ -266,7 +266,8 @@ def test_s3_options_need_store_uri(
     capture = Capture(tmp_path)
     react_run(capture)
     extra = [str(tmp_path / "store") if item == "STORE" else item for item in extra]
-    assert main(["--spans", str(capture.write()), *extra]) == 2
+    exit_code = main(["--spans", str(capture.write()), *extra])
+    assert exit_code == 2
     assert "--store-uri" in capsys.readouterr().err
 
 

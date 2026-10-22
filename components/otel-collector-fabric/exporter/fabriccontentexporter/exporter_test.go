@@ -86,17 +86,18 @@ func TestFileBackendRoundTripThroughFactory(t *testing.T) {
 		id   string
 		body []byte
 	}{{testObjectID, request}, {"0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02", response}} {
-		obj := filepath.Join(dir, testTenant, "evidence", tc.id)
+		obj := shardedObject(dir, testTenant, tc.id)
 		if got := readFile(t, obj); string(got) != string(tc.body) {
 			t.Errorf("stored body = %q", got)
 		}
-		meta := filepath.Join(dir, testTenant, "evidence", "meta", tc.id+".json")
+		meta := shardedMeta(dir, testTenant, tc.id)
 		raw := readFile(t, meta)
 		var desc map[string]any
 		if err := json.Unmarshal(raw, &desc); err != nil {
 			t.Fatal(err)
 		}
-		if desc["ref"] != "file://"+obj || desc["encoding"] != "binary" {
+		// The ref is the logical (flat) key; the bytes live in the shard.
+		if desc["ref"] != "file://"+filepath.Join(dir, testTenant, "evidence", tc.id) || desc["encoding"] != "binary" {
 			t.Errorf("descriptor ref/encoding = %v / %v", desc["ref"], desc["encoding"])
 		}
 		if _, ok := desc["event_class"]; ok {
@@ -113,12 +114,12 @@ func TestFileBackendRoundTripThroughFactory(t *testing.T) {
 			t.Errorf("%s mode = %o, want 700", d, got)
 		}
 	}
-	entries, _ := os.ReadDir(filepath.Join(dir, testTenant, "evidence"))
-	for _, entry := range entries {
-		if strings.HasSuffix(entry.Name(), ".tmp") {
+	_ = filepath.WalkDir(filepath.Join(dir, testTenant, "evidence"), func(path string, entry os.DirEntry, err error) error {
+		if err == nil && strings.HasSuffix(entry.Name(), ".tmp") {
 			t.Errorf("temp file left behind: %s", entry.Name())
 		}
-	}
+		return nil
+	})
 }
 
 // A replay of identical bytes is success; a different body under an existing
@@ -137,7 +138,7 @@ func TestFileBackendReplayAndConflict(t *testing.T) {
 	if err := e.pushLogs(context.Background(), makeLogs(t, withBody(validAttrs(other), other))); err != nil {
 		t.Fatalf("conflict must be permanent (dropped), got %v", err)
 	}
-	obj := filepath.Join(dir, testTenant, "evidence", testObjectID)
+	obj := shardedObject(dir, testTenant, testObjectID)
 	if got := readFile(t, obj); string(got) != string(body) {
 		t.Fatalf("stored object overwritten: %q", got)
 	}
@@ -159,7 +160,7 @@ func TestFileBackendDescriptorConflict(t *testing.T) {
 	if err := e.pushLogs(context.Background(), makeLogs(t, withBody(changed, body))); err != nil {
 		t.Fatal(err)
 	}
-	meta := readFile(t, filepath.Join(dir, testTenant, "evidence", "meta", testObjectID+".json"))
+	meta := readFile(t, shardedMeta(dir, testTenant, testObjectID))
 	if !strings.Contains(string(meta), `"run_id": "run-travel-42"`) {
 		t.Fatalf("descriptor overwritten: %s", meta)
 	}

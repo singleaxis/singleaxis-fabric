@@ -123,14 +123,16 @@ def test_a_rescan_during_a_write_keeps_the_write_counted(tmp_path: Path) -> None
         _assert_exact(spool, root)
 
     with patch("os.rename", rename_then_rescan):
-        assert spool.write(_final("own", 0)) is not None
+        written = spool.write(_final("own", 0))
+        assert written is not None
     _assert_exact(spool, root)
     listdir = os.listdir
 
     def listdir_then_write(path: Any) -> list[str]:  # the write lands mid-rescan
         entries = listdir(path)
         with patch("os.listdir", listdir):
-            assert spool.write(_final("own", 1)) is not None
+            written = spool.write(_final("own", 1))
+            assert written is not None
         return entries
 
     with patch("os.listdir", listdir_then_write):
@@ -156,13 +158,18 @@ def test_a_failed_write_that_ends_during_a_rescan_stays_counted(tmp_path: Path) 
     spool = Spool(str(root), LIMIT)
     assert spool.try_lock()
     admitted, listed = threading.Event(), threading.Event()
-    rename, listdir, lstat, failure = spool._rename, os.listdir, os.lstat, list[BaseException]()
+    rename, listdir, lstat, failure = (
+        spool._rename_many,
+        os.listdir,
+        os.lstat,
+        list[BaseException](),
+    )
     record = f"{1:020d}-{os.getpid():010d}-{0:012d}.rec"  # the write's (not its temp file)
 
-    def rename_after_listing(src: str, dst: str) -> None:
+    def rename_after_listing(names: Any) -> Any:
         admitted.set()
         assert listed.wait(10)
-        rename(src, dst)
+        return rename(names)
 
     def unobservable(path: Any, *args: Any, **kwargs: Any) -> Any:
         if os.path.basename(os.fspath(path)) == record:
@@ -182,7 +189,7 @@ def test_a_failed_write_that_ends_during_a_rescan_stays_counted(tmp_path: Path) 
         return entries
 
     with (
-        patch.object(spool, "_rename", rename_after_listing),
+        patch.object(spool, "_rename_many", rename_after_listing),
         patch.object(spool, "_sync_dir", _enospc),
         patch("os.lstat", unobservable),
     ):
@@ -222,7 +229,7 @@ def test_a_rescan_before_a_failed_write_ends_keeps_its_temp_file_counted(
         spool.rescan()
 
     with (
-        patch.object(spool, "_rename", _enospc),  # the write fails after its temp file
+        patch.object(spool, "_rename_many", _enospc),  # the write fails after its temp file
         patch("os.unlink", _enospc),  # which then stays on disk
         patch.object(spool, "_failed_write", failed_write_then_rescan),
         pytest.raises(OSError),
@@ -267,14 +274,19 @@ def _maybe(rng: random.Random, original: Callable[..., Any]) -> Callable[..., An
     return call
 
 
+@pytest.mark.parametrize("sealed", [False, True])
 @pytest.mark.parametrize("seed", range(24))
-def test_interleaved_admissions_retirements_failures_and_rescans(tmp_path: Path, seed: int) -> None:
+def test_interleaved_admissions_retirements_failures_and_rescans(
+    tmp_path: Path, seed: int, sealed: bool
+) -> None:
     """Random admissions (own and another writer's), drains, receipt consumption and
     rescans, with failures injected into every disk step: after each operation the
-    drainer's ledger equals what is on disk and never exceeds the bound."""
+    drainer's ledger equals what is on disk and never exceeds the bound. ``sealed``: the
+    049 §7.8 envelope changes record sizes, never the accounting."""
     rng, root = random.Random(seed), tmp_path / "spool"  # noqa: S311 - a reproducible schedule
-    writer = Spool(str(root), 4000)
-    drainer = Spool(str(root), 4000)
+    key = bytes(range(32)) if sealed else None
+    writer = Spool(str(root), 4000, key=key)
+    drainer = Spool(str(root), 4000, key=key)
     assert drainer.try_lock() and drainer.max_receipts == 3
     sender = Sender(drainer, _Ok(), LossEmitter(), content=None, service_name="svc")
     for counter in range(1, 161):
@@ -475,7 +487,8 @@ def test_a_rename_destination_that_cannot_be_observed_stays_charged(
         with patch("os.ftruncate", _enospc):
             sender._drain()
         assert os.path.exists(destination)
-        assert drainer.write(_final("drainer", 99)) is None
+        written = drainer.write(_final("drainer", 99))
+        assert written is None
         total, _ = _on_disk(root)
         assert total <= drainer.bytes <= drainer.max_bytes
     drainer.rescan()  # faults cleared: exact again

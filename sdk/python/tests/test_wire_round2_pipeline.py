@@ -223,7 +223,8 @@ def test_close_claims_a_job_whose_span_is_still_being_created(tmp_path: Path) ->
         client.post(OPENAI_CHAT, json={"messages": []})
     assert slow.entered.wait(2)
     pipeline = handle._tee.pipeline
-    assert handle.close(0.05) is False
+    closed = handle.close(0.05)
+    assert closed is False
     losses = _named(exporter, SPAN_LOSS)
     assert [(x[LossAttr.REASON], x[LossAttr.FIRST_SEQUENCE]) for x in losses] == [("shutdown", 0)]
     slow.release.set()
@@ -251,7 +252,8 @@ def test_a_committed_job_has_exactly_one_outcome(monkeypatch: pytest.MonkeyPatch
     with _client(handle) as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert entered.wait(2)
-    assert handle.close(0.05) is False  # not drained in time ...
+    closed = handle.close(0.05)
+    assert closed is False  # not drained in time ...
     release.set()
     pipeline._worker.join(2)
     outcomes = _named(exporter, "fabric.model_call") + _named(exporter, SPAN_LOSS)
@@ -277,7 +279,8 @@ def test_run_markers_and_final_heartbeat_carry_their_kind() -> None:
         with wire.run("run-k"):
             client.post(OPENAI_CHAT, json={"messages": []})
     sealed_epoch = allocator.epoch
-    assert handle.close(2.0)
+    closed = handle.close(2.0)
+    assert closed
     beats = _beats(exporter)
     run_k = run_pseudonym("run-k")
     assert ("run_start", run_k, 0) in beats and ("run_end", run_k, 1) in beats

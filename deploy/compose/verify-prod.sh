@@ -110,18 +110,53 @@ if [ -z "$(tail -c1 "${token_file}")" ]; then
 fi
 ok "ingress token file has no empty-token entries"
 token=$(head -n 1 "${token_file}" | tr -d '[:space:]')
+
+# The production Node binds every batch to one tenant and source (spec 049
+# §7.9), so the probe must carry the binding the overlay configures: the
+# same FABRIC_TENANT_ID / FABRIC_SOURCE_ID that docker-compose.production.yml
+# passes to the Node. A probe under any other identity is refused (400).
+tenant_id="$(envget FABRIC_TENANT_ID)"
+source_id="$(envget FABRIC_SOURCE_ID)"
+if ! printf '%s' "${tenant_id}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'; then
+  bad "FABRIC_TENANT_ID unset or unsafe; set it in .env to the Node's bound tenant"
+  exit 1
+fi
+if ! printf '%s' "${source_id}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'; then
+  bad "FABRIC_SOURCE_ID unset or unsafe; set it in .env to the Node's bound source"
+  exit 1
+fi
+probe_dir="$(mktemp -d)"
+trap 'rm -rf "${probe_dir}"' EXIT
+# A different, valid source under the bound tenant: the Node must refuse it.
+forged_source="verify-prod-forged-source"
+[ "${source_id}" = "${forged_source}" ] && forged_source="verify-prod-other-source"
+sed -e "s|__FABRIC_TENANT_ID__|${tenant_id}|" -e "s|__FABRIC_SOURCE_ID__|${source_id}|" \
+  fixtures/bound-span.json >"${probe_dir}/bound.json"
+sed -e "s|__FABRIC_TENANT_ID__|${tenant_id}|" -e "s|__FABRIC_SOURCE_ID__|${forged_source}|" \
+  fixtures/bound-span.json >"${probe_dir}/forged.json"
+
+# post_traces FILE prints the HTTP status of an authenticated trace export.
 # The token travels to curl through a stdin config file, never argv — a
 # `-H "Authorization: Bearer $token"` flag would be visible to other users
 # via process inspection for the duration of the request.
-# shellcheck disable=SC2086
-code=$(printf 'header = "Authorization: Bearer %s"\n' "${token}" \
-  | curl ${curl_tls} -K - -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${node_addr}/v1/traces" \
-  -H 'Content-Type: application/json' \
-  --data-binary @fixtures/decision-summary.json)
+post_traces() {
+  # shellcheck disable=SC2086
+  printf 'header = "Authorization: Bearer %s"\n' "${token}" \
+    | curl ${curl_tls} -K - -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${node_addr}/v1/traces" \
+      -H 'Content-Type: application/json' \
+      --data-binary "@$1"
+}
+code=$(post_traces "${probe_dir}/bound.json")
 if [ "${code}" = "200" ]; then
-  ok "authenticated OTLP accepted (200)"
+  ok "authenticated OTLP for the bound tenant and source accepted (200)"
 else
-  bad "authenticated OTLP returned ${code}, expected 200"
+  bad "authenticated OTLP for the bound tenant and source returned ${code}, expected 200"
+fi
+code=$(post_traces "${probe_dir}/forged.json")
+if [ "${code}" = "400" ]; then
+  ok "authenticated OTLP naming another source refused (400): source binding active"
+else
+  bad "authenticated OTLP naming another source returned ${code}, expected 400 (source binding inactive?)"
 fi
 
 # --- content ingress auth (spec 048: otlp/content, same authenticator) --------

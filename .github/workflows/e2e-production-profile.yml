@@ -148,7 +148,7 @@ jobs:
             --namespace "${NAMESPACE}" \
             --values charts/fabric/profiles/shadow-production.yaml \
             --values qualification/synthetic-slice/kind-production-values.yaml \
-            --set tenant.id=synthetic-tenant \
+            --set tenant.id=synthetic \
             --set "otel-collector.image.digest=${COLLECTOR_DIGEST}" \
             --wait --timeout 5m
           kubectl wait --for=condition=ready pods --namespace "${NAMESPACE}" \
@@ -299,8 +299,26 @@ jobs:
             --client-cert "${CERT_DIR}/client.crt" \
             --client-key "${CERT_DIR}/client.key" \
             --bearer-token-file "${CERT_DIR}/workload-token"
+          # Spec 049 §7.9: the ingress is bound to tenant synthetic and source
+          # dispatcher. A span naming them is admitted; the same span naming
+          # another source refuses the batch, so an unbound ingress fails here.
+          for probe in dispatcher:200 forged-source:400; do
+            sed -e 's|__FABRIC_TENANT_ID__|synthetic|' \
+              -e "s|__FABRIC_SOURCE_ID__|${probe%%:*}|" \
+              deploy/compose/fixtures/bound-span.json > "${CERT_DIR}/probe.json"
+            STATUS=$(curl -sS --cacert "${CERT_DIR}/ingress-ca.crt" \
+              --cert "${CERT_DIR}/client.crt" --key "${CERT_DIR}/client.key" \
+              -o /dev/null -w '%{http_code}' -X POST https://localhost:14319/v1/traces \
+              -H "Authorization: Bearer $(cat "${CERT_DIR}/workload-token")" \
+              -H 'Content-Type: application/json' --data-binary "@${CERT_DIR}/probe.json")
+            test "${STATUS}" = "${probe##*:}"
+          done
+          # The spec-040 pilot exports through the same bound ingress, so it
+          # records every adapter under the bound tenant and source.
           "${RUNNER_TEMP}/fabric-agent-venv/bin/python" \
             scripts/qualification/run_synthetic_agent_pilot.py \
+            --tenant-id synthetic \
+            --source-id dispatcher \
             --node-url https://localhost:14319/v1/logs \
             --node-ca "${CERT_DIR}/ingress-ca.crt" \
             --node-cert "${CERT_DIR}/client.crt" \

@@ -15,8 +15,23 @@ type Config struct {
 	MaxFieldBytes       int    `mapstructure:"max_field_bytes"`
 	// Only a startup-gated, dedicated single-source OTLP ingress may set this.
 	// The processor compares payload identities; authentication itself is
-	// enforced by the receiver and checked by fabric-gate.
+	// enforced by the receiver and checked by fabric-gate. Spec 049 §7.9: the
+	// binding covers evidence logs and every trace span (capture spans,
+	// markers, manifests); a span admitted at the bound ingress is stamped
+	// fabric.source.authenticated=true.
 	EvidenceSourceBinding *EvidenceSourceBinding `mapstructure:"evidence_source_binding"`
+
+	// Profile is the Node's deployment profile (spec 049 §7.3, §7.9):
+	// "local" (default) or "production". The production profile rejects
+	// unauthenticated sources: it requires evidence_source_binding.
+	Profile string `mapstructure:"profile"`
+
+	// IdentityMode is the Node counterpart of the SDK's FABRIC_IDENTITY_MODE
+	// (spec 049 §2.9 rule 7). "pseudonymous" (default): externally meaningful
+	// ids are admitted only in their keyed prefix form (fabric.session_id as
+	// sess-<32 hex>); a clear value is dropped. "clear": those ids keep their
+	// pre-049 admission (the operator guarantees they hold no personal data).
+	IdentityMode string `mapstructure:"identity_mode"`
 
 	// Aggregate bounds cap count-based pressure that max_field_bytes cannot
 	// see: thousands of individually-tiny attributes, events, links or slice
@@ -61,6 +76,15 @@ func (c *Config) Validate() error {
 	if c.EvidenceSourceBinding != nil && (!validEvidenceIDString(c.EvidenceSourceBinding.TenantID) || !validEvidenceIDString(c.EvidenceSourceBinding.SourceID)) {
 		return errors.New("fabricguard: evidence_source_binding requires valid tenant_id and source_id")
 	}
+	if c.Profile != profileLocal && c.Profile != profileProduction {
+		return errors.New("fabricguard: profile must be local or production")
+	}
+	if c.Profile == profileProduction && c.EvidenceSourceBinding == nil {
+		return errors.New("fabricguard: the production profile rejects unauthenticated sources; it requires evidence_source_binding")
+	}
+	if c.IdentityMode != identityModePseudonymous && c.IdentityMode != identityModeClear {
+		return errors.New("fabricguard: identity_mode must be pseudonymous or clear")
+	}
 	if c.EventClassAttribute == "" {
 		return errors.New("fabricguard: event_class_attribute must be non-empty")
 	}
@@ -90,11 +114,17 @@ func (c *Config) Validate() error {
 			if sensitiveAttributeKey(field) {
 				return fmt.Errorf("fabricguard: extra_allowed_fields[%q] contains prohibited sensitive field %q", class, field)
 			}
+			if _, owned := receiverOwnedKeys[field]; owned {
+				return fmt.Errorf("fabricguard: extra_allowed_fields[%q] contains receiver-owned field %q", class, field)
+			}
 		}
 	}
 	for _, field := range c.ExtraAllowedTraceFields {
 		if sensitiveAttributeKey(field) {
 			return fmt.Errorf("fabricguard: extra_allowed_trace_fields contains prohibited sensitive field %q", field)
+		}
+		if _, owned := receiverOwnedKeys[field]; owned {
+			return fmt.Errorf("fabricguard: extra_allowed_trace_fields contains receiver-owned field %q", field)
 		}
 	}
 	if err := validateModelAllowlist(c.CaptureModelAllowlist); err != nil {
@@ -109,6 +139,14 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+const (
+	profileLocal      = "local"
+	profileProduction = "production"
+
+	identityModePseudonymous = "pseudonymous"
+	identityModeClear        = "clear"
+)
+
 func createDefaultConfig() *Config {
 	return &Config{
 		EventClassAttribute: "event_class",
@@ -119,5 +157,7 @@ func createDefaultConfig() *Config {
 		MaxLinksPerSpan:     64,
 		MaxSliceElements:    64,
 		CaptureLabels:       captureLabelsPseudonymous,
+		Profile:             profileLocal,
+		IdentityMode:        identityModePseudonymous,
 	}
 }

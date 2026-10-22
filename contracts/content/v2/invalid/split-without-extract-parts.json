@@ -1,0 +1,115 @@
+{
+  "schema_version": "fabric.split-reassembly-vector/v1",
+  "name": "skeleton names representation split without the extract_parts transformation",
+  "rule": "Spec 049 §7.4-§7.5: each inline base64 part is stored as its own model.exchange.part object holding the exact source byte range (the base64 text), with the media type of the decoded content and content_encoding base64; the skeleton is the original body with those ranges removed, representation split, transformations [extract_parts] and the source_sha256 of the original body. Each part carries a part_of link to the skeleton with byte_range = the half-open [start, end) offsets of the part in the original body. A reader reassembles by inserting every part at its range, in ascending start order, into the skeleton; the result must equal source_byte_length and source_sha256. Sizes are toy-sized: the contract is the layout, not part_min_bytes.",
+  "original": {
+    "byte_length": 428,
+    "sha256": "sha256:71a8f3130ca41e6099b1269b8cd7da406d2fd4e78f6a29128b3b007eea9f0028"
+  },
+  "objects": [
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "tenant_id": "tenant-a",
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "operation_id": "0f4c2a7e-9b1d-4e3f-8a6c-5d2e1b0a9f8e",
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "source_id": "s-c5aedfd8a3ee415e277e335bf1517ff4",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 7,
+        "captured_at": "2026-10-19T09:00:00Z",
+        "status": "stored",
+        "encoding": "binary",
+        "object_id": "2b8f3c9e-4d1a-4b7e-9c2f-7a6d5e4c3b2a",
+        "role": "model.exchange.request",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "split",
+        "transformations": [],
+        "source_byte_length": 428,
+        "source_sha256": "sha256:71a8f3130ca41e6099b1269b8cd7da406d2fd4e78f6a29128b3b007eea9f0028",
+        "stored_byte_length": 272,
+        "stored_sha256": "sha256:20b0aab0338c7d7c67c9258d3429c39a20526f4fa45a7c3d0e50d8f637613c12",
+        "ref": "file:///var/lib/fabric/tenant-a/evidence/2b8f3c9e-4d1a-4b7e-9c2f-7a6d5e4c3b2a"
+      },
+      "base64": "eyJtb2RlbCI6ImdwdC00by1hdWRpby1wcmV2aWV3IiwibWVzc2FnZXMiOlt7InJvbGUiOiJ1c2VyIiwiY29udGVudCI6W3sidHlwZSI6InRleHQiLCJ0ZXh0IjoiRGVzY3JpYmUgdGhlIHBpY3R1cmUsIHRoZW4gYW5zd2VyIHRoZSBjbGlwLiJ9LHsidHlwZSI6ImltYWdlX3VybCIsImltYWdlX3VybCI6eyJ1cmwiOiJkYXRhOmltYWdlL3BuZztiYXNlNjQsIn19LHsidHlwZSI6ImlucHV0X2F1ZGlvIiwiaW5wdXRfYXVkaW8iOnsiZGF0YSI6IiIsImZvcm1hdCI6IndhdiJ9fV19XX0="
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "tenant_id": "tenant-a",
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "operation_id": "0f4c2a7e-9b1d-4e3f-8a6c-5d2e1b0a9f8e",
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "source_id": "s-c5aedfd8a3ee415e277e335bf1517ff4",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 7,
+        "captured_at": "2026-10-19T09:00:00Z",
+        "status": "stored",
+        "encoding": "binary",
+        "object_id": "5c1d2e3f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+        "role": "model.exchange.part",
+        "media_type": "image/png",
+        "content_encoding": "base64",
+        "representation": "exact",
+        "transformations": [],
+        "source_byte_length": 96,
+        "source_sha256": "sha256:10a7227ade22bb007518dbb14d064d2f3b0d5a282264d6d94a8682d68866650a",
+        "stored_byte_length": 96,
+        "stored_sha256": "sha256:10a7227ade22bb007518dbb14d064d2f3b0d5a282264d6d94a8682d68866650a",
+        "ref": "file:///var/lib/fabric/tenant-a/evidence/5c1d2e3f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+        "links": [
+          {
+            "relation": "part_of",
+            "object_id": "2b8f3c9e-4d1a-4b7e-9c2f-7a6d5e4c3b2a",
+            "byte_range": [
+              201,
+              297
+            ]
+          }
+        ]
+      },
+      "base64": "aVZCT1J3MEtHZ29BQUFBTlNVaEVVZ0FBQUFFQUFBQUJDQVlBQUFBZkZjU0pBQUFBRFVsRVFWUjQybU5rK005UUR3QURoZ0dBV2pSOWF3QUFBQUJKUlU1RXJrSmdnZz09"
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "tenant_id": "tenant-a",
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "operation_id": "0f4c2a7e-9b1d-4e3f-8a6c-5d2e1b0a9f8e",
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "source_id": "s-c5aedfd8a3ee415e277e335bf1517ff4",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 7,
+        "captured_at": "2026-10-19T09:00:00Z",
+        "status": "stored",
+        "encoding": "binary",
+        "object_id": "8e7d6c5b-4a39-4281-b7c6-d5e4f3a2b1c0",
+        "role": "model.exchange.part",
+        "media_type": "audio/wav",
+        "content_encoding": "base64",
+        "representation": "exact",
+        "transformations": [],
+        "source_byte_length": 60,
+        "source_sha256": "sha256:bd34704031ac06b0bf2ec42feaff86aec793b3b4138acc184655a631f0a36905",
+        "stored_byte_length": 60,
+        "stored_sha256": "sha256:bd34704031ac06b0bf2ec42feaff86aec793b3b4138acc184655a631f0a36905",
+        "ref": "file:///var/lib/fabric/tenant-a/evidence/8e7d6c5b-4a39-4281-b7c6-d5e4f3a2b1c0",
+        "links": [
+          {
+            "relation": "part_of",
+            "object_id": "2b8f3c9e-4d1a-4b7e-9c2f-7a6d5e4c3b2a",
+            "byte_range": [
+              346,
+              406
+            ]
+          }
+        ]
+      },
+      "base64": "VWtsR1JpUUFBQUJYUVZaRlptMTBJQkFBQUFBQkFBRUFRQjhBQUVBZkFBQUJBQWdBWkdGMFlRQUFBQUE9"
+    }
+  ]
+}

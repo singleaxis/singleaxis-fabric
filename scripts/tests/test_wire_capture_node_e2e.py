@@ -49,6 +49,7 @@ Opt-in by environment: the module skips when Docker Compose is unavailable.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -74,12 +75,14 @@ from _wire_capture_common import (
     Sink,
     autoload_path,
     build_image,
+    capture_protection,
     compose_available,
     free_port,
     content_config_with_tls,
+    open_spool_record,
     production_config_with_tls,
     pseudonym,
-    spool_header,
+    spool_headers,
     spool_records,
     volume_grep,
     wait_until,
@@ -111,8 +114,51 @@ SECRET_MARKERS = [
 
 
 def source_of(service: str) -> str:
-    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1)."""
-    return f"{MARK}-src-{service}"
+    """The clear FABRIC_SOURCE_ID each agent is given: identifying on purpose (J1).
+
+    Spec 049 §7.9 (P0-A): a production Node binds one source, so every agent
+    of this stack runs as the same source (distinct service names); the Node
+    is bound to its s- pseudonym."""
+    del service
+    return f"{MARK}-src-agent"
+
+
+# Spec 049 §7.8: the Node-side content key (base64 of 32 random bytes) and the
+# agents' spool key (production agents seal their spool).
+CONTENT_KEY = os.urandom(32)
+SPOOL_KEY = os.urandom(32)
+NODE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
+SHARD = re.compile(r"^(.+/evidence/(?:meta/)?)[0-9a-f]{2}/[0-9a-f]{2}/([^/]+)$")
+
+
+def unseal_store(sealed: Path, plain: Path) -> None:
+    """Open every Node envelope below ``sealed`` into ``plain`` (spec 049 §7.8).
+
+    Asserts each stored file IS an envelope (never plaintext at rest) and that
+    it authenticates for its own path."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+
+    for path in sealed.rglob("*"):
+        if path.is_dir():
+            continue
+        # The envelope binds the object's logical (flat) key, not its hash shard (spec
+        # 048 rule 4): <tenant>/evidence/[meta/]ab/cd/<name> -> <tenant>/evidence/[meta/]<name>.
+        rel = SHARD.sub(r"\1\2", path.relative_to(sealed).as_posix())
+        target = plain / rel
+        if path.name.startswith(".fabric-root-barrier"):
+            continue
+        data = path.read_bytes()
+        assert data.startswith(NODE_MAGIC), f"{rel} is not sealed at rest"
+        aad = json.dumps(
+            ["fabric.node-content-envelope/v1", rel], separators=(",", ":")
+        ).encode()
+        body = AESGCM(CONTENT_KEY).decrypt(
+            data[len(NODE_MAGIC) : len(NODE_MAGIC) + 12],
+            data[len(NODE_MAGIC) + 12 :],
+            aad,
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(body)
 
 
 # Spec 047 §8: the fifteen capture keys, plus spec 048's run scope id, plus
@@ -138,6 +184,8 @@ REUSED_KEYS = frozenset(
     }
 )  # fmt: skip
 assert len(CAPTURE_KEYS) == 16
+# Receiver-owned keys the Node itself writes (spec 049 §7.9).
+NODE_STAMPS = frozenset({"fabric.source.authenticated"})
 HEARTBEAT_KINDS = frozenset({"periodic", "run_start", "run_end", "final"})
 # Content refs on spans are bare uuid4 object ids (spec 047 §8, decision D2).
 OBJECT_ID = re.compile(
@@ -208,7 +256,20 @@ class Stack:
         # No trailing newline (fabric-gate rule); nonroot in the container
         # reads it through a bind mount.
         token_file.write_text(INGRESS_TOKEN, "utf-8")
-        token_file.chmod(0o644)
+        # Spec 049 §7.9: the production Node supervises the token as its
+        # bound source's credential, which must be closed to other users. The
+        # container reads it through the host group (override below).
+        token_file.chmod(0o640)
+        # Spec 049 §7.8: the Node content key, a Compose secret like the token.
+        key_file = root / "secrets" / "content.key"
+        key_file.write_bytes(base64.b64encode(CONTENT_KEY) + b"\n")
+        key_file.chmod(0o640)
+        self.content_key_file = key_file
+        # Spec 049 §7.3: a production agent records content only with a capture
+        # policy, the id key and (with a spool) the spool key.
+        self.protection = capture_protection(root, TENANT, SPOOL_KEY)
+        # Each opened snapshot -> the sealed copy it came from (what the reader reads).
+        self.sealed: dict[Path, Path] = {}
         write_tls(self.tls)
         self.sink = Sink(root / "sink", self.tls, EGRESS_AUTH, id_key=ID_KEY)
         # Clear labels the agents were given, and every report: the J1 leak scan.
@@ -223,6 +284,9 @@ class Stack:
             "services:\n"
             "  fabric-node:\n"
             "    pull_policy: never\n"
+            # The nonroot user in the test runner's group, so the 0640
+            # secrets are readable through the group and closed to others.
+            f'    user: "65532:{os.getgid()}"\n'
             "    volumes:\n"
             f"      - {self.config}:/etc/fabric-node/collector-production.yaml:ro\n"
             f"      - {self.content_config}:/etc/fabric-node/collector-content.yaml:ro\n"
@@ -246,6 +310,10 @@ class Stack:
             "FABRIC_EXPORT_AUTH_HEADER": EGRESS_AUTH,
             # The only tenant the Node's fabriccontent exporter writes.
             "FABRIC_TENANT_ID": TENANT,
+            # Spec 049 §7.9: the production Node binds every batch to the
+            # agents' source as it travels (its s- pseudonym).
+            "FABRIC_SOURCE_ID": pseudonym("s-", source_of(""), ID_KEY),
+            "FABRIC_CONTENT_KEY_FILE": str(key_file),
         }
         self._autoload = autoload_path()
 
@@ -335,9 +403,16 @@ class Stack:
     # -- Node-written content --------------------------------------------------
 
     def content_snapshot(self) -> Path:
-        """A host copy of the Node's content volume (file backend)."""
+        """A host copy of the Node's content volume (file backend), opened.
+
+        Spec 049 §7.8: the volume holds only envelopes; the copy the
+        reconstruct reader gets is opened with the Node key."""
+        sealed = self.root / f"sealed-{uuid.uuid4().hex[:8]}"
+        self.compose("cp", f"fabric-node:{NODE_CONTENT_DIR}", str(sealed))
         target = self.root / f"content-{uuid.uuid4().hex[:8]}"
-        self.compose("cp", f"fabric-node:{NODE_CONTENT_DIR}", str(target))
+        target.mkdir()
+        unseal_store(sealed, target)
+        self.sealed[target] = sealed
         return target
 
     def wait_content(self, object_ids: set[str], timeout_s: float = 60.0) -> Path:
@@ -381,6 +456,7 @@ class Stack:
             "FABRIC_WIRE_SPOOL_DIR": str(spool),
             "FABRIC_WIRE_ENDPOINTS": self.model.endpoints_json(),
             "FABRIC_WIRE_ID_KEY": ID_KEY,
+            **self.protection,
             # Default labels (no FABRIC_WIRE_LABELS): leave only as s-/svc- (J1).
             "FABRIC_SOURCE_ID": source_of(service),
             "OTEL_SERVICE_NAME": service,
@@ -430,10 +506,14 @@ class Stack:
     # -- verification --------------------------------------------------------
 
     def reconstruct(self, store: Path) -> tuple[int, dict[str, Any]]:
+        """The reader on the Node's sealed directory (its own key, spec 049 §7.8), with
+        the sink as trusted readback of the Node's telemetry (§7.9, production)."""
         out = self.root / f"report-{uuid.uuid4().hex[:8]}.json"
         result = subprocess.run(
             [sys.executable, "-m", "fabric.reconstruct", "--spans", str(self.records),
-             "--store-root", str(store), "--tenant", TENANT, "--out", str(out)],
+             "--store-root", str(self.sealed[store]), "--content-key-file",
+             str(self.content_key_file), "--tenant", TENANT, "--trusted-source",
+             "--profile", "production", "--out", str(out)],
             env={**os.environ, "FABRIC_WIRE_ID_KEY": ID_KEY},
             capture_output=True, text=True, timeout=300, check=False,
         )  # fmt: skip
@@ -442,6 +522,8 @@ class Stack:
         self.reports.append(text + result.stdout + result.stderr)
         report: dict[str, Any] = json.loads(text)
         _assert_report_labels(report, text)
+        assert report["inputs"]["telemetry_origin"] == "trusted_readback"
+        assert report["inputs"]["profile"] == "production"
         return result.returncode, report
 
 
@@ -529,11 +611,13 @@ def _assert_no_leak(stack: Stack) -> None:
     assert volume_grep(f"{stack.project}_fabric-queue", MARK) == "", (
         "a marker persisted in the Node's telemetry queue volume"
     )
-    # The content queue carries bodies by design, never a credential.
-    for secret in SECRET_MARKERS:
-        assert volume_grep(f"{stack.project}_fabric-content-queue", secret) == "", (
-            f"{secret} persisted in the Node's content queue volume"
-        )
+    # Spec 049 §7.8: the content queue and the file store are sealed with the
+    # Node key, so neither holds a body or a credential in clear.
+    for marker in CONTENT_MARKERS + SECRET_MARKERS:
+        for volume in ("fabric-content-queue", "fabric-content"):
+            assert volume_grep(f"{stack.project}_{volume}", marker) == "", (
+                f"{marker} persisted in clear in the Node's {volume} volume"
+            )
 
 
 def _delivered(
@@ -568,7 +652,11 @@ def _assert_capture_spans(
     store = run.store
     assert {s["name"] for s in spans} <= CAPTURE_SPAN_NAMES, {s["name"] for s in spans}
     for span in spans:
-        extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS
+        # Spec 049 §7.9: the bound production Node stamps every span it admits.
+        assert span["attributes"].get("fabric.source.authenticated") is True, span[
+            "name"
+        ]
+        extra = set(span["attributes"]) - CAPTURE_KEYS - REUSED_KEYS - NODE_STAMPS
         assert not extra, f"{span['name']} carries non-allowlisted keys {extra}"
         assert span["scope"] == "", (
             "fabricguard must clear the instrumentation scope name"
@@ -704,6 +792,10 @@ def _assert_store_holds_content(run: AgentRun, exchanges: list[dict[str, Any]]) 
             f"file://{NODE_CONTENT_DIR}/{TENANT}/evidence/"
         )
         assert descriptor["tenant_id"] == TENANT
+        # Spec 049 §7.9: persisted by fabriccontent at the bound ingress.
+        assert descriptor.get("source_authenticated") is True
+        assert descriptor["privacy_mode"] == "retain_original"
+        assert descriptor["policy_id"] == "wire-e2e-capture"
 
 
 def test_wire_capture_streams_through_production_node_and_reconstructs(
@@ -801,14 +893,22 @@ def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -
     # though nothing could be delivered.
     assert time.monotonic() - started < 60
     # Capture itself still worked: every record waits on disk for replay.
-    headers = [spool_header(path) for path in spool_records(bad.spool)]
+    headers = [
+        h for path in spool_records(bad.spool) for h in spool_headers(path, SPOOL_KEY)
+    ]
     rejected_ids = {
         h["span"]["attributes"]["fabric.wire.exchange_id"]
         for h in headers if h["record_kind"] == "exchange"
     }  # fmt: skip
     assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
     # J1: undelivered records carry the source only as its pseudonym.
-    spooled = b"".join(path.read_bytes() for path in spool_records(bad.spool))
+    # Spec 049 §7.8: sealed at rest; opened, they name the source only by pseudonym.
+    sealed = b"".join(path.read_bytes() for path in spool_records(bad.spool))
+    for marker in CONTENT_MARKERS:
+        assert marker.encode() not in sealed, f"{marker} is in clear in the agent spool"
+    spooled = b"".join(
+        open_spool_record(path, SPOOL_KEY) for path in spool_records(bad.spool)
+    )
     assert pseudonym("s-", source_of(bad.service), ID_KEY).encode() in spooled
     for label in (bad.service, source_of(bad.service)):
         assert label.encode() not in spooled, f"clear label {label} was spooled"

@@ -134,7 +134,9 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	// Spec 048 run scopes: one uuid4 per fabric.wire.run() entry, on
 	// exchange spans inside the scope and on its run_start/run_end markers.
 	"fabric.run.scope_id",
-))
+	// Spec 049 P0: every new four-layer key with a closed validator
+	// (coverage_keys.go), value-closed wherever it appears.
+), coverageKeyNames())
 
 // BuiltInAllowedFields retains released v1 log classes. The shared envelope
 // fields are added by mergeAllowed.

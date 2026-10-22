@@ -1,370 +1,148 @@
 # Architecture
 
-SingleAxis Fabric is a customer-controlled recording data plane for AI
-systems. One deployable runtime — **Fabric Node** — performs the whole product
-pipeline:
+Fabric is a passive recorder for AI systems that runs entirely in your
+infrastructure:
 
 ```text
-CAPTURE -> PROTECT -> DELIVER
+CAPTURE  ->  PROTECT  ->  DELIVER
 ```
 
-- **Capture** — accept OTLP telemetry from SDKs, adapters, or an existing
-  collector over an authenticated listener.
-- **Protect** — strip everything except an exact metadata allowlist before
-  records cross the customer boundary.
-- **Deliver** — buffer records in a persistent queue and retry export to the
-  customer-chosen destination with at-least-once retry after durable queue
-  admission. Finite storage, pre-admission loss and terminal export failures
-  still require explicit operational evidence.
-
-The recorder is **passive**: it does not authorize or alter monitored actions.
-SDK admission is bounded, but instrumentation and synchronous privacy transforms
-have overhead; Node backpressure can block a telemetry exporter. Keep exporter
-and shutdown work off the application critical path and measure target overhead.
-The accepted design of record is
-[spec 027](../specs/027-recorder-v1.md).
-
-## System context
-
-```mermaid
-flowchart LR
-    subgraph MONITORED["Monitored AI system (customer workload)"]
-        AGENT["Agent application"]
-        SDK["Fabric SDK<br/>Python / TypeScript"]
-        OTLP["Existing OTLP pipeline"]
-        ADP["Framework / vendor adapter"]
-        AGENT --> SDK
-        AGENT --> OTLP
-        AGENT --> ADP
-    end
-
-    subgraph BOUNDARY["Customer-controlled boundary"]
-        NODE["<b>Fabric Node</b><br/>capture · protect · deliver"]
-        QUEUE[("Persistent queue<br/>file storage, fsync")]
-        NODE <--> QUEUE
-    end
-
-    subgraph DEST["Destination (customer chooses)"]
-        BACKEND["Customer OTLP backend<br/>Jaeger · Tempo · vendor"]
-        PLATFORM["SingleAxis Platform<br/>(optional, downstream)"]
-    end
-
-    SDK -- "OTLP :4317/:4318<br/>+ auth" --> NODE
-    OTLP -- "OTLP :4317/:4318<br/>+ auth" --> NODE
-    ADP -- "OTLP :4317/:4318<br/>+ auth" --> NODE
-    NODE -- "protected OTLP/HTTP + auth<br/>at-least-once" --> DEST
-
-    BACKEND -. "monitor · search · investigate" .-> CONSUMER["Operators"]
-    PLATFORM -. "evaluate · Decision Graph" .-> CONSUMER
-```
-
-Three boundaries matter:
-
-1. **The monitored system is unaffected.** Telemetry flows one way; a Fabric
-   Node outage cannot change an agent decision.
-2. **Protection happens inside the customer boundary.** The allowlist runs in
-   Fabric Node *before* export — not downstream, not "in transit".
-3. **The destination is the customer's choice.** A private OTLP backend, a
-   private SingleAxis deployment, or SingleAxis Platform — Fabric Node behaves
-   identically toward each.
-
-## Inside Fabric Node
-
-Fabric Node is an OpenTelemetry Collector distribution with one job. The
-pipeline is deliberately minimal — fewer stages, fewer failure modes:
-
-```mermaid
-flowchart TD
-    subgraph IN["CAPTURE"]
-        GRPC["OTLP gRPC :4317"]
-        HTTP["OTLP HTTP :4318"]
-        AUTH{"authenticated?"}
-        GRPC --> AUTH
-        HTTP --> AUTH
-        AUTH -- "no token / bad cert" --> REJ["401 / TLS reject<br/>(record never enters)"]
-    end
-
-    subgraph PROC["PROCESSORS (in order)"]
-        ML["memory_limiter<br/>512 MiB — bounded memory"]
-        FG["<b>fabricguard processor</b><br/>metadata-only allowlist"]
-        ML --> FG
-    end
-
-    subgraph OUT["DELIVER"]
-        SQ["sending_queue<br/>persistent · fsync · block_on_overflow"]
-        RT["retry_on_failure<br/>max_elapsed_time: 0 — never gives up"]
-        EXP["otlp_http exporter<br/>HTTPS + Authorization header"]
-        SQ --> RT --> EXP
-    end
-
-    EXT["Extensions:<br/>health_check :13133 · file_storage · bearertokenauth"]
-    METRICS[("Internal metrics :8888<br/>queue depth · send failures")]
-
-    AUTH -- "valid" --> ML
-    FG --> SQ
-    EXP -- "protected records" --> DEST2[("Customer destination")]
-
-    AUTH -.-> EXT
-    SQ -.-> METRICS
-```
-
-Wire capture in node mode ([spec 048](../specs/048-node-content-delivery-and-agent-spool.md))
-adds a separate, HTTP-only content receiver `otlp/content` on **:4319** (same
-authentication and TLS) feeding its own pipeline: `memory_limiter` →
-`fabriccontent`, which verifies each body's digest, length and tenant and
-writes body + descriptor to the customer's content store (a directory or
-S3) behind its own persistent queue. Content never passes `fabricguard` and
-can never reach the OTLP destination exporter: `fabric-gate` refuses any
-configuration that mixes the two paths. The Node is the only writer of the
-content store; agents hold no store credentials.
-
-Design notes:
-
-- **No batch processor before the queue.** A volatile in-memory batch window
-  in front of the durable queue would be a silent-loss mode; records are
-  persisted per-request.
-- **`block_on_overflow: true`.** A full queue back-pressures the receiver —
-  the exporter blocks until space frees rather than the record silently
-  dropping. This is the fail-safe choice for a recorder: backpressure is
-  visible, loss is not.
-- **`max_elapsed_time: 0s`.** Retry never expires. A destination outage
-  pauses delivery; it does not delete data.
-- **`memory_limiter` first.** The node sheds load on itself before it can be
-  OOM-killed mid-batch.
-- **Two pipelines only: `traces` and `logs`.** The image entrypoint
-  (`fabric-gate`) refuses to boot a config defining any other pipeline, and
-  the distribution-qualification test
-  (`tests/qualify-distribution-config.sh`) proves the refusal, so new signal
-  types cannot widen the export surface accidentally. `fabric-gate` also
-  supervises bearer-token material while the collector runs — a mid-run
-  rotation to an unsafe token file stops the recorder instead of minting an
-  empty credential.
-
-## How PROTECT decides what crosses the boundary
-
-The allowlist applies to the shipped traces and logs pipelines; `fabric-gate`
-enforces that pipeline set at container startup inside the image (bare-binary
-builds rely on the qualification test).
-
-The `fabricguard` processor applies a per-record, per-attribute decision
-cascade. Every attribute key must survive all four gates:
-
-```mermaid
-flowchart TD
-    IN["Attribute on span / event / log record"]
-    G1{"1. sensitive name?<br/>prompt · response · message · body · payload<br/>argument · result · header · cookie · token"}
-    G2{"2. exact allowlist key?<br/>metadata fields only<br/>identifiers · enums · counts · hashes"}
-    G3{"3. *hash key ⇒ valid SHA-256 hex?<br/>no freeform values smuggled in a hash field"}
-    G4{"4. scalar / flat slice shape?<br/>maps and byte arrays removed<br/>strings ≤ 8 KiB"}
-
-    IN --> G1
-    G1 -- "yes (and not explicitly safe)" --> DROP1["REMOVED<br/>sensitive"]
-    G1 -- "no" --> G2
-    G2 -- "no" --> DROP2["REMOVED<br/>not_allowed"]
-    G2 -- "yes" --> G3
-    G3 -- "no" --> DROP3["REMOVED<br/>invalid_hash"]
-    G3 -- "yes" --> G4
-    G4 -- "no" --> DROP4["REMOVED<br/>oversized / structured"]
-    G4 -- "yes" --> KEEP["EXPORTED"]
-```
-
-Two more rules complete the gate:
-
-- **Log record bodies and severity text are cleared.** Only allowlisted
-  attributes and a normalized `event_name` survive — a log body is a free-form
-  string channel and is always treated as content.
-- **Event names are normalized to a fixed vocabulary** (`fabric.decision`,
-  `fabric.llm_call`/`fabric.model_call`, `fabric.tool_call`,
-  `fabric.retrieval`, `fabric.memory`, `fabric.side_effect`,
-  `fabric.interaction`, `fabric.file_access`, `fabric.delegation`,
-  `fabric.checkpoint`, `fabric.replay`, `fabric.mcp.inventory`,
-  `fabric.skill`, `fabric.hook`, `fabric.coverage`, `fabric.error`,
-  `fabric.retry`, `fabric.cancellation`, `fabric.execution`, …). Unknown
-  names map to `fabric.activity` or are dropped when
-  `drop_unknown_classes` is on — a caller-controlled event name can never
-  smuggle text out.
-
-The allowlist is **exact-key, not namespaced**. `fabric.*` as a prefix is not
-trusted — every field the SDKs emit was reviewed and individually admitted
-(identifiers, workflow/delegation structure, token counts, enums, hashes).
-Caller-controlled free text — `fabric.tags`, `user_id`, raw paths, raw
-targets, memory keys — stays denied. Removing denied keys is not the same as
-guaranteeing no sensitive data exists in the remaining metadata; customers
-still own classification and retention.
-
-## Delivery lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> Accepted : valid OTLP + auth
-    Accepted --> Queued : fabricguard passed,<br/>fsync to volume
-    Queued --> Dispatched : consumer picks batch
-    Dispatched --> Acknowledged : destination 2xx
-    Dispatched --> Queued : timeout / 5xx / network<br/>(retry, exponential backoff)
-    Queued --> [*] : delivered (at least once)
-
-    note right of Queued
-        fsync before the record is
-        visible for dispatch — survives
-        pod delete, container restart,
-        hard reboot (volume permitting)
-    end note
-
-    note right of Acknowledged
-        "Accepted" means the destination
-        answered 2xx. Durable persistence
-        at the destination is its own
-        evidence — not implied by ours.
-    end note
-```
-
-What each state means operationally:
-
-| State | Meaning | Who observes it |
-|---|---|---|
-| Accepted | Fabric Node returned 2xx to the agent | agent SDK |
-| Queued | record fsynced to the node's volume | `otelcol_exporter_queue_size` |
-| Dispatched | batch sent to destination | exporter logs |
-| Acknowledged | destination answered 2xx | retry counter stops |
-| Delivered | destination durably persisted | **destination's own evidence** |
-
-Node restart: on boot, `file_storage` reloads the queue index and compacts —
-undelivered records re-enter `Dispatched`. Destination outage: records
-accumulate in the queue (bounded by `queue_size` items — size the volume for
-the expected outage window) and drain when the destination returns.
-
-Duplicate delivery is possible after ambiguous acknowledgements. Destinations
-must deduplicate on the preserved `trace_id`/`span_id`/`event_id` — identity
-is deliberately retained for exactly this reason.
-
-## What arrives at the destination
-
-A monitored workflow lands as a standard OTLP trace — existing backends
-render it without any Fabric-specific tooling:
-
-```mermaid
-flowchart TD
-    D["<b>fabric.decision</b> span<br/>tenant_id · agent_id · session_id · request_id<br/>workflow_id · execution_id · trace/span ids"]
-    LLM["llm_call span<br/>gen_ai.request.model · provider<br/>input/output tokens · finish_reason"]
-    TOOL["tool_call span<br/>tool name · type<br/>arguments_hash · result_hash"]
-    EV["span events on the decision:<br/>fabric.retrieval · fabric.memory<br/>fabric.side_effect · fabric.checkpoint<br/>fabric.delegation · fabric.interaction"]
-
-    D --> LLM
-    D --> TOOL
-    D --> EV
-
-    LLM --- CONTENT["content visible:<br/>model, provider, token counts,<br/>status — never the prompt/response"]
-    TOOL --- CONTENT2["content visible:<br/>name, kind, hashes of payloads —<br/>never the payload"]
-```
-
-Cross-service agent workflows stay connected: SDK `inject()` writes W3C
-`traceparent` plus Fabric identity into carriers, and the child decision
-stamps `fabric.parent_agent_id` / `fabric.parent_decision_id`. A delegated
-call chain can reconstruct as one trace when every participating producer
-propagates and emits that context. Root return does not prove background or
-remote producers have closed; missing producers remain unknown.
-
-## Deployment topologies
-
-### Single client VM (Docker, no Kubernetes)
-
-```mermaid
-flowchart LR
-    subgraph HOST["Client VM"]
-        subgraph AG["Agent workload"]
-            APP["monitored agent<br/>(SDK or OTLP)"]
-        end
-        subgraph FN["docker compose (production overlay)"]
-            NODE2["fabric-node container<br/>nonroot · read-only · cap_drop ALL"]
-            V[("named volume<br/>fabric-queue")]
-            NODE2 --- V
-        end
-    end
-
-    APP -- "127.0.0.1:4318<br/>Authorization: Bearer" --> NODE2
-    NODE2 -- "https + Authorization<br/>your OTLP backend" --> EXT["External destination"]
-
-    subgraph OPS["Operate"]
-        PF["make preflight-prod<br/>make verify-prod"]
-        M["127.0.0.1:8888 metrics<br/>127.0.0.1:13133 health"]
-    end
-    FN -.-> OPS
-```
-
-Path: `deploy/compose/` — `make preflight-prod && make up-prod && make verify-prod`.
-Ingress requires a bearer token (file secret); egress requires HTTPS + auth
-header; receiver TLS is supported before binding beyond loopback.
-
-### Kubernetes
-
-```mermaid
-flowchart LR
-    subgraph NS["cluster namespace"]
-        subgraph SVC["ClusterIP service"]
-            POD["fabric-node-otel-collector-0<br/>StatefulSet + PVC queue<br/>NetworkPolicy · nonroot"]
-            PVC[("PersistentVolumeClaim<br/>durable queue")]
-            POD --- PVC
-        end
-    end
-
-    AG2["agent workloads<br/>in-cluster"] -- "mTLS / bearer<br/>+ NetworkPolicy" --> POD
-    POD -- "https + auth" --> EXT2["destination"]
-
-    subgraph PROF["Profiles"]
-        DEV["shadow-dev<br/>local evaluation"]
-        PROD["shadow-production<br/>fail-closed: pinned image,<br/>TLS required, explicit peers"]
-    end
-    NS -.-> PROF
-```
-
-### Two capture lines
-
-Fabric records agent activity through two capture lines that share the Node
-but stay separate in activation, spools, delivery topology, verifiers,
-verdicts and fabricguard classes:
-
-- **Explicit evidence line** (specs 035–046): the caller wraps calls with
-  `CallRecorder`, `ByteBoundaryAdapter` or `FinalHTTPAdapter`; the SDK writes
-  protected bytes to the customer store and emits `agent.evidence.*` records
-  that fabricguard's exact-key `evidence` class admits, optionally through a
-  dedicated, evidence-bound Node (`evidence_source_binding`, logs only, no
-  content path).
-- **Zero-code wire line** (specs 047–049): an opt-in httpx/httpx2 tee records
-  exact model-call bytes, delivered through the agent spool to a
-  content-capable Node (`otlp/content` → `fabriccontent`); fabricguard's
-  exact-key capture span profile admits its `fabric.model_call` spans.
-
-Inside an explicit model call the wire tee defers ("explicit wins"), and a
-Fabric-protected global tracer provider never carries wire spans. Each spool
-owns its own directory. Wire `complete_for_*` verdicts are record-integrity
-statements; only spec 046 issues `verified_complete_for_declared_scope`.
-Details: [Two capture lines](README.md#two-capture-lines).
-
-Path: `helm install fabric charts/fabric -f charts/fabric/profiles/shadow-production.yaml`
-plus the required secrets. The production profile fails closed on unpinned
-images, missing TLS, and unbounded network peers.
+It records observable AI activity, protects the record before it leaves the
+process and before it reaches disk, and delivers it to a store and an OTLP
+destination you choose. It never blocks or alters the monitored system:
+results and exceptions are unchanged, protection and export I/O stay off the
+monitored call path, and instrumentation adds a small, measured overhead
+(about 0.2 ms per call in our tests) plus a bounded drain at shutdown. It
+does not evaluate, judge, score or control the system.
 
 ## Components
 
-| Component | What it is | What it is not |
-|---|---|---|
-| **Fabric SDKs** (Python, TypeScript) | Optional instrumentation emitting rich agentic-workflow telemetry (decisions, LLM/tool calls, retrieval, memory, side effects, delegation, checkpoints) | Required — any OTLP source works; richer source, richer record |
-| **Fabric Node** | The recorder runtime: OTel Collector + `fabricguard` + durable queue | A relay, a proxy, or a control plane — no second hop, no agent control |
-| **`fabricctl`** | Offline CLI: `init` (interactive wizard), `recorder validate`, `recorder digest` | A deploy tool — `init` writes a config + receipt marked `not-installed` |
-| **Helm chart** | `charts/fabric` with `shadow-dev` / fail-closed `shadow-production` profiles | A management plane |
-| **Compose overlay** | `deploy/compose` production path for a plain VM | An orchestration framework — Docker + restart policy is the whole story |
-| **Contracts** | Public schemas: Activity Envelope v2, connect capability, privacy assertion, delivery evidence, recorder config | Runtime behavior — the envelope is the downstream normalization target, not what the node emits on the wire |
+```text
+┌──────────────────────── agent process (Python) ────────────────────────┐
+│ app ─► httpx / httpx2 / aiohttp ─► model provider                      │
+│          │ tee (bytes copied, never changed)                           │
+│          ▼                                                             │
+│   capture worker: match ─► extract parts ─► PROTECT ─► digest          │
+│          ▼                                                             │
+│   durable spool (fsync, AES-256-GCM) ─► sender thread ───────────────┐ │
+│                                                                      │ │
+│ app ─► explicit APIs: decision()/record_*, CallRecorder, adapters ──┐│ │
+└─────────────────────────────────────────────────────────────────────┼┼─┘
+                                                     spans (OTLP) ◄───┘│ content (OTLP logs)
+┌──────────────────────────── Fabric Node ───────────────────────────────▼──┐
+│ fabric-gate (refuses unsafe config) ─► otelcol-fabric                     │
+│  otlp :4317/:4318 ─► fabricguard (allowlist, source binding) ─► queue ─►  ├─► OTLP destination
+│  otlp/content :4319 ─► fabriccontent (descriptor checks, binding) ─► q ─► ├─► file dir or S3 (SSE)
+│                        queue sealed by fabricenvelope                     │
+└───────────────────────────────────────────────────────────────────────────┘
+offline:  python -m fabric.reconstruct  (spans + store ─► integrity verdict)
+```
 
-## What the recorder does not do
+### Capture
 
-The release binary/chart/package surfaces contain no judges, red-team
-runners, prompt-time PII engines, guardrails, policy enforcement, tool
-authorization, or management UI — enforced by artifact-content tests, not
-just disabled defaults. Blocking or altering agent traffic requires an
-inline placement the passive recorder never occupies; that is a separate,
-deliberate decision for later.
+Two inputs exist in the Python SDK:
 
-Downstream services (SingleAxis Platform, or any backend) consume the
-protected record for monitoring, evaluation, and Decision Graph analysis.
-They are consumers, not hidden dependencies — Fabric Node delivers a
-verifiable record with or without them.
+- **Wire capture** (`fabric.wire`, Python only). Enabled per process by
+  `fabric.wire.install()` or by the autoload (`FABRIC_WIRE_AUTOLOAD=1` with
+  the autoload directory on `PYTHONPATH`); installing the package enables
+  nothing. It patches the default transports of `httpx` and `httpx2` and
+  `aiohttp.ClientSession` requests, so it covers any client built on them:
+  the official `openai` SDK (httpx in 1.x/2.x, httpx2 from 3.x, and its
+  optional aiohttp client) and `anthropic` SDK (httpx2 from 1.x), LiteLLM
+  and DSPy (aiohttp by default), and the frameworks that use them. A model
+  call through `requests` or `urllib3` is not captured but is recorded as
+  an `uninstrumented_client` loss. A request is matched by host and path (chat completions,
+  responses, completions, embeddings, messages); its exact request and
+  response bytes are copied on the transport and handed to a background
+  worker. Nothing is parsed at capture time. Each call gets a source
+  sequence number, so a missing record is detectable; losses are recorded
+  as `fabric.capture_loss` and the end of a process as a `final` heartbeat.
+  `fabric.wire.run(run_id)` brackets a run scope with start/end markers.
+- **Explicit records**: what the application reports through the SDK
+  (Python and TypeScript): `decision()` and its `record_*` methods, and in
+  Python `CallRecorder` and the byte-boundary adapters, which record exact
+  bytes the application passes. See [explicit APIs](explicit-apis.md).
+
+Inside a live explicit model call the wire tee defers, so a call is
+recorded once.
+
+Optional Linux [host sensors](host-sensors.md) (auditd receiver, eBPF host
+emitter) record process, connection and file metadata as corroboration.
+
+### Protect
+
+Protection happens in the agent, on the capture worker, **before** the spool:
+
+- each object gets the privacy mode of its content role from the capture
+  policy (`omit`, `metadata_only`, `redact`, `tokenize`, `masked_only`,
+  `original_plus_masked`, `retain_original`); customer redaction is done by
+  a redaction service you run beside the agent (Unix socket or loopback),
+  never by code Fabric runs; a failure withholds the object;
+- large JSON requests are split into a skeleton and extracted media parts,
+  each protected separately;
+- identifiers leave as keyed pseudonyms; telemetry carries ids, digests and
+  allowlisted metadata only;
+- the spool is encrypted with a customer key.
+
+The production profile refuses to record content without a policy and
+keys. The Node then enforces an exact-key allowlist (`fabricguard`), binds
+every batch to one authenticated source, and seals its content queue and
+file store. Details: [privacy and security](privacy-and-security.md).
+
+### Deliver
+
+- **Agent → Node.** A single sender thread drains the spool: it posts each
+  body to the Node's content receiver, then exports its span, and deletes the
+  record only when both were accepted. It retries until the Node accepts;
+  records survive agent restarts.
+- **Node → destinations.** Telemetry goes through a persistent, fsync'd
+  queue to one OTLP/HTTP destination, with infinite retry and no redirects.
+  Content goes through its own persistent queue to a directory or an
+  S3/S3-compatible bucket with server-side encryption; objects are written
+  once (`If-None-Match: *`) under `<prefix><tenant>/evidence/<object-id>`
+  with a JSON descriptor beside each (a Node directory store shards these
+  into hash-named subdirectories).
+- Delivery is at least once; destinations deduplicate.
+
+### Verify
+
+Verification is a property of the record, not a runtime service:
+
+- `python -m fabric.reconstruct` checks sequences, losses, heartbeats and
+  run markers, re-reads every object and its digest, rebuilds runs from the
+  stored bytes and states `complete_for_declared_scope`,
+  `complete_for_observed_scopes`, `partial` or `unverified`. In the
+  production profile it requires the Node's source-authentication stamp on
+  trusted readback. See [reconstruct](reconstruct.md).
+- [Qualified-run mode](qualified-run-mode.md) (opt-in, explicit line) adds
+  independent witnesses and four signed receipt stages and is the only path
+  to `verified_complete_for_declared_scope`.
+
+## Profiles
+
+`local` (development; `file://` store or an unauthenticated loopback Node)
+and `production` (node mode; capture policy, id key and spool key required;
+authenticated, single-source Node). See [deployment](deployment.md).
+
+## What ships
+
+| Artifact | Contents |
+|---|---|
+| Python SDK `singleaxis-fabric` | wire capture, explicit APIs, `fabric.reconstruct`, qualified-run verifier; extras `otlp`, `s3`, `mcp`, `signing` |
+| TypeScript SDK `@singleaxis/fabric` | explicit APIs only (no wire capture); Node.js ≥ 20.6 |
+| Fabric Node image `ghcr.io/singleaxis/fabric-otelcol` | `otelcol-fabric` with `fabric-gate`; components: `otlp` and `audit` receivers; `fabricguard`, `batch`, `memory_limiter` processors; `fabriccontent`, `otlphttp`, `debug` exporters; `health_check`, `file_storage`, patched `bearertokenauth`, `noredirect`, `fabricenvelope` extensions |
+| Host emitter image `ghcr.io/singleaxis/fabric-host-emitter` | eBPF host sensor |
+| Helm chart `fabric` | the Node, profiles `shadow-dev` and `shadow-production` |
+| `fabricctl` | `init`, `recorder validate`, `recorder digest`, `version`, `help` for a local recorder configuration file |
+| Public contracts | activity v2, connect v1, content v1, delivery v1, privacy v1, recorder v1 (published archive); capture v1, content v2, coverage v1, deployment-policy v1, evidence v1 and redaction v1 are in the repository as drafts |
+
+Compose files for the Node are in `deploy/compose` (not a separate
+artifact).
+
+## What Fabric is not
+
+Fabric OSS does not include evaluation, judges, guardrails, red-teaming,
+escalation, policy engines, approval workflows, enforcement, analytics or a
+management UI, and it never requires a SingleAxis service. Those consume
+the record elsewhere ([AGENTS.md](../AGENTS.md)). Release artifact tests
+keep removed capabilities out of every package and image.

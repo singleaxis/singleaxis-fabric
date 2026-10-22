@@ -6,6 +6,8 @@ package fabriccontentexporter
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"io/fs"
@@ -48,8 +50,10 @@ func (e *storeError) Error() string {
 	return "fabriccontent: " + e.op + " failed"
 }
 
-// fileBackend stores objects below an absolute directory with the SDK's
-// local layout: files 0600, directories 0700, written to a temp file,
+// fileBackend stores objects below an absolute directory in the SDK's
+// local layout, sharded by a two-level hash prefix of the object id (see
+// shardedRel; refs and envelope AADs keep the logical, flat key): files
+// 0600, directories 0700, written to a temp file,
 // fsync'd, then put into place with an atomic no-replace primitive and the
 // directory fsync'd. The primitive is link(2), which never replaces an
 // existing name; on a filesystem without hard links it is an atomic
@@ -122,6 +126,9 @@ type fileBackend struct {
 	// fsync'd. Bounded by maxDurableDirs: forgetting entries only costs a
 	// repeated (harmless) parent fsync.
 	durable map[string]bool
+	// sealer, when set, wraps every object and descriptor in the Node
+	// directory envelope (spec 049 §7.8; envelope.go).
+	sealer *sealer
 	// rootDurable is set once a walk of the root's ancestor chain (see
 	// rootBarrier) has completed in this process, and cleared whenever the
 	// root has to be created again.
@@ -132,8 +139,11 @@ type fileBackend struct {
 	created map[string]bool
 }
 
-// maxDurableDirs bounds the durable set (three directories per tenant).
-const maxDurableDirs = 4096
+// maxDurableDirs bounds the durable set. The sharded layout has up to
+// 2*(1+256+65536) directories per tenant below evidence/; a set that holds
+// the busy part of that avoids re-fsyncing a shard's parent on most puts.
+// Forgetting entries only costs a repeated (harmless) parent fsync.
+const maxDurableDirs = 1 << 16
 
 // linkFile and renameNoReplace are the no-replace primitives; tests replace
 // them to simulate filesystems without hard links or without either.
@@ -162,7 +172,7 @@ func newFileBackend(dir string) *fileBackend {
 // root already exists, the root barrier (see rootBarrier): a failure other
 // than reaching the durable boundary fails Start with a retryable error.
 // A missing root is created, and its barrier completed, by the first put.
-func startFileBackend(dir, boundary string) (*fileBackend, error) {
+func startFileBackend(dir, boundary string, s *sealer) (*fileBackend, error) {
 	if boundary != "" {
 		if err := checkPhysicalBoundary(dir, boundary); err != nil {
 			return nil, err
@@ -170,6 +180,7 @@ func startFileBackend(dir, boundary string) (*fileBackend, error) {
 	}
 	b := newFileBackend(dir)
 	b.boundary = boundary
+	b.sealer = s
 	b.sweepStaleTemps()
 	if info, err := os.Lstat(dir); err == nil && info.IsDir() {
 		if err := b.ensureRoot(); err != nil {
@@ -251,18 +262,96 @@ func (b *fileBackend) prefix() string { return b.dir + "/" }
 
 func (b *fileBackend) ref(key string) string { return "file://" + key }
 
+// shardFanout is the number of hex characters per shard directory level.
+const shardFanout = 2
+
+// shardedRel maps a logical SDK layout key, relative to the content root
+// ("<tenant>/evidence/<id>" or "<tenant>/evidence/meta/<id>.json"), to the
+// directory backend's physical location:
+//
+//	<tenant>/evidence/<h0h1>/<h2h3>/<id>
+//	<tenant>/evidence/meta/<h0h1>/<h2h3>/<id>.json
+//
+// where h = lowercase hex SHA-256 of the object id's UTF-8 bytes. A flat
+// directory would hold every object of a tenant (about four million files a
+// day at ten exchanges a second): inode exhaustion before bytes, slow
+// lookups and walks. The prefix is a hash of the id rather than the id's own
+// leading characters so the spread does not depend on the id format (a
+// time-ordered id would pile into one shard), and so the shard components
+// are always [0-9a-f]{2}: they can never be ".", ".." or a separator.
+// Every other component must be a single, non-empty, non-dot name; anything
+// else is not a layout key (ok=false) and is refused.
+func shardedRel(rel string) (string, bool) {
+	parts := strings.Split(rel, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." || strings.ContainsRune(part, '\\') {
+			return "", false
+		}
+	}
+	switch {
+	case len(parts) == 3 && parts[1] == "evidence":
+		a, b := shardOf(parts[2])
+		return strings.Join([]string{parts[0], "evidence", a, b, parts[2]}, "/"), true
+	case len(parts) == 4 && parts[1] == "evidence" && parts[2] == "meta" && strings.HasSuffix(parts[3], ".json") && len(parts[3]) > len(".json"):
+		a, b := shardOf(strings.TrimSuffix(parts[3], ".json"))
+		return strings.Join([]string{parts[0], "evidence", "meta", a, b, parts[3]}, "/"), true
+	}
+	return "", false
+}
+
+// shardOf is the two shard directory names for an object id.
+func shardOf(objectID string) (string, string) {
+	sum := sha256.Sum256([]byte(objectID))
+	h := hex.EncodeToString(sum[:2])
+	return h[:shardFanout], h[shardFanout : 2*shardFanout]
+}
+
+// put stores key (a logical SDK layout key; see shardedRel) at its sharded
+// location. Objects written before the sharded layout live at the flat,
+// legacy location (the key itself): an object found there counts as stored
+// (identical bytes: a replay, healed and fsync'd there) or is a conflict
+// (different bytes), so an id written before an upgrade is never written a
+// second time in its shard. Only a writer of the legacy layout racing this
+// one could still publish the flat name after the check; a Node upgrade
+// replaces the writer, so that is not a supported deployment.
 func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 	if !strings.HasPrefix(key, b.prefix()) {
 		return &storeError{op: "file layout"}
 	}
-	target := filepath.FromSlash(key)
+	rel := strings.TrimPrefix(key, b.prefix())
+	physical, ok := shardedRel(rel)
+	if !ok {
+		return &storeError{op: "file layout"}
+	}
+	legacy := filepath.Join(b.dir, filepath.FromSlash(rel))
+	target := filepath.Join(b.dir, filepath.FromSlash(physical))
 	parent := filepath.Dir(target)
+	// Creates and makes durable every directory down to the shard, and
+	// checks each is a real directory: that includes the legacy object's
+	// parent (<tenant>/evidence or <tenant>/evidence/meta).
 	if err := b.privateDirs(parent); err != nil {
 		return err
 	}
-	if done, err := existing(target, data); done || err != nil {
+	stored := data
+	if b.sealer != nil {
+		// The envelope binds the logical key, not the shard path: the
+		// shard is a function of the id, and a legacy flat object
+		// authenticates under the same AAD.
+		sealed, err := b.sealer.seal(data, rel)
+		if err != nil {
+			return &storeError{op: "file seal"}
+		}
+		stored = sealed
+	}
+	if done, err := b.existing(target, data, rel); done || err != nil {
 		if err == nil { // a replay: heal a second link a crash after link(2) left
 			return healStaleTemps(target)
+		}
+		return err
+	}
+	if done, err := b.existingLegacy(legacy, data, rel); done || err != nil {
+		if err == nil {
+			return healStaleTemps(legacy)
 		}
 		return err
 	}
@@ -272,7 +361,7 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
-	if err := writeSynced(tmp, data); err != nil {
+	if err := writeSynced(tmp, stored); err != nil {
 		return err
 	}
 	err = linkFile(tmpName, target)
@@ -285,7 +374,7 @@ func (b *fileBackend) put(_ context.Context, key string, data []byte) error {
 		}
 	}
 	if err != nil { // the target exists: replay or conflict
-		done, err := existing(target, data)
+		done, err := b.existing(target, data, rel)
 		if err == nil && !done {
 			return &storeError{op: "file link"} // vanished: retry
 		}
@@ -653,6 +742,53 @@ func privateDir(path string) (created bool, err error) {
 		}
 	}
 	return created, nil
+}
+
+// existingLegacy is existing for an object at its flat, pre-shard location.
+// A directory there is not an object (an id "meta" names the legacy
+// descriptor directory) and counts as absent; a symlink or another
+// non-regular file is refused by existing's no-follow open, as at the shard.
+func (b *fileBackend) existingLegacy(path string, data []byte, rel string) (bool, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return true, &storeError{op: "file read"}
+	}
+	if info.IsDir() {
+		return false, nil
+	}
+	return b.existing(path, data, rel)
+}
+
+// existing is the package existing for a plaintext backend. With an
+// envelope the stored file is opened (authenticated for its own path rel)
+// and its plaintext compared: an envelope that fails authentication (a
+// corrupt or tampered object, or another key) is errConflict, never
+// overwritten and never read as content.
+func (b *fileBackend) existing(path string, data []byte, rel string) (bool, error) {
+	if b.sealer == nil {
+		return existing(path, data)
+	}
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return true, &storeError{op: "file read"}
+	}
+	defer func() { _ = f.Close() }()
+	limit := int64(len(contentMagic) + nonceBytes + len(data) + b.sealer.aead.Overhead())
+	current, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return true, &storeError{op: "file read"}
+	}
+	plaintext, err := b.sealer.open(current, rel)
+	if err != nil || !bytes.Equal(plaintext, data) {
+		return true, errConflict
+	}
+	return true, nil
 }
 
 // existing reports whether path already exists. An existing object holding

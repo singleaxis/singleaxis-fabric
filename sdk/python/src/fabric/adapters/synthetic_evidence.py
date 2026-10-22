@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, cast
 from urllib.parse import urlsplit
 
+from fabric._sequence import GeneratedIds
 from fabric.byte_evidence import ByteEvidenceRecorder
 from fabric.source_spool import SyntheticSourceSpool
 
@@ -49,6 +50,8 @@ _OUTCOME_FIELDS = frozenset(
     }
 )
 _HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+# An AEEP evidence identifier, as fabricguard and the OTLP projection accept it.
+_EVIDENCE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 
 
 def _now() -> str:
@@ -70,6 +73,12 @@ class SyntheticCaptureSession:
     It does *not* authenticate a source or produce a complete-run manifest.
     Optional source spooling persists an epoch and settled metadata events,
     but cannot eliminate the pre-spool crash window.
+
+    Each adapter records under its own source (``provider-http-1``,
+    ``terminal-1``, ``artifact-1``) unless ``source_id`` is given: then every
+    adapter's evidence is one sequence under that source. A Node ingress is
+    bound to exactly one tenant and source (spec 049 §7.9), so an agent that
+    exports through one is recorded under that bound source.
     """
 
     def __init__(
@@ -79,9 +88,23 @@ class SyntheticCaptureSession:
         tenant_id: str,
         run_id: str,
         source_spool: SyntheticSourceSpool | None = None,
+        source_id: str | None = None,
     ) -> None:
         if recorder.tenant_id != tenant_id:
             raise ValueError("recorder store tenant does not match session tenant")
+        if source_id is not None and (
+            not isinstance(source_id, str) or _EVIDENCE_ID.match(source_id) is None
+        ):
+            raise ValueError("invalid session source_id")
+        self._source_id = source_id
+        # Spec 049 §2.9: events carry the ids the recorder emits (keyed pseudonyms, or
+        # generated ids in production without the id key), never the caller's clear ids;
+        # a source spool is keyed by the emitted run id (unused for generated ids).
+        self._ids = recorder.emitted_ids
+        if self._ids is not None:
+            run_id = self._ids.run(run_id, 0)
+            if isinstance(self._ids, GeneratedIds):
+                source_spool = None
         if source_spool is not None and (
             source_spool.tenant_id != tenant_id or source_spool.run_id != run_id
         ):
@@ -95,6 +118,17 @@ class SyntheticCaptureSession:
         self._next: dict[str, int] = {}
         self._events: list[dict[str, Any]] = []
         self._operations: list[dict[str, Any]] = []
+
+    def _emit(self, source_id: str, *ids: str | None) -> tuple[Any, ...]:
+        """``source_id`` and the other caller ``ids`` as emitted (spec 049 §2.9)."""
+        if self._source_id is not None:
+            source_id = self._source_id
+        if (emitted := self._ids) is None:
+            return (source_id, *ids)
+        return (
+            emitted.source(source_id),
+            *(emitted.other(value) if value is not None else None for value in ids),
+        )
 
     def _sequence(self, source_id: str) -> int:
         with self._lock:
@@ -124,6 +158,9 @@ class SyntheticCaptureSession:
         stream_id: str | None = None,
         chunk_index: int | None = None,
     ) -> dict[str, Any]:
+        source_id, operation_id, attempt_id, stream_id = self._emit(
+            source_id, operation_id, attempt_id, stream_id
+        )
         sequence = self._sequence(source_id)
         record_id = _opaque_id("evt")
         try:
@@ -181,6 +218,7 @@ class SyntheticCaptureSession:
     ) -> None:
         if status not in {"truncated", "unsupported", "dropped", "failed", "not_captured"}:
             raise ValueError("gap status must be an incomplete evidence state")
+        source_id, operation_id, attempt_id = self._emit(source_id, operation_id, attempt_id)
         with self._lock:
             event = {
                 "record_id": _opaque_id("evt"),
@@ -238,6 +276,10 @@ class SyntheticCaptureSession:
                 reason="outcome_field_not_allowed",
             )
             return
+        source_id, operation_id, attempt_id = self._emit(
+            source_id, fields["operation_id"], fields["attempt_id"]
+        )
+        fields = {**fields, "operation_id": operation_id, "attempt_id": attempt_id}
         sequence = self._sequence(source_id)
         observed_at = _now()
         event = {

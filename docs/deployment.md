@@ -1,294 +1,391 @@
 # Deployment
 
-The supported recorder-v1 Kubernetes unit is the Fabric umbrella chart. It
-packages only Fabric Node.
+A Fabric deployment has three parts you run and one you choose:
 
-## Choose a profile
+```text
+agent (Python SDK, wire capture)  ──spans──►  Fabric Node  ──spans──►  your OTLP destination
+   durable spool                  ──content─►  (Collector)  ──content─►  your file directory or S3 bucket
+```
 
-| Profile | Use | Posture |
+- **Agent.** The Python SDK in your application. In **node mode** it spools
+  every record to disk and sends it to the Node. It holds no store
+  credentials.
+- **Fabric Node.** The Fabric OpenTelemetry Collector distribution
+  (`ghcr.io/singleaxis/fabric-otelcol`), started through `fabric-gate`,
+  which refuses unsafe configurations. Deploy it with Docker Compose
+  (`deploy/compose`) or Helm (`charts/fabric`).
+- **Content store.** A directory on the Node, or an S3 / S3-compatible
+  bucket. Only the Node writes it.
+- **OTLP destination.** Any OTLP/HTTP endpoint you choose. A SingleAxis
+  account is not required.
+
+Two profiles exist, and they are not interchangeable:
+
+| | `local` | `production` |
 |---|---|---|
-| `shadow-dev` | Local evaluation | Plaintext input and debug output are allowed; no durability claim |
-| `shadow-production` | Passive enterprise monitoring | Fail-closed configuration, mTLS input, authenticated HTTPS output, persistent queue, no sampling |
+| Purpose | Development, evaluation, offline runs | Anything crossing a trust boundary |
+| Agent | `file://` store (direct) or node mode | node mode |
+| Content needs | nothing (implicit `fabric.local-default` policy) | capture policy + id key + spool key |
+| Node | plaintext loopback, no authentication (Compose `make up`, Helm `shadow-dev`) | single-token bearer ingress bound to one tenant and source, TLS, encrypted queue (Compose `make up-prod`, Helm `shadow-production`) |
+| Verdicts | never production-qualified | can be authenticated on trusted readback |
 
-These profiles are operating postures, not regulatory certifications.
+## Local profile
 
-## Local evaluation
+### Compose
 
 ```bash
-helm dependency build charts/fabric
+cd deploy/compose
+make up          # builds the Node image, starts the Node and a test sink
+make status
+```
+
+Ports, all on `127.0.0.1`: `4317` OTLP/gRPC, `4318` OTLP/HTTP, `4319`
+content, `13133` health, `8080` test sink. The sink stores every span
+request and acknowledges only after fsync; `make export-spans OUT=<dir>`
+copies them for `fabric.reconstruct`. The Node writes content to the
+`fabric-content` volume (unencrypted), with tenant `evaluation` by default.
+This setup is plaintext and unauthenticated: never expose it beyond the
+host.
+
+Other targets: `make smoke` (send one fixture trace), `make qualify`
+(destination outage and Node restart recovery), `make up-s3-eval` (a local
+SeaweedFS S3 store with SSE, Node-only writer keys and a read-only reader),
+`make down` / `make reset`.
+
+Agent settings for the local Node with a direct `file://` store (the
+[quickstart](quickstart.md) runs this). With an OTLP endpoint set, file
+mode spools by default at `<store>/.fabric-wire-spool/<tenant>`: a captured
+call survives the process (a crash, SIGKILL or a terminated worker) and the
+next process capturing to the same store delivers it.
+`FABRIC_WIRE_SPOOL_DIR=off` restores direct export.
+
+```bash
+export PYTHONPATH="$(python -m fabric.wire --print-autoload-path)${PYTHONPATH:+:$PYTHONPATH}"
+export FABRIC_WIRE_AUTOLOAD=1
+export FABRIC_TENANT_ID=demo
+export FABRIC_WIRE_STORE=file:///absolute/path/to/store
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+```
+
+### Helm
+
+```bash
 helm upgrade --install fabric charts/fabric \
-  --namespace fabric-system \
-  --create-namespace \
+  --namespace fabric-system --create-namespace \
   --values charts/fabric/profiles/shadow-dev.yaml
 ```
 
-With no destination, `shadow-dev` writes protected metadata to the Collector
-debug exporter. Pod logs are neither durable storage nor an audit trail.
+`shadow-dev` runs one replica without TLS, authentication or NetworkPolicy,
+and uses the debug exporter when no endpoint is set. It is not a production
+posture.
 
-## Production shadow deployment
+## Production profile
 
-The production profile deliberately cannot invent credentials, storage, or an
-approved egress route. Before installation, create these Secrets in the target
-namespace:
+### What the agent needs
+
+Node mode is the production profile. Content is recorded only when **all**
+of these are present; otherwise content capture is disabled, metadata
+continues, and every exchange span says why (`fabric.wire.store_reason`).
+The application is never blocked.
+
+| Variable | Value |
+|---|---|
+| `FABRIC_WIRE_AUTOLOAD=1` and `PYTHONPATH` | the autoload directory (`python -m fabric.wire --print-autoload-path`), prepended; or call `fabric.wire.install()` |
+| `FABRIC_WIRE_CONTENT_ENDPOINT` | `https://<node>:4319/v1/logs`. Setting it selects node mode. Verified HTTPS, or plain HTTP to a loopback host only. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) | `https://<node>:4318` (`/v1/traces` is appended to the general variable) |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer%20<ingress token>` (covers spans and content) |
+| `OTEL_EXPORTER_OTLP_CERTIFICATE` | CA bundle of the Node's server certificate |
+| `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | agent client certificate (Helm `shadow-production` requires mTLS **and** the token) |
+| `FABRIC_TENANT_ID` | the Node's single allowed tenant; must equal the policy's `tenant_id` |
+| `FABRIC_SOURCE_ID` | this source's id; the Node is bound to its `s-` pseudonym (below) |
+| `FABRIC_WIRE_SPOOL_DIR` | absolute directory for the durable spool (created `0700`, must be owned by the agent's uid) |
+| `FABRIC_WIRE_SPOOL_KEY` or `FABRIC_WIRE_SPOOL_KEY_FILE` | 32-byte AES-256-GCM key (base64, or raw/base64 in the file) |
+| `FABRIC_CAPTURE_POLICY` | path to a deployment-policy/v1 JSON file (below) |
+| `FABRIC_WIRE_ID_KEY` | secret of at least 16 bytes (used as given, not base64) for pseudonyms |
+| `FABRIC_TOKENIZATION_KEY` | only for `tokenize`: base64 of at least 32 bytes, distinct from the id key |
+| `FABRIC_REDACTION_ENDPOINT`, `FABRIC_REDACTION_TOKEN_FILE` | only for `redact`, `masked_only` and `original_plus_masked`: your [redaction service](privacy-and-security.md#redaction-service) (Unix socket or loopback port) and its optional `0600` token file |
+| `OTEL_SERVICE_NAME` | optional; emitted as an `svc-` pseudonym |
+
+Other settings: `FABRIC_WIRE_ENDPOINTS` (extra model hosts, a JSON array of
+matchers: `endpoint_id`, `dialect` `openai`/`anthropic`, `hosts` or
+`host_suffixes`, optional `ports`, `path_prefix`, `schemes`,
+`provider_name`), `FABRIC_WIRE_MODEL_ALLOWLIST`, `FABRIC_WIRE_MAX_BODY_BYTES`
+(default 32 MiB, at most 63 MiB in node mode), `FABRIC_WIRE_QUEUE_MAX_ITEMS`
+(default 16384; the capture queue is bounded by 256 MiB of retained bodies,
+the entry cap only bounds per-entry overhead), `FABRIC_WIRE_SPOOL_MAX_BYTES`
+(default 1 GiB), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
+on by default),
+`FABRIC_WIRE_PROXY` (an explicit CONNECT proxy for Fabric's own delivery),
+`FABRIC_WIRE_LABELS=clear`. `FABRIC_WIRE_STORE_SSE` and
+`FABRIC_WIRE_STORE_KMS_KEY_ID` are refused: encryption is configured on the
+Node. Source: `sdk/python/src/fabric/wire/_config.py`.
+
+**Source id.** The Node is bound to one source id **as it travels**. The
+agent always emits its `FABRIC_SOURCE_ID` as a keyed pseudonym, `s-` + the
+first 32 hex of HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, `FABRIC_SOURCE_ID`), even
+when the value already looks like `s-` + 32 hex. Choose an opaque agent
+value (letters, digits, `.`, `_`, `:`, `-`; at most 128 characters), then
+compute the Node's value with the same key:
+
+```bash
+export FABRIC_SOURCE_ID=support-agent-prod
+python3 -c 'import hashlib, hmac, os
+print("s-" + hmac.new(os.environ["FABRIC_WIRE_ID_KEY"].encode(),
+      os.environ["FABRIC_SOURCE_ID"].encode(), hashlib.sha256).hexdigest()[:32])'
+```
+
+It is also the `fabric.source_id` on the agent's capture spans. Only with
+`FABRIC_WIRE_LABELS=clear` is the agent value sent, and bound, unchanged.
+
+**Capture policy.** A deployment-policy/v1 document
+(`contracts/deployment-policy/v1`). For wire capture name the
+`model.exchange.*` roles; roles you do not name are `omit`:
+
+```json
+{
+  "schema_version": "fabric.deployment-policy/v1",
+  "policy_id": "support-agent-capture",
+  "policy_version": 1,
+  "tenant_id": "acme-prod",
+  "workload_id": "support-agent",
+  "privacy": {
+    "model.exchange.request": "retain_original",
+    "model.exchange.response": "retain_original",
+    "model.exchange.part": "retain_original"
+  },
+  "storage": {"backend": "local", "region": "local", "key_id": "support-agent-key"},
+  "retention": {"days": 30},
+  "required_integrations": [],
+  "deployment": {
+    "profile": "production",
+    "image_digest": "sha256:<64 hex of your agent image>",
+    "tls_required": true,
+    "encrypted_store_required": true
+  }
+}
+```
+
+All ten top-level keys are required; `storage.backend` must be `local`.
+Modes are listed in
+[privacy and security](privacy-and-security.md#protection-modes-the-protect-stage).
+`redact`, `masked_only` and `original_plus_masked` need a
+[redaction service](privacy-and-security.md#redaction-service) you run
+beside the agent (`FABRIC_REDACTION_ENDPOINT`) and a transformation named in
+code at `fabric.wire.install()`; zero-code autoload cannot name one and
+withholds those roles.
+
+**Running the redaction service.** Run it on the same host or in the same
+Pod, reachable only over a Unix socket on a shared volume or a loopback
+port. [`examples/redaction-service/`](../examples/redaction-service/README.md)
+has a Dockerfile and Compose and Kubernetes sidecar snippets for its
+reference service; replace its sample rules with your own detection.
+
+### Compose production overlay
+
+For one VM. `make up-prod` runs `preflight-prod.sh` first and refuses to
+start on any failure; a direct `docker compose up` bypasses those checks.
+
+Required in `deploy/compose/.env` (see `.env.example`):
+
+| Variable | Meaning |
+|---|---|
+| `FABRIC_EXPORT_ENDPOINT` | your OTLP/HTTP destination, `https://` only |
+| `FABRIC_EXPORT_AUTH_HEADER` | the `Authorization` value for the destination |
+| `FABRIC_INGRESS_TOKEN_FILE` | file holding the agents' bearer token: 32–4096 printable characters, no trailing newline, owned by you, group 65532, mode `0440` |
+| `FABRIC_TENANT_ID` | the agents' tenant |
+| `FABRIC_SOURCE_ID` | the agents' source id as it travels (`s-<32 hex>`) |
+
+Content (opt-in; without it the production Node is telemetry only):
+
+| Variable | Meaning |
+|---|---|
+| `FABRIC_CONTENT_BACKEND` | `s3` or `file` |
+| `FABRIC_CONTENT_KEY_FILE` | Node content key: 32 random bytes or their base64 (`openssl rand -base64 32`), group 65532, `0440`. Seals the content queue and the file store. |
+| `FABRIC_CONTENT_S3_BUCKET`, `FABRIC_CONTENT_S3_REGION` | required for `s3` |
+| `FABRIC_CONTENT_S3_PREFIX`, `_ENDPOINT`, `_PATH_STYLE`, `_SSE`, `_KMS_KEY_ID` | optional; SSE defaults to `aws:kms`; an endpoint must be `https://` with no path |
+| `FABRIC_CONTENT_REQUIRE_SSE=false` | required to accept the `file` backend (no server-side encryption; the store is sealed with the content key) |
+
+```bash
+cd deploy/compose
+make preflight-prod   # checks only
+make up-prod
+make verify-prod      # gate, health, unauthenticated refused, bound source accepted, other source refused
+```
+
+Ports bind to `127.0.0.1` unless you set `FABRIC_BIND_ADDR`; preflight then
+requires TLS on every published receiver (uncomment the `tls:` stanzas and
+set `FABRIC_INGRESS_TLS_DIR`). Health (`13133`) and metrics (`8888`) stay on
+loopback. The Node writes S3 with the instance role (IMDSv2, hop limit 2)
+or a credentials-file secret. Agents on the same host use
+`http://127.0.0.1:4318` and `:4319` with the bearer header.
+
+### Helm `shadow-production`
+
+The profile pins 31 settings (TLS, client certificates, durable queue,
+infinite retry, no debug exporter, NetworkPolicy, restricted security
+context, `fabric.profile: production`, ...) and refuses to render without
+the values below. Validate with `helm template`: `helm lint` reports the
+refusals as informational and still exits 0.
+
+Operator-created Secrets in the Node namespace:
 
 | Secret | Keys | Purpose |
 |---|---|---|
-| `fabric-node-receiver-tls` | `tls.crt`, `tls.key` | Fabric Node OTLP server identity |
-| `fabric-node-client-ca` | `ca.crt` | CA used to authenticate OTLP clients |
-| `fabric-node-export-auth` | `authorization` | Complete outbound authorization value |
-| `fabric-workload-token` | `token` | Single workload-scoped ingress bearer token |
+| `fabric-node-receiver-tls` | `tls.crt`, `tls.key` | Node server certificate |
+| `fabric-node-client-ca` | `ca.crt` | CA that signs agent client certificates |
+| `fabric-node-export-auth` | `authorization` | `Authorization` value for your destination |
+| your token Secret | `token` | the agents' bearer token (`receiver.workloadAuthentication.tokenSecret.name`) |
+| `fabric-node-content-key` | `key` | Node content key (with content) |
 
-Select an encrypted StorageClass or a customer-owned persistent volume and
-retain a review reference for its actual encryption/KMS posture. Provision one
-workload-scoped client identity and bearer token, with a credential-custody review.
-Then select the monitored workload namespace and install with a verified image
-digest, tenant/workload identity, HTTPS destination, and explicit network peers. This
-example CIDR is documentation-only:
+Values (a file passed after the profile):
+
+```yaml
+tenant:
+  id: acme-prod
+otel-collector:
+  image:
+    digest: sha256:<approved Node image digest>
+  receiver:
+    workloadAuthentication:
+      tenantId: acme-prod                       # must equal tenant.id
+      workloadId: support-agent
+      sourceId: s-0123456789abcdef0123456789abcdef
+      identityAttestationRef: <your credential review record>
+      tokenSecret: {name: fabric-node-ingress-token, key: token}
+  exporter:
+    endpoint: https://otlp.example.internal:4318
+    sendingQueue:
+      persistence:
+        storageClass: <encrypted StorageClass>  # or existingClaim
+        encryptionAttestationRef: <your storage/KMS review record>
+  content:                                      # optional
+    enabled: true
+    allowedTenants: [acme-prod]
+    backend: s3                                 # file is refused in this profile
+    s3: {bucket: acme-fabric-content, region: eu-west-1, sse: aws:kms, kmsKeyId: <key arn>}
+    encryption:
+      keySecret: {name: fabric-node-content-key}
+  networkPolicy:
+    ingressFrom:
+      - namespaceSelector: {matchLabels: {fabric.singleaxis.ai/agent: "true"}}
+    exporterEgress:
+      to: [{ipBlock: {cidr: 10.20.0.0/16}}]
+      ports: [{port: 4318, protocol: TCP}]
+    contentEgress:                              # the store (and STS for IRSA)
+      to: [{ipBlock: {cidr: 10.30.0.0/16}}]
+      ports: [{port: 443, protocol: TCP}]
+```
 
 ```bash
-kubectl label namespace monitored-agents fabric.singleaxis.ai/agent=true
-
-helm dependency build charts/fabric
-helm upgrade --install fabric charts/fabric \
-  --namespace fabric-system \
-  --create-namespace \
-  --values charts/fabric/profiles/shadow-production.yaml \
-  --set tenant.id=TENANT_UUID \
-  --set 'otel-collector.image.digest=sha256:<approved-64-lowercase-hex>' \
-  --set otel-collector.receiver.workloadAuthentication.tenantId=TENANT_UUID \
-  --set otel-collector.receiver.workloadAuthentication.workloadId=approved-agent \
-  --set otel-collector.receiver.workloadAuthentication.identityAttestationRef=identity-review-001 \
-  --set otel-collector.receiver.workloadAuthentication.tokenSecret.name=fabric-workload-token \
-  --set otel-collector.exporter.sendingQueue.persistence.storageClass=customer-encrypted \
-  --set otel-collector.exporter.sendingQueue.persistence.encryptionAttestationRef=storage-review-001 \
-  --set otel-collector.exporter.endpoint=https://otlp.example.com \
-  --set-string 'otel-collector.networkPolicy.ingressFrom[0].namespaceSelector.matchLabels.fabric\.singleaxis\.ai/agent=true' \
-  --set 'otel-collector.networkPolicy.exporterEgress.to[0].ipBlock.cidr=203.0.113.10/32' \
-  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].protocol=TCP' \
-  --set 'otel-collector.networkPolicy.exporterEgress.ports[0].port=443'
+helm template fabric charts/fabric -n fabric-system \
+  -f charts/fabric/profiles/shadow-production.yaml -f production-values.yaml > /dev/null
+helm upgrade --install fabric charts/fabric -n fabric-system \
+  -f charts/fabric/profiles/shadow-production.yaml -f production-values.yaml
 ```
 
-Set the persistent volume StorageClass through the Collector subchart values
-described in the chart README. Kubernetes NetworkPolicy cannot match a DNS name
-or prove that a CIDR belongs to the configured URL; route through an approved
-egress gateway when that is the organization's control point.
+The `file` content backend (allowed in Compose, refused in this profile)
+stores objects at `<dir>/<tenant>/evidence/<h0h1>/<h2h3>/<object-id>`
+(`h` = hex SHA-256 of the id; descriptors under `evidence/meta/` likewise).
+Objects stored flat by earlier Nodes are still read and still count for
+replay and conflict checks. Alert on the volume's inode use, not only
+bytes. S3 keys are unchanged.
 
-Operational notes:
+Put the Node's S3 writer role on `otel-collector.serviceAccount.annotations`
+(IRSA), or name a credentials Secret in `content.s3.credentialsSecret` for an
+S3-compatible store. `matchLabels` values must be strings (`"true"`; use
+`--set-string` on the command line).
 
-- **Dedicated namespace.** Install into a namespace used only by the
-  recorder. `networkPolicy.denyDefault` selects every pod in the release
-  namespace, so co-located workloads lose pod-to-pod traffic unless a
-  subchart policy opens it. When `namespace.create=true`,
-  `namespace.name` must equal the release namespace (`--namespace`) —
-  resources are always rendered into the release namespace.
-- **Pinned image.** `shadow-production` requires
-  `otel-collector.image.digest=sha256:<64-lowercase-hex>`. Every tag-only
-  selection, including a version-shaped tag, is rejected. Verify the actual
-  release image and signature; the example is not a real digest.
-- **Peer rules.** Every NetworkPolicy peer you supply in `ingressFrom`,
-  `exporterEgress.to`, `contentEgress.to` and `egressTo` must restrict
-  something, in every profile; anything equivalent to no policy is
-  rejected at render time: an empty peer; a `namespaceSelector` that is
-  empty, null or exclusion-only (`NotIn`/`DoesNotExist`) without a
-  `podSelector` that narrows it; an empty `podSelector` alone (every pod in
-  the namespace); an `ipBlock` with prefix length 0 (`0.0.0.0/0`, `::/0`,
-  `10.0.0.0/0`, …); an `ipBlock` combined with a selector. A selector
-  restricts when it has `matchLabels` or an `In`/`Exists` expression.
-  Label values are strings in Kubernetes (`matchLabels` is
-  `map<string,string>`): pass them with `--set-string`, as above, or quote
-  them (`"true"`) in a values file. `--set ...=true` makes a boolean, which
-  the API server rejects, so the chart refuses a boolean or numeric
-  `matchLabels` or `matchExpressions` value at render time. An
-  empty `ingressFrom` keeps the development default (any namespace) and is
-  refused by `shadow-production`. The health extension is not exposed by
-  NetworkPolicy by default — kubelet probes are node traffic. To let a
-  monitoring stack scrape it, set
-  `otel-collector.networkPolicy.monitoringNamespaceSelector` (the same
-  restriction rule applies).
-- **Destination URLs.** `exporter.endpoint` (and `content.s3.endpoint`
-  when set) must be `scheme://host[:port][/path]` with a DNS name, dotted
-  IPv4 address or bracketed IPv6 address and a port 1–65535, and must not
-  carry user info, a query or a fragment: a credential pasted into the URL
-  would land in the rendered ConfigMap. Put the destination credential in
-  the `fabric-node-export-auth` Secret. `shadow-production` requires
-  `https://`. Render errors name the field and never echo the value.
-- **Redirects.** The chart attaches the distribution's `noredirect` client
-  middleware to the OTLP/HTTP exporter: a `3xx` from the destination is a
-  retried failure, never a re-send of the batch and its Authorization
-  header to another location and never a false success (a `302` to a login
-  page). `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
-  the destination's final URL; a redirecting one stalls delivery until
-  corrected.
-- **Pull secrets.** Set `otel-collector.imagePullSecrets`; there is no
-  parent-level `imagePullSecrets` key.
-- **`helm test` is dev-only.** The bundled test pod matches no ingress
-  peer under `shadow-production`; run it under `shadow-dev` only.
+Under pseudonymous capture labels (the default) the chart refuses a
+`sourceId` that is not `s-<32 hex>`. It cannot check that the value matches
+your agents' key: a well-formed but wrong value renders, and then every agent
+batch is refused at the Node.
 
-## Content delivery for LLM wire capture (optional)
-
-Wire capture (spec 048) sends stored request/response bodies to a separate
-content receiver on the Node (`otlp/content`, port 4319, OTLP/HTTP only,
-64 MiB per request). The `fabriccontent` exporter verifies each record's
-descriptor, digest, length and tenant and writes it to the customer store.
-The Node is the only content writer; agents hold no cloud credentials.
-Content never enters the telemetry pipelines and never reaches
-`exporter.endpoint`. It is off by default. To enable it in
-`shadow-production`, create the Node writer role (see
-[wire-capture-deployment.md](wire-capture-deployment.md#4-minimal-iam)) and
-add:
+Creating the certificates and Secrets with self-managed CAs (use your own
+PKI if you have one; keep CA keys off the cluster):
 
 ```bash
-  --set otel-collector.content.enabled=true \
-  --set 'otel-collector.content.allowedTenants[0]=TENANT_ID_USED_BY_AGENTS' \
-  --set otel-collector.content.backend=s3 \
-  --set otel-collector.content.s3.bucket=customer-evidence \
-  --set otel-collector.content.s3.region=eu-west-1 \
-  --set otel-collector.content.s3.sse=aws:kms \
-  --set otel-collector.content.s3.kmsKeyId=arn:aws:kms:eu-west-1:111122223333:key/KEY_ID \
-  --set 'otel-collector.serviceAccount.annotations.eks\.amazonaws\.com/role-arn=arn:aws:iam::111122223333:role/fabric-node-writer' \
-  --set 'otel-collector.networkPolicy.contentEgress.to[0].ipBlock.cidr=198.51.100.0/24' \
-  --set 'otel-collector.networkPolicy.contentEgress.ports[0].protocol=TCP' \
-  --set 'otel-collector.networkPolicy.contentEgress.ports[0].port=443'
+NS=fabric-system
+NODE=fabric-otel-collector.$NS.svc
+openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes \
+  -keyout node-ca.key -out node-ca.crt -subj "/CN=fabric-node-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes \
+  -keyout client-ca.key -out client-ca.crt -subj "/CN=fabric-agent-client-ca" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,keyCertSign,cRLSign"
+openssl req -newkey rsa:3072 -sha256 -nodes -keyout node.key -out node.csr -subj "/CN=$NODE"
+printf 'subjectAltName=DNS:%s,DNS:%s.cluster.local\nextendedKeyUsage=serverAuth\n' "$NODE" "$NODE" > node.ext
+openssl x509 -req -in node.csr -CA node-ca.crt -CAkey node-ca.key -CAcreateserial \
+  -days 90 -sha256 -extfile node.ext -out node.crt
+
+kubectl -n "$NS" create secret tls fabric-node-receiver-tls --cert=node.crt --key=node.key
+kubectl -n "$NS" create secret generic fabric-node-client-ca --from-file=ca.crt=client-ca.crt
+umask 077; openssl rand -hex 32 | tr -d '\n' > ingress.token
+kubectl -n "$NS" create secret generic fabric-node-ingress-token --from-file=token=ingress.token
+umask 077; read -rs DEST_TOKEN; printf 'Bearer %s' "$DEST_TOKEN" > authorization; unset DEST_TOKEN
+kubectl -n "$NS" create secret generic fabric-node-export-auth --from-file=authorization=authorization
+openssl rand -base64 32 > content.key
+kubectl -n "$NS" create secret generic fabric-node-content-key --from-file=key=content.key
+rm -f authorization
 ```
 
-`allowedTenants` takes exactly one tenant: a content record names its own
-tenant, so a Node allowing several would let any authenticated agent write
-under another tenant's prefix. Run one Node per tenant; only
-`otel-collector.content.allowMultipleTenants=true` permits more, and it
-trusts every authenticated agent to name its tenant. The rule is per Node:
-the chart renders one `fabriccontent` exporter, and `fabric-gate` refuses a
-hand-written or overlaid configuration whose `fabriccontent` exporters,
-taken together across the whole effective configuration (whatever
-receivers, pipelines or authenticators they sit behind), allow more than one
-tenant, unless every one of them sets `allow_multiple_tenants: true`. A
-`fabriccontent` block the gate cannot read as a literal map after its own
-resolution (for example a whole-block `${env:…}`) is refused with a fixed
-message. `content.s3.sse` is
-required for the s3 backend (`AES256` by default, or `aws:kms`).
+Issue each agent a client certificate from `client-ca`
+(`extendedKeyUsage=clientAuth`) and give it the Node CA. Mount the spool on
+a subdirectory of a volume (the agent must own the directory); an
+`emptyDir` survives container restarts but not Pod deletion, a PVC on an
+encrypted StorageClass survives both.
 
-The content receiver uses the same server certificate, client CA and
-NetworkPolicy ingress peers as 4317/4318. The content queue shares the
-queue PVC (`<persistence.directory>/content-queue`, fsync); size the PVC for
-`content.queue.queueSize` × 64 MiB in addition to the telemetry queue, and
-raise `resources.limits.memory` above `content.memoryLimiterMiB`. The chart
-refuses to render content without allowed tenants, a backend and a valid
-bucket; in `shadow-production` it also requires SSE, an `https://` store
-endpoint (when one is set, for S3-compatible stores), store egress peers,
-and refuses the file backend. For an S3-compatible store without workload
-identity, reference an operator-created Secret with
-`otel-collector.content.s3.credentialsSecret.name`; keys never go in values.
+## One source per production Node
 
-A successful rollout does not prove that content reaches the store (bucket
-policy, IRSA trust, KMS grants and store egress are only exercised by a real
-upload). After each deployment change run the content canary described in
-[wire-capture-deployment.md](wire-capture-deployment.md#5-verify-a-run).
+A production Node binds exactly one tenant, one source id and one ingress
+token. Agents with different source ids need one Node each; several pods
+may share a Node only if they run with the same `FABRIC_SOURCE_ID` and
+`FABRIC_WIRE_ID_KEY`.
 
-## Production invariants
+## Minimal IAM (S3)
 
-`shadow-production` must render only when all of these are true:
+Agents need no store permissions. The Node writer needs `s3:PutObject` and
+`s3:GetObject` on `arn:aws:s3:::<bucket>/<prefix><tenant>/evidence/*` (plus
+`kms:GenerateDataKey` and `kms:Decrypt` for `aws:kms`). The reader that runs
+`fabric.reconstruct` needs `s3:GetObject` (and `kms:Decrypt`). Neither
+needs list or delete. Writes are conditional (`If-None-Match: *`): an object
+is never overwritten. `<prefix>` defaults to `fabric/content/`.
 
-- OTLP receivers require TLS, a verified client certificate and a workload-scoped
-  bearer token on both HTTP/gRPC, or an explicitly selected evidence-only binding;
-- the selected binding's tenant matches `tenant.id`;
-- the export endpoint is an HTTPS URL with a valid host and port, no user
-  info, query or fragment, and is authenticated through a Secret;
-- metadata-only protection is enabled;
-- custom allowlist extensions are empty in the named production profile;
-- at least one operator-supplied workload ingress peer is present;
-- the sending queue uses persistent file storage with fsync;
-- one storageClass or existingClaim is explicitly selected with an
-  `encryptionAttestationRef`;
-- volatile batching before the persistent exporter queue is disabled;
-- overflow blocks intake instead of silently discarding accepted audit data;
-- retry has no finite maximum elapsed time for retryable failures;
-- the debug exporter is disabled;
-- the audit path is not sampled;
-- the Collector Service is ClusterIP (no NodePort/LoadBalancer exposure);
-- the Collector image is pinned by a full immutable sha256 digest;
-- the pod runs as non-root and cannot escalate privileges;
-- every declared network peer restricts its sources or destinations (no
-  empty, unrestricted-selector or prefix-length-0 peer);
-- when content delivery is enabled: allowed tenants, an s3 backend with
-  server-side encryption, the same mTLS on port 4319, a persistent content
-  queue and explicit store egress;
-- default-deny network policy and explicit workload ingress and destination
-  egress are enabled.
+## Upgrading from earlier releases
 
-Helm validation proves configuration shape and required references. Process
-readiness is not proof of credential custody, workload identity, encryption,
-destination durability, or complete capture. Review references are operator
-assertions; the chart does not fetch or verify their evidence.
+- **Node mode now requires a capture policy and keys.** An agent in node
+  mode without `FABRIC_CAPTURE_POLICY`, `FABRIC_WIRE_ID_KEY` and
+  `FABRIC_WIRE_SPOOL_KEY` stops recording content on upgrade (metadata
+  continues; each span reports the missing item).
+- **The Node needs its P0-A settings.** Compose preflight and the Helm
+  render fail until `FABRIC_SOURCE_ID` /
+  `receiver.workloadAuthentication.sourceId` (and, with content,
+  `FABRIC_CONTENT_KEY_FILE` / `content.encryption.keySecret`) are set. The
+  agents are never affected by a Node configuration error.
+- **Customer redaction moved to a redaction service.** Module-reference
+  and callable transformations (Python `Transformation(..., ref)`,
+  `BytePrivacyPolicy.transform`, `ContentProtector` `redactors`) and
+  TypeScript worker redactors (`{ module, exportName }`) are removed and
+  raise at construction. Run a [redaction service](privacy-and-security.md#redaction-service),
+  set `FABRIC_REDACTION_ENDPOINT`, and name each transformation by id and
+  version.
+- **`s-`-shaped source ids are now pseudonymised.** An agent
+  `FABRIC_SOURCE_ID` that was already `s-` + 32 hex used to be sent
+  unchanged; it is now mapped like any other value. Recompute the Node's
+  `FABRIC_SOURCE_ID` / `sourceId` as shown under "Source id" above.
+- **Node directory store layout.** New objects go to hash-sharded
+  subdirectories; existing flat objects stay readable. Readers older than
+  this release do not find sharded objects: upgrade `fabric.reconstruct`
+  together with the Node.
+- **Plaintext spool records.** With a spool key set, records written before
+  it are quarantined in production. In the local profile,
+  `FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT=1` seals them in place once.
+- **`fabric-gate` is stricter.** Hand-written collector configurations must
+  attach the `noredirect` middleware to every OTLP/HTTP exporter, run
+  `fabricguard` in every telemetry pipeline, and write receivers, pipelines
+  and extensions literally. The shipped Compose and Helm configurations
+  comply.
+- See the [changelog](../CHANGELOG.md) for removed modules and changed APIs.
 
-The ordinary workload mode authenticates possession of a dedicated credential;
-it does not compare a certificate SAN to the configured workload ID or validate
-arbitrary tenant fields in spans. Keep separate credential boundaries in separate
-releases. `identityAttestationRef` must cover certificate issuance, token custody,
-rotation and revocation. Test missing/wrong tokens and client certificates in the
-real environment. Tokens must contain one 32–4096-byte printable ASCII value
-with no spaces/newlines; their values never belong in Helm values.
-
-Optional paired `workloadAuthentication.policyVersion` and `policyDigest` are
-capture-policy metadata on the Pod, not executable policy or runtime approval.
-The actual Collector config has a distinct `checksum/config`. For an evidence-only
-endpoint, explicitly disable workload authentication and enable
-`evidenceSourceBinding`; its tenant must also match `tenant.id`, and traces remain
-rejected by that dedicated mode. See the [chart README](../charts/fabric/README.md)
-for exact migration and security requirements.
-
-The Compose VM example remains a separate technical profile; it does not
-inherit these Helm validations. Real target-environment identity, storage/KMS,
-retention and independent readback checks remain required before production GO.
-
-Independently of the chart, the Node's `fabric-gate` entrypoint refuses to
-boot any configuration (Helm, Compose or hand-written, overlays included)
-in which a `traces` or `logs` pipeline does not run `fabricguard`, or runs a
-processor other than `batch` or `memory_limiter` after it, or in which
-content could leave its own path (a content receiver or the `fabriccontent`
-exporter outside `logs/content`, any other processor or exporter on that
-pipeline, gRPC on the content receiver, or connectors). For LLM wire
-capture see [wire-capture-deployment.md](wire-capture-deployment.md).
-
-## Delivery semantics
-
-Fabric Node uses at-least-once delivery. Destinations must deduplicate using
-preserved trace/span identity or an event/batch identity supplied by an upstream
-or destination adapter. A restart or retry can produce a duplicate; losing an
-accepted audit record to avoid duplication would be the wrong tradeoff.
-
-Delivery states remain distinct:
-
-```text
-accepted by Node -> queued -> transmitted -> destination accepted
-                                           -> durably persisted (only with destination proof)
-```
-
-An OTLP success response establishes destination acceptance, not arbitrary
-backend retention or WORM persistence.
-
-The production pipeline hands acknowledged OTLP directly to the persistent
-exporter queue. It disables the optional in-memory batch processor because a
-pod failure during that pre-queue batching window could otherwise lose recently
-acknowledged telemetry. This favors audit reliability over maximum throughput.
-
-Recorder v1 defines the delivery receipt contract but Fabric Node does not
-automatically emit a receipt document for each exported OTLP batch.
-
-## Other deployment models
-
-- **Existing collector:** add Fabric Node as a protected OTLP destination or
-  route compatible telemetry through its processor chain.
-- **Customer backend:** export to an OTLP service operated entirely by the
-  customer.
-- **Private SingleAxis:** export to SingleAxis Platform deployed inside the
-  customer's environment.
-- **SingleAxis SaaS:** export only protected records over the approved endpoint.
-
-All models use the same public contracts. No management-plane connection is
-required to start or continue local capture.
-
-## Not deployed
-
-The recorder chart does not package Relay, Presidio, NeMo, Prompt Guard,
-Langfuse, red-team runners, judge workers, update agents, assurance profiles,
-or enterprise management services. Their older source directories are not
-Helm dependencies or recorder release images.
+Before a release reaches production, verify its artifacts as described in
+[verify a release](verify-release.md), and run the checks in
+[operations](operations/README.md).

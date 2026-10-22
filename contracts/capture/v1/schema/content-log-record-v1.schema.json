@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/content-log-record-v1.schema.json",
   "title": "Fabric content log record v1 (draft, spec 048)",
-  "description": "JSON form of one OTLP LogRecord on the content path (agent -> Fabric Node otlp/content receiver -> fabriccontent exporter). The LogRecord body is AnyValue.bytes_value holding the exact stored bytes; this document describes them by length and digest only. attributes is the exact, closed attribute set: event_class plus the content-v2 descriptor fields. The Node rejects a record with any other attribute, an invalid value, a body whose length or sha256 differs, or a tenant outside its allowed_tenants.",
+  "description": "JSON form of one OTLP LogRecord on the content path (agent -> Fabric Node otlp/content receiver -> fabriccontent exporter). The LogRecord body is AnyValue.bytes_value holding the exact stored bytes; this document describes them by length and digest only. attributes is the exact, closed attribute set: event_class plus the content-v2 descriptor fields (widened by spec 049 §4.3; links is an OTLP array of kvlist values). A descriptor-only not_captured record has an empty body. The Node rejects a record with any other attribute, an invalid value, a body whose length or sha256 differs, or a tenant outside its allowed_tenants.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -60,7 +60,7 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "descriptor": {
-      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref). Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
+      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref to an object with bytes), as widened by spec 049 §4.3 (P0-A): every role of contracts/coverage/v1/registry/content-roles-v1.json (boundary, provenance, media type and cap per row are checked by the validator and the Node), the privacy fields, split parts and review copies, and descriptor-only not_captured records (no stored bytes, digest or ref; status_reason from the coverage reason vocabulary). source_authenticated is receiver-owned and never part of it. Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
       "type": "object",
       "required": [
         "schema_version",
@@ -74,9 +74,6 @@
         "provenance",
         "boundary",
         "status",
-        "stored_byte_length",
-        "stored_sha256",
-        "source_byte_length",
         "source_id",
         "source_epoch",
         "source_sequence",
@@ -89,8 +86,7 @@
           "const": "fabric.content-object/v2"
         },
         "object_id": {
-          "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          "$ref": "#/$defs/uuid4"
         },
         "tenant_id": {
           "type": "string",
@@ -98,8 +94,77 @@
         },
         "role": {
           "enum": [
+            "model.request.instructions",
+            "model.request.messages",
+            "model.request.tool_definitions",
+            "model.request.parameters",
+            "model.output.messages",
             "model.exchange.request",
-            "model.exchange.response"
+            "model.exchange.response",
+            "tool.definition",
+            "tool.call.arguments",
+            "tool.call.result",
+            "retrieval.query",
+            "retrieval.results",
+            "memory.write.content",
+            "memory.read.content",
+            "side_effect.request",
+            "side_effect.result",
+            "context.file",
+            "interaction.payload",
+            "terminal.argv",
+            "terminal.stdin",
+            "terminal.stdout",
+            "terminal.stderr",
+            "remote.request",
+            "remote.result",
+            "remote.stream",
+            "database.query",
+            "database.parameters",
+            "database.rows",
+            "database.mutation",
+            "network.request",
+            "network.response",
+            "network.stream",
+            "sandbox.config",
+            "sandbox.output",
+            "artifact.before",
+            "artifact.after",
+            "service.receipt",
+            "model.exchange.part",
+            "model.output.reasoning",
+            "actor.identity",
+            "run.trigger",
+            "run.goal",
+            "run.input",
+            "run.permissions",
+            "run.configuration",
+            "run.environment",
+            "run.outcome",
+            "outcome.delivery",
+            "step.error",
+            "tool.inventory",
+            "agent.handoff",
+            "checkpoint.state",
+            "workflow.definition",
+            "mcp.request",
+            "mcp.response",
+            "mcp.notification",
+            "mcp.server",
+            "computer.action",
+            "computer.snapshot",
+            "control.checked",
+            "control.reason",
+            "control.approval",
+            "selection.decision",
+            "context.change",
+            "terminal.context",
+            "artifact.diff",
+            "asset.bytes",
+            "media.frames",
+            "media.events",
+            "media.transcript",
+            "artifact.locator"
           ]
         },
         "media_type": {
@@ -114,26 +179,102 @@
           "enum": [
             "exact",
             "partial",
-            "truncated"
+            "truncated",
+            "split",
+            "redacted",
+            "tokenized",
+            "unavailable"
           ]
         },
         "transformations": {
           "type": "array",
-          "maxItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
           "items": {
-            "const": "truncate"
+            "enum": [
+              "truncate",
+              "extract_parts",
+              "redact",
+              "tokenize"
+            ]
           }
         },
         "provenance": {
-          "const": "protocol"
+          "enum": [
+            "native",
+            "protocol",
+            "caller_reported",
+            "inferred"
+          ]
         },
         "boundary": {
-          "const": "provider_bound"
+          "enum": [
+            "caller",
+            "provider_bound",
+            "tool",
+            "terminal",
+            "sandbox",
+            "remote",
+            "host",
+            "service"
+          ]
         },
         "status": {
           "enum": [
             "stored",
-            "truncated"
+            "truncated",
+            "redacted",
+            "not_captured"
+          ]
+        },
+        "status_reason": {
+          "enum": [
+            "not_instrumented",
+            "hook_disabled",
+            "not_configured",
+            "unsupported_api",
+            "unsupported_runtime",
+            "unsupported_version",
+            "parse_failed",
+            "body_cap",
+            "part_cap",
+            "inflight_budget",
+            "queue_full",
+            "disk_full",
+            "shutdown",
+            "internal_error",
+            "span_dropped",
+            "store_failed",
+            "destination_rejected",
+            "transport_incomplete",
+            "stream_closed_early",
+            "privacy_policy",
+            "protection_failed",
+            "missing_capture_policy",
+            "missing_id_key",
+            "missing_spool_key",
+            "provider_redacted",
+            "provider_encrypted",
+            "provider_summarised",
+            "provider_not_returned",
+            "provider_held",
+            "caller_omitted",
+            "deferred_to_explicit",
+            "explicit_withheld",
+            "not_exposed",
+            "source_lost",
+            "segment_missing",
+            "segment_conflict",
+            "run_unterminated",
+            "post_terminal_activity",
+            "clock_uncertain",
+            "source_unauthenticated",
+            "unsealed_epoch",
+            "seal_mismatch",
+            "uninstrumented_client",
+            "sampling",
+            "retention_expired",
+            "deleted"
           ]
         },
         "stored_byte_length": {
@@ -168,10 +309,320 @@
           "$ref": "#/$defs/opaqueId"
         },
         "captured_at": {
-          "type": "string",
-          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
+          "$ref": "#/$defs/timestamp"
+        },
+        "observed_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "workload_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "attempt_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "stream_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "chunk_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "privacy_mode": {
+          "enum": [
+            "retain_original",
+            "redact",
+            "tokenize",
+            "masked_only",
+            "original_plus_masked",
+            "metadata_only",
+            "omit"
+          ]
+        },
+        "policy_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "policy_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "protection_status": {
+          "enum": [
+            "retained",
+            "redacted",
+            "tokenized",
+            "withheld"
+          ]
+        },
+        "transformation_id": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "transformation_version": {
+          "$ref": "#/$defs/opaqueId"
+        },
+        "links": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "relation",
+              "object_id"
+            ],
+            "properties": {
+              "relation": {
+                "enum": [
+                  "part_of",
+                  "derived_from"
+                ]
+              },
+              "object_id": {
+                "$ref": "#/$defs/uuid4"
+              },
+              "byte_range": {
+                "description": "part_of only: the half-open [start, end) byte offsets of the part in the original body (spec 049 §7.4).",
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2
+              }
+            },
+            "if": {
+              "properties": {
+                "relation": {
+                  "const": "part_of"
+                }
+              }
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "byte_range"
+                ]
+              }
+            }
+          }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "not_captured"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "status_reason"
+            ],
+            "properties": {
+              "representation": {
+                "const": "unavailable"
+              },
+              "transformations": {
+                "maxItems": 0
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "stored_byte_length"
+                  ]
+                },
+                {
+                  "required": [
+                    "stored_sha256"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "stored_byte_length",
+              "stored_sha256"
+            ],
+            "not": {
+              "required": [
+                "status_reason"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "stored",
+                  "truncated"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "source_byte_length"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "redacted"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "privacy_mode",
+              "policy_id",
+              "policy_version",
+              "policy_digest",
+              "protection_status"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "source_sha256"
+                  ]
+                },
+                {
+                  "required": [
+                    "source_byte_length"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "privacy_mode"
+                ]
+              },
+              {
+                "required": [
+                  "policy_id"
+                ]
+              },
+              {
+                "required": [
+                  "policy_version"
+                ]
+              },
+              {
+                "required": [
+                  "policy_digest"
+                ]
+              },
+              {
+                "required": [
+                  "protection_status"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "privacy_mode",
+              "policy_id",
+              "policy_version",
+              "policy_digest",
+              "protection_status"
+            ]
+          }
+        },
+        {
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "transformation_id"
+                ]
+              },
+              {
+                "required": [
+                  "transformation_version"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "transformation_id",
+              "transformation_version",
+              "privacy_mode",
+              "policy_id",
+              "policy_version",
+              "policy_digest",
+              "protection_status"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "chunk_index"
+            ]
+          },
+          "then": {
+            "required": [
+              "stream_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "stream_id"
+            ]
+          },
+          "then": {
+            "required": [
+              "chunk_index"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "source_sha256"
+            ]
+          },
+          "then": {
+            "required": [
+              "source_byte_length"
+            ]
+          }
+        }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$"
     }
   }
 }

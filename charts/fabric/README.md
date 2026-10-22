@@ -58,7 +58,30 @@ Fails closed at render time unless the recorder has:
   allowed tenants, an s3 backend with server-side encryption (the file
   backend is refused), an `https://` store endpoint when one is set, the
   same mTLS on port 4319 and explicit `networkPolicy.contentEgress` peers.
-  See [docs/deployment.md](../../docs/deployment.md#content-delivery-for-llm-wire-capture-optional).
+  See [docs/deployment.md](../../docs/deployment.md#helm-shadow-production).
+- the spec 049 P0-A production profile (`otel-collector.fabric.profile:
+  production`, pinned). Every batch on the workload ingress, spans and
+  content alike, is bound to `workloadAuthentication.tenantId` and
+  `workloadAuthentication.sourceId`. `sourceId` is the agents' source id as
+  it travels: `s-<32 hex>` under their pseudonymous labels (the render
+  fails on any other form unless `fabric.guard.captureLabels: clear`). A batch that
+  names another tenant or source is refused, and admitted spans carry
+  `fabric.source.authenticated=true`. A span that names no source is
+  dropped on its own.
+  **Deployment limit:** one production Node serves exactly one agent
+  source. A Node shared by many pods, such as a DaemonSet, works only if
+  every pod runs with the same `FABRIC_SOURCE_ID`. Otherwise run one Node
+  per source.
+- with content, the Node key Secret `content.encryption.keySecret` (default
+  `fabric-node-content-key`; 32 random bytes or their base64), which seals
+  the persistent content queue with AES-256-GCM. `fabric-gate` refuses a
+  production config without the binding or the sealed queue.
+
+Spec 049 P0-A supersedes spec 048 §1. Agents in node mode record content only
+with a capture policy (`FABRIC_CAPTURE_POLICY`) and `FABRIC_WIRE_ID_KEY`;
+without them they record metadata only. An install from before P0-A stops
+at render until `sourceId` (and, with content, the key Secret) are set. The
+agents are never affected.
 
 The customer must create the referenced Secrets and identify the exact egress
 peer/port. Example render/install arguments:

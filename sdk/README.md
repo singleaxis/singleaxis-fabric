@@ -1,41 +1,36 @@
 # SDK
 
-Client libraries that agents import in-process to emit recorder telemetry
-— OpenTelemetry spans and span events carrying Fabric's metadata-only
-vocabulary — to a Fabric Node or any OTLP endpoint.
+Client libraries that agents import in-process. They record model calls and
+other activity, protect the record before it is stored, and send it to a
+Fabric Node or an OTLP endpoint. They never block, alter or delay the agent.
 
-The SDK observes execution and existing permission decisions; it does not
-authorize agent actions. Instrumentation still adds overhead and can encounter
-configuration, queue and storage failures. Protection depends on the API and
-export path selected. Python's governed byte path applies deployment policy
-before persistence; its legacy `masked_only` callback runs in the byte worker.
-TypeScript has a narrower implementation. Its decision/execution callback
-diagnostics use a closed error classification and static message, including
-LLM/tool wrappers. It does not sanitize arbitrary spans supplied by an externally
-owned provider. Do not assume every export path is metadata-only.
+| Language | Package | What it provides |
+|----------|---------|------------------|
+| [`python`](python/) | `singleaxis-fabric` | Zero-code wire capture of httpx, httpx2 and aiohttp model calls (`fabric.wire`), durable encrypted spool, PROTECT stage, explicit APIs (`decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters), `python -m fabric.reconstruct`, qualified-run mode |
+| [`typescript`](typescript/) | `@singleaxis/fabric` | Explicit APIs only (`decision`/`record*`, `ByteEvidenceRecorder` with redaction-service masking). **No wire capture.** |
+
+Protection depends on the path. Wire capture and `ByteEvidenceRecorder`
+apply the capture policy before persistence; customer masking is done by
+a redaction service you run (Unix socket or loopback), never by code Fabric
+runs. Python's
+`install_default_provider` adds a metadata-only export projection;
+TypeScript does not sanitize spans from a provider you register. Do not
+assume every export path is metadata-only. See
+[explicit APIs](../docs/explicit-apis.md) and
+[privacy and security](../docs/privacy-and-security.md).
 
 ## Authoritative specs
 
+- [`../specs/049-four-layer-capture-coverage.md`](../specs/049-four-layer-capture-coverage.md) —
+  current capture contract (P0-A built)
+- [`../specs/047-llm-wire-capture-and-reconstruction.md`](../specs/047-llm-wire-capture-and-reconstruction.md),
+  [`../specs/048-node-content-delivery-and-agent-spool.md`](../specs/048-node-content-delivery-and-agent-spool.md) —
+  wire capture, spool, delivery
 - [`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md) — recorder scope
-- [`../specs/020-execution-step-capture.md`](../specs/020-execution-step-capture.md) — decision/step capture model
-- [`../specs/022-surface-logging.md`](../specs/022-surface-logging.md) —
-  agent surface logging (delegation, MCP, skills, hooks, file access)
+- [`../specs/020-execution-step-capture.md`](../specs/020-execution-step-capture.md),
+  [`../specs/022-surface-logging.md`](../specs/022-surface-logging.md) — decision API model
 
-## Target languages
-
-| Language | Status | Mechanism |
-|----------|--------|-----------|
-| [`python`](python/) | Reference implementation; target qualification required | Explicit capture, governed byte store, journal and OTLP delivery |
-| [`typescript`](typescript/) | Narrower subset; target qualification required | Explicit in-process metadata and content adapters |
-
-Both packages use a shared subset of the wire vocabulary. Instrumented
-delegation propagates `traceparent` and Fabric parent identity across a process
-boundary. This links observed work; it does not establish complete distributed
-capture, producer closure or Python/TypeScript feature parity. See the
-[support matrix](../docs/sdk-support-matrix.md) and
-[standalone guide](../docs/standalone-evidence-guide.md).
-
-## API surface (preview)
+## Decision API example (Python)
 
 ```python
 from fabric import Fabric, MemoryKind, RetrievalSource
@@ -96,5 +91,5 @@ the SDK does not flush implicitly on process exit.
 
 See [`python/README.md`](python/README.md) and
 [`typescript/README.md`](typescript/README.md) for the per-language
-surface and [`../docs/capturing-interactions.md`](../docs/capturing-interactions.md)
-for the metadata each call emits.
+surface and [`../docs/genai-semantic-conventions.md`](../docs/genai-semantic-conventions.md)
+for the spans and attributes each call emits.

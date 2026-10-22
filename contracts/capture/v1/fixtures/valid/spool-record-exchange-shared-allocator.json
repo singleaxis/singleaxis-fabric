@@ -1,0 +1,106 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "exchange",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "order": 7,
+  "written_at_unix_nano": 1791331202053000000,
+  "service_name": "travel-agent",
+  "span": {
+    "name": "fabric.model_call",
+    "kind": "client",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "a3ce929d0e0e4736",
+    "parent_span_id": "00f067aa0ba902b7",
+    "parent_is_remote": false,
+    "trace_flags": 1,
+    "start_time_unix_nano": 1791331201120000000,
+    "end_time_unix_nano": 1791331202050000000,
+    "status": "unset",
+    "attributes": {
+      "fabric.wire.exchange_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+      "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+      "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+      "fabric.source.epoch": 1791331200000000000,
+      "fabric.source.sequence": 1,
+      "fabric.wire.api": "openai.chat_completions",
+      "fabric.content.request_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+      "fabric.content.result_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+      "fabric.wire.request_sha256": "74f7fdd9188d8afe45808fdf20faea146609fe95e1fff588a42d0cf3e97e18a9",
+      "fabric.wire.response_sha256": "8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+      "fabric.wire.response_state": "complete",
+      "fabric.wire.truncated": false,
+      "fabric.wire.store_status": "stored",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.provider.name": "openai",
+      "http.request.method": "POST",
+      "http.response.status_code": 200,
+      "gen_ai.response.model": "gpt-4o-2024-08-06",
+      "gen_ai.response.finish_reasons": [
+        "tool_calls"
+      ],
+      "fabric.capture.input": "wire",
+      "fabric.event_id": "6a1f0c3e-8b2d-4f5a-9c7e-1d2b3a4c5e6f",
+      "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051"
+    }
+  },
+  "bodies": [
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+        "tenant_id": "tenant-a",
+        "role": "model.exchange.request",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "status": "stored",
+        "stored_byte_length": 73,
+        "stored_sha256": "sha256:74f7fdd9188d8afe45808fdf20faea146609fe95e1fff588a42d0cf3e97e18a9",
+        "source_byte_length": 73,
+        "source_sha256": "sha256:74f7fdd9188d8afe45808fdf20faea146609fe95e1fff588a42d0cf3e97e18a9",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 1,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+        "captured_at": "2026-10-07T00:00:01.120000+00:00"
+      },
+      "offset": 0,
+      "length": 73
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+        "tenant_id": "tenant-a",
+        "role": "model.exchange.response",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "status": "stored",
+        "stored_byte_length": 100,
+        "stored_sha256": "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+        "source_byte_length": 100,
+        "source_sha256": "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 1,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+        "captured_at": "2026-10-07T00:00:02.050000+00:00"
+      },
+      "offset": 73,
+      "length": 100
+    }
+  ]
+}

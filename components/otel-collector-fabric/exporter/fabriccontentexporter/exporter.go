@@ -17,7 +17,7 @@ import (
 )
 
 // dropReasons is the closed set of permanent per-record outcomes.
-var dropReasons = []string{reasonBadDescriptor, reasonDigestMismatch, reasonTenantNotAllowed, reasonConflict}
+var dropReasons = []string{reasonBadDescriptor, reasonDigestMismatch, reasonTenantNotAllowed, reasonConflict, reasonSourceUnbound}
 
 type contentExporter struct {
 	cfg        *Config
@@ -48,7 +48,21 @@ func newContentExporter(cfg *Config, set component.TelemetrySettings) (*contentE
 	switch cfg.Backend {
 	case backendFile:
 		e.newBackend = func(context.Context) (backend, error) {
-			b, err := startFileBackend(cfg.File.Directory, cfg.File.DurableBoundary)
+			var s *sealer
+			if cfg.File.EncryptionKeyFile != "" {
+				// A missing or malformed key fails start: the backend never
+				// writes unencrypted when a key is configured.
+				key, err := loadKey(cfg.File.EncryptionKeyFile)
+				if err != nil {
+					return nil, err
+				}
+				s, err = newSealer(key, contentMagic, contentSchema)
+				clear(key)
+				if err != nil {
+					return nil, err
+				}
+			}
+			b, err := startFileBackend(cfg.File.Directory, cfg.File.DurableBoundary, s)
 			if err != nil {
 				return nil, err
 			}
@@ -121,9 +135,12 @@ func (e *contentExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
 // exportRecord returns only retryable errors; permanent outcomes are counted
 // and logged here.
 func (e *contentExporter) exportRecord(ctx context.Context, lr plog.LogRecord) error {
-	rec, reason := parseRecord(lr)
+	rec, reason := parseRecord(lr, e.cfg.MaxBodyBytes)
 	if reason == "" && !e.allowed[rec.tenant] {
 		reason = reasonTenantNotAllowed
+	}
+	if b := e.cfg.SourceBinding; reason == "" && b != nil && (rec.tenant != b.TenantID || rec.strs["source_id"] != b.SourceID) {
+		reason = reasonSourceUnbound
 	}
 	if reason == "" {
 		err := e.write(ctx, rec)
@@ -143,10 +160,16 @@ func (e *contentExporter) write(ctx context.Context, rec *contentRecord) error {
 	}
 	prefix := e.backend.prefix()
 	bodyKey := objectKey(prefix, rec.tenant, rec.objectID)
-	if err := e.backend.put(ctx, bodyKey, rec.body); err != nil {
-		return err
+	// A descriptor-only record (not_captured) has no body object and no ref.
+	if !rec.descriptorOnly() {
+		if err := e.backend.put(ctx, bodyKey, rec.body); err != nil {
+			return err
+		}
 	}
-	descriptor := rec.descriptorJSON(e.backend.ref(bodyKey))
+	// source_authenticated is receiver-owned (spec 049 §4.3 rule 6, §7.9):
+	// written only when this exporter is bound to the record's ingress, whose
+	// tenant and source exportRecord has just checked.
+	descriptor := rec.descriptorJSON(e.backend.ref(bodyKey), e.cfg.SourceBinding != nil)
 	if err := e.backend.put(ctx, descriptorKey(prefix, rec.tenant, rec.objectID), descriptor); err != nil {
 		return err
 	}

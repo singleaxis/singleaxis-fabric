@@ -72,7 +72,8 @@ def _send(rig: Rig, module: ModuleType, mode: str, chunks: list[bytes], **kw: An
         request = module.Request("POST", OPENAI_CHAT, content=gen())
         original = request.stream
         with module.Client(transport=WireTransport(inner, handle=rig.handle)) as client:
-            assert client.send(request).status_code == 200
+            response = client.send(request)
+            assert response.status_code == 200
         return inner, request, original
 
     inner = async_t(**kw)
@@ -86,7 +87,8 @@ def _send(rig: Rig, module: ModuleType, mode: str, chunks: list[bytes], **kw: An
         original = request.stream
         transport = AsyncWireTransport(inner, handle=rig.handle)
         async with module.AsyncClient(transport=transport) as client:
-            assert (await client.send(request)).status_code == 200
+            response = await client.send(request)
+            assert response.status_code == 200
         return inner, request, original
 
     return asyncio.run(run())
@@ -181,7 +183,8 @@ def test_request_stream_failure_reaches_the_caller_unchanged(rig: Rig) -> None:
 
 
 def test_response_truncation_keeps_whole_chunks_by_reference(tmp_path: Path) -> None:
-    rig = make_rig(tmp_path, max_body_bytes=12_000)
+    # 049 §7.4: retention is bounded by max_retain_bytes (the worker then cuts or splits).
+    rig = make_rig(tmp_path, max_body_bytes=12_000, max_retain_bytes=12_000)
     chunks = [bytes([n]) * 5000 for n in (1, 2, 3)]
     try:
         client = rig.client(lambda r: httpx.Response(200, stream=ChunkStream(chunks)))
@@ -214,7 +217,8 @@ def test_oversized_in_memory_request_body_is_not_sliced(tmp_path: Path) -> None:
         a = attrs(span)
         assert a["fabric.wire.truncated"] is True
         assert "fabric.content.request_ref" not in a  # no whole chunk fit: nothing stored
-        assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"").hexdigest()
+        assert "fabric.wire.request_sha256" not in a  # 049 §2.4 rule 8: nothing stored
+        assert a["fabric.wire.store_reason"] == "body_cap"
     finally:
         rig.close()
 
@@ -244,7 +248,8 @@ def test_transport_reading_its_request_leaves_the_caller_as_without_fabric(
             inner: Any = module.MockTransport(handler)
             transport = WireTransport(inner, handle=rig.handle) if wrap else inner
             with module.Client(transport=transport) as client:
-                assert client.send(request).json() == {"read": len(sent)}
+                payload = client.send(request).json()
+                assert payload == {"read": len(sent)}
             return request.content, type(request.stream), b"".join(request.stream)
 
         async def agen() -> AsyncIterator[bytes]:
@@ -259,7 +264,8 @@ def test_transport_reading_its_request_leaves_the_caller_as_without_fabric(
             inner: Any = module.MockTransport(ahandler)
             transport = AsyncWireTransport(inner, handle=rig.handle) if wrap else inner
             async with module.AsyncClient(transport=transport) as client:
-                assert (await client.send(request)).json() == {"read": len(sent)}
+                payload = (await client.send(request)).json()
+                assert payload == {"read": len(sent)}
             return request.content, type(request.stream), b"".join(request.stream)
 
         return asyncio.run(run())

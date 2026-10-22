@@ -5,7 +5,8 @@
 #
 # This produces a custom collector binary at ./dist/otelcol-fabric that
 # includes only the recorder's metadata protection processor, content
-# writer (spec 048) and redirect-refusing client middleware alongside the standard contrib receiver, durable storage,
+# writer (spec 048), redirect-refusing client middleware and queue envelope
+# (spec 049 §7.8) alongside the standard contrib receiver, durable storage,
 # and exporter components.
 
 dist:
@@ -32,6 +33,12 @@ extensions:
   # Authorization header to another location and never a false success.
   - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
     path: ./extension/noredirectextension
+  # Spec 049 §7.8: storage extension that seals every value the wrapped
+  # file_storage persists in the AES-256-GCM customer-key envelope. The
+  # fabriccontent persistent queue uses it in the production profile
+  # (fabric-gate enforces); delivery semantics are unchanged.
+  - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/fabricenvelopeextension v0.1.0
+    path: ./extension/fabricenvelopeextension
 
 receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
@@ -69,5 +76,6 @@ replaces:
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver => ./receiver/auditreceiver
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter => ./exporter/fabriccontentexporter
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension => ./extension/noredirectextension
+  - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/fabricenvelopeextension => ./extension/fabricenvelopeextension
   # CVE-2026-63209: klauspost/compress below 1.18.7 (transitive).
   - github.com/klauspost/compress => github.com/klauspost/compress v1.18.7

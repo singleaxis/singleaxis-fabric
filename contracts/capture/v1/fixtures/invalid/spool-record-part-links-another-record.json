@@ -1,0 +1,178 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "exchange",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "order": 7,
+  "written_at_unix_nano": 1791331202053000000,
+  "service_name": "travel-agent",
+  "span": {
+    "name": "fabric.model_call",
+    "kind": "client",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "a3ce929d0e0e4736",
+    "parent_span_id": "00f067aa0ba902b7",
+    "parent_is_remote": false,
+    "trace_flags": 1,
+    "start_time_unix_nano": 1791331201120000000,
+    "end_time_unix_nano": 1791331202050000000,
+    "status": "unset",
+    "attributes": {
+      "fabric.wire.exchange_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+      "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+      "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+      "fabric.source.epoch": 1791331200000000000,
+      "fabric.source.sequence": 1,
+      "fabric.wire.api": "openai.chat_completions",
+      "fabric.content.request_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+      "fabric.content.result_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+      "fabric.wire.request_sha256": "bcf5f68a2cca5594a167ed3b93b524e943d99b03f07faeb32da691be470af585",
+      "fabric.wire.response_sha256": "8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+      "fabric.wire.response_state": "complete",
+      "fabric.wire.truncated": false,
+      "fabric.wire.store_status": "stored",
+      "gen_ai.operation.name": "chat",
+      "gen_ai.provider.name": "openai",
+      "http.request.method": "POST",
+      "http.response.status_code": 200,
+      "gen_ai.response.model": "gpt-4o-2024-08-06",
+      "gen_ai.response.finish_reasons": [
+        "tool_calls"
+      ]
+    }
+  },
+  "bodies": [
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+        "tenant_id": "tenant-a",
+        "role": "model.exchange.request",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "split",
+        "transformations": [
+          "extract_parts"
+        ],
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "status": "stored",
+        "stored_byte_length": 108,
+        "stored_sha256": "sha256:bcf5f68a2cca5594a167ed3b93b524e943d99b03f07faeb32da691be470af585",
+        "source_byte_length": 112,
+        "source_sha256": "sha256:7dd19f8e09cb7342df0444ad3c04da3dd25ed78e45442c00e4d6d2f9fc5c48ca",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 1,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+        "captured_at": "2026-10-07T00:00:01.120000+00:00"
+      },
+      "offset": 0,
+      "length": 108
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "5c1d2e3f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+        "tenant_id": "tenant-a",
+        "role": "model.exchange.part",
+        "media_type": "image/png",
+        "content_encoding": "base64",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "status": "stored",
+        "stored_byte_length": 4,
+        "stored_sha256": "sha256:05aa3ac8d365559e81f8ad1b62918aedeabeaebab553e7b129ae95d9acdb77cc",
+        "source_byte_length": 4,
+        "source_sha256": "sha256:05aa3ac8d365559e81f8ad1b62918aedeabeaebab553e7b129ae95d9acdb77cc",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 1,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+        "captured_at": "2026-10-07T00:00:01.120000+00:00",
+        "links": [
+          {
+            "relation": "part_of",
+            "object_id": "7b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e",
+            "byte_range": [
+              101,
+              105
+            ]
+          }
+        ]
+      },
+      "offset": 108,
+      "length": 4
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "9d4e5f6a-7b8c-4d9e-8fa0-2b3c4d5e6f7a",
+        "tenant_id": "tenant-a",
+        "role": "model.exchange.part",
+        "media_type": "video/mp4",
+        "content_encoding": "base64",
+        "representation": "unavailable",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "status": "not_captured",
+        "source_byte_length": 73400320,
+        "source_sha256": "sha256:abababababababababababababababababababababababababababababababab",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 1,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+        "captured_at": "2026-10-07T00:00:01.120000+00:00",
+        "status_reason": "part_cap",
+        "links": [
+          {
+            "relation": "part_of",
+            "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+            "byte_range": [
+              10,
+              73400330
+            ]
+          }
+        ]
+      },
+      "offset": 112,
+      "length": 0
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+        "tenant_id": "tenant-a",
+        "role": "model.exchange.response",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "status": "stored",
+        "stored_byte_length": 100,
+        "stored_sha256": "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+        "source_byte_length": 100,
+        "source_sha256": "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 1,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+        "captured_at": "2026-10-07T00:00:02.050000+00:00"
+      },
+      "offset": 112,
+      "length": 100
+    }
+  ]
+}

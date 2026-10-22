@@ -21,16 +21,18 @@ from __future__ import annotations
 
 import base64
 import binascii
+import dataclasses
 import hashlib
 import json
 import os
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, cast
 
 from fabric._model_names import MODEL_PATTERN
+from fabric._sequence import pseudonym_v2
 
 SpanFormat = Literal["sink_jsonl", "otlp_json", "otlp_proto"]
 OTLP_PROTO_SUFFIX = ".otlp"
@@ -58,7 +60,16 @@ APIS = frozenset(
 )
 RESPONSE_STATES = frozenset({"complete", "closed_early", "error", "abandoned"})
 STORE_STATUSES = frozenset({"stored", "partial", "failed", "disabled"})
-LOSS_REASONS = frozenset({"queue_full", "internal_error", "shutdown", "span_dropped"})
+LOSS_REASONS = frozenset(
+    {
+        "queue_full",
+        "internal_error",
+        "shutdown",
+        "span_dropped",
+        "uninstrumented_client",
+        "disk_full",
+    }
+)
 HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
 HEARTBEAT_KINDS: frozenset[str] = frozenset({"periodic", "run_start", "run_end", "final"})
 RUN_MARKER_KINDS: frozenset[str] = frozenset({"run_start", "run_end"})
@@ -89,6 +100,8 @@ L_FIRST = "fabric.loss.first_sequence"
 L_LAST = "fabric.loss.last_sequence"
 H_LAST = "fabric.heartbeat.last_sequence"
 H_KIND = "fabric.heartbeat.kind"
+# 049 §7.9: stamped by fabricguard at a bound Node ingress (receiver-owned, const true).
+A_SOURCE_AUTHENTICATED = "fabric.source.authenticated"
 
 
 class ReconstructInputError(ValueError):
@@ -383,9 +396,13 @@ def scope_id_value(value: Any) -> str | None:
     return value if isinstance(value, str) and SCOPE_ID_RE.fullmatch(value) else None
 
 
-def pseudonym(value: str) -> str:
-    """``p-`` + 16 hex of sha256: how the report carries a provider-derived id."""
+def pseudonym(value: str, key: bytes | None = None) -> str:
+    """How the report carries a provider-derived id: with the id key, the keyed v2
+    ``p-`` + 32 hex (spec 049 §2.9 rule 4, type ``provider``); without one, the legacy
+    unkeyed ``p-`` + 16 hex of sha256 (the length tells them apart)."""
 
+    if key is not None and (keyed := pseudonym_v2("p", value, key)) is not None:
+        return keyed
     return "p-" + hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:16]
 
 
@@ -427,7 +444,7 @@ class ExchangeObs:
     response_state: str
     store_status: str
     truncated: bool
-    request_sha256: str
+    request_sha256: str | None  # 049 §2.4 rule 8: absent when no request object is stored
     response_sha256: str | None
     request_ref: str | None
     response_ref: str | None
@@ -442,6 +459,9 @@ class ExchangeObs:
     # A valid identity with malformed payload fields: its claims count, its payload
     # (placeholders) is never used, and it is a ``malformed_record`` gap (partial).
     malformed: bool = False
+    # 049 §7.9: the record carries the Node's fabric.source.authenticated stamp. Not part
+    # of the record's identity: a retry with and without it is one record.
+    authenticated: bool = field(default=False, compare=False)
 
     @property
     def source(self) -> tuple[str, int]:
@@ -458,6 +478,7 @@ class LossObs:
     count: int
     first_sequence: int
     last_sequence: int
+    authenticated: bool = field(default=False, compare=False)  # 049 §7.9 stamp
 
 
 @dataclass(frozen=True, slots=True)
@@ -480,6 +501,7 @@ class HeartbeatObs:
     run_id: str | None
     last_sequence: int
     scope_id: str | None = None
+    authenticated: bool = field(default=False, compare=False)  # 049 §7.9 stamp
 
 
 @dataclass(frozen=True, slots=True)
@@ -511,11 +533,28 @@ def observe(span: SpanRecord) -> Observation | None:
         return _exchange(span, source_id, epoch, ambiguous=markers > 0)
     if markers > 1:
         raise ReconstructInputError("a span claims both the loss and the heartbeat record class")
+    marker: HeartbeatObs | MalformedMarkerObs | LossObs | None
     if H_LAST in attrs:
-        return _heartbeat(attrs, source_id, epoch)
-    if L_REASON in attrs:
-        return _loss(attrs, source_id, epoch)
-    return None
+        marker = _heartbeat(attrs, source_id, epoch)
+    elif L_REASON in attrs:
+        marker = _loss(attrs, source_id, epoch)
+    else:
+        return None
+    if not authenticated(attrs):
+        return marker
+    if isinstance(marker, MalformedMarkerObs):
+        heartbeat = marker.heartbeat
+        return MalformedMarkerObs(
+            marker.scope_id,
+            None if heartbeat is None else dataclasses.replace(heartbeat, authenticated=True),
+        )
+    return None if marker is None else dataclasses.replace(marker, authenticated=True)
+
+
+def authenticated(attrs: Mapping[str, Any]) -> bool:
+    """Whether the record carries the Node's stamp (049 §7.9: a boolean ``true``; any
+    other value, as an agent could forge it, is no stamp)."""
+    return attrs.get(A_SOURCE_AUTHENTICATED) is True
 
 
 def _heartbeat(
@@ -587,6 +626,7 @@ def _exchange(
         "end_ns": max(span.end_ns, span.start_ns),
         "trace_id": _trace_id(span.trace_id),
         "span_id": _span_id(span.span_id),
+        "authenticated": authenticated(attrs),
     }
     api = enum_value(attrs.get(A_API), APIS)
     state = enum_value(attrs.get(A_RESPONSE_STATE), RESPONSE_STATES)
@@ -600,7 +640,11 @@ def _exchange(
         or api is None
         or state is None
         or store_status is None
-        or request_sha256 is None
+        # 049 §2.4 rule 8: the request digest is required only when the request object is
+        # stored (it is the stored, protected object's digest, absent when none is).
+        or (A_REQUEST_REF in attrs and request_sha256 is None)
+        or (A_REQUEST_SHA256 in attrs and request_sha256 is None)
+        or (A_RESULT_REF in attrs and response_sha256 is None)
         or not isinstance(truncated, bool)
         or (A_RESPONSE_SHA256 in attrs and response_sha256 is None)
         or (A_HTTP_STATUS in attrs and http_status is None)
@@ -625,7 +669,7 @@ def _exchange(
         response_state=cast("str", state),
         store_status=cast("str", store_status),
         truncated=cast("bool", truncated),
-        request_sha256=cast("str", request_sha256),
+        request_sha256=request_sha256,
         response_sha256=response_sha256,
         request_ref=_ref(attrs.get(A_REQUEST_REF)),
         response_ref=_ref(attrs.get(A_RESULT_REF)),

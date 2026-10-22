@@ -284,7 +284,8 @@ def test_in_flight_job_is_a_shutdown_loss_and_its_late_span_is_suppressed(
     job = _job(SourceAllocator("hard-inflight", "wire"))
     assert pipeline.submit(job) and store.entered.wait(5.0)
     start = time.monotonic()
-    assert pipeline.close(0.2) is False
+    closed = pipeline.close(0.2)
+    assert closed is False
     assert time.monotonic() - start < 0.5
     assert emitter.flush(2.0)
     (loss,) = _named(exporter, SPAN_LOSS)

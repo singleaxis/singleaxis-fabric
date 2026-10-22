@@ -309,6 +309,46 @@ def test_terminal_overflow_and_cancel_are_explicit_and_do_not_change_action(tmp_
     _close_recorder(session)
 
 
+def test_bound_session_records_every_adapter_under_the_ingress_source(tmp_path: Path) -> None:
+    """Spec 049 §7.9: a Node ingress admits one tenant and source, so a session bound to
+    a source records the terminal and the artifact observer as one sequence under it."""
+    store = LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="synthetic")
+    recorder = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=ROLES))
+    with pytest.raises(ValueError, match="source_id"):
+        SyntheticCaptureSession(recorder, tenant_id="synthetic", run_id="r", source_id="a b")
+    session = SyntheticCaptureSession(
+        recorder, tenant_id="synthetic", run_id="run-1", source_id="dispatcher"
+    )
+    root = tmp_path / "work"
+    root.mkdir()
+    observer = AllowlistedArtifactObserver(session, root=str(root), relative_paths=["out.bin"])
+    observer.observe(phase="before", operation_id="tool-1", attempt_id="try-1")
+    adapter = BoundedTerminalAdapter(session, allowed_cwd_root=str(root))
+    script = "import pathlib; pathlib.Path('out.bin').write_bytes(b'x')"
+    result = adapter.run(
+        [sys.executable, "-c", script],
+        cwd=str(root),
+        stdin=b"",
+        operation_id="tool-1",
+        attempt_id="try-1",
+    )
+    assert result.returncode == 0
+    observer.observe(phase="after", operation_id="tool-1", attempt_id="try-1")
+    snapshot = session.snapshot()
+    events = snapshot["events"]
+    assert {event["boundary"] for event in events} >= {"terminal", "tool"}
+    assert {event["source_id"] for event in events} == {"dispatcher"}
+    assert list(snapshot["source_high_water"]) == ["dispatcher"]
+    sequences = sorted(item["source_sequence"] for item in (*events, *snapshot["operations"]))
+    assert sequences == list(range(len(sequences)))  # one gapless sequence
+    projected, _ = project_synthetic_snapshot(snapshot)
+    for record in json.loads(projected)["resourceLogs"][0]["scopeLogs"][0]["logRecords"]:
+        attrs = {item["key"]: item["value"] for item in record["attributes"]}
+        assert attrs["tenant_id"] == {"stringValue": "synthetic"}
+        assert attrs["source_id"] == {"stringValue": "dispatcher"}
+    _close_recorder(session)
+
+
 def test_artifact_symlink_and_oversize_are_gaps(tmp_path: Path) -> None:
     session, _store = _session(tmp_path)
     root = tmp_path / "work"

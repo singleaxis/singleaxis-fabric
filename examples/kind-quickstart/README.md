@@ -63,6 +63,6 @@ the port-forward `up.sh` opens on `localhost:4318`.
   [`charts/fabric/profiles/shadow-production.yaml`](../../charts/fabric/profiles/shadow-production.yaml)
   for the fail-closed posture (tenant identity, receiver mTLS, explicit
   peers, authenticated HTTPS export, persistent queue).
-- **Auditor checklist** — see
-  [`docs/auditor-checklist.md`](../../docs/auditor-checklist.md) for what
-  your auditor will ask and what Fabric already captures for you.
+- **Privacy and security** — see
+  [`docs/privacy-and-security.md`](../../docs/privacy-and-security.md) for
+  what Fabric protects, what it records and its limits.

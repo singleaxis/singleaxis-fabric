@@ -222,7 +222,22 @@ def test_exit_code_needs_every_scope_and_unscoped_run_complete(capture: Capture)
 
 
 @pytest.mark.parametrize("state", ["complete", "closed_early"])
-@pytest.mark.parametrize("store", [True, False])
+def test_without_stored_content_no_response_digest_is_expected(tmp_path: Path, state: str) -> None:
+    """049 §2.4 rule 8: with content disabled no object is stored, so neither digest is
+    emitted; its absence is not a missing-response gap (the bytes check is skipped)."""
+    capture = Capture(tmp_path, store=False)
+    capture.run_start(R)
+    exchange = capture.exchange(*TURN, run_id=R, state=state)
+    capture.run_end(R)
+    for key in ("fabric.wire.response_sha256", "fabric.wire.request_sha256"):
+        exchange.span["attributes"].pop(key, None)
+    run = only_run(capture.reconstruct())
+    assert ("missing_object", "response_not_recorded") not in real_gaps(run)
+    assert run["checks"]["bytes"] != "failed"
+
+
+@pytest.mark.parametrize("state", ["complete", "closed_early"])
+@pytest.mark.parametrize("store", [True])
 def test_a_received_response_without_evidence_blocks_completeness(
     tmp_path: Path, state: str, store: bool
 ) -> None:
@@ -447,7 +462,8 @@ def test_cli_internal_errors_name_only_the_exception_class(
         raise RuntimeError(f"failed reading /home/{MARKER}/spans with token SECRET")
 
     monkeypatch.setattr("fabric.reconstruct.__main__.reconstruct", explode)
-    assert main(["--spans", str(capture.write())]) == 2
+    exit_code = main(["--spans", str(capture.write())])
+    assert exit_code == 2
     err = capsys.readouterr().err
     assert "RuntimeError" in err
     assert MARKER not in err
@@ -477,7 +493,8 @@ def test_cli_report_is_written_private(capture: Capture, tmp_path: Path) -> None
     capture.exchange(*TURN)
     capture.heartbeat()
     out = tmp_path / "new-report.json"
-    assert main(["--spans", str(capture.write()), "--out", str(out)]) == 1  # no store
+    exit_code = main(["--spans", str(capture.write()), "--out", str(out)])
+    assert exit_code == 1  # no store
     assert _mode(out) == 0o600
     validate(json.loads(out.read_text()))
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".fabric-reconstruct-")] == []
@@ -517,7 +534,8 @@ def test_cli_failed_report_write_leaves_no_temporary_file(
     capture.heartbeat()
     target = tmp_path / "out"
     target.mkdir()  # os.replace onto a directory fails
-    assert main(["--spans", str(capture.write()), "--out", str(target)]) == 2
+    exit_code = main(["--spans", str(capture.write()), "--out", str(target)])
+    assert exit_code == 2
     assert target.is_dir()
     leftovers = [p for p in tmp_path.iterdir() if p.name.startswith(".fabric-reconstruct-")]
     assert leftovers == []

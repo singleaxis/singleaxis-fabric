@@ -14,20 +14,38 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
+import logging
+import os
 import queue
 import re
 import threading
 import time
 import uuid
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import InitVar, dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any
 
+from ._sequence import (
+    EmittedIds,
+    IdentityMode,
+    check_id_key,
+    emitted_ids,
+    id_key_from_env,
+    identity_mode_from_env,
+)
 from .byte_spool import ByteSpoolAdmissionError, DurableByteSpool
 from .content_store.base import ByteEvidenceStore, check_safe_identifier
 from .deployment_policy import ContentProtector, DeploymentPolicy
+from .redaction import (
+    RedactionClient,
+    RedactionService,
+    Transformation,
+    refuse_removed,
+    resolve_service,
+)
 
 _ROLES = frozenset(
     {
@@ -74,7 +92,42 @@ _BOUNDARIES = frozenset(
 _MEDIA_TYPE_RE = re.compile(r"^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 _MEDIA_TYPE_MAX_LENGTH = 128
+# Deployment modes whose stored object is a derivative (to the review store).
+_DERIVED = frozenset({"redact", "masked_only", "tokenize"})
 _OPAQUE_ID_MAX_LENGTH = 128
+# Spec 049 §7.7 rule 3 / content-v2 2.2.0: every object stored under a masked mode records
+# the policy id, version and digest. Caller-supplied ``role_policies`` have no deployment
+# policy, so they are bound by an implicit one (like ``fabric.local-default``) whose digest
+# binds each role's mode and transformation identity and version.
+ROLE_POLICIES_ID = "fabric.role-policies"
+_MASKED_MODES = frozenset({"masked_only", "original_plus_masked"})
+_LOG = logging.getLogger("fabric.byte_evidence")
+
+
+def _production_marked(policy: object) -> bool:
+    return isinstance(policy, DeploymentPolicy) and policy.deployment["profile"] == "production"
+
+
+def content_gate(
+    deployment_policy: DeploymentPolicy | None, id_key: bytes | None,
+    *stores: ByteEvidenceStore | None,
+) -> tuple[str, str | None]:  # fmt: skip
+    """Spec 049 §7.3 on the explicit (records) input, as on the wire (§7.7 "both
+    inputs"): ``(profile, reason)``. The ``production`` profile (the deployment policy, or
+    a store's own policy, is marked production) needs the capture policy and the id key
+    (``FABRIC_WIRE_ID_KEY``); a missing one disables content capture with that reason
+    (metadata continues). The optional durable spool is always sealed (AES-256-GCM, a
+    customer key), so it never lacks the spool envelope. ``local`` needs nothing."""
+    marked = _production_marked(deployment_policy) or any(
+        _production_marked(getattr(store, "policy", None)) for store in stores
+    )
+    if not marked:
+        return "local", None
+    if deployment_policy is None:
+        return "production", "missing_capture_policy"
+    if id_key is None:
+        return "production", "missing_id_key"
+    return "production", None
 
 
 def _validate_capture_args(
@@ -138,24 +191,29 @@ def _validate_capture_args(
 
 @dataclass(frozen=True, slots=True)
 class BytePrivacyPolicy:
-    """Customer-approved content handling; transformations run on the writer thread.
+    """Customer-approved content handling; masking runs behind the handoff.
 
-    A transform is customer code, not a built-in PII detector. Masked descriptors
-    omit the original digest to avoid revealing low-entropy original values.
-    Raw queued memory stays inside the customer's approved capture boundary.
+    The masked copy of ``masked_only`` and ``original_plus_masked`` is made by the
+    customer-run redaction service (``ByteEvidenceConfig.redaction``, else
+    ``FABRIC_REDACTION_ENDPOINT``; ``contracts/redaction/v1``), called on the recorder's
+    worker, never the caller's thread, with this transformation identity and version.
+    Fabric runs no customer code and ships no PII detector. A failed, timed-out,
+    oversized or saturated call withholds the object (and a review copy) as
+    ``protection_failed`` (spec 049 §7.7 rule 4).
+    Masked descriptors omit the original digest to avoid revealing low-entropy original
+    values. Raw queued memory stays inside the customer's approved capture boundary.
     """
 
     mode: str = "original"
-    transform: Callable[[bytes], bytes] | None = None
     transformation_id: str | None = None
     transformation_version: str | None = None
+    transform: InitVar[object] = None  # a module reference: removed, refused with the docs
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, transform: object) -> None:
+        refuse_removed(transform=transform)
         if self.mode not in {"original", "omit", "masked_only", "original_plus_masked"}:
             raise ValueError("unsupported byte privacy mode")
         masked = self.mode in {"masked_only", "original_plus_masked"}
-        if masked and not callable(self.transform):
-            raise ValueError("masked modes require a customer transformation")
         for value in (self.transformation_id, self.transformation_version):
             if masked and (
                 not isinstance(value, str)
@@ -164,10 +222,35 @@ class BytePrivacyPolicy:
             ):
                 raise ValueError("masked modes require opaque transformation identity and version")
         if not masked and any(
-            value is not None
-            for value in (self.transform, self.transformation_id, self.transformation_version)
+            value is not None for value in (self.transformation_id, self.transformation_version)
         ):
             raise ValueError("transformation settings require a masked mode")
+
+    @property
+    def transformation(self) -> Transformation | None:
+        """The masked modes' transformation identity, sent to the redaction service."""
+        if self.transformation_id is None or self.transformation_version is None:
+            return None
+        return Transformation(self.transformation_id, self.transformation_version)
+
+
+def _role_policies_block(policies: Mapping[str, BytePrivacyPolicy]) -> dict[str, Any]:
+    """The implicit ``fabric.role-policies`` identity (version 1) of a role-policy table."""
+    privacy = {
+        role: {
+            "mode": policy.mode,
+            "transformation_id": policy.transformation_id,
+            "transformation_version": policy.transformation_version,
+        }
+        for role, policy in sorted(policies.items())
+    }
+    doc = {"policy_id": ROLE_POLICIES_ID, "policy_version": 1, "privacy": privacy}
+    canonical = json.dumps(doc, sort_keys=True, separators=(",", ":")).encode()
+    return {
+        "policy_id": ROLE_POLICIES_ID,
+        "policy_version": 1,
+        "policy_digest": "sha256:" + hashlib.sha256(canonical).hexdigest(),
+    }
 
 
 def _validate_store_separation(original: ByteEvidenceStore, review: ByteEvidenceStore) -> None:
@@ -198,8 +281,19 @@ class ByteEvidenceConfig:
     deployment_policy: DeploymentPolicy | None = None
     content_protector: ContentProtector | None = None
     durable_spool: DurableByteSpool | None = None
+    # The id key (049 §7.3; FABRIC_WIRE_ID_KEY when unset): the production profile needs
+    # it before any content is captured. A secret: never in repr or logs.
+    id_key: bytes | None = field(default=None, repr=False)
+    # The customer-run redaction service for masked role policies (contracts/redaction/v1;
+    # FABRIC_REDACTION_ENDPOINT when unset).
+    redaction: RedactionService | None = None
+    # 049 §2.9 rule 7 (FABRIC_IDENTITY_MODE when unset): caller ids leave as keyed
+    # pseudonyms (``pseudonymous``, the default) or as given (``clear``).
+    identity_mode: IdentityMode | None = None
 
     def __post_init__(self) -> None:  # noqa: PLR0912
+        if self.redaction is not None and not isinstance(self.redaction, RedactionService):
+            raise ValueError("redaction must be a RedactionService")
         if not isinstance(self.store, ByteEvidenceStore) or not self.store.tenant_id:
             raise ValueError("byte evidence requires a tenant-scoped byte evidence store")
         check_safe_identifier("tenant_id", self.store.tenant_id)
@@ -210,6 +304,9 @@ class ByteEvidenceConfig:
             raise ValueError("durable byte spool must match the byte store tenant")
         if not self.roles or not isinstance(self.roles, frozenset) or self.roles - _ROLES:
             raise ValueError("roles must be a non-empty frozenset of content-v2 roles")
+        check_id_key(self.id_key)
+        if self.identity_mode not in (None, "pseudonymous", "clear"):
+            raise ValueError("identity_mode must be 'pseudonymous' or 'clear'")
         if self.content_protector is not None and self.deployment_policy is None:
             object.__setattr__(self, "deployment_policy", self.content_protector.policy)
         if self.deployment_policy is not None:
@@ -222,12 +319,12 @@ class ByteEvidenceConfig:
             if self.role_policies:
                 raise ValueError("deployment_policy and role_policies cannot be combined")
             protector = self.content_protector or ContentProtector(
-                deployment, payload_max_bytes=self.payload_max_bytes
+                deployment, payload_max_bytes=self.payload_max_bytes, redaction=self.redaction
             )
             if protector.policy.digest != deployment.digest:
                 raise ValueError("content protector must match deployment policy")
             object.__setattr__(self, "content_protector", protector)
-            if any(deployment.privacy.get(role) in {"redact", "tokenize"} for role in self.roles):
+            if any(deployment.privacy.get(role) in _DERIVED for role in self.roles):
                 if (
                     not isinstance(self.review_store, ByteEvidenceStore)
                     or self.review_store.tenant_id != self.store.tenant_id
@@ -280,6 +377,29 @@ class ByteEvidenceRecorder:
         self._pending = 0
         self._unretained_drops = 0
         self._spool = config.durable_spool
+        self._policy_block = _role_policies_block(config.role_policies or {})
+        # One connection pool to the redaction service for masked role policies (049
+        # §7.7 rule 3), used only on this recorder's worker.
+        self._redaction: RedactionClient | None = None
+        if any(policy.transformation is not None
+               for policy in (config.role_policies or {}).values()):  # fmt: skip
+            service = resolve_service(config.redaction, os.environ)
+            if service is None:
+                raise ValueError(
+                    "masked modes require a redaction service endpoint (FABRIC_REDACTION_ENDPOINT)"
+                )
+            self._redaction = RedactionClient(service, max_output_bytes=config.payload_max_bytes)
+        # 049 §7.3: never blocked, but not silent; a malformed id key still raises here.
+        id_key = config.id_key if config.id_key is not None else id_key_from_env(os.environ)
+        self._profile, self._gate_reason = content_gate(
+            config.deployment_policy, id_key, config.store, config.review_store
+        )
+        if self._gate_reason is not None:
+            self._log_gate()
+        # 049 §2.9: caller ids leave as keyed pseudonyms, or, in production without the id
+        # key (rule 5), as generated ids; as given only in the clear mode (or local, no key).
+        mode = config.identity_mode or identity_mode_from_env(os.environ)
+        self._emitted_ids = emitted_ids(self._profile, id_key, mode)
         if self._spool is not None:
             recovered_ids = self._spool.object_ids()
             if len(recovered_ids) > config.max_records:
@@ -291,6 +411,54 @@ class ByteEvidenceRecorder:
             self._spool.bind(config.store, config.review_store)
         self._worker = threading.Thread(target=self._run, name="fabric-byte-evidence", daemon=True)
         self._worker.start()
+
+    def _log_gate(self) -> None:
+        """The disabled state, by reason only (class-only text, never a value)."""
+        _LOG.warning(
+            "fabric.byte_evidence: content capture disabled (%s, %s profile); "
+            "metadata capture continues",
+            self._gate_reason,
+            self._profile,
+        )
+
+    def status(self) -> dict[str, Any]:
+        """The content state of this recorder (049 §7.3): profile, ``content_capture`` and
+        its reason, and whether a sealed durable spool is used. Values only."""
+        return {
+            "profile": self._profile,
+            "content_capture": "enabled" if self._gate_reason is None else "disabled",
+            "content_capture_reason": self._gate_reason,
+            "spool_encrypted": self._spool is not None,
+        }
+
+    def redaction_stats(self) -> dict[str, int]:
+        """The redaction service counters (never a value): calls that timed out, were
+        refused at the in-flight bound, or failed otherwise."""
+        if self._redaction is not None:
+            return self._redaction.stats()
+        if (protector := self._config.content_protector) is not None:
+            return protector.stats()
+        return dict.fromkeys(("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0)
+
+    @property
+    def emitted_ids(self) -> EmittedIds | None:
+        """How caller ids are emitted (049 §2.9): keyed pseudonyms, generated ids (the
+        production profile without the id key, rule 5), or ``None`` (as given)."""
+        return self._emitted_ids
+
+    def emitted_run_id(self, run_id: str) -> str:
+        """``run_id`` as this recorder emits it (epoch 0): the id a source spool or a
+        qualified-run expectation for this run is keyed by. Never the clear value unless
+        ids are emitted as given. The result is an :class:`fabric._sequence.EmittedId`:
+        passed back to this recorder it is kept as is, while a plain string is always
+        caller input and mapped again."""
+        ids = self._emitted_ids
+        return run_id if ids is None else ids.run(run_id, 0)
+
+    def emitted_source_id(self, source_id: str) -> str:
+        """``source_id`` as this recorder emits it, like :meth:`emitted_run_id`."""
+        ids = self._emitted_ids
+        return source_id if ids is None else ids.source(source_id)
 
     @property
     def tenant_id(self) -> str:
@@ -336,18 +504,32 @@ class ByteEvidenceRecorder:
             chunk_index=chunk_index,
         )
 
+        if (ids := self._emitted_ids) is not None:  # 049 §2.9: no clear caller id leaves
+            source_id = ids.source(source_id)
+            run_id = ids.run(run_id, source_epoch) if run_id is not None else None
+            operation_id, attempt_id, stream_id = (
+                ids.other(value) if value is not None else None
+                for value in (operation_id, attempt_id, stream_id)
+            )
         object_id = str(uuid.uuid4())
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
-        enabled = role in self._config.roles and policy.mode != "omit"
+        # 049 §7.3: content disabled, metadata only (logged at construction, never here:
+        # nothing on the caller's path may wait on a log handler).
+        gated = self._gate_reason is not None
+        enabled = role in self._config.roles and policy.mode != "omit" and not gated
         protected = None
-        if self._config.content_protector is not None:
-            # Protection runs before the handoff. Only permitted bytes enter the queue.
-            protected = self._config.content_protector.protect(role if enabled else "", data)
+        protector = self._config.content_protector
+        # Customer redaction never runs on the caller's thread (spec 049 §7.1, §7.7): it
+        # is deferred to the worker, before persistence; failure there withholds.
+        deferred = protector is not None and enabled and protector.needs_redaction_service(role)
+        if protector is not None and not gated and not deferred:
+            # Fabric's own protection runs before the handoff: only permitted bytes queue.
+            protected = protector.protect(role if enabled else "", data)
             enabled = enabled and protected.protected_bytes is not None
         # Neither omitted nor masked-only content exposes the original fingerprint.
         digest = (
             "sha256:" + hashlib.sha256(data).hexdigest()
-            if protected is None and enabled and policy.mode != "masked_only"
+            if protected is None and enabled and policy.mode != "masked_only" and not deferred
             else None
         )
         descriptor: dict[str, Any] = {
@@ -371,7 +553,13 @@ class ByteEvidenceRecorder:
         }
         if role in (self._config.role_policies or {}):
             descriptor["privacy_mode"] = policy.mode
-        if enabled and protected is None:
+        if enabled and policy.mode in _MASKED_MODES:
+            descriptor.update(
+                self._policy_block,
+                protection_status="redacted" if policy.mode == "masked_only" else "retained",
+            )
+        if enabled and protected is None and policy.mode != "masked_only" and not deferred:
+            # masked_only keeps no digest or length of the original (content-v2 2.2.0).
             descriptor["source_byte_length"] = len(data)
         if enabled and policy.mode == "masked_only":
             descriptor.update(
@@ -383,6 +571,23 @@ class ByteEvidenceRecorder:
         if digest is not None:
             descriptor["source_byte_length"] = len(data)
             descriptor["source_sha256"] = digest
+        if deferred:  # pending the worker's redaction: no digest or length of the original
+            deployment = self._config.deployment_policy
+            transformation = protector.transformation(role) if protector is not None else None
+            if deployment is None or transformation is None:  # validated configuration
+                raise ValueError("missing deployment policy")
+            descriptor.update(
+                workload_id=deployment.workload_id,
+                policy_digest=deployment.digest,
+                policy_id=deployment.policy_id,
+                policy_version=deployment.policy_version,
+                privacy_mode=deployment.privacy[role],
+                protection_status="redacted",
+                representation="redacted",
+                transformations=["redact"],
+                transformation_id=transformation.transformation_id,
+                transformation_version=transformation.version,
+            )
         if protected is not None:
             deployment = self._config.deployment_policy
             if deployment is None:  # validated configuration
@@ -426,7 +631,13 @@ class ByteEvidenceRecorder:
                 )
                 self._unretained_drops += 1
                 return copy.deepcopy(descriptor)
-            if not enabled and protected is not None:
+            if gated:
+                descriptor.update(
+                    status="not_captured",
+                    representation="unavailable",
+                    status_reason=self._gate_reason,
+                )
+            elif not enabled and protected is not None:
                 descriptor.update(
                     status={"lost": "failed", "unsupported": "unsupported"}.get(
                         protected.status, "not_captured"
@@ -491,9 +702,12 @@ class ByteEvidenceRecorder:
                 "transformations": ["redact"],
                 "transformation_id": policy.transformation_id,
                 "transformation_version": policy.transformation_version,
+                "protection_status": "redacted",
                 "links": [{"relation": "derived_from", "object_id": object_id}],
             }
+            # The review copy keeps no digest or length of the original (§7.5).
             derivative.pop("source_sha256", None)
+            derivative.pop("source_byte_length", None)
             self._records[derivative_id] = derivative
         try:
             self._queue.put_nowait((object_id, data, derivative_id))
@@ -606,14 +820,21 @@ class ByteEvidenceRecorder:
         return self._spool.health() if self._spool is not None else {"enabled": False}
 
     def close(self, timeout_s: float = 10.0) -> bool:
+        """Settle accepted writes, stop the worker, close the redaction service
+        connections (the role policies' and the content protector's) and the durable
+        spool, all within ``timeout_s``."""
         deadline = time.monotonic() + max(0.0, timeout_s)
         with self._condition:
             self._closed = True
         complete = self.flush(max(0.0, deadline - time.monotonic()))
         self._worker.join(max(0.0, deadline - time.monotonic()))
+        if self._redaction is not None:
+            self._redaction.close()
+        if self._config.content_protector is not None:
+            self._config.content_protector.close()
         if self._spool is not None:
-            stopped = self._spool.close(max(0.0, deadline - time.monotonic()))
-            return complete and stopped and not self._worker.is_alive()
+            spooled = self._spool.close(max(0.0, deadline - time.monotonic()))
+            return complete and spooled and not self._worker.is_alive()
         return complete
 
     def _run(self) -> None:
@@ -652,27 +873,23 @@ class ByteEvidenceRecorder:
             role = self._records[object_id]["role"]
         if self._config.deployment_policy is not None:
             mode = self._config.deployment_policy.privacy.get(role, "omit")
-            store = (
-                self._config.review_store if mode in {"redact", "tokenize"} else self._config.store
-            )
+            store = self._config.review_store if mode in _DERIVED else self._config.store
             if store is None:
                 raise ValueError("missing deployment content store")
-            self._write_record(object_id, data, store)
+            payload = self._deferred_protection(object_id, role, data)
+            if payload is not None:
+                self._write_record(object_id, payload, store)
             return
         policy = (self._config.role_policies or {}).get(role, BytePrivacyPolicy())
         transformed = None
-        if policy.transform is not None:
-            try:
-                transformed = policy.transform(data)
-                if not isinstance(transformed, bytes):
-                    raise TypeError("transform must return bytes")
-                if len(transformed) > self._config.payload_max_bytes:
-                    raise ValueError("transformed payload too large")
-            except Exception:
+        if policy.transformation is not None:
+            transformed = self._role_transform(role, policy, data)
+            if transformed is None:
+                # Spec 049 §7.7 rule 4: a failed transformation withholds; never raw bytes.
                 with self._condition:
-                    self._fail_record(object_id, "privacy_transform_failed")
-                    if derivative_id is not None:
-                        self._fail_record(derivative_id, "privacy_transform_failed")
+                    for record_id in (object_id, derivative_id):
+                        if record_id is not None:
+                            self._withhold(record_id)
                 return
         payload = transformed if policy.mode == "masked_only" else data
         if payload is None:
@@ -683,11 +900,57 @@ class ByteEvidenceRecorder:
                 raise ValueError("missing transformed content or review store")
             self._write_record(derivative_id, transformed, self._config.review_store)
 
+    def _role_transform(self, role: str, policy: BytePrivacyPolicy, data: bytes) -> bytes | None:
+        """A role policy's masked copy from the redaction service; ``None`` when the call
+        failed, timed out, was refused at the in-flight bound or returned too much."""
+        transformation = policy.transformation
+        if transformation is None or self._redaction is None:
+            return None
+        return self._redaction.transform(
+            data, transformation=transformation, role=role, mode="masked_only"
+        )
+
+    def _deferred_protection(self, object_id: str, role: str, data: bytes) -> bytes | None:
+        """The bytes to persist under a deployment policy. A customer redaction deferred
+        from :meth:`capture` runs here (bounded, on its own thread), before persistence;
+        any failure withholds the object (spec 049 §7.7 rule 4) and returns ``None``."""
+        protector = self._config.content_protector
+        if protector is None or not protector.needs_redaction_service(role):
+            return data  # already protected before the handoff
+        protected = protector.protect(role, data)
+        if protected.status != "redacted" or protected.protected_bytes is None:
+            with self._condition:
+                self._withhold(object_id)
+            return None
+        if len(protected.protected_bytes) > self._config.payload_max_bytes:
+            # The recorder's own cap, as before deferral (a supplied protector may allow
+            # more): dropped, nothing stored (Sol P0-A round 2 #4).
+            with self._condition:
+                self._fail_record(object_id, "payload_too_large", status="dropped")
+            return None
+        return protected.protected_bytes
+
     def _fail_record(self, object_id: str, reason: str, *, status: str = "failed") -> None:
         descriptor = self._records[object_id]
         for key in ("ref", "stored_byte_length", "stored_sha256"):
             descriptor.pop(key, None)
         descriptor.update(status=status, status_reason=reason, representation="unavailable")
+
+    def _withhold(self, object_id: str) -> None:
+        """A descriptor-only ``not_captured(protection_failed)``: no bytes, no digest or
+        length of the original, protection outcome ``withheld``."""
+        descriptor = self._records[object_id]
+        for key in ("ref", "stored_byte_length", "stored_sha256"):
+            descriptor.pop(key, None)
+        for key in ("source_sha256", "source_byte_length"):
+            descriptor.pop(key, None)
+        descriptor.update(
+            status="not_captured",
+            status_reason="protection_failed",
+            representation="unavailable",
+            transformations=[],
+            protection_status="withheld",
+        )
 
     def _write_record(self, object_id: str, data: bytes, store: ByteEvidenceStore) -> None:
         with self._condition:

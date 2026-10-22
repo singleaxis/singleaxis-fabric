@@ -111,6 +111,11 @@ spec:
               mountPath: /etc/fabric/workload-auth
               readOnly: true
             {{- end }}
+            {{- if and .Values.content.enabled .Values.content.encryption.keySecret.name }}
+            - name: content-key
+              mountPath: /etc/fabric/content-key
+              readOnly: true
+            {{- end }}
             {{- if .Values.exporter.sendingQueue.persistence.enabled }}
             - name: queue-storage
               mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
@@ -199,6 +204,18 @@ spec:
                   items:
                     - key: {{ .Values.receiver.workloadAuthentication.tokenSecret.key | quote }}
                       path: token
+        {{- end }}
+        {{- if and .Values.content.enabled .Values.content.encryption.keySecret.name }}
+        # Spec 049 §7.8: the Node-side content key, a file (never env or values).
+        - name: content-key
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ .Values.content.encryption.keySecret.name | quote }}
+                  items:
+                    - key: {{ .Values.content.encryption.keySecret.key | quote }}
+                      path: key
         {{- end }}
         {{- if and .Values.exporter.sendingQueue.persistence.enabled .Values.exporter.sendingQueue.persistence.existingClaim }}
         - name: queue-storage

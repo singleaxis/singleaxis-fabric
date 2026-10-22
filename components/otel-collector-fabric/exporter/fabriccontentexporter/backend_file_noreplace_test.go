@@ -140,7 +140,7 @@ func runNoReplaceRace(t *testing.T, mode string) {
 			t.Errorf("object %d: %d writers accepted (%v), want exactly 1: an accepted body was overwritten", k, len(winners), winners)
 			continue
 		}
-		got, err := os.ReadFile(filepath.Join(dir, "tenant-a", "evidence", "object-"+strconv.Itoa(k)))
+		got, err := os.ReadFile(onDisk(dir, filepath.ToSlash(filepath.Join(dir, "tenant-a", "evidence", "object-"+strconv.Itoa(k)))))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -148,11 +148,8 @@ func runNoReplaceRace(t *testing.T, mode string) {
 			t.Errorf("object %d holds a body other than the accepted one", k)
 		}
 	}
-	entries, _ := os.ReadDir(filepath.Join(dir, "tenant-a", "evidence"))
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".tmp") {
-			t.Errorf("temp file left behind: %s", e.Name())
-		}
+	for _, left := range temps(t, dir) {
+		t.Errorf("temp file left behind: %s", left)
 	}
 }
 
@@ -187,13 +184,15 @@ func TestFileBackendWithoutAtomicNoReplaceFailsRetryably(t *testing.T) {
 	if errors.Is(err, errConflict) {
 		t.Fatal("unsupported no-replace reported as a conflict")
 	}
-	if _, statErr := os.Lstat(filepath.FromSlash(key)); !errors.Is(statErr, os.ErrNotExist) {
+	if _, statErr := os.Lstat(onDisk(dir, key)); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("object written without an atomic no-replace primitive (stat err %v)", statErr)
 	}
-	entries, _ := os.ReadDir(filepath.Join(dir, "tenant-a", "evidence"))
-	for _, e := range entries {
-		t.Errorf("file left behind: %s", e.Name())
-	}
+	_ = filepath.WalkDir(filepath.Join(dir, "tenant-a", "evidence"), func(path string, e os.DirEntry, err error) error {
+		if err == nil && !e.IsDir() {
+			t.Errorf("file left behind: %s", e.Name())
+		}
+		return nil
+	})
 }
 
 // The rename fallback keeps replay semantics: identical bytes are success,
@@ -218,11 +217,11 @@ func TestFileBackendRenameFallbackReplayAndConflict(t *testing.T) {
 	if err := b.put(context.Background(), key, []byte("second")); !errors.Is(err, errConflict) {
 		t.Fatalf("different bytes = %v, want errConflict", err)
 	}
-	got, _ := os.ReadFile(filepath.FromSlash(key))
+	got, _ := os.ReadFile(onDisk(dir, key))
 	if string(got) != "first" {
 		t.Fatalf("stored object replaced: %q", got)
 	}
-	if mode := perm(t, filepath.FromSlash(key)); mode != 0o600 {
+	if mode := perm(t, onDisk(dir, key)); mode != 0o600 {
 		t.Fatalf("object mode %o, want 600", mode)
 	}
 }

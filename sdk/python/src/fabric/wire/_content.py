@@ -23,10 +23,18 @@ _ORPHANED: list[object] = []  # sessions a forked child replaced (see _live_sess
 
 
 def _value(value: Any) -> dict[str, Any]:
+    """An OTLP AnyValue: strings, integers, arrays of them, and (049 §4.3: ``links``)
+    arrays of key-value maps, as the Node's closed parser reads them."""
+    if isinstance(value, dict):
+        return {"kvlist_value": {"values": [{"key": k, "value": _value(v)}
+                                            for k, v in value.items()]}}  # fmt: skip
     if isinstance(value, bool) or not isinstance(value, (str, int, list)):
-        raise TypeError("descriptor values are strings, integers or string lists")
+        raise TypeError("descriptor values are strings, integers, lists or maps")
     if isinstance(value, list):
-        return {"array_value": {"values": [{"string_value": str(v)} for v in value]}}
+        return {"array_value": {"values": [
+            _value(v) if isinstance(v, (dict, int)) else {"string_value": str(v)}
+            for v in value
+        ]}}  # fmt: skip
     return {"int_value": value} if isinstance(value, int) else {"string_value": value}
 
 

@@ -1,0 +1,51 @@
+{
+  "schema_version": "fabric.node-envelope-vectors/v1",
+  "rule": "Spec 049 §7.8: a Node directory backend configured with a customer key stores every body object and every descriptor as magic 'FABRIC-NODE-CONTENT-1\\n' | 12-byte nonce | AES-256-GCM(key, nonce, plaintext, aad) (ciphertext then 16-byte tag), aad = canonical JSON [\"fabric.node-content-envelope/v1\", path] with path the object's location below the content root ('<tenant>/evidence/<id>' or '<tenant>/evidence/meta/<id>.json'). The plaintext is unchanged (a descriptor keeps its 048 golden bytes). The key file holds 32 raw bytes or their standard base64 with at most one trailing newline. A reader with the key requires the magic and authenticates; without the key it refuses an enveloped file. Writers draw a random nonce per object; these vectors fix it.",
+  "cases": [
+    {
+      "name": "body object",
+      "key_base64": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo=",
+      "path": "tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+      "aad": "[\"fabric.node-content-envelope/v1\",\"tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01\"]",
+      "plaintext_base64": "eyJtb2RlbCI6ImdwdC00byIsIm1lc3NhZ2VzIjpbeyJyb2xlIjoidXNlciIsImNvbnRlbnQiOiJoaSJ9XX0=",
+      "envelope_base64": "RkFCUklDLU5PREUtQ09OVEVOVC0xCgABAgMEBQYHCAkKCzaDQApaptLuNBaqns4KYWeoZ/UWOJ8Ac5tJyYo+e7w4TVMYBv9pcFuWPN5F3gwcymCDNbAjdxvipPcu1l6HrGySg5AoFjv95QyId3HvOA==",
+      "valid": true
+    },
+    {
+      "name": "descriptor",
+      "key_base64": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo=",
+      "path": "tenant-a/evidence/meta/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01.json",
+      "aad": "[\"fabric.node-content-envelope/v1\",\"tenant-a/evidence/meta/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01.json\"]",
+      "plaintext_base64": "eyJvYmplY3RfaWQiOiAiMGI4ZTFjNTItMWYwYS00ZDdlLThmM2ItNWM5YTJlN2QxYTAxIiwgInRlbmFudF9pZCI6ICJ0ZW5hbnQtYSJ9Cg==",
+      "envelope_base64": "RkFCUklDLU5PREUtQ09OVEVOVC0xCgwNDg8QERITFBUWFyFKW/OKehFYnwqgQmAO6clEfC/WqiLot1XKMuwCnnwGypJr99yb2Ru4ohChtn+XwdJUMld8eSmAil7vvteX26f7gsTn/L5kiVESDzge0pDioDhU82O9r51NAPMsGUj6",
+      "valid": true
+    },
+    {
+      "name": "body envelope opened as its descriptor",
+      "key_base64": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo=",
+      "path": "tenant-a/evidence/meta/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01.json",
+      "aad": "[\"fabric.node-content-envelope/v1\",\"tenant-a/evidence/meta/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01.json\"]",
+      "plaintext_base64": "",
+      "envelope_base64": "RkFCUklDLU5PREUtQ09OVEVOVC0xCgABAgMEBQYHCAkKCzaDQApaptLuNBaqns4KYWeoZ/UWOJ8Ac5tJyYo+e7w4TVMYBv9pcFuWPN5F3gwcymCDNbAjdxvipPcu1l6HrGySg5AoFjv95QyId3HvOA==",
+      "valid": false
+    },
+    {
+      "name": "flipped tag",
+      "key_base64": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo=",
+      "path": "tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+      "aad": "[\"fabric.node-content-envelope/v1\",\"tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01\"]",
+      "plaintext_base64": "",
+      "envelope_base64": "RkFCUklDLU5PREUtQ09OVEVOVC0xCgABAgMEBQYHCAkKCzaDQApaptLuNBaqns4KYWeoZ/UWOJ8Ac5tJyYo+e7w4TVMYBv9pcFuWPN5F3gwcymCDNbAjdxvipPcu1l6HrGySg5AoFjv95QyId3HvOQ==",
+      "valid": false
+    },
+    {
+      "name": "queue magic",
+      "key_base64": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlo=",
+      "path": "tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+      "aad": "[\"fabric.node-content-envelope/v1\",\"tenant-a/evidence/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01\"]",
+      "plaintext_base64": "",
+      "envelope_base64": "RkFCUklDLU5PREUtUVVFVUUtMQoAAQIDBAUGBwgJCgs2g0AKWqbS7jQWqp7OCmFnqGf1FjifAHObScmKPnu8OE1TGAb/aXBbljzeRd4MHMpggzWwI3cb4qT3LtZeh6xskoOQKBY7/eUMiHdx7zg=",
+      "valid": false
+    }
+  ]
+}

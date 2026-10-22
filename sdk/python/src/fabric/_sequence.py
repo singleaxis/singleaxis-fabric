@@ -23,10 +23,18 @@ from typing import Literal, cast
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
-SOURCE_PSEUDONYM_RE = re.compile(r"^s-[0-9a-f]{32}$")
 ID_KEY_ENV = "FABRIC_WIRE_ID_KEY"
 LABELS_ENV = "FABRIC_WIRE_LABELS"  # "clear": operator labels exported unchanged (opt-in)
 Labels = Literal["pseudonymous", "clear"]
+IDENTITY_MODE_ENV = "FABRIC_IDENTITY_MODE"  # 049 §2.9 rule 7: ids pseudonymous or clear
+IdentityMode = Literal["pseudonymous", "clear"]
+# Function v2 prefix -> type string (049 §2.9 rule 2), pinned by pseudonym-v2.json.
+V2_TYPES: Mapping[str, str] = {
+    "sess": "session", "usr": "user", "act": "actor", "conv": "conversation", "turn": "turn",
+    "trg": "trigger", "dsp": "dispatch", "agt": "agent", "tgt": "target", "hst": "host",
+    "sbx": "sandbox", "mcps": "mcp_session", "rpc": "jsonrpc", "dbn": "db_namespace",
+    "txn": "db_transaction", "mst": "memory_store", "mkey": "memory_key", "p": "provider",
+}  # fmt: skip
 MIN_ID_KEY_BYTES = 16
 Component = Literal["wire"]
 _LIVE: weakref.WeakSet[SourceAllocator] = weakref.WeakSet()
@@ -80,10 +88,42 @@ def run_pseudonym(run_id: str, key: bytes | None = None) -> str:
 
 def source_label(source_id: str, key: bytes | None = None, *, clear: bool = False) -> str:
     """The emitted source id (J1): ``s-`` + :func:`label_pseudonym`, or the operator's label
-    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). An ``s-`` value is kept."""
-    if clear or SOURCE_PSEUDONYM_RE.fullmatch(source_id):
+    unchanged when ``clear`` (``FABRIC_WIRE_LABELS=clear``). A caller value is always mapped,
+    even an ``s-``-shaped one (Sol P0-A round 5 #1): shape never proves it was emitted."""
+    if clear:
         return source_id
     return label_pseudonym("s-", source_id, key)
+
+
+def operator_label(value: str, key: bytes | None = None, *, clear: bool = False) -> str:
+    """An operator label (049 §4.2: policy ids, workflow nodes) as emitted: ``lbl-`` +
+    :func:`label_pseudonym` (keyed when ``key`` is set), unchanged only when ``clear``."""
+    return value if clear else label_pseudonym("lbl-", value, key)
+
+
+def pseudonym_v2(prefix: str, value: str, key: bytes | None) -> str | None:
+    """Function v2 (049 §2.9): ``prefix-`` + the first 32 hex of HMAC-SHA256(k_type, value),
+    k_type = HMAC-SHA256(key, ``"fabric-id/v2/" + type``). ``None`` without a key: an
+    unkeyed hash of a low-entropy id is not a pseudonym, so the id is omitted."""
+    if key is None:
+        return None
+    k_type = hmac.new(key, f"fabric-id/v2/{V2_TYPES[prefix]}".encode(), hashlib.sha256).digest()
+    data = value.encode("utf-8", "surrogatepass")
+    return f"{prefix}-" + hmac.new(k_type, data, hashlib.sha256).hexdigest()[:32]
+
+
+def key_id(key: bytes) -> str:
+    """The id key's public id (049 §2.9 rule 6): ``kid-`` + 8 hex; never the key."""
+    return "kid-" + hmac.new(key, b"fabric-id/v2/kid", hashlib.sha256).hexdigest()[:8]
+
+
+def identity_mode_from_env(environ: Mapping[str, str]) -> IdentityMode:
+    """``FABRIC_IDENTITY_MODE``: unset/``pseudonymous`` (default) or ``clear``; else
+    ``ValueError`` (fixed text, never the value)."""
+    value = (environ.get(IDENTITY_MODE_ENV) or "pseudonymous").strip()
+    if value not in ("pseudonymous", "clear"):
+        raise ValueError(f"{IDENTITY_MODE_ENV} must be 'pseudonymous' or 'clear'")
+    return cast("IdentityMode", value)
 
 
 def labels_from_env(environ: Mapping[str, str]) -> Labels:
@@ -189,12 +229,16 @@ def get_allocator(component: Component, *, source_id: str | None = None) -> Sour
 
 
 @contextmanager
-def run_scope(run_id: str, key: bytes | None = None) -> Iterator[RunScope]:
+def run_scope(
+    run_id: str, key: bytes | None = None, *, emitted: str | None = None
+) -> Iterator[RunScope]:
     """A new uniquely identified scope for ``run_id``, current for the block (closed after);
-    the scope carries :func:`run_pseudonym` of ``run_id``, never the clear value."""
+    the scope carries :func:`run_pseudonym` of ``run_id``, never the clear value, or
+    ``emitted`` (a generated fallback) when no value derived from ``run_id`` may leave the
+    process (049 §2.9 rule 5)."""
     if not isinstance(run_id, str) or not OPAQUE_ID_RE.fullmatch(run_id):
         raise ValueError("run_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-    scope = RunScope(run_pseudonym(run_id, key), str(uuid.uuid4()), _SCOPE.get())
+    scope = RunScope(emitted or run_pseudonym(run_id, key), str(uuid.uuid4()), _SCOPE.get())
     token = _SCOPE.set(scope)
     try:
         yield scope
@@ -222,9 +266,169 @@ def resolve_run_id(allocator: SourceAllocator, *, trace_id: int | None = None) -
     return encode_opaque_id(f"source:{allocator.source_id}:{allocator.epoch}")
 
 
+_PROCESS_SOURCE: list[str] = []  # this process's random source id, once generated
+_MAX_GENERATED_IDS = 65536
+_MINT = object()  # only this module mints an EmittedId
+
+
+def process_source_id() -> str:
+    """This process's random source id (049 §2.9 rule 5): ``s-`` + 32 random hex, the same
+    for every caller in the process, new in a forked child. Continuity across restarts is
+    lost by design: nothing derived from a host- or caller-supplied id."""
+    with _LOCK:
+        if not _PROCESS_SOURCE:
+            _PROCESS_SOURCE.append("s-" + uuid.uuid4().hex)
+        return _PROCESS_SOURCE[0]
+
+
+class EmittedId(str):
+    """An id Fabric emitted or minted (049 §2.9), as returned to callers: a run or source
+    id a recorder pins, a call, operation or attempt id it minted. It is recognised by its
+    type and issuer, never by its shape or by a lookup (Sol P0-A round 6 #1): passed back
+    to a recorder of the same issuer it is kept as is, so ids pass through more than one
+    layer and a ``parent_call_id`` joins its parent's ``call_id`` for as long as the value
+    lives. A plain ``str`` is always caller input and always mapped, even an ``r-``/``s-``/
+    ``lbl-``-shaped one; an id that lost its type (serialised and read back) is a plain
+    string again. Only :mod:`fabric._sequence` mints one."""
+
+    _issuer: str
+
+    def __new__(cls, value: str, issuer: str, token: object = None) -> EmittedId:
+        if token is not _MINT:
+            raise TypeError("emitted ids are minted by Fabric recorders only")
+        minted = super().__new__(cls, value)
+        minted._issuer = issuer
+        return minted
+
+    def __reduce__(self) -> tuple[object, ...]:
+        return _remint, (str(self), self._issuer)
+
+    def __copy__(self) -> EmittedId:
+        return self
+
+    def __deepcopy__(self, memo: object) -> EmittedId:
+        return self
+
+    def issued_by(self, issuer: str) -> bool:
+        return self._issuer == issuer
+
+
+def _remint(value: str, issuer: str) -> EmittedId:  # unpickling and copying
+    return EmittedId(value, issuer, _MINT)
+
+
+class GeneratedIds:
+    """Emitted ids when no value derived from a caller-supplied id may leave the process
+    (049 §2.9 rule 5: the production profile without ``FABRIC_WIRE_ID_KEY``). The source id
+    is :func:`process_source_id`; a run id is its generated source fallback
+    (``source:<source>:<epoch>``); any other caller id is a random ``g-`` id generated on
+    first sight and remembered (at most 65536 values; beyond that a value gets a new one
+    each time) so one recorder's records still join. An :class:`EmittedId` of this
+    instance maps to itself, so ids may pass through more than one layer."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._ids: dict[str, EmittedId] = {}
+        self._issuer = "gen-" + uuid.uuid4().hex
+
+    def _mine(self, value: str) -> bool:
+        return isinstance(value, EmittedId) and value.issued_by(self._issuer)
+
+    def mint(self, value: str) -> EmittedId:
+        """A Fabric-minted id (a call id) as this instance's: it maps to itself."""
+        return EmittedId(value, self._issuer, _MINT)
+
+    def source(self, value: str) -> EmittedId:  # nothing is derived from the value
+        return self.mint(process_source_id())
+
+    def run(self, value: str, epoch: int) -> EmittedId:  # nothing is derived from the value
+        return value if self._mine(value) else (  # type: ignore[return-value]
+            self.mint(encode_opaque_id(f"source:{process_source_id()}:{epoch}")))  # fmt: skip
+
+    def agent(self, value: str) -> EmittedId:
+        return self.other(value)
+
+    def other(self, value: str) -> EmittedId:
+        if self._mine(value):
+            return value  # type: ignore[return-value]
+        with self._lock:
+            if (found := self._ids.get(value)) is not None:
+                return found
+            generated = self.mint("g-" + uuid.uuid4().hex)
+            if len(self._ids) < _MAX_GENERATED_IDS:
+                self._ids[value] = generated
+            return generated
+
+
+class KeyedIds:
+    """Emitted explicit-line ids in the ``pseudonymous`` identity mode with
+    ``FABRIC_WIRE_ID_KEY`` (049 §2.9 rules 1-3), as the wire line and ``decision()`` emit
+    them: the run id is :func:`run_pseudonym` (``r-``) and the source id
+    :func:`source_label` (``s-``), both function v1 keyed; an agent id is its v2 ``agt-``
+    pseudonym; any other caller id (operation, attempt, stream, parent call: step labels,
+    049 §2.3) is the keyed v1 operator label ``lbl-``. Deterministic, so records join
+    across recorders, processes and restarts that hold the key.
+
+    Provenance, never shape, decides what passes through (Sol P0-A rounds 4-6): every
+    result is an :class:`EmittedId` issued under this key, and such a value maps to itself
+    (in any recorder holding the key), so ids pass through more than one layer and a
+    ``parent_call_id`` joins its parent's ``call_id``; every plain string, even a 32-hex
+    or ``r-``/``s-``/``lbl-``-shaped one, is mapped. Nothing is cached, so no amount of
+    traffic changes an id a live caller holds. Continuity across processes comes from
+    passing the same clear id, never an emitted one."""
+
+    __slots__ = ("_issuer", "_key")
+
+    def __init__(self, key: bytes) -> None:
+        self._key = key
+        self._issuer = key_id(key)
+
+    def __repr__(self) -> str:  # the key is a secret
+        return "KeyedIds()"
+
+    def _mine(self, value: str) -> bool:
+        return isinstance(value, EmittedId) and value.issued_by(self._issuer)
+
+    def mint(self, value: str) -> EmittedId:
+        """A Fabric-minted id (a call id) as this key's: it maps to itself."""
+        return EmittedId(value, self._issuer, _MINT)
+
+    def source(self, value: str) -> EmittedId:
+        return value if self._mine(value) else self.mint(source_label(value, self._key))  # type: ignore[return-value]
+
+    def run(self, value: str, epoch: int) -> EmittedId:  # the same in every epoch
+        return value if self._mine(value) else self.mint(run_pseudonym(value, self._key))  # type: ignore[return-value]
+
+    def agent(self, value: str) -> EmittedId:
+        if self._mine(value):
+            return value  # type: ignore[return-value]
+        return self.mint(cast("str", pseudonym_v2("agt", value, self._key)))
+
+    def other(self, value: str) -> EmittedId:
+        if self._mine(value):
+            return value  # type: ignore[return-value]
+        return self.mint(label_pseudonym("lbl-", value, self._key))
+
+
+EmittedIds = GeneratedIds | KeyedIds
+
+
+def emitted_ids(profile: str, key: bytes | None, mode: IdentityMode) -> EmittedIds | None:
+    """How the explicit line emits caller-supplied ids (049 §2.9): generated in the
+    production profile without the key (rule 5, whatever the mode); keyed pseudonyms in
+    the ``pseudonymous`` mode with the key; ``None`` (as given) in the ``clear`` mode, or
+    in the local profile without the key."""
+    if profile == "production" and key is None:
+        return GeneratedIds()
+    if key is not None and mode == "pseudonymous":
+        return KeyedIds(key)
+    return None
+
+
 def _after_fork_in_child() -> None:
     global _LOCK  # noqa: PLW0603
     _LOCK = threading.Lock()  # another parent thread may have held it
+    _PROCESS_SOURCE.clear()  # a forked child is a new process: a new random source id
     for allocator in list(_LIVE):
         allocator._lock, allocator._next, allocator.epoch = threading.Lock(), 0, _new_epoch()
 

@@ -93,6 +93,11 @@
               "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$",
               "maxLength": 128
             },
+            "sourceId": {
+              "type": "string",
+              "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$",
+              "maxLength": 128
+            },
             "workloadId": {
               "type": "string",
               "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$",
@@ -152,6 +157,7 @@
       "additionalProperties": false,
       "required": ["guard"],
       "properties": {
+        "profile": {"enum": ["local", "production"]},
         "guard": {
           "type": "object",
           "additionalProperties": false,
@@ -179,7 +185,8 @@
               "items": {"type": "string", "minLength": 1, "maxLength": 256},
               "uniqueItems": true
             },
-            "captureLabels": {"type": "string", "enum": ["pseudonymous", "clear"]}
+            "captureLabels": {"type": "string", "enum": ["pseudonymous", "clear"]},
+            "identityMode": {"type": "string", "enum": ["pseudonymous", "clear"]}
           }
         }
       }
@@ -285,6 +292,22 @@
         "allowMultipleTenants": {"type": "boolean"},
         "backend": {"enum": ["", "file", "s3"]},
         "requireServerSideEncryption": {"type": "boolean"},
+        "encryption": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["keySecret"],
+          "properties": {
+            "keySecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "key"],
+              "properties": {
+                "name": {"type": "string", "pattern": "^(?:|[a-z0-9]([-a-z0-9]*[a-z0-9])?)$", "maxLength": 253},
+                "key": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"}
+              }
+            }
+          }
+        },
         "file": {
           "type": "object",
           "additionalProperties": false,

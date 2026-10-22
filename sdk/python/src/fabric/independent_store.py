@@ -14,6 +14,8 @@ import stat
 from contextlib import ExitStack
 from pathlib import Path
 
+from ._descriptors import open_descriptor
+
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _MAX_OBJECT = 16 << 20
 
@@ -79,19 +81,18 @@ class LocalIndependentFeedResolver:
     def _read(self, identifier: str, limit: int) -> bytes:
         flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
         with ExitStack() as opened:
-            fd = os.open(self._root.anchor, flags)
-            opened.callback(os.close, fd)
+            fd = opened.enter_context(open_descriptor(self._root.anchor, flags))
             for index, component in enumerate(
                 (*self._root.parts[1:], self.tenant_id, self.issuer_id)
             ):
-                fd = os.open(component, flags, dir_fd=fd)
-                opened.callback(os.close, fd)
+                fd = opened.enter_context(open_descriptor(component, flags, dir_fd=fd))
                 # Public ancestors such as /private/tmp are not owned stores.
                 # The configured root and both namespace directories are.
                 if index >= len(self._root.parts) - 2:
                     _private(os.fstat(fd), directory=True)
-            object_fd = os.open(identifier, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-            opened.callback(os.close, object_fd)
+            object_fd = opened.enter_context(
+                open_descriptor(identifier, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+            )
             before = os.fstat(object_fd)
             _private(before, directory=False)
             if before.st_size > limit:

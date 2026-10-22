@@ -64,6 +64,7 @@ import {
 import { activeExecution } from "./execution.js";
 import { assertSha256Hex, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
 import { warnIfPiiShaped } from "./id-validators.js";
+import { IdentityPolicy } from "./identity.js";
 import {
   applyCrossCutting,
   type AttrValue,
@@ -119,6 +120,11 @@ export interface DecisionClientIdentity {
   contentWriter?: ContentWriter;
   /** Resolved capture-role policy for this client. */
   contentRoles?: ReadonlySet<string>;
+  /**
+   * How caller-supplied ids are emitted (spec 049 §2.9). Absent: resolved
+   * from `FABRIC_IDENTITY_MODE` / `FABRIC_WIRE_ID_KEY` at decision open.
+   */
+  identityPolicy?: IdentityPolicy;
 }
 
 /** Per-turn identifiers for one {@link Decision}. */
@@ -598,6 +604,9 @@ export class Decision implements DecisionLike {
   private readonly span: Span;
   private readonly recordingAtStart: boolean | null;
   private readonly identity: DecisionClientIdentity;
+  // 049 §2.9: how ids leave the process (pseudonymous by default, omitted
+  // without a key; `clear` reproduces the pre-049 output).
+  private readonly ids: IdentityPolicy;
   // Rolling counters + distinct-value sets folded onto the decision span,
   // mirroring the Python SDK so the Telemetry Bridge can summarize a
   // decision without replaying every event.
@@ -650,6 +659,14 @@ export class Decision implements DecisionLike {
     this.recordingAtStart = recording;
     void this.captureHealth;
     this.identity = identity;
+    this.ids =
+      identity.identityPolicy ??
+      IdentityPolicy.resolve(
+        undefined,
+        undefined,
+        typeof process !== "undefined" ? process.env : {},
+      );
+    const session = this.ids.id("sess", ids.sessionId);
     span.setAttribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION);
     span.setAttribute(ATTR_TENANT, identity.tenantId);
     span.setAttribute(ATTR_AGENT, identity.agentId);
@@ -657,7 +674,9 @@ export class Decision implements DecisionLike {
     span.setAttribute("gen_ai.operation.name", "invoke_agent");
     span.setAttribute("gen_ai.agent.name", identity.agentName);
     span.setAttribute("gen_ai.agent.id", identity.agentId);
-    span.setAttribute("gen_ai.conversation.id", ids.sessionId);
+    if (session !== undefined) {
+      span.setAttribute("gen_ai.conversation.id", session);
+    }
     if (identity.agentVersion !== undefined) {
       span.setAttribute("gen_ai.agent.version", identity.agentVersion);
     }
@@ -717,12 +736,15 @@ export class Decision implements DecisionLike {
     this.sessionIdStored = ids.sessionId;
     this.requestIdStored = ids.requestId;
     this.userIdStored = ids.userId;
-    span.setAttribute(ATTR_SESSION, ids.sessionId);
+    if (session !== undefined) {
+      span.setAttribute(ATTR_SESSION, session);
+    }
     span.setAttribute(ATTR_REQUEST, ids.requestId);
     this.decisionIdValue = ids.decisionId ?? randomUuid();
     span.setAttribute(ATTR_DECISION_ID, this.decisionIdValue);
-    if (ids.userId !== undefined) {
-      span.setAttribute(ATTR_USER, ids.userId);
+    const user = ids.userId !== undefined ? this.ids.id("usr", ids.userId) : undefined;
+    if (user !== undefined) {
+      span.setAttribute(ATTR_USER, user);
     }
     // Delegation lineage from a propagated context. `parentAgentId` names
     // the delegating agent when the upstream carried one (a `delegate`
@@ -940,9 +962,14 @@ export class Decision implements DecisionLike {
   llmCall<T>(options: LlmCallOptions, fn: (call: LlmCall) => T): T {
     const extra: Record<string, AttrValue> = {};
     applyCrossCutting(extra, options);
+    // 049 §2.9: the session default carries `sess-`, an explicit
+    // conversation id `conv-`; both omitted without a key, clear unchanged.
+    const conversationId = options.conversationId
+      ? this.ids.id("conv", options.conversationId)
+      : this.ids.id("sess", this.sessionIdStored);
     const resolved = {
       ...options,
-      conversationId: options.conversationId || this.sessionIdStored,
+      conversationId,
       conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
@@ -1220,8 +1247,9 @@ export class Decision implements DecisionLike {
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
-      if (record.key !== undefined) {
-        attrs[A.ATTR_MEMORY_KEY] = record.key;
+      const memoryKey = record.key !== undefined ? this.ids.id("mkey", record.key) : undefined;
+      if (memoryKey !== undefined) {
+        attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
       if (record.tags.length > 0) {
         attrs[A.ATTR_MEMORY_TAGS] = [...record.tags];
@@ -1229,8 +1257,10 @@ export class Decision implements DecisionLike {
       if (record.ttlSeconds !== undefined) {
         attrs[A.ATTR_MEMORY_TTL_SECONDS] = record.ttlSeconds;
       }
-      if (record.invalidates !== undefined) {
-        attrs[A.ATTR_MEMORY_INVALIDATES] = record.invalidates;
+      const invalidates =
+        record.invalidates !== undefined ? this.ids.id("mkey", record.invalidates) : undefined;
+      if (invalidates !== undefined) {
+        attrs[A.ATTR_MEMORY_INVALIDATES] = invalidates;
       }
       this.span.addEvent(A.EVENT_NAME_MEMORY, attrs);
       return record;
@@ -1265,9 +1295,12 @@ export class Decision implements DecisionLike {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "read",
         [A.ATTR_MEMORY_KIND]: record.kind,
-        [A.ATTR_MEMORY_KEY]: options.key,
-        [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
       };
+      const memoryKey = this.ids.id("mkey", options.key);
+      if (memoryKey !== undefined) {
+        attrs[A.ATTR_MEMORY_KEY] = memoryKey;
+      }
+      attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!;
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1302,8 +1335,11 @@ export class Decision implements DecisionLike {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "erase",
         [A.ATTR_MEMORY_KIND]: kind,
-        [A.ATTR_MEMORY_KEY]: key,
       };
+      const memoryKey = this.ids.id("mkey", key);
+      if (memoryKey !== undefined) {
+        attrs[A.ATTR_MEMORY_KEY] = memoryKey;
+      }
       if (record.tenantScope) {
         attrs[A.ATTR_MEMORY_TENANT_SCOPE] = true;
       }
@@ -1692,10 +1728,13 @@ export class Decision implements DecisionLike {
 
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_DELEGATION_TO_AGENT]: toAgent,
-        [A.ATTR_DELEGATION_PROTOCOL]: protocol,
-        [A.ATTR_DELEGATION_DEPTH]: depth,
       };
+      const agent = this.ids.id("agt", toAgent);
+      if (agent !== undefined) {
+        attrs[A.ATTR_DELEGATION_TO_AGENT] = agent;
+      }
+      attrs[A.ATTR_DELEGATION_PROTOCOL] = protocol;
+      attrs[A.ATTR_DELEGATION_DEPTH] = depth;
       applyCrossCutting(attrs, options);
       this.span.addEvent(A.EVENT_NAME_DELEGATION, attrs);
       return { toAgent, protocol, depth, context, carrier };
@@ -1746,7 +1785,8 @@ export class Decision implements DecisionLike {
       }
       this.fileAccessCount += 1;
       this.span.setAttribute(A.ATTR_FILE_ACCESS_COUNT, this.fileAccessCount);
-      const redactPath = options.redactPath ?? true;
+      // 049 N46: telemetry carries only the path hash unless identity mode is clear.
+      const redactPath = (options.redactPath ?? true) || !this.ids.clear;
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_FILE_OPERATION]: operation,
@@ -1803,8 +1843,12 @@ export class Decision implements DecisionLike {
         [A.ATTR_INTERACTION_KIND]: kind,
         [A.ATTR_INTERACTION_TARGET_REDACTED]: redactTarget,
       };
-      if (redactTarget) attrs[A.ATTR_INTERACTION_TARGET_HASH] = sha256Hex(target);
-      else attrs[A.ATTR_INTERACTION_TARGET] = target;
+      if (redactTarget) {
+        attrs[A.ATTR_INTERACTION_TARGET_HASH] = sha256Hex(target);
+      } else {
+        const emitted = this.ids.id("tgt", target);
+        if (emitted !== undefined) attrs[A.ATTR_INTERACTION_TARGET] = emitted;
+      }
       if (options.direction !== undefined) {
         attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
       }

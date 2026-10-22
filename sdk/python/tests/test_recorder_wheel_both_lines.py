@@ -62,11 +62,12 @@ def _qualifier() -> ModuleType:
 @pytest.fixture(scope="module")
 def wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
     out = tmp_path_factory.mktemp("wheel")
+    command: list[str] | None = None
     if (uv := shutil.which("uv")) is not None:
         command = [uv, "build", "--wheel", "--out-dir", str(out), str(SDK)]
     elif importlib.util.find_spec("build") is not None:
         command = [sys.executable, "-m", "build", "--wheel", "--outdir", str(out), str(SDK)]
-    else:
+    if command is None:
         pytest.skip("neither uv nor the build package is available to build the wheel")
     subprocess.run(command, check=True, capture_output=True, timeout=300)  # noqa: S603
     (built,) = out.glob("*.whl")

@@ -1,160 +1,69 @@
 # Fabric documentation
 
-Fabric OSS is the customer-controlled recorder:
+Fabric OSS is a customer-controlled, passive recorder for AI systems:
 
 ```text
 CAPTURE -> PROTECT -> DELIVER
 ```
 
-The accepted scope and release gates are in
-[spec 027](../specs/027-recorder-v1.md). When an older document conflicts with
-that specification, 027 controls the recorder release.
+These pages describe what the v0.8 release provides. A capability that is
+not described here is not built; see
+[limitations and roadmap](limitations-and-roadmap.md).
 
-## Start here
+## Use Fabric
 
-- [Standalone evidence guide](standalone-evidence-guide.md) — application setup,
-  customer storage, fresh readback and a bounded local demonstration.
+| Page | What it covers |
+|---|---|
+| [Quickstart](quickstart.md) | Offline example and zero-code capture through a local Node |
+| [Architecture](architecture.md) | Components, data flow, what ships |
+| [Deployment](deployment.md) | Compose and Helm, local and production profiles, required keys and policy, upgrade notes |
+| [Privacy and security](privacy-and-security.md) | Protection modes, pseudonyms, encryption at rest, source authentication, threat model |
+| [Operations](operations/README.md) | Spool, queues, health, metrics, troubleshooting, upgrades; [recovery runbook](operations/dr.md) |
+| [Reconstruct and verdicts](reconstruct.md) | The offline verifier, gaps and verdicts |
+| [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
+| [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
+| [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter |
+| [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, phases P1–P5 |
 
-- [Quickstart](quickstart.md) — record one agent operation and send it through
-  a local Fabric Node.
-- [Architecture](architecture.md) — how the system works end to end: pipeline
-  diagrams, the protection gate, delivery lifecycle, and deployment
-  topologies.
-- [Deployment](deployment.md) — `shadow-dev` and fail-closed
-  `shadow-production` installation.
-- [Integration models](integration-models.md) — SDK, existing OTLP pipeline,
-  framework adapter, gateway, and vendor integration choices.
-- [Agent activity coverage](agent-activity-coverage.md) — terminal, SSH,
-  sandbox, database, network, file, and artifact evidence levels, blind spots,
-  and production qualification gates.
-- [Agent Execution Evidence Profile](../specs/035-agent-execution-evidence-profile.md)
-  — draft OTLP/W3C protocol for interoperable operations, evidence references,
-  and run-level completeness.
-- [Evidence capture build plan](../specs/036-evidence-capture-implementation-plan.md)
-  — draft contracts, adapter sequence, conformance gates, and honest coverage
-  claims; not a shipped capture capability.
-- [Enterprise go/no-go qualification](../specs/037-bounded-enterprise-deployment-and-controls.md)
-  — draft bounded deployment and control matrix, with
-  [capture/loss gates](../specs/038-capture-boundary-and-loss-qualification.md)
-  and [storage/release/shadow-pilot gates](../specs/039-storage-release-and-shadow-pilot.md).
-- [Capturing interactions](capturing-interactions.md) — model, tool, retrieval,
-  memory, delegation, side-effect, failure, and retry activity.
-- [Recording a custom agent](custom-agent-recording.md) — wrap an existing
-  dispatcher, retain actual permitted bytes and reconstruct linked calls;
-  [privacy choices](custom-agent-recording-privacy.md) distinguish exact
-  originals from omitted or masked content.
-- [Offline evidence statements](evidence-attestation-verification.md) —
-  verify approved issuer signatures without claiming that a signature alone
-  proves a complete run; [independent feed contract](../specs/045-independent-evidence-feeds.md)
-  specifies the separate operation and byte records required from witnesses.
-- [Qualified bounded call-run testing](qualified-call-run-testing.md) —
-  combine signed witness feeds, exact original data, fresh source readback and
-  four distinct receipt sets; reproduce the installed-package loss tests.
-- [Exporting to your backend](exporting-to-your-observability-backend.md) —
-  customer-owned and SingleAxis destinations.
-- [Install a pinned release](install.md) and
-  [verify a release](verify-release.md) — artifact integrity and promotion.
-- [Qualification status](recorder-v1-qualification-status.md) — implemented
-  behavior, contract-only surfaces, required CI, and known boundaries.
-- [Deploying LLM wire capture](wire-capture-deployment.md) — agent
-  activation, Node authentication, what is streamed and who can read it,
-  minimal IAM and known limits for spec 047/048 capture (draft).
-- [Governed content](governed-content.md) — opt-in capture of actual
-  content to customer-controlled storage: postures, stores, durability,
-  resolution/export, coverage limits, and migration from `capture_content`.
-- [Historical governed-content gap assessment](governed-content-gap-assessment.md)
-  — the dated September 22 baseline for specs 028–034, not current capability
-  status. Use the qualification status above for current test evidence.
-- [API stability](api-stability.md) — compatibility commitments.
+## Reference
 
-## Two capture lines
-
-Fabric records agent activity through two capture lines that coexist in one
-process. They stay separate in activation, spools, delivery topology,
-verifiers, verdicts, fabricguard classes and Node ingress profiles.
-
-| | Explicit evidence line | Zero-code wire line |
-|---|---|---|
-| Specs | 035–046 | 047–049 |
-| Activation | Caller wraps calls: `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`, `record_*` | `fabric.wire.install()` or the env-gated autoload; no code changes |
-| What it sees | Calls the caller routes through it (`caller_reported`) | httpx/httpx2 traffic to listed LLM endpoints (`protocol`) |
-| Content delivery | SDK writes `<tenant>/evidence/<uuid>` (local store, S3, protected byte spool) | Agent spool → Node `otlp/content` → `fabriccontent` (same layout) |
-| Node ingress | Dedicated evidence Node (`evidence_source_binding`, logs only) | Content-capable Node (`otlp/content` on 4319) |
-| Fabricguard | Exact-key `evidence` log class | Exact-key capture span profile (`fabric.model_call`) |
-| Verifier and verdicts | `call_reconcile` / spec 046 (`verified_complete_for_declared_scope`, `invalid`, `incomplete`) | `python -m fabric.reconstruct` (`complete_for_declared_scope`, `complete_for_observed_scopes`, `partial`, `unverified`) |
-
-**Explicit wins.** Inside a live explicit model call (`CallRecorder` with
-`kind="model"`, including every `RecordedStream` step, or
-`ByteBoundaryAdapter(kind="model")`) the wire tee defers: an exchange whose
-response ends while the call is live gets no sequence and writes nothing, so
-the call is recorded once and the wire record shows no gap. The scope ends
-with the call: a task or thread spawned inside it, or a streamed response
-the call returns unread, is wire-captured afterwards. Tool, database and
-agent calls (either API) do not suppress wire capture. The only expected
-duplicate is work handed to `ThreadPoolExecutor.submit` or
-`loop.run_in_executor`, which do not copy the context; wrap the function in
-`fabric.bind_capture_context(...)` to keep it in the explicit call.
-
-**A Fabric-protected global provider never carries wire spans.** With
-`FABRIC_WIRE_TRACER=global`, if the global provider is one that
-`install_default_provider` protects, wire switches to its private provider
-when an OTLP endpoint is configured and otherwise does not install (one
-class-only warning). `FABRIC_CAPTURE_LLM_CONTENT` never affects wire: wire
-stores content off telemetry regardless.
-
-**One directory per spool.** Never point two spools at one directory or
-share a `.lock`:
-
-| Spool | Owner | Configured by | Files it owns |
-|---|---|---|---|
-| Wire agent spool | `fabric.wire` (spec 048) | `FABRIC_WIRE_SPOOL_DIR` | `.lock`, `.barrier`, `*.rec`, `*.ack`, `.tmp-*`, `*.corrupt` |
-| Source spool | `SyntheticSourceSpool` (passed to `CallRecorder(source_spool=...)`) | `SyntheticSourceSpool(root, ...)` | `.lock`, `state.json`, `event-*.json`, `seal-*.json`, `intent-*.json` |
-| Protected byte spool | `byte_spool.DurableByteSpool` | `DurableByteSpool(root, ...)` | `.lock`, `health`, envelopes |
-| Metadata delivery ledger | `metadata_delivery.JournalMetadataSender` | `JournalMetadataSender(root, ...)` | `.lock`, `owner.json`, `cursor.json`, `batch-*/result-*.json` |
-
-The wire spool refuses (fail-open: no install, one class-only warning) a
-directory holding any name outside its own set; the other spools keep their
-own lock and foreign-name refusals.
-
-**Verdict vocabulary.** Wire `complete_for_*` verdicts are record-integrity
-statements about the exchanges the tee owned. Only spec 046 issues
-`verified_complete_for_declared_scope`, which needs spec 045 feeds, route
-closure and the four receipt stages.
+- [GenAI semantic conventions](genai-semantic-conventions.md): span and
+  attribute names emitted by the decision API.
+- [API stability](api-stability.md): compatibility commitments.
+- [Verify a release](verify-release.md): signatures, provenance and release
+  qualification.
+- SDKs: [Python](../sdk/python/README.md), [TypeScript](../sdk/typescript/README.md);
+  [Fabric Node](../components/otel-collector-fabric/README.md);
+  [Compose](../deploy/compose/README.md).
+- Specifications: [specs/](../specs/README.md). The current capture
+  contract is [049](../specs/049-four-layer-capture-coverage.md), with
+  [047](../specs/047-llm-wire-capture-and-reconstruction.md) (wire capture
+  and reconstruction) and
+  [048](../specs/048-node-content-delivery-and-agent-spool.md) (Node
+  content delivery and the agent spool).
 
 ## Public contracts
 
-- [Activity Envelope v2](../contracts/activity/v2/README.md)
-- [Connector capability contract](../contracts/connect/v1/README.md)
-- [Content objects and transcript manifests](../contracts/content/v1/README.md)
-- [Draft AEEP evidence contract](../contracts/evidence/v1/README.md) and
-  [draft byte-content v2 contract](../contracts/content/v2/README.md) —
-  schemas and conformance fixtures only; recorder v1 does not emit them.
-  The byte-content v2 contract also carries the exact-byte
-  `model.exchange.*` descriptors used by LLM wire capture (specs 047/048).
-- [Draft LLM wire-capture contracts](../contracts/capture/v1/README.md)
-- [Recorder configuration](../contracts/recorder/v1/README.md)
-- [Privacy assertion](../contracts/privacy/v1/README.md)
-- [Delivery batch and receipt](../contracts/delivery/v1/README.md)
+Published in the v0.8 contracts archive:
+[Activity Envelope v2](../contracts/activity/v2/README.md),
+[connector capability v1](../contracts/connect/v1/README.md),
+[content objects and transcript manifests v1](../contracts/content/v1/README.md),
+[delivery batch and receipt v1](../contracts/delivery/v1/README.md),
+[privacy assertion v1](../contracts/privacy/v1/README.md),
+[recorder configuration v1](../contracts/recorder/v1/README.md).
 
-Contract links may appear before a release is published while the release
-candidate is being qualified.
+In the repository as drafts (used by v0.8 code, not in the published
+archive): [capture v1](../contracts/capture/v1/README.md),
+[content v2](../contracts/content/v2/README.md),
+[coverage v1](../contracts/coverage/v1/README.md),
+deployment-policy v1 (`contracts/deployment-policy/v1`),
+[evidence v1](../contracts/evidence/v1/README.md),
+[redaction v1](../contracts/redaction/v1/README.md).
 
-The schema `$id` authorities differ across contract families for historical
-reasons and are stable published identities, not resolvable URLs:
-`schemas.singleaxis.dev` (activity v2, privacy, delivery), `singleaxis.ai`
-(connect), `singleaxis.dev` (recorder), and a `github.com` repository address
-(activity v1). They are intentionally not renumbered.
+## Contributors and maintainers
 
-## Removed capability surfaces
-
-This repository carries recorder-v1 scope only. Judges, red-team runners,
-prompt-time guardrails, policy enforcement, assurance findings, Decision
-Graph, and enterprise governance sources were removed when the recorder scope
-became authoritative; their design history lives in git history. The release
-boundary tests prove none of them can reach an artifact.
-
-## Status
-
-Recorder v1 is being qualified for enterprise testing. Production claims are
-limited to behavior proven by the qualification evidence published with a
-release.
+- [Building Fabric](building-fabric.md)
+- [Third-party licenses](licenses/README.md)
+- [Recorder cleanup audit](maintainers/recorder-cleanup-audit.md)
+- [Historical secret-scan triage](security-history-triage.md)
+- [Archive](archive/README.md): superseded documents, kept for history.

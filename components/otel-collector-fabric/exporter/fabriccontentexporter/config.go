@@ -44,6 +44,11 @@ type FileConfig struct {
 	// recorded; a root that is (or sits directly in) a volume mount point
 	// needs none.
 	DurableBoundary string `mapstructure:"durable_boundary"`
+	// EncryptionKeyFile names the Node-side customer key (spec 049 §7.8): a
+	// mounted Secret holding 32 raw bytes or their base64. When set, every
+	// object and descriptor is written in the AES-256-GCM envelope; the key is
+	// never a configuration literal. Required in the production profile.
+	EncryptionKeyFile string `mapstructure:"encryption_key_file"`
 }
 
 // S3Config selects the S3 (or S3-compatible) backend. Credentials come from
@@ -83,10 +88,47 @@ type Config struct {
 	// existing directory or database (a restored or reused volume).
 	QueueDirectory string `mapstructure:"queue_directory"`
 
+	// SourceBinding is the tenant and source of the ingress feeding this
+	// exporter (spec 049 §7.9): a record naming another tenant or source is
+	// dropped (source_unbound); every written descriptor carries the
+	// receiver-owned source_authenticated: true. fabric-gate checks that the
+	// content pipeline's only receiver is the bound, authenticated ingress.
+	SourceBinding *SourceBinding `mapstructure:"source_binding"`
+	// Profile is "local" (default) or "production". The production profile
+	// requires source_binding, the encrypted persistent queue (sending_queue
+	// storage on a fabricenvelope extension) and, for the file backend,
+	// encryption_key_file (spec 049 §7.3, §7.8, §7.9).
+	Profile string `mapstructure:"profile"`
+	// MaxBodyBytes is the role table's max_body_bytes (spec 049 §4.3 rule 4):
+	// default 32 MiB, never above 63 MiB (one record fits the 64 MiB request).
+	MaxBodyBytes int64 `mapstructure:"max_body_bytes"`
+
 	TimeoutConfig exporterhelper.TimeoutConfig                             `mapstructure:",squash"`
 	QueueConfig   configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
 	RetryConfig   configretry.BackOffConfig                                `mapstructure:"retry_on_failure"`
 }
+
+// SourceBinding names the tenant and source an ingress is bound to, as the
+// records carry them (the source id in its wire form, s-<32 hex> under the
+// SDK's default pseudonymous labels).
+type SourceBinding struct {
+	TenantID string `mapstructure:"tenant_id"`
+	SourceID string `mapstructure:"source_id"`
+}
+
+const (
+	profileLocal      = "local"
+	profileProduction = "production"
+
+	defaultMaxBodyBytes = 32 << 20
+	// nodeMaxBodyBytes is 63 MiB: one record must fit the Node's 64 MiB
+	// request bound (spec 049 §7.4).
+	nodeMaxBodyBytes = 63 << 20
+
+	// envelopeStorageType is the queue storage extension that encrypts the
+	// persistent queue (extension/fabricenvelopeextension).
+	envelopeStorageType = "fabricenvelope"
+)
 
 var _ component.Config = (*Config)(nil)
 
@@ -101,6 +143,8 @@ func createDefaultConfig() component.Config {
 	// Content is evidence: retry until the store accepts it.
 	retry.MaxElapsedTime = 0
 	return &Config{
+		Profile:       profileLocal,
+		MaxBodyBytes:  defaultMaxBodyBytes,
 		S3:            S3Config{Prefix: defaultS3Prefix},
 		TimeoutConfig: exporterhelper.TimeoutConfig{Timeout: 60 * time.Second},
 		QueueConfig:   configoptional.Some(queue),
@@ -130,6 +174,33 @@ func (c *Config) Validate() error {
 		// under another tenant's prefix (Codex r2 #1).
 		return errors.New("allowed_tenants lists more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant")
 	}
+	if c.MaxBodyBytes < 1 || c.MaxBodyBytes > nodeMaxBodyBytes {
+		return errors.New("max_body_bytes must be between 1 and 66060288 (63 MiB)")
+	}
+	if b := c.SourceBinding; b != nil {
+		if !tenantPattern.MatchString(b.TenantID) || !opaqueIDPattern.MatchString(b.SourceID) {
+			return errors.New("source_binding requires a valid tenant_id and source_id")
+		}
+		if c.AllowMultipleTenants || len(c.AllowedTenants) != 1 || c.AllowedTenants[0] != b.TenantID {
+			return errors.New("source_binding requires allowed_tenants to be exactly the bound tenant")
+		}
+	}
+	switch c.Profile {
+	case profileLocal:
+	case profileProduction:
+		if c.SourceBinding == nil {
+			return errors.New("the production profile rejects unauthenticated sources; it requires source_binding")
+		}
+		queue := c.QueueConfig.Get()
+		if !c.QueueConfig.HasValue() || queue.StorageID == nil || queue.StorageID.Type().String() != envelopeStorageType {
+			return errors.New("the production profile requires the persistent sending_queue on a fabricenvelope storage extension (encrypted at rest)")
+		}
+		if c.Backend == backendFile && c.File.EncryptionKeyFile == "" {
+			return errors.New("the production profile requires file.encryption_key_file for the file backend")
+		}
+	default:
+		return errors.New("profile must be local or production")
+	}
 	if queue := c.QueueConfig.Get(); c.QueueConfig.HasValue() && queue.StorageID != nil && c.QueueDirectory == "" {
 		return errors.New("queue_directory is required with a persistent sending_queue (the storage extension's directory)")
 	}
@@ -155,6 +226,9 @@ func (f FileConfig) validate() error {
 	}
 	if !filepath.IsAbs(dir) || filepath.Clean(dir) != dir || dir == string(filepath.Separator) {
 		return errors.New("file.directory must be an absolute, clean path other than / with no trailing slash")
+	}
+	if k := f.EncryptionKeyFile; k != "" && (!filepath.IsAbs(k) || filepath.Clean(k) != k) {
+		return errors.New("file.encryption_key_file must be an absolute, clean path")
 	}
 	if b := f.DurableBoundary; b != "" {
 		if !filepath.IsAbs(b) || filepath.Clean(b) != b {

@@ -22,9 +22,10 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from .._capture_scope import current_explicit_model_scope
 from .._loss import LossEmitter, LossReason, PrivateFallback
 from .._sequence import SourceAllocator, current_run_scope
+from ._forks import ForkLedger
 from ._match import EndpointIndex
 from ._model import CaptureJob
-from ._pipeline import CapturePipeline
+from ._pipeline import CapturePipeline, protector_for
 from ._stream import DELEGATION_MARK, FLAVORS, Budget, Exchange, drain_reaper, private_copy
 
 if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
@@ -32,6 +33,7 @@ if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_w
     from httpx import BaseTransport as _SyncBase
 
     from ._config import WireConfig
+    from ._policy import ContentGate
     from ._sender import Sender
 else:
     _SyncBase = _AsyncBase = object
@@ -82,7 +84,7 @@ def _original(inner: Any, attr: str) -> Any | None:
         if attr in vars(inner):
             return None
     except TypeError:
-        pass
+        pass  # no instance __dict__ (e.g. __slots__): it cannot shadow the class method
     method = getattr(type(inner), attr, None)
     if getattr(method, "__fabric_wire_patch__", False):
         return getattr(method, "__fabric_wire_original__", None)
@@ -114,23 +116,30 @@ class WireTee:
     def __init__(
         self, config: WireConfig, *, allocator: SourceAllocator, loss: LossEmitter,
         pipeline: CapturePipeline | None = None, sender: Sender | None = None,
-        fallback: PrivateFallback | None = None,
+        fallback: PrivateFallback | None = None, gate: ContentGate | None = None,
     ) -> None:  # fmt: skip
         self.config, self.allocator, self.loss, self.sender = config, allocator, loss, sender
         self.max_body_bytes, self.budget = config.max_body_bytes, Budget(config.max_inflight_bytes)
+        self.max_retain_bytes = config.max_retain_bytes
         self.index = EndpointIndex(config.all_endpoints)
         self.closed, self.matched, self.internal_errors = False, 0, 0
         self.deferred_to_explicit = 0  # local counter only; never telemetry
+        self.stranded = 0  # exchanges claimed open at shutdown (``shutdown`` losses)
         self._active: set[Exchange] = set()
+        self.forks = ForkLedger()  # what forked children allocate survives their death
+        loss.add_beat_source(self._child_beats)
         self.pipeline = pipeline or CapturePipeline(
             store=config.store, tracer_provider=config.tracer_provider, loss=loss,
             queue_max_items=config.queue_max_items, on_job_done=self._release, sender=sender,
             node_tenant_id=config.content_endpoint and config.tenant_id,
-            model_allowlist=config.model_allowlist, fallback=fallback,
+            model_allowlist=config.model_allowlist, fallback=fallback, gate=gate,
+            protector=protector_for(config, gate), max_body_bytes=config.max_body_bytes,
         )  # fmt: skip
         _TEES.add(self)
 
-    def begin(self, request: Any) -> tuple[bool, Exchange | None]:
+    def begin(
+        self, request: Any, *, factory: type[Exchange] | None = None
+    ) -> tuple[bool, Exchange | None]:
         """Match ``request``, open an exchange; never raises. ``owned`` once a sequence is
         allocated or a provisional exchange opened (nested tees stay off; a failed setup is
         an ``internal_error`` loss).
@@ -148,7 +157,7 @@ class WireTee:
             if found is None:
                 return False, None
             if (deferral := current_explicit_model_scope()) is None:
-                epoch, sequence, scope = self.allocator.next_sequence()
+                epoch, sequence, scope = self._allocate()
             else:  # provisional: nothing allocated until it is adopted
                 epoch, sequence, scope = -1, -1, current_run_scope()
         except Exception:  # nothing allocated: nothing to account for
@@ -160,7 +169,8 @@ class WireTee:
                 self.matched += 1
                 with contextlib.suppress(Exception):  # heartbeats cover the source from now on
                     self.loss.note_activity(self.allocator)
-            exchange = Exchange(self, found[0], found[1], epoch, sequence, scope, deferral=deferral)
+            kind = Exchange if factory is None else factory  # resolved now (tests patch it)
+            exchange = kind(self, found[0], found[1], epoch, sequence, scope, deferral=deferral)
             exchange.start(request)
             self._active.add(exchange)
             return True, exchange
@@ -175,6 +185,18 @@ class WireTee:
                     self.internal_errors += 1
             return True, None
 
+    def _child_beats(self) -> list[Any]:
+        """A ``periodic`` heartbeat per forked child epoch at its last allocated sequence."""
+        source = self.allocator.source_id
+        return [(source, epoch, last, None, None, "periodic")
+                for _, epoch, last in self.forks.children()]  # fmt: skip
+
+    def _allocate(self, scope: Any = None, *, adopted: bool = False) -> tuple[Any, ...]:
+        found = self.allocator.next_sequence_for(scope) if adopted else (
+            self.allocator.next_sequence())  # fmt: skip
+        self.forks.note(found[0], found[1])
+        return found
+
     def adopt(self, exchange: Exchange) -> bool:
         """A finished provisional exchange: ``False`` (bytes released) when its explicit model
         call is still live, so the explicit record owns it; else allocate its sequence now
@@ -187,7 +209,7 @@ class WireTee:
             exchange.release()
             return False
         try:
-            exchange.assign(*self.allocator.next_sequence_for(exchange.scope))
+            exchange.assign(*self._allocate(exchange.scope, adopted=True))
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
             exchange.release()
@@ -251,9 +273,35 @@ class WireTee:
         response = job.response.captured_byte_length if job.response is not None else 0
         self.budget.release(job.request.captured_byte_length + response)
 
+    def lose_uninstrumented(self) -> None:
+        """A model call sent through a client this tee does not see (wire/_detect.py): it
+        takes a sequence, recorded as an ``uninstrumented_client`` loss."""
+        epoch, sequence, _ = self._allocate()
+        with contextlib.suppress(Exception):
+            self.loss.note_activity(self.allocator)
+        self.lose(epoch, sequence, "uninstrumented_client")
+
     def lose(self, epoch: int, sequence: int, reason: LossReason) -> None:
         self.internal_errors += reason == "internal_error"
         self.loss.record(self.allocator.source_id, epoch, reason, sequence)
+
+    def shut(self, exchange: Exchange) -> None:
+        """Claim an exchange still open at shutdown (capture closing, or its client
+        unpatched): a ``shutdown`` loss, unless already finished or owned by its live
+        explicit call. Never raises."""
+        with contextlib.suppress(Exception):
+            deferral = getattr(exchange, "deferral", None)
+            if not exchange.detach():
+                return
+            if deferral is None:
+                epoch, sequence = exchange.epoch, exchange.sequence
+            elif deferral.defers:  # its explicit call is still live and owns it
+                self.deferred_to_explicit += 1
+                return
+            else:  # it outlived its explicit call: wire's, and now lost
+                epoch, sequence, _ = self._allocate(None, adopted=True)
+            self.stranded += 1
+            self.lose(epoch, sequence, "shutdown")
 
     def close(self, timeout_s: float) -> bool:
         """Stop capturing; exchanges still open become ``shutdown`` losses, then drain."""
@@ -261,20 +309,14 @@ class WireTee:
         deadline = time.monotonic() + max(0.0, timeout_s)
         drain_reaper(timeout_s / 4)  # streams already finalized still get their span
         # The caller still gets every byte; only exchanges this call claims are lost.
-        stranded: list[tuple[int, int]] = []
         for exchange in list(self._active):
-            deferral = getattr(exchange, "deferral", None)
-            if not exchange.detach():
-                continue
-            if deferral is None:
-                stranded.append((exchange.epoch, exchange.sequence))
-            elif deferral.defers:  # its explicit call is still live and owns it
-                self.deferred_to_explicit += 1
-            else:  # it outlived its explicit call: wire's, and now lost
-                stranded.append(self.allocator.next_sequence_for(None)[:2])
-        for epoch, sequence in stranded:
-            self.lose(epoch, sequence, "shutdown")
-        return self.pipeline.close(max(0.0, deadline - time.monotonic())) and not stranded
+            self.shut(exchange)
+        closed = self.pipeline.close(max(0.0, deadline - time.monotonic())) and not self.stranded
+        with contextlib.suppress(Exception):  # children seen so far, then no more
+            for beat in self._child_beats():
+                self.loss.queue_beat(beat)
+        self.loss.remove_beat_source(self._child_beats)
+        return closed
 
     def flush(self, timeout_s: float) -> bool:
         deadline = time.monotonic() + max(0.0, timeout_s)
@@ -285,7 +327,10 @@ class WireTee:
         pipeline = self.pipeline.stats()
         internal = self.internal_errors + pipeline["internal_errors"]
         sender = self.sender.stats() if self.sender is not None else {}
+        from . import _detect  # noqa: PLC0415
+
         return {**pipeline, **sender, "matched": self.matched, "internal_errors": internal,
+                "uninstrumented_calls": _detect.count(),
                 "inflight_bytes": self.budget.used,
                 "deferred_to_explicit": self.deferred_to_explicit}  # fmt: skip
 

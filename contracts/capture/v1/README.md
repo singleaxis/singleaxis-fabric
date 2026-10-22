@@ -12,9 +12,10 @@ until those specs are accepted.
 | Schema | Document | Produced by |
 |---|---|---|
 | `schema/llm-exchange-v1.schema.json` | `fabric.llm-exchange/v1` — the JSON form of one `fabric.model_call` span: exchange id, source position, run, body digests and store object ids, closed-shape response metadata | wire tee (as an OTLP span); normalized by the verifier |
-| `schema/loss-record-v1.schema.json` | `fabric.loss-record/v1` — `loss` (a range of exchange sequences that will never produce a span) or `heartbeat` (the source's last allocated sequence, with `heartbeat_kind` `periodic`, `run_start`, `run_end` or `final`) | the capture loss emitter (as `fabric.capture_loss` / `fabric.capture_heartbeat` spans) |
+| `schema/loss-record-v1.schema.json` | `fabric.loss-record/v1` — `loss` (a range of positions that will never produce a span) or `heartbeat` (the source's last allocated position, with `heartbeat_kind` `periodic`, `run_start`, `run_end`, `segment_seal` or `final`) | the capture loss emitter (as `fabric.capture_loss` / `fabric.capture_heartbeat` spans) |
 | `schema/run-reconstruction-v1.schema.json` | `fabric.run-reconstruction/v1` — per-run exchanges, threads, gaps and integrity verdict, plus one verdict per `fabric.wire.run()` scope (`scopes[]`) | `python -m fabric.reconstruct` |
-| `schema/spool-record-v1.schema.json` | `fabric.wire-spool-record/v1` — the header of one agent spool record (spec 048 §2): an `exchange` (fully resolved `fabric.model_call` span + up to two content descriptors addressing the record's byte blob), a `loss` range, or a `run_start`/`run_end`/`final` marker | the agent's capture worker and sender (on disk, never on the wire) |
+| `schema/spool-record-v1.schema.json` | `fabric.wire-spool-record/v1` — the header of one agent spool record (spec 048 §2): an `exchange` (fully resolved `fabric.model_call` span + up to two content descriptors addressing the record's byte blob), a `record` (one records-input span, spec 049), a `loss` range, or a `run_start`/`run_end`/`segment_seal`/`final` marker | the agent's capture worker and sender (on disk, never on the wire) |
+| `schema/capture-manifest-record-v1.schema.json` | `fabric.capture-manifest-record/v1` — the `fabric.capture_manifest` span (spec 049 §2.8): the closed attribute set that carries one `fabric.capture-manifest/v1` document. Generated from `contracts/coverage/v1` by `validate_coverage_contracts.py --write`; never edited by hand | the capture worker (P1), one per manifest change of a source epoch |
 | `schema/content-log-record-v1.schema.json` | `fabric.content-log-record/v1` — the JSON form of one OTLP `LogRecord` on the content path: body length and digest, and the exact closed attribute set (`event_class: content` + content-v2 descriptor fields) | agent sender → Fabric Node `otlp/content` → `fabriccontent` exporter |
 
 Every document is metadata only. Request and response bytes live in
@@ -110,6 +111,15 @@ conflicting observations invalidates every window holding it
 `closed_early` exchange without a response digest is a `missing_object`
 gap (`response_not_recorded`).
 
+A run's sequence gaps reference the source's ranges rather than copy them
+(spec 047 §9 step 3, D6): `sources[].missing_sequences` and `loss_ranges`
+list every missing range once; a run lists the segments of one stretch
+(inside a window, adjacent to it, or after it) one gap each while there are
+at most 16, and otherwise one gap per reason whose `first_sequence` and
+`last_sequence` are that reason's first and last missing sequence in the
+stretch, a range that can span recorded sequences. Gap types, effects,
+reasons and verdicts do not depend on which form is used.
+
 The content descriptor definition is identical in the spool and content
 log-record schemas: the content-v2 descriptor fields without `encoding`
 and `ref`, which every writer adds itself. `fixtures/golden/` pins the
@@ -117,9 +127,48 @@ exact bytes a writer must produce for the descriptor sidecar
 (`json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n"`, so
 `", "` and `": "` separators) and the object and descriptor keys of the
 shared layout (`<prefix><tenant>/evidence/<object_id>` and
-`<prefix><tenant>/evidence/meta/<object_id>.json`), for a file directory and
-an S3 prefix. The Fabric Node's `fabriccontent` exporter and the SDK local
+`<prefix><tenant>/evidence/meta/<object_id>.json`; a Node directory stores
+them under a two-level shard `<h[0:2]>/<h[2:4]>/` of hex SHA-256(object id)
+below `evidence/` and `evidence/meta/`, refs keeping the flat key), for a
+file directory and an S3 prefix. The Fabric Node's `fabriccontent` exporter and the SDK local
 store must both match them byte for byte.
+
+**Spec 049 additions (manifest 1.1.0; contract only, P1 builds the
+emitters).**
+
+- *Two inputs, one allocator.* `fabric.capture.input` names the input of a
+  sequenced record: `wire` (exchanges) or `records` (everything the
+  application reports through the SDK, including the explicit exact-byte
+  producers). From P1 one allocator per (source, epoch) serves both inputs
+  and every manifest declares `sequence_unit: record`: exchange and records
+  entries take positions from the same counter and the same spool, so loss
+  ranges, heartbeats and markers count shared positions. The spool gains
+  record kind `record` (one sequenced records-input span, with
+  `fabric.capture.input=records`, `fabric.event_id` and
+  `fabric.attempt.uid`; its bodies arrive with the role table in P0-A).
+  Exchange spans may carry `fabric.capture.input=wire`, `fabric.event_id`
+  and `fabric.run.segment_id`. Loss, heartbeat (every kind) and manifest
+  records never carry `fabric.capture.input`: they belong to the source,
+  i.e. to both inputs.
+- *Manifests on the spool.* A capture manifest is spooled as a `marker` of
+  kind `manifest` whose `manifest` object holds the `fabric.capture_manifest`
+  span attributes (`schema/capture-manifest-record-v1.schema.json`) and whose
+  `last_sequence` is the manifest's `after_source_sequence`; it never
+  occupies a position.
+- *Run segments and markers.* `segment_seal` is a heartbeat kind (spool
+  kind `marker`, exported as a `fabric.capture_heartbeat` span) that seals
+  one run segment (spec 049 §2.12). The run-marker keys appear only on the
+  kinds that define them, identically on heartbeat spans and spool markers:
+  `segment_id` on every run marker; `predecessors` (`none` alone for the
+  root, else exact `<segment>/<source>/<epoch>/<last_sequence>/sha256:<hex>`
+  entries), `open_deadline_s`, `declared_branches` and `branch_ids` on
+  `run_start`; `resumable` on the root `run_start` and on a token-issuing
+  seal; `terminal` and `seal` (`last_sequence`, `manifest_digest`,
+  `seal_digest`, minted `branch_ids`) on `segment_seal`; `scope_status` on
+  `run_end`; the manifest in force (`manifest_id`, `manifest_digest`) on
+  `run_start`/`run_end`, and `manifest_seq` on any heartbeat.
+  `contracts/coverage/v1/fixtures/vectors/run-marker-v1.json` holds the
+  telemetry attribute sets fabricguard admits.
 
 ```bash
 python scripts/contracts/validate_capture_contracts.py

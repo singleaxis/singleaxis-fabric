@@ -3,7 +3,21 @@
 """Agent durable spool (spec 048 §2): one fsync'd ``<source_epoch:020d>-<pid:010d>-
 <order:012d>.rec`` per capture event (name order = drain order), any process writing,
 the ``.lock`` holder draining. Bytes: ``b"FWSPOOL1" | u32 len | header (canonical JSON,
-spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``."""
+spool-record-v1, no content) | blob (bodies) | sha256(all preceding)``. The capture
+worker writes a batch of exchange records as one batch file (``BATCH_MAGIC``: one fsync
+per batch, chaos report D4). A write that fails on a full volume is told apart
+(:func:`disk_full`); loss and marker records that cannot be spooled are kept in the
+preallocated loss ledger (:mod:`._ledger`, D1).
+
+Encryption at rest (spec 049 §7.8): with a customer key, each record file is the AES-256-GCM
+envelope ``b"FWSPENC1" | key id (12 ASCII) | nonce (12) | AESGCM(frame, aad)`` with
+``aad = b"FWSPENC1" | key id | record name``, the construction of ``byte_spool.py``. The
+key is never written; the key id (``kid-`` + 8 hex) names which key sealed a record.
+With a key configured, a record without the envelope is never read (a downgrade: anyone
+able to replace spool files can write a valid unkeyed frame): it is corrupt, quarantined
+and counted as a loss. Plaintext records written before the key was configured are
+sealed in place only by the explicit, local-profile migration (:meth:`Spool.
+migrate_plaintext`, ``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT``)."""
 
 from __future__ import annotations
 
@@ -21,8 +35,15 @@ from collections.abc import Collection, Iterator, Mapping, Sequence
 from typing import Any
 
 from .._loss import _Beat, _Range
+from ._ledger import LEDGER, NEW_PREFIX, LossLedger
+from ._ledger import SIZE as LEDGER_BYTES
 
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
+# A batch file (D4): ``b"FWSPOOLB" | u32 count | count x (u64 length | FWSPOOL1 frame) |
+# sha256(all preceding)``; the capture worker's exchange records of one batch, written,
+# fsync'd, renamed, delivered and retired together.
+BATCH_MAGIC, MAX_BATCH = b"FWSPOOLB", 4096
+ENVELOPE_MAGIC, _KID_LEN, _NONCE_LEN, _TAG_LEN = b"FWSPENC1", 12, 12, 16
 RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by this much
 # Cross-process admission (spec 048 §2 "Shared bound"): every process sharing the spool
 # admits under this flock'd file (never the drainer's ``.lock``), against the bytes on disk.
@@ -36,6 +57,19 @@ ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record
 # number is bounded too (oldest first), as is their age.
 RECEIPT_OVERHEAD, DEFAULT_MAX_RECEIPTS, RECEIPT_TTL_S = 128, 4096, 3600.0
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+
+
+def _iov_max() -> int:
+    """The most vectors one ``writev`` accepts (``EINVAL`` above it); 1024 if unknown."""
+    try:
+        value = os.sysconf("SC_IOV_MAX")
+    except (AttributeError, OSError, ValueError):
+        return 1024
+    return value if value > 0 else 1024
+
+
+_IOV_MAX = _iov_max()
+
 # The spool's directory barrier (spec 048 §2): present once a walk fsync'd every directory
 # from the spool's parent up to the durable boundary (see Spool.establish_barrier).
 BARRIER_MARKER = ".barrier"
@@ -44,13 +78,41 @@ _REFUSED = (errno.EACCES, errno.EPERM, errno.EROFS)  # this process may not sync
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 _KEYS = {"exchange": {"service_name", "span", "bodies"}, "loss": {"loss"}, "marker": {"marker"}}
 _COMMON = {"schema_version", "record_kind", "source", "order", "written_at_unix_nano"}
-_REASONS = ("queue_full", "internal_error", "shutdown", "span_dropped")
+_REASONS = ("queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client",
+            "disk_full")  # fmt: skip
+_DISK_FULL = frozenset({errno.ENOSPC, errno.EDQUOT})
+# Objects per exchange record: 2 sides x (primary + 64 parts) + 2 review copies (049 §7.4).
+MAX_BODIES = 130
+
+
+def disk_full(exc: BaseException) -> bool:
+    """Whether a spool write failed because the volume (or the user's quota) is full: a
+    ``disk_full`` loss, distinct from the configured bound (``queue_full``)."""
+    return isinstance(exc, OSError) and exc.errno in _DISK_FULL
+
+
+class UndecryptableRecordError(ValueError):
+    """An enveloped record sealed under another key (or none configured): never delivered
+    or quarantined by this process; a process holding that key can still deliver it."""
+
+    def __init__(self) -> None:
+        super().__init__("spool record sealed under another key")
 
 
 class CorruptRecordError(ValueError):  # ``doc``: the header, when it parsed
-    def __init__(self, doc: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self, doc: Mapping[str, Any] | None = None, docs: Sequence[Mapping[str, Any]] = ()
+    ) -> None:
         super().__init__("corrupt spool record")
         self.doc = doc
+        # Every header that parsed (a batch file's): their sequences are explained losses.
+        self.docs = list(docs) if docs else ([doc] if doc is not None else [])
+
+
+class PlaintextRecordError(CorruptRecordError):
+    """A record without the envelope, read by a spool that has a key (049 §7.8): never
+    delivered; quarantined as corrupt and counted as a loss (``doc``: its header, when the
+    frame parsed, so its sequence is an explained loss)."""
 
 
 def frame(doc: Mapping[str, Any], bodies: Sequence[bytes]) -> list[bytes]:
@@ -78,6 +140,78 @@ def unframe(data: bytes) -> tuple[dict[str, Any], memoryview]:
     return doc, view[12 + size : end]
 
 
+def batch_frame(frames: Sequence[Sequence[bytes]]) -> list[bytes]:
+    """Several records' frames (:func:`frame`) as one batch file's pieces."""
+    pieces = [BATCH_MAGIC + struct.pack(">I", len(frames))]
+    for pieces_of in frames:
+        pieces.append(struct.pack(">Q", sum(map(len, pieces_of))))
+        pieces.extend(pieces_of)
+    digest = hashlib.sha256()
+    for piece in pieces:
+        digest.update(piece)
+    return [*pieces, digest.digest()]
+
+
+def unframe_all(data: bytes) -> list[tuple[dict[str, Any], memoryview]]:
+    """Every record of a record file (one frame, or a batch file), else
+    :class:`CorruptRecordError` carrying the headers that did parse."""
+    if not data.startswith(BATCH_MAGIC):
+        return [unframe(data)]
+    view = memoryview(data)
+    records: list[tuple[dict[str, Any], memoryview]] = []
+    docs: list[dict[str, Any]] = []
+    try:
+        end = len(data) - 32
+        (count,), offset = struct.unpack(">I", data[8:12]), 12
+        while offset < end and len(records) < min(count, MAX_BATCH):
+            (size,) = struct.unpack(">Q", data[offset : offset + 8])
+            if offset + 8 + size > end:
+                break
+            doc, blob = unframe(view[offset + 8 : offset + 8 + size])  # type: ignore[arg-type]
+            records.append((doc, blob))
+            docs.append(doc)
+            offset += 8 + size
+        intact = hashlib.sha256(view[:end]).digest() == data[end:]
+    except (struct.error, CorruptRecordError) as exc:
+        if isinstance(exc, CorruptRecordError) and exc.doc is not None:
+            docs.append(dict(exc.doc))
+        raise CorruptRecordError(docs[0] if docs else None, docs) from None
+    if not intact or offset != end or len(records) != count or not 1 <= count <= MAX_BATCH:
+        raise CorruptRecordError(docs[0] if docs else None, docs)
+    return records
+
+
+def unseal(data: bytes, name: str, cipher: Any, key_id: str | None) -> bytes:
+    """The framed bytes of record file ``name``, opened from its envelope with ``cipher``
+    (an ``AESGCM`` of the key named ``key_id``); as is only when no key is configured. With
+    a key, a record without the envelope is :class:`PlaintextRecordError` (never a
+    downgrade to an unauthenticated frame); an envelope that does not authenticate is
+    :class:`CorruptRecordError`; one sealed under another key (or with no key configured)
+    is :class:`UndecryptableRecordError`."""
+    if not data.startswith(ENVELOPE_MAGIC):
+        if cipher is None:
+            return data
+        doc = None
+        with contextlib.suppress(CorruptRecordError):
+            doc = unframe_all(data)[0][0]
+        raise PlaintextRecordError(doc)
+    head = len(ENVELOPE_MAGIC)
+    kid = data[head : head + _KID_LEN]
+    if cipher is None or kid != str(key_id).encode("ascii"):
+        raise UndecryptableRecordError
+    if len(data) < head + _KID_LEN + _NONCE_LEN + _TAG_LEN:
+        raise CorruptRecordError
+    nonce = data[head + _KID_LEN : head + _KID_LEN + _NONCE_LEN]
+    try:
+        plain: bytes = cipher.decrypt(
+            nonce, data[head + _KID_LEN + _NONCE_LEN :],
+            ENVELOPE_MAGIC + kid + name.encode("ascii"),
+        )  # fmt: skip
+    except Exception:  # cryptography's InvalidTag: tampered, truncated or renamed
+        raise CorruptRecordError from None
+    return plain
+
+
 def _int(value: object, low: int = 0) -> bool:
     return type(value) is int and value >= low
 
@@ -99,10 +233,11 @@ def valid_header(doc: Mapping[str, Any], blob_length: int) -> bool:
                 marker["last_sequence"], -1) and ("run_id" in marker) is run is (
                 "scope_id" in marker)  # fmt: skip
         span, attrs, offset = doc["span"], doc["span"]["attributes"], 0
-        ok = ok and isinstance(doc["service_name"], str) and len(doc["bodies"]) < 3  # noqa: PLR2004
+        ok = ok and isinstance(doc["service_name"], str) and len(doc["bodies"]) <= MAX_BODIES
         for body in doc["bodies"]:
             ok = ok and body["offset"] == offset and _int(body["length"])
-            ok = ok and body["descriptor"]["stored_byte_length"] == body["length"]
+            # a descriptor-only object (049 §4.3 rule 5: not_captured) carries no bytes
+            ok = ok and body["descriptor"].get("stored_byte_length", 0) == body["length"]
             offset += body["length"]
         return bool(ok and offset == blob_length
             and _HEX[32].fullmatch(span["trace_id"]) and _HEX[16].fullmatch(span["span_id"])
@@ -182,8 +317,8 @@ def _mount_point(path: str) -> bool:
 def _own_name(name: str) -> bool:
     """Whether ``name`` is one the wire spool itself creates."""
     return (
-        name in (".lock", ADMIT_LOCK, BARRIER_MARKER)
-        or name.startswith(".tmp-")
+        name in (".lock", ADMIT_LOCK, BARRIER_MARKER, LEDGER)
+        or name.startswith((".tmp-", NEW_PREFIX))
         or name.endswith((".rec", ACK_SUFFIX, QUARANTINE_SUFFIX))
     )
 
@@ -221,12 +356,28 @@ class Spool:
 
     def __init__(
         self, directory: str, max_bytes: int, max_receipts: int = DEFAULT_MAX_RECEIPTS,
-        durable_boundary: str | None = None,
+        durable_boundary: str | None = None, key: bytes | None = None,
+        migrate_plaintext: bool = False,
     ) -> None:  # fmt: skip
         try:
             import fcntl  # noqa: PLC0415
         except ImportError:
             raise ValueError("the wire spool needs POSIX fcntl") from None
+        self._cipher: Any = None
+        self.key_id: str | None = None
+        if key is not None:  # 049 §7.8: the customer-key envelope
+            try:
+                from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: PLC0415
+            except ImportError:
+                raise ValueError("the spool envelope needs the cryptography package") from None
+            if not isinstance(key, bytes) or len(key) != 32:  # noqa: PLR2004
+                raise ValueError("the spool envelope needs a 32-byte AES-256-GCM key")
+            from ._keys import envelope_key_id  # noqa: PLC0415
+
+            self._cipher, self.key_id = AESGCM(key), envelope_key_id(key)
+        # The explicit migration of plaintext records (local profile only; the caller
+        # decides): pending until the drainer ran it once (migrate_plaintext).
+        self.migrate = bool(migrate_plaintext) and self._cipher is not None
         created = _secure_dir(directory)
         _refuse_foreign(directory)
         self.dir, self.max_bytes, self._fcntl = directory.rstrip("/") or "/", max_bytes, fcntl
@@ -238,6 +389,14 @@ class Spool:
         self._boundary = os.path.realpath(durable_boundary) if durable_boundary else None
         # Parents holding an entry this process created: never accepted as the boundary.
         self._created_in = {os.path.dirname(os.path.realpath(d)) for d in created}
+        # The loss ledger (D1): created fully allocated now, while there is room, so the
+        # evidence of a loss survives a full disk and the process. Without it (a volume
+        # already full, a foreign file) losses are spooled or held in memory, as before.
+        self.ledger: LossLedger | None = None
+        with contextlib.suppress(OSError, ValueError):
+            self.ledger = LossLedger(self.dir)
+        # Loss and marker records may exceed the bound by the reserve, the ledger included.
+        self._reserve_bytes = RESERVE_BYTES - (LEDGER_BYTES if self.ledger else 0)
         self._init_state()
         self.rescan()
 
@@ -315,6 +474,8 @@ class Spool:
 
     def after_fork(self) -> None:  # the child drops the parent's lock and only writes
         self.release()
+        if self.ledger is not None:  # record locks are never inherited
+            self.ledger.after_fork()
         with contextlib.suppress(OSError):  # the parent's description: never shared
             os.close(self._admit_fd)
         self._init_state()
@@ -381,32 +542,73 @@ class Spool:
         self._disk = disk
         return total
 
-    def _reserve(self, tmp: str, size: int, limit: int) -> int | None:
-        """Shared admission (spec 048 §2 "Shared bound"): under the admission lock, admit
-        ``size`` bytes only while the spool's on-disk total plus ``size`` stays within
-        ``limit``, and reserve them on disk before the lock is released: the temp file is
-        created at its full size (its last byte written), so every other process's next
-        scan counts it. Returns the temp file's descriptor, or ``None`` (refused: over the
-        bound, the lock busy, or the total unknown)."""
+    def _reserve_many(
+        self, wanted: Sequence[tuple[str, int]], limit: int
+    ) -> list[int | BaseException | None]:
+        """Shared admission (spec 048 §2 "Shared bound"): under one admission lock (one
+        directory scan), admit each ``(temp path, size)`` in turn only while the spool's
+        on-disk total plus its size stays within ``limit``, and reserve it on disk before
+        the lock is released: the temp file is created at its full size (its last byte
+        written), so every other process's next scan counts it. Per entry: the temp file's
+        descriptor, ``None`` (refused: over the bound, the lock busy, or the total unknown)
+        or the exception that failed its creation (``ENOSPC`` ...)."""
+        results: list[int | BaseException | None] = [None] * len(wanted)
+        if not wanted:
+            return results
         try:
             with self._admission():
-                total = self._shared_total()
+                try:
+                    total = self._shared_total()
+                except OSError as exc:  # the total cannot be observed: fail closed
+                    return [exc] * len(wanted)
                 self.shared_bytes = total
-                if total + size > limit:
-                    return None
-                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
-                try:  # its last byte: the file has its full size (sparse below it)
-                    os.pwrite(fd, b"\0", size - 1)
-                except BaseException:
-                    os.close(fd)
-                    with contextlib.suppress(OSError):
-                        os.unlink(tmp)
-                    raise
-                self.shared_bytes = total + size
-                return fd
-        except TimeoutError:
+                for index, (tmp, size) in enumerate(wanted):
+                    if total + size > limit:
+                        continue
+                    try:
+                        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+                    except OSError as exc:
+                        results[index] = exc
+                        continue
+                    reserved = False
+                    try:  # its last byte: the file has its full size (sparse below it)
+                        os.pwrite(fd, b"\0", size - 1)
+                        reserved = True
+                    except Exception as exc:
+                        results[index] = exc
+                    finally:
+                        # Any failure, an interrupt included (which then propagates),
+                        # leaves no open descriptor and no half-reserved file behind.
+                        if not reserved:
+                            os.close(fd)
+                            with contextlib.suppress(OSError):
+                                os.unlink(tmp)
+                    if not reserved:
+                        continue
+                    results[index] = fd
+                    total += size
+                self.shared_bytes = total
+        except TimeoutError:  # raised before the lock was taken: nothing was reserved
             self.admission_timeouts += 1
-            return None
+        return results
+
+    def _rename_many(self, names: Sequence[str]) -> list[BaseException | None]:
+        """Rename each ``.tmp-<name>`` to ``name`` under one admission lock (a busy lock
+        fails them all with ``TimeoutError``)."""
+        if not names:
+            return []
+        try:
+            with self._admission():
+                errors: list[BaseException | None] = []
+                for name in names:
+                    try:
+                        os.rename(self._path(".tmp-" + name), self._path(name))
+                        errors.append(None)
+                    except OSError as exc:
+                        errors.append(exc)
+                return errors
+        except TimeoutError as exc:
+            return [exc] * len(names)
 
     def _rename(self, src: str, dst: str) -> None:
         """A rename under the admission lock, so an admission's scan never misses the file
@@ -500,50 +702,142 @@ class Spool:
     def write(
         self, doc: Mapping[str, Any], bodies: Sequence[bytes] = (), *, reserve: bool = False
     ) -> str | None:
-        """Append one record (temp, fsync, rename, dir fsync); ``None`` when over the bound."""
+        """Append one record (temp, fsync, rename, dir fsync); ``None`` when over the bound.
+        A failure raises (:func:`disk_full` tells a full volume apart)."""
+        (result,) = self.write_batch([(doc, bodies)], reserve=reserve)
+        if isinstance(result, BaseException):
+            raise result
+        return result
+
+    def write_group(
+        self, records: Sequence[tuple[Mapping[str, Any], Sequence[bytes]]]
+    ) -> list[str | BaseException | None]:
+        """Exchange records in one batch file (D4): one temp file, one write, one fsync,
+        one rename and one directory fsync for all of them; each record's outcome is the
+        file's (its name, ``None`` or the exception). When the file does not fit under the
+        bound, the records are written one per file instead, so as many as fit are kept."""
+        if len(records) < 2:  # noqa: PLR2004
+            return self.write_batch(records)
+        (result,) = self.write_batch(records, group=True)
+        if result is None:
+            return self.write_batch(records)
+        return [result] * len(records)
+
+    def _prepare(
+        self, records: Sequence[tuple[Mapping[str, Any], Sequence[bytes]]], *, group: bool
+    ) -> list[tuple[str, list[bytes], int]]:
+        """Each record framed (``group``: all in one batch file named after the first),
+        sealed when a key is set: ``(name, pieces, size)``."""
+        named: list[tuple[str, list[bytes]]] = []
+        for record, bodies in records:
+            with self._lock:
+                order, self._order = self._order, self._order + 1
+            doc = {**record, "schema_version": SCHEMA, "order": order,
+                   "written_at_unix_nano": time.time_ns()}  # fmt: skip
+            name = f"{doc['source']['source_epoch']:020d}-{os.getpid():010d}-{order:012d}.rec"
+            named.append((name, frame(doc, bodies)))
+        if group and named:
+            named = [(named[0][0], batch_frame([pieces for _, pieces in named]))]
+        prepared = []
+        for name, pieces in named:
+            sealed = self._seal(name, pieces) if self._cipher is not None else pieces
+            prepared.append((name, sealed, sum(map(len, sealed))))
+        return prepared
+
+    def write_batch(  # noqa: PLR0912, PLR0915 - per-record outcomes of each shared step
+        self, records: Sequence[tuple[Mapping[str, Any], Sequence[bytes]]], *,
+        reserve: bool = False, group: bool = False,
+    ) -> list[str | BaseException | None]:  # fmt: skip
+        """Append records, each to its own file, with the per-record steps of :meth:`write`
+        shared across the batch (D4): one admission (one directory scan) reserves every
+        temp file, each is written (``writev``) and fsync'd, then one admission renames them
+        all and one directory fsync makes them durable. A record counts as written (its
+        name returned) only after its file and the directory were fsync'd. Per record:
+        its name, ``None`` (over the bound, or the admission lock busy) or the exception
+        that failed it (its bytes are charged where they are, as for :meth:`write`)."""
+        prepared = self._prepare(records, group=group)
+        limit = self.max_bytes + (self._reserve_bytes if reserve else 0)
+        results: list[str | BaseException | None] = [None] * len(prepared)
+        live: list[int] = []  # admitted locally: counted at full size until the outcome
         with self._lock:
-            order, self._order = self._order, self._order + 1
-        doc = {**doc, "schema_version": SCHEMA, "order": order,
-               "written_at_unix_nano": time.time_ns()}  # fmt: skip
-        pieces = frame(doc, bodies)
-        size = sum(map(len, pieces))
-        name = f"{doc['source']['source_epoch']:020d}-{os.getpid():010d}-{order:012d}.rec"
-        limit = self.max_bytes + (RESERVE_BYTES if reserve else 0)
-        with self._lock:  # admitted: counted at its full size until the outcome is known
-            if self.bytes + size > limit:
-                return None
-            self._writing.add(name)
-            self._account(name, size)
-        tmp = self._path(".tmp-" + name)
-        try:
-            # Then across every process sharing the spool, against the disk (048 §2).
-            if (fd := self._reserve(tmp, size, limit)) is None:
-                with self._lock:
-                    self._writing.discard(name)
-                    self._account(name, None)
-                return None
-            try:
-                for piece in pieces:
-                    view = memoryview(piece)
-                    while view:
-                        view = view[os.write(fd, view) :]
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-            self._rename(".tmp-" + name, name)
-            self._sync_dir()
-        except BaseException:
+            for index, (name, _, size) in enumerate(prepared):
+                if self.bytes + size <= limit:
+                    self._writing.add(name)
+                    self._account(name, size)
+                    live.append(index)
+        fds: dict[int, int] = {}
+
+        def fail(index: int, exc: BaseException) -> None:
+            name = prepared[index][0]
+            results[index] = exc
             with contextlib.suppress(OSError):
-                os.unlink(tmp)
+                os.unlink(self._path(".tmp-" + name))
             self._failed_write(name)
             with self._lock:
                 self._writing.discard(name)
+
+        try:
+            # Then across every process sharing the spool, against the disk (048 §2).
+            reserved = self._reserve_many(
+                [(self._path(".tmp-" + prepared[i][0]), prepared[i][2]) for i in live], limit
+            )
+            for index, got in zip(list(live), reserved, strict=True):
+                if isinstance(got, int):
+                    fds[index] = got
+                    continue
+                live.remove(index)
+                if got is None:  # refused: over the bound, the lock busy, or unknown
+                    with self._lock:
+                        self._writing.discard(prepared[index][0])
+                        self._account(prepared[index][0], None)
+                else:
+                    fail(index, got)
+            for index in list(live):
+                fd = fds.pop(index)
+                try:
+                    views = [memoryview(piece) for piece in prepared[index][1]]
+                    while views:  # at most IOV_MAX vectors per call (a batch has more)
+                        written = os.writev(fd, views[:_IOV_MAX])
+                        while views and written >= len(views[0]):
+                            written -= len(views.pop(0))
+                        if views:
+                            views[0] = views[0][written:]
+                    os.fsync(fd)
+                except Exception as exc:
+                    live.remove(index)
+                    fail(index, exc)
+                finally:
+                    os.close(fd)
+            try:
+                renamed = self._rename_many([prepared[i][0] for i in live])
+            except Exception as exc:
+                renamed = [exc] * len(live)
+            for index, error in zip(list(live), renamed, strict=True):
+                if error is not None:
+                    live.remove(index)
+                    fail(index, error)
+            if live:
+                try:
+                    self._sync_dir()
+                except Exception as exc:
+                    for index in live:
+                        fail(index, exc)
+                    live = []
+        except BaseException:
+            for fd in fds.values():
+                with contextlib.suppress(OSError):
+                    os.close(fd)
+            for index in live:
+                fail(index, RuntimeError("interrupted"))
             raise
         with self._lock:
-            self._writing.discard(name)
-            self._account(name, size)
-            self.mine.add(name)
-        return name
+            for index in live:
+                name, _, size = prepared[index]
+                self._writing.discard(name)
+                self._account(name, size)
+                self.mine.add(name)
+                results[index] = name
+        return results
 
     def _failed_write(self, name: str) -> None:
         """Charge a failed write where its bytes are: still in the temp file (its unlink
@@ -563,9 +857,88 @@ class Spool:
         with self._lock:
             return sorted(n for n in names if n not in self._writing)
 
+    def _seal(self, name: str, pieces: Sequence[bytes]) -> list[bytes]:
+        kid = str(self.key_id).encode("ascii")
+        nonce = os.urandom(_NONCE_LEN)
+        aad = ENVELOPE_MAGIC + kid + name.encode("ascii")
+        return [ENVELOPE_MAGIC, kid, nonce, self._cipher.encrypt(nonce, b"".join(pieces), aad)]
+
     def read(self, name: str) -> bytes:
+        """A record's framed bytes, opened from its envelope when it has one (see
+        :func:`unseal`)."""
         with os.fdopen(os.open(self._path(name), os.O_RDONLY | _NOFOLLOW), "rb") as handle:
-            return handle.read()
+            return unseal(handle.read(), name, self._cipher, self.key_id)
+
+    @property
+    def encrypted(self) -> bool:
+        return self._cipher is not None
+
+    def plaintext_records(self) -> int:
+        """Records on disk without the envelope, pending or quarantined (both hold content
+        at rest): the spool is encrypted at rest only when this is zero and a key is set."""
+        count = 0
+        for name in os.listdir(self.dir):
+            if name.startswith(".") or not name.endswith((".rec", QUARANTINE_SUFFIX)):
+                continue
+            try:
+                fd = os.open(self._path(name), os.O_RDONLY | _NOFOLLOW)
+            except OSError:
+                continue  # gone (delivered or renamed) meanwhile
+            try:
+                head = os.read(fd, len(ENVELOPE_MAGIC))
+            except OSError:
+                head = b""
+            finally:
+                os.close(fd)
+            count += bool(head) and head != ENVELOPE_MAGIC
+        return count
+
+    def migrate_plaintext(self) -> int:
+        """Seal every intact plaintext record in place under the key (the explicit,
+        local-profile opt-in, ``FABRIC_WIRE_SPOOL_MIGRATE_PLAINTEXT``; never in production).
+        The drainer runs it before it reads any record; only the lock holder reads, so no
+        reader sees a record mid-migration. Each record is sealed into a temp file
+        (fsync'd), renamed over itself and the directory fsync'd. A record whose frame
+        does not verify is left as is, for quarantine. Returns how many were sealed; an
+        ``OSError`` (or a busy admission lock) propagates, and the caller retries."""
+        if self._cipher is None:
+            return 0
+        sealed = 0
+        for name in self.names():
+            try:
+                with os.fdopen(os.open(self._path(name), os.O_RDONLY | _NOFOLLOW), "rb") as f:
+                    raw = f.read()
+            except FileNotFoundError:
+                continue
+            if raw.startswith(ENVELOPE_MAGIC):
+                continue
+            try:
+                unframe_all(raw)
+            except CorruptRecordError:
+                continue
+            tmp = ".tmp-" + name
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(self._path(tmp))  # a crashed migration's leftover
+            fd = os.open(self._path(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW,
+                         0o600)  # fmt: skip
+            try:
+                try:
+                    for piece in self._seal(name, [raw]):
+                        view = memoryview(piece)
+                        while view:
+                            view = view[os.write(fd, view) :]
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
+                self._rename(tmp, name)
+            except BaseException:
+                with contextlib.suppress(OSError):
+                    os.unlink(self._path(tmp))
+                raise
+            self._sync_dir()
+            self._observe(name)
+            sealed += 1
+        return sealed
 
     def exists(self, name: str) -> bool:
         return os.path.lexists(self._path(name))
@@ -578,30 +951,59 @@ class Spool:
         record pending; a retry redoes only the outstanding step. Either way the ledger
         holds what is on disk, so no outcome is counted twice. Expiring receipts over the
         count is best effort, retried on the next retirement and rescan."""
-        with self._lock:  # an own record is settled (delivered) before it disappears
-            if name in self.mine:
-                self.mine.discard(name)
-                self._own_retiring.add(name)  # a retry must still unlink, not rename
-            own = name in self._own_retiring
-        path, receipt, renamed = self._path(name), self._path(name + ACK_SUFFIX), False
+        _, error = self.retire_many([name])
+        if error is not None:
+            raise error
+
+    def retire_many(self, names: Sequence[str]) -> tuple[int, OSError | None]:
+        """:meth:`retire` for delivered records in order, with one directory fsync for all
+        of them (D4). Returns how many (a prefix of ``names``) are retired, and the error
+        that stopped the rest (they stay pending, still charged; a retry is idempotent)."""
+        done: list[tuple[str, bool, bool]] = []  # (name, own, renamed)
+        error: OSError | None = None
+        for name in names:
+            with self._lock:  # an own record is settled (delivered) before it disappears
+                if name in self.mine:
+                    self.mine.discard(name)
+                    self._own_retiring.add(name)  # a retry must still unlink, not rename
+                own = name in self._own_retiring
+            renamed = False
+            try:
+                if own:
+                    with contextlib.suppress(FileNotFoundError):
+                        os.unlink(self._path(name))
+                else:
+                    with contextlib.suppress(FileNotFoundError):  # renamed by an earlier try
+                        self._rename(name, name + ACK_SUFFIX)
+                    renamed = True
+                    self._truncate(self._path(name + ACK_SUFFIX))  # missing: consumed
+            except OSError as exc:
+                error = exc
+                self._settle_retired(name, own, renamed)
+                break
+            done.append((name, own, renamed))
+        synced = False
         try:
-            if own:
-                with contextlib.suppress(FileNotFoundError):
-                    os.unlink(path)
-            else:
-                with contextlib.suppress(FileNotFoundError):  # renamed by an earlier attempt
-                    self._rename(name, name + ACK_SUFFIX)
-                renamed = True
-                self._truncate(receipt)  # a missing receipt was consumed by its writer
-            self._sync_dir()
+            if done:
+                self._sync_dir()
+            synced = True
+        except OSError as exc:
+            error = error or exc
         finally:
-            if own:
-                self._observe(name)
-            elif renamed:  # else the rename failed: still pending, still charged
-                self._move(name, name + ACK_SUFFIX)
-        with self._lock:
-            self._own_retiring.discard(name)
+            for name, own, renamed in done:
+                self._settle_retired(name, own, renamed)
+        if synced:
+            with self._lock:
+                self._own_retiring.difference_update(name for name, _, _ in done)
         self._trim()
+        return (len(done) if synced else 0), error
+
+    def _settle_retired(self, name: str, own: bool, renamed: bool) -> None:
+        """The ledger side of a retirement step: what is on disk now."""
+        if own:
+            self._observe(name)
+        elif renamed:  # else the rename failed: still pending, still charged
+            self._move(name, name + ACK_SUFFIX)
 
     @staticmethod
     def _truncate(path: str) -> None:
@@ -633,7 +1035,7 @@ class Spool:
             try:
                 os.unlink(self._path(name))
             except FileNotFoundError:
-                pass
+                pass  # already pruned by another process: still drop it from the count below
             except OSError:
                 continue
             with self._lock:
@@ -704,6 +1106,7 @@ class Spool:
         stale = time.time() - RECEIPT_TTL_S
         for name in os.listdir(self.dir):
             path, tmp, ack = self._path(name), name.startswith(".tmp-"), name.endswith(ACK_SUFFIX)
+            tmp = tmp or name.startswith(NEW_PREFIX)  # a ledger creation that died
             try:
                 info = os.lstat(path)
                 if ack and self.holder and info.st_size:  # crashed between rename and truncate

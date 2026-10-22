@@ -12,6 +12,7 @@ Runtime:
 Receiver TLS:  {{ ternary "required" "development/plaintext" (dig "receiver" "requireTLS" false $otel) }}
 Client certs:  {{ ternary "required" "not required" (dig "receiver" "requireClientCertificate" false $otel) }}
 Workload auth: {{ ternary "required (dedicated bearer credential)" "not enabled" (dig "receiver" "workloadAuthentication" "enabled" false $otel) }}
+Node profile:  {{ dig "fabric" "profile" "local" $otel }}{{ if eq (dig "fabric" "profile" "local" $otel) "production" }} (every batch bound to one tenant and source; content encrypted at rest, spec 049 P0-A){{ end }}
 Sampling:      unavailable in recorder v1 (accepted audit activity is not sampled)
 Debug export:  {{ ternary "ON (development only)" "OFF" (dig "debugExporter" "enabled" false $otel) }}
 {{- if dig "content" "enabled" false $otel }}
@@ -44,6 +45,10 @@ Check health:
 
 This release does not install runtime guardrails, prompt-time PII controls,
 judges, red-team runners, governance, or management services.
+
+Spec 049 P0-A (supersedes spec 048 §1): agents in node mode record content
+only with a capture policy (FABRIC_CAPTURE_POLICY) and FABRIC_WIRE_ID_KEY;
+without them they keep recording metadata and report why on every exchange.
 
 Configuration acceptance is not production qualification. Identity and storage
 review references are operator assertions, not runtime proof of workload

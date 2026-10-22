@@ -69,7 +69,7 @@ def _wait_for_growth(baseline: int, attempts: int = 30) -> int:
         if current > baseline:
             return current
         time.sleep(1)
-    sys.exit(
+    raise SystemExit(
         f"sink count did not grow beyond {baseline} within {attempts}s — "
         f"is the harness up? (`cd deploy/compose && make up`)"
     )

@@ -107,3 +107,20 @@ references, not a credential (the evaluation-only defaults live in
 `x-s3-eval-identities` and are documented in `.env.example`). The following
 commit passes the keys through a curl config file instead, so the current tree
 has no match; only that exact commit/path/rule/line fingerprint is baselined.
+
+## PR #191 squash-merge canaries (2026-10-22)
+
+PR #191 (spec 049 P0-A content path and privacy gate) was squash-merged as
+`f4f8d914eb1fcf8ced43b2222760187e0e358db7`, which PR #197 carries into its
+history. The squash produced a new commit for the two synthetic canaries
+already classified above under `937301c…` and `4254dfd…`, so those
+fingerprints no longer matched. Content is unchanged; only the shifted
+line number of the Python canary differs (an import line was added above it).
+
+| Commit / path / line | Source evidence and classification |
+| --- | --- |
+| `f4f8d91…` `sdk/python/tests/test_wire_p0a_privacy.py:44` | The same planted privacy canary (a synthetic, deliberately invalid SSN pattern) that the P0-A privacy test asserts never leaves the agent in clear (rule `generic-api-key`). Grants no access. |
+| `f4f8d91…` `sdk/typescript/test/identity.test.ts:247` | The same planted `memoryKey` identity canary in the TypeScript pseudonym test, built from the `q8z` marker that cannot occur in hex, UUIDs or SDK keys (rule `generic-api-key`). Grants no access. |
+
+Only these exact commit/path/rule/line fingerprints are baselined; the
+synthetic new-commit probe must still fail.

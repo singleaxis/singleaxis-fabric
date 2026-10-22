@@ -1,0 +1,32 @@
+{
+  "schema_version": "fabric.content-object/v2",
+  "tenant_id": "tenant-a",
+  "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+  "operation_id": "0f4c2a7e-9b1d-4e3f-8a6c-5d2e1b0a9f8e",
+  "provenance": "protocol",
+  "boundary": "provider_bound",
+  "source_id": "s-c5aedfd8a3ee415e277e335bf1517ff4",
+  "source_epoch": 4611686018427387905,
+  "source_sequence": 7,
+  "captured_at": "2026-10-19T09:00:00Z",
+  "object_id": "5c1d2e3f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+  "role": "model.exchange.part",
+  "media_type": "image/png",
+  "content_encoding": "base64",
+  "status": "not_captured",
+  "representation": "unavailable",
+  "transformations": [],
+  "status_reason": "privacy_policy",
+  "privacy_mode": "redact",
+  "protection_status": "withheld",
+  "source_authenticated": true,
+  "policy_id": "acme-capture",
+  "policy_version": 3,
+  "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+  "links": [
+    {
+      "relation": "part_of",
+      "object_id": "2b8f3c9e-4d1a-4b7e-9c2f-7a6d5e4c3b2a"
+    }
+  ]
+}

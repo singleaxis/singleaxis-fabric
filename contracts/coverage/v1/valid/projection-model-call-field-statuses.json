@@ -1,0 +1,379 @@
+{
+  "schema_version": "fabric.step-projection/v1",
+  "projection_revision": 1,
+  "generated_at": "2026-10-19T10:00:00Z",
+  "parser": {
+    "name": "fabric.reconstruct",
+    "version": "0.9.0"
+  },
+  "field_registry": {
+    "schema_version": "fabric.field-registry/v1",
+    "registry_revision": 9
+  },
+  "coverage_profile": "fabric.profile.model-calls/v1",
+  "inputs": {
+    "reconstruction_sha256": "sha256:c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "manifests": [
+      {
+        "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "sha256": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      }
+    ],
+    "telemetry_origin": "trusted_readback"
+  },
+  "pseudonym_mode": "keyed",
+  "key_id": "kid-b2a0080c",
+  "content_inline": false,
+  "runs": [
+    {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "integrity_verdict": "complete_for_observed_scopes",
+      "layer_verdicts": {
+        "context": {
+          "verdict": "partial"
+        },
+        "structure": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "content": {
+          "verdict": "captured_with_withholding",
+          "reasons": [
+            "provider_encrypted"
+          ]
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      },
+      "fields": {
+        "cross_cutting": {
+          "run_id": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "run.scope@0.9.0",
+            "value": "r-93347307304ecb0a9bb1b51ae90ac326"
+          }
+        }
+      },
+      "run_state": "terminated",
+      "segments": [
+        {
+          "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "terminal": true,
+          "predecessors": [
+            "none"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:cdd4be7ebf85fe5f3a31e4b4b12bdc2192f3aff98065808657f55c6eed415815"
+        }
+      ],
+      "resumable": false
+    }
+  ],
+  "steps": [
+    {
+      "attempt_id": "ceeefe14-2b07-40a2-ace6-38df710bf60a",
+      "step_id": "ceeefe14-2b07-40a2-ace6-38df710bf60a",
+      "step_kind": "model_call",
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "aliases": {
+        "wire.span_id": "s-b94f348e8d6890782b2af72c847dc77b/00f067aa0ba902b7"
+      },
+      "source": {
+        "input": "wire",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 3,
+        "sequence_unit": "record",
+        "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4"
+      },
+      "event_ids": [
+        "6a0e75c8-62da-425e-a2b9-fa87628bd1ac"
+      ],
+      "capture_point": "wire.py.httpx@1.2.0",
+      "provenance": "observed",
+      "actor": {
+        "type": "agent"
+      },
+      "timing": {
+        "started_at_ns": 1760864400000000000,
+        "ended_at_ns": 1760864401250000000,
+        "basis": "measured",
+        "clock_domain": "wall_utc"
+      },
+      "lifecycle_state": "completed",
+      "result_status": "ok",
+      "links": [
+        {
+          "type": "continues",
+          "target": {
+            "namespace": "exchange",
+            "id": "7a236d4d-5fc6-445c-a7dd-1930a98f61af"
+          },
+          "provenance": "inferred",
+          "method": "prefix_digest",
+          "confidence": "certain",
+          "state": "resolved"
+        },
+        {
+          "type": "retries",
+          "target": {
+            "namespace": "attempt",
+            "id": "7a236d4d-5fc6-445c-a7dd-1930a98f61af"
+          },
+          "provenance": "inferred",
+          "method": "identical_request_after_error",
+          "confidence": "tentative",
+          "state": "resolved"
+        }
+      ],
+      "layers": {
+        "context": {
+          "instructions": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "refs": [
+              {
+                "object_id": "a4d7485c-422d-40be-abea-ce2bcdac6e33",
+                "role": "model.exchange.request",
+                "pointer": "/messages/0",
+                "sha256": "sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a"
+              }
+            ]
+          },
+          "tools_offered": {
+            "status": "absent",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "parse": "parsed"
+          },
+          "model.requested": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "value": "gpt-4o"
+          },
+          "model.served": {
+            "status": "conflict",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "evidence": [
+              {
+                "capture_point": "wire.py.httpx@1.2.0",
+                "provenance": "observed",
+                "assertion_origin": "provider",
+                "value": "gpt-4o-2024-08-06"
+              },
+              {
+                "capture_point": "explicit.call_recorder@0.9.0",
+                "provenance": "reported",
+                "assertion_origin": "application",
+                "value": "gpt-4o-mini"
+              }
+            ]
+          },
+          "provider_request_id": {
+            "status": "not_captured",
+            "provenance": "observed",
+            "capture_point": "wire.py.httpx@1.2.0",
+            "reason": "hook_disabled"
+          }
+        },
+        "structure": {
+          "actor.type": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "fabric.self@0.9.0",
+            "value": "agent"
+          },
+          "actor.id": {
+            "status": "not_captured",
+            "provenance": "reported",
+            "capture_point": "sdk.records@0.9.0",
+            "reason": "missing_id_key"
+          },
+          "actor.on_behalf_of": {
+            "status": "unknown",
+            "provenance": "reported",
+            "capture_point": "sdk.records@0.9.0"
+          },
+          "attempt.kind": {
+            "status": "captured",
+            "provenance": "inferred",
+            "capture_point": "reconstruct.infer@0.9.0",
+            "value": "retry",
+            "method": "identical_request_after_error",
+            "confidence": "tentative"
+          }
+        },
+        "content": {
+          "input.messages": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "ref": {
+              "object_id": "a4d7485c-422d-40be-abea-ce2bcdac6e33",
+              "role": "model.exchange.request",
+              "pointer": "/messages"
+            }
+          },
+          "finish_reasons": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "value": []
+          },
+          "reasoning.summary": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "ref": {
+              "object_id": "f83d3913-c508-43d3-ac3f-adcd0ad01127",
+              "role": "model.output.reasoning",
+              "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            }
+          },
+          "reasoning.text": {
+            "status": "redacted",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "reason": "provider_encrypted",
+            "assertion_origin": "provider"
+          },
+          "embedding.input": {
+            "status": "not_applicable",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0"
+          },
+          "x-acme.redaction_profile": {
+            "status": "captured",
+            "provenance": "reported",
+            "capture_point": "sdk.records@0.9.0",
+            "value": "strict"
+          }
+        },
+        "decisions_effects": {
+          "usage.input_tokens": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "value": 0,
+            "assertion_origin": "provider"
+          },
+          "usage.media_units": {
+            "status": "unsupported",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "reason": "unsupported_api"
+          },
+          "usage.reasoning_tokens": {
+            "status": "absent",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "parse": "parsed"
+          },
+          "usage.basis": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "fabric.self@0.9.0",
+            "value": "provider_reported"
+          }
+        },
+        "cross_cutting": {
+          "event_id": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "fabric.self@0.9.0",
+            "value": "6a0e75c8-62da-425e-a2b9-fa87628bd1ac"
+          },
+          "capture_point": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "fabric.self@0.9.0",
+            "value": "wire.py.httpx@1.2.0"
+          }
+        }
+      },
+      "layer_verdicts": {
+        "context": {
+          "verdict": "partial"
+        },
+        "structure": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "content": {
+          "verdict": "captured_with_withholding",
+          "reasons": [
+            "provider_encrypted"
+          ]
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      }
+    },
+    {
+      "attempt_id": "32b837d5-60cc-472a-a8a2-1cb29524d0d5",
+      "step_id": "32b837d5-60cc-472a-a8a2-1cb29524d0d5",
+      "step_kind": "input",
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "event_ids": [
+        "6a0e75c8-62da-425e-a2b9-fa87628bd1ac"
+      ],
+      "capture_point": "reconstruct.infer@0.9.0",
+      "provenance": "inferred",
+      "method": "new_user_message",
+      "confidence": "tentative",
+      "lifecycle_state": "completed",
+      "result_status": "unknown",
+      "links": [
+        {
+          "type": "derived_from",
+          "target": {
+            "namespace": "exchange",
+            "id": "ceeefe14-2b07-40a2-ace6-38df710bf60a"
+          },
+          "provenance": "inferred",
+          "method": "new_user_message",
+          "confidence": "tentative",
+          "state": "resolved"
+        }
+      ],
+      "layers": {
+        "context": {
+          "input.payload": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "reconstruct.parse@0.9.0",
+            "ref": {
+              "object_id": "a4d7485c-422d-40be-abea-ce2bcdac6e33",
+              "role": "model.exchange.request",
+              "pointer": "/messages/3"
+            }
+          }
+        }
+      },
+      "layer_verdicts": {
+        "context": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "structure": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "content": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      }
+    }
+  ],
+  "evaluated_at": "2026-10-19T10:00:00Z"
+}

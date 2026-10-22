@@ -1,0 +1,22 @@
+# Production profile for the S3 content exporter (spec 049 P0-A).
+#
+# Merged last by docker-compose.content-s3.yml, after collector-production.yaml,
+# collector-content.yaml and collector-content-s3.yaml. collector-content-s3.yaml
+# stays shared with the evaluation S3 store (docker-compose.s3-eval.yml, local
+# profile); this file adds what production requires of fabriccontent/s3:
+#
+#   * the production profile and the same source binding as fabricguard
+#     (spec 049 §7.9);
+#   * the content queue on the encrypted fabricenvelope storage (§7.8). S3
+#     itself keeps its mandatory server-side encryption.
+#
+# fabric-gate refuses a production Node without them.
+
+exporters:
+  fabriccontent/s3:
+    profile: production
+    source_binding:
+      tenant_id: ${env:FABRIC_TENANT_ID}
+      source_id: ${env:FABRIC_SOURCE_ID}
+    sending_queue:
+      storage: fabricenvelope/fabric_content

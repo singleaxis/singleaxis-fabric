@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import base64
 import json
@@ -56,9 +57,79 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_evidence_artifacts_validate() -> None:
     paths = validate_contracts(REPO_ROOT)
-    assert len(paths) == 17
+    assert len(paths) == 33
+    assert "content/valid/split-reassembly-retain-original.json" in paths
+    assert "content/fixtures/node-envelope-v1.json" in paths
+    assert "content/valid/persisted-descriptor-review-copy.json" in paths
     assert "content/fixtures/bytes/binary-four-bytes.json" in paths
     assert "evidence/valid/complete-run.json" in paths
+
+
+def _schemas() -> dict[str, Any]:
+    from contracts.validate_evidence_contracts import SCHEMAS as known  # noqa: PLC0415
+
+    return {
+        f"{family}/{path}": _json(
+            f"contracts/{family}/{'v1' if family == 'evidence' else 'v2'}/{path}"
+        )
+        for family, path in known.values()
+    }
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (lambda d: d, None),
+        (lambda d: d.update(transformations=["extract_parts", "redact"]), None),
+        (
+            lambda d: d.update(transformations=["tokenize"]),
+            "evidence.content.protection",
+        ),
+        (
+            lambda d: d.update(protection_status="retained"),
+            "evidence.content.protection",
+        ),
+        (
+            lambda d: d.update(privacy_mode="retain_original"),
+            "evidence.content.protection",
+        ),
+    ],
+)
+def test_spec_049_masked_only_outcomes(change: Any, error: str | None) -> None:
+    from contracts.validate_evidence_contracts import (
+        EvidenceContractError,
+        validate_document,
+    )  # noqa: PLC0415
+
+    document = _json("contracts/content/v2/valid/persisted-descriptor-masked-only.json")
+    change(document)
+    if error is None:
+        validate_document(document, _schemas())
+    else:
+        with pytest.raises(EvidenceContractError) as raised:
+            validate_document(document, _schemas())
+        assert raised.value.code == error
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["redact", "tokenize", "masked_only", "original_plus_masked", "retain_original"],
+)
+def test_spec_049_protection_failure_withholds_in_every_byte_mode(mode: str) -> None:
+    from contracts.validate_evidence_contracts import (
+        EvidenceContractError,
+        validate_document,
+    )  # noqa: PLC0415
+
+    document = _json(
+        "contracts/content/v2/valid/persisted-descriptor-protection-failed.json"
+    )
+    document["privacy_mode"] = mode
+    validate_document(document, _schemas())
+    for metadata_mode in ("metadata_only", "omit"):
+        document["privacy_mode"] = metadata_mode
+        with pytest.raises(EvidenceContractError):
+            validate_document(document, _schemas())
 
 
 def test_exact_binary_object_and_event_correlate() -> None:
@@ -333,6 +404,9 @@ def test_node_emitted_protected_descriptors_conform(tmp_path: Path) -> None:
     entry = REPO_ROOT / "sdk/typescript/dist/index.js"
     if not node or not entry.is_file():
         pytest.skip("Build the Node SDK to verify emitted protected descriptors")
+    # Customer redaction is a customer-run service (contracts/redaction/v1).
+    from _redaction_service import reference_service
+
     script = r"""
 import fs from 'node:fs';
 import path from 'node:path';
@@ -346,7 +420,9 @@ for (const mode of ['retain_original', 'omit', 'metadata_only', 'redact', 'token
   const original = new LocalFilesystemContentStore(path.join(root, mode, 'original'), policy.tenant_id);
   const review = new LocalFilesystemContentStore(path.join(root, mode, 'review'), policy.tenant_id);
   const protector = new ContentProtector(policy, {
-    redactors: mode === 'redact' ? {'terminal.stdout': () => Buffer.from('[redacted]')} : undefined,
+    transformations: mode === 'redact'
+      ? {'terminal.stdout': {id: 'contract-mask', version: '1'}} : undefined,
+    redaction: mode === 'redact' ? {endpoint: process.argv[4]} : undefined,
     tokenizationKey: Buffer.alloc(32, 'k'),
   });
   const recorder = new ByteEvidenceRecorder({store: original, reviewStore: review,
@@ -358,25 +434,28 @@ for (const mode of ['retain_original', 'omit', 'metadata_only', 'redact', 'token
     }))));
   }
   await recorder.close();
+  await protector.close();
   records.push(...recorder.drainSettled());
 }
 process.stdout.write(JSON.stringify(records));
 """
-    result = subprocess.run(
-        [
-            node,
-            "--input-type=module",
-            "-e",
-            script,
-            entry.as_uri(),
-            str(REPO_ROOT / "examples/enterprise/policy.local.json"),
-            str(tmp_path),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        timeout=30,
-    )
+    with reference_service({"contract-mask": [(".+", "[redacted]")]}) as endpoint:
+        result = subprocess.run(
+            [
+                node,
+                "--input-type=module",
+                "-e",
+                script,
+                entry.as_uri(),
+                str(REPO_ROOT / "examples/enterprise/policy.local.json"),
+                str(tmp_path),
+                endpoint,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     descriptors = json.loads(result.stdout)
     assert len(descriptors) == 20
     assert {item["privacy_mode"] for item in descriptors} == {
@@ -430,13 +509,43 @@ def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) ->
         )
         for plane in ("original", "derivative")
     ]
-    protector = ContentProtector(
-        policy,
-        redactors={"terminal.stdout": lambda _: b"[redacted]"}
+    from fabric.redaction import RedactionService, Transformation
+
+    from _redaction_service import reference_service
+
+    service = (
+        reference_service({"contract-mask": [("sensitive", "[masked]")]})
         if mode == "redact"
-        else None,
-        tokenization_key=b"k" * 32,
+        else contextlib.nullcontext(None)
     )
+    with service as endpoint:
+        _governed_descriptors_conform(
+            ByteEvidenceRecorder,
+            ByteEvidenceConfig,
+            stores,
+            policy,
+            mode,
+            ContentProtector(
+                policy,
+                transformations={
+                    "terminal.stdout": Transformation("contract-mask", "1")
+                }
+                if mode == "redact"
+                else None,
+                redaction=RedactionService(endpoint) if endpoint else None,
+                tokenization_key=b"k" * 32,
+            ),
+        )
+
+
+def _governed_descriptors_conform(
+    ByteEvidenceRecorder: Any,  # noqa: N803 - the SDK classes, imported late
+    ByteEvidenceConfig: Any,  # noqa: N803
+    stores: list[Any],
+    policy: Any,
+    mode: str,
+    protector: Any,
+) -> None:
     recorder = ByteEvidenceRecorder(
         ByteEvidenceConfig(
             store=stores[0],
@@ -590,3 +699,77 @@ def test_manifest_pinning_detects_modified_fixture(tmp_path: Path) -> None:
     with pytest.raises(EvidenceContractError) as caught:
         validate_contracts(tmp_path)
     assert caught.value.code == "evidence.manifest.digest"
+
+
+def _split_vector() -> dict[str, Any]:
+    return _json("contracts/content/v2/valid/split-reassembly-retain-original.json")
+
+
+def test_split_skeleton_and_parts_reassemble_to_the_original_digest() -> None:
+    validate_document(_split_vector(), _schemas())
+
+
+def test_split_reassembly_rejects_a_part_moved_inside_the_original() -> None:
+    vector = _split_vector()
+    part = vector["objects"][2]["descriptor"]["links"][0]
+    part["byte_range"] = [part["byte_range"][0] - 1, part["byte_range"][1] - 1]
+    _assert_error(vector, "evidence.split.reassembly")
+
+
+def test_split_reassembly_rejects_a_dropped_part() -> None:
+    vector = _split_vector()
+    del vector["objects"][1]
+    _assert_error(vector, "evidence.split.reassembly")
+
+
+def test_split_reassembly_rejects_tampered_part_bytes() -> None:
+    vector = _split_vector()
+    vector["objects"][1]["base64"] = vector["objects"][2]["base64"]
+    _assert_error(vector, "evidence.split.bytes")
+
+
+def test_split_skeleton_needs_the_original_body_digest() -> None:
+    skeleton = _split_vector()["objects"][0]["descriptor"]
+    del skeleton["source_sha256"], skeleton["source_byte_length"]
+    _assert_error(skeleton, "evidence.schema")
+
+
+def test_retained_split_skeleton_agrees_with_its_privacy_mode() -> None:
+    skeleton = _split_vector()["objects"][0]["descriptor"]
+    skeleton.update(
+        privacy_mode="retain_original",
+        protection_status="retained",
+        policy_id="policy-a",
+        policy_version=1,
+        policy_digest="sha256:" + "a" * 64,
+    )
+    validate_document(skeleton, _schemas())
+    skeleton["protection_status"] = "redacted"
+    _assert_error(skeleton, "evidence.content.protection")
+
+
+def test_byte_range_is_only_a_part_of_link_and_is_ordered() -> None:
+    part = _split_vector()["objects"][1]["descriptor"]
+    link = part["links"][0]
+    link["byte_range"] = [link["byte_range"][1], link["byte_range"][0]]
+    _assert_error(part, "evidence.content.byte_range")
+    link["relation"] = "derived_from"
+    _assert_error(part, "evidence.schema")
+
+
+def test_new_roles_and_receiver_owned_source_authenticated_are_admitted() -> None:
+    schema = _schemas()["content/schema/content-object-v2.schema.json"]
+    roles = json.loads(
+        (REPO_ROOT / "contracts/coverage/v1/registry/content-roles-v1.json").read_text()
+    )["roles"]
+    assert schema["properties"]["role"]["enum"] == [row["role"] for row in roles]
+    assert schema["properties"]["source_authenticated"] == {
+        "description": schema["properties"]["source_authenticated"]["description"],
+        "type": "boolean",
+    }
+    validate_document(
+        _json(
+            "contracts/content/v2/valid/persisted-descriptor-source-authenticated.json"
+        ),
+        _schemas(),
+    )

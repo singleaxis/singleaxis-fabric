@@ -29,8 +29,9 @@ from typing import Any
 
 import pytest
 
-from fabric.wire._spool import RESERVE_BYTES, Spool, _accounted, marker_doc, unframe
+from fabric.wire._spool import RESERVE_BYTES, Spool, _accounted, marker_doc, unframe_all
 
+from .test_wire_helpers import open_record, production_env
 from .test_wire_spool import FakeNode
 
 BODY = 256 * 1024  # max_body_bytes; each exchange record holds two such bodies
@@ -114,10 +115,10 @@ def node() -> Iterator[FakeNode]:
     created.close()
 
 
-def _env() -> dict[str, str]:
+def _env(directory: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith(("OTEL_", "FABRIC_", "AWS_"))}
     env["PYTHONDONTWRITEBYTECODE"] = "1"
-    return env
+    return env | production_env(directory)  # node mode is production (049 §7.3)
 
 
 def _line(process: subprocess.Popen[str]) -> str:
@@ -147,7 +148,7 @@ def test_processes_sharing_a_spool_stay_within_the_bound_with_the_node_down(
     try:
         for _ in range(writers):
             processes.append(subprocess.Popen(  # noqa: S603 - this interpreter, fixed script
-                argv, env=_env(), text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                argv, env=_env(tmp_path), text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
             ))  # fmt: skip
         assert [_line(p) for p in processes] == ["READY"] * writers
@@ -195,7 +196,7 @@ def test_processes_sharing_a_spool_stay_within_the_bound_with_the_node_down(
     assert sum(losses.values()) == writers * EXCHANGES - 2
     # Every exchange and loss record was delivered; only a process's ``final`` marker,
     # written at close after the drainer exited, may wait for the next drainer.
-    left = [unframe(p.read_bytes())[0] for p in root.glob("[0-9]*.rec")]
+    left = [doc for p in root.glob("[0-9]*.rec") for doc, _ in unframe_all(open_record(p))]
     assert {doc["record_kind"] for doc in left} <= {"marker"}
 
 
@@ -222,7 +223,7 @@ def test_a_crashed_writers_temp_file_counts_against_the_shared_bound(tmp_path: P
     survivor = Spool(str(root), limit)  # its ledger is built before the crash
     crashed = subprocess.run(  # noqa: S603 - this interpreter, fixed script
         [sys.executable, "-c", _CRASH, str(root), str(limit), str(40 * 1024)],
-        env=_env(), capture_output=True, text=True, timeout=60, check=False,
+        env=_env(tmp_path), capture_output=True, text=True, timeout=60, check=False,
     )  # fmt: skip
     assert crashed.returncode == -signal.SIGKILL
     (leftover,) = root.glob(".tmp-*")
@@ -230,18 +231,21 @@ def test_a_crashed_writers_temp_file_counts_against_the_shared_bound(tmp_path: P
     assert survivor.bytes == 0  # the local ledger has not seen it (no rescan yet)
 
     body = b"s" * (30 * 1024)  # fits the local ledger, not the disk
-    assert survivor.write(marker_doc(("survivor", 1, 0, None, None, "final")), [body]) is None
+    written = survivor.write(marker_doc(("survivor", 1, 0, None, None, "final")), [body])
+    assert written is None
     assert survivor.shared_bytes == leftover.stat().st_size
     assert survivor.bytes == 0 and not list(root.glob("[0-9]*.rec"))
     small = b"s" * (8 * 1024)  # what still fits next to the crashed writer's reservation
-    assert survivor.write(marker_doc(("survivor", 1, 1, None, None, "final")), [small])
+    written = survivor.write(marker_doc(("survivor", 1, 1, None, None, "final")), [small])
+    assert written
     assert _on_disk(root) <= limit
 
     os.utime(leftover, (0, 0))  # an hour old: the drainer removes it and space frees
     assert survivor.try_lock()
     survivor.rescan()
     assert not leftover.exists()
-    assert survivor.write(marker_doc(("survivor", 1, 2, None, None, "final")), [body])
+    written = survivor.write(marker_doc(("survivor", 1, 2, None, None, "final")), [body])
+    assert written
     assert _on_disk(root) <= limit
     survivor.release()
 
@@ -259,15 +263,18 @@ def test_admission_lock_is_not_the_drainer_lock_and_a_busy_lock_fails_closed(
     drainer, writer = Spool(str(root), 1 << 20), Spool(str(root), 1 << 20)
     assert drainer.try_lock()  # the drainer lock is held: writers still admit
     doc = marker_doc(("w", 1, 0, None, None, "final"))
-    assert writer.write(doc) is not None
+    written = writer.write(doc)
+    assert written is not None
     holder = os.open(root / ".admit", os.O_RDWR)
     try:
         fcntl.flock(holder, fcntl.LOCK_EX)  # another process stalls holding admission
         monkeypatch.setattr(_spool, "ADMIT_TIMEOUT_S", 0.2)
-        assert writer.write(marker_doc(("w", 1, 1, None, None, "final"))) is None
+        written = writer.write(marker_doc(("w", 1, 1, None, None, "final")))
+        assert written is None
         assert writer.admission_timeouts == 1
     finally:
         os.close(holder)
-    assert writer.write(marker_doc(("w", 1, 2, None, None, "final"))) is not None
+    written = writer.write(marker_doc(("w", 1, 2, None, None, "final")))
+    assert written is not None
     drainer.release()
     writer.release()

@@ -1,9 +1,17 @@
 # SingleAxis Fabric recorder SDK for TypeScript
 
-`@singleaxis/fabric` adds passive OpenTelemetry activity capture to Node.js AI
+`@singleaxis/fabric` adds passive, app-reported activity capture to Node.js AI
 agents. It records identity and causal context for model calls, tool calls,
-retrieval, memory activity, side effects, delegation, retries and failures. It
-does not block, alter or delay the agent.
+retrieval, memory activity, side effects, delegation, retries and failures that
+your code reports, and exact bytes you pass to `ByteEvidenceRecorder`. It does
+not block, alter or delay the agent.
+
+**No zero-code wire capture in TypeScript yet.** Unlike the Python SDK, this
+package does not tee model HTTP traffic; every record comes from an explicit
+call. TypeScript wire capture is planned (spec 049 TS-1) and not built. See
+[limitations](../../docs/limitations-and-roadmap.md).
+
+Requires Node.js 20.6 or later.
 
 ```text
 CAPTURE -> PROTECT -> DELIVER
@@ -12,9 +20,11 @@ CAPTURE -> PROTECT -> DELIVER
 TypeScript SDK (optional instrumentation)
 ```
 
-Protection and delivery happen in the customer-controlled Fabric Node. Raw
-prompt, response, tool argument and tool result fields are not part of the
-recorder SDK's default activity surface.
+Tool payloads are hashed by default. Exact bytes are protected in the SDK by
+the role's privacy mode before storage (below); the customer-controlled Fabric
+Node then applies its own allowlist before delivery. Unlike Python,
+`installDefaultProvider` does not add a metadata-only export projection: the
+provider and exporters you register are your responsibility.
 
 ## Install
 
@@ -125,7 +135,7 @@ uncalled instrumentation, or governed-content delivery. It does not change host
 sampling, span limits, or privacy settings. Retain the decision object if you
 need to inspect the snapshot after the callback completes.
 
-## Opt-in exact-byte evidence (draft)
+## Opt-in exact-byte evidence
 
 The separate content-v2 `ByteEvidenceRecorder` stores **only bytes explicitly
 passed by the caller**. It preserves binary data without UTF-8 conversion,
@@ -175,14 +185,16 @@ This limitation differs from the Python local store's directory-handle checks.
 
 Pass a validated `DeploymentPolicy` as `deploymentPolicy`, or a
 `ContentProtector` as `contentProtector`, to `ByteEvidenceRecorder`. The policy
-tenant must match the store. Protection runs before bytes enter the delivery
-queue; roles absent from the policy are omitted. These options apply only to
+tenant must match the store. Fabric's own protection runs before bytes enter the
+delivery queue; a customer redaction is requested from your redaction service
+behind it, before anything is stored (below). Roles absent from the policy are omitted. These options apply only to
 this explicit byte-capture interface, not automatically to every SDK content
 path or third-party integration.
 
 - `omit` records no original bytes, digest, or length
 - `metadata_only` records the original length without bytes or an original digest
-- `redact` requires a synchronous customer-supplied redactor for each selected role
+- `redact` and `masked_only` require a transformation `{ id, version }` for each
+  selected role and a customer-run redaction service (below)
 - `tokenize` produces an irreversible, whole-object HMAC pseudonym using a
   customer-supplied key of at least 32 bytes; it is scoped to policy, tenant,
   workload, and role
@@ -196,11 +208,41 @@ original digest or length. Policy ID, version, digest, and workload bind the loc
 descriptor to its configured capture policy; they do not prove independent
 authorization, encryption, residency, delivery, or completeness.
 
-Transforms execute synchronously on a bounded payload, so customers must keep
-redactors fast and test their correctness. Storage delivery remains asynchronous.
+Fabric never runs customer redaction code in your process. A masking role is sent to
+a **redaction service you run** beside the application (a sidecar), over a Unix socket
+or loopback HTTP only, using the public protocol in
+[`contracts/redaction/v1`](../../contracts/redaction/v1/README.md);
+`examples/redaction-service/` is a reference implementation:
+
+```ts
+new ContentProtector(policy, {
+  transformations: { "terminal.stdout": { id: "mask-email", version: "3" } },
+  redaction: { endpoint: "unix:///run/fabric/redaction.sock" }, // or FABRIC_REDACTION_ENDPOINT
+});
+```
+
+The endpoint must be `unix:///absolute/path`, `http://127.0.0.1:<port>` or
+`http://[::1]:<port>`; anything else throws at construction. An optional bearer token
+is read once from `tokenFile` (`FABRIC_REDACTION_TOKEN_FILE`), a `0600` file owned by
+the process user. `capture()` returns a `pending` descriptor at once; the call is made
+behind the handoff and is bounded by `timeoutMs` (default 5000, at most 300000) and
+`maxInFlight` (default 2: a call above it is withheld at once). A non-200 status (a
+redirect included), a timeout, an oversized response or a connection error withholds
+the object (`not_captured`, `protection_status: withheld`, `status_reason:
+protection_failed`); `ContentProtector.stats()` counts `redaction_timeouts`,
+`redaction_saturated` and `redaction_failures`. Stored objects record
+`transformation_id` and `transformation_version`. Functions and module references
+(the removed `redactors` option) are rejected at construction.
+`ContentProtector.protect()` is synchronous and fails closed for masking roles; use
+`protectAsync()`. `ByteEvidenceRecorder.close()` closes the protector's connection pool.
+
+In the production profile (`deployment.profile: production` in the policy) content
+capture also needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`, at least 16 bytes);
+without it every capture is `not_captured` with `status_reason: missing_id_key` and
+`ByteEvidenceRecorder.status()` says so.
 Configuration errors are reported during setup; capture outcomes never authorize
 or reject the monitored action. This Node interface does not implement the Python
-authenticated local store, capability authority, or deployment-state registry.
+authenticated local store or capability authority.
 
 ### Governed transcript contract compatibility
 
@@ -278,11 +320,10 @@ npm run build
 npm run test:package
 ```
 
-### Enterprise capture support boundary
+### Parity with the Python SDK
 
-The shared deployment-policy/privacy/byte path is supported. Python's
-CallRecorder, source journal, encrypted durable byte spool, restartable metadata
-sender, governed local backend, authenticated configuration lifecycle/readback,
-and reference closure do not have TypeScript parity. See the
-[explicit SDK support matrix](../../docs/sdk-support-matrix.md). Neither SDK
-implements a portal or action enforcement runtime.
+The deployment-policy, privacy and byte path is shared. Python's wire capture,
+`CallRecorder`, byte-boundary adapters, source journal, encrypted durable byte
+spool, restartable metadata sender, governed local backend, metadata-only span
+export and qualified-run mode have no TypeScript equivalent. See
+[explicit APIs](../../docs/explicit-apis.md).

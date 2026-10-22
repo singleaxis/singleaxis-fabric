@@ -27,7 +27,7 @@ func checkWatched(watched []tokenFile) error {
 	for _, tf := range watched {
 		var err error
 		if tf.dedicated {
-			err = checkDedicatedTokenFile(tf.path)
+			err = checkDedicatedTokenFile(tf.extension, tf.path)
 		} else {
 			err = checkTokenFile(tf.extension, tf.path)
 		}

@@ -12,6 +12,16 @@ import { sha256BytesPrefixed as digest } from "./hash.js";
 
 import type { GovernedStore } from "./content-store.js";
 import {
+  EmittedId,
+  checkIdentityMode,
+  identityModeFromEnv,
+  issuedBy,
+  keyId,
+  labelPseudonym,
+  mintEmittedId,
+  type IdentityMode,
+} from "./identity.js";
+import {
   ContentProtector,
   DeploymentPolicy,
   type PrivacyMode,
@@ -71,6 +81,132 @@ const OPAQUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const MEDIA_TYPE = /^[a-zA-Z0-9!#$&^_.+-]+\/[a-zA-Z0-9!#$&^_.+-]+$/;
 const HARD_MAX_BYTES = 64 * 1024 * 1024;
 const HARD_MAX_ITEMS = 1 << 20;
+const MIN_ID_KEY_BYTES = 16;
+export const ID_KEY_ENV = "FABRIC_WIRE_ID_KEY";
+
+function checkIdKey(key: Uint8Array | undefined): Uint8Array | undefined {
+  if (key !== undefined && (!(key instanceof Uint8Array) || key.byteLength < MIN_ID_KEY_BYTES))
+    throw new Error(`${ID_KEY_ENV} must be at least ${MIN_ID_KEY_BYTES} bytes`);
+  return key;
+}
+
+/** The id key named by `FABRIC_WIRE_ID_KEY` (unset or empty: undefined); a secret. */
+export function idKeyFromEnv(
+  env: Record<string, string | undefined> = typeof process !== "undefined" ? process.env : {},
+): Uint8Array | undefined {
+  const value = env[ID_KEY_ENV] ?? "";
+  return value === "" ? undefined : checkIdKey(Buffer.from(value, "utf8"));
+}
+
+function productionMarked(policy: unknown): boolean {
+  return policy instanceof DeploymentPolicy && policy.deployment.profile === "production";
+}
+
+/**
+ * Spec 049 §7.3 on the explicit (records) input, as on the wire (§7.7 "both inputs"),
+ * in parity with Python `fabric.byte_evidence.content_gate`. The production profile
+ * (the deployment policy, or a store's own policy, is marked production) needs the
+ * capture policy and the id key; a missing one disables content capture with that
+ * reason (metadata continues). The local profile needs nothing.
+ */
+export function contentGate(
+  deploymentPolicy: DeploymentPolicy | undefined,
+  idKey: Uint8Array | undefined,
+  ...stores: (GovernedStore | undefined)[]
+): { profile: "local" | "production"; reason: string | null } {
+  const marked =
+    productionMarked(deploymentPolicy) ||
+    stores.some((store) => productionMarked((store as { policy?: unknown } | undefined)?.policy));
+  if (!marked) return { profile: "local", reason: null };
+  if (deploymentPolicy === undefined)
+    return { profile: "production", reason: "missing_capture_policy" };
+  if (idKey === undefined) return { profile: "production", reason: "missing_id_key" };
+  return { profile: "production", reason: null };
+}
+
+let processSource: string | undefined;
+const MAX_GENERATED_IDS = 65536;
+
+/** A caller id, or an id a Fabric recorder emitted (passed through by its issuer). */
+export type CallerId = string | EmittedId;
+
+/**
+ * Emitted ids when no value derived from a caller-supplied id may leave the process
+ * (spec 049 §2.9 rule 5: the production profile without the id key), in parity with
+ * Python `fabric._sequence.GeneratedIds`. The source id is random per process (`s-` + 32
+ * hex), a run id its generated source fallback (`source:<source>:<epoch>`), and any
+ * other caller id a random `g-` id generated on first sight (a bounded cache, so one
+ * recorder's records still join; past it a new id is minted). An {@link EmittedId} this
+ * instance issued passes through unchanged: provenance is the value's type, never a
+ * cache lookup (Sol P0-A round 6 #1).
+ */
+class GeneratedIds {
+  readonly #issuer = "gen-" + randomUUID();
+  readonly #ids = new Map<string, string>();
+
+  source(value: CallerId): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    processSource ??= "s-" + randomUUID().replaceAll("-", "");
+    return mintEmittedId(processSource, this.#issuer);
+  }
+
+  run(value: CallerId, epoch: number): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    return mintEmittedId(`source:${String(this.source(""))}:${epoch}`, this.#issuer);
+  }
+
+  other(value: CallerId): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    const text = String(value);
+    let found = this.#ids.get(text);
+    if (found === undefined) {
+      found = "g-" + randomUUID().replaceAll("-", "");
+      if (this.#ids.size < MAX_GENERATED_IDS) this.#ids.set(text, found);
+    }
+    return mintEmittedId(found, this.#issuer);
+  }
+}
+
+/**
+ * Emitted ids in the `pseudonymous` identity mode with the id key (spec 049 §2.9 rules
+ * 1-3), in parity with Python `fabric._sequence.KeyedIds` and as the wire line emits
+ * them: the run id `r-` and the source id `s-` (function v1, keyed); any other caller id
+ * (operation, attempt, stream: step labels, 049 §2.3) the keyed v1 operator label `lbl-`.
+ * Deterministic, so records join across recorders and processes holding the key.
+ * Provenance, never shape, decides what passes through (Sol P0-A rounds 4-6): only an
+ * {@link EmittedId} issued under the same key (its issuer is the key id) maps to itself,
+ * for as long as the caller holds it; every plain string, even a 32-hex or
+ * `r-`/`s-`/`lbl-`-shaped one, is mapped. No registry: nothing ages out.
+ */
+class KeyedIds {
+  readonly #key: Uint8Array;
+  readonly #issuer: string;
+
+  constructor(key: Uint8Array) {
+    this.#key = key;
+    this.#issuer = keyId(key);
+  }
+
+  source(value: CallerId): EmittedId {
+    return this.#map("s", value);
+  }
+
+  run(value: CallerId): EmittedId {
+    return this.#map("r", value);
+  }
+
+  other(value: CallerId): EmittedId {
+    return this.#map("lbl", value);
+  }
+
+  #map(prefix: string, value: CallerId): EmittedId {
+    if (issuedBy(value, this.#issuer)) return value;
+    return mintEmittedId(labelPseudonym(prefix, String(value), this.#key), this.#issuer);
+  }
+}
+
+/** Ids as given (the clear mode, or local without the key): typed, never mapped. */
+const CLEAR_ISSUER = "clear";
 
 export interface ByteEvidenceDescriptor {
   schema_version: "fabric.content-object/v2";
@@ -92,6 +228,8 @@ export interface ByteEvidenceDescriptor {
   workload_id?: string;
   protection_status?: ProtectionStatus;
   transformations?: ("redact" | "tokenize")[];
+  transformation_id?: string;
+  transformation_version?: string;
   source_byte_length?: number;
   source_sha256?: string;
   stored_byte_length?: number;
@@ -107,18 +245,38 @@ export interface ByteEvidenceDescriptor {
   status_reason?: string;
 }
 
+/**
+ * One capture. Id fields take a caller id (a plain string: always mapped as the
+ * recorder emits caller ids) or an {@link EmittedId} the recorder returned (passed
+ * through unchanged by the recorder, or one holding the same id key, that issued it).
+ */
 export interface ByteEvidenceCapture {
   role: string;
   boundary: string;
-  sourceId: string;
+  sourceId: CallerId;
   sourceEpoch: number;
   sourceSequence: number;
   mediaType?: string;
+  runId?: CallerId;
+  operationId?: CallerId;
+  attemptId?: CallerId;
+  streamId?: CallerId;
+  chunkIndex?: number;
+}
+
+type PlainCapture = Omit<
+  ByteEvidenceCapture,
+  "sourceId" | "runId" | "operationId" | "attemptId" | "streamId"
+> & {
+  sourceId: string;
   runId?: string;
   operationId?: string;
   attemptId?: string;
   streamId?: string;
-  chunkIndex?: number;
+};
+
+function plain(value: CallerId | undefined): string | undefined {
+  return value instanceof EmittedId ? value.value : (value as string | undefined);
 }
 
 export interface ByteEvidenceConfig {
@@ -139,12 +297,31 @@ export interface ByteEvidenceConfig {
   payloadMaxBytes?: number;
   /** Best-effort delivery attempts; no source spool or durable receipt. */
   retryMaxAttempts?: number;
+  /**
+   * The id key (spec 049 §7.3; `FABRIC_WIRE_ID_KEY` when unset, at least 16 bytes): the
+   * production profile needs it before any content is captured. A secret.
+   */
+  idKey?: Uint8Array;
+  /**
+   * Spec 049 §2.9 rule 7 (`FABRIC_IDENTITY_MODE` when unset): caller ids leave as keyed
+   * pseudonyms (`pseudonymous`, the default) or as given (`clear`).
+   */
+  identityMode?: IdentityMode;
+}
+
+/** The content state of an explicit-line recorder (spec 049 §7.3). Values only. */
+export interface ByteEvidenceStatus {
+  profile: "local" | "production";
+  content_capture: "enabled" | "disabled";
+  content_capture_reason: string | null;
 }
 
 interface WorkItem {
   descriptor: ByteEvidenceDescriptor;
   bytes: Uint8Array;
   store: GovernedStore;
+  /** A customer redaction deferred from capture(): the redaction service, in drain(). */
+  redactRole?: string;
 }
 
 export class ByteEvidenceRecorder {
@@ -163,6 +340,10 @@ export class ByteEvidenceRecorder {
   private running = false;
   private closed = false;
   private lostRecordCount = 0;
+  private readonly profile: "local" | "production";
+  private readonly gateReason: string | null;
+  /** How caller ids are emitted (spec 049 §2.9); undefined: as given. */
+  private readonly emittedIds?: GeneratedIds | KeyedIds;
   private readonly counts = {
     stored: 0,
     redacted: 0,
@@ -225,7 +406,7 @@ export class ByteEvidenceRecorder {
         throw new Error("content protector must match deployment policy");
       if (
         [...config.roles].some((role) =>
-          ["redact", "tokenize"].includes(policy.privacy[role] ?? "omit"),
+          ["redact", "masked_only", "tokenize"].includes(policy.privacy[role] ?? "omit"),
         )
       ) {
         const review = config.reviewStore;
@@ -250,6 +431,52 @@ export class ByteEvidenceRecorder {
     this.reviewStore = config.reviewStore;
     this.store = config.store;
     this.roles = new Set(config.roles);
+    // Spec 049 §7.3: never blocked, but not silent; a malformed id key still throws.
+    const idKey = checkIdKey(config.idKey) ?? idKeyFromEnv();
+    const gate = contentGate(policy, idKey, config.store, config.reviewStore);
+    this.profile = gate.profile;
+    this.gateReason = gate.reason;
+    // Spec 049 §2.9: keyed pseudonyms, or generated ids in production without the id key
+    // (rule 5, whatever the mode); as given only in the clear mode (or local, no key).
+    const mode =
+      config.identityMode !== undefined
+        ? checkIdentityMode(config.identityMode)
+        : identityModeFromEnv(typeof process !== "undefined" ? process.env : {});
+    if (gate.profile === "production" && idKey === undefined) this.emittedIds = new GeneratedIds();
+    else if (idKey !== undefined && mode === "pseudonymous") this.emittedIds = new KeyedIds(idKey);
+    if (gate.reason !== null)
+      console.warn(
+        `fabric.byteEvidence: content capture disabled (${gate.reason}, ${gate.profile} ` +
+          "profile); metadata capture continues",
+      );
+  }
+
+  /** The content state (spec 049 §7.3): profile, content capture and its reason. */
+  /**
+   * `runId` as this recorder emits it (epoch 0), in parity with Python
+   * `ByteEvidenceRecorder.emitted_run_id`: never the clear value unless ids are emitted
+   * as given.
+   */
+  emittedRunId(runId: CallerId): EmittedId {
+    if (this.emittedIds !== undefined) return this.emittedIds.run(runId, 0);
+    return runId instanceof EmittedId ? runId : mintEmittedId(runId, CLEAR_ISSUER);
+  }
+
+  /**
+   * `sourceId` as this recorder emits it: pass the returned value back (as
+   * `sourceId`) and it is never mapped again, however many ids the recorder sees.
+   */
+  emittedSourceId(sourceId: CallerId): EmittedId {
+    if (this.emittedIds !== undefined) return this.emittedIds.source(sourceId);
+    return sourceId instanceof EmittedId ? sourceId : mintEmittedId(sourceId, CLEAR_ISSUER);
+  }
+
+  status(): ByteEvidenceStatus {
+    return {
+      profile: this.profile,
+      content_capture: this.gateReason === null ? "enabled" : "disabled",
+      content_capture_reason: this.gateReason,
+    };
   }
 
   /** Snapshot of terminal and pending counts. A pending remainder is a gap. */
@@ -286,8 +513,19 @@ export class ByteEvidenceRecorder {
    * No content bytes are put on OTLP. Caller must retain the returned
    * descriptor (or persist it separately); this slice has no run manifest.
    */
-  capture(data: Uint8Array, options: ByteEvidenceCapture): ByteEvidenceDescriptor {
+  capture(data: Uint8Array, input: ByteEvidenceCapture): ByteEvidenceDescriptor {
     if (!(data instanceof Uint8Array)) throw new TypeError("byte evidence requires Uint8Array");
+    if (input === null || typeof input !== "object") throw new TypeError("invalid capture options");
+    let options: PlainCapture = {
+      ...input,
+      sourceId: plain(input.sourceId)!,
+      runId: plain(input.runId),
+      operationId: plain(input.operationId),
+      attemptId: plain(input.attemptId),
+      streamId: plain(input.streamId),
+    };
+    for (const name of ["runId", "operationId", "attemptId", "streamId"] as const)
+      if (options[name] === undefined) delete options[name];
     this.validateOptions(options);
     const key = JSON.stringify([options.sourceId, options.sourceEpoch]);
     const previous = this.highWater.get(key);
@@ -296,6 +534,23 @@ export class ByteEvidenceRecorder {
     }
     const sourceRegistryFull = previous === undefined && this.highWater.size >= this.maxSources;
     if (!sourceRegistryFull) this.highWater.set(key, options.sourceSequence);
+    const ids = this.emittedIds;
+    if (ids !== undefined) {
+      // Spec 049 §2.9: no clear caller id leaves the process; an EmittedId this recorder
+      // issued passes through by its type (never a bounded registry, Sol P0-A round 6 #1).
+      options = {
+        ...options,
+        sourceId: ids.source(input.sourceId).value,
+        ...(input.runId !== undefined
+          ? { runId: ids.run(input.runId, options.sourceEpoch).value }
+          : {}),
+        ...(input.operationId !== undefined
+          ? { operationId: ids.other(input.operationId).value }
+          : {}),
+        ...(input.attemptId !== undefined ? { attemptId: ids.other(input.attemptId).value } : {}),
+        ...(input.streamId !== undefined ? { streamId: ids.other(input.streamId).value } : {}),
+      };
+    }
     const descriptor: ByteEvidenceDescriptor = {
       schema_version: "fabric.content-object/v2",
       object_id: randomUUID(),
@@ -336,12 +591,35 @@ export class ByteEvidenceRecorder {
       return descriptor;
     }
     this.records.set(descriptor.object_id, descriptor);
+    if (this.gateReason !== null) {
+      // Spec 049 §7.3: content disabled; nothing stored, digested or queued.
+      descriptor.status_reason = this.gateReason;
+      this.counts.not_captured += 1;
+      return { ...descriptor };
+    }
     if (!this.roles.has(options.role)) {
       descriptor.status_reason = "outside_capture_policy";
       this.counts.not_captured += 1;
       return descriptor;
     }
-    const protectedContent = this.protector?.protect(options.role, data);
+    // The redaction service is never called on the caller's path (spec 049 §7.1, §7.7):
+    // it is deferred behind the handoff, before persistence; failure withholds.
+    const deferred = this.protector?.needsRedactionService(options.role) === true;
+    const protectedContent = deferred ? undefined : this.protector?.protect(options.role, data);
+    if (deferred) {
+      const policy = this.protector!.policy;
+      const transformation = this.protector!.transformationFor(options.role)!;
+      Object.assign(descriptor, {
+        privacy_mode: policy.privacy[options.role],
+        protection_status: "redacted",
+        policy_digest: policy.digest,
+        policy_id: policy.policy_id,
+        policy_version: policy.policy_version,
+        workload_id: policy.workload_id,
+        transformation_id: transformation.id,
+        transformation_version: transformation.version,
+      });
+    }
     if (protectedContent !== undefined) {
       const policy = this.protector!.policy;
       Object.assign(descriptor, {
@@ -385,7 +663,14 @@ export class ByteEvidenceRecorder {
     }
     const bytes = new Uint8Array(data); // immutable capture snapshot
     let targetStore = this.store;
-    if (protectedContent?.status === "redacted" || protectedContent?.status === "tokenized") {
+    if (deferred) {
+      descriptor.representation = "redacted"; // pending the redaction service
+      descriptor.transformations = ["redact"];
+      targetStore = this.reviewStore!;
+    } else if (
+      protectedContent?.status === "redacted" ||
+      protectedContent?.status === "tokenized"
+    ) {
       descriptor.representation = protectedContent.status;
       descriptor.transformations = [protectedContent.status === "redacted" ? "redact" : "tokenize"];
       targetStore = this.reviewStore!;
@@ -395,13 +680,18 @@ export class ByteEvidenceRecorder {
       descriptor.source_sha256 = protectedContent?.original_digest ?? digest(bytes);
     }
     descriptor.status = "pending";
-    this.queue.push({ descriptor, bytes, store: targetStore });
+    this.queue.push({
+      descriptor,
+      bytes,
+      store: targetStore,
+      ...(deferred ? { redactRole: options.role } : {}),
+    });
     this.counts.pending += 1;
     this.schedule();
     return descriptor;
   }
 
-  private validateOptions(options: ByteEvidenceCapture): void {
+  private validateOptions(options: PlainCapture): void {
     if (typeof options.sourceId !== "string" || !OPAQUE_ID.test(options.sourceId)) {
       throw new Error("sourceId must be an opaque identifier");
     }
@@ -454,6 +744,32 @@ export class ByteEvidenceRecorder {
       while (this.queue.length > 0) {
         const item = this.queue.shift() as WorkItem;
         const d = item.descriptor;
+        if (item.redactRole !== undefined) {
+          const redacted = await this.protector!.protectAsync(item.redactRole, item.bytes);
+          const bytes = redacted.status === "redacted" ? redacted.protected_bytes : null;
+          if (bytes === null) {
+            // Spec 049 §7.7 rule 4: withheld, never raw bytes, no error text.
+            d.status = "not_captured";
+            d.status_reason = "protection_failed";
+            d.protection_status = "withheld";
+            d.representation = "unavailable";
+            delete d.transformations;
+            this.counts.pending -= 1;
+            this.counts.not_captured += 1;
+            continue;
+          }
+          if (bytes.byteLength > this.payloadMaxBytes) {
+            // The recorder's own cap, as before deferral (a supplied protector may allow
+            // more): dropped, nothing stored (Sol P0-A round 2 #4).
+            d.status = "dropped";
+            d.status_reason = "payload_too_large";
+            d.representation = "unavailable";
+            this.counts.pending -= 1;
+            this.counts.dropped += 1;
+            continue;
+          }
+          item.bytes = bytes;
+        }
         let succeeded = false;
         let stored: ByteEvidenceDescriptor | undefined;
         for (let attempt = 0; attempt < this.retryMaxAttempts; attempt += 1) {
@@ -513,8 +829,11 @@ export class ByteEvidenceRecorder {
     return this.stats();
   }
 
+  /** Settle accepted writes, then close the redaction service connection pool. */
   async close(timeoutMs = 10_000): Promise<Record<string, number>> {
     this.closed = true;
-    return this.flush(timeoutMs);
+    const stats = await this.flush(timeoutMs);
+    await this.protector?.close();
+    return stats;
   }
 }

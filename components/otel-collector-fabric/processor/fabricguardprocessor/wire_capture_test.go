@@ -456,9 +456,14 @@ func TestWireCapture_ExactlyTheCaptureKeysAreAllowlistedAndNotSensitive(t *testi
 			t.Errorf("%q is denied by sensitiveAttributeKey", key)
 		}
 	}
-	// Every allowlisted key in the capture namespaces is one of the sixteen.
+	// Every allowlisted key in the capture namespaces is one of the sixteen,
+	// or a spec 049 key admitted with its registry check (coverage_keys.go,
+	// verified key by key against the registry in coverage_keys_test.go).
 	listed := map[string]struct{}{}
 	for _, key := range captureKeys {
+		listed[key] = struct{}{}
+	}
+	for key := range coverageKeyValidators {
 		listed[key] = struct{}{}
 	}
 	for key := range TraceAllowedFields {
@@ -544,4 +549,24 @@ func TestWireCapture_EventsAndLinksAreValueClosedToo(t *testing.T) {
 	if _, ok := gotLink.Attributes().Get("fabric.source.epoch"); !ok {
 		t.Error("valid epoch removed from span link")
 	}
+}
+
+// A model call sent through a client wire capture does not tee is an
+// uninstrumented_client loss (agent matrix D4): admitted like every other reason.
+func TestCaptureLossAdmitsUninstrumentedClient(t *testing.T) {
+	g := newTestGuard(t, nil)
+	attrs := wireLossAttrs()
+	attrs["fabric.loss.reason"] = "uninstrumented_client"
+	span := processOne(t, g, "fabric.capture_loss", attrs)
+	assertKeysKept(t, span, attrs)
+}
+
+// A spool whose volume is full records disk_full losses (chaos report D1):
+// admitted like every other reason.
+func TestCaptureLossAdmitsDiskFull(t *testing.T) {
+	g := newTestGuard(t, nil)
+	attrs := wireLossAttrs()
+	attrs["fabric.loss.reason"] = "disk_full"
+	span := processOne(t, g, "fabric.capture_loss", attrs)
+	assertKeysKept(t, span, attrs)
 }

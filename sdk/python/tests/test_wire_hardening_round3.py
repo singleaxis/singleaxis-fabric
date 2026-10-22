@@ -35,7 +35,7 @@ from fabric.wire._sender import Sender
 from fabric.wire._spool import Spool, marker_doc
 from fabric.wire._transport import WireTee
 
-from .test_wire_helpers import CAPTURE, OPENAI_CHAT, ChunkStream, chat_response
+from .test_wire_helpers import CAPTURE, OPENAI_CHAT, ChunkStream, chat_response, open_record
 from .test_wire_spool import SPOOL_MIN, FakeNode, install_node, model_client, records
 
 DESCRIPTOR = {
@@ -178,10 +178,12 @@ def test_flush_and_close_are_false_when_losses_and_markers_cannot_be_spooled(
     loss.record("disk-agent", allocator.epoch, "queue_full", 0)
     scope = RunScope("r-" + "1" * 32, "11111111-1111-4111-8111-111111111111", None)
     loss.heartbeat(allocator, kind="run_start", scope=scope)
-    assert not sender.flush(1.0)  # a loss stays in memory, a marker was dropped
-    assert loss.has_pending_losses() and sender.stats()["markers_dropped"] >= 1
+    assert not sender.flush(1.0)  # a loss and a marker stay in memory (and in the ledger)
+    assert loss.has_pending_losses() and sender.stats()["markers_held"] >= 1
+    assert sender.stats()["ledger_slots"] >= 1
     loss.final(allocator)
-    assert not sender.close(1.0)
+    closed = sender.close(1.0)
+    assert not closed
 
 
 def test_flush_is_false_after_an_exchange_was_lost_then_true_again(
@@ -190,16 +192,21 @@ def test_flush_is_false_after_an_exchange_was_lost_then_true_again(
     handle = install_node(node, tmp_path / "spool")
     sender = handle._tee.sender
     assert sender is not None
-    original = sender.spool.write
+    original, batch = sender.spool.write, sender.spool.write_batch
     sender.spool.write = _full_disk  # type: ignore[method-assign]
+    sender.spool.write_batch = lambda records, **_: [  # type: ignore[method-assign]
+        OSError(errno.ENOSPC, "no space left on device") for _ in records
+    ]
     with model_client() as client:  # the host is unaffected
         assert client.post(OPENAI_CHAT, json={"messages": []}).status_code == 200
     assert handle._tee.flush(5.0)
-    sender.spool.write = original  # type: ignore[method-assign]
+    assert handle.stats().disk_full_drops == 1  # a disk_full loss, not an internal error
+    sender.spool.write, sender.spool.write_batch = original, batch  # type: ignore[method-assign]
     assert not handle.flush(10.0)  # its loss is delivered, the exchange is not
     assert records(tmp_path / "spool") == [] and node.named("fabric.capture_loss")
     assert handle.flush(10.0)  # nothing failed since the previous flush
-    assert not handle.close(5.0)  # close answers for the whole lifetime
+    closed = handle.close(5.0)
+    assert not closed  # close answers for the whole lifetime
 
 
 def test_own_record_quarantined_makes_flush_false(tmp_path: Path) -> None:
@@ -285,7 +292,8 @@ def test_content_client_never_follows_a_redirect(status: int, location: str | No
     adapter = _Redirecting(status, location)
     client._session.mount("https://", adapter)
     client._session.mount("http://", adapter)
-    assert client.send(DESCRIPTOR, b"PROMPT") == "retry"  # never success, never resent
+    send_result = client.send(DESCRIPTOR, b"PROMPT")
+    assert send_result == "retry"  # never success, never resent
     assert [url for url, _ in adapter.seen] == ["https://fabric-node.example/v1/logs"]
 
 
@@ -371,14 +379,15 @@ def test_clear_run_id_never_leaves_the_process(
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", KEY.decode())  # install() reads it
     node.mode = "down"
     spool = tmp_path / "spool"
-    handle = install_node(node, spool)
+    handle = install_node(node, spool, id_key=None)  # the environment's key
     assert handle.config.id_key == KEY
     with wire.run(CLEAR), model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert handle._tee.flush(5.0)
     expected = run_pseudonym(CLEAR, KEY)
-    assert all(CLEAR.encode() not in path.read_bytes() for path in records(spool))
-    assert any(expected.encode() in path.read_bytes() for path in records(spool))
+    opened = [open_record(path) for path in records(spool)]  # 049 §7.8: sealed at rest
+    assert all(CLEAR.encode() not in data for data in opened)
+    assert any(expected.encode() in data for data in opened)
     node.mode = "ok"
     assert handle.flush(20.0)
     (span,) = node.named("fabric.model_call")

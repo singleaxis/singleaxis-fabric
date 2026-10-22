@@ -21,6 +21,7 @@ from fabric import (
     S3ContentStore,
 )
 from fabric.byte_evidence import BytePrivacyPolicy
+from fabric.redaction import RedactionService
 
 
 def _recorder(
@@ -144,7 +145,7 @@ def test_store_failure_never_claims_stored(tmp_path: Path, monkeypatch: pytest.M
 
 
 def test_derivative_reference_failure_leaves_no_pending_records(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, redaction: RedactionService
 ) -> None:
     review = LocalFilesystemContentStore(str(tmp_path / "review"), tenant_id="tenant-a")
     recorder, store = _recorder(
@@ -153,8 +154,7 @@ def test_derivative_reference_failure_leaves_no_pending_records(
         role_policies={
             "artifact.after": BytePrivacyPolicy(
                 mode="original_plus_masked",
-                transform=lambda _: b"safe",
-                transformation_id="redactor",
+                transformation_id="safe",
                 transformation_version="v1",
             )
         },
@@ -409,3 +409,80 @@ def test_s3_byte_store_uses_conditional_write_and_preserves_descriptor() -> None
     assert all(item["IfNoneMatch"] == "*" for item in fake.writes)
     assert all("tenant-a/evidence/" in item["Key"] for item in fake.writes)
     recorder.close()
+
+
+@pytest.mark.parametrize("mode", ["masked_only", "original_plus_masked"])
+def test_a_hung_role_policy_transform_never_stops_the_recorder_worker(
+    tmp_path: Path, mode: str, redaction: RedactionService
+) -> None:
+    """Sol P0-A follow-up / round 2 #2: a ``role_policies`` masking call to a redaction
+    service that never answers is abandoned at its timeout (the object, and a review
+    copy, withheld as ``protection_failed``); later captures are still processed, and
+    nothing raw is persisted."""
+    import time  # noqa: PLC0415
+
+    secret = b"canary-ssn-078-05-1120"
+    review = LocalFilesystemContentStore(str(tmp_path / "review"), tenant_id="tenant-a")
+    recorder, _ = _recorder(
+        tmp_path,
+        review_store=review,
+        role_policies={
+            "artifact.after": BytePrivacyPolicy(
+                mode=mode, transformation_id="hang", transformation_version="v1",
+            )
+        },
+        redaction=RedactionService(redaction.endpoint, timeout_s=0.05),
+    )  # fmt: skip
+    try:
+        started = time.monotonic()
+        ids = [
+            recorder.capture(secret, role="artifact.after", boundary="sandbox",
+                             source_id="sandbox-1", source_epoch=0,
+                             source_sequence=n)["object_id"]
+            for n in range(4)
+        ]  # fmt: skip
+        assert recorder.flush(10.0)  # the worker is not stuck behind the hung service
+        assert time.monotonic() - started < 4 * (0.05 + 0.5)
+        for object_id in ids:
+            settled = recorder.get(object_id)
+            assert settled is not None
+            assert (settled["status"], settled["status_reason"]) == (
+                "not_captured", "protection_failed")  # fmt: skip
+            assert "ref" not in settled and "source_sha256" not in settled
+        stats = recorder.redaction_stats()
+        assert (stats["redaction_timeouts"], stats["redaction_saturated"]) == (4, 0)
+        for path in tmp_path.rglob("*"):
+            if path.is_file():
+                assert secret not in path.read_bytes()
+    finally:
+        _close(recorder)
+
+
+def test_recorder_close_leaves_no_thread_or_connection(
+    tmp_path: Path, redaction: RedactionService
+) -> None:
+    """Sol P0-A round 2 #6, the review's reproduction: six masked recorders created,
+    captured through and closed. ``close`` stops the worker and closes the redaction
+    service connections; Fabric never starts a process or thread for customer code."""
+    import gc  # noqa: PLC0415
+
+    def fabric_threads() -> list[str]:
+        return [t.name for t in threading.enumerate() if t.name.startswith("fabric-")]
+
+    threads = fabric_threads()
+    for n in range(6):
+        review = LocalFilesystemContentStore(str(tmp_path / f"review-{n}"), tenant_id="tenant-a")
+        recorder, _ = _recorder(
+            tmp_path / str(n), review_store=review,
+            role_policies={"artifact.after": BytePrivacyPolicy(
+                mode="masked_only", transformation_id="masked", transformation_version="1",
+            )},
+        )  # fmt: skip
+        descriptor = _capture(recorder, b"secret")
+        assert recorder.flush(10.0)
+        assert recorder.get(descriptor["object_id"])["status"] == "redacted"  # type: ignore[index]
+        closed = recorder.close()
+        assert closed
+        del recorder
+    gc.collect()
+    assert fabric_threads() == threads

@@ -8,14 +8,15 @@ OTLP spans   (4317/4318) -> Fabric Node -> default-deny allowlist -> durable que
 wire content (4319)      -> Fabric Node -> fabriccontent (digest, tenant) -> durable queue -> content store
 ```
 
-It contains only two services:
+It contains two services (`make up-s3-eval` adds a local S3-compatible
+store and its one-shot setup job):
 
 - `fabric-node`: the current Collector-based recorder implementation;
 - `test-sink`: a controlled OTLP/HTTP destination that stores requests on a
   durable Docker volume and returns success only after fsync.
 
-There are no guardrails, prompt-time PII sidecars, judges, red-team runners,
-management services, or observability UI.
+It contains nothing but the recorder: no evaluation, management services or
+observability UI.
 
 ## LLM wire capture content (spec 048)
 
@@ -36,8 +37,8 @@ routes content into a telemetry pipeline or to the OTLP destination.
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
 
 The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
-production overlay is telemetry only and starts unchanged with an existing
-`.env` (no `FABRIC_TENANT_ID`, no port 4319).
+production overlay is telemetry only (no port 4319). It still needs
+`FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID` for the source binding.
 
 `make up-s3-eval` starts an S3-compatible evaluation store (SeaweedFS,
 Apache-2.0, pinned by digest; an SSE-S3 key from `FABRIC_S3_EVAL_SSE_KEK`;
@@ -103,6 +104,7 @@ Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
 
 - `GET http://localhost:8080/health`
 - `GET http://localhost:8080/count`
+- `GET http://localhost:8080/contains` (a telemetry-search oracle; loopback only)
 
 Run the restart/outage qualification:
 
@@ -143,14 +145,19 @@ cp .env.example .env && chmod 0600 .env
 #   FABRIC_EXPORT_ENDPOINT    = https://<your-otlp-backend>
 #   FABRIC_EXPORT_AUTH_HEADER = "Bearer <egress credential>"
 #   FABRIC_INGRESS_TOKEN_FILE = ./secrets/ingress.token
+#   FABRIC_TENANT_ID          = <tenant id your agents send>
+#   FABRIC_SOURCE_ID          = <the agents' source id as it travels: s-<32 hex>>
 # Optional content path (spec 048):
 #   FABRIC_CONTENT_BACKEND    = s3 (or file with FABRIC_CONTENT_REQUIRE_SSE=false)
-#   FABRIC_TENANT_ID          = <tenant id your agents send>
+#   FABRIC_CONTENT_KEY_FILE   = ./secrets/content.key
 printf %s "$(openssl rand -hex 32)" > secrets/ingress.token
 sudo chown "$(id -u)":65532 secrets/ingress.token && chmod 0440 secrets/ingress.token
+# With the content path:
+openssl rand -base64 32 > secrets/content.key
+sudo chown "$(id -u)":65532 secrets/content.key && chmod 0440 secrets/content.key
 make preflight-prod # validates env, secrets, TLS posture, tooling before deploy
 make up-prod        # docker compose -f docker-compose.yml -f docker-compose.production.yml [content overlays] up -d --wait
-make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 authenticated spans (queue metrics warn-only)
+make verify-prod    # proves health, 401 unauthenticated (spans, and content when enabled), 200 for a span under the bound FABRIC_TENANT_ID/FABRIC_SOURCE_ID, 400 for another source (queue metrics warn-only)
 make logs-prod
 ```
 
@@ -183,6 +190,39 @@ content path, set `FABRIC_TENANT_ID` in `.env` to the tenant id your agents
 send (required; the content exporter writes no other tenant, and the shipped
 configs allow exactly one: run one Node per tenant).
 
+**Production profile (spec 049 P0-A).** The production configuration is a
+production-profile Node. Every agent batch is bound to one tenant and one
+source, `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID`, and the ingress token is
+that source's single credential. `fabricguard` refuses a span batch that
+names another tenant or source with `INVALID_ARGUMENT` and stamps
+`fabric.source.authenticated=true` on every span it admits.
+`fabriccontent` drops a content record of another tenant or source and writes
+`source_authenticated: true` into every descriptor it stores.
+
+`FABRIC_SOURCE_ID` is the source id as the agents send it. Under their
+default pseudonymous labels that is `s-` plus the first 32 hex of
+HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, agent `FABRIC_SOURCE_ID`), the `s-`
+value on their capture spans. A span that names no source, such as an
+application span exported to the same ingress, is dropped on its own; the
+capture records next to it are admitted. **Limit:** a production Node binds
+exactly one agent source, so agents with different `FABRIC_SOURCE_ID`
+values need one Node each.
+
+With the content path, the persistent content queue and the file store are
+sealed with the Node key `FABRIC_CONTENT_KEY_FILE`: 32 bytes or their
+base64, mounted as a Compose secret, AES-256-GCM. S3 keeps its server-side
+encryption.
+
+The Compose stack refuses to start without these settings, and preflight
+and `fabric-gate` fail on them too. **Upgrading a Node configured before
+P0-A therefore stops at preflight until they are set; the agents are never
+affected.**
+
+Agents in node mode now need a capture policy (`FABRIC_CAPTURE_POLICY`) and
+`FABRIC_WIRE_ID_KEY` to record content (spec 049 §7.3, superseding spec 048
+§1). Without them they record metadata only and report why on every exchange
+span.
+
 **Content store.** The production content path is S3 with server-side
 encryption: set `FABRIC_CONTENT_BACKEND=s3`, `FABRIC_CONTENT_S3_BUCKET`,
 `FABRIC_CONTENT_S3_REGION` and optionally `FABRIC_CONTENT_S3_PREFIX`,
@@ -204,8 +244,8 @@ no user info, query or fragment (the value is never printed).
 `make verify-prod` checks that unauthenticated content is rejected, not that
 an authenticated upload reaches the store; after each deployment change run
 the content canary in
-[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md#5-verify-a-run). See
-[`docs/wire-capture-deployment.md`](../../docs/wire-capture-deployment.md)
+[`docs/operations/README.md`](../../docs/operations/README.md#verify-a-deployment). See
+[`docs/deployment.md`](../../docs/deployment.md#minimal-iam-s3)
 for the minimal Node-writer and reader IAM.
 
 > **Token file format matters.** Write one token with `printf %s` and no
@@ -266,7 +306,7 @@ verified release identity. Static Compose checks are not Docker execution.
   export. `fabric-gate` refuses an OTLP/HTTP exporter without it. Configure
   the destination's final `https://` URL; a redirecting URL stalls delivery
   (watch `otelcol_exporter_send_failed_*`). See
-  [wire-capture-deployment.md §2](../../docs/wire-capture-deployment.md).
+  [privacy and security](../../docs/privacy-and-security.md#delivery-and-the-node).
 - The collector runs as nonroot with a read-only root filesystem, all
   capabilities dropped, and `no-new-privileges`.
 - This deployment configures a durable queue and retry to a client-selected

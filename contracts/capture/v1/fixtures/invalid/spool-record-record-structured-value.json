@@ -1,0 +1,37 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "record",
+  "source": {
+    "source_id": "wire-3f9a1c2b7d4e5f60",
+    "source_epoch": 1791331200000000000
+  },
+  "order": 8,
+  "written_at_unix_nano": 1791331202053001000,
+  "span": {
+    "name": "fabric.decision",
+    "kind": "internal",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "b7ad6b7169203331",
+    "parent_span_id": "a3ce929d0e0e4736",
+    "trace_flags": 1,
+    "start_time_unix_nano": 1791331202050000000,
+    "end_time_unix_nano": 1791331202052000000,
+    "status": "unset",
+    "attributes": {
+      "fabric.capture.input": "records",
+      "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+      "fabric.source.epoch": 1791331200000000000,
+      "fabric.source.sequence": 2,
+      "fabric.event_id": "0c9d8e7f-6a5b-4c3d-8e2f-1a0b9c8d7e6f",
+      "fabric.attempt.uid": "f1e2d3c4-b5a6-4978-8a9b-0c1d2e3f4a5b",
+      "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+      "fabric.step.kind": "tool_call",
+      "fabric.actor.type": "agent",
+      "fabric.tool.name": "search_flights",
+      "fabric.tool.arguments": {
+        "q": "Jane Doe"
+      }
+    }
+  }
+}

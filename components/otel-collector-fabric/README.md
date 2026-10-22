@@ -1,14 +1,20 @@
 # Fabric Node Collector distribution
 
-This OpenTelemetry Collector Builder distribution is the recorder-v1 runtime:
+This OpenTelemetry Collector Builder distribution (`otelcol-fabric`, v0.8) is the Fabric Node:
 
 ```text
 CAPTURE -> PROTECT -> DELIVER
 ```
 
-It accepts OTLP, removes unapproved content with an exact metadata allowlist,
-buffers protected telemetry, and exports to any customer-selected OTLP/HTTP
-destination. SingleAxis Platform is optional.
+It accepts OTLP telemetry and wire-capture content from agents, removes
+unapproved telemetry fields with an exact metadata allowlist, binds every
+batch to one authenticated source in the production profile, buffers both in
+persistent queues, and delivers telemetry to a customer-selected OTLP/HTTP
+destination and content to a customer-owned directory or S3 bucket. No
+SingleAxis service is required. Operator documentation:
+[deployment](../../docs/deployment.md),
+[privacy and security](../../docs/privacy-and-security.md),
+[operations](../../docs/operations/README.md).
 
 ## Included components
 
@@ -21,8 +27,14 @@ destination. SingleAxis Platform is optional.
   name its tenant; use one Node per tenant otherwise), and writes body then
   descriptor to a directory or an S3(-compatible) bucket (`sse: AES256` or
   `aws:kms` required) with the SDK store layout
-  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`). It
-  never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
+  (`<prefix><tenant>/evidence/<id>` and `.../evidence/meta/<id>.json`; the
+  directory backend shards both under two hash-prefix levels,
+  `<tenant>/evidence/<h[0:2]>/<h[2:4]>/<id>` and
+  `<tenant>/evidence/meta/<h[0:2]>/<h[2:4]>/<id>.json` with `h` the hex
+  SHA-256 of the id, while refs keep the flat key; objects an earlier
+  version wrote flat are still read and still count for replay/conflict.
+  Each exchange adds files, so alert on the content filesystem's inode
+  use, not only its bytes). It never overwrites (S3 `If-None-Match: *`; on disk an fsync'd temp file is
   hard-linked into place, or renamed with an atomic no-replace rename —
   `renameat2(RENAME_NOREPLACE)` on Linux — where the filesystem has no hard
   links; a filesystem offering neither fails the write retryably, never a
@@ -55,12 +67,15 @@ destination. SingleAxis Platform is optional.
   `extensions` and in `service.extensions`). The `fabriccontent` S3 client
   never follows a redirect either;
 - health-check and persistent file-storage extensions;
+- `fabricenvelope` — a storage extension that wraps `file_storage` and seals
+  every persisted queue value with AES-256-GCM under a Node-side key (see
+  the P0-A section);
 - the bearer-token auth extension is compiled in for non-Kubernetes
   deployments that terminate token-authenticated OTLP ingress without a
   proxy; the compose production overlay wires this extension.
 
-The recorder binary does not include policy, Presidio, prompt guard, sampling,
-judge, red-team, or management components. Historical implementations remain in git and are not compiled into this image.
+The binary contains only the components above; release tests check the
+build manifest so nothing else is compiled in. Historical implementations remain in git and are not compiled into this image.
 
 Recorder configurations MUST NOT define `metrics` or `profiles` service
 pipelines: `fabricguard` only protects logs and traces, so any telemetry on
@@ -102,6 +117,25 @@ exported unchanged (checked by pattern), and you guarantee they contain no
 personal data. In global-tracer mode the capture spans share the host's
 resource, whose clear `service.name` is dropped by default.
 
+Spec 049 (four-layer capture contract, rev 6.3) admits every one of its
+telemetry keys in P0 with the closed check declared in
+`contracts/coverage/v1/registry/telemetry-keys-v1.json`; the validator table in
+`coverage_keys.go` is generated from that file and a Go test verifies it key
+by key; free text never passes. The tightened validators of existing keys
+(`fabric.session_id`, `fabric.delegation.to_agent`) are in force (see
+the P0-A section). A key is
+admitted on capture spans only on the record classes and heartbeat kinds the
+spec places it on: `segment_seal` is a heartbeat kind, and the segment,
+predecessor, termination and branch keys stay on their marker kinds. Under
+`capture_labels: pseudonymous` a predecessor entry must name its source in
+`s-<32 hex>` form and an operator label (`fabric.control.policy_id`,
+`fabric.run.agent_policy_id`, `fabric.workflow.node`) must be `lbl-<32 hex>`.
+The `fabric.capture_manifest` span is closed to the manifest keys, with
+`fabric.schema_version` only as `fabric.capture-manifest/v1`.
+`fabric.source.authenticated` is receiver-owned: it is stripped from every
+agent-supplied record and cannot be added through `extra_allowed_*`; a
+bound ingress stamps it on admitted spans (P0-A section).
+
 Content (spec 048) has its own path: an `otlp/content*` receiver (OTLP/HTTP
 only, port 4319) feeds a `logs/content*` pipeline that runs only
 `memory_limiter` and exports only to `fabriccontent`. `fabricguard` is not on
@@ -121,7 +155,8 @@ message. Every OTLP/HTTP exporter must list the `noredirect` middleware.
 Gate diagnostics name config sources by position (`--config #2`) and never
 echo source text, paths, URLs or underlying error text. The gate also refuses an OTLP exporter
 endpoint (`endpoint`, `traces_endpoint`, `logs_endpoint`, ...) or a
-`fabriccontent` `s3.endpoint` with user info, a query or a fragment; put
+`fabriccontent` `s3.endpoint` with user info, a query or a fragment (and an
+`s3.endpoint` with a path); put
 destination credentials in Secret-backed headers.
 Give `fabriccontent` its own `file_storage` queue (`block_on_overflow: true`)
 and `retry_on_failure.max_elapsed_time: 0`; S3 credentials come from the AWS
@@ -138,6 +173,48 @@ the queue drain) if a rotation reintroduces an unsafe file. Operators who
 override the container entrypoint or launch `otelcol-fabric` directly leave
 the enforced path; `verify-prod.sh` surfaces a container-level entrypoint
 override at verification time.
+
+## Spec 049 P0-A: production profile
+
+- `fabricguard` `profile: production` requires `evidence_source_binding`
+  (`tenant_id`, `source_id` as the records carry them). On a bound ingress
+  a span, resource or scope naming another `fabric.source_id` or
+  `fabric.tenant_id` refuses the whole batch with `INVALID_ARGUMENT` before
+  any mutation. A span naming no source is dropped on its own (an internal
+  count and a debug log line `unbound_span`; no exported metric); the rest
+  of the batch is admitted, and admitted spans get
+  `fabric.source.authenticated=true`. On a bound logs pipeline every log
+  record must be `event_class=evidence` with matching `tenant_id` and
+  `source_id`; any other record (for example host-sensor `audit` records)
+  refuses the whole batch. One production Node binds exactly one agent
+  source. `identity_mode: pseudonymous` (the
+  default) admits `fabric.session_id` only as `sess-<32 hex>`; `clear`
+  keeps its earlier admission. `fabric.delegation.to_agent` is admitted
+  only as `agt-<32 hex>`.
+- `fabriccontent` follows the role table
+  `contracts/coverage/v1/registry/content-roles-v1.json`
+  (`roles_generated.go`, rendered by
+  `scripts/contracts/generate_p0_contracts.py`), up to `max_body_bytes`
+  (default 32 MiB, at most 63 MiB). With `source_binding` it drops other
+  tenants or sources (`source_unbound`) and writes `source_authenticated:
+  true` into the persisted descriptor. With `file.encryption_key_file`
+  every object and descriptor is stored in the AES-256-GCM envelope
+  (`contracts/content/v2/fixtures/node-envelope-v1.json`). Its
+  `profile: production` requires the binding, a persistent queue on a
+  `fabricenvelope` storage extension and, for the file backend, the key.
+- `fabricenvelope` (extension) wraps a `file_storage` extension. It seals
+  every value the persistent queue persists with the key in `key_file`
+  (32 raw bytes or their base64). A value that fails authentication is an
+  error and is never read as plaintext.
+- `fabric-gate` treats a configuration whose `fabricguard`/`fabriccontent`
+  declare `profile: production` as a production Node. It enforces the
+  binding; one single-token bearer authenticator (`require_single_token`,
+  token from a file) shared by the receivers; no receiver other than `otlp`
+  and `otlp/content` (so no `audit` receiver); pipelines named `traces`,
+  `logs` and `logs/content*` with fixed processors; exactly one telemetry
+  exporter, `otlp_http/fabric`, over `https://` and no debug exporter; the
+  same binding on every content exporter; the sealed queue and the
+  directory key.
 
 ## Build and qualify
 
@@ -178,7 +255,7 @@ export FABRIC_EXPORT_AUTH='Bearer <token>'
 
 Mount the file-storage directory on encrypted persistent storage. Production
 deployments should use the Helm `shadow-production` profile, which validates
-mTLS, authentication, persistence, retry, overflow, sampling, debug, and
+mTLS, authentication, persistence, retry, overflow, debug, and
 network-policy invariants. That profile disables batching before the persistent
 exporter queue so acknowledged telemetry does not wait in volatile memory.
 

@@ -212,7 +212,7 @@ the verdict is `unverified`, never `complete_for_declared_scope`.
 | Bounded queue, retries, loss records, heartbeats | DELIVER / Verify | Bounded handoff with explicit, sequenced loss. |
 | `python -m fabric.reconstruct` | Verify | Local offline verification. The verdict says whether the *record* has gaps. It never judges the agent's quality, correctness or policy compliance. |
 
-Spec [041](041-follow-on-evidence-adapter-scopes.md) says no adapter may
+Spec [041](archive/041-follow-on-evidence-adapter-scopes.md) says no adapter may
 install a global interceptor *by default*; the tee patches httpx/httpx2 only
 after explicit opt-in. This spec makes no coverage claim: a verdict covers
 only model calls made through httpx or httpx2 in an instrumented process.
@@ -486,7 +486,10 @@ protection fails **closed**: the Node drops unknown keys and invalid values.
    is already too large; such a side has a digest but no ref, §5).
 5. *(→ 048 §2 for delivery: in spool mode exports run on the sender
    thread from fsync'd records; undelivered records survive exit.)*
-   **Never blocks.** `queue_max_items` (default 256, cap 65,536). A full
+   **Never blocks.** The queue is bounded by bytes: queued exchanges keep
+   their bodies charged to `max_inflight_bytes`; `queue_max_items` (default
+   16,384, cap 65,536; was 256, which an asyncio fan-out overflowed) only
+   caps per-entry overhead. A full
    queue drops the exchange with a `queue_full` loss. Store retries (3
    attempts, backoff 0.1/0.4/1.6 s) run on the worker. `flush()`/`close()`
    block only when called, each for at most its timeout; exchanges still in
@@ -605,7 +608,10 @@ ref and `truncated` is true.
   **Loss records** (`fabric.capture_loss`): `{reason, count,
   first_sequence, last_sequence}` per `(source, epoch)`. Reasons:
   `queue_full`, `internal_error`, `shutdown`, `span_dropped` (sampled out,
-  or the private exporter reported failure). `record()` is O(1) and never
+  or the private exporter reported failure), `uninstrumented_client` (a
+  model call sent through a client wire capture does not tee, `requests` or
+  `urllib3`, seen by a zero-content detector: it takes a sequence and is
+  recorded lost, so the run is never complete; agent matrix D4). `record()` is O(1) and never
   raises; a 1 s emitter thread coalesces pending losses per
   `(source, epoch, reason)` into one range (min, max, count) and emits it.
   Loss and heartbeat records are exported through an always-on private
@@ -698,7 +704,7 @@ or body lengths are emitted.
 
 | Key | Value | On |
 |---|---|---|
-| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped` | loss |
+| `fabric.loss.reason` | `queue_full`\|`internal_error`\|`shutdown`\|`span_dropped`\|`uninstrumented_client` | loss |
 | `fabric.loss.count` | int ≥ 1 | loss |
 | `fabric.loss.first_sequence`, `fabric.loss.last_sequence` | int ≥ 0 | loss |
 | `fabric.heartbeat.last_sequence` | int ≥ -1 | heartbeat |
@@ -866,6 +872,24 @@ own function. The report is still customer data.
    `fabric.wire.run()` blocks with the same run id on one source whose
    markers carry the same `last_sequence` merge; give concurrent blocks
    distinct run ids.
+
+   *Gap listing (D6).* Missing ranges and their loss/unexplained parts
+   (*segments*) are computed once per `(source, epoch)` and reported once,
+   in `sources[].missing_sequences` and `loss_ranges`. A run lists each
+   segment of one stretch as its own gap (one stretch: the segments inside a
+   scope window, those after an open scope's last call, those intersecting
+   `[lo − 1, hi + 1]`, or those after it) while the stretch holds at most 16;
+   a longer stretch is one gap per reason (`loss` per loss reason,
+   `sequence_gap` for the unexplained parts) with `first_sequence` the first
+   and `last_sequence` the last missing sequence of that reason in the
+   stretch. Such a summary range can span recorded sequences and other
+   reasons; the source's ranges say which sequences are missing. More than
+   16 conflicted sequences in one window are likewise one
+   `conflicting_claim` gap from the first to the last. Gap types, effects
+   and reasons, hence every check and verdict, are the same as if each
+   segment were listed; only the entry count (`counts.gaps_by_type`)
+   differs, and the report grows with runs plus distinct ranges, never with
+   runs × ranges.
 4. *Tail.* `declared_scope.windows` records `lo`, `hi` and `H`, and
    `closed_by` (`run_markers` or `final_heartbeat`) when the window's end
    is proven; a window without `closed_by` is never part of a complete run.

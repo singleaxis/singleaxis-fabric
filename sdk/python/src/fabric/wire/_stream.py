@@ -17,7 +17,7 @@ import uuid
 import weakref
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from types import MemberDescriptorType, ModuleType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from opentelemetry import context as otel_context
 from opentelemetry import trace
@@ -29,7 +29,8 @@ from ._pipeline import capture_parent
 
 if TYPE_CHECKING:
     from .._capture_scope import ExplicitScope
-    from ._transport import WireTee
+    from .._loss import LossReason
+    from .._sequence import SourceAllocator
 
 _FINISH_LOCK = threading.Lock()
 # GC may finalize a stream on any thread, even one holding a capture lock: those paths
@@ -98,13 +99,37 @@ class Budget:
             self.used = max(0, self.used - size)
 
 
+class ExchangeOwner(Protocol):
+    """What an :class:`Exchange` needs from the tee that started it (``WireTee`` in
+    ``_transport.py``, which imports this module). Declared here as a structural type so
+    this module never imports ``_transport``: the dependency runs one way only."""
+
+    allocator: SourceAllocator
+    max_body_bytes: int
+    max_retain_bytes: int
+    budget: Budget
+    internal_errors: int
+
+    def adopt(self, exchange: Exchange) -> bool: ...
+    def forget(self, exchange: Exchange) -> None: ...
+    def submit(self, job: CaptureJob) -> None: ...
+    def lose(self, epoch: int, sequence: int, reason: LossReason) -> None: ...
+    def shut(self, exchange: Exchange) -> None: ...
+
+
 class _Side:
-    __slots__ = ("chunks", "encoding", "media_type", "observed", "retained", "truncated")
+    __slots__ = (
+        "chunks", "cut", "encoding", "media_type", "observed", "prefix", "retained", "truncated",
+    )  # fmt: skip
 
     def __init__(self, headers: Mapping[str, str]) -> None:
         self.chunks: list[bytes | bytearray] = []
         self.observed = self.retained = 0
         self.truncated = False
+        self.cut: str | None = None  # why retention stopped early (a store_reason)
+        # Bytes in the whole chunks that fit max_body_bytes, once a chunk crossed it: the
+        # stored prefix when the worker cannot keep the side whole (047, 049 §7.4).
+        self.prefix: int | None = None
         self.media_type = headers.get("content-type", "application/octet-stream")
         self.encoding = headers.get("content-encoding", "identity")
 
@@ -122,7 +147,12 @@ class _Side:
         """The retained chunks; ownership of the list (coalescing buffers included) moves to
         the job. No copy here: the capture worker joins them off the host's thread."""
         chunks, self.chunks = self.chunks, []
-        return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding)
+        return CapturedBody(chunks, self.observed, self.truncated, self.media_type, self.encoding,
+                            self.cut if self.truncated else None, self.prefix)  # fmt: skip
+
+    def stop(self, reason: str) -> None:
+        """End retention (the first reason is kept)."""
+        self.truncated, self.cut = True, self.cut or reason
 
 
 def _tee_types(response: Any) -> tuple[type[Any], type[Any], type[Any]]:
@@ -178,7 +208,7 @@ class Exchange:
     (``fabric._capture_scope``): it has no sequence yet. When it finishes, the explicit
     record owns it if that call is still live (the call consumed the response); otherwise
     the response outlived the call (e.g. a lazy stream the call returned) and the tee
-    allocates its sequence then (:meth:`WireTee.adopt`)."""
+    allocates its sequence then (:meth:`ExchangeOwner.adopt`)."""
 
     __slots__ = (
         "__weakref__", "api", "deferral", "done", "epoch", "exchange_id", "finalizer", "handoff",
@@ -187,7 +217,7 @@ class Exchange:
     )  # fmt: skip
 
     def __init__(
-        self, tee: WireTee, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
+        self, tee: ExchangeOwner, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
         scope: RunScope | None = None, *, deferral: ExplicitScope | None = None,
     ) -> None:  # fmt: skip
         self.tee, self.matcher, self.api, self.scope = tee, matcher, api, scope
@@ -235,7 +265,7 @@ class Exchange:
             self.request_tee, self.request_sent = kind(request.stream, self), False
             private.stream = self.request_tee  # yields the same chunks, on the copy only
         else:  # not an httpx byte stream: sent as is, unretained
-            side.truncated = True
+            side.stop("transport_incomplete")
         self.handoff = (request, private, _instance_state(private))
         self.outgoing = private
 
@@ -247,7 +277,7 @@ class Exchange:
         handoff, self.handoff, self.outgoing = self.handoff, None, None
         try:
             if self.request_tee is not None and not self.request_sent:
-                self.request.truncated = True
+                self.request.stop("transport_incomplete")
             self.request_tee = None
             if handoff is not None:
                 _carry_back(*handoff)
@@ -261,14 +291,18 @@ class Exchange:
         side.observed += size
         if side.truncated or self.done:
             return
-        # Whole chunks only: a chunk that does not fit ends retention without slicing it,
-        # so the host's thread never copies a large prefix (the stored prefix = the whole
-        # chunks retained before it).
-        if size <= self.tee.max_body_bytes - side.retained and self.tee.budget.try_reserve(size):
+        # Whole chunks only, by reference (049 §7.4): a chunk that does not fit ends
+        # retention without slicing it, so the host's thread never copies a large prefix.
+        # The worker stores, splits or cuts what was retained (up to max_retain_bytes).
+        if side.prefix is None and size > self.tee.max_body_bytes - side.retained:
+            side.prefix = side.retained
+        if size > self.tee.max_retain_bytes - side.retained:
+            side.stop("body_cap")
+        elif self.tee.budget.try_reserve(size):
             side.retained += size  # counted first: detach() releases what was reserved
             side.keep(chunk)
         else:
-            side.truncated = True
+            side.stop("inflight_budget")
 
     def add(self, chunk: bytes) -> None:
         try:

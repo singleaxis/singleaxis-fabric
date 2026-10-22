@@ -2,10 +2,14 @@
 {{- include "otel-collector.validateExporter" . -}}
 {{- include "otel-collector.validateDelivery" . -}}
 {{- include "otel-collector.validateContent" . -}}
+{{- include "otel-collector.validateProfile" . -}}
 {{- include "otel-collector.validateNetworkPolicy" . -}}
 {{- $content := .Values.content -}}
 {{- $persist := .Values.exporter.sendingQueue.persistence -}}
 {{- $exporters := include "otel-collector.exporterNames" . -}}
+{{- $production := eq .Values.fabric.profile "production" -}}
+{{- $workload := .Values.receiver.workloadAuthentication -}}
+{{- $sealed := and $content.enabled $persist.enabled $content.encryption.keySecret.name -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -123,6 +127,14 @@ data:
         create_directory: true
         fsync: {{ .Values.exporter.sendingQueue.persistence.fsync }}
       {{- if $content.enabled }}
+      {{- if $sealed }}
+      # Spec 049 §7.8: everything the content queue persists is sealed with
+      # the Node-side customer key (content.encryption.keySecret, mounted as a
+      # file); delivery semantics are unchanged.
+      fabricenvelope/fabric_content:
+        storage: file_storage/fabric_content
+        key_file: /etc/fabric/content-key/key
+      {{- end }}
       file_storage/fabric_content:
         directory: {{ printf "%s/content-queue" $persist.directory | quote }}
         timeout: 1s
@@ -143,12 +155,21 @@ data:
         event_class_attribute: {{ .Values.fabric.guard.eventClassAttribute | quote }}
         drop_unknown_classes: {{ .Values.fabric.guard.dropUnknownClasses }}
         max_field_bytes: {{ .Values.fabric.guard.maxFieldBytes }}
+        profile: {{ .Values.fabric.profile | quote }}
         {{- if .Values.receiver.evidenceSourceBinding.enabled }}
         evidence_source_binding:
           tenant_id: {{ .Values.receiver.evidenceSourceBinding.tenantId | quote }}
           source_id: {{ .Values.receiver.evidenceSourceBinding.sourceId | quote }}
+        {{- else if and $production $workload.enabled }}
+        # Spec 049 §7.9: every batch on the workload ingress is bound to its
+        # tenant and source; spans admitted here are stamped
+        # fabric.source.authenticated=true.
+        evidence_source_binding:
+          tenant_id: {{ $workload.tenantId | quote }}
+          source_id: {{ $workload.sourceId | quote }}
         {{- end }}
         capture_labels: {{ .Values.fabric.guard.captureLabels | default "pseudonymous" | quote }}
+        identity_mode: {{ .Values.fabric.guard.identityMode | default "pseudonymous" | quote }}
         {{- with .Values.fabric.guard.extraAllowedFields }}
         extra_allowed_fields:
           {{- toYaml . | nindent 10 }}
@@ -208,6 +229,12 @@ data:
       {{- end }}
       {{- if $content.enabled }}
       fabriccontent:
+        profile: {{ .Values.fabric.profile | quote }}
+        {{- if and $production $workload.enabled }}
+        source_binding:
+          tenant_id: {{ $workload.tenantId | quote }}
+          source_id: {{ $workload.sourceId | quote }}
+        {{- end }}
         allowed_tenants:
           {{- range $content.allowedTenants }}
           - {{ . | quote }}
@@ -219,6 +246,10 @@ data:
         {{- if eq $content.backend "file" }}
         file:
           directory: {{ include "otel-collector.contentFileDirectory" . | quote }}
+          {{- if $content.encryption.keySecret.name }}
+          # Spec 049 §7.8: objects and descriptors in the customer-key envelope.
+          encryption_key_file: /etc/fabric/content-key/key
+          {{- end }}
         {{- else }}
         s3:
           bucket: {{ $content.s3.bucket | quote }}
@@ -244,7 +275,9 @@ data:
           num_consumers: {{ $content.queue.numConsumers }}
           queue_size: {{ $content.queue.queueSize }}
           block_on_overflow: true
-          {{- if $persist.enabled }}
+          {{- if $sealed }}
+          storage: fabricenvelope/fabric_content
+          {{- else if $persist.enabled }}
           storage: file_storage/fabric_content
           {{- end }}
         retry_on_failure:
@@ -275,6 +308,9 @@ data:
         - file_storage/fabric
         {{- if $content.enabled }}
         - file_storage/fabric_content
+        {{- if $sealed }}
+        - fabricenvelope/fabric_content
+        {{- end }}
         {{- end }}
         {{- end }}
       telemetry:

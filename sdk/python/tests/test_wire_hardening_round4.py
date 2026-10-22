@@ -145,7 +145,8 @@ def test_a_record_quarantined_by_another_drainer_fails_its_writers_flush_and_clo
     _drain_elsewhere(root)  # a forked drainer quarantines the writer's record
     assert not (root / name).exists() and (root / (name + ".corrupt")).exists()
     assert not sender.flush(2.0)  # sol2 #3 probe: was True
-    assert not sender.close(2.0)
+    closed = sender.close(2.0)
+    assert not closed
 
 
 def test_a_record_delivered_by_another_drainer_is_acknowledged(tmp_path: Path) -> None:
@@ -157,7 +158,8 @@ def test_a_record_delivered_by_another_drainer_is_acknowledged(tmp_path: Path) -
     assert not (root / name).exists() and (root / (name + ".ack")).exists()
     assert sender.flush(2.0)
     assert not (root / (name + ".ack")).exists()  # the receipt was consumed
-    assert sender.close(2.0)
+    closed = sender.close(2.0)
+    assert closed
 
 
 def test_a_record_that_disappears_without_a_receipt_is_not_a_delivery(tmp_path: Path) -> None:
@@ -168,7 +170,8 @@ def test_a_record_that_disappears_without_a_receipt_is_not_a_delivery(tmp_path: 
     (root / name).unlink()  # removed by an operator or a drainer that left no receipt
     assert not sender.flush(2.0)
     assert sender.flush(2.0)  # nothing failed since
-    assert not sender.close(2.0)  # close answers for the whole lifetime
+    closed = sender.close(2.0)
+    assert not closed  # close answers for the whole lifetime
 
 
 # ------------------------------------- sol2 new: the deadline holds while a pump stalls on disk
@@ -231,7 +234,8 @@ def _real_capture_rows(tmp_path: Path, state: str) -> tuple[list[dict[str, Any]]
                 list(response.iter_raw())
         del response
         gc.collect()
-    assert rig.handle.close(5)
+    closed = rig.handle.close(5)
+    assert closed
     rows = []
     for span in rig.exporter.get_finished_spans():
         context = span.context
@@ -434,7 +438,8 @@ def _capture_with_labels(
     transport = wire.WireTransport(httpx.MockTransport(lambda r: httpx.Response(200, json=reply)))
     with wire.run("private-run-Jane-Doe"), httpx.Client(transport=transport) as client:
         client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": []})
-    assert handle.close(5.0)
+    closed = handle.close(5.0)
+    assert closed
     return _sink_rows(sink.spans), store
 
 
@@ -487,21 +492,21 @@ def test_spool_records_and_content_records_carry_the_pseudonyms(
     monkeypatch.setenv("OTEL_SERVICE_NAME", LABEL)
     node.mode = "down"
     spool = tmp_path / "spool"
-    handle = install_node(node, spool, source_id=LABEL)
+    handle = install_node(node, spool, source_id=LABEL)  # node mode: keyed (049 §7.3)
     with wire.run("run-h"), model_client() as client:
         client.post(OPENAI_CHAT, json={"messages": []})
     assert not handle.flush(0.5)  # the Node is down: everything stays spooled
     headers = headers_of(spool)
     assert headers and LABEL not in json.dumps(headers)
-    assert {h["source"]["source_id"] for h in headers} == {"s-" + hex32(LABEL)}
+    assert {h["source"]["source_id"] for h in headers} == {"s-" + hex32(LABEL, KEY)}
     exchange = next(h for h in headers if h["record_kind"] == "exchange")
-    assert exchange["service_name"] == "svc-" + hex32(LABEL)
-    assert {b["descriptor"]["source_id"] for b in exchange["bodies"]} == {"s-" + hex32(LABEL)}
+    assert exchange["service_name"] == "svc-" + hex32(LABEL, KEY)
+    assert {b["descriptor"]["source_id"] for b in exchange["bodies"]} == {"s-" + hex32(LABEL, KEY)}
     node.mode = "ok"
     assert handle.flush(10.0)
-    assert node.content and all(a["source_id"] == "s-" + hex32(LABEL) for a, _ in node.content)
+    assert node.content and all(a["source_id"] == "s-" + hex32(LABEL, KEY) for a, _ in node.content)
     spans = node.spans
-    assert spans and all(resource == {"service.name": "svc-" + hex32(LABEL)}
+    assert spans and all(resource == {"service.name": "svc-" + hex32(LABEL, KEY)}
                          for _, _, resource in spans)  # fmt: skip
 
 

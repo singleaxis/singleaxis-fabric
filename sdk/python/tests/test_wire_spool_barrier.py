@@ -107,7 +107,8 @@ def test_a_new_spool_fsyncs_every_created_ancestor_before_flush_succeeds(
     base = tmp_path.resolve()
     root = base / "a" / "b" / "spool"
     senders.append(sender := _sender(root))
-    assert sender.spool.write(_final(0), reserve=True)
+    written = sender.spool.write(_final(0), reserve=True)
+    assert written
     assert sender.flush(10.0)
     chain = [str(base), str(base / "a"), str(base / "a" / "b")]
     ordered = [path for path in fsyncs.synced if path in chain]
@@ -127,7 +128,8 @@ def test_writes_never_walk_the_barrier(tmp_path: Path, fsyncs: _Fsyncs) -> None:
     spool = Spool(str(base / "a" / "spool"), LIMIT)
     try:
         fsyncs.synced.clear()
-        assert spool.write(_final(0), reserve=True)
+        written = spool.write(_final(0), reserve=True)
+        assert written
         assert str(base) not in fsyncs.synced and str(base / "a") not in fsyncs.synced
         assert not spool.durable
     finally:
@@ -144,18 +146,21 @@ def test_an_injected_ancestor_fsync_failure_then_restart(
     root = base / "a" / "spool"
     fsyncs.failing.add(str(base))
     senders.append(first := _sender(root))
-    assert first.spool.write(_final(0), reserve=True)
+    written = first.spool.write(_final(0), reserve=True)
+    assert written
     assert not first.flush(5.0)
     stats = first.stats()
     assert stats["spool_undurable"] == 1 and stats["spool_barrier_failures"] >= 1
     assert stats["delivered"] == 1  # passive: delivery is not held back
     assert not (root / BARRIER_MARKER).exists()
-    assert not first.close(5.0)
+    closed = first.close(5.0)
+    assert not closed
     senders.remove(first)
 
     restarted = _sender(root)  # a new process: still failing
     senders.append(restarted)
-    assert restarted.spool.write(_final(1), reserve=True)
+    written = restarted.spool.write(_final(1), reserve=True)
+    assert written
     assert not restarted.flush(5.0)
     assert restarted.stats()["spool_undurable"] == 1
 
@@ -198,7 +203,8 @@ def test_a_restart_never_takes_a_permission_refusal_for_a_finished_barrier(
     _unreadable(base)
     for _ in range(2):  # the first process, then a restart
         senders.append(sender := _sender(root))
-        assert sender.spool.write(_final(0), reserve=True)
+        written = sender.spool.write(_final(0), reserve=True)
+        assert written
         assert not sender.flush(5.0)
         assert sender.stats()["spool_undurable"] == 1
         assert not (root / BARRIER_MARKER).exists()
@@ -244,7 +250,8 @@ def test_a_symlinked_ancestor_walks_the_physical_parent(base: Path, senders: lis
     try:
         for _ in range(2):  # the first process, then a restart
             senders.append(sender := _sender(root))
-            assert sender.spool.write(_final(0), reserve=True)
+            written = sender.spool.write(_final(0), reserve=True)
+            assert written
             assert not sender.flush(5.0)
             assert sender.stats()["spool_undurable"] == 1
             assert not (root / BARRIER_MARKER).exists()

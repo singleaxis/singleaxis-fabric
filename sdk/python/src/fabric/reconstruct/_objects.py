@@ -37,9 +37,10 @@ import hashlib
 import re
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
+from fabric._roles import part_object_id
 from fabric.reconstruct._ids import report_run_id, report_source_id
 from fabric.reconstruct._inputs import ReconstructInputError, opaque_id
 
@@ -57,12 +58,28 @@ _REQUIRED_KEYS = frozenset(
     {
         "schema_version", "object_id", "tenant_id", "role", "media_type", "content_encoding",
         "representation", "transformations", "provenance", "boundary", "status",
-        "stored_byte_length", "stored_sha256", "source_byte_length", "source_id",
+        "stored_byte_length", "stored_sha256", "source_id",
         "source_epoch", "source_sequence", "run_id", "operation_id", "captured_at",
         "encoding", "ref",
     }
 )  # fmt: skip
-_OPTIONAL_KEYS = frozenset({"source_sha256"})
+# 049 §4.3 rule 6: the privacy fields (all of the policy block, or none of it), and the
+# receiver-owned source_authenticated the Node writes into the persisted descriptor.
+_POLICY_KEYS = frozenset(
+    {"privacy_mode", "policy_id", "policy_version", "policy_digest", "protection_status"}
+)
+_OPTIONAL_KEYS = frozenset(
+    {"source_sha256", "source_byte_length", "workload_id", "transformation_id",
+     "transformation_version", "source_authenticated", "links"}
+) | _POLICY_KEYS  # fmt: skip
+# privacy mode -> (protection status, representations) of a primary stored object
+_MODES = {
+    "retain_original": ("retained", ("exact", "partial", "truncated", "split")),
+    "original_plus_masked": ("retained", ("exact", "partial", "truncated", "split")),
+    "redact": ("redacted", ("redacted",)),
+    "masked_only": ("redacted", ("redacted",)),
+    "tokenize": ("tokenized", ("tokenized",)),
+}
 BINDING_KEYS = ("source_id", "source_epoch", "source_sequence", "run_id", "operation_id")
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
@@ -82,10 +99,27 @@ def _str(value: Any, pattern: re.Pattern[str]) -> bool:
 
 def _consistent(descriptor: Mapping[str, Any]) -> bool:
     """truncated <=> status truncated <=> ["truncate"] <=> no source digest <=> a longer
-    source; otherwise stored, [] and source digest/length equal to the stored ones;
-    ``partial`` only on a response (the Node's ``consistent`` rule)."""
-    stored, source = descriptor["stored_byte_length"], descriptor["source_byte_length"]
+    source; split: stored, ["extract_parts"], the original's digest and a longer source;
+    redacted/tokenized: status redacted, ["redact"]/["tokenize"] (after
+    ``extract_parts``), no source fields; otherwise stored, [] and source digest/length
+    equal to the stored ones; ``partial`` only on a response (the Node's rule)."""
+    stored, source = descriptor["stored_byte_length"], descriptor.get("source_byte_length")
     transformations, has_source_sha = descriptor["transformations"], "source_sha256" in descriptor
+    representation = descriptor["representation"]
+    if representation in ("redacted", "tokenized"):
+        step = "redact" if representation == "redacted" else "tokenize"
+        return (
+            descriptor["status"] == "redacted"
+            and transformations in ([step], ["extract_parts", step])
+            and not has_source_sha and source is None
+        )  # fmt: skip
+    if not isinstance(source, int):
+        return False
+    if representation == "split":
+        return (
+            descriptor["status"] == "stored" and transformations == ["extract_parts"]
+            and has_source_sha and source > stored
+        )  # fmt: skip
     if descriptor["representation"] == "truncated":
         return (
             descriptor["status"] == "truncated"
@@ -112,28 +146,58 @@ def descriptor_contract_ok(descriptor: Mapping[str, Any]) -> bool:
     keys = set(descriptor)
     if not keys >= _REQUIRED_KEYS or keys - _REQUIRED_KEYS - _OPTIONAL_KEYS:
         return False
+    if not _privacy_ok(descriptor, keys):
+        return False
     shapes = (
         descriptor["schema_version"] == "fabric.content-object/v2",
         descriptor["role"] in ("model.exchange.request", "model.exchange.response"),
         _str(descriptor["media_type"], _MEDIA_RE),
         _str(descriptor["content_encoding"], _ENCODING_RE),
-        descriptor["representation"] in ("exact", "partial", "truncated"),
-        descriptor["transformations"] in ([], ["truncate"]),
+        descriptor["representation"]
+        in ("exact", "partial", "truncated", "split", "redacted", "tokenized"),
+        isinstance(descriptor["transformations"], list),
         descriptor["provenance"] == "protocol",
         descriptor["boundary"] == "provider_bound",
-        descriptor["status"] in ("stored", "truncated"),
+        descriptor["status"] in ("stored", "truncated", "redacted"),
         descriptor["encoding"] == "binary",
         isinstance(descriptor["ref"], str) and bool(descriptor["ref"]),
         _str(descriptor["stored_sha256"], _DIGEST_RE),
         "source_sha256" not in descriptor or _str(descriptor["source_sha256"], _DIGEST_RE),
         _str(descriptor["captured_at"], _CAPTURED_AT_RE),
-        all(_int(descriptor[key]) for key in ("stored_byte_length", "source_byte_length")),
+        _int(descriptor["stored_byte_length"]),
+        "source_byte_length" not in descriptor or _int(descriptor["source_byte_length"]),
         all(_int(descriptor[key]) for key in ("source_epoch", "source_sequence")),
         all(opaque_id(descriptor[key]) is not None for key in ("source_id", "run_id")),
         opaque_id(descriptor["operation_id"]) is not None,
         opaque_id(descriptor["object_id"]) is not None,
     )
     return all(shapes) and _consistent(descriptor)
+
+
+def _privacy_ok(descriptor: Mapping[str, Any], keys: set[str]) -> bool:
+    """049 §4.3/§7.5: the policy block is all or nothing; its mode and protection status
+    agree with the representation; an object a span names is never a review copy (a
+    ``derived_from`` copy never satisfies a requirement for the original)."""
+    if descriptor.get("source_authenticated", True) is not True:
+        return False  # receiver-owned (049 §7.9): only ever written as true by a bound Node
+    links = descriptor.get("links", [])
+    if not isinstance(links, list) or any(
+        not isinstance(link, Mapping) or link.get("relation") == "derived_from" for link in links
+    ):
+        return False
+    block = keys & _POLICY_KEYS
+    if not block:
+        return not keys & {"transformation_id", "transformation_version"}
+    if block != _POLICY_KEYS:
+        return False
+    expected = _MODES.get(descriptor["privacy_mode"])
+    return (
+        expected is not None and descriptor["protection_status"] == expected[0]
+        and descriptor["representation"] in expected[1]
+        and _str(descriptor["policy_digest"], _DIGEST_RE)
+        and opaque_id(descriptor["policy_id"]) is not None
+        and type(descriptor["policy_version"]) is int and descriptor["policy_version"] >= 1
+    )  # fmt: skip
 
 
 def _bound(descriptor: Mapping[str, Any], binding: Mapping[str, Any], key: bytes | None) -> bool:
@@ -165,6 +229,15 @@ class ObjectResult:
     media_type: str | None = None
     content_encoding: str = "identity"
     truncated: bool = False
+    # 049 §7.9: the Node stamped the persisted descriptor (a bound ingress); read back,
+    # never reported here (counted as authentication only from trusted readback).
+    source_authenticated: bool = False
+    # 049 §7.5: a split skeleton's (source_sha256, source_byte_length), the original body
+    # its parts must reassemble to; None for every other object.
+    split: tuple[str, int] | None = None
+    # 049 §7.9: whether every part a split side was reassembled from carries the Node's
+    # stamp (True when nothing was reassembled); a verdict consumes the parts too.
+    parts_authenticated: bool = True
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
@@ -300,6 +373,10 @@ class StoreReader:
                 content_encoding=encoding if isinstance(encoding, str) else "unknown",
                 truncated="truncated"
                 in (descriptor.get("representation"), descriptor.get("status")),
+                source_authenticated=descriptor.get("source_authenticated") is True,
+                split=(descriptor["source_sha256"], descriptor["source_byte_length"])
+                if descriptor.get("representation") == "split"
+                else None,
             )
         return ObjectResult("digest_mismatch", object_id, expected_sha256, len(data), reason=reason)
 
@@ -323,3 +400,159 @@ class StoreReader:
             )
         except Exception:  # an unexpected shape is a mismatch, never a crash
             return False
+
+    # -- split sides (spec 049 §7.4-§7.5) -------------------------------------------
+
+    def reassemble(
+        self,
+        skeleton_id: str,
+        skeleton: bytes,
+        split: tuple[str, int],
+        *,
+        binding: Mapping[str, Any],
+        id_key: bytes | None = None,
+    ) -> Reassembly:
+        """Rebuild a ``retain_original`` split side from its skeleton and parts and check it
+        against the skeleton's ``source_sha256`` (§7.5). Parts are read by the ids derived
+        from the skeleton's (GetObject only, no listing); each must link ``part_of`` the
+        skeleton, bind to the same exchange, hold exactly its ``byte_range`` and match its
+        stored digest. A part the store does not hold yet is re-read, with backoff, until
+        the reader's ``wait_for_objects_s`` deadline."""
+
+        delay = _RETRY_FIRST_S
+        while True:
+            outcome = self._reassemble_once(skeleton_id, skeleton, split, binding, id_key)
+            remaining = self._deadline - time.monotonic()
+            if outcome.reason != "part_missing" or remaining <= 0:
+                return outcome
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, _RETRY_MAX_S)
+
+    def _reassemble_once(
+        self,
+        skeleton_id: str,
+        skeleton: bytes,
+        split: tuple[str, int],
+        binding: Mapping[str, Any],
+        id_key: bytes | None,
+    ) -> Reassembly:
+        """Read the parts by their derived ids (:func:`fabric._roles.part_object_id`), in
+        order, until they account for every byte the skeleton lacks."""
+        needed = split[1] - len(skeleton)
+        ranges: list[tuple[int, int, bytes]] = []
+        authenticated = True
+        for index in range(_MAX_PARTS):
+            if sum(end - start for start, end, _ in ranges) >= needed:
+                rebuilt = _splice(skeleton, ranges, split)
+                return replace(rebuilt, authenticated=authenticated)
+            object_id = part_object_id(skeleton_id, index)
+            try:
+                descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
+            except ImportError:
+                raise
+            except Exception as exc:
+                reason = "part_missing" if _is_absent(exc) else "part_read_error"
+                return Reassembly(None, "missing_object", reason)
+            if not isinstance(descriptor, Mapping):
+                return Reassembly(None, "digest_mismatch", "part_binding_mismatch")
+            part = self._part(object_id, descriptor, skeleton_id, binding, id_key, split[1])
+            if not isinstance(part, tuple):
+                return part
+            ranges.append(part)
+            # 049 §7.9: the receiver-owned stamp of the part's persisted descriptor
+            authenticated = authenticated and descriptor.get("source_authenticated") is True
+        return Reassembly(None, "missing_object", "part_missing")
+
+    def _part(  # noqa: PLR0911 - closed refusal states
+        self,
+        object_id: str,
+        descriptor: Mapping[str, Any],
+        skeleton_id: str,
+        binding: Mapping[str, Any],
+        id_key: bytes | None,
+        source_length: int,
+    ) -> tuple[int, int, bytes] | Reassembly:
+        """One part's ``(start, end, bytes)``, or why it cannot take part."""
+        found = descriptor.get("links")
+        links = [
+            link
+            for link in (found if isinstance(found, list) else [])
+            if isinstance(link, Mapping)
+            and link.get("relation") == "part_of"
+            and link.get("object_id") == skeleton_id
+        ]
+        if (
+            descriptor.get("tenant_id") != self.tenant_id
+            or descriptor.get("object_id") != object_id
+            or descriptor.get("role") != "model.exchange.part"
+            or len(links) != 1
+            or not _bound(descriptor, binding, id_key)
+        ):
+            return Reassembly(None, "digest_mismatch", "part_binding_mismatch")
+        span = links[0].get("byte_range")
+        if descriptor.get("status") != "stored" or span is None:
+            # Withheld by its cap or by its role's privacy mode: the original body is not
+            # wholly held, so its digest cannot be checked.
+            if descriptor.get("status_reason") == "part_cap":
+                return Reassembly(None, "truncated", "part_cap")
+            return Reassembly(None, "missing_object", "part_withheld")
+        if (
+            not isinstance(span, list)
+            or len(span) != 2  # noqa: PLR2004 - a half-open [start, end) pair
+            or not all(_int(value) for value in span)
+            or not span[0] < span[1] <= source_length
+        ):
+            return Reassembly(None, "digest_mismatch", "part_range")
+        try:
+            data = bytes(self._store.read(self._store.evidence_ref_for(object_id)))
+        except ImportError:
+            raise
+        except Exception as exc:
+            reason = "part_missing" if _is_absent(exc) else "part_read_error"
+            return Reassembly(None, "missing_object", reason)
+        digest = sha256_digest(data)
+        if (
+            descriptor.get("stored_sha256") != digest
+            or descriptor.get("stored_byte_length") != len(data)
+            or descriptor.get("source_sha256") != digest
+            or descriptor.get("representation") != "exact"
+            or span[1] - span[0] != len(data)
+        ):
+            return Reassembly(None, "digest_mismatch", "part_digest")
+        return span[0], span[1], data
+
+
+def _splice(
+    skeleton: bytes, ranges: list[tuple[int, int, bytes]], split: tuple[str, int]
+) -> Reassembly:
+    """Insert every part at its range, in ascending order (the contract's reference rule,
+    ``validate_evidence_contracts.py``); the result must be the original body."""
+    source_sha256, source_length = split
+    if len(skeleton) + sum(end - start for start, end, _ in ranges) != source_length:
+        return Reassembly(None, "missing_object", "part_missing")
+    body, cursor, offset = bytearray(), 0, 0
+    for start, end, data in sorted(ranges):
+        if start < offset:
+            return Reassembly(None, "digest_mismatch", "split_reassembly")
+        take = start - offset
+        body += skeleton[cursor : cursor + take] + data
+        cursor, offset = cursor + take, end
+    body += skeleton[cursor:]
+    if len(body) != source_length or sha256_digest(bytes(body)) != source_sha256:
+        return Reassembly(None, "digest_mismatch", "split_reassembly")
+    return Reassembly(bytes(body))
+
+
+# More parts than a side can hold at part_min_bytes 64 KiB within 64 MiB, with margin.
+_MAX_PARTS = 4096
+
+
+@dataclass(frozen=True, slots=True)
+class Reassembly:
+    """A split side's reassembled original, or the gap that prevents it."""
+
+    data: bytes | None
+    gap_type: Literal["missing_object", "digest_mismatch", "truncated"] | None = None
+    reason: str | None = None
+    # Every part read carries the Node's source stamp (049 §7.9).
+    authenticated: bool = True

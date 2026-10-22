@@ -31,6 +31,7 @@ from .test_wire_helpers import (
     exchange_document,
     load_validator,
     loss_document,
+    validate_exchange_document,
 )
 
 UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
@@ -79,7 +80,7 @@ def _validate(exporter: InMemorySpanExporter) -> None:
     validator, schemas = load_validator(), capture_schemas()
     for span in exporter.get_finished_spans():
         if span.name == "fabric.model_call":
-            validator.validate_document(exchange_document(span), schemas)
+            validate_exchange_document(exchange_document(span))
         elif span.name.startswith("fabric.capture_"):
             validator.validate_document(loss_document(span), schemas)
 

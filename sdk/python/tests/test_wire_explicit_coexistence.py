@@ -685,7 +685,8 @@ def test_provisional_exchange_stranded_at_close(
 
         def open_and_close(data: bytes) -> bytes:
             live.append(open_stream(data))
-            assert handle.close(5.0) is False  # one stranded exchange is lost
+            closed = handle.close(5.0)
+            assert closed is False  # one stranded exchange is lost
             return b""
 
         recording.recorder.call(json.dumps(STREAM).encode(), open_and_close, kind="model")
