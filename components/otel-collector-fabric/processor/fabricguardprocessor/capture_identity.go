@@ -62,6 +62,9 @@ func (g *guard) validServiceLabel(value pcommon.Value) bool {
 // source:<source id>:<epoch> must embed the source id in its s- form, so a
 // clear source label cannot ride along inside the run id.
 func (g *guard) validRunIDLabel(value pcommon.Value) bool {
+	if g.cfg.IdentityMode == identityModeClear {
+		return safeID(value)
+	}
 	if !validRunID(value) {
 		return false
 	}
@@ -272,4 +275,16 @@ func validateModelAllowlist(entries []string) error {
 		}
 	}
 	return nil
+}
+
+// validCaptureIdentity closes the reused X05 keys' capture_check. Their
+// general trace admission predates the capture profile; capture labels must
+// still be pseudonymous unless the Node explicitly opts into clear labels.
+func (g *guard) validCaptureIdentity(key string, value pcommon.Value) bool {
+	switch key {
+	case "fabric.agent_id", "fabric.system_id", "fabric.deployment_id", "fabric.release_id", "fabric.environment":
+		return matches(operatorLabelPattern)(value) &&
+			(g.clearLabels() || labelPseudonymPattern.MatchString(value.Str()))
+	}
+	return false
 }

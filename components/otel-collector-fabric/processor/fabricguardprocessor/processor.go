@@ -1169,31 +1169,10 @@ var captureNewKeys = toSet(
 	"fabric.run.scope_id",
 )
 
-// runMarkerKinds are the heartbeat kinds that carry fabric.run.scope_id
-// (spec 048 §6; spec 049 §2.12 rule 4 adds segment_seal).
-var runMarkerKinds = toSet("run_start", "run_end", "segment_seal")
-
-// captureMarkers are the keys that make activityCategory (and the offline
-// verifier) treat a span as a capture record. They are the only capture
-// discriminator: the normalized name is not one, because activityCategory
-// also names governed and framework LLM spans (gen_ai.request.model,
-// fabric.llm.system) fabric.model_call, and a second guard pass (edge Node ->
-// central Node) must leave those spans as the first pass did.
-var captureMarkers = []string{"fabric.wire.exchange_id", "fabric.loss.reason", "fabric.heartbeat.last_sequence"}
-
-// isCaptureSpan reports whether a span is a spec 047 capture record: it
-// carries a capture marker key (whatever the value). Classification uses the
-// unfiltered span so an invalid marker cannot opt a span out of the strict
-// profile. A span without a marker is not a capture record, whatever its
-// name (the verifier ignores it too), and keeps the general allowlist, so
-// governed and framework LLM spans are processed identically on every pass.
+// isCaptureSpan classifies from unfiltered discriminators, never the span
+// name. A records input must be sequenced and have no wire/loss/heartbeat key.
 func isCaptureSpan(span ptrace.Span) bool {
-	for _, key := range captureMarkers {
-		if _, ok := span.Attributes().Get(key); ok {
-			return true
-		}
-	}
-	return false
+	return captureClass(span.Attributes()) != 0
 }
 
 // anyCaptureSpan reports whether a resource group holds at least one capture
@@ -1224,60 +1203,42 @@ func validCaptureModel(value pcommon.Value) bool {
 // bounds). Capture spans carry no events or links, so any are removed.
 func (g *guard) applyCaptureProfile(span ptrace.Span) {
 	class := captureClass(span.Attributes())
-	span.Attributes().RemoveIf(func(key string, value pcommon.Value) bool {
-		if valid, listed := captureProfile[key]; listed && valid(value) {
-			return false
+	if class == onRecord {
+		g.applyRecordProfile(span.Attributes())
+	} else {
+		kind := ""
+		if v, ok := span.Attributes().Get("fabric.heartbeat.kind"); ok {
+			kind = v.Str()
 		}
-		// Spec 049 keys are admitted only on the record classes that carry them.
-		if classes, listed := coverageCaptureKeys[key]; listed && classes&class != 0 {
-			if valid, _ := g.validCoverageValue(key, value); valid {
-				return false
+		span.Attributes().RemoveIf(func(key string, value pcommon.Value) bool {
+			keep := false
+			if _, placed := coverageKeyPlacements[key]; placed {
+				if placementAllowed(key, class, kind) {
+					if valid, known := g.validCoverageValue(key, value); known {
+						keep = valid
+					} else if valid, legacy := captureProfile[key]; legacy {
+						keep = valid(value)
+					} else {
+						keep = g.validCaptureIdentity(key, value)
+					}
+				}
+			} else if valid, legacy := captureProfile[key]; legacy {
+				keep = valid(value)
 			}
-		}
-		g.stats.notAllowedRemoved.Add(1)
-		return true
-	})
-	g.applyCaptureLabels(span.Attributes())
-	g.exposeCaptureModel(span.Attributes())
+			if !keep {
+				g.stats.notAllowedRemoved.Add(1)
+			}
+			return !keep
+		})
+		g.applyCaptureLabels(span.Attributes())
+		g.exposeCaptureModel(span.Attributes())
+	}
 	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
-	g.markerKeysOnlyWhereDefined(span.Attributes())
 	if removed := span.Events().Len() + span.Links().Len(); removed > 0 {
 		span.Events().RemoveIf(func(ptrace.SpanEvent) bool { return true })
 		span.Links().RemoveIf(func(ptrace.SpanLink) bool { return true })
 		g.stats.notAllowedRemoved.Add(uint64(removed))
 	}
-}
-
-// markerKeysOnlyWhereDefined keeps a run-marker key only on the heartbeat
-// kinds that define it (markerKeyKinds): fabric.run.scope_id on an exchange
-// and on run_start/run_end/segment_seal (spec 048 §6, spec 049 §2.12 rule 4);
-// the spec 049 segment, predecessor, termination and branch keys on their
-// marker kinds. A marker key is dropped from loss records, from heartbeats of
-// another kind and from heartbeats whose kind did not survive validation.
-func (g *guard) markerKeysOnlyWhereDefined(attrs pcommon.Map) {
-	category := activityCategory("", attrs)
-	kind := ""
-	if value, ok := attrs.Get("fabric.heartbeat.kind"); ok && value.Type() == pcommon.ValueTypeStr {
-		kind = value.Str()
-	}
-	attrs.RemoveIf(func(key string, _ pcommon.Value) bool {
-		kinds, listed := markerKeyKinds[key]
-		if !listed {
-			return false
-		}
-		keep := false
-		switch category {
-		case "fabric.model_call":
-			// Exchanges carry their scope and segment, never marker-only keys.
-			keep = key == "fabric.run.scope_id" || key == "fabric.run.segment_id"
-		case "fabric.capture_heartbeat":
-			_, keep = kinds[kind]
-		}
-		if !keep {
-			g.stats.notAllowedRemoved.Add(1)
-		}
-		return !keep
-	})
 }
 
 // applyCaptureResource keeps only a well-formed service.name on a resource

@@ -267,6 +267,9 @@ func TestWireCapture_HeartbeatKindIsClosedVocabulary(t *testing.T) {
 		g := newTestGuard(t, nil)
 		attrs := wireHeartbeatAttrs()
 		attrs["fabric.heartbeat.kind"] = kind
+		if kind == "periodic" || kind == "final" {
+			delete(attrs, "fabric.run.id")
+		}
 		span := processOne(t, g, "fabric.capture_heartbeat", attrs)
 		assertKeysKept(t, span, attrs)
 		if v, _ := span.Attributes().Get("fabric.heartbeat.kind"); v.Str() != kind {

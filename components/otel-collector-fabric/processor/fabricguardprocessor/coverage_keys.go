@@ -5,6 +5,7 @@ package fabricguardprocessor
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -401,69 +402,73 @@ const (
 	onExchange uint8 = 1 << iota
 	onLoss
 	onHeartbeat
+	onRecord
 )
 
-// coverageCaptureKeys places the new keys spec 049 puts on capture records:
-// wire exchange spans (X26, X40, S01, S03, S07-S09, S11, S30; section 2.4
-// "every record carries fabric.capture.input ... fabric.run.segment_id") and
-// run markers and heartbeats (X10-X12, X34, X39, X41-X46, S34, D30). Every
-// other new key is admitted on non-capture spans only.
-var coverageCaptureKeys = map[string]uint8{
-	"fabric.event_id":                   onExchange | onLoss | onHeartbeat,
-	"fabric.capture.input":              onExchange,
-	"fabric.capture.point":              onExchange | onLoss | onHeartbeat,
-	"fabric.run.segment_id":             onExchange | onHeartbeat,
-	"fabric.wire.store_reason":          onExchange,
-	"fabric.wire.first_chunk_offset_ns": onExchange,
-	"fabric.step.kind":                  onExchange,
-	"fabric.actor.type":                 onExchange,
-	"fabric.step.lifecycle_state":       onExchange,
-	"fabric.step.status":                onExchange,
-	"fabric.error.domain":               onExchange,
-	"fabric.error.code":                 onExchange,
-	"fabric.capture.manifest_seq":       onHeartbeat,
-	"fabric.capture.manifest_id":        onHeartbeat,
-	"fabric.capture.manifest_digest":    onHeartbeat,
-	"fabric.run.predecessors":           onHeartbeat,
-	"fabric.run.resumable":              onHeartbeat,
-	"fabric.run.terminal":               onHeartbeat,
-	"fabric.run.open_deadline_s":        onHeartbeat,
-	"fabric.run.declared_branches":      onHeartbeat,
-	"fabric.run.branch_ids":             onHeartbeat,
-	"fabric.segment.last_sequence":      onHeartbeat,
-	"fabric.segment.manifest_digest":    onHeartbeat,
-	"fabric.segment.seal_digest":        onHeartbeat,
-	"fabric.segment.branch_ids":         onHeartbeat,
-	"fabric.run.scope_status":           onHeartbeat,
-	"fabric.run.parent_id":              onHeartbeat,
-	"fabric.run.resumed_from":           onHeartbeat,
-	"fabric.run.links":                  onHeartbeat,
-	"fabric.run.outcome":                onHeartbeat,
-	"fabric.run.stop_reason":            onHeartbeat,
+// coverageCaptureKeys and markerKeyKinds are derived views of the generated
+// placements. Keep one source of truth for class and heartbeat admission.
+var coverageCaptureKeys, markerKeyKinds = capturePlacements()
+
+func capturePlacements() (map[string]uint8, map[string]map[string]struct{}) {
+	classes := map[string]uint8{}
+	markers := map[string]map[string]struct{}{}
+	for key, placements := range coverageKeyPlacements {
+		for _, placement := range placements {
+			switch placement {
+			case "exchange":
+				classes[key] |= onExchange
+			case "record":
+				classes[key] |= onRecord
+			case "loss":
+				classes[key] |= onLoss
+			default:
+				if _, heartbeat := captureHeartbeatKinds[placement]; heartbeat {
+					classes[key] |= onHeartbeat
+					if markers[key] == nil {
+						markers[key] = map[string]struct{}{}
+					}
+					markers[key][placement] = struct{}{}
+				}
+			}
+		}
+		// Only keys narrowed to particular heartbeat kinds need the second pass.
+		if len(markers[key]) == len(captureHeartbeatKinds) {
+			delete(markers, key)
+		}
+		if _, coverage := coverageKeyValidators[key]; !coverage {
+			delete(classes, key)
+		}
+	}
+	return classes, markers
 }
 
-// markerKeyKinds narrows run-marker keys to the heartbeat kinds that define
-// them (spec 049 §2.10, §2.12 rule 4, X41-X46, S34, D30), exactly as the
-// capture/v1 loss-record and spool-record schemas do. fabric.run.scope_id
-// follows the same rule (scopeIDOnlyWhereDefined).
-var markerKeyKinds = map[string]map[string]struct{}{
-	"fabric.run.scope_id":            runMarkerKinds,
-	"fabric.run.segment_id":          toSet("run_start", "run_end", "segment_seal"),
-	"fabric.run.predecessors":        toSet("run_start"),
-	"fabric.run.open_deadline_s":     toSet("run_start"),
-	"fabric.run.declared_branches":   toSet("run_start"),
-	"fabric.run.branch_ids":          toSet("run_start"),
-	"fabric.run.resumable":           toSet("run_start", "segment_seal"),
-	"fabric.run.terminal":            toSet("segment_seal"),
-	"fabric.segment.last_sequence":   toSet("segment_seal"),
-	"fabric.segment.manifest_digest": toSet("segment_seal"),
-	"fabric.segment.seal_digest":     toSet("segment_seal"),
-	"fabric.segment.branch_ids":      toSet("segment_seal"),
-	"fabric.capture.manifest_id":     toSet("run_start", "run_end"),
-	"fabric.capture.manifest_digest": toSet("run_start", "run_end"),
-	"fabric.run.scope_status":        toSet("run_end"),
-	"fabric.run.outcome":             toSet("run_end"),
-	"fabric.run.stop_reason":         toSet("run_end"),
+// placementAllowed uses the unfiltered class/kind. Invalid marker values must
+// not opt a span into a more permissive class as attributes are removed.
+func placementAllowed(key string, class uint8, kind string) bool {
+	placements, listed := coverageKeyPlacements[key]
+	if !listed {
+		return false
+	}
+	switch class {
+	case onExchange:
+		return slices.Contains(placements, "exchange")
+	case onRecord:
+		return slices.Contains(placements, "record")
+	case onLoss:
+		return slices.Contains(placements, "loss")
+	case onHeartbeat:
+		if slices.Contains(placements, kind) {
+			return true
+		}
+		// Preserve common source metadata on legacy/invalid-kind heartbeats.
+		for heartbeat := range captureHeartbeatKinds {
+			if !slices.Contains(placements, heartbeat) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func coverageKeyNames() map[string]struct{} {
@@ -612,17 +617,25 @@ func (g *guard) applyManifestProfile(attrs pcommon.Map) {
 		}
 		return !keep
 	})
+	g.applyCaptureLabels(attrs)
 }
 
 // captureClass names the capture record class of a span's attributes.
 func captureClass(attrs pcommon.Map) uint8 {
-	switch activityCategory("", attrs) {
-	case "fabric.capture_heartbeat":
+	if _, ok := attrs.Get("fabric.heartbeat.last_sequence"); ok {
 		return onHeartbeat
-	case "fabric.capture_loss":
+	}
+	if _, ok := attrs.Get("fabric.loss.reason"); ok {
 		return onLoss
-	case "fabric.model_call":
+	}
+	if _, ok := attrs.Get("fabric.wire.exchange_id"); ok {
 		return onExchange
+	}
+	input, ok := attrs.Get("fabric.capture.input")
+	if ok && constStr("records")(input) {
+		if _, sequenced := attrs.Get("fabric.source.sequence"); sequenced {
+			return onRecord
+		}
 	}
 	return 0
 }
