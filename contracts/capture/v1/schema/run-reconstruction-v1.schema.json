@@ -410,7 +410,38 @@
           }
         },
         "deadline_at": {"type": "string", "format": "date-time"},
-        "evaluated_at": {"type": "string", "format": "date-time"}
+        "evaluated_at": {"type": "string", "format": "date-time"},
+        "attempts": {
+          "description": "Spec 050 §3.12 (WP-30): the complete position set of every records-input attempt of the run. The step projection lists at most 64 event_ids per step (collection/continuation); this keeps the full membership: per attempt its fabric.attempt.uid, its step id when the records carry one, the number of positions and, per (source, epoch), the positions as ascending, disjoint, non-adjacent [first, last] ranges.",
+          "type": "array",
+          "maxItems": 1000000,
+          "items": {"$ref": "#/$defs/attempt"}
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt_uid", "records", "sequences"],
+      "properties": {
+        "attempt_uid": {"$ref": "#/$defs/scopeId"},
+        "step_id": {"$ref": "#/$defs/opaqueId"},
+        "records": {"type": "integer", "minimum": 1},
+        "sequences": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4096,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_id", "source_epoch", "ranges"],
+            "properties": {
+              "source_id": {"$ref": "#/$defs/opaqueId"},
+              "source_epoch": {"type": "integer", "minimum": 0},
+              "ranges": {"type": "array", "minItems": 1, "maxItems": 1000000, "items": {"$ref": "#/$defs/range"}}
+            }
+          }
+        }
       }
     }
   }
