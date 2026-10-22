@@ -15,8 +15,8 @@ Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
 next unused public number is 050.
 
 For the v0.8 release, the current capture contract is spec
-[049](049-four-layer-capture-coverage.md) (four-layer coverage; P0-A is
-built, P1–P5 are not), building on [047](047-llm-wire-capture-and-reconstruction.md)
+[049](049-four-layer-capture-coverage.md) (four-layer coverage, rev 6.4; P0 and
+P0-A are built, P1–P5 are not), building on [047](047-llm-wire-capture-and-reconstruction.md)
 (wire capture and reconstruction) and
 [048](048-node-content-delivery-and-agent-spool.md) (Node content delivery
 and the agent spool). Where they disagree, 049 wins over 048 and 048 over
@@ -75,8 +75,8 @@ Every spec declares a `Status` in its header:
 | [045](045-independent-evidence-feeds.md) | Authenticated independent operation and byte feeds | draft; no complete-run claim |
 | [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implementation in progress; NO-GO |
 | [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | draft; NO_COVERAGE_CLAIM; partly superseded by 048 |
-| [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft; NO_COVERAGE_CLAIM |
-| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | final rev 6.3, owner-approved 2026-10-18; P0-A built, P1–P5 not built; NO_COVERAGE_CLAIM |
+| [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft rev 9; NO_COVERAGE_CLAIM |
+| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | final rev 6.4, owner-approved 2026-10-22; P0 and P0-A built (v0.8), P1–P5 not built; NO_COVERAGE_CLAIM |
 
 Specs 036 and 040–046 are the design of record for the explicit evidence
 line (`CallRecorder`, byte-boundary adapters, qualified-run mode), which

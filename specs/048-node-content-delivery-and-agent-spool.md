@@ -2,8 +2,8 @@
 title: Node content delivery, agent durable spool and run scopes
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 4
-last_updated: 2026-10-13
+revision: 9
+last_updated: 2026-10-22
 owner: recorder-engineering
 depends_on: 029, 032, 033, 038, 047
 supersedes_in_part: 047 (§3 store activation, §4.5/§4.8 delivery, §6 loss resend and run markers, §7 store writer, §8 model value and boot gate, §9 step 3 run windows)
@@ -168,6 +168,35 @@ and the capture/verifier fixes:
   identity refuses the input (exit 2, fixed text). A run marker naming a
   valid scope with malformed other fields leaves that scope `conflict`
   (`malformed_record`).
+
+**2026-10-22 — revision 9 (alignment with 049 rev 6.4).** Revisions 5–8
+were the hardening rounds recorded only in §11 (items 14–17); the front
+matter still said revision 4, so this revision is numbered 9. Decisions
+K1–K4:
+
+- **K1 Byte-bounded capture queue.** §2 "Window before the spool write"
+  said the capture queue holds `queue_max_items` entries, default 256. The
+  code bounds it by bytes: every queued exchange keeps its retained bodies
+  charged to `max_inflight_bytes` (default 256 MiB) until the worker has
+  written it, and `queue_max_items` (default 16384, range 1–65536) only caps
+  the per-entry overhead (`wire/_config.py:43-45,95-100`); a full queue is a
+  `queue_full` loss, never a wait (049 §7.1 rule 5). The default was raised
+  from 256 after the agent matrix (D3) overflowed it on an asyncio fan-out
+  of 408 calls. Corrected in §2.
+- **K2 Content validated after acknowledgement** (049 decision 24). The
+  content receiver acknowledges a batch (HTTP 200) once `fabriccontent`'s
+  sending queue holds it; the exporter's §4 steps 1–3 and the conflict
+  check run afterwards, so a refused record is dropped, counted and logged
+  at the Node and the agent never learns of it. Stated in §4; moving
+  validation before acknowledgement is a 049 P1 candidate.
+- **K3 Run ids always mapped** (049 decision 22). `fabric.wire.run(run_id)`
+  maps every value it is given, including one that already looks like
+  `r-…`; processes continue one run by passing the same clear run id,
+  never an emitted `r-` value. Stated in §6.
+- **K4 Open questions 1 and 2 answered by 049.** The Node's content roles
+  come from the 049 role table (049 §4.3), and the agent spool, the Node
+  content queue and the directory backend have the 049 §7.8 AES-256-GCM
+  envelopes, required in the production profile (§12).
 
 **Why.**
 
@@ -344,8 +373,10 @@ thread under the allocator lock (047 §6) and the record is queued in memory
 **Window before the spool write.** A record is durable only once its
 file is fsync'd. Between a call finishing (the stream is exhausted, closed
 or failed) and that point the exchange exists only in the agent's memory:
-it waits in the capture worker's queue (bounded by `queue_max_items`,
-default 256, and `max_inflight_bytes`, default 256 MiB), then the worker
+it waits in the capture worker's queue — bounded by bytes: it stays
+charged to `max_inflight_bytes` (default 256 MiB) until written, and
+`queue_max_items` (default 16384) only caps the per-entry overhead (K1) —
+then the worker
 digests both bodies, builds the record, writes, fsyncs and renames it. With
 an idle worker the window is one exchange for the time of one SHA-256 pass
 over its bodies plus one `fsync` — typically a few milliseconds, tens of
@@ -710,7 +741,14 @@ Durability: exporterhelper `sending_queue` on its own `file_storage`
 idempotent). Steps 1–3 and conflicts are permanent per record: the record is
 dropped, counted, and logged as `fabriccontent: dropped content record
 (reason=<bad_descriptor|digest_mismatch|tenant_not_allowed|conflict>)` —
-no tenant, id, path, URL or byte.
+no tenant, id, path, URL or byte. (049 adds `source_unbound` for a record
+that does not match the exporter's source binding.) These checks run
+**after** the receiver has acknowledged the request (K2): the receiver
+answers HTTP 200 once the sending queue holds the batch, so the agent
+retires its spool record and is never told of a refusal; the verifier
+finds the object missing. The agent sees a refusal only when the receiver
+itself refuses the request (HTTP 400/413/415/422 or an OTLP partial
+success), counted as `content_rejected` (§2 Stats).
 
 Build: add the module to `ocb-config.yaml` (local `path` + `replaces`), the
 Dockerfile `COPY`, `EXPOSE 4319`, `tests/test-recorder-manifest.sh`'s pinned
@@ -779,7 +817,9 @@ function with prefixes `s-` and `svc-` unless `FABRIC_WIRE_LABELS=clear`
 `contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json` pin it.
 fabricguard admits `fabric.run.id` only in the `r-` form or a generated
 fallback form (`trace:<32 hex>`, `source:<source_id>:<epoch>`, `h-<40
-hex>`). Entry: read `a` = last allocated
+hex>`). Every `run_id` passed in is mapped, an `r-`-shaped one included;
+processes that share a run pass the same clear id, never an emitted `r-`
+value (K3, 049 §2.9 rule 9). Entry: read `a` = last allocated
 sequence under the allocator lock, then set the scope in the context;
 spool `run_start{run_id, scope_id, last_sequence=a}`. Exit: under the
 allocator lock mark the scope closed and read `b`; reset the context; spool
@@ -1129,8 +1169,12 @@ projected. `--run` values go through the same projection.
 ## 12. Open questions
 
 1. Whether the Node should also accept governed-content roles (spec 028)
-   on `otlp/content`, or stay closed to the two wire roles.
+   on `otlp/content`, or stay closed to the two wire roles. *Answered by
+   049 §4.3 (K4): the role table drives `fabriccontent`.*
 2. Spool encryption at rest (today: `0600`/`0700` and host disk encryption).
+   *Answered by 049 §7.8 (K4): AES-256-GCM envelopes on the agent spool,
+   the Node content queue and the directory backend, required in the
+   production profile.*
 3. Whether the Helm chart enables the content path by default.
 4. Durable scope admission: writing `run_start` (or a scope inventory) to
    disk before a `fabric.wire.run()` block runs would let the verifier

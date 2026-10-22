@@ -1,9 +1,9 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final rev 6.3 (clarifications), owner-approved 2026-10-18
+status: Final rev 6.4 (owner decisions 21-25, built state), owner-approved 2026-10-22
 qualification: NO_COVERAGE_CLAIM
-revision: 6.3
-last_updated: 2026-10-19
+revision: 6.4
+last_updated: 2026-10-22
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
 related: 030, 031, 036, 038, 040, 041, 042, 044, 045, 046
@@ -14,10 +14,13 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: Final rev 6.3 (clarifications only), owner-approved 2026-10-18.** Every owner
+**Status: Final rev 6.4, owner-approved 2026-10-22.** Every owner
 decision in section 9 was approved as recommended and is applied in this
-text, marked *Approved (owner, 2026-10-18)*. A later change to a decision
-changes only the sections that decision lists.
+text, marked *Approved (owner, 2026-10-18)* (decisions 1–20) or *Approved
+(owner, 2026-10-19..22)* (decisions 21–25). A later change to a decision
+changes only the sections that decision lists. **P0 and P0-A are built**
+and merged in v0.8 (main `36f7a89`); P1–P5 and the TS track are not
+(section 8.2).
 
 Revision 3 resolves the rev-2 confirmation reviews (appendix D): records
 are sequenced on their own source, attempt identity is always minted,
@@ -39,7 +42,13 @@ verifier and applies the final-gate fixes (rows R6F-*). Revision 6.2
 adds per-branch identities, encrypts the Node content queue and bounds
 authentication to trusted readback (rows R6A-*). Revision 6.3 only
 clarifies ambiguities met while building P0, each with the most
-conservative reading (rows R63-*); it changes no design.
+conservative reading (rows R63-*); it changes no design. Revision 6.4
+applies the owner decisions made while building P0 and P0-A (section 9,
+decisions 21–25: a customer-run redaction service, caller ids always
+mapped, host sensors and multi-source binding deferred to P4, content
+validated after the Node acknowledges it, the `with Pool()` limit),
+corrects the capture-queue default, re-verifies section 2.1 against the
+v0.8 code and marks P0 and P0-A built (rows R64-*).
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -119,7 +128,8 @@ both on one spool and one sequencing model:
   Reported records are `reported`. Out-of-process optional producers (the
   auditd receiver and the eBPF host emitter) emit records with their own
   (source, epoch) and their own cursor or spool, not the agent spool; they
-  are corroboration only.
+  are corroboration only, and until P4 they run in the `local` profile
+  only (decision 23, section 2.8).
 
 In-process, both inputs share one durable agent spool (the fsync'd, flock-admitted,
 fork-safe wire spool, 048 §2), one allocator per (source, epoch), one
@@ -188,35 +198,53 @@ Fabric OSS never does, and this contract never specifies:
 
 ## 2. Cross-cutting model
 
-### 2.1 Current state, verified against code (`c3f1e51`, rechecked for rev 4)
+### 2.1 Current state, verified against code (main `36f7a89`, v0.8, rechecked for rev 6.4)
+
+Python paths are relative to `sdk/python/src/fabric/`; Node paths to
+`components/otel-collector-fabric/`. Rows marked *(P0-A)* changed when
+P0-A was built; rows marked *(v0.8)* record runtime work merged with it
+(agent matrix and chaos reports) that earlier revisions did not describe.
 
 | Claim | Verified state | Evidence |
 |---|---|---|
-| `fabric.event_id` is emitted | **False.** No Python or TypeScript code emits it. It is only admitted by the span protection list and the fabricguard allowlist. The explicit line has its own per-record `record_id` (uuid4 hex). | `sdk/python/src/fabric/_span_protection.py:76`; `fabricguardprocessor/allowlist.go:24`; `call_recorder.py:156` |
-| SDK records are sequenced | **False.** `record_*`, `tool_call()` and `llm_call()` spans carry no `fabric.source.*`; only the wire pipeline and loss/heartbeat records set them. `SourceAllocator` refuses any component other than `wire`; the spool knows only `exchange`, `loss`, `marker`. | `wire/_pipeline.py:134-135`; `_loss.py:50,59`; `_sequence.py:126-127`; `wire/_spool.py:45` |
-| The verifier ignores unknown records | **True, by attributes.** `observe()` classifies a span as an exchange if it has `fabric.wire.exchange_id`, as a heartbeat if it has `fabric.heartbeat.last_sequence`, as a loss if it has `fabric.loss.reason`; anything else is ignored. Heartbeats and loss records do not consume sequences. | `reconstruct/_inputs.py:498-518`; 047 §6 |
-| The explicit line has its own journal and spool | **True.** `CallRecorder` sequences per (tenant, run) in its own journal (`SyntheticSourceSpool`, own epoch) and ships bytes through an AES-256-GCM `DurableByteSpool`; the wire spool is plaintext with owner-only permissions. | `call_recorder.py:100-121`; `source_spool.py:195-204`; `byte_spool.py:1-20`; `wire/_spool.py:153-159,257-261` |
-| A framework adapter ships in the package | **No longer.** `adapters/crewai.py` was removed by the owner-approved cleanup (chore/recorder-cleanup), as TARGET directs (section 2.11). | `sdk/python/src/fabric/adapters/` |
-| Explicit withholding survives `adopt()` | **False.** `ExplicitScope` has only `model` and `ended`. | `_capture_scope.py:43-58`; `wire/_transport.py:178-198` |
-| User and session ids are protected | **False.** `decision()` sets `fabric.session_id` and `fabric.user_id` in clear (Python and TypeScript). fabricguard admits `fabric.session_id` in clear; it does not admit `fabric.user_id` (only `user_id_hash`), so the Node drops it, but any non-Node exporter receives it. `fabric.memory.key`, `fabric.interaction.target` and `fabric.file.path` are emitted clear and not admitted. | `decision.py:256,271,663-666,1209,1295,1373`; `sdk/typescript/src/decision.ts:725`; `allowlist.go:23,27` |
-| An oversized model request keeps its text | **False.** Default `max_body_bytes` is 8 MiB. Retention keeps whole chunks only; an in-memory request body is one chunk, so a 9 MiB request retains nothing: digest but no stored object, and no metadata parse. | `wire/_config.py:31,78`; `wire/_stream.py:257-271`; `wire/_pipeline.py:92,364`; 047 §4 rule 4 |
-| Node accepts large bodies | Node receiver `max_request_body_size` is 64 MiB per request; in node mode the SDK caps one body at 63 MiB (1 MiB for the record envelope); in-process cap 64 MiB. | 048 §4; `wire/_config.py:31,148` |
-| Node mode needs a policy and a key | **False.** Node mode needs tenant, spool directory, content endpoint and a traces endpoint; the id key is optional and `FABRIC_CAPTURE_POLICY` does not exist. Malformed node-mode configuration raises `ValueError` at install. | `wire/_config.py:95,144-148`; 048 §1 |
-| The Node content path can carry new roles | **False.** `fabriccontent` admits exactly two roles, `provenance` must be `protocol`, `boundary` must be `provider_bound`, `status` only `stored`/`truncated`. | `fabriccontentexporter/record.go:35-37,55-60` |
+| `fabric.event_id` is emitted | **False.** No Python or TypeScript code emits it. It is admitted by the span protection list and the fabricguard allowlist. The explicit line has its own per-record `record_id` (uuid4 hex). | `_span_protection.py:76`; `processor/fabricguardprocessor/allowlist.go:24`; `call_recorder.py:168` |
+| SDK records are sequenced | **False.** `record_*`, `tool_call()` and `llm_call()` spans carry no `fabric.source.*`; only the wire pipeline and loss/heartbeat records set them. `SourceAllocator` refuses any component other than `wire`; the spool knows only `exchange`, `loss`, `marker`. | `wire/_pipeline.py:175`; `_loss.py:60,69`; `_sequence.py:165-167`; `wire/_spool.py:79` |
+| The verifier ignores unknown records | **True, by attributes.** `observe()` classifies a span as an exchange if it has `fabric.wire.exchange_id`, as a heartbeat if it has `fabric.heartbeat.last_sequence`, as a loss if it has `fabric.loss.reason`; anything else is ignored. Heartbeats and loss records do not consume sequences. | `reconstruct/_inputs.py:520-545`; 047 §6 |
+| The explicit line has its own journal and spool | **True.** `CallRecorder` sequences per (tenant, run) in its own journal (`SyntheticSourceSpool`, own epoch) and ships bytes through an AES-256-GCM `DurableByteSpool`. *(P0-A)* The wire spool now has the same kind of optional envelope (`FWSPENC1`, `spool_key`), required in the production profile (section 7.8). | `call_recorder.py`; `source_spool.py`; `byte_spool.py`; `wire/_spool.py:13-16,185-188`; `wire/_config.py:134-135` |
+| A framework adapter ships in the package | **No.** `adapters/crewai.py` was removed by the owner-approved cleanup (chore/recorder-cleanup); `adapters/` holds only the byte-boundary and synthetic-evidence producers (section 2.11). | `adapters/` |
+| Explicit withholding survives `adopt()` | **False.** `ExplicitScope` has only `model` and `ended`. | `_capture_scope.py:43-58`; `wire/_transport.py:200-220` |
+| User and session ids are protected | **True** *(P0-A)*. `decision()` emits `fabric.session_id` as `sess-` and `fabric.user_id` as `usr-` keyed pseudonyms (Python and TypeScript), memory keys as `mkey-`, interaction targets as `tgt-`, delegation targets as `agt-`; `identity_mode=clear` reproduces the earlier output. fabricguard admits both keys only in pseudonym form. | `decision.py:636,678-681,1223,1782,1991`; `sdk/typescript/src/decision.ts:669,745`; `processor/fabricguardprocessor/coverage_keys.go:34-35` |
+| An oversized model request keeps its text | **True within the 7.4 bounds** *(P0-A)*. Default `max_body_bytes` is 32 MiB, `max_retain_bytes` 64 MiB; large chunks are retained by reference; a JSON side above `max_body_bytes` is split into a skeleton and `model.exchange.part` objects (typed extraction, section 7.4). | `wire/_config.py:91-100`; `wire/_stream.py:42-43`; `wire/_protect.py:120-178` |
+| Node accepts large bodies | Node receiver `max_request_body_size` is 64 MiB per request; in node mode the SDK caps one body at 63 MiB (1 MiB for the record envelope); in-process cap 64 MiB. | 048 §4; `wire/_config.py:41,214` |
+| Node mode needs a policy and a key | **True** *(P0-A)*. Node mode is the `production` profile: without `FABRIC_CAPTURE_POLICY` or `FABRIC_WIRE_ID_KEY` content capture is disabled and metadata continues (`missing_capture_policy`, `missing_id_key`); without a spool key, `missing_spool_key`. Malformed configuration still raises `ValueError` at install. | `wire/_policy.py:30-35,156-180`; `wire/_config.py:180-215`; 048 §1 |
+| The Node content path can carry new roles | **True** *(P0-A)*. `fabriccontent` is driven by the generated role table (boundaries, provenance, media types, caps per role) and admits the privacy descriptor fields; `source_authenticated` is written by the exporter only. | `exporter/fabriccontentexporter/roles_generated.go`; `record.go:39-40,491`; `exporter.go:160-170` |
+| Content records are validated before the Node acknowledges them | **False** *(v0.8)*. The OTLP receiver acknowledges a batch (HTTP 200) once the exporter's sending queue holds it; `fabriccontent` validates each record afterwards and drops, counts and logs a refused one with a fixed reason. The agent learns of a refusal only when the receiver itself refuses the request (HTTP 400/413/415/422 or OTLP partial success, counted `content_rejected`). Decision 24, section 7.9. | `exporter/fabriccontentexporter/exporter.go:103-188`; `wire/_content.py:18-20,101-127`; `wire/_sender.py:412-426` |
+| A Node binds more than one agent source | **No.** fabricguard's `evidence_source_binding` and `fabriccontent`'s `source_binding` each name exactly one (tenant, source); the production gate requires both to match. Decision 23. | `processor/fabricguardprocessor/config.go:22,70-83`; `exporter/fabriccontentexporter/config.go:90-118`; `gate/gate.go:285-305` |
+| A production Node accepts host-sensor records | **No.** In the production profile the gate allows only the bound `otlp` and `otlp/content` receivers, so the auditd receiver and the eBPF emitter run against a separate `local`-profile Node. Decision 23. | `gate/gate.go:212-230`; `docs/host-sensors.md:91-98` |
+| The Node directory store is sharded | **True** *(v0.8)*. The directory backend stores at a two-level hash-prefix shard of the logical key; refs and envelope AADs keep the flat key; readers try the shard, then the flat name. | `exporter/fabriccontentexporter/backend_file.go:54-55,265,284`; 048 §4 step 4 |
 | Activity v2 can carry the projection | **False.** Closed schema, 13 event types, no per-field status. | `contracts/activity/v2/schema/activity-sequence-v2.schema.json` |
 | `fabric.step.type` is a closed step enum | **False.** It is a host-overridable label. | `_calls.py:164-192` |
-| Attempt ids are always distinct | **False for callers.** `CallRecorder` mints `call_id` per call, but accepts a caller `attempt_id`; decision records take a host `fabric.step.attempt_id`. | `call_recorder.py:236,250`; `_calls.py:171-175` |
-| Provider ids are keyed pseudonyms | **False.** `p-` + 16 hex of unkeyed SHA-256. | `reconstruct/_inputs.py:386-389` |
-| Run/source labels without a key | Fall back to unkeyed SHA-256. | `_sequence.py:65-71` |
-| Hosted tool items are projected | **False.** Only `function_call`/`custom_tool_call` are emitted tool calls. | `reconstruct/_stitch.py:73` |
+| Attempt ids are always distinct | **False for callers.** `CallRecorder` mints `call_id` per call, but accepts a caller `attempt_id` (mapped, below); decision records take a host `fabric.step.attempt_id`. | `call_recorder.py:237,247,255-274`; `_calls.py:173,199` |
+| Caller-supplied ids are mapped whatever their shape | **True** *(P0-A)*. Only an `EmittedId` (a `str` subtype minted by `_sequence.py`, recognised by type and issuer, never by shape) passes through; every plain string, including an `r-`/`s-`/`lbl-`-shaped one, is mapped: keyed pseudonyms with the key (`KeyedIds`), random `g-` ids in the production profile without it (`GeneratedIds`), as given only in `clear` mode or the local profile without a key. `fabric.wire.run()` always emits the run id's `r-` pseudonym (or the generated fallback), never the value passed in. Decision 22, section 2.9. | `_sequence.py:232-241,284-425`; `call_recorder.py:247-258`; `wire/__init__.py:593-620` |
+| Provider ids are keyed pseudonyms | **True with a key** *(P0-A)*: `p-` + 32 hex (v2, type `provider`); without a key the legacy `p-` + 16 hex of unkeyed SHA-256. | `reconstruct/_inputs.py:399-406` |
+| Run/source labels without a key | Local profile: unkeyed SHA-256 fallback. Production profile *(P0-A)*: nothing derived from the caller's value; the source id is random per process (`s-` + 32 random hex) and the run id the generated `source:<source>:<epoch>` fallback. | `_sequence.py:73-89,275-283`; `wire/__init__.py:607-614` |
+| Hosted tool items are projected | **False.** Only `function_call`/`custom_tool_call` are emitted tool calls. | `reconstruct/_stitch.py:73-74` |
 | History rewrite detection | An `info` gap `prefix_break`, reason `history_rewritten`; not compaction evidence. | `reconstruct/_stitch_check.py:127` |
 | Control vocabulary | `ControlObservation.decision` ∈ allow, deny, requires_review, unknown. | `control_evidence.py:58` |
-| Side effects default to committed | **True (unsafe).** `committed: bool = True`; the emitted boolean does not say whether it was defaulted. | `side_effect.py:92`; `decision.py:1404,1519` |
-| A side-effect context manager exists | **False.** Only `delegate()`/`adelegate()` are context managers. | `decision.py:1990-1991,2032` |
-| auditd netlink decoding | Parses each netlink header and rejects short or invalid lengths; the rev-1 claim that it "splits raw frames" was wrong. | `receiver/auditreceiver/netlink_linux.go:317-347` |
-| Capability declarations exist | **Removed.** `fabric.capture-sdk-capabilities/v1` (`capture_capabilities.py`) and `fabric.integration-coverage/v1` (`coverage_manifest.py`) were removed by the owner-approved cleanup (chore/recorder-cleanup); nothing records active capture points per source epoch until the capture manifest (section 2.8). | removed by chore/recorder-cleanup |
-| TypeScript wire capture | Not implemented. | `sdk/typescript/src/` |
-| Wire endpoints | POST only; chat/completions, responses, completions, embeddings, messages; OpenAI, Anthropic, Azure OpenAI by default. | `wire/_match.py:16-21,46`; `wire/_config.py:33-40` |
+| Side effects default to committed | **True (unsafe).** `committed: bool = True`; the emitted boolean does not say whether it was defaulted. | `side_effect.py:92`; `decision.py:1426,1541` |
+| A side-effect context manager exists | **False.** Only `delegate()`/`adelegate()` are public context managers. | `decision.py:2013-2014,2055-2056` |
+| auditd netlink decoding | Parses each netlink header and rejects short or invalid lengths. | `receiver/auditreceiver/netlink_linux.go:317-347` |
+| Capability declarations exist | **Removed.** `fabric.capture-sdk-capabilities/v1` and `fabric.integration-coverage/v1` were removed by the owner-approved cleanup (chore/recorder-cleanup); until the capture manifest (P1, section 2.8) `WireHandle.status()` and loss records say what is not captured. | `wire/__init__.py:433`; `wire/_detect.py:18-21` |
+| TypeScript wire capture | Not implemented. The TypeScript SDK has `decision.ts` identity parity and the byte-evidence recorder with the redaction-service client. | `sdk/typescript/src/` |
+| Wire endpoints | POST only; chat/completions, responses, completions, embeddings, messages; OpenAI, Anthropic, Azure OpenAI by default. | `wire/_match.py:12-21,46`; `wire/_config.py:47-53` |
+| aiohttp is captured | **True** *(v0.8)*: capture point `wire.py.aiohttp`, on with the wire input (`patch_aiohttp`, `FABRIC_WIRE_AIOHTTP=0` turns it off). | `wire/_aiohttp.py`; `wire/__init__.py:408-414`; `wire/_config.py:102-103` |
+| Model calls through an uninstrumented client are visible | **True** *(v0.8)*. A model-endpoint request sent through `requests` or `urllib3` (and `botocore` on it) takes a source sequence and is recorded as a loss with reason `uninstrumented_client`; a tee-able client loaded but not patched is reported by `WireHandle.status()`. Nothing is read but the method and URL. | `wire/_detect.py:1-21,157`; `wire/_transport.py:278-282`; `_loss.py:29-39` |
+| A full volume is told apart from the bound | **True** *(v0.8)*: `ENOSPC`/`EDQUOT` on a spool write is a `disk_full` loss (`disk_full_drops`), distinct from `queue_full` at the configured bound. | `wire/_spool.py:81-90`; `wire/_sender.py:197-214`; `reconstruct/_inputs.py:69-70` |
+| Loss evidence survives a full disk | **True** *(v0.8)*. The loss ledger (`.ledger`, 64 preallocated 4 KiB slots, per-process `lockf` ownership) holds the loss and marker records a process could not spool; the drainer exports orphaned slots of dead owners. | `wire/_ledger.py:1-50` |
+| The spool batches exchange writes | **True** *(v0.8)*. The capture worker writes the exchange records queued behind one another (up to 64, about 8 MiB) as one `FWSPOOLB` batch file with one fsync. | `wire/_pipeline.py:68,348-361`; `wire/_spool.py:7,42-45,143`; 048 §2 "Batch file" |
+| The capture queue is bounded by bytes | **True.** Every queued exchange stays charged to `max_inflight_bytes` (256 MiB) until written; `queue_max_items` (default 16384, 1–65536) caps only the per-entry overhead; a full queue is a `queue_full` loss (section 7.1). 048 §2 said 256 entries until its revision 9. | `wire/_config.py:43-45,95-100,152-153`; `wire/_pipeline.py:200-212` |
+| A killed forked worker's epoch is visible | **True for direct forked children** *(v0.8)*: each writes `(pid, epoch, next sequence)` into a shared anonymous map on every allocation, and the parent emits a `periodic` heartbeat for the child epoch, so a `with Pool()` worker killed by `terminate()` leaves an accounted, never-complete epoch. Spawned workers and grandchildren are not tracked (decision 25, section 2.10). | `wire/_forks.py:1-60` |
+| Customer redaction runs in Fabric | **No** *(P0-A)*. `redact`, `masked_only` and review copies are performed by a customer-run redaction service (`contracts/redaction/v1`) over a Unix socket or loopback HTTP, on the recorder's worker, with a hard timeout (default 5 s) and an in-flight bound (default 2); module references and callables are refused. Decision 21, section 7.7. | `redaction.py:1-40,143-156`; `wire/_config.py:123-131`; `contracts/redaction/v1/README.md` |
 
 ### 2.2 Provenance, capture points and assertion origin
 
@@ -931,6 +959,15 @@ point, or if an in-scope field names none:
 | `delivery.receipts` | S | qualified | destination | n/a | destination-provided | contract (delivery/v1); verified in qualified-run mode only (section 2.13) | spooled, accepted and durable delivery stages | not obtained automatically by recorder v1 | delivery/v1 | X37 |
 <!-- generated:points:end -->
 
+**Host sensors (decision 23).** `host.ebpf` and `host.auditd` are built,
+but in v0.8 they are **`local`-profile producers only**: a production Node
+admits only its bound agent ingress (section 7.9), so their records go to a
+separate `local`-profile Node and never enter a production run's verdict;
+a `corroborated_by` link to them is never production-qualified. A
+production host ingress — a separate bound ingress per host source, with
+its own source id and epoch — is a P4 work item (section 8.2). The two
+registry rows above do not yet state this limit (R64-5).
+
 ### 2.9 Pseudonymisation
 
 **Approved (owner, 2026-10-18) (decisions 7 and 8).**
@@ -978,7 +1015,11 @@ point, or if an in-scope field names none:
    the run id uses its generated trace/source fallback, and source ids are
    random per process (continuity across restarts is lost; the manifest
    says so); in the `local` profile, v1 labels keep their unkeyed fallback
-   and v2 ids are omitted.
+   and v2 ids are omitted. The explicit line's recorder ids (agent,
+   operation, attempt, parent call) are not omitted, because they join its
+   records: each distinct caller value is replaced by a random `g-` id,
+   remembered for the process (at most 65536 values), so nothing derived
+   from the value leaves the process (`GeneratedIds`, `_sequence.py`).
 6. **Key id and rotation.** `key_id` = `kid-` + 8 hex of
    `HMAC-SHA256(key, "fabric-id/v2/kid")`, in the manifest. A key change
    starts a new epoch (section 2.4, manifest rule 5). Continuity across rotation is
@@ -990,6 +1031,25 @@ point, or if an in-scope field names none:
    `clear` reproduces today's `decision()` behaviour.
 8. The verifier needs the key to compute or match pseudonyms; it never logs
    or reports it.
+9. **Caller-supplied ids are always mapped (decision 22).** Every id the
+   application passes in — run, session, user, agent, operation, attempt,
+   parent call, step, target, memory key or any other — is mapped by the
+   function of its type (v1 for `r-`/`s-`/`svc-`/`lbl-`, v2 otherwise, rule
+   5 without a key), **whatever its shape**: a value that already looks
+   like `r-…`, `s-…` or `lbl-…` is a clear id like any other. Only an id
+   this process emitted or minted passes through unchanged, and it is
+   recognised by its type — `EmittedId`, a `str` subtype that only
+   `_sequence.py` mints, carrying its issuer (the key id, or a per-instance
+   id without a key) — never by its shape or by a lookup. An emitted id that
+   was serialised and read back is a plain string again and is mapped.
+   Cross-process and cross-host continuity therefore comes from every
+   process passing the **same clear id**, which the deterministic keyed
+   mapping turns into the same pseudonym under the same key; it never comes
+   from passing an emitted `r-`/`s-` value onward. Resume tokens (section
+   2.10) are Fabric-emitted values that Fabric parses; they are carried as
+   emitted and never pseudonymised. The registry definition of `X08`
+   (section 3.1: "a value already in `r-` form is used verbatim") predates
+   this rule and is superseded by it until the registry is changed (R64-3).
 
 ### 2.10 Long-running and multi-machine runs: segments, termination, resume
 
@@ -1102,9 +1162,14 @@ uncertainty, if U exceeds the bound or `evaluated_at` lies within U of the
 deadline, the run state is `deadline_uncertain` and the verdict
 `unverified(clock_uncertain)`.
 
-**Key rotation** does not break a run: the run id travels in its `r-` form
-and is used verbatim, and predecessor entries carry identifiers as emitted.
-Run pseudonyms minted under different keys are listed as `run_aliases`.
+**Key rotation** does not break a run, but it changes the run's
+pseudonym. Every process passes the same clear run id (section 2.9 rule
+9), so segments recorded under different keys carry different `r-` values.
+The segment graph joins them: resume tokens and predecessor entries carry
+identifiers as emitted and are never re-mapped, and the verifier treats the
+run ids of segments joined by a predecessor entry as one run, listing the
+pseudonyms minted under different keys as `run_aliases`. Across a rotation
+without a token the two pseudonyms are two runs.
 
 **Limits, stated exactly.** Detected: every lost segment that a successor
 names, every declared branch (fork child, branch id) that is missing or
@@ -1118,20 +1183,37 @@ every present but unjoined branch, every post-terminal continuation. Not detecte
   token (without branch ids) goes to B and C, B is wholly lost and C
   terminates naming A, the run is `terminated`. Branch tokens close this.
 
+**Process pools (decision 25).** A `multiprocessing` pool's
+`terminate()` — what leaving a `with Pool()` block does — SIGTERMs its
+workers; no exit hook runs. Calls a forked worker had allocated but its
+capture worker had not yet written are lost: the fork ledger
+(`wire/_forks.py`) still names the child epoch and its last allocated
+sequence in a parent heartbeat, so the loss is **accounted** and the epoch
+is never complete, but those calls' content is gone. A worker started by
+`spawn` or `forkserver`, and any grandchild, is not in the ledger: killed
+before its first record reaches the spool it leaves nothing and is
+**invisible** until P1 epoch registration (section 2.4) registers it at its
+`install()` and the next epoch registered on the same spool declares it in
+`unsealed_prior_epochs` (section 2.12 rule 5). An application that needs
+every call closes the pool with `close()` and `join()` before leaving the
+block.
+
 **Resume contract (what the application or orchestrator must
 propagate).** Fabric never injects anything into model requests; the
 application carries these on its own carriers between its own processes:
 
 | What | Value | In-process | Child process / batch worker | Across services and machines (HTTP, queues) |
 |---|---|---|---|---|
-| Run id | `r-` + 32 hex as emitted (never the clear id) | `fabric.wire.run(run_id=…)` | env `FABRIC_RUN_ID` | W3C `baggage` entry `fabric.run=<r-…>`, or the message attribute `fabric.run` |
+| Run id | the application's own **clear** run id, the same value in every process (an opaque value of the application's choosing is recommended); never an emitted `r-` value, which would be mapped again (section 2.9 rule 9) | `fabric.wire.run(run_id=…)` | env `FABRIC_RUN_ID` | W3C `baggage` entry `fabric.run=<run id>`, or the message attribute `fabric.run` |
 | Resume token(s) | `fr2/<segment_id>/<source_id>/<epoch>/<last_sequence>/sha256:<hex>[/br-<hex>]`, comma-separated for a join, percent-encoded in `baggage` | `fabric.wire.run(run_id=…, resume=token)` | env `FABRIC_RUN_RESUME_TOKEN` | `baggage` entry `fabric.resume=<token>`, or message attribute `fabric.resume` |
 | Trace context | W3C `traceparent` / `tracestate` | ambient | the app's propagator | the app's propagator |
 
 Rules:
 
-- `fabric.wire.run()` accepts a run id already in `r-` form and uses it
-  verbatim (P1); a clear id is pseudonymised once, by the root segment.
+- `fabric.wire.run()` maps every run id it is given, an `r-`-shaped one
+  included (built; decision 22): each process maps the same clear id to
+  the same `r-` under the same key, so no process needs another's emitted
+  value. Only resume tokens are passed on as Fabric emitted them.
 - `install_from_env()` reads `FABRIC_RUN_ID` and `FABRIC_RUN_RESUME_TOKEN`;
   the first `fabric.wire.run()` without an explicit id joins that run.
 - Without a run id, the 047 fallback `trace:<trace id>` puts processes that
@@ -1142,7 +1224,8 @@ Rules:
   **`parent_run_id` (`X10`)** is a child run: separate, its root has
   predecessor `none`.
 - Configure propagators so `baggage` is not sent to model providers or third
-  parties; the values are pseudonymous, but linkable.
+  parties: the run id is the application's clear value, and tokens are
+  pseudonymous but linkable.
 
 **When propagation is missing**, reconstruct reports separate runs, and
 links two runs with `same_as` only as a tentative inference by
@@ -1157,7 +1240,7 @@ Every guarantee of main's explicit evidence line is kept and moved:
 | Guarantee | Lives today | Lives in the target | Phase |
 |---|---|---|---|
 | Exact byte boundary (bytes exactly as handed to or returned by the caller's delegate; `boundary`, `representation: exact`) | `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`, `ByteEvidenceRecorder` | Unchanged producers on the records input; descriptors keep content-v2 `boundary` and `representation`; D2 still makes the explicit producer own a model call over the wire tee | P1 |
-| Governed redaction before persistence (`retain_original`, `redact`, `tokenize`, `metadata_only`, `omit`; masked-only never persisted in original form; failed transformation withholds) | `ByteEvidenceRecorder` privacy modes, `GovernedLocalContentStore` | Applied by the records producer before spool admission, driven by the capture policy and role table (sections 2.7, 7.5); the spool and writer only ever see protected bytes | P0-A |
+| Governed redaction before persistence (`retain_original`, `redact`, `tokenize`, `metadata_only`, `omit`; masked-only never persisted in original form; failed transformation withholds) | `ByteEvidenceRecorder` privacy modes, `GovernedLocalContentStore` | Applied by the records producer before spool admission, driven by the capture policy and role table (sections 2.7, 7.5); `redact` and `masked_only` through the customer-run redaction service (section 7.7, decision 21); the spool and writer only ever see protected bytes | P0-A |
 | Encrypted spool at rest (AES-256-GCM, customer key, never saved) | `byte_spool.py` `DurableByteSpool` | Optional envelope encryption of the unified spool, the same construction; manifest `spool_encrypted`; required when the capture policy says so. `DurableByteSpool` stays until parity tests pass | P0-A (contract), P1 (code) |
 | 16 MiB explicit object cap | `byte_evidence.py:255`, `governed_store.py:72` (`coverage_manifest.py:77` removed by the owner-approved cleanup, chore/recorder-cleanup) | Manifest limit `records_max_object_bytes` (default and maximum 16 MiB) for exact-byte objects of the records producers; wire objects keep `max_body_bytes` (32 MiB) | P1 |
 | Per-run accounting (every journal event of a run is either delivered or a visible gap) | per-(tenant, run) journal sequence (`source_spool.py`) | Segment membership (`fabric.run.segment_id`) and segment graph (2.10) on the shared allocator; loss records for queue-full positions | P1 |
@@ -1227,7 +1310,9 @@ store and the telemetry can recompute it.
    `unsealed_prior_epoch_count`), including epochs with zero surviving
    records; each is a gap (`unsealed_epoch`) for its runs. Fork children
    never register; a lost fork child is caught by the declared-branch rule
-   (G2). Lost epochs on other hosts fall under chaining and the deadline
+   (G2). A spawned worker registers at its own `install()`, which is what
+   makes one killed before its first record visible (section 2.10, process
+   pools). Lost epochs on other hosts fall under chaining and the deadline
    (section 2.10).
 
 The default seal detects a deleted tail, a substituted or edited record
@@ -1269,7 +1354,9 @@ Columns: **Observed by** lists capture-point ids (section 2.8) only.
 verdict; `O` = present when supplied, omitted means `unknown`, not counted.
 **If hook absent**: status when the observing capture point is absent
 (2.6); `always` = Fabric always has it. **Phase**: phase that delivers it
-(`built` = exists at `c3f1e51`). **Lives in**: `T` telemetry key (exact,
+(`built` = exists at `c3f1e51`; P0 and P0-A are built since v0.8, main
+`36f7a89`, so a phase `P0` or `P0-A` is built too, section 8.2; the
+registry relabel is listed in R64-10). **Lives in**: `T` telemetry key (exact,
 fabricguard-validated), `C` content role, `P` projection only, `M` capture
 manifest (section 4).
 
@@ -1544,7 +1631,7 @@ the listed reporting or hook phase.
 | Multi-agent / delegation | hand-off | `S22`–`S25`, link `delegates`, `X10` |
 | | sub-agent run | `X10`, `X12`, `S03` = `sub_agent` |
 | | agent-to-agent message | `N58`, `S03` |
-| | cross-process continuation | `X08` reused, `X11`, `X20` (propagated trace) |
+| | cross-process continuation | `X08` (the same clear run id, mapped in each process, plus a resume token; 2.10), `X11`, `X20` (propagated trace) |
 | Workflow / DAG | node, iteration | `S17`, `S18` |
 | | branch, join, fan-out | links `depends_on`, `caused_by`; `S20` for queued work |
 | | retry, fallback, hedge | `S13`–`S16`, links `retries`, `fallback_of`, `hedges` |
@@ -1592,6 +1679,7 @@ the listed reporting or hook phase.
 | Network-frame and stream-chunk timing | Wire tee concatenates bodies | `S30`, `S31` |
 | A lost last segment of a resumable run, before it sealed terminally and before any successor names it | Nothing references it | run `open` until the deadline, then `partial(run_unterminated)` (2.10) |
 | A wholly lost token consumer or worker that nothing declared | Nothing references it | invisible; issue branch tokens (`resume_token(branches=n)`, dispatch `branch_id`) to make each consumer detectable by id (2.10) |
+| Calls a `with Pool()` worker had allocated but not written when `terminate()` killed it; a spawned pool worker killed before its first record | No exit hook runs; spawned workers are not in the fork ledger | forked worker: an accounted loss, its epoch never complete; spawned worker: nothing until P1 epoch registration, then `unsealed_epoch` (2.10, decision 25) |
 | Human browser tabs, direct sockets, other runtimes without a capture point | No capture point | manifest `uncaptured_classes`; fields `unsupported` |
 | Evaluation results, policy outcomes computed by Fabric | Not Fabric OSS | — |
 
@@ -1888,9 +1976,19 @@ Exporter semantics (P0-A), applied per record:
    receiver-owned `source_authenticated` boolean. Manifest
    `2.0.0` → `2.1.0`; content-v2 is a draft, not a public contract.
 
-The agent spool and sender carry any role in the table; a refused record
-is a counted loss surfaced as `not_captured(destination_rejected)`. The
-explicit line's `byte_spool` / governed store stays supported.
+The agent spool and sender carry any role in the table. The exporter
+applies rules 1–6, the tenant and source-binding checks and the conflict
+check **after** the Node has acknowledged the batch (decision 24, section
+7.9): a refused record is dropped, counted and logged at the Node with a
+fixed reason, the agent has already retired it, and reconstruct finds the
+object missing (`missing_object`, integrity `partial`; in the projection
+`not_captured(store_failed)`, never `captured`).
+`not_captured(destination_rejected)` is reserved for a refusal the agent
+observes: today only the content receiver refusing the request itself
+(HTTP 400/413/415/422 or OTLP partial success), which the sender counts
+(`content_rejected`); every rule above once validation moves before
+acknowledgement (P1 candidate). The explicit line's `byte_spool` /
+governed store stays supported.
 
 <!-- generated:roles:begin -->
 | Role | Status | Layer | Boundary | Provenance | Media types | Default policy | Cap | Phase | Holds |
@@ -2216,7 +2314,13 @@ unchanged; the projection adds layer verdicts. Neither ever emits
    ≤ 2 µs per streamed chunk, ≤ 5 µs per non-matching request. Each new
    capture point sets its budget in its phase before it ships.
 5. **Bounded memory.** Per-side retention, global in-flight budget and
-   queue bounds (section 7.4); a full queue drops with `queue_full`.
+   queue bounds (section 7.4). The capture queue is **bounded by bytes**:
+   every queued exchange keeps its retained bodies charged to
+   `max_inflight_bytes` (default 256 MiB) until the worker has written it,
+   and `queue_max_items` (default 16384, range 1–65536) only caps the
+   per-entry overhead (`wire/_config.py:43-45,95-100`). A full queue drops
+   with `queue_full`, never a wait. (048 §2 said 256 entries until its
+   revision 9.)
 6. **Recording failures affect evidence, never the action**, for every
    reporting API too: a raising, slow or full recorder inside `record_*`
    never propagates or delays (P2/P3 gates).
@@ -2266,7 +2370,7 @@ an authenticated source binding at the Node (section 7.9).
 configuration is: an unreadable or schema-invalid capture policy, a key
 under 16 bytes, an invalid endpoint, node mode without tenant or spool
 directory, and every other `ValueError` that `WireConfig` raises today
-(`wire/_config.py:101,144-148`). These keep raising at explicit `install()`
+(`wire/_config.py:140-215`). These keep raising at explicit `install()`
 (autoload catches and logs, 047 §3). An implementer must not turn them into
 silent disablement.
 
@@ -2374,15 +2478,27 @@ the content writer or the network before it has run.
    `original_plus_masked`, `retain_original`. deployment-policy/v1 gains
    `masked_only` and `original_plus_masked` (minor, P0-A).
 3. **Transformations.** `tokenize` is HMAC-SHA256 with a tenant-scoped
-   tokenization key (distinct from the id key); `redact` and `masked_only`
-   use a customer-supplied, versioned transformation (Fabric ships no PII
-   detector). `original_plus_masked` stores the original and a masked review
-   copy as separate objects; a review copy never satisfies a requirement
-   for the original. Each stored object records `privacy_mode`,
+   tokenization key (distinct from the id key). `redact`, `masked_only` and
+   the review copy of `original_plus_masked` are performed by a
+   **customer-run redaction service** (`contracts/redaction/v1`, decision
+   21): the configuration names a versioned transformation (`id`,
+   `version`) per role, and the recorder's worker — never the application's
+   thread — posts one object's bytes to the service over a Unix socket or
+   loopback HTTP (no TLS, no proxy, no redirect), with a hard timeout
+   (default 5 s, at most 300 s) and an in-flight bound (default 2; a call
+   above it is withheld at once, never queued). Fabric ships no PII detector
+   and never runs customer code: no imported module, no callable, no child
+   process and no thread of its own for it; a module reference or callable
+   in the configuration is refused at install. `original_plus_masked`
+   stores the original and a masked review copy as separate objects; a
+   review copy never satisfies a requirement for the original. Each stored object records `privacy_mode`,
    `protection_status`, `transformation_id`/`version` and the policy id,
    version and digest.
 4. **Failure withholds.** A transformation error, timeout, unsupported
-   media, or a mode with no configured transformation withholds the
+   media, a mode with no configured transformation, or any redaction-service
+   failure (a status other than 200, any `3xx` included; no complete
+   response within the timeout; a response above the object cap; a
+   connection error; the in-flight bound reached) withholds the
    content: a descriptor-only object `not_captured`, `protection_status:
    withheld`, reason `protection_failed`, and the exchange span carries
    `fabric.wire.store_reason=protection_failed`. There is no fallback to raw
@@ -2462,6 +2578,34 @@ projection records `inputs.telemetry_origin` (`trusted_readback` or
 `imported`). Portable authenticated proof stays in qualified-run mode
 (section 2.13).
 
+**One agent source per Node (decision 23).** A binding names exactly one
+(tenant, source): fabricguard's `evidence_source_binding` and every
+`fabriccontent` exporter's `source_binding` must name the same pair, and
+the production gate refuses anything else. A production Node therefore
+serves the agents of one source id; agents with different source ids each
+need their own Node. Multi-source binding — one Node, several declared
+sources, each record bound to exactly one of them with the forged-identity
+refusal per source, as a DaemonSet Node needs — is a P4 design item.
+
+**Host sensors (decision 23).** The production gate admits only the bound
+`otlp` and `otlp/content` receivers, so the auditd receiver and the eBPF
+emitter run against a separate `local`-profile Node and their records are
+never stamped. A production host ingress (a separate bound ingress per
+host source, with its own source id and epoch) is P4.
+
+**Content validation after acknowledgement (decision 24).** Trace and
+marker batches are checked by fabricguard before the receiver answers, so
+a forged identity is refused to the agent. Content records are not: the
+content receiver acknowledges a batch (HTTP 200) once `fabriccontent`'s
+persistent sending queue holds it, and the exporter validates each record
+afterwards (section 4.3 rules 1–6, tenant, source binding, conflict),
+dropping, counting and logging a refused one with a fixed reason and no
+content. The agent has already retired its spool record; the loss shows at
+reconstruct as a missing object and its cause only in the Node's drop
+counter and log (section 4.3). **P1 candidate:** validate content records
+before acknowledgement, so a refusal reaches the agent as a non-retryable
+error and a `destination_rejected` loss.
+
 ### 7.10 Content v1 and reads
 
 - **Content v1 transcript manifests** stay **readable**: content v1 is a
@@ -2499,6 +2643,7 @@ fields that need no new role.
 
 **P0 — Contract freeze**
 
+- **Status: built**, merged in v0.8 (main `36f7a89`).
 - Entry: this spec accepted (owner confirms or amends section 9).
 - Work: finalise `contracts/coverage/v1` (registries, both schemas,
   vocabularies) with valid/invalid fixtures and
@@ -2527,6 +2672,12 @@ fields that need no new role.
 
 **P0-A — Content path and privacy gate**
 
+- **Status: built**, merged in v0.8 (main `36f7a89`), with the redaction
+  service of decision 21 and the bounds of decisions 23 and 24: source
+  authentication covers agent batches on a single-source binding (host
+  sensors stay `local`, multi-source binding is P4), and content records
+  are validated after the Node acknowledges them (moving it earlier is a
+  P1 candidate).
 - Entry: P0 exit.
 - Work: `fabriccontent` and SDK sender driven by the role table (section
   4.3); descriptor-only and `redacted` records; privacy fields; production
@@ -2573,7 +2724,9 @@ fields that need no new role.
   `fabric.wire.resume_token()`, `fabric.wire.end_run(…, resume=)`, 63-bit
   CSPRNG epochs registered at `install()`, the portable segment seal and
   its fabricguard migration (2.12), UTC deadline with clock uncertainty,
-  verbatim `r-` run ids, `FABRIC_RUN_ID`/`FABRIC_RUN_RESUME_TOKEN`; the
+  caller run ids mapped in every process and resume tokens passed as
+  emitted (2.9 rule 9, decision 22), `FABRIC_RUN_ID`/`FABRIC_RUN_RESUME_TOKEN`,
+  `run_aliases` across key rotation; the
   verifier's segment graph, `open`/`unterminated` run states and
   `same_as` inference limits; minted attempt ids and
   qualified aliases (2.3); identity block on wire spans and markers;
@@ -2586,6 +2739,9 @@ fields that need no new role.
   extraction (7.4); `fabric.step-projection/v1` for model calls: `C19`–`C23`,
   `C34`–`C40`, `N01`–`N16`, `N18`–`N21`, `N53`, `N55`, `N60`, `D17`,
   `D31`–`D34`, inferred links; provider hosted tools; reasoning formats.
+  **Candidate** (decision 24): validate content records before the Node
+  acknowledges them, so a refusal reaches the agent as a
+  `destination_rejected` loss.
 - Exit: the verifier rebuilds OpenAI Chat, OpenAI Responses (hosted tools,
   `previous_response_id`, stored conversations) and Anthropic Messages
   (thinking, redacted thinking, server tools) fixtures with a wrapper for
@@ -2603,12 +2759,19 @@ fields that need no new role.
   not a supported reader (no guarantee is asserted for it); two retries
   with identical caller ids are two attempts; two processes forced onto the
   same epoch are detected (redrawn at `install()` on one spool; otherwise
-  `segment_conflict` from the verifier).
+  `segment_conflict` from the verifier); a `spawn` pool worker killed
+  before its first record is declared by the next epoch's manifest 0
+  (`unsealed_epoch`), and a forked `with Pool()` worker killed by
+  `terminate()` stays an accounted, never-complete epoch (decision 25); an
+  `r-`-shaped run id passed by a caller is mapped, and two processes
+  passing the same clear id under one key share one run id (decision 22).
 - Exit (**long-running reference scenario**, `LR-1`): one resumable run
   spanning 3 processes on 2 hosts — process A on host 1 (segment 1)
   suspends with a resume token; 2 days later process B on host 2 resumes
-  it after an id-key rotation (new epoch, new `key_id`; the run id travels
-  as `r-…`); process C on host 1 resumes from B and ends the run with a
+  it after an id-key rotation (new epoch, new `key_id`; B passes the same
+  clear run id and A's token, so its segment carries the new key's `r-`
+  value and the verifier joins both pseudonyms as `run_aliases`); process
+  C on host 1 resumes from B and ends the run with a
   terminal segment seal (a `final=True` block). Verdicts asserted: after A only and within a 3-day
   deadline → `open`; all three present → `terminated` with
   `captured_for_declared_fields` (or withholding) for the model-calls
@@ -2700,14 +2863,22 @@ fields that need no new role.
 - Work: `mcp.client`, `exec.subprocess`, `exec.audit`, `db.dbapi`
   (sqlite3 and psycopg first), `http.nonmodel` (with vector-store and
   JSON-RPC dialects), `file.audit`, the SSH client wrapper (041),
-  `corroborated_by` joins with host sensors.
+  `corroborated_by` joins with host sensors; the **production host-sensor
+  ingress** — a separate bound ingress per host source, with its own source
+  id and epoch, so auditd and eBPF records can enter a production Node
+  (decision 23); **multi-source binding** for Nodes that serve several agent
+  sources, such as DaemonSet Nodes (decision 23; design to be settled in
+  its own spec before build).
 - Exit, per channel: a fixture server, driver or process ledger proves the
   exact bytes and operation set; no extra reads, fetches, pipes or
   requests; retry, parallelism, cancellation, partial consumption,
   transactions, timeout after possible commit, detached work; D2/D3
   honoured; hook passivity (raising body, budget, fork, recursion,
   audit self-event); header and environment credential canaries never
-  stored. No channel inherits another's qualification.
+  stored. No channel inherits another's qualification. Host-sensor records
+  reach a production Node only on their own bound ingress and are stamped
+  for that source only; a multi-source Node binds each record to exactly one
+  declared source and refuses a forged one per source (7.9).
 
 **P5 — Specialised runtimes and media**
 
@@ -2758,7 +2929,7 @@ opt-in hook.
 | Browser / computer use | P2 | P1 provider computer-use steps; P2 executed actions (R); P5 (H) | P1 requested actions + screenshots in model bytes; P2/P5 executed actions and snapshots | P3. Limit: a click is not proof of a business effect |
 | RAG pipeline | P2 index/config (R) | P2 retrieval/memory steps (R); P4 vector stores via `http.nonmodel`/`db.dbapi` (H) | P1 embeddings; P2 results schema (R); P4 (H) | P2 memory writes (R); P4 commit (H) |
 | Realtime / voice | P5 | P5 | P5 | P5. Until then the manifest declares `websocket`/`webrtc` uncaptured and fields are `unsupported` |
-| Batch / async workers | P1 per worker (epoch per process) | P2 dispatch identity and acks (R) | P1 for model calls in workers; P5 provider Batch API files | P2. Limit: acknowledged is not processed |
+| Batch / async workers | P1 per worker (epoch per process) | P2 dispatch identity and acks (R). Limit: a `with Pool()` worker killed by `terminate()` loses unwritten calls (accounted, never complete); a spawned worker killed before its first record is invisible until P1 registration (2.10) | P1 for model calls in workers; P5 provider Batch API files | P2. Limit: acknowledged is not processed |
 | Coding agent (additional row) | P2 | P4 exec/file hooks (H) | P4 consumed output and observed file ranges | P4. Limit: no PTY changes, no extra reads |
 | Resumable / long-running (additional) | P1 | P1 chained segments across epochs, processes and hosts; `open`/`unterminated` run states; P2 checkpoints | P1 | P2. Limit: a lost last segment before its terminal seal is detected only by the open-run deadline (2.10) |
 | Provider-stateful APIs (additional) | P1 with `provider_held` dependencies | P1 (stitching via ids) | P1 visible bytes only | P1 hosted tools as assertions |
@@ -2792,6 +2963,11 @@ Each is applied in this spec as its recommended default.
 | 18 | Branch guarantee | Distinct branch identities: `resume_token(branches=n)` and dispatch mint `br-` ids bound to the issuing seal; each must have exactly one sealed consumer; count-only semantics rejected. **Approved (owner, 2026-10-18).** | 2.10 |
 | 19 | Node content-queue encryption | The `fabriccontent` persistent queue is encrypted with the same customer-key envelope, required in production; delivery semantics unchanged. **Approved (owner, 2026-10-18).** | 7.8 |
 | 20 | Authentication trust boundary | The stamp counts only on trusted readback (Node export, configured store); imported files are authentication-unverified; portable proof stays in qualified-run mode. **Approved (owner, 2026-10-18).** | 1.1, 7.9 |
+| 21 | Customer redaction | `redact`, `masked_only` and `original_plus_masked` review copies are performed by a customer-run redaction service (`contracts/redaction/v1`; Unix socket or loopback only; hard timeout; withhold on failure); never module references or callables; Fabric never spawns processes or threads for customer code. **Approved (owner, 2026-10-19..22).** | 2.1, 2.11, 7.7 |
+| 22 | Caller-supplied ids | Always mapped through the keyed pseudonym function, whatever their shape; only ids this process emitted or minted (`EmittedId`) pass through; cross-process and cross-host continuity comes from passing the same clear id, never an emitted `r-`/`s-` value; resume tokens are Fabric-emitted values. **Approved (owner, 2026-10-19..22).** | 2.1, 2.9, 2.10, 3.6, 8.2 P1 |
+| 23 | Host sensors and source binding | Host sensors (auditd, eBPF) are `local`-profile only in v0.8; a production host ingress (a separate bound ingress per host source) is P4. A production Node binds exactly one agent source; multi-source binding (DaemonSet Nodes) is a P4 design item. **Approved (owner, 2026-10-19..22).** | 1.3, 2.1, 2.8, 7.9, 8.2 P0-A and P4 |
+| 24 | Content validation timing | Content records are validated after the Node's queue acknowledges them (HTTP 200, then drop, count and log); moving validation before acknowledgement is a P1 candidate. **Approved (owner, 2026-10-19..22).** | 2.1, 4.3, 7.9, 8.2 P1 |
+| 25 | Process pools | `with Pool()` can lose calls a worker had not written (accounted, never complete); spawned workers killed before their first record are invisible until P1 epoch registration. **Approved (owner, 2026-10-19..22).** | 2.1, 2.10, 2.12, 3.7, 8.2 P1, 8.3 |
 
 ---
 
@@ -3045,7 +3221,7 @@ Each is applied in this spec as its recommended default.
 |---|---|---|---|
 | R4-1 | Long-running runs: can a whole segment be lost silently? | Chained segments: every segment names its predecessors (source, epoch, last sequence, final-manifest digest) or `none`; a missing middle segment is detected (`segment_missing`, `partial`). Residual: a lost last segment is caught only by the open-run deadline; an unjoined, undispatched lost branch stays invisible | 2.10, 3.7, 6.2 |
 | R4-2 | Long-running runs: how is a run that is still going reported? | `open` run verdict within a customer-set `open_run_deadline`, `partial(run_unterminated)` after it; reproducible via `evaluated_at` | 2.10, 6.2 |
-| R4-3 | Long-running runs: what must be propagated across processes and machines? | Resume contract: `r-` run id and resume token via `fabric.wire.run()`, `FABRIC_RUN_ID`/`FABRIC_RUN_RESUME_TOKEN`, W3C `baggage` (`fabric.run`, `fabric.resume`) or message attributes; `resumed_from` vs `parent_run_id`; missing propagation → separate runs, tentative `same_as` only by `trace_id_match` or `cross_run_previous_response`; reference scenario LR-1 in P1/P2 gates | 2.10, 8.2 |
+| R4-3 | Long-running runs: what must be propagated across processes and machines? | (Run-id part superseded by R64-3: the clear run id is propagated, never the `r-` value.) Resume contract: `r-` run id and resume token via `fabric.wire.run()`, `FABRIC_RUN_ID`/`FABRIC_RUN_RESUME_TOKEN`, W3C `baggage` (`fabric.run`, `fabric.resume`) or message attributes; `resumed_from` vs `parent_run_id`; missing propagation → separate runs, tentative `same_as` only by `trace_id_match` or `cross_run_previous_response`; reference scenario LR-1 in P1/P2 gates | 2.10, 8.2 |
 | R4-4 | Two-input model: one allocator or two? | One allocator per (source, epoch) for both inputs: both now travel through the same spool and sender, so the rev-2 sampling objection no longer applies; host-tracer copies are unsequenced duplicates | 1.3, 2.4 |
 | R4-5 | Two-input model: where do the explicit line's guarantees go? | Kept and moved: exact boundary (records producers), governed redaction (before spool admission), encrypted spool (unified spool envelope), 16 MiB cap (`records_max_object_bytes`), per-run accounting (scope windows + chaining), receipts (qualified-run mode, section 2.13; superseded in rev 6), governed local store (writer backend); modules retired only with owner sign-off | 2.11 |
 | R4-6 | CrewAI and framework adapters | Removed from the default package and from the matrix wording; framework-specific capture only as an optional extension through the records input | 2.11, 5 rule 15, 8.3 |
@@ -3109,3 +3285,14 @@ Each is applied in this spec as its recommended default.
 | R63-13 | Schema versioning rule vs practice | Minor = edit in place + manifest minor bump + repin (content/v2, capture/v1 precedent) | 5 rule 8 |
 | R63-14 | Stale code citations | `capture_capabilities.py`, `coverage_manifest.py` and `adapters/crewai.py` marked as removed by the owner-approved cleanup (chore/recorder-cleanup); `control_protocol.py` and `enterprise.py` are not cited in the rev 6.2 text | 2.1, 2.8, 2.11, 7.4 |
 | R64-1 | `missing_spool_key` (P0-A build finding) | A production agent without a spool encryption key disables content capture and continues metadata (7.8 → 7.3); the case gets its own closed value in `fabric.wire.store_reason`, manifest `content_capture_reason` and the coverage reason vocabulary (mapped to the same-name reason). Owner-delegated decision | 7.8, 2.6, 4.2 |
+| R64-2 | Section 7.7 named "a customer-supplied, versioned transformation" without saying where it runs | Decision 21: a customer-run redaction service (`contracts/redaction/v1`) over a Unix socket or loopback HTTP, on the recorder's worker, hard timeout, bounded in-flight calls, withhold on every failure; module references and callables refused; Fabric never runs customer code | 2.1, 2.11, 7.7, 9 |
+| R64-3 | Lines implying emitted ids are passed on verbatim (run id "used verbatim", resume contract "`r-` as emitted", activity map "`X08` reused", P1 work "verbatim `r-` run ids", LR-1 "the run id travels as `r-…`") | Decision 22: caller ids are always mapped, whatever their shape; only `EmittedId` values pass through; continuity comes from the same clear id; resume tokens stay Fabric-emitted; key rotation joins pseudonyms through predecessor entries as `run_aliases`. The registry definition of `X08` still says "used verbatim" and is listed for the registry work package | 2.9 rule 9, 2.10, 3.6, 8.2 P1, R4-3 |
+| R64-4 | Production without a key: rule 5 said caller ids are omitted, but the explicit line must join its records | Stated as built: the explicit line's recorder ids become random `g-` ids remembered per process (`GeneratedIds`); nothing derived from the value leaves the process | 2.9 rule 5 |
+| R64-5 | Host sensors were described as corroborating production runs | Decision 23: `local` profile only in v0.8; production host ingress (separate bound ingress per host source) in P4. The `host.ebpf`/`host.auditd` registry `state` text does not state the limit; listed for the registry work package | 1.3, 2.1, 2.8, 7.9, 8.2 P4 |
+| R64-6 | Source binding cardinality was unstated | Decision 23: one (tenant, source) per Node in production; multi-source binding for DaemonSet Nodes is a P4 design item | 2.1, 7.9, 8.2 P4 |
+| R64-7 | Section 4.3 promised `not_captured(destination_rejected)` for every Node refusal, but the exporter validates after the receiver has acknowledged | Decision 24: validation after acknowledgement is the v0.8 behaviour; a Node-side refusal is a missing object at reconstruct (`not_captured(store_failed)` in the projection) and a Node counter and log line; `destination_rejected` only for refusals the agent observes; validation before acknowledgement is a P1 candidate | 2.1, 4.3, 7.9, 8.2 P1 |
+| R64-8 | `with Pool()` and spawned workers | Decision 25: forked workers killed by `terminate()` are accounted by the fork ledger, never complete; spawned workers and grandchildren invisible until P1 epoch registration, then `unsealed_epoch` | 2.1, 2.10, 2.12, 3.7, 8.2 P1, 8.3 |
+| R64-9 | Capture-queue default stated as 256 entries (048 §2) | Byte-bounded: `max_inflight_bytes` 256 MiB charges every queued exchange; `queue_max_items` default 16384 (1–65536) caps only per-entry overhead; 048 corrected in its revision 9 | 2.1, 7.1 rule 5, 048 §2 |
+| R64-10 | P0 and P0-A built | Marked built (v0.8, main `36f7a89`) in the status, section 3 conventions and 8.2. Registry `phase`/`state` values that still read `P0`/`P0-A` (12 field rows, 24 telemetry keys, 2 roles, the `install.config` and `sdk.records` capture points) are left for the registry work package | front matter, 3, 8.2 |
+| R64-11 | Section 2.1 cited `c3f1e51` | Re-verified at `36f7a89`: rows changed by P0-A (spool envelope, user/session pseudonyms, typed extraction, production profile, role table, provider ids, generated ids) and new rows for runtime work merged in v0.8 (`wire.py.aiohttp`, `uninstrumented_client`, `disk_full`, the loss ledger, the batched spool, the sharded Node store, the byte-bounded queue, the fork ledger, the redaction service, `EmittedId`, single-source binding, host sensors, validation after acknowledgement); citations updated | 2.1 |
+| R64-12 | Owner decisions 7–9 of 2026-10-19..22 (qualified-run mode separate, no framework adapters, TypeScript never a gate) | Already decisions 15, 13 (with section 5 rule 15) and 9; no change | 2.13, 5, 8.2 |
