@@ -89,9 +89,12 @@ class ProjectionSink(Protocol):
     def observed(self, obs: Observation, span: SpanRecord) -> None: ...
 
     def exchange_read(
-        self, exchange: ExchangeObs, request: ObjectResult, response: ObjectResult | None,
+        self,
+        exchange: ExchangeObs,
+        request: ObjectResult,
+        response: ObjectResult | None,
         view: StitchView,
-    ) -> None: ...  # fmt: skip
+    ) -> None: ...
 
 
 Profile = Literal["local", "production"]
