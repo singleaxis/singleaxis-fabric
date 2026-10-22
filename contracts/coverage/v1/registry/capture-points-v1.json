@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-point-registry/v1",
-  "registry_revision": 7,
+  "registry_revision": 8,
   "capture_points": [
     {
       "id": "fabric.self",
@@ -37,6 +37,7 @@
         "X44",
         "X45",
         "X47",
+        "X48",
         "C16",
         "S01",
         "S03",
@@ -53,7 +54,7 @@
       "runtime": "Python, TypeScript",
       "process_global": "no",
       "activation": "install-time environment and configuration",
-      "state": "built (tenant, labels); P0-A (policy), P1-P2 (identity block)",
+      "state": "built (tenant, labels, policy); P1-P2 (identity block)",
       "observes": "tenant, deployment identity block, capture policy, build digest, framework identity as configured",
       "cannot_observe": "anything not configured",
       "passivity_gate": "C0A-3",
@@ -238,7 +239,7 @@
       "runtime": "Python, TypeScript",
       "process_global": "no",
       "activation": "explicit API",
-      "state": "built (metadata, unsequenced); P1: records input on the shared allocator and spool; content roles P0-A/P2",
+      "state": "built (metadata, unsequenced); P1: records input on the shared allocator and spool; content roles built (P0-A) and P2",
       "observes": "`fabric.decision` records and spans: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill, `tool_call()`, `llm_call()`; new P2/P3 reporting APIs; sequenced on the process source from P1",
       "cannot_observe": "anything the application does not report",
       "passivity_gate": "P2/P3 recording-failure tests",
@@ -378,6 +379,7 @@
         "X43",
         "X44",
         "X46",
+        "X49",
         "S34"
       ],
       "input": "wire, records"
@@ -651,7 +653,7 @@
       "runtime": "Linux nodes",
       "process_global": "n/a (separate component)",
       "activation": "customer-deployed",
-      "state": "built (031); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only",
+      "state": "built (031); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only; `local` profile only (decision 23): a production Node admits only its bound agent ingress, so these records never enter a production run's verdict; a production host ingress (one bound ingress per host source) is P4",
       "observes": "exec and connect records; used only as `corroborated_by`",
       "cannot_observe": "in-process content",
       "passivity_gate": "031",
@@ -666,7 +668,7 @@
       "runtime": "Linux nodes",
       "process_global": "n/a (separate component)",
       "activation": "customer-deployed",
-      "state": "built (030); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only",
+      "state": "built (030); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only; `local` profile only (decision 23): a production Node admits only its bound agent ingress, so these records never enter a production run's verdict; a production host ingress (one bound ingress per host source) is P4",
       "observes": "exec and connect records; used only as `corroborated_by`",
       "cannot_observe": "in-process content",
       "passivity_gate": "030",

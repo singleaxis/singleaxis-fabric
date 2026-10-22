@@ -1,0 +1,20 @@
+{
+  "schema_version": "fabric.model-call-size-golden/v1",
+  "name": "response-70mib-side",
+  "rule": "Spec 050 §1.4 P1 exit (049 §7.4): sizes are synthetic. A request with one inline base64 image is split (the part is extracted, the text stays in the skeleton) and reassembles to source_sha256; a side above max_retain_bytes is truncated(body_cap). The bytes are rebuilt from the recipe: the JSON template with '@IMAGE@' replaced by image_base64_length copies of 'A', or a response of side_bytes copies of 'x' inside a JSON string.",
+  "api": "openai.chat_completions",
+  "limits": {
+    "max_body_bytes": 33554432,
+    "max_retain_bytes": 67108864,
+    "part_min_bytes": 65536
+  },
+  "recipe": {
+    "side": "response",
+    "side_bytes": 73400320
+  },
+  "expected": {
+    "side_byte_length": 73400320,
+    "status": "truncated",
+    "reason": "body_cap"
+  }
+}

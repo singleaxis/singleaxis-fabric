@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 8,
+  "registry_revision": 9,
   "coverage_status": [
     {
       "value": "captured",
@@ -70,7 +70,7 @@
     },
     {
       "value": "body_cap",
-      "meaning": "A side exceeded `max_retain_bytes`, or could not be split under `max_body_bytes`; whole-chunk truncation applied."
+      "meaning": "A side exceeded `max_retain_bytes`, or could not be split under `max_body_bytes`; whole-chunk truncation applied. Or a records object exceeded `records_max_object_bytes` (a descriptor-only object; exact bytes are never truncated)."
     },
     {
       "value": "part_cap",
@@ -223,6 +223,28 @@
     {
       "value": "deleted",
       "meaning": "The object existed and was deleted on request."
+    }
+  ],
+  "descriptor_reason": [
+    {
+      "value": "payload_too_large",
+      "meaning": "A records producer measured the value over its cap before encoding, or the object exceeded `records_max_object_bytes` on the worker. Projected `not_captured(body_cap)`.",
+      "projects_as": "not_captured(body_cap)"
+    },
+    {
+      "value": "parse_failed",
+      "meaning": "The value could not be read as the producer's input type (for example a lone surrogate in a `str` body). Projected `not_captured(parse_failed)`.",
+      "projects_as": "not_captured(parse_failed)"
+    },
+    {
+      "value": "encoding_failed",
+      "meaning": "A bounded encoder refused the value (depth, item or size limit before serialising). Projected `not_captured(parse_failed)`.",
+      "projects_as": "not_captured(parse_failed)"
+    },
+    {
+      "value": "not_exact_bytes",
+      "meaning": "The explicit line was given a value that is not exact bytes. Projected `unsupported(unsupported_api)`.",
+      "projects_as": "unsupported(unsupported_api)"
     }
   ],
   "provenance": [
@@ -413,6 +435,10 @@
     {
       "value": "run",
       "meaning": "Root of a run or of one `fabric.wire.run()` scope."
+    },
+    {
+      "value": "agent_turn",
+      "meaning": "One agent turn reported by `decision()`: the agent's handling of one input, enclosing its model, tool and other steps."
     },
     {
       "value": "model_call",
@@ -848,6 +874,32 @@
     {
       "value": "records",
       "meaning": "Everything the application reports or an opt-in hook observes through the SDK: `record_*`, `tool_call()`, `llm_call()`, the new P2/P3 APIs, and the explicit exact-byte producers (`CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`)."
+    }
+  ],
+  "run_id_basis": [
+    {
+      "value": "caller",
+      "meaning": "No valid resume token; the caller's clear run id (argument or same-host `FABRIC_RUN_ID`), mapped by the identity rule (clear mode: as given)."
+    },
+    {
+      "value": "caller_join",
+      "meaning": "Valid tokens with different run correlation ids, joined under the caller's mapped clear run id (fan-in under one application run); the verifier merges the predecessors' runs as `run_aliases`."
+    },
+    {
+      "value": "token",
+      "meaning": "Valid tokens that all carry one run correlation id; the run id is that id, verbatim (never re-mapped, so key rotation keeps it)."
+    },
+    {
+      "value": "token_conflict",
+      "meaning": "Valid tokens with different run correlation ids and no caller run id; the lowest correlation id (byte order) is taken and the verifier reports `segment_conflict`."
+    },
+    {
+      "value": "minted",
+      "meaning": "No valid token and no run id: a minted correlation id, `r-` + 32 CSPRNG hex, with no caller input."
+    },
+    {
+      "value": "legacy",
+      "meaning": "Opened from `fr2/` tokens (no correlation id) or a pre-P1 segment; the run id follows rule 4 or 5 and the verifier joins by predecessor union."
     }
   ],
   "run_only_verdicts": [

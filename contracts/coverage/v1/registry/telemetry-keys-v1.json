@@ -1,14 +1,15 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 9,
+  "registry_revision": 10,
   "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 §4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in its listed phase; today's admission stays until then). identity_mode names the admission under a Node configured identity_mode: clear ('existing': the clear value keeps its pre-049 admission); under the default pseudonymous Node only the check admits. Keys with owner receiver are stripped from every agent-supplied record. A check with span applies only on that span.",
+  "capture_check_rule": "capture_check is the closed check fabricguard applies to a reused key on the capture classes its placement names (spec 050 §3.14: the records class, the X05 block on exchanges and run_start); elsewhere the key keeps its existing admission. placement lists the capture record classes a key may appear on: exchange, record (the records input, spec 050 §3.14), loss, the heartbeat kinds run_start, run_end, segment_seal, periodic and final, and manifest (the fabric.capture_manifest span). A key without placement is admitted on non-capture spans only. The records class admits exactly the keys whose placement names record, each with its check (capture_check when the row has one): generated into fabricguard's recordKeyValidators and the SDK's fabric._records_keys_generated (spec 050 §3.4 rule A).",
   "keys": [
     {
       "key": "fabric.delegation.to_agent",
       "change": "changed",
       "field": "S22",
       "validator": "ID: `agt-` + 32 hex",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Admitted clear today.",
       "check": {
         "type": "string",
@@ -23,7 +24,7 @@
       "change": "changed",
       "field": "N46",
       "validator": "never admitted; the SDK stops emitting it in pseudonymous mode",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Clear path moves to the `artifact.locator` role.",
       "check": {
         "type": "never",
@@ -55,7 +56,7 @@
       "change": "changed",
       "field": "N58",
       "validator": "ID: `tgt-` + 32 hex (newly admitted)",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Decided: pseudonymise. Emitted clear today when not hashed and dropped by the Node; `fabric.interaction.target_hash` stays.",
       "check": {
         "type": "string",
@@ -70,7 +71,7 @@
       "change": "changed",
       "field": "N31",
       "validator": "ID: `mkey-` + 32 hex (newly admitted)",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Decided: pseudonymise. Emitted clear today and dropped by the Node; the clear key stays in the memory content roles.",
       "check": {
         "type": "string",
@@ -85,8 +86,12 @@
       "change": "changed",
       "field": "X13",
       "validator": "ID: `sess-` + 32 hex under a pseudonymous Node; clear only when the Node is configured `identity_mode: clear`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Admitted clear today.",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
       "check": {
         "type": "string",
         "pattern": "^sess-[0-9a-f]{32}$",
@@ -103,8 +108,12 @@
       "change": "changed",
       "field": "X14",
       "validator": "ID: `usr-` + 32 hex (newly admitted; clear values rejected)",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Emitted clear by `decision()` today and dropped by the Node (only `user_id_hash` is admitted).",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
       "check": {
         "type": "string",
         "pattern": "^usr-[0-9a-f]{32}$",
@@ -118,7 +127,7 @@
       "change": "changed",
       "field": "N01",
       "validator": "DIGEST: bare 64 hex (built form); digest of the stored, protected request object; absent when nothing is stored",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Today the digest of the original body (`_pipeline.py:136,293,302`). Never computed over the original under redact, tokenize, masked_only or metadata_only.",
       "check": {
         "type": "string",
@@ -134,7 +143,7 @@
       "change": "changed",
       "field": "N01",
       "validator": "DIGEST: bare 64 hex (built form); digest of the stored, protected response object; absent when nothing is stored",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Today the digest of the original body (`_pipeline.py:141,293,302`).",
       "check": {
         "type": "string",
@@ -180,6 +189,10 @@
       "field": "S03",
       "validator": "META: closed enum (field type)",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -203,6 +216,9 @@
       "field": "X19",
       "validator": "ID: uuid4",
       "phase": "P1 (records)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -259,6 +275,10 @@
       "field": "X06",
       "validator": "META: closed enum (capture_input vocabulary)",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -274,6 +294,10 @@
       "field": "X34",
       "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P1",
+      "placement": [
+        "run_start",
+        "run_end"
+      ],
       "check": {
         "type": "string",
         "pattern": "^sha256:[0-9a-f]{64}$",
@@ -289,6 +313,10 @@
       "validator": "ID: uuid4",
       "phase": "P1",
       "manifest_property": "manifest_id",
+      "placement": [
+        "run_start",
+        "run_end"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -303,6 +331,13 @@
       "field": "X39",
       "validator": "META: integer ≥ 0",
       "phase": "P1",
+      "placement": [
+        "run_start",
+        "run_end",
+        "segment_seal",
+        "periodic",
+        "final"
+      ],
       "check": {
         "type": "int",
         "min": 0
@@ -314,6 +349,16 @@
       "field": "X26",
       "validator": "LABEL: `^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$` (Fabric-defined id@version); emitted as is",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record",
+        "loss",
+        "run_start",
+        "run_end",
+        "segment_seal",
+        "periodic",
+        "final"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$",
@@ -787,6 +832,9 @@
       "field": "S11",
       "validator": "META: `^[A-Za-z0-9_.-]{1,64}$`",
       "phase": "P1 (provider)",
+      "placement": [
+        "exchange"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[A-Za-z0-9_.-]{1,64}$",
@@ -802,6 +850,10 @@
       "field": "S09",
       "validator": "META: closed enum (field type)",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -1008,7 +1060,7 @@
       "change": "new",
       "field": "X31",
       "validator": "META: boolean",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/encrypted_store_required",
       "check": {
@@ -1020,7 +1072,7 @@
       "change": "new",
       "field": "X31",
       "validator": "DIGEST: `sha256:` + 64 hex",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/policy_digest",
       "check": {
@@ -1036,7 +1088,7 @@
       "change": "new",
       "field": "X31",
       "validator": "LABEL: opaque id pattern",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/policy_id",
       "check": {
@@ -1053,7 +1105,7 @@
       "change": "new",
       "field": "X31",
       "validator": "META: integer ≥ 1",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_policy/policy_version",
       "check": {
@@ -1104,7 +1156,7 @@
       "change": "new",
       "field": "X33",
       "validator": "META: closed enum `enabled`, `disabled`, `metadata_only`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "content_capture",
       "check": {
@@ -1122,7 +1174,7 @@
       "change": "new",
       "field": "X33",
       "validator": "META: closed enum (schema)",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "content_capture_reason",
       "check": {
@@ -1202,7 +1254,7 @@
       "change": "new",
       "field": "X33",
       "validator": "META: closed enum `pseudonymous`, `clear`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "identity_mode",
       "check": {
@@ -1250,7 +1302,7 @@
       "change": "new",
       "field": "X33",
       "validator": "META: `^kid-[0-9a-f]{8}$`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "key_id",
       "check": {
@@ -1401,7 +1453,7 @@
       "change": "new",
       "field": "X33",
       "validator": "META: closed enum `local`, `production`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "profile",
       "check": {
@@ -1418,7 +1470,7 @@
       "change": "new",
       "field": "X33",
       "validator": "META: closed enum `keyed`, `unkeyed`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "pseudonym_mode",
       "check": {
@@ -1435,7 +1487,7 @@
       "change": "new",
       "field": "X34",
       "validator": "META: `^fabric\\.content-role-table/v[0-9]+@[0-9]+$`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "role_table_version",
       "check": {
@@ -1520,7 +1572,7 @@
       "change": "new",
       "field": "X47",
       "validator": "META: closed enum `bound`, `unbound`",
-      "phase": "P0-A",
+      "phase": "built",
       "manifest_property": "source_auth",
       "check": {
         "type": "enum",
@@ -1536,7 +1588,7 @@
       "change": "new",
       "field": "X34",
       "validator": "META: boolean",
-      "phase": "P0-A",
+      "phase": "built",
       "manifest_property": "spool_encrypted",
       "check": {
         "type": "bool"
@@ -1547,7 +1599,7 @@
       "change": "new",
       "field": "X34",
       "validator": "META: `^kid-[0-9a-f]{8}$`",
-      "phase": "P0-A",
+      "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span; only with `spool_encrypted` true. The key's id, never the key.",
       "manifest_property": "spool_key_id",
       "check": {
@@ -1968,6 +2020,9 @@
       "field": "X46",
       "validator": "ID: array (max 64) of `br-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "array",
         "items": {
@@ -1991,6 +2046,9 @@
       "field": "X46",
       "validator": "ID: array (max 64) of `seg-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "array",
         "items": {
@@ -2032,6 +2090,9 @@
       "field": "X12",
       "validator": "ID: `r-` + 32 hex (array, max 16)",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "array",
         "items": {
@@ -2055,6 +2116,9 @@
       "field": "X42",
       "validator": "META: integer range 60-31536000",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "int",
         "min": 60,
@@ -2066,7 +2130,10 @@
       "change": "new",
       "field": "D30",
       "validator": "META: closed enum (field type)",
-      "phase": "P2",
+      "phase": "P1 (`end_run`, run hook)",
+      "placement": [
+        "run_end"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2085,6 +2152,9 @@
       "field": "X10",
       "validator": "ID: `r-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "string",
         "pattern": "^r-[0-9a-f]{32}$",
@@ -2110,6 +2180,9 @@
       "field": "X41",
       "validator": "ID: array (max 64) of `none` or `<seg-id>/<opaque source id>/<epoch>/<last_sequence>/sha256:<64 hex>`; source id is the opaque id as emitted (pseudonymous or clear label)",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "array",
         "items": {
@@ -2146,6 +2219,10 @@
       "validator": "META: boolean",
       "phase": "P1",
       "note": "Also on token-issuing `segment_seal` markers; resumability is monotonic.",
+      "placement": [
+        "run_start",
+        "segment_seal"
+      ],
       "check": {
         "type": "bool"
       }
@@ -2156,6 +2233,9 @@
       "field": "X11",
       "validator": "ID: `r-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
       "check": {
         "type": "string",
         "pattern": "^r-[0-9a-f]{32}$",
@@ -2170,6 +2250,9 @@
       "field": "S34",
       "validator": "META: closed enum (field type)",
       "phase": "P1",
+      "placement": [
+        "run_end"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2186,6 +2269,14 @@
       "field": "X43",
       "validator": "ID: `seg-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record",
+        "loss",
+        "run_start",
+        "run_end",
+        "segment_seal"
+      ],
       "check": {
         "type": "string",
         "pattern": "^seg-[0-9a-f]{32}$",
@@ -2199,7 +2290,10 @@
       "change": "new",
       "field": "D30",
       "validator": "META: closed enum (field type)",
-      "phase": "P2",
+      "phase": "P1 (`end_run`, run hook)",
+      "placement": [
+        "run_end"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2222,6 +2316,9 @@
       "field": "X42",
       "validator": "META: boolean",
       "phase": "P1",
+      "placement": [
+        "segment_seal"
+      ],
       "check": {
         "type": "bool"
       }
@@ -2271,6 +2368,9 @@
       "field": "X46",
       "validator": "ID: array (max 64) of `br-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "segment_seal"
+      ],
       "check": {
         "type": "array",
         "items": {
@@ -2294,6 +2394,9 @@
       "field": "X44",
       "validator": "META: integer ≥ -1",
       "phase": "P1",
+      "placement": [
+        "segment_seal"
+      ],
       "check": {
         "type": "int",
         "min": -1
@@ -2305,6 +2408,9 @@
       "field": "X44",
       "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P1",
+      "placement": [
+        "segment_seal"
+      ],
       "check": {
         "type": "string",
         "pattern": "^sha256:[0-9a-f]{64}$",
@@ -2319,6 +2425,9 @@
       "field": "X44",
       "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P1",
+      "placement": [
+        "segment_seal"
+      ],
       "check": {
         "type": "string",
         "pattern": "^sha256:[0-9a-f]{64}$",
@@ -2443,7 +2552,7 @@
       "change": "new",
       "field": "X47",
       "validator": "META: const `true`; set only by fabricguard at a bound ingress, stripped when supplied by an agent",
-      "phase": "P0-A",
+      "phase": "built",
       "owner": "receiver",
       "note": "Receiver-owned: excluded from the seal digest (section 2.12).",
       "check": {
@@ -2485,10 +2594,15 @@
       "field": "S01",
       "validator": "META: closed enum (field type)",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
           "run",
+          "agent_turn",
           "model_call",
           "embedding",
           "input",
@@ -2527,6 +2641,10 @@
       "field": "S07",
       "validator": "META: closed enum (field type)",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2547,6 +2665,9 @@
       "field": "X18",
       "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
       "phase": "P1",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
@@ -2562,6 +2683,10 @@
       "field": "S08",
       "validator": "META: closed enum (field type)",
       "phase": "P1",
+      "placement": [
+        "exchange",
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2612,6 +2737,9 @@
       "field": "S30",
       "validator": "META: integer ≥ 0",
       "phase": "P1",
+      "placement": [
+        "exchange"
+      ],
       "check": {
         "type": "int",
         "min": 0
@@ -2622,7 +2750,10 @@
       "change": "new",
       "field": "X40",
       "validator": "META: closed enum (store_reason vocabulary)",
-      "phase": "P0-A",
+      "phase": "built",
+      "placement": [
+        "exchange"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2679,6 +2810,17 @@
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "event_id",
+      "placement": [
+        "exchange",
+        "record",
+        "loss",
+        "run_start",
+        "run_end",
+        "segment_seal",
+        "periodic",
+        "final",
+        "manifest"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -2717,7 +2859,21 @@
       "validator": "existing validator",
       "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
-      "manifest_property": "source_epoch"
+      "manifest_property": "source_epoch",
+      "placement": [
+        "exchange",
+        "record",
+        "loss",
+        "run_start",
+        "run_end",
+        "segment_seal",
+        "periodic",
+        "final"
+      ],
+      "capture_check": {
+        "type": "int",
+        "min": 0
+      }
     },
     {
       "key": "fabric.source_id",
@@ -2726,7 +2882,353 @@
       "validator": "existing validator",
       "phase": "built",
       "note": "Attribute of the `fabric.capture_manifest` span.",
-      "manifest_property": "source_id"
+      "manifest_property": "source_id",
+      "placement": [
+        "exchange",
+        "record",
+        "loss",
+        "run_start",
+        "run_end",
+        "segment_seal",
+        "periodic",
+        "final"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^s-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "s-c5aedfd8a3ee415e277e335bf1517ff4",
+          "billing-agent.prod"
+        ]
+      }
+    },
+    {
+      "key": "fabric.content.object_ids",
+      "change": "new",
+      "field": "X48",
+      "validator": "ID: array 1-8 of uuid4 (Fabric-generated content object ids, in reference order)",
+      "phase": "P1",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "examples": [
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+          ]
+        },
+        "max_items": 8,
+        "examples": [
+          [
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+          ],
+          [
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
+          ]
+        ],
+        "min_items": 1,
+        "unique": true
+      }
+    },
+    {
+      "key": "fabric.run.id_basis",
+      "change": "new",
+      "field": "X49",
+      "validator": "META: closed enum (run_id_basis vocabulary)",
+      "phase": "P1",
+      "placement": [
+        "run_start"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "caller",
+          "caller_join",
+          "token",
+          "token_conflict",
+          "minted",
+          "legacy"
+        ],
+        "source": "vocabulary:run_id_basis"
+      }
+    },
+    {
+      "key": "fabric.wire.endpoint_id",
+      "change": "new",
+      "field": "C35",
+      "validator": "LABEL: `^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$` (a built-in `<provider>.default` or the keyed `lbl-` label of a configured endpoint; never a hostname)",
+      "phase": "P1",
+      "placement": [
+        "exchange"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$",
+        "examples": [
+          "openai.default",
+          "anthropic.default",
+          "lbl-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.wire.provider_request_id",
+      "change": "new",
+      "field": "C40",
+      "validator": "ID: `p-` + 32 hex (keyed v2 of one provider response header value; opt-in, omitted without a key)",
+      "phase": "P1",
+      "placement": [
+        "exchange"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^p-[0-9a-f]{32}$",
+        "examples": [
+          "p-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.capture.source",
+      "change": "reused",
+      "field": "X27",
+      "validator": "META: closed enum `observed`, `reported` (X27 provenance as emitted; `inferred` exists only in the projection)",
+      "phase": "P1",
+      "note": "Allowlisted before spec 049 without a value check (legacy activity-envelope alias `capture_source`).",
+      "placement": [
+        "exchange",
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "observed",
+          "reported"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.source.sequence",
+      "change": "reused",
+      "field": "X06",
+      "validator": "existing validator (capture profile: int >= 0)",
+      "phase": "built",
+      "placement": [
+        "exchange",
+        "record"
+      ],
+      "capture_check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.run.id",
+      "change": "reused",
+      "field": "X08",
+      "validator": "existing validator (capture profile: `r-` + 32 hex, a minted correlation id, or a generated fallback `trace:`/`source:`/`h-`; clear under a Node configured identity_mode: clear)",
+      "phase": "built",
+      "placement": [
+        "exchange",
+        "record",
+        "run_start",
+        "run_end",
+        "segment_seal"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40}|source:(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,100}):(?P<epoch>[0-9]{1,19}))$",
+        "int64_groups": [
+          "epoch"
+        ],
+        "capture_labels": {
+          "group": "source",
+          "pseudonymous_pattern": "^s-[0-9a-f]{32}$"
+        },
+        "identity_mode": {
+          "clear": "existing"
+        },
+        "examples": [
+          "r-93347307304ecb0a9bb1b51ae90ac326",
+          "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+          "source:s-c5aedfd8a3ee415e277e335bf1517ff4:4611686018427387905"
+        ]
+      }
+    },
+    {
+      "key": "fabric.run.scope_id",
+      "change": "reused",
+      "field": "X09",
+      "validator": "existing validator (capture profile: uuid4)",
+      "phase": "built",
+      "placement": [
+        "exchange",
+        "record",
+        "run_start",
+        "run_end",
+        "segment_seal"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        "examples": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "key": "fabric.step.id",
+      "change": "reused",
+      "field": "X17",
+      "validator": "existing allowlist key; on records the mapped form only: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P1",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "examples": [
+          "op-7f3a",
+          "a-1b2c3d4e5f60718293a4b5c6d7e8f901"
+        ]
+      }
+    },
+    {
+      "key": "fabric.step.attempt_id",
+      "change": "reused",
+      "field": "X38",
+      "validator": "existing allowlist key; on records the mapped caller attempt id only: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
+      "phase": "P1",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "examples": [
+          "op-7f3a",
+          "a-1b2c3d4e5f60718293a4b5c6d7e8f901"
+        ]
+      }
+    },
+    {
+      "key": "fabric.agent_id",
+      "change": "reused",
+      "field": "X05",
+      "validator": "existing allowlist key; on capture spans an operator label (048 J1: `lbl-` + 32 hex under capture_labels pseudonymous)",
+      "phase": "P1",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "lbl-9f86d081884c7d659a2feaa0c55ad015",
+          "support-agent"
+        ]
+      }
+    },
+    {
+      "key": "fabric.system_id",
+      "change": "reused",
+      "field": "X05",
+      "validator": "existing allowlist key; on capture spans an operator label (048 J1: `lbl-` + 32 hex under capture_labels pseudonymous)",
+      "phase": "P1",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "lbl-9f86d081884c7d659a2feaa0c55ad015",
+          "support-agent"
+        ]
+      }
+    },
+    {
+      "key": "fabric.deployment_id",
+      "change": "reused",
+      "field": "X05",
+      "validator": "existing allowlist key; on capture spans an operator label (048 J1: `lbl-` + 32 hex under capture_labels pseudonymous)",
+      "phase": "P1",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "lbl-9f86d081884c7d659a2feaa0c55ad015",
+          "support-agent"
+        ]
+      }
+    },
+    {
+      "key": "fabric.release_id",
+      "change": "reused",
+      "field": "X05",
+      "validator": "existing allowlist key; on capture spans an operator label (048 J1: `lbl-` + 32 hex under capture_labels pseudonymous)",
+      "phase": "P1",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "lbl-9f86d081884c7d659a2feaa0c55ad015",
+          "support-agent"
+        ]
+      }
+    },
+    {
+      "key": "fabric.environment",
+      "change": "reused",
+      "field": "X05",
+      "validator": "existing allowlist key; on capture spans an operator label (048 J1: `lbl-` + 32 hex under capture_labels pseudonymous)",
+      "phase": "P1",
+      "placement": [
+        "exchange",
+        "run_start"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+          "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
+        },
+        "examples": [
+          "lbl-9f86d081884c7d659a2feaa0c55ad015",
+          "support-agent"
+        ]
+      }
     }
   ],
   "manifest_span": "fabric.capture_manifest",

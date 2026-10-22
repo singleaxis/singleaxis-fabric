@@ -1,0 +1,395 @@
+{
+  "schema_version": "fabric.span-category-vectors/v1",
+  "rule": "Spec 050 §3.4 rule N: a record's span name is category(name_hint, attribute keys), the port of fabricguard's activityCategory (processor/fabricguardprocessor/processor.go): heartbeat and loss markers first, then tool keys, model keys, the ordered key table, then the name itself when it is a known Fabric name, else fabric.activity. Only attribute keys decide, never values. fabricguard's Go test and the SDK's port read these cases.",
+  "cases": [
+    {
+      "name": "heartbeat beats loss",
+      "name_hint": "anything",
+      "attribute_keys": [
+        "fabric.loss.reason",
+        "fabric.heartbeat.last_sequence"
+      ],
+      "category": "fabric.capture_heartbeat"
+    },
+    {
+      "name": "loss record",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "fabric.loss.reason"
+      ],
+      "category": "fabric.capture_loss"
+    },
+    {
+      "name": "tool beats model",
+      "name_hint": "fabric.model_call",
+      "attribute_keys": [
+        "fabric.llm.system",
+        "fabric.tool.name"
+      ],
+      "category": "fabric.tool_call"
+    },
+    {
+      "name": "tool key fabric.tool.name",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "fabric.tool.name"
+      ],
+      "category": "fabric.tool_call"
+    },
+    {
+      "name": "tool key gen_ai.tool.name",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "gen_ai.tool.name"
+      ],
+      "category": "fabric.tool_call"
+    },
+    {
+      "name": "tool key fabric.tool.result_hash",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "fabric.tool.result_hash"
+      ],
+      "category": "fabric.tool_call"
+    },
+    {
+      "name": "model key fabric.llm.system",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "fabric.llm.system"
+      ],
+      "category": "fabric.model_call"
+    },
+    {
+      "name": "model key gen_ai.request.model",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "gen_ai.request.model"
+      ],
+      "category": "fabric.model_call"
+    },
+    {
+      "name": "model key fabric.wire.exchange_id",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [
+        "fabric.wire.exchange_id"
+      ],
+      "category": "fabric.model_call"
+    },
+    {
+      "name": "ordered key fabric.retrieval.source",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.retrieval.source"
+      ],
+      "category": "fabric.retrieval"
+    },
+    {
+      "name": "ordered key fabric.memory.kind",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.memory.kind"
+      ],
+      "category": "fabric.memory"
+    },
+    {
+      "name": "ordered key fabric.side_effect.type",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.side_effect.type"
+      ],
+      "category": "fabric.side_effect"
+    },
+    {
+      "name": "ordered key fabric.interaction.kind",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.interaction.kind"
+      ],
+      "category": "fabric.interaction"
+    },
+    {
+      "name": "ordered key fabric.file.operation",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.file.operation"
+      ],
+      "category": "fabric.file_access"
+    },
+    {
+      "name": "ordered key fabric.delegation.protocol",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.delegation.protocol"
+      ],
+      "category": "fabric.delegation"
+    },
+    {
+      "name": "ordered key fabric.checkpoint.checkpoint_id",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.checkpoint.checkpoint_id"
+      ],
+      "category": "fabric.checkpoint"
+    },
+    {
+      "name": "ordered key fabric.replay.execution_id",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.replay.execution_id"
+      ],
+      "category": "fabric.replay"
+    },
+    {
+      "name": "ordered key fabric.mcp.server",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.mcp.server"
+      ],
+      "category": "fabric.mcp.inventory"
+    },
+    {
+      "name": "ordered key fabric.skill.name",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.skill.name"
+      ],
+      "category": "fabric.skill"
+    },
+    {
+      "name": "ordered key fabric.hook.phase",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.hook.phase"
+      ],
+      "category": "fabric.hook"
+    },
+    {
+      "name": "ordered key fabric.coverage.kind",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.coverage.kind"
+      ],
+      "category": "fabric.coverage"
+    },
+    {
+      "name": "ordered key fabric.execution.status",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.execution.status"
+      ],
+      "category": "fabric.execution"
+    },
+    {
+      "name": "ordered key fabric.execution_id",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.execution_id"
+      ],
+      "category": "fabric.execution"
+    },
+    {
+      "name": "ordered key fabric.decision_id",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.decision_id"
+      ],
+      "category": "fabric.decision"
+    },
+    {
+      "name": "retrieval beats memory",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.memory.kind",
+        "fabric.retrieval.source"
+      ],
+      "category": "fabric.retrieval"
+    },
+    {
+      "name": "execution status beats decision id",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.decision_id",
+        "fabric.execution.status"
+      ],
+      "category": "fabric.execution"
+    },
+    {
+      "name": "unknown name",
+      "name_hint": "Patient Jane Doe",
+      "attribute_keys": [],
+      "category": "fabric.activity"
+    },
+    {
+      "name": "unknown fabric name",
+      "name_hint": "fabric.agent_turn",
+      "attribute_keys": [],
+      "category": "fabric.activity"
+    },
+    {
+      "name": "empty name",
+      "name_hint": "",
+      "attribute_keys": [],
+      "category": "fabric.activity"
+    },
+    {
+      "name": "unrelated keys keep the name",
+      "name_hint": "fabric.memory",
+      "attribute_keys": [
+        "fabric.step.kind",
+        "fabric.attempt.uid"
+      ],
+      "category": "fabric.memory"
+    },
+    {
+      "name": "known name fabric.cancellation",
+      "name_hint": "fabric.cancellation",
+      "attribute_keys": [],
+      "category": "fabric.cancellation"
+    },
+    {
+      "name": "known name fabric.capture_heartbeat",
+      "name_hint": "fabric.capture_heartbeat",
+      "attribute_keys": [],
+      "category": "fabric.capture_heartbeat"
+    },
+    {
+      "name": "known name fabric.capture_loss",
+      "name_hint": "fabric.capture_loss",
+      "attribute_keys": [],
+      "category": "fabric.capture_loss"
+    },
+    {
+      "name": "known name fabric.capture_manifest",
+      "name_hint": "fabric.capture_manifest",
+      "attribute_keys": [],
+      "category": "fabric.capture_manifest"
+    },
+    {
+      "name": "known name fabric.checkpoint",
+      "name_hint": "fabric.checkpoint",
+      "attribute_keys": [],
+      "category": "fabric.checkpoint"
+    },
+    {
+      "name": "known name fabric.coverage",
+      "name_hint": "fabric.coverage",
+      "attribute_keys": [],
+      "category": "fabric.coverage"
+    },
+    {
+      "name": "known name fabric.decision",
+      "name_hint": "fabric.decision",
+      "attribute_keys": [],
+      "category": "fabric.decision"
+    },
+    {
+      "name": "known name fabric.delegation",
+      "name_hint": "fabric.delegation",
+      "attribute_keys": [],
+      "category": "fabric.delegation"
+    },
+    {
+      "name": "known name fabric.deployment_change",
+      "name_hint": "fabric.deployment_change",
+      "attribute_keys": [],
+      "category": "fabric.deployment_change"
+    },
+    {
+      "name": "known name fabric.error",
+      "name_hint": "fabric.error",
+      "attribute_keys": [],
+      "category": "fabric.error"
+    },
+    {
+      "name": "known name fabric.execution",
+      "name_hint": "fabric.execution",
+      "attribute_keys": [],
+      "category": "fabric.execution"
+    },
+    {
+      "name": "known name fabric.file_access",
+      "name_hint": "fabric.file_access",
+      "attribute_keys": [],
+      "category": "fabric.file_access"
+    },
+    {
+      "name": "known name fabric.hook",
+      "name_hint": "fabric.hook",
+      "attribute_keys": [],
+      "category": "fabric.hook"
+    },
+    {
+      "name": "known name fabric.human_action",
+      "name_hint": "fabric.human_action",
+      "attribute_keys": [],
+      "category": "fabric.human_action"
+    },
+    {
+      "name": "known name fabric.interaction",
+      "name_hint": "fabric.interaction",
+      "attribute_keys": [],
+      "category": "fabric.interaction"
+    },
+    {
+      "name": "known name fabric.llm_call",
+      "name_hint": "fabric.llm_call",
+      "attribute_keys": [],
+      "category": "fabric.llm_call"
+    },
+    {
+      "name": "known name fabric.mcp.inventory",
+      "name_hint": "fabric.mcp.inventory",
+      "attribute_keys": [],
+      "category": "fabric.mcp.inventory"
+    },
+    {
+      "name": "known name fabric.memory",
+      "name_hint": "fabric.memory",
+      "attribute_keys": [],
+      "category": "fabric.memory"
+    },
+    {
+      "name": "known name fabric.model_call",
+      "name_hint": "fabric.model_call",
+      "attribute_keys": [],
+      "category": "fabric.model_call"
+    },
+    {
+      "name": "known name fabric.replay",
+      "name_hint": "fabric.replay",
+      "attribute_keys": [],
+      "category": "fabric.replay"
+    },
+    {
+      "name": "known name fabric.retrieval",
+      "name_hint": "fabric.retrieval",
+      "attribute_keys": [],
+      "category": "fabric.retrieval"
+    },
+    {
+      "name": "known name fabric.retry",
+      "name_hint": "fabric.retry",
+      "attribute_keys": [],
+      "category": "fabric.retry"
+    },
+    {
+      "name": "known name fabric.side_effect",
+      "name_hint": "fabric.side_effect",
+      "attribute_keys": [],
+      "category": "fabric.side_effect"
+    },
+    {
+      "name": "known name fabric.skill",
+      "name_hint": "fabric.skill",
+      "attribute_keys": [],
+      "category": "fabric.skill"
+    },
+    {
+      "name": "known name fabric.tool_call",
+      "name_hint": "fabric.tool_call",
+      "attribute_keys": [],
+      "category": "fabric.tool_call"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.test.items-v1.schema.json",
+  "title": "Evidence type fabric.test.items/v1 (spec 050 §3.4a item 7)",
+  "description": "One item of the carrier's test type: a named, counted, digested entry with an optional reference to a body object by its index in refs. Closed: no other property, no free text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "count"
+  ],
+  "properties": {
+    "name": {
+      "description": "LABEL.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+    },
+    "count": {
+      "description": "META.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "digest": {
+      "description": "DIGEST.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "kind": {
+      "description": "META.",
+      "enum": [
+        "alpha",
+        "beta",
+        "other"
+      ]
+    },
+    "ref_index": {
+      "description": "Index into the document's refs.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 63
+    },
+    "tags": {
+      "description": "META: at most 8 labels.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      }
+    }
+  }
+}

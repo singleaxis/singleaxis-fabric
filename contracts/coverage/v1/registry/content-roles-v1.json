@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.content-role-table/v1",
-  "registry_revision": 3,
+  "registry_revision": 4,
   "content_object_schema": "fabric.content-object/v2",
   "media_type_rule": "exact type/subtype, type/* wildcard, or * (any value passing the 047 §7 media rule)",
   "unknown_role": "rejected (destination_rejected)",
@@ -791,7 +791,7 @@
       ],
       "default_policy": "off",
       "cap": "64 KiB",
-      "phase": "P0-A",
+      "phase": "built",
       "telemetry_forbidden": true,
       "holds": "Clear identity of a user, approver or operator behind a pseudonym."
     },
@@ -1405,9 +1405,42 @@
       ],
       "default_policy": "content",
       "cap": "64 KiB",
-      "phase": "P0-A",
+      "phase": "built",
       "telemetry_forbidden": true,
       "holds": "File path and rename target behind `fabric.file.path_hash`."
+    },
+    {
+      "role": "record.evidence",
+      "status": "new",
+      "layer": "cross_cutting",
+      "boundary": [
+        "caller",
+        "provider_bound",
+        "tool",
+        "terminal",
+        "sandbox",
+        "remote",
+        "host",
+        "service"
+      ],
+      "provenance": [
+        "caller_reported",
+        "protocol"
+      ],
+      "media_types": [
+        "application/vnd.fabric.record-evidence+json"
+      ],
+      "default_policy": "metadata",
+      "cap": "1 MiB",
+      "phase": "P1",
+      "telemetry_forbidden": true,
+      "allowed_modes": [
+        "retain_original",
+        "metadata_only",
+        "omit"
+      ],
+      "holds": "The record's one `fabric.record-evidence/v1` document (spec 050 §3.4a): closed, registered evidence types; ids only in mapped or Fabric-generated form; no CONTENT-class value. Stored whenever a content destination exists, unless the capture policy maps it to `metadata_only` or `omit`."
     }
-  ]
+  ],
+  "allowed_modes_rule": "A row without allowed_modes admits every privacy mode; a row with it refuses any other mode at policy validation (a malformed policy raises at install). default_policy metadata (record.evidence only): the role carries no CONTENT-class value and is stored whenever a content destination exists, including when content capture is disabled (spec 049 §2.7 rule 0, spec 050 §9 delta 15)."
 }

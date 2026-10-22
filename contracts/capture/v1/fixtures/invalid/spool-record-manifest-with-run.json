@@ -10,16 +10,17 @@
   "marker": {
     "kind": "manifest",
     "last_sequence": -1,
+    "event_id": "28e4bfcd-24ec-44b8-a72d-c003aae3407e",
     "manifest": {
       "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
       "fabric.manifest.after_source_sequence": -1,
       "fabric.manifest.capture_point_fields": [
-        "fabric.self=X01,X02,X03,X06,X07,X17,X18,X19,X20,X23,X25,X26,X27,X29,X32,X33,X34,X35,X36,X38,X39,X44,X45,X47,C16,S01,S03,S31,D11,D24,D34",
+        "fabric.self=X01,X02,X03,X06,X07,X17,X18,X19,X20,X23,X25,X26,X27,X29,X32,X33,X34,X35,X36,X38,X39,X44,X45,X47,X48,C16,S01,S03,S31,D11,D24,D34",
         "install.config=X04,X05,X31,C12,C15",
         "wire.py.httpx=X08,X22,X24,X40,C34,C35,C37,C40,S07,S08,S09,S10,S11,S29,S30,S32,N01,N02,N07,D31",
         "explicit.call_recorder=X18,X22,X24,C19,C21,S07,S08,S10,N01,N03,N04,N09,N17,N39",
         "sdk.records=X13,X14,X15,X16,X21,X22,X24,X28,X46,C01,C02,C03,C04,C05,C06,C07,C08,C09,C10,C11,C13,C14,C15,C17,C18,C24,C30,C31,C32,C33,C41,C42,S02,S03,S04,S05,S06,S07,S08,S09,S10,S12,S13,S14,S15,S16,S17,S18,S19,S20,S21,S22,S23,S24,S25,S26,S27,S28,S32,S33,N13,N14,N17,N18,N26,N27,N28,N30,N31,N38,N45,N46,N48,N49,N50,N51,N54,N55,N57,N58,N59,D01,D02,D03,D04,D05,D06,D07,D08,D09,D10,D12,D13,D14,D15,D16,D18,D19,D20,D21,D22,D23,D25,D26,D27,D28,D29,D30",
-        "run.scope=X08,X09,X10,X11,X12,X13,X14,X21,X41,X42,X43,X44,X46,S34",
+        "run.scope=X08,X09,X10,X11,X12,X13,X14,X21,X41,X42,X43,X44,X46,X49,S34",
         "mcp.client=C25,C26,C27,C28,C29,N22,N23,N24,N25",
         "reconstruct.parse=X27,X28,X30,C11,C19,C20,C21,C22,C36,C37,C38,C39,S01,S03,S11,S12,N03,N04,N05,N06,N07,N08,N09,N10,N11,N12,N13,N14,N15,N18,N19,N20,N21,N51,N53,N55,N60,D31,D32,D33",
         "reconstruct.infer=X21,C08,C23,C39,S13,S15,N16,N29,N48,N52,D17"
@@ -64,7 +65,7 @@
       "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
       "fabric.manifest.profile": "local",
       "fabric.manifest.pseudonym_mode": "keyed",
-      "fabric.manifest.role_table_version": "fabric.content-role-table/v1@3",
+      "fabric.manifest.role_table_version": "fabric.content-role-table/v1@4",
       "fabric.manifest.runtime.name": "cpython",
       "fabric.manifest.runtime.version": "3.12.13",
       "fabric.manifest.sdk.language": "python",

@@ -1,0 +1,57 @@
+{
+  "schema_version": "fabric.model-call-golden/v1",
+  "rule": "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the projection field keys (or, for list-valued step facts, tool_calls, provider_tools and extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' ('response:final' for the terminal document a stream carries). null means absent; 'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are the parsed values; the 048 §7 exposure rule applies on top (every name here is allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and locators equal these.",
+  "name": "chat-error",
+  "api": "openai.chat_completions",
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "user",
+        "content": "hi"
+      }
+    ]
+  },
+  "response": {
+    "error": {
+      "message": "Rate limit reached",
+      "type": "requests",
+      "code": "rate_limit_exceeded"
+    }
+  },
+  "key": "fabric-test-id-key-not-a-secret",
+  "expected": {
+    "model.requested": "gpt-4o",
+    "model.served": null,
+    "model.parameters": [],
+    "instructions": [],
+    "instructions.digest": null,
+    "tools_offered": [],
+    "tools_offered.count": 0,
+    "tools_offered.digest": null,
+    "context_dependencies": [],
+    "input.messages": [
+      {
+        "index": 0,
+        "role": "user",
+        "pointer": "request:/messages/0"
+      }
+    ],
+    "output.messages": [],
+    "refusal": null,
+    "finish_reasons": [],
+    "reasoning.format": "not_applicable",
+    "reasoning.text": "not_applicable",
+    "reasoning.summary": null,
+    "reasoning.object": null,
+    "tool_calls": [],
+    "provider_tools": [],
+    "asset.reference": [],
+    "embedding.input": null,
+    "embedding.dimensions": null,
+    "usage": {},
+    "usage.basis": "not_captured(provider_not_returned)",
+    "error.code": "rate_limit_exceeded",
+    "extension_items": []
+  }
+}

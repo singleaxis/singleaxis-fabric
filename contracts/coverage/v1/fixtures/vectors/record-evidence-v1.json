@@ -1,0 +1,630 @@
+{
+  "schema_version": "fabric.record-evidence-vectors/v1",
+  "rule": "Spec 050 §3.4a: a record.evidence body is one fabric.record-evidence/v1 document in spec-029 canonical JSON. The Node's envelope check (before acknowledgement) refuses, in order: evidence_not_canonical (not canonical bytes: whitespace, key order, duplicate keys, floats), evidence_envelope (another top-level key, wrong schema_version, malformed continuation or refs), evidence_type_unregistered, evidence_bounds (over 1 MiB, 4096 items, item depth 4, 256-character strings, 64 refs). fabric.reconstruct then validates each item against its registered type schema (item_errors: those items' fields project not_captured(parse_failed)) and projects the registry's pointers ('*': every valid item) into fields. The evidence object is one of the record's bodies: its stored_sha256 is in the record digest's content list, so the seal covers it. A case is a document (hashed as its canonical bytes), raw text, or generate (base with count copies of item).",
+  "registered_types": [
+    "fabric.test.items/v1"
+  ],
+  "cases": [
+    {
+      "name": "registered type, canonical",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          },
+          {
+            "name": "orders.refund",
+            "count": 0,
+            "kind": "beta",
+            "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+            "tags": [
+              "late",
+              "partial"
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": null,
+      "item_errors": [],
+      "fields": {
+        "content.x-fabric.test_item_names": [
+          "orders.lookup",
+          "orders.refund"
+        ],
+        "content.x-fabric.test_item_digests": [
+          "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95"
+        ],
+        "decisions_effects.x-fabric.test_item_counts": [
+          3,
+          0
+        ]
+      }
+    },
+    {
+      "name": "no items",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": []
+      },
+      "refusal": null,
+      "item_errors": [],
+      "fields": {
+        "content.x-fabric.test_item_names": [],
+        "content.x-fabric.test_item_digests": [],
+        "decisions_effects.x-fabric.test_item_counts": []
+      }
+    },
+    {
+      "name": "not canonical (whitespace)",
+      "raw": "{\n \"schema_version\": \"fabric.record-evidence/v1\",\n \"evidence_type\": \"fabric.test.items/v1\",\n \"items\": [\n  {\n   \"name\": \"orders.lookup\",\n   \"count\": 3,\n   \"kind\": \"alpha\",\n   \"ref_index\": 0\n  },\n  {\n   \"name\": \"orders.refund\",\n   \"count\": 0,\n   \"kind\": \"beta\",\n   \"digest\": \"sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95\",\n   \"tags\": [\n    \"late\",\n    \"partial\"\n   ]\n  }\n ],\n \"continuation\": {\n  \"index\": 0,\n  \"final\": true\n },\n \"refs\": [\n  {\n   \"object_id\": \"3d60b862-7f44-48cb-ae71-bb8134f69bac\",\n   \"role\": \"tool.call.arguments\",\n   \"pointer\": \"/q\"\n  }\n ]\n}",
+      "refusal": "evidence_not_canonical"
+    },
+    {
+      "name": "not canonical (key order)",
+      "raw": "{\"schema_version\":\"fabric.record-evidence/v1\",\"evidence_type\":\"fabric.test.items/v1\",\"items\":[{\"name\":\"orders.lookup\",\"count\":3,\"kind\":\"alpha\",\"ref_index\":0},{\"name\":\"orders.refund\",\"count\":0,\"kind\":\"beta\",\"digest\":\"sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95\",\"tags\":[\"late\",\"partial\"]}],\"continuation\":{\"index\":0,\"final\":true},\"refs\":[{\"object_id\":\"3d60b862-7f44-48cb-ae71-bb8134f69bac\",\"role\":\"tool.call.arguments\",\"pointer\":\"/q\"}]}",
+      "refusal": "evidence_not_canonical"
+    },
+    {
+      "name": "duplicate key",
+      "raw": "{\"evidence_type\":\"fabric.test.items/v1\",\"items\":[],\"items\":[],\"schema_version\":\"fabric.record-evidence/v1\"}",
+      "refusal": "evidence_not_canonical"
+    },
+    {
+      "name": "a float",
+      "raw": "{\"evidence_type\":\"fabric.test.items/v1\",\"items\":[{\"count\":1.5,\"name\":\"a\"}],\"schema_version\":\"fabric.record-evidence/v1\"}",
+      "refusal": "evidence_not_canonical"
+    },
+    {
+      "name": "extra top-level key",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          },
+          {
+            "name": "orders.refund",
+            "count": 0,
+            "kind": "beta",
+            "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+            "tags": [
+              "late",
+              "partial"
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ],
+        "note": "free text"
+      },
+      "refusal": "evidence_envelope"
+    },
+    {
+      "name": "wrong schema version",
+      "document": {
+        "schema_version": "fabric.record-evidence/v2",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          },
+          {
+            "name": "orders.refund",
+            "count": 0,
+            "kind": "beta",
+            "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+            "tags": [
+              "late",
+              "partial"
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": "evidence_envelope"
+    },
+    {
+      "name": "continuation without final",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          },
+          {
+            "name": "orders.refund",
+            "count": 0,
+            "kind": "beta",
+            "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+            "tags": [
+              "late",
+              "partial"
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": "evidence_envelope"
+    },
+    {
+      "name": "ref to a path",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          },
+          {
+            "name": "orders.refund",
+            "count": 0,
+            "kind": "beta",
+            "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+            "tags": [
+              "late",
+              "partial"
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "/var/data/x",
+            "role": "tool.call.arguments"
+          }
+        ]
+      },
+      "refusal": "evidence_envelope"
+    },
+    {
+      "name": "unregistered type",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "acme.secret.dump/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          },
+          {
+            "name": "orders.refund",
+            "count": 0,
+            "kind": "beta",
+            "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+            "tags": [
+              "late",
+              "partial"
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": "evidence_type_unregistered"
+    },
+    {
+      "name": "string over 256 characters",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "count": 1
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": "evidence_bounds"
+    },
+    {
+      "name": "item deeper than 4",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "deep",
+            "count": 1,
+            "tags": [
+              [
+                [
+                  [
+                    [
+                      "x"
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": "evidence_bounds"
+    },
+    {
+      "name": "4097 items",
+      "generate": {
+        "base": {
+          "schema_version": "fabric.record-evidence/v1",
+          "evidence_type": "fabric.test.items/v1",
+          "items": [],
+          "continuation": {
+            "index": 0,
+            "final": true
+          },
+          "refs": []
+        },
+        "item": {
+          "name": "x",
+          "count": 0
+        },
+        "count": 4097
+      },
+      "refusal": "evidence_bounds"
+    },
+    {
+      "name": "4096 items",
+      "generate": {
+        "base": {
+          "schema_version": "fabric.record-evidence/v1",
+          "evidence_type": "fabric.test.items/v1",
+          "items": [],
+          "continuation": {
+            "index": 0,
+            "final": true
+          },
+          "refs": []
+        },
+        "item": {
+          "name": "x",
+          "count": 0
+        },
+        "count": 4096
+      },
+      "refusal": null,
+      "item_errors": []
+    },
+    {
+      "name": "a CONTENT-class value in an item (free text): refused by the type schema",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "Jane Doe asked about her prescription",
+            "count": 1
+          },
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": null,
+      "item_errors": [
+        0
+      ],
+      "fields": {
+        "content.x-fabric.test_item_names": [
+          "orders.lookup"
+        ],
+        "content.x-fabric.test_item_digests": [],
+        "decisions_effects.x-fabric.test_item_counts": [
+          3
+        ]
+      }
+    },
+    {
+      "name": "an extra item property",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0,
+            "note": "x"
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": null,
+      "item_errors": [
+        0
+      ],
+      "fields": {
+        "content.x-fabric.test_item_names": [],
+        "content.x-fabric.test_item_digests": [],
+        "decisions_effects.x-fabric.test_item_counts": []
+      }
+    }
+  ],
+  "record": {
+    "span": {
+      "name": "fabric.tool_call",
+      "start_ns": 1791331202050001000,
+      "end_ns": 1791331202053001000,
+      "status": "ok",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.9.0",
+        "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "tool_call",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ]
+      }
+    },
+    "descriptors": [
+      {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+        "tenant_id": "tenant-a",
+        "role": "tool.call.arguments",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "caller_reported",
+        "boundary": "caller",
+        "status": "stored",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 3,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "captured_at": "2026-10-19T09:00:02.000000+00:00",
+        "privacy_mode": "retain_original",
+        "policy_id": "acme-capture",
+        "policy_version": 3,
+        "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "protection_status": "retained",
+        "stored_byte_length": 33,
+        "stored_sha256": "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+        "source_byte_length": 33,
+        "source_sha256": "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571"
+      },
+      {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "6185ee41-5e88-45a0-a895-f95e494f8584",
+        "tenant_id": "tenant-a",
+        "role": "tool.call.result",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "unavailable",
+        "transformations": [],
+        "provenance": "caller_reported",
+        "boundary": "caller",
+        "status": "not_captured",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 3,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "captured_at": "2026-10-19T09:00:02.000000+00:00",
+        "privacy_mode": "retain_original",
+        "policy_id": "acme-capture",
+        "policy_version": 3,
+        "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "protection_status": "withheld",
+        "status_reason": "payload_too_large"
+      },
+      {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "e478b53c-3ba7-43d4-ad04-04a38d8d3a89",
+        "tenant_id": "tenant-a",
+        "role": "record.evidence",
+        "media_type": "application/vnd.fabric.record-evidence+json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "caller_reported",
+        "boundary": "caller",
+        "status": "stored",
+        "source_id": "wire-3f9a1c2b7d4e5f60",
+        "source_epoch": 1791331200000000000,
+        "source_sequence": 3,
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "captured_at": "2026-10-19T09:00:02.000000+00:00",
+        "privacy_mode": "retain_original",
+        "policy_id": "acme-capture",
+        "policy_version": 3,
+        "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "protection_status": "retained",
+        "stored_byte_length": 463,
+        "stored_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98",
+        "source_byte_length": 463,
+        "source_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+      }
+    ],
+    "evidence_object_id": "e478b53c-3ba7-43d4-ad04-04a38d8d3a89",
+    "evidence_document": {
+      "schema_version": "fabric.record-evidence/v1",
+      "evidence_type": "fabric.test.items/v1",
+      "items": [
+        {
+          "name": "orders.lookup",
+          "count": 3,
+          "kind": "alpha",
+          "ref_index": 0
+        },
+        {
+          "name": "orders.refund",
+          "count": 0,
+          "kind": "beta",
+          "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+          "tags": [
+            "late",
+            "partial"
+          ]
+        }
+      ],
+      "continuation": {
+        "index": 0,
+        "final": true
+      },
+      "refs": [
+        {
+          "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "role": "tool.call.arguments",
+          "pointer": "/q"
+        }
+      ]
+    },
+    "content": [
+      "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+      null,
+      "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+    ],
+    "digest": "sha256:1c3bcf79f9b9383756119cbcc15d87fbef4fb4b534ba5909e78614bbe0a10ad8",
+    "segment_entries": [
+      [
+        3,
+        "sha256:1c3bcf79f9b9383756119cbcc15d87fbef4fb4b534ba5909e78614bbe0a10ad8"
+      ]
+    ],
+    "seal_digest": "sha256:e619deabcb016141b0b60911696d3e07af2f010705e0d03e148046fdc52028ba"
+  }
+}

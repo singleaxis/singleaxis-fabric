@@ -1,0 +1,114 @@
+{
+  "schema_version": "fabric.model-call-golden/v1",
+  "rule": "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the projection field keys (or, for list-valued step facts, tool_calls, provider_tools and extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' ('response:final' for the terminal document a stream carries). null means absent; 'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are the parsed values; the 048 §7 exposure rule applies on top (every name here is allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and locators equal these.",
+  "name": "chat-stream",
+  "api": "openai.chat_completions",
+  "stream": true,
+  "request": {
+    "model": "gpt-4o",
+    "temperature": 0,
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "search_flights",
+          "parameters": {
+            "type": "object"
+          }
+        }
+      }
+    ],
+    "messages": [
+      {
+        "role": "system",
+        "content": "You book travel."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Flights like the one in this photo?"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://images.example.com/p/1.png"
+            }
+          }
+        ]
+      }
+    ],
+    "stream": true
+  },
+  "response": "data: {\"id\":\"chatcmpl-9AbD\",\"model\":\"gpt-4o-2024-08-06\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\ndata: {\"id\":\"chatcmpl-9AbD\",\"model\":\"gpt-4o-2024-08-06\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_8Rz\",\"type\":\"function\",\"function\":{\"name\":\"search_flights\",\"arguments\":\"\"}}]}}]}\n\ndata: {\"id\":\"chatcmpl-9AbD\",\"model\":\"gpt-4o-2024-08-06\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"to\\\":\\\"LIS\\\"}\"}}]}}]}\n\ndata: {\"id\":\"chatcmpl-9AbD\",\"model\":\"gpt-4o-2024-08-06\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\ndata: {\"id\":\"chatcmpl-9AbD\",\"model\":\"gpt-4o-2024-08-06\",\"choices\":[],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":18}}\n\ndata: [DONE]\n\n",
+  "key": "fabric-test-id-key-not-a-secret",
+  "expected": {
+    "model.requested": "gpt-4o",
+    "model.served": "gpt-4o-2024-08-06",
+    "model.parameters": [
+      "temperature",
+      "stream"
+    ],
+    "instructions": [
+      "request:/messages/0"
+    ],
+    "instructions.digest": "sha256:be261af2d8f71848c3eca6b59c561190e1944b7431fdd1604e5c235bac15232f",
+    "tools_offered": [
+      {
+        "name": "search_flights",
+        "type": "function"
+      }
+    ],
+    "tools_offered.count": 1,
+    "tools_offered.digest": "sha256:3f35e0894ff6b3ada58703a212cb40d4b52f686a75e270e7dbf4ba40b9e8f730",
+    "context_dependencies": [],
+    "input.messages": [
+      {
+        "index": 0,
+        "role": "system",
+        "pointer": "request:/messages/0"
+      },
+      {
+        "index": 1,
+        "role": "user",
+        "pointer": "request:/messages/1"
+      }
+    ],
+    "output.messages": [
+      {
+        "index": 0,
+        "role": "assistant"
+      }
+    ],
+    "refusal": null,
+    "finish_reasons": [
+      "tool_calls"
+    ],
+    "reasoning.format": "not_applicable",
+    "reasoning.text": "not_applicable",
+    "reasoning.summary": null,
+    "reasoning.object": null,
+    "tool_calls": [
+      {
+        "id": "p-201548e49e6436826c2943f2c0570adc",
+        "name": "search_flights",
+        "type": "function",
+        "execution_side": "agent"
+      }
+    ],
+    "provider_tools": [],
+    "asset.reference": [
+      "request:/messages/1/content/1/image_url/url"
+    ],
+    "embedding.input": null,
+    "embedding.dimensions": null,
+    "usage": {
+      "input_tokens": 120,
+      "output_tokens": 18
+    },
+    "usage.basis": "provider_reported",
+    "error.code": null,
+    "extension_items": []
+  }
+}

@@ -8,7 +8,7 @@
 package fabriccontentexporter
 
 // roleTableVersion is the role table this exporter enforces.
-const roleTableVersion = "fabric.content-role-table/v1@3"
+const roleTableVersion = "fabric.content-role-table/v1@4"
 
 // roleTable is every content role with its permitted boundaries, provenance,
 // media types and cap (capBytes 0: the configured max_body_bytes).
@@ -84,6 +84,7 @@ var roleTable = map[string]roleRule{
 	"media.events":                   {boundary: []string{"provider_bound"}, provenance: []string{"protocol"}, media: []string{"application/json"}, capBytes: 4194304},
 	"media.transcript":               {boundary: []string{"provider_bound"}, provenance: []string{"protocol", "caller_reported"}, media: []string{"text/plain", "application/json"}, capBytes: 4194304},
 	"artifact.locator":               {boundary: []string{"host"}, provenance: []string{"caller_reported", "protocol"}, media: []string{"application/json"}, capBytes: 65536},
+	"record.evidence":                {boundary: []string{"caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service"}, provenance: []string{"caller_reported", "protocol"}, media: []string{"application/vnd.fabric.record-evidence+json"}, capBytes: 1048576},
 }
 
 // statusReasons is the closed coverage reason vocabulary a descriptor-only
@@ -135,4 +136,13 @@ var statusReasons = map[string]bool{
 	"sampling":               true,
 	"retention_expired":      true,
 	"deleted":                true,
+}
+
+// descriptorOnlyReasons are the producer reasons a descriptor-only records
+// body (spec 050 §3.4 R5, status not_captured or unsupported) may name in
+// status_reason besides statusReasons (vocabulary descriptor_reason).
+var descriptorOnlyReasons = map[string]bool{
+	"payload_too_large": true,
+	"encoding_failed":   true,
+	"not_exact_bytes":   true,
 }

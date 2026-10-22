@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 10,
+  "registry_revision": 11,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -216,7 +216,7 @@
       "status_if_hook_absent": "always (fallback)",
       "phase": "built",
       "lives_in": "T `fabric.run.id`",
-      "definition": "Logical run. A value already in `r-` form is used verbatim (P1), so a run id carried across processes and key rotations stays the same (section 2.10)."
+      "definition": "Logical run. A caller value is mapped in pseudonymous mode and emitted as given in clear mode (decisions 7, 22); only an `EmittedId` passes through; a run started from tokens takes the tokens' run correlation id (spec 050 §3.6, run identity rules 1-5; X49 records which rule applied)."
     },
     {
       "id": "X09",
@@ -295,7 +295,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P0-A (pseudonymise), P1 (wire)",
+      "phase": "built (pseudonymise), P1 (wire)",
       "lives_in": "T `fabric.session_id`",
       "definition": "Application session across runs. Keyed pseudonym by default (decision 7). Via `fabric.wire.run(session_id=)` or `decision(session_id=)`."
     },
@@ -312,8 +312,8 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P0-A",
-      "lives_in": "T `fabric.user_id` (admitted in `usr-` form, P0-A); clear only in C `actor.identity`",
+      "phase": "built",
+      "lives_in": "T `fabric.user_id` (admitted in `usr-` form); clear only in C `actor.identity`",
       "definition": "End user. Keyed pseudonym by default (decision 7). Via `fabric.wire.run(user_id=)` or `decision(user_id=)`."
     },
     {
@@ -427,7 +427,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "absent",
-      "phase": "P0 (contract), P1 (projection)",
+      "phase": "built (contract), P1 (projection)",
       "lives_in": "P; T only for nesting parent",
       "definition": "Typed causal links (section 2.5)."
     },
@@ -595,7 +595,7 @@
       "privacy_class": "LABEL/META/DIGEST",
       "required": "R (content capture)",
       "status_if_hook_absent": "not_captured(missing_capture_policy)",
-      "phase": "P0-A",
+      "phase": "built",
       "lives_in": "M; C descriptor `policy_*`",
       "definition": "Recorder capture policy in force (`fabric.local-default` when none is configured in the `local` profile, section 7.3). Distinct from the agent's execution policy (C30-C33)."
     },
@@ -612,7 +612,7 @@
       "privacy_class": "META",
       "required": "R (content)",
       "status_if_hook_absent": "always",
-      "phase": "built (explicit), P0-A (wire)",
+      "phase": "built",
       "lives_in": "C descriptor",
       "definition": "Per-object privacy treatment."
     },
@@ -628,7 +628,7 @@
       "privacy_class": "META",
       "required": "R",
       "status_if_hook_absent": "always",
-      "phase": "P0-A",
+      "phase": "built",
       "lives_in": "M",
       "definition": "Whether ids are pseudonymous or clear, keyed or unkeyed, and which key."
     },
@@ -741,7 +741,7 @@
       "privacy_class": "META",
       "required": "R (when store_status is not stored)",
       "status_if_hook_absent": "always",
-      "phase": "P0-A",
+      "phase": "built",
       "lives_in": "T `fabric.wire.store_reason`",
       "definition": "Why an exchange's content is absent or partial, on the exchange span itself, so telemetry (not only the manifest) shows it."
     },
@@ -855,9 +855,41 @@
       "privacy_class": "META",
       "required": "R (production profile)",
       "status_if_hook_absent": "unknown (record not stamped: `unverified(source_unauthenticated)` in production)",
-      "phase": "P0-A",
+      "phase": "built",
       "lives_in": "T `fabric.source.authenticated` (Node-stamped); C descriptor `source_authenticated` (persisted by `fabriccontent`); M `source_auth`",
       "definition": "Whether the record arrived on a Node ingress bound to its tenant and source. Only the Node sets it (fabricguard for telemetry, `fabriccontent` in the persisted content descriptor); an agent-supplied value is stripped or rejected. It is receiver-owned: excluded from the seal digest. It counts only when reconstruct reads from the trusted Node export or the configured store (trusted readback); imported span files never establish authentication. The manifest declares the intended `source_auth`."
+    },
+    {
+      "id": "X48",
+      "layer": "cross_cutting",
+      "name": "content_object_ids",
+      "type": "list of uuid4 (max 8)",
+      "observed_by": [
+        "fabric.self"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P1",
+      "lives_in": "T `fabric.content.object_ids`",
+      "definition": "The content objects a records-input record references, including its evidence object, in reference order. The record digest's `content` list follows this order (`null` for a descriptor-only object), so the segment seal covers them (spec 050 §3.4, §3.7)."
+    },
+    {
+      "id": "X49",
+      "layer": "cross_cutting",
+      "name": "run.id_basis",
+      "type": "enum caller/caller_join/token/token_conflict/minted/legacy",
+      "observed_by": [
+        "run.scope"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (run_start)",
+      "status_if_hook_absent": "always",
+      "phase": "P1",
+      "lives_in": "T `fabric.run.id_basis`",
+      "definition": "Which run-identity rule decided the segment's `fabric.run.id` at segment open (spec 050 §3.6): `token` (the tokens' common correlation id), `caller_join` (differing correlation ids joined under a mapped clear run id), `token_conflict` (differing correlation ids, lowest taken; a conflict), `caller` (no valid token; mapped clear id), `minted` (no token and no run id), `legacy` (`fr2/` tokens or a pre-P1 segment)."
     },
     {
       "id": "C01",
@@ -1429,8 +1461,8 @@
       "required": "R (model_call)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
       "phase": "P1",
-      "lives_in": "P; M endpoint set digest",
-      "definition": "Which configured endpoint matched."
+      "lives_in": "T `fabric.wire.endpoint_id`; M endpoint set digest",
+      "definition": "Which configured endpoint matched: a built-in endpoint as `<provider>.default`, a configured one as `lbl-` + the keyed v1 label of its configured name. A hostname is never emitted; the manifest keeps the endpoint-set digest."
     },
     {
       "id": "C36",
@@ -1513,8 +1545,8 @@
       "required": "O",
       "status_if_hook_absent": "not_captured(hook_disabled)",
       "phase": "P1",
-      "lives_in": "P",
-      "definition": "Provider request id for disputes. The only header value Fabric may read; never the header block."
+      "lives_in": "T `fabric.wire.provider_request_id`",
+      "definition": "Provider request id for disputes. The only header value Fabric may read; never the header block. Opt-in (`FABRIC_WIRE_PROVIDER_REQUEST_ID=1`), mapped to `p-` (v2) and omitted without a key (spec 050 §3.9, WP-14)."
     },
     {
       "id": "C41",
@@ -1629,7 +1661,7 @@
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(hook_disabled)",
-      "phase": "P0-A",
+      "phase": "built",
       "lives_in": "C `actor.identity`",
       "definition": "Clear identity behind the pseudonym."
     },
@@ -1917,7 +1949,7 @@
       "privacy_class": "ID",
       "required": "R (delegation)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "built (clear), P0-A (`agt-` keyed)",
+      "phase": "built",
       "lives_in": "T `fabric.delegation.to_agent`",
       "definition": "Agent, run or service delegated to. Via `delegate()`."
     },
@@ -2630,8 +2662,8 @@
       "privacy_class": "CONTENT (key as `mkey-` pseudonym on T)",
       "required": "R (memory)",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "built (content), P0-A (key pseudonym)",
-      "lives_in": "C `memory.read.content`, `memory.write.content`; T `fabric.memory.key` in `mkey-` form (P0-A)",
+      "phase": "built",
+      "lives_in": "C `memory.read.content`, `memory.write.content`; T `fabric.memory.key` in `mkey-` form",
       "definition": "Key and value read or written."
     },
     {
@@ -2884,7 +2916,7 @@
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(hook_disabled)",
-      "phase": "built (R, clear on T), P0-A (role)",
+      "phase": "built",
       "lives_in": "C `artifact.locator`",
       "definition": "Path and, for renames, the target path. Telemetry carries only `fabric.file.path_hash`; the clear path moves to the `artifact.locator` role (P0-A)."
     },
@@ -3601,7 +3633,7 @@
       "privacy_class": "META",
       "required": "R (run root)",
       "status_if_hook_absent": "unknown",
-      "phase": "P2",
+      "phase": "P1 (`end_run`, run hook), P2 (public API)",
       "lives_in": "T `fabric.run.outcome`, `fabric.run.stop_reason` on `run_end`",
       "definition": "Application-declared disposition. Integrity verdicts are not outcomes."
     },
@@ -3685,5 +3717,34 @@
       "lives_in": "-",
       "definition": "Pricing and billing are downstream (decision 11). Provider-returned cost fields stay in the stored bytes, unprojected."
     }
-  ]
+  ],
+  "evidence_types": [
+    {
+      "type": "fabric.test.items/v1",
+      "schema": "evidence/fabric.test.items-v1.schema.json",
+      "phase": "P1",
+      "capture_points": [
+        "sdk.records"
+      ],
+      "fields": [
+        {
+          "layer": "content",
+          "key": "x-fabric.test_item_names",
+          "pointer": "/items/*/name"
+        },
+        {
+          "layer": "content",
+          "key": "x-fabric.test_item_digests",
+          "pointer": "/items/*/digest"
+        },
+        {
+          "layer": "decisions_effects",
+          "key": "x-fabric.test_item_counts",
+          "pointer": "/items/*/count"
+        }
+      ],
+      "definition": "Test type of the structured evidence carrier (spec 050 §3.4a item 7): a list of named, counted, digested items. Registered so the carrier, the Node envelope check and the projection decoder can be qualified before P2-P5 register real types; never emitted by a release build."
+    }
+  ],
+  "evidence_rule": "Spec 050 §3.4a: one generic closed carrier, fabric.record-evidence/v1, for structured metadata without a single telemetry key. P2-P5 add evidence types here, never a carrier. Each type names its closed item schema (schema/record-evidence-v1.schema.json is the envelope), the capture points allowed to emit it and, per projected field, the JSON pointer into the document ('*' stands for every item). Strings are at most 256 characters and pattern-checked by the type schema; no CONTENT-class value."
 }

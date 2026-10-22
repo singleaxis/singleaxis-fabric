@@ -32,11 +32,12 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from contracts import p1_reference as ref  # noqa: E402
 from contracts import validate_coverage_contracts as coverage  # noqa: E402
 
 COVERAGE = Path("contracts/coverage/v1")
@@ -112,6 +113,12 @@ LABEL_PSEUDONYM = "^lbl-[0-9a-f]{32}$"
 SOFTWARE_VERSION = "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
 EX_DIGEST = "sha256:" + "3f" * 32
 EX_UUID = "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+EX_UUID_2 = "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
+ENDPOINT_ID = "^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$"
+RUN_ID = (
+    "^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40}|"
+    "source:(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,100}):(?P<epoch>[0-9]{1,19}))$"
+)
 SEG_EX = "seg-4f1c2e3d5a6b7c8d9e0f1a2b3c4d5e6f"
 BR_EX = "br-0a1b2c3d4e5f60718293a4b5c6d7e8f9"
 INT32 = (-2147483648, 2147483647)
@@ -477,10 +484,88 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.turn_id": pseudonym("turn"),
         "fabric.wire.first_chunk_offset_ns": integer(0),
         "fabric.wire.store_reason": vocab_enum("store_reason"),
+        # spec 050 §4.1 (P1)
+        "fabric.capture.source": enum(["observed", "reported"], "validator"),
+        "fabric.content.object_ids": array(
+            uuid4, 8, [[EX_UUID], [EX_UUID, EX_UUID_2]], min_items=1, unique=True
+        ),
+        "fabric.run.id_basis": vocab_enum("run_id_basis"),
+        "fabric.wire.endpoint_id": string(
+            ENDPOINT_ID,
+            "openai.default",
+            "anthropic.default",
+            "lbl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+        "fabric.wire.provider_request_id": pseudonym("p"),
         "fabric.workflow.iteration": integer(0),
         "fabric.workflow.node": operator_label("plan", "act"),
     }
     return checks
+
+
+CAPTURE_CHECK_RULE = (
+    "capture_check is the closed check fabricguard applies to a reused key on the capture "
+    "classes its placement names (spec 050 §3.14: the records class, the X05 block on "
+    "exchanges and run_start); elsewhere the key keeps its existing admission. placement "
+    "lists the capture record classes a key may appear on: exchange, record (the records "
+    "input, spec 050 §3.14), loss, the heartbeat kinds run_start, run_end, segment_seal, "
+    "periodic and final, and manifest (the fabric.capture_manifest span). A key without "
+    "placement is admitted on non-capture spans only. The records class admits exactly the "
+    "keys whose placement names record, each with its check (capture_check when the row has "
+    "one): generated into fabricguard's recordKeyValidators and the SDK's "
+    "fabric._records_keys_generated (spec 050 §3.4 rule A)."
+)
+
+
+def build_capture_checks() -> dict[str, dict[str, Any]]:
+    """Closed checks of reused keys on their capture placements (spec 050 §3.14)."""
+
+    def string(pattern: str, *examples: str, **extra: Any) -> dict[str, Any]:
+        return {
+            "type": "string",
+            "pattern": pattern,
+            **extra,
+            "examples": list(examples),
+        }
+
+    source = string(
+        OPAQUE,
+        "s-c5aedfd8a3ee415e277e335bf1517ff4",
+        "billing-agent.prod",
+        capture_labels={"pseudonymous_pattern": "^s-[0-9a-f]{32}$"},
+    )
+    label = string(
+        OPERATOR_LABEL,
+        "lbl-9f86d081884c7d659a2feaa0c55ad015",
+        "support-agent",
+        capture_labels={"pseudonymous_pattern": LABEL_PSEUDONYM},
+    )
+    opaque = string(OPAQUE, "op-7f3a", "a-1b2c3d4e5f60718293a4b5c6d7e8f901")
+    return {
+        "fabric.source_id": source,
+        "fabric.source.epoch": {"type": "int", "min": 0},
+        "fabric.source.sequence": {"type": "int", "min": 0},
+        "fabric.run.id": string(
+            RUN_ID,
+            "r-93347307304ecb0a9bb1b51ae90ac326",
+            "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+            "source:s-c5aedfd8a3ee415e277e335bf1517ff4:4611686018427387905",
+            int64_groups=["epoch"],
+            capture_labels={
+                "group": "source",
+                "pseudonymous_pattern": "^s-[0-9a-f]{32}$",
+            },
+            identity_mode={"clear": "existing"},
+        ),
+        "fabric.run.scope_id": string(UUID4, EX_UUID),
+        "fabric.step.id": opaque,
+        "fabric.step.attempt_id": opaque,
+        "fabric.agent_id": label,
+        "fabric.system_id": label,
+        "fabric.deployment_id": label,
+        "fabric.release_id": label,
+        "fabric.environment": label,
+    }
 
 
 SCHEMA_CACHE: dict[str, Any] = {}
@@ -495,20 +580,25 @@ def generate_registry(w: Writer) -> None:
     unknown = set(checks) - set(rows)
     if unknown:
         raise SystemExit(f"checks for keys the registry lacks: {sorted(unknown)}")
+    capture_checks = build_capture_checks()
     for key, row in rows.items():
         row.pop("check", None)
         row.pop("check_pending", None)
+        row.pop("capture_check", None)
         if key in checks:
             row["check"] = checks[key]
         elif row["change"] != "reused":
             raise SystemExit(f"no check for {key}")
-    keys["registry_revision"] = 9
+        if key in capture_checks:
+            row["capture_check"] = capture_checks[key]
+    keys["registry_revision"] = 10
     ordered: dict[str, Any] = {}
     for name, value in keys.items():
-        if name == "check_rule":
+        if name in {"check_rule", "capture_check_rule"}:
             continue
         if name == "keys":
             ordered["check_rule"] = CHECK_RULE
+            ordered["capture_check_rule"] = CAPTURE_CHECK_RULE
         ordered[name] = value
     w.json(COVERAGE / coverage.REGISTRY["keys"], ordered)
     vocab = reg["vocab"]
@@ -516,7 +606,7 @@ def generate_registry(w: Writer) -> None:
         row["confidence"] = re.search(
             r"Confidence `(certain|tentative)`", row["meaning"]
         ).group(1)
-    vocab["registry_revision"] = 8
+    vocab["registry_revision"] = 9
     w.json(COVERAGE / coverage.REGISTRY["vocab"], vocab)
 
 
@@ -612,7 +702,7 @@ def coverage_manifests(reg: dict[str, Any]) -> dict[str, Any]:
             "encrypted_store_required": False,
         },
         "content_capture": "enabled",
-        "role_table_version": "fabric.content-role-table/v1@3",
+        "role_table_version": "fabric.content-role-table/v1@4",
         "limits": LIMITS,
         "sequence_unit": "record",
         "clock": {
@@ -1724,6 +1814,7 @@ def _projections(put: Callable[[str, Any], None], m0: dict[str, Any]) -> None:
         "post_terminal_activity",
     )
     put("valid/projection-run-post-terminal.json", projection([post], []))
+    _p1_projections(put, projection, run, segment, verdicts, fld, m0, model_step)
 
     def bad(name: str, document: Any, change: Callable[[Any], Any]) -> None:
         put(f"invalid/{name}.json", mutate(document, change))
@@ -1864,6 +1955,147 @@ def _projections(put: Callable[[str, Any], None], m0: dict[str, Any]) -> None:
     )
 
 
+def _p1_projections(
+    put: Callable[[str, Any], None],
+    projection: Callable[..., Any],
+    run: Callable[..., Any],
+    segment: Callable[..., Any],
+    verdicts: Callable[..., Any],
+    fld: Callable[..., Any],
+    m0: dict[str, Any],
+    model_step: dict[str, Any],
+) -> None:
+    """Spec 050 §4.3: the P1-A D2 projection and an attempt with 300 records."""
+    terminated = run(
+        "terminated",
+        [segment(seg(1), ["none"], terminal=True)],
+        verdicts(
+            "partial",
+            "partial",
+            reasons={
+                "context": ["deferred_to_explicit"],
+                "structure": ["deferred_to_explicit"],
+            },
+        ),
+        resumable=False,
+    )
+    call = uid("explicit-call")
+    deferred = fld(
+        "not_captured", cp="wire.py.httpx@1.2.0", reason="deferred_to_explicit"
+    )
+    explicit = "explicit.call_recorder@0.9.0"
+    d2 = {
+        "attempt_id": call,
+        "step_id": f"records:{SOURCE}:a-" + "4e" * 16,
+        "step_kind": "model_call",
+        "run_id": RUN,
+        "segment_id": seg(1),
+        "aliases": {"records.call_id": f"{SOURCE}/{call}"},
+        "source": {
+            "input": "records",
+            "source_id": SOURCE,
+            "source_epoch": EPOCH,
+            "source_sequence": 7,
+            "sequence_unit": "record",
+            "manifest_id": m0["manifest_id"],
+        },
+        "event_ids": [uid("explicit-start"), uid("explicit-data"), uid("explicit-end")],
+        "capture_point": explicit,
+        "provenance": "reported",
+        "actor": {"type": "agent"},
+        "timing": dict(model_step["timing"], basis="reported"),
+        "lifecycle_state": "completed",
+        "result_status": "ok",
+        "layers": {
+            "context": {
+                "model.provider": deferred,
+                "model.api": deferred,
+                "model.endpoint_id": deferred,
+                "model.requested": fld(
+                    "captured", prov="reported", cp=explicit, value="gpt-4o"
+                ),
+            },
+            "structure": {
+                "stream.state": deferred,
+                "stream.first_chunk_offset_ns": deferred,
+                "step.kind": fld(
+                    "captured", prov="reported", cp=explicit, value="model_call"
+                ),
+            },
+            "content": {
+                "model.exchange.request": fld(
+                    "captured",
+                    prov="reported",
+                    cp=explicit,
+                    ref={
+                        "object_id": uid("explicit-input"),
+                        "role": "model.request.messages",
+                    },
+                ),
+                "input.messages": fld(
+                    "captured",
+                    prov="reported",
+                    cp=explicit,
+                    ref={
+                        "object_id": uid("explicit-input"),
+                        "role": "model.request.messages",
+                        "pointer": "/messages",
+                    },
+                ),
+            },
+        },
+        "layer_verdicts": verdicts(
+            "partial",
+            "partial",
+            reasons={
+                "context": ["deferred_to_explicit"],
+                "structure": ["deferred_to_explicit"],
+            },
+        ),
+    }
+    put("valid/projection-records-explicit-d2.json", projection([terminated], [d2]))
+    done = run(
+        "terminated",
+        [segment(seg(1), ["none"], terminal=True)],
+        verdicts(),
+        resumable=False,
+    )
+    events = [uid(f"stream-record-{n}") for n in range(300)]
+    stream = {
+        "attempt_id": uid("stream-call"),
+        "step_id": uid("stream-call"),
+        "step_kind": "tool_call",
+        "run_id": RUN,
+        "segment_id": seg(1),
+        "source": {
+            "input": "records",
+            "source_id": SOURCE,
+            "source_epoch": EPOCH,
+            "source_sequence": 100,
+            "sequence_unit": "record",
+            "manifest_id": m0["manifest_id"],
+        },
+        "event_ids": events[:64],
+        "capture_point": explicit,
+        "provenance": "reported",
+        "actor": {"type": "agent"},
+        "lifecycle_state": "completed",
+        "result_status": "ok",
+        "layers": {
+            "cross_cutting": {
+                "event_id": fld(
+                    "captured",
+                    cp="fabric.self@0.9.0",
+                    value=events[:64],
+                    collection={"completeness": "partial", "observed_count": 300},
+                )
+            }
+        },
+        "layer_verdicts": verdicts(),
+    }
+    put("valid/projection-many-records.json", projection([done], [stream]))
+
+
 # ===================================================================== capture fixtures
 def generate_capture(w: Writer) -> None:
     cov = w.read_json(COVERAGE / "fixtures/vectors/run-marker-v1.json")
@@ -1916,6 +2148,15 @@ def generate_capture(w: Writer) -> None:
         for key, name in mapping.items():
             if key in attrs:
                 doc[name] = attrs[key]
+        # capture/v1 1.3.0 (spec 050 §4.2): every marker persists its uuid4 event id;
+        # every segment's run_start records its run-identity basis.
+        doc["event_id"] = uid(f"marker-{kind}-{attrs.get('fabric.run.segment_id', '')}")
+        if kind == "run_start" and "segment_id" in doc:
+            doc["id_basis"] = (
+                "caller"
+                if attrs.get("fabric.run.predecessors") == ["none"]
+                else "token"
+            )
         if "fabric.segment.last_sequence" in attrs:
             doc["seal"] = {
                 "last_sequence": attrs["fabric.segment.last_sequence"],
@@ -2120,6 +2361,7 @@ def generate_capture(w: Writer) -> None:
         "marker": {
             "kind": "manifest",
             "last_sequence": -1,
+            "event_id": span["cases"][0]["attributes"]["fabric.event_id"],
             "manifest": span["cases"][0]["attributes"],
         },
     }
@@ -2141,6 +2383,1983 @@ def generate_capture(w: Writer) -> None:
             ),
         ),
     )
+
+
+# ===================================================================== capture/v1 1.3.0 (spec 050)
+TENANT = "tenant-a"
+POLICY = {
+    "policy_id": "acme-capture",
+    "policy_version": 3,
+    "policy_digest": "sha256:" + "3f" * 32,
+}
+
+
+def p1_descriptor(
+    oid: str,
+    role: str,
+    data: bytes | None,
+    *,
+    src: dict[str, Any],
+    attempt: str,
+    run_id: str,
+    media: str = "application/json",
+    boundary: str = "caller",
+    provenance: str = "caller_reported",
+    status: str = "not_captured",
+    reason: str | None = None,
+    mode: str = "retain_original",
+    operation: str | None = None,
+) -> dict[str, Any]:
+    """A records-body descriptor (spec 050 §3.5): the wire descriptor base plus attempt_id,
+    under the capture policy's mode; descriptor-only when ``data`` is ``None`` (R5)."""
+    out: dict[str, Any] = {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": oid,
+        "tenant_id": TENANT,
+        "role": role,
+        "media_type": media,
+        "content_encoding": "identity",
+        "representation": "exact" if data is not None else "unavailable",
+        "transformations": [],
+        "provenance": provenance,
+        "boundary": boundary,
+        "status": status if data is None else "stored",
+        "source_id": src["source_id"],
+        "source_epoch": src["source_epoch"],
+        "source_sequence": src["source_sequence"],
+        "run_id": run_id,
+        "operation_id": operation or attempt,
+        "attempt_id": attempt,
+        "captured_at": "2026-10-19T09:00:02.000000+00:00",
+        "privacy_mode": mode,
+        **POLICY,
+        "protection_status": "retained" if data is not None else "withheld",
+    }
+    if data is None:
+        out["status_reason"] = reason
+    else:
+        digest = ref.sha256_digest(data)
+        out.update(
+            stored_byte_length=len(data),
+            stored_sha256=digest,
+            source_byte_length=len(data),
+            source_sha256=digest,
+        )
+    return out
+
+
+def evidence_test_document() -> dict[str, Any]:
+    return {
+        "schema_version": ref.EVIDENCE_SCHEMA,
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+            {"name": "orders.lookup", "count": 3, "kind": "alpha", "ref_index": 0},
+            {
+                "name": "orders.refund",
+                "count": 0,
+                "kind": "beta",
+                "digest": "sha256:" + hashlib.sha256(b"refund").hexdigest(),
+                "tags": ["late", "partial"],
+            },
+        ],
+        "continuation": {"index": 0, "final": True},
+        "refs": [
+            {
+                "object_id": uid("record-args"),
+                "role": "tool.call.arguments",
+                "pointer": "/q",
+            }
+        ],
+    }
+
+
+RECORD_ARGS = b'{"q":"flights to Lisbon","max":3}'
+
+
+def p1_record(
+    exchange: dict[str, Any], segment: str
+) -> tuple[dict[str, Any], dict[str, bytes]]:
+    """A records-input spool record with a stored body, a descriptor-only body and its
+    evidence object (spec 050 §3.4, §3.4a, §3.5), and the bytes of each stored body."""
+    attrs = exchange["span"]["attributes"]
+    attempt = uid("record-attempt")
+    src = {
+        "source_id": exchange["source"]["source_id"],
+        "source_epoch": exchange["source"]["source_epoch"],
+        "source_sequence": attrs["fabric.source.sequence"] + 2,
+    }
+    evidence = ref.canonical_bytes(evidence_test_document())
+    common = {"src": src, "attempt": attempt, "run_id": attrs["fabric.run.id"]}
+    bodies = [
+        (
+            p1_descriptor(
+                uid("record-args"), "tool.call.arguments", RECORD_ARGS, **common
+            ),
+            RECORD_ARGS,
+        ),
+        (
+            p1_descriptor(
+                uid("record-result"),
+                "tool.call.result",
+                None,
+                reason="payload_too_large",
+                **common,
+            ),
+            b"",
+        ),
+        (
+            p1_descriptor(
+                uid("record-evidence"),
+                ref.EVIDENCE_ROLE,
+                evidence,
+                media=ref.EVIDENCE_MEDIA_TYPE,
+                **common,
+            ),
+            evidence,
+        ),
+    ]
+    offset, spooled = 0, []
+    for descriptor, data in bodies:
+        spooled.append(
+            {"descriptor": descriptor, "offset": offset, "length": len(data)}
+        )
+        offset += len(data)
+    span_attrs = {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.9.0",
+        "fabric.source_id": src["source_id"],
+        "fabric.source.epoch": src["source_epoch"],
+        "fabric.source.sequence": src["source_sequence"],
+        "fabric.event_id": uid("record-event"),
+        "fabric.attempt.uid": attempt,
+        "fabric.run.id": attrs["fabric.run.id"],
+        "fabric.run.scope_id": attrs["fabric.run.scope_id"],
+        "fabric.run.segment_id": segment,
+        "fabric.step.kind": "tool_call",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [d["object_id"] for d, _ in bodies],
+    }
+    record = {
+        "schema_version": "fabric.wire-spool-record/v1",
+        "record_kind": "record",
+        "source": exchange["source"],
+        "order": exchange["order"] + 2,
+        "written_at_unix_nano": exchange["written_at_unix_nano"] + 4000,
+        "service_name": exchange["service_name"],
+        "span": {
+            "name": ref.span_category("fabric.tool_call", span_attrs),
+            "kind": "internal",
+            "trace_id": exchange["span"]["trace_id"],
+            "span_id": "c8be7c8279314442",
+            "parent_span_id": exchange["span"]["span_id"],
+            "trace_flags": 1,
+            "start_time_unix_nano": exchange["span"]["end_time_unix_nano"] + 1000,
+            "end_time_unix_nano": exchange["span"]["end_time_unix_nano"] + 3001000,
+            "status": "ok",
+            "attributes": span_attrs,
+        },
+        "bodies": spooled,
+    }
+    return record, {d["object_id"]: data for d, data in bodies if data}
+
+
+def big_exchange(exchange: dict[str, Any]) -> dict[str, Any]:
+    """Spec 050 R6: the largest exchange the writer accepts, 260 bodies: per side the split
+    skeleton, 64 parts, a masked review copy of each part and of the side
+    (``original_plus_masked``)."""
+    attrs = exchange["span"]["attributes"]
+    base = {
+        "schema_version": "fabric.content-object/v2",
+        "tenant_id": TENANT,
+        "content_encoding": "identity",
+        "provenance": "protocol",
+        "boundary": "provider_bound",
+        "source_id": attrs["fabric.source_id"],
+        "source_epoch": attrs["fabric.source.epoch"],
+        "source_sequence": attrs["fabric.source.sequence"],
+        "run_id": attrs["fabric.run.id"],
+        "operation_id": attrs["fabric.wire.exchange_id"],
+        "captured_at": "2026-10-07T00:00:01.120000+00:00",
+        "privacy_mode": "original_plus_masked",
+        **POLICY,
+    }
+    masked = {
+        "status": "redacted",
+        "representation": "redacted",
+        "transformations": ["redact"],
+        "protection_status": "redacted",
+        "transformation_id": "acme-pii-mask",
+        "transformation_version": "7",
+    }
+    bodies: list[dict[str, Any]] = []
+    refs: dict[str, str] = {}
+    for side, role in (
+        ("req", "model.exchange.request"),
+        ("rsp", "model.exchange.response"),
+    ):
+        skeleton_bytes = f'{{"side":"{side}"}}'.encode()
+        skeleton = dict(
+            base,
+            object_id=uid(f"260-{side}"),
+            role=role,
+            media_type="application/json",
+            representation="split",
+            transformations=["extract_parts"],
+            status="stored",
+            protection_status="retained",
+            stored_byte_length=len(skeleton_bytes),
+            stored_sha256=ref.sha256_digest(skeleton_bytes),
+            source_byte_length=len(skeleton_bytes) + 64 * 4,
+            source_sha256=ref.sha256_digest(side.encode() * 100),
+        )
+        refs[role] = skeleton["object_id"]
+        bodies.append(skeleton)
+        for n in range(64):
+            part_bytes = bytes([n % 256, 1, 2, 3])
+            part = dict(
+                base,
+                object_id=uid(f"260-{side}-part-{n}"),
+                role="model.exchange.part",
+                media_type="image/png",
+                content_encoding="base64",
+                representation="exact",
+                transformations=[],
+                status="stored",
+                protection_status="retained",
+                stored_byte_length=4,
+                stored_sha256=ref.sha256_digest(part_bytes),
+                source_byte_length=4,
+                source_sha256=ref.sha256_digest(part_bytes),
+                links=[
+                    {
+                        "relation": "part_of",
+                        "object_id": skeleton["object_id"],
+                        "byte_range": [10 + 4 * n, 14 + 4 * n],
+                    }
+                ],
+            )
+            review = dict(
+                base,
+                **masked,
+                object_id=uid(f"260-{side}-part-{n}-review"),
+                role="model.exchange.part",
+                media_type="image/png",
+                stored_byte_length=4,
+                stored_sha256=ref.sha256_digest(b"\0\0\0\0"),
+                links=[
+                    {"relation": "part_of", "object_id": skeleton["object_id"]},
+                    {"relation": "derived_from", "object_id": part["object_id"]},
+                ],
+            )
+            bodies += [part, review]
+        side_review_bytes = f'{{"side":"{side}","masked":true}}'.encode()
+        bodies.append(
+            dict(
+                base,
+                **masked,
+                object_id=uid(f"260-{side}-review"),
+                role=role,
+                media_type="application/json",
+                stored_byte_length=len(side_review_bytes),
+                stored_sha256=ref.sha256_digest(side_review_bytes),
+                links=[
+                    {"relation": "derived_from", "object_id": skeleton["object_id"]}
+                ],
+            )
+        )
+    out = copy.deepcopy(exchange)
+    out["span"]["attributes"]["fabric.content.request_ref"] = refs[
+        "model.exchange.request"
+    ]
+    out["span"]["attributes"]["fabric.content.result_ref"] = refs[
+        "model.exchange.response"
+    ]
+    offset, out["bodies"] = 0, []
+    for d in bodies:
+        out["bodies"].append(
+            {"descriptor": d, "offset": offset, "length": d["stored_byte_length"]}
+        )
+        offset += d["stored_byte_length"]
+    return out
+
+
+def generate_capture_p1(w: Writer) -> None:
+    """Spec 050 §4.3: capture/v1 1.3.0 examples and their invalid counterparts."""
+
+    def put(rel: str, document: Any) -> None:
+        w.json(CAPTURE / "fixtures" / rel, document)
+
+    exchange = w.read_json(CAPTURE / "fixtures/valid/spool-record-exchange.json")
+    root = w.read_json(CAPTURE / "fixtures/valid/spool-record-run-start-root.json")
+    segment = root["marker"]["segment_id"]
+    record, _ = p1_record(exchange, segment)
+    put("valid/spool-record-record-bodies.json", record)
+    put(
+        "invalid/spool-record-record-bodies-out-of-order.json",
+        mutate(record, lambda d: d["bodies"].reverse()),
+    )
+
+    def second_evidence(d: Any) -> None:
+        extra = copy.deepcopy(d["bodies"][2])
+        extra["descriptor"]["object_id"] = uid("record-evidence-2")
+        extra["offset"] = d["bodies"][2]["offset"] + d["bodies"][2]["length"]
+        d["bodies"].append(extra)
+        d["span"]["attributes"]["fabric.content.object_ids"].append(
+            uid("record-evidence-2")
+        )
+
+    put(
+        "invalid/spool-record-record-two-evidence-objects.json",
+        mutate(record, second_evidence),
+    )
+
+    def nine(d: Any) -> None:
+        for n in range(6):
+            extra = copy.deepcopy(d["bodies"][1])
+            extra["descriptor"]["object_id"] = uid(f"record-extra-{n}")
+            d["bodies"].append(extra)
+            d["span"]["attributes"]["fabric.content.object_ids"].append(
+                uid(f"record-extra-{n}")
+            )
+
+    put("invalid/spool-record-record-nine-bodies.json", mutate(record, nine))
+    put(
+        "invalid/spool-record-record-body-other-attempt.json",
+        mutate(
+            record,
+            lambda d: d["bodies"][0]["descriptor"].update(attempt_id=uid("other")),
+        ),
+    )
+    big = big_exchange(exchange)
+    w.text(
+        CAPTURE / "fixtures/valid/spool-record-exchange-260.json",
+        json.dumps(big, ensure_ascii=False, separators=(",", ":")) + "\n",
+    )
+
+    def two_sixty_one(d: Any) -> None:
+        extra = copy.deepcopy(d["bodies"][-1])
+        extra["descriptor"]["object_id"] = uid("261")
+        extra["offset"] = d["bodies"][-1]["offset"] + d["bodies"][-1]["length"]
+        d["bodies"].append(extra)
+
+    w.text(
+        CAPTURE / "fixtures/invalid/spool-record-exchange-261.json",
+        json.dumps(
+            mutate(big, two_sixty_one), ensure_ascii=False, separators=(",", ":")
+        )
+        + "\n",
+    )
+    loss = {
+        "schema_version": "fabric.loss-record/v1",
+        "kind": "loss",
+        "source": {"source_id": SOURCE, "source_epoch": EPOCH},
+        "emitted_at": "2026-10-19T09:00:05.000Z",
+        "reason": "queue_full",
+        "count": 2,
+        "first_sequence": 12,
+        "last_sequence": 13,
+        "segment_id": segment,
+    }
+    put("valid/loss-record-segment.json", loss)
+    put(
+        "invalid/loss-record-segment-range-not-exact.json",
+        mutate(loss, lambda d: d.update(last_sequence=14)),
+    )
+    put(
+        "invalid/loss-record-bad-segment-id.json",
+        mutate(loss, lambda d: d.update(segment_id=segment.upper())),
+    )
+    spool_loss = {
+        "schema_version": "fabric.wire-spool-record/v1",
+        "record_kind": "loss",
+        "source": {"source_id": SOURCE, "source_epoch": EPOCH},
+        "order": 14,
+        "written_at_unix_nano": 1791331203050000000,
+        "loss": {
+            k: loss[k]
+            for k in (
+                "reason",
+                "count",
+                "first_sequence",
+                "last_sequence",
+                "segment_id",
+            )
+        },
+    }
+    put("valid/spool-record-loss-segment.json", spool_loss)
+    put(
+        "invalid/spool-record-loss-segment-range-not-exact.json",
+        mutate(spool_loss, lambda d: d["loss"].update(first_sequence=10)),
+    )
+    run_end = copy.deepcopy(root)
+    run_end["order"] = 15
+    run_end["marker"] = {
+        "kind": "run_end",
+        "last_sequence": 41,
+        "run_id": root["marker"]["run_id"],
+        "scope_id": root["marker"]["scope_id"],
+        "segment_id": segment,
+        "manifest_id": root["marker"]["manifest_id"],
+        "manifest_digest": root["marker"]["manifest_digest"],
+        "manifest_seq": 0,
+        "scope_status": "ok",
+        "outcome": "completed",
+        "stop_reason": "goal_reached",
+        "event_id": uid("marker-run-end-outcome"),
+    }
+    put("valid/spool-record-marker-run-end-outcome.json", run_end)
+    put(
+        "invalid/spool-record-marker-outcome-on-run-start.json",
+        mutate(root, lambda d: d["marker"].update(outcome="completed")),
+    )
+    put(
+        "invalid/spool-record-marker-session-on-run-end.json",
+        mutate(run_end, lambda d: d["marker"].update(session_id="sess-" + "9f" * 16)),
+    )
+    put(
+        "invalid/spool-record-marker-bad-event-id.json",
+        mutate(
+            run_end,
+            lambda d: d["marker"].update(event_id=uid("x")[:14] + "5" + uid("x")[15:]),
+        ),
+    )
+    put(
+        "invalid/spool-record-marker-run-start-without-id-basis.json",
+        mutate(root, lambda d: d["marker"].pop("id_basis")),
+    )
+    rich_root = mutate(
+        root,
+        lambda d: d["marker"].update(
+            session_id="sess-" + "9f" * 16,
+            user_id="usr-" + "8e" * 16,
+            parent_run_id=v1("r", "run-travel-41", KEY1),
+            links=[v1("r", "run-travel-40", KEY1)],
+            identity={
+                "agent_id": "lbl-" + "7d" * 16,
+                "environment": "lbl-" + "6c" * 16,
+            },
+        ),
+    )
+    put("valid/spool-record-run-start-root-identity.json", rich_root)
+    continuation = w.read_json(
+        CAPTURE / "fixtures/valid/loss-record-run-start-continuation.json"
+    )
+    put(
+        "invalid/loss-record-session-on-continuation.json",
+        mutate(continuation, lambda d: d.update(session_id="sess-" + "9f" * 16)),
+    )
+    put(
+        "invalid/loss-record-id-basis-on-seal.json",
+        mutate(
+            w.read_json(CAPTURE / "fixtures/valid/loss-record-segment-seal.json"),
+            lambda d: d.update(id_basis="token"),
+        ),
+    )
+    manifest = w.read_json(CAPTURE / "fixtures/valid/spool-record-manifest.json")
+    put(
+        "invalid/spool-record-manifest-event-id-mismatch.json",
+        mutate(
+            manifest, lambda d: d["marker"].update(event_id=uid("not-the-manifest"))
+        ),
+    )
+    nested = w.read_json(
+        CAPTURE / "fixtures/valid/run-reconstruction-nested-scopes.json"
+    )
+    mdig = canonical_digest(coverage_manifests(registries(w))["m0"])
+    report = copy.deepcopy(nested)
+    report["inputs"]["evaluated_at"] = "2026-10-19T10:00:00Z"
+    source = report["sources"][0]
+    source["manifests"] = [
+        {"manifest_id": uid("m0"), "sha256": mdig, "manifest_seq": 0}
+    ]
+    source["unsealed_epochs"] = []
+    run = report["runs"][0]
+    run.update(
+        run_state="terminated",
+        segments=[
+            {
+                "segment_id": seg(1),
+                "source_id": source["source_id"],
+                "source_epoch": source["source_epoch"],
+                "last_sequence": 2,
+                "manifest_digest": mdig,
+                "terminal": True,
+                "predecessors": ["none"],
+                "state": "sealed",
+                "seal_digest": ref.seal_digest([]),
+            }
+        ],
+        run_aliases=[],
+        evaluated_at="2026-10-19T10:00:00Z",
+    )
+    put("valid/run-reconstruction-segments.json", report)
+
+    def open_gap_on_terminated(d: Any) -> None:
+        d["runs"][0]["gaps"].append({"gap_type": "run_open", "effect": "info"})
+        d["runs"][0]["counts"]["gaps_by_type"]["run_open"] = 1
+
+    put(
+        "invalid/run-reconstruction-run-open-on-terminated.json",
+        mutate(report, open_gap_on_terminated),
+    )
+    put(
+        "invalid/run-reconstruction-open-without-deadline.json",
+        mutate(report, lambda d: d["runs"][0].update(run_state="open")),
+    )
+    put(
+        "invalid/run-reconstruction-segment-bad-predecessor.json",
+        mutate(
+            report,
+            lambda d: d["runs"][0]["segments"][0].update(predecessors=[f"fr2/{ENTRY}"]),
+        ),
+    )
+
+
+# ===================================================================== P1 vectors (spec 050 §4.3)
+SPAN_START = 1791331202051000000
+
+
+def _span(
+    name: str, attributes: dict[str, Any], status: str = "ok", width: int = 2000000
+) -> dict[str, Any]:
+    return {
+        "name": name,
+        "start_ns": SPAN_START,
+        "end_ns": SPAN_START + width,
+        "status": status,
+        "attributes": attributes,
+    }
+
+
+def _record_case(
+    name: str,
+    kind: str,
+    span: dict[str, Any],
+    descriptors: list[dict[str, Any]],
+    **extra: Any,
+) -> dict[str, Any]:
+    content = ref.record_content(
+        kind, descriptors, span["attributes"].get("fabric.content.object_ids", [])
+    )
+    return {
+        "name": name,
+        "kind": kind,
+        "span": span,
+        "descriptors": descriptors,
+        "content": content,
+        "digest": ref.record_digest(**span, content=content),
+        **extra,
+    }
+
+
+def p1_records_span(record: dict[str, Any]) -> dict[str, Any]:
+    span = record["span"]
+    return {
+        "name": span["name"],
+        "start_ns": span["start_time_unix_nano"],
+        "end_ns": span["end_time_unix_nano"],
+        "status": span["status"],
+        "attributes": span["attributes"],
+    }
+
+
+def _seal_vectors(w: Writer, record: dict[str, Any]) -> dict[str, Any]:
+    split = w.read_json(CAPTURE / "fixtures/valid/spool-record-exchange-split.json")
+    exchange_span = {
+        "name": split["span"]["name"],
+        "start_ns": split["span"]["start_time_unix_nano"],
+        "end_ns": split["span"]["end_time_unix_nano"],
+        "status": split["span"]["status"],
+        "attributes": split["span"]["attributes"],
+    }
+    descriptors = [b["descriptor"] for b in record["bodies"]]
+    rec_span = p1_records_span(record)
+    stamped = copy.deepcopy(rec_span)
+    stamped["attributes"]["fabric.source.authenticated"] = True
+    only_descriptor = copy.deepcopy(rec_span)
+    only_descriptor["attributes"]["fabric.content.object_ids"] = [
+        descriptors[1]["object_id"]
+    ]
+    only_evidence = copy.deepcopy(rec_span)
+    only_evidence["attributes"]["fabric.content.object_ids"] = [
+        descriptors[2]["object_id"]
+    ]
+    typed = copy.deepcopy(rec_span)
+    typed["attributes"].update(
+        {
+            "fabric.source.epoch": ref.INT64_MAX,
+            "fabric.source.sequence": ref.INT64_MAX - 1,
+        }
+    )
+    typed["attributes"].pop("fabric.content.object_ids")
+    typed["status"] = "error"
+    records = [
+        _record_case(
+            "wire exchange: request then response primary, the split part excluded",
+            "exchange",
+            exchange_span,
+            [b["descriptor"] for b in split["bodies"]],
+        ),
+        _record_case(
+            "record with a stored body, a descriptor-only body and its evidence object",
+            "record",
+            rec_span,
+            descriptors,
+        ),
+        _record_case(
+            "record with one descriptor-only body (null)",
+            "record",
+            only_descriptor,
+            [descriptors[1]],
+        ),
+        _record_case(
+            "record with its evidence object only",
+            "record",
+            only_evidence,
+            [descriptors[2]],
+        ),
+        _record_case(
+            "receiver-owned fabric.source.authenticated is excluded",
+            "record",
+            stamped,
+            descriptors,
+            same_digest_as="record with a stored body, a descriptor-only body and its evidence object",
+        ),
+        _record_case(
+            "int64 epoch and sequence, error status, no bodies", "record", typed, []
+        ),
+    ]
+    by_name = {r["name"]: r["digest"] for r in records}
+    seg_a, seg_b = seg(21), seg(22)
+
+    def loss(first: int, last: int, reason: str, segment: str | None) -> dict[str, Any]:
+        out = {
+            "reason": reason,
+            "count": last - first + 1,
+            "first_sequence": first,
+            "last_sequence": last,
+        }
+        if segment:
+            out["segment_id"] = segment
+        return out
+
+    def segment(
+        name: str,
+        segment_id: str,
+        members: list[tuple[int, str]],
+        losses: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        entries = ref.seal_entries(
+            ((s, by_name[n]) for s, n in members), losses, segment_id
+        )
+        entries.sort(key=lambda e: e[0])
+        return {
+            "name": name,
+            "segment_id": segment_id,
+            "records": [[s, n] for s, n in members],
+            "losses": losses,
+            "entries": entries,
+            "seal_digest": ref.seal_digest(entries),
+        }
+
+    segments = [
+        segment("empty segment (zero-width, end_run)", seg(20), [], []),
+        segment(
+            "records and their own segment's losses; another segment's loss and an unattributed loss are not members",
+            seg_a,
+            [(3, records[0]["name"]), (5, records[1]["name"])],
+            [
+                loss(6, 7, "queue_full", seg_a),
+                loss(4, 4, "queue_full", seg_b),
+                loss(8, 8, "shutdown", None),
+            ],
+        ),
+        segment(
+            "interleaved segment on the same source (T8): only its own positions",
+            seg_b,
+            [(9, records[3]["name"])],
+            [loss(6, 7, "queue_full", seg_a), loss(4, 4, "queue_full", seg_b)],
+        ),
+        segment("loss-only segment", seg(23), [], [loss(10, 12, "disk_full", seg(23))]),
+    ]
+    return {
+        "schema_version": "fabric.seal-digest-vectors/v1",
+        "rule": (
+            "Spec 050 §3.7 (049 §2.12 rule 1, deltas 8 and 17): a record digest is sha256: of the "
+            "spec-029 canonical JSON (sorted keys, separators (',', ':'), UTF-8, no floats) of "
+            "{name, start_ns, end_ns, status, attributes, content}; name is the category "
+            "fabricguard derives, status unset/ok/error, attributes the emitted ones minus "
+            "receiver-owned keys (fabric.source.authenticated), ints as ints, arrays as lists. "
+            "content: for a wire exchange the stored_sha256 of the request then the response "
+            "primary (the side object with no link) when present; for a record the stored_sha256 "
+            "of each object of fabric.content.object_ids, in list order, null for a "
+            "descriptor-only object. A seal digest is sha256: of the canonical JSON of the "
+            "[sequence, entry] pairs sorted by sequence; entry is a record digest or "
+            "'loss:<reason>' for each position of a loss record naming this segment_id (a "
+            "segment-attributed range is exact); a loss without segment_id is never a member; an "
+            "empty segment hashes []."
+        ),
+        "records": records,
+        "segments": segments,
+    }
+
+
+def _category_vectors() -> dict[str, Any]:
+    cases: list[tuple[str, str, list[str]]] = [
+        (
+            "heartbeat beats loss",
+            "anything",
+            ["fabric.loss.reason", "fabric.heartbeat.last_sequence"],
+        ),
+        ("loss record", "fabric.decision", ["fabric.loss.reason"]),
+        (
+            "tool beats model",
+            "fabric.model_call",
+            ["fabric.llm.system", "fabric.tool.name"],
+        ),
+    ]
+    cases += [(f"tool key {k}", "fabric.decision", [k]) for k in ref._TOOL_KEYS]
+    cases += [(f"model key {k}", "fabric.decision", [k]) for k in ref._MODEL_KEYS]
+    cases += [(f"ordered key {k}", "fabric.activity", [k]) for k, _ in ref._ORDERED]
+    cases += [
+        (
+            "retrieval beats memory",
+            "x",
+            ["fabric.memory.kind", "fabric.retrieval.source"],
+        ),
+        (
+            "execution status beats decision id",
+            "x",
+            ["fabric.decision_id", "fabric.execution.status"],
+        ),
+        ("unknown name", "Patient Jane Doe", []),
+        ("unknown fabric name", "fabric.agent_turn", []),
+        ("empty name", "", []),
+        (
+            "unrelated keys keep the name",
+            "fabric.memory",
+            ["fabric.step.kind", "fabric.attempt.uid"],
+        ),
+    ]
+    cases += [(f"known name {n}", n, []) for n in sorted(ref.KNOWN_NAMES)]
+    return {
+        "schema_version": "fabric.span-category-vectors/v1",
+        "rule": (
+            "Spec 050 §3.4 rule N: a record's span name is category(name_hint, attribute keys), "
+            "the port of fabricguard's activityCategory (processor/fabricguardprocessor/"
+            "processor.go): heartbeat and loss markers first, then tool keys, model keys, the "
+            "ordered key table, then the name itself when it is a known Fabric name, else "
+            "fabric.activity. Only attribute keys decide, never values. fabricguard's Go test "
+            "and the SDK's port read these cases."
+        ),
+        "cases": [
+            {
+                "name": n,
+                "name_hint": h,
+                "attribute_keys": k,
+                "category": ref.span_category(h, k),
+            }
+            for n, h, k in cases
+        ],
+    }
+
+
+def _records_span_vectors(
+    reg: dict[str, Any], record: dict[str, Any]
+) -> dict[str, Any]:
+    table = record_checks(reg)
+    base = dict(record["span"]["attributes"])
+    base["fabric.source_id"] = SOURCE
+    base["fabric.run.id"] = RUN
+    full = dict(
+        base,
+        **{
+            "fabric.step.id": "a-" + "1b" * 16,
+            "fabric.step.attempt_id": "a-" + "2c" * 16,
+            "fabric.step.parent_id": uid("parent-call"),
+            "fabric.error.domain": "tool",
+        },
+    )
+    cases: list[dict[str, Any]] = []
+
+    def case(
+        name: str,
+        attrs: dict[str, Any],
+        labels: str = "pseudonymous",
+        identity: str = "pseudonymous",
+    ) -> None:
+        kept, dropped = ref.project_record_attributes(
+            attrs, table, coverage.check_value, labels=labels, identity=identity
+        )
+        cases.append(
+            {
+                "name": name,
+                "capture_labels": labels,
+                "identity_mode": identity,
+                "attributes": attrs,
+                "admitted": kept,
+                "dropped": dropped,
+            }
+        )
+
+    case("every records key with a valid value", full)
+    case("observed hook record", dict(base, **{"fabric.capture.source": "observed"}))
+    case(
+        "inferred is projection-only",
+        dict(base, **{"fabric.capture.source": "inferred"}),
+    )
+    case(
+        "keys outside the table are dropped, never hashed",
+        dict(
+            base,
+            **{
+                "fabric.tool.name": "search_flights",
+                "fabric.tool.arguments_hash": "a" * 64,
+                "gen_ai.request.model": "gpt-4o",
+                "fabric.wire.exchange_id": uid("ex"),
+            },
+        ),
+    )
+    case(
+        "structured, float and receiver-owned values are dropped",
+        dict(
+            base,
+            **{
+                "fabric.step.kind": {"kind": "tool_call"},
+                "fabric.source.sequence": 3.5,
+                "fabric.source.authenticated": True,
+            },
+        ),
+    )
+    case(
+        "failing values are dropped",
+        dict(
+            base,
+            **{
+                "fabric.step.lifecycle_state": "done",
+                "fabric.step.status": "success",
+                "fabric.actor.type": "Jane Doe",
+                "fabric.event_id": "not-a-uuid",
+                "fabric.content.object_ids": [uid(f"o{n}") for n in range(9)],
+                "fabric.step.id": "Jane Doe's order 42",
+            },
+        ),
+    )
+    case("agent_turn is a step kind", dict(base, **{"fabric.step.kind": "agent_turn"}))
+    clear = dict(
+        base, **{"fabric.source_id": "billing-agent.prod", "fabric.run.id": "order-42"}
+    )
+    case("clear source label and clear run id, pseudonymous Node", clear)
+    case(
+        "clear source label and clear run id, clear Node",
+        clear,
+        labels="clear",
+        identity="clear",
+    )
+    case(
+        "generated run-id fallback embeds the s- source",
+        dict(base, **{"fabric.run.id": f"source:{SOURCE}:{EPOCH}"}),
+    )
+    return {
+        "schema_version": "fabric.records-span-vectors/v1",
+        "rule": (
+            "Spec 050 §3.4 rule A and §3.14: a records-class span keeps exactly the keys whose "
+            "registry placement names record, each value passing the key's check (capture_check "
+            "for a reused key) under the Node's capture_labels and identity_mode; every other "
+            "key, a failing value, a float, a map or bytes is dropped and counted "
+            "(records_keys_dropped), never hashed or truncated. keys is the table "
+            "(fabric/_records_keys_generated.py and fabricguard recordKeyValidators are "
+            "generated from the same rows)."
+        ),
+        "table_revision": reg["keys"]["registry_revision"],
+        "keys": sorted(table),
+        "cases": cases,
+    }
+
+
+def _parity_vectors(reg: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    def export(span: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "name": span["name"],
+            "attributes": dict(
+                span["attributes"], **{"fabric.source.authenticated": True}
+            ),
+        }
+
+    rec = p1_records_span(record)
+    rec["attributes"] = dict(
+        rec["attributes"], **{"fabric.source_id": SOURCE, "fabric.run.id": RUN}
+    )
+    descriptors = [b["descriptor"] for b in record["bodies"]]
+    record_content = ref.record_content(
+        "record", descriptors, rec["attributes"]["fabric.content.object_ids"]
+    )
+    exchange = _span(
+        "fabric.model_call",
+        {
+            "fabric.wire.exchange_id": uid("parity-ex"),
+            "fabric.run.id": RUN,
+            "fabric.run.scope_id": uid("scope1"),
+            "fabric.run.segment_id": seg(1),
+            "fabric.source_id": SOURCE,
+            "fabric.source.epoch": EPOCH,
+            "fabric.source.sequence": 4,
+            "fabric.event_id": uid("parity-ex-event"),
+            "fabric.capture.input": "wire",
+            "fabric.capture.point": "wire.py.httpx@0.9.0",
+            "fabric.capture.source": "observed",
+            "fabric.step.kind": "model_call",
+            "fabric.actor.type": "agent",
+            "fabric.step.lifecycle_state": "completed",
+            "fabric.step.status": "ok",
+            "fabric.wire.endpoint_id": "openai.default",
+            "fabric.wire.api": "openai.chat_completions",
+            "fabric.wire.response_state": "complete",
+            "fabric.wire.truncated": False,
+            "fabric.wire.store_status": "disabled",
+            "fabric.wire.store_reason": "no_store",
+            "gen_ai.operation.name": "chat",
+            "gen_ai.provider.name": "openai",
+            "http.request.method": "POST",
+            "http.response.status_code": 200,
+        },
+        status="unset",
+    )
+    loss = {
+        "name": "fabric.capture_loss",
+        "start_ns": SPAN_START,
+        "end_ns": SPAN_START,
+        "status": "unset",
+        "attributes": {
+            "fabric.source_id": SOURCE,
+            "fabric.source.epoch": EPOCH,
+            "fabric.loss.reason": "queue_full",
+            "fabric.loss.count": 2,
+            "fabric.loss.first_sequence": 6,
+            "fabric.loss.last_sequence": 7,
+            "fabric.run.segment_id": seg(1),
+            "fabric.event_id": uid("parity-loss-event"),
+        },
+    }
+    seal = {
+        "name": "fabric.capture_heartbeat",
+        "start_ns": SPAN_START,
+        "end_ns": SPAN_START,
+        "status": "unset",
+        "attributes": {
+            "fabric.source_id": SOURCE,
+            "fabric.source.epoch": EPOCH,
+            "fabric.heartbeat.kind": "segment_seal",
+            "fabric.heartbeat.last_sequence": 9,
+            "fabric.run.id": RUN,
+            "fabric.run.scope_id": uid("scope1"),
+            "fabric.run.segment_id": seg(1),
+            "fabric.segment.last_sequence": 9,
+            "fabric.segment.manifest_digest": DIG,
+            "fabric.segment.seal_digest": "sha256:" + "5e" * 32,
+            "fabric.run.terminal": True,
+            "fabric.capture.manifest_seq": 0,
+            "fabric.event_id": uid("parity-seal-event"),
+        },
+    }
+    cases = [
+        {
+            "name": "records span with bodies and an evidence object",
+            "class": "record",
+            "emitted": rec,
+            "content": record_content,
+            "expected_export": export(rec),
+            "digest": ref.record_digest(**rec, content=record_content),
+        },
+        {
+            "name": "wire exchange span with the P1 enrichment, content disabled",
+            "class": "exchange",
+            "emitted": exchange,
+            "content": [],
+            "expected_export": export(exchange),
+            "digest": ref.record_digest(**exchange, content=[]),
+        },
+        {
+            "name": "segment-attributed loss",
+            "class": "loss",
+            "emitted": loss,
+            "expected_export": export(loss),
+            "seal_entries": ref.loss_entries(
+                {
+                    "reason": "queue_full",
+                    "count": 2,
+                    "first_sequence": 6,
+                    "last_sequence": 7,
+                    "segment_id": seg(1),
+                }
+            ),
+        },
+        {
+            "name": "terminal segment seal with its persisted event id",
+            "class": "segment_seal",
+            "emitted": seal,
+            "expected_export": export(seal),
+        },
+    ]
+    return {
+        "schema_version": "fabric.seal-parity-vectors/v1",
+        "rule": (
+            "Spec 050 §3.14 (T3): each span as the Python emitter writes it passes a Node "
+            "(capture_labels and identity_mode pseudonymous, ingress bound to the source) with its "
+            "name and every attribute intact; the Node adds only the receiver-owned "
+            "fabric.source.authenticated stamp. The record digest the agent sealed equals the "
+            "digest recomputed from the export (receiver-owned keys excluded), so the seal "
+            "verifies from a Node export byte for byte. A loss contributes 'loss:<reason>' "
+            "entries for its exact range to its segment's seal only."
+        ),
+        "node": {
+            "capture_labels": "pseudonymous",
+            "identity_mode": "pseudonymous",
+            "bound_source": SOURCE,
+        },
+        "cases": cases,
+    }
+
+
+def _evidence_vectors(
+    reg: dict[str, Any], record: dict[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    good = evidence_test_document()
+    registered = [t["type"] for t in reg["fields"]["evidence_types"]]
+
+    def doc(**change: Any) -> dict[str, Any]:
+        return dict(copy.deepcopy(good), **change)
+
+    deep = doc(items=[{"name": "deep", "count": 1, "tags": [[[[["x"]]]]]}])
+    cases: list[dict[str, Any]] = [
+        {"name": "registered type, canonical", "document": good},
+        {"name": "no items", "document": doc(items=[], refs=[])},
+        {"name": "not canonical (whitespace)", "raw": json.dumps(good, indent=1)},
+        {
+            "name": "not canonical (key order)",
+            "raw": json.dumps(good, separators=(",", ":")),
+        },
+        {
+            "name": "duplicate key",
+            "raw": '{"evidence_type":"fabric.test.items/v1","items":[],"items":[],"schema_version":"fabric.record-evidence/v1"}',
+        },
+        {
+            "name": "a float",
+            "raw": '{"evidence_type":"fabric.test.items/v1","items":[{"count":1.5,"name":"a"}],"schema_version":"fabric.record-evidence/v1"}',
+        },
+        {"name": "extra top-level key", "document": doc(note="free text")},
+        {
+            "name": "wrong schema version",
+            "document": doc(schema_version="fabric.record-evidence/v2"),
+        },
+        {
+            "name": "continuation without final",
+            "document": doc(continuation={"index": 0}),
+        },
+        {
+            "name": "ref to a path",
+            "document": doc(
+                refs=[{"object_id": "/var/data/x", "role": "tool.call.arguments"}]
+            ),
+        },
+        {
+            "name": "unregistered type",
+            "document": doc(evidence_type="acme.secret.dump/v1"),
+        },
+        {
+            "name": "string over 256 characters",
+            "document": doc(items=[{"name": "a" * 257, "count": 1}]),
+        },
+        {"name": "item deeper than 4", "document": deep},
+        {
+            "name": "4097 items",
+            "generate": {
+                "base": doc(items=[], refs=[]),
+                "item": {"name": "x", "count": 0},
+                "count": 4097,
+            },
+        },
+        {
+            "name": "4096 items",
+            "generate": {
+                "base": doc(items=[], refs=[]),
+                "item": {"name": "x", "count": 0},
+                "count": 4096,
+            },
+        },
+        {
+            "name": "a CONTENT-class value in an item (free text): refused by the type schema",
+            "document": doc(
+                items=[
+                    {"name": "Jane Doe asked about her prescription", "count": 1},
+                    good["items"][0],
+                ]
+            ),
+        },
+        {
+            "name": "an extra item property",
+            "document": doc(items=[dict(good["items"][0], note="x")]),
+        },
+    ]
+    type_row = reg["fields"]["evidence_types"][0]
+    item_schema = w_cache["evidence_item_schema"]
+    for case in cases:
+        raw = evidence_raw(case)
+        refusal = ref.evidence_envelope_refusal(raw, registered)
+        case["refusal"] = refusal
+        if refusal is None:
+            document = json.loads(raw)
+            bad = ref.evidence_item_errors(document, item_schema)
+            case["item_errors"] = bad
+            valid = dict(
+                document,
+                items=[it for i, it in enumerate(document["items"]) if i not in bad],
+            )
+            if "generate" in case:
+                continue  # the bound case: its 4096 projected values are not pinned
+            case["fields"] = {
+                f"{m['layer']}.{m['key']}": ref.resolve_pointer(valid, m["pointer"])
+                for m in type_row["fields"]
+            }
+    rec_span = p1_records_span(record)
+    descriptors = [b["descriptor"] for b in record["bodies"]]
+    content = ref.record_content(
+        "record", descriptors, rec_span["attributes"]["fabric.content.object_ids"]
+    )
+    digest = ref.record_digest(**rec_span, content=content)
+    seq = rec_span["attributes"]["fabric.source.sequence"]
+    entries = [[seq, digest]]
+    vector = {
+        "schema_version": "fabric.record-evidence-vectors/v1",
+        "rule": (
+            "Spec 050 §3.4a: a record.evidence body is one fabric.record-evidence/v1 document in "
+            "spec-029 canonical JSON. The Node's envelope check (before acknowledgement) refuses, "
+            "in order: evidence_not_canonical (not canonical bytes: whitespace, key order, "
+            "duplicate keys, floats), evidence_envelope (another top-level key, wrong "
+            "schema_version, malformed continuation or refs), evidence_type_unregistered, "
+            "evidence_bounds (over 1 MiB, 4096 items, item depth 4, 256-character strings, 64 "
+            "refs). fabric.reconstruct then validates each item against its registered type "
+            "schema (item_errors: those items' fields project not_captured(parse_failed)) and "
+            "projects the registry's pointers ('*': every valid item) into fields. The evidence "
+            "object is one of the record's bodies: its stored_sha256 is in the record digest's "
+            "content list, so the seal covers it. A case is a document (hashed as its canonical "
+            "bytes), raw text, or generate (base with count copies of item)."
+        ),
+        "registered_types": registered,
+        "cases": cases,
+        "record": {
+            "span": rec_span,
+            "descriptors": descriptors,
+            "evidence_object_id": descriptors[2]["object_id"],
+            "evidence_document": good,
+            "content": content,
+            "digest": digest,
+            "segment_entries": entries,
+            "seal_digest": ref.seal_digest(entries),
+        },
+    }
+    fixtures = {
+        "valid/evidence-test-items.json": good,
+        "valid/evidence-continuation-window.json": doc(
+            continuation={"index": 7, "final": False}
+        ),
+        "invalid/evidence-unknown-type.json": doc(evidence_type="acme.secret.dump/v1"),
+        "invalid/evidence-extra-key.json": doc(note="free text"),
+        "invalid/evidence-free-text-over-bound.json": doc(
+            items=[{"name": "a" * 300, "count": 1}]
+        ),
+        "invalid/evidence-too-deep.json": deep,
+        "invalid/evidence-too-many-items.json": doc(
+            items=[{"name": "x", "count": 0}] * 4097, refs=[]
+        ),
+        "invalid/evidence-content-class-value.json": doc(
+            items=[{"name": "Jane Doe asked about her prescription", "count": 1}]
+        ),
+    }
+    return vector, fixtures
+
+
+def _prevalidate_vectors(
+    reg: dict[str, Any], record: dict[str, Any], blobs: dict[str, bytes]
+) -> dict[str, Any]:
+    """Spec 050 §3.14 (WP-21): one case per pre-acknowledgement refusal reason."""
+    source = record["source"]["source_id"]
+    registered = [t["type"] for t in reg["fields"]["evidence_types"]]
+    config = {
+        "allowed_tenants": [TENANT],
+        "source_binding": {"tenant_id": TENANT, "source_id": source},
+    }
+
+    def attrs(index: int, **change: Any) -> dict[str, Any]:
+        out = dict(record["bodies"][index]["descriptor"], event_class="content")
+        out.update(change)
+        return out
+
+    args_id, result_id, evidence_id = (
+        b["descriptor"]["object_id"] for b in record["bodies"]
+    )
+
+    def evidence(raw: bytes) -> tuple[dict[str, Any], bytes]:
+        digest = ref.sha256_digest(raw)
+        return (
+            attrs(
+                2,
+                stored_byte_length=len(raw),
+                stored_sha256=digest,
+                source_byte_length=len(raw),
+                source_sha256=digest,
+            ),
+            raw,
+        )
+
+    good = evidence_test_document()
+    cases_in: list[tuple[str, dict[str, Any], bytes]] = [
+        ("stored tool arguments", attrs(0), blobs[args_id]),
+        ("descriptor-only body (payload_too_large)", attrs(1), b""),
+        ("evidence object", attrs(2), blobs[evidence_id]),
+        ("unknown role", attrs(0, role="tool.call.secret"), blobs[args_id]),
+        (
+            "evidence object with another media type",
+            attrs(2, media_type="text/plain"),
+            blobs[evidence_id],
+        ),
+        ("evidence object over its 1 MiB cap", *evidence(b" " * ((1 << 20) + 1))),
+        ("body differs from its digest", attrs(0), blobs[args_id] + b" "),
+        (
+            "tenant outside allowed_tenants",
+            attrs(0, tenant_id="tenant-b"),
+            blobs[args_id],
+        ),
+        (
+            "source other than the bound source",
+            attrs(0, source_id="s-" + "0f" * 16),
+            blobs[args_id],
+        ),
+        ("evidence not canonical", *evidence(json.dumps(good, indent=1).encode())),
+        (
+            "evidence with an extra key",
+            *evidence(ref.canonical_bytes(dict(good, note="x"))),
+        ),
+        (
+            "evidence of an unregistered type",
+            *evidence(
+                ref.canonical_bytes(dict(good, evidence_type="acme.secret.dump/v1"))
+            ),
+        ),
+        (
+            "evidence string over the bound",
+            *evidence(
+                ref.canonical_bytes(dict(good, items=[{"name": "a" * 257, "count": 1}]))
+            ),
+        ),
+    ]
+    return {
+        "schema_version": "fabric.node-prevalidate-vectors/v1",
+        "rule": (
+            "Spec 050 §3.14 (R10, OD-1): fabriccontent runs the stateless checks on every content "
+            "record before acknowledging it, in order: the descriptor rules (schema, role table, "
+            "protection, links) -> bad_descriptor; body length and sha256 against the descriptor "
+            "-> digest_mismatch; allowed_tenants -> tenant_not_allowed; the source binding -> "
+            "source_unbound; for a stored record.evidence body the envelope check of §3.4a item 4 "
+            "-> evidence_not_canonical, evidence_envelope, evidence_type_unregistered or "
+            "evidence_bounds. A refusal is a permanent error the OTLP receiver answers with HTTP "
+            "400; nothing is enqueued and fabric_content_prevalidate_refused{reason} counts it. "
+            "accepted means every stateless check passed and the record is queued, never that it "
+            "is durable; the store-conflict check stays after acknowledgement. Bodies are base64; "
+            "the over-cap body is generated (body_repeat: one byte repeated)."
+        ),
+        "reasons": list(ref.PREVALIDATE_REASONS),
+        "config": config,
+        "registered_evidence_types": registered,
+        "cases": [
+            {
+                "name": name,
+                "attributes": a,
+                **(
+                    {"body_repeat": {"byte": body[0], "count": len(body)}}
+                    if len(body) > 4096
+                    else {"body_base64": base64.b64encode(body).decode()}
+                ),
+                "expected": ref.prevalidate(
+                    a,
+                    body,
+                    allowed_tenants=config["allowed_tenants"],
+                    source_binding=config["source_binding"],
+                    descriptor_ok=capture_descriptor_ok,
+                    registered=registered,
+                )
+                or "accepted",
+            }
+            for name, a, body in cases_in
+        ],
+    }
+
+
+def capture_descriptor_ok(attributes: Mapping[str, Any]) -> bool:
+    """The Node's descriptor rules, as validate_capture_contracts mirrors them."""
+    from contracts import validate_capture_contracts as capture  # noqa: PLC0415
+
+    return capture.content_descriptor_ok(attributes)
+
+
+w_cache: dict[str, Any] = {}
+w_cache: dict[str, Any] = {}
+
+
+def evidence_raw(case: Mapping[str, Any]) -> bytes:
+    """The bytes a record-evidence vector case stands for."""
+    if "raw" in case:
+        return case["raw"].encode("utf-8")
+    if "generate" in case:
+        gen = case["generate"]
+        document = dict(gen["base"], items=[gen["item"]] * gen["count"])
+        return ref.canonical_bytes(document)
+    return ref.canonical_bytes(case["document"])
+
+
+def generate_p1_vectors(w: Writer) -> None:
+    reg = registries(w)
+    w_cache["evidence_item_schema"] = w.read_json(
+        COVERAGE / reg["fields"]["evidence_types"][0]["schema"]
+    )
+    exchange = w.read_json(CAPTURE / "fixtures/valid/spool-record-exchange.json")
+    root = w.read_json(CAPTURE / "fixtures/valid/spool-record-run-start-root.json")
+    record, _ = p1_record(exchange, root["marker"]["segment_id"])
+
+    def put(rel: str, document: Any) -> None:
+        w.json(COVERAGE / rel, document)
+
+    put("fixtures/vectors/seal-digest-v1.json", _seal_vectors(w, record))
+    put("fixtures/vectors/span-category-v1.json", _category_vectors())
+    put("fixtures/vectors/records-span-v1.json", _records_span_vectors(reg, record))
+    put("fixtures/vectors/seal-parity-v1.json", _parity_vectors(reg, record))
+    vector, fixtures = _evidence_vectors(reg, record)
+    put("fixtures/vectors/record-evidence-v1.json", vector)
+    for rel, document in fixtures.items():
+        put(rel, document)
+    record, blobs = p1_record(exchange, root["marker"]["segment_id"])
+    w.json(
+        CONTENT / "fixtures/node-prevalidate-v1.json",
+        _prevalidate_vectors(reg, record, blobs),
+    )
+
+
+# ===================================================================== model-call projection goldens (spec 050 §3.13)
+def _sse(*events: Any) -> str:
+    return (
+        "".join(f"data: {json.dumps(e, separators=(',', ':'))}\n\n" for e in events)
+        + "data: [DONE]\n\n"
+    )
+
+
+def _sse_named(*events: Any) -> str:
+    return "".join(
+        f"event: {e['type']}\ndata: {json.dumps(e, separators=(',', ':'))}\n\n"
+        for e in events
+    )
+
+
+def model_call_cases() -> list[dict[str, Any]]:
+    tools = [
+        {
+            "type": "function",
+            "function": {"name": "search_flights", "parameters": {"type": "object"}},
+        }
+    ]
+    chat_req = {
+        "model": "gpt-4o",
+        "temperature": 0,
+        "tools": tools,
+        "messages": [
+            {"role": "system", "content": "You book travel."},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Flights like the one in this photo?"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "https://images.example.com/p/1.png"},
+                    },
+                ],
+            },
+        ],
+    }
+    chat_resp = {
+        "id": "chatcmpl-9AbC",
+        "object": "chat.completion",
+        "model": "gpt-4o-2024-08-06",
+        "choices": [
+            {
+                "index": 0,
+                "finish_reason": "tool_calls",
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_7Qx",
+                            "type": "function",
+                            "function": {
+                                "name": "search_flights",
+                                "arguments": '{"to":"LIS"}',
+                            },
+                        }
+                    ],
+                },
+            }
+        ],
+        "usage": {
+            "prompt_tokens": 120,
+            "completion_tokens": 18,
+            "prompt_tokens_details": {"cached_tokens": 64},
+        },
+    }
+    chat_stream = _sse(
+        {
+            "id": "chatcmpl-9AbD",
+            "model": "gpt-4o-2024-08-06",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}],
+        },
+        {
+            "id": "chatcmpl-9AbD",
+            "model": "gpt-4o-2024-08-06",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_8Rz",
+                                "type": "function",
+                                "function": {"name": "search_flights", "arguments": ""},
+                            }
+                        ]
+                    },
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-9AbD",
+            "model": "gpt-4o-2024-08-06",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [
+                            {"index": 0, "function": {"arguments": '{"to":"LIS"}'}}
+                        ]
+                    },
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-9AbD",
+            "model": "gpt-4o-2024-08-06",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+        },
+        {
+            "id": "chatcmpl-9AbD",
+            "model": "gpt-4o-2024-08-06",
+            "choices": [],
+            "usage": {"prompt_tokens": 120, "completion_tokens": 18},
+        },
+    )
+    responses_req = {
+        "model": "o4-mini",
+        "instructions": "You are a careful travel agent.",
+        "reasoning": {"effort": "medium", "summary": "auto"},
+        "tools": [
+            {"type": "web_search_preview"},
+            {"type": "file_search", "vector_store_ids": ["vs_1"]},
+            {
+                "type": "function",
+                "name": "book_flight",
+                "parameters": {"type": "object"},
+            },
+        ],
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Book the cheapest LIS flight."}
+                ],
+            }
+        ],
+    }
+    responses_resp = {
+        "id": "resp_A1",
+        "object": "response",
+        "model": "o4-mini-2025-04-16",
+        "status": "completed",
+        "output": [
+            {
+                "type": "reasoning",
+                "id": "rs_1",
+                "summary": [{"type": "summary_text", "text": "Compared fares."}],
+                "encrypted_content": "gAAAAB...",
+            },
+            {"type": "web_search_call", "id": "ws_1", "status": "completed"},
+            {
+                "type": "file_search_call",
+                "id": "fs_1",
+                "status": "completed",
+                "queries": ["LIS fares"],
+            },
+            {
+                "type": "function_call",
+                "id": "fc_1",
+                "call_id": "call_bk1",
+                "name": "book_flight",
+                "arguments": "{}",
+            },
+            {
+                "type": "message",
+                "id": "msg_1",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Booking."}],
+            },
+        ],
+        "usage": {
+            "input_tokens": 300,
+            "output_tokens": 90,
+            "output_tokens_details": {"reasoning_tokens": 64},
+            "input_tokens_details": {"cached_tokens": 0},
+        },
+    }
+    responses_stream = _sse_named(
+        {
+            "type": "response.created",
+            "response": {"id": "resp_A2", "status": "in_progress", "output": []},
+        },
+        {"type": "response.output_text.delta", "item_id": "msg_2", "delta": "Hi"},
+        {
+            "type": "response.completed",
+            "response": {
+                "id": "resp_A2",
+                "model": "gpt-4.1-2025-04-14",
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "id": "msg_2",
+                        "role": "assistant",
+                        "content": [{"type": "output_text", "text": "Hi"}],
+                    }
+                ],
+                "usage": {"input_tokens": 10, "output_tokens": 1},
+            },
+        },
+    )
+    small_resp = {
+        "id": "resp_B2",
+        "model": "gpt-4.1-2025-04-14",
+        "status": "completed",
+        "output": [
+            {
+                "type": "message",
+                "id": "m",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "Done."}],
+            }
+        ],
+        "usage": {"input_tokens": 12, "output_tokens": 2},
+    }
+    anthropic_req = {
+        "model": "claude-sonnet-4-5",
+        "max_tokens": 1024,
+        "system": "You book travel.",
+        "thinking": {"type": "enabled", "budget_tokens": 512},
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "LIS?"},
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "url",
+                            "url": "https://images.example.com/p/2.png",
+                        },
+                    },
+                ],
+            }
+        ],
+    }
+    anthropic_resp = {
+        "id": "msg_01A",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-4-5-20250929",
+        "stop_reason": "end_turn",
+        "content": [
+            {"type": "thinking", "thinking": "Check fares.", "signature": "sig"},
+            {"type": "text", "text": "Found one."},
+        ],
+        "usage": {
+            "input_tokens": 50,
+            "output_tokens": 20,
+            "cache_read_input_tokens": 32,
+            "cache_creation_input_tokens": 0,
+        },
+    }
+    redacted_resp = dict(
+        anthropic_resp,
+        id="msg_01B",
+        content=[
+            {"type": "redacted_thinking", "data": "EuYB..."},
+            {"type": "text", "text": "Found one."},
+        ],
+    )
+    server_req = dict(
+        anthropic_req,
+        tools=[
+            {"type": "web_search_20250305", "name": "web_search", "max_uses": 2},
+            {"name": "book_flight", "input_schema": {"type": "object"}},
+        ],
+    )
+    server_req.pop("thinking")
+    server_resp = {
+        "id": "msg_01C",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-sonnet-4-5-20250929",
+        "stop_reason": "tool_use",
+        "content": [
+            {
+                "type": "server_tool_use",
+                "id": "srvtoolu_1",
+                "name": "web_search",
+                "input": {"query": "LIS fares"},
+            },
+            {
+                "type": "web_search_tool_result",
+                "tool_use_id": "srvtoolu_1",
+                "content": [],
+            },
+            {"type": "tool_use", "id": "toolu_1", "name": "book_flight", "input": {}},
+        ],
+        "usage": {
+            "input_tokens": 80,
+            "output_tokens": 30,
+            "server_tool_use": {"web_search_requests": 1},
+        },
+    }
+    anthropic_stream = _sse_named(
+        {
+            "type": "message_start",
+            "message": {
+                "id": "msg_01D",
+                "type": "message",
+                "role": "assistant",
+                "model": "claude-sonnet-4-5-20250929",
+                "content": [],
+                "usage": {"input_tokens": 50, "output_tokens": 1},
+            },
+        },
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "thinking", "thinking": ""},
+        },
+        {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {"type": "thinking_delta", "thinking": "Check."},
+        },
+        {"type": "content_block_stop", "index": 0},
+        {
+            "type": "content_block_start",
+            "index": 1,
+            "content_block": {"type": "text", "text": ""},
+        },
+        {"type": "content_block_stop", "index": 1},
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 20},
+        },
+        {"type": "message_stop"},
+    )
+    assets_req = {
+        "model": "gpt-4.1",
+        "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": "Summarise the attached itinerary."},
+                    {
+                        "type": "input_image",
+                        "image_url": "https://images.example.com/p/3.png",
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/png;base64,iVBORw0KGgo=",
+                    },
+                    {"type": "input_file", "file_id": "file-abc123"},
+                    {
+                        "type": "input_file",
+                        "file_url": "https://files.example.com/itinerary.pdf",
+                    },
+                ],
+            }
+        ],
+    }
+    return [
+        {
+            "name": "chat",
+            "api": "openai.chat_completions",
+            "request": chat_req,
+            "response": chat_resp,
+        },
+        {
+            "name": "chat-stream",
+            "api": "openai.chat_completions",
+            "stream": True,
+            "request": dict(chat_req, stream=True),
+            "response": chat_stream,
+        },
+        {
+            "name": "chat-refusal",
+            "api": "openai.chat_completions",
+            "request": {
+                "model": "gpt-4o",
+                "messages": [{"role": "user", "content": "..."}],
+            },
+            "response": {
+                "model": "gpt-4o-2024-08-06",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "refusal": "I can't help with that.",
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 9, "completion_tokens": 7},
+            },
+        },
+        {
+            "name": "chat-reasoning-content",
+            "api": "openai.chat_completions",
+            "request": {
+                "model": "deepseek-reasoner",
+                "messages": [{"role": "user", "content": "2+2?"}],
+            },
+            "response": {
+                "model": "deepseek-reasoner",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {
+                            "role": "assistant",
+                            "content": "4",
+                            "reasoning_content": "Add.",
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 3},
+            },
+        },
+        {
+            "name": "chat-error",
+            "api": "openai.chat_completions",
+            "request": {
+                "model": "gpt-4o",
+                "messages": [{"role": "user", "content": "hi"}],
+            },
+            "response": {
+                "error": {
+                    "message": "Rate limit reached",
+                    "type": "requests",
+                    "code": "rate_limit_exceeded",
+                }
+            },
+        },
+        {
+            "name": "responses-hosted-tools-reasoning",
+            "api": "openai.responses",
+            "request": responses_req,
+            "response": responses_resp,
+        },
+        {
+            "name": "responses-stream",
+            "api": "openai.responses",
+            "stream": True,
+            "request": {"model": "gpt-4.1", "input": "Hi", "stream": True},
+            "response": responses_stream,
+        },
+        {
+            "name": "responses-previous-response-resolved",
+            "api": "openai.responses",
+            "request": {
+                "model": "gpt-4.1",
+                "previous_response_id": "resp_B1",
+                "input": [{"role": "user", "content": "And then?"}],
+            },
+            "response": small_resp,
+            "known_responses": ["resp_B1"],
+        },
+        {
+            "name": "responses-previous-response-unresolved",
+            "api": "openai.responses",
+            "request": {
+                "model": "gpt-4.1",
+                "previous_response_id": "resp_Z9",
+                "conversation": "conv_77",
+                "input": [{"role": "user", "content": "And then?"}],
+            },
+            "response": small_resp,
+        },
+        {
+            "name": "responses-unknown-item",
+            "api": "openai.responses",
+            "request": {"model": "gpt-4.1", "input": "Hi"},
+            "response": dict(
+                small_resp,
+                output=small_resp["output"]
+                + [{"type": "acme_widget_call", "id": "w1"}],
+            ),
+        },
+        {
+            "name": "responses-asset-references",
+            "api": "openai.responses",
+            "request": assets_req,
+            "response": small_resp,
+        },
+        {
+            "name": "anthropic-thinking",
+            "api": "anthropic.messages",
+            "request": anthropic_req,
+            "response": anthropic_resp,
+        },
+        {
+            "name": "anthropic-redacted-thinking",
+            "api": "anthropic.messages",
+            "request": anthropic_req,
+            "response": redacted_resp,
+        },
+        {
+            "name": "anthropic-server-tools",
+            "api": "anthropic.messages",
+            "request": server_req,
+            "response": server_resp,
+        },
+        {
+            "name": "anthropic-stream",
+            "api": "anthropic.messages",
+            "stream": True,
+            "request": dict(anthropic_req, stream=True),
+            "response": anthropic_stream,
+        },
+        {
+            "name": "embeddings",
+            "api": "openai.embeddings",
+            "request": {
+                "model": "text-embedding-3-small",
+                "input": ["a", "b"],
+                "dimensions": 256,
+            },
+            "response": {
+                "object": "list",
+                "model": "text-embedding-3-small",
+                "data": [{"index": 0, "embedding": [0, 1]}],
+                "usage": {"prompt_tokens": 2, "total_tokens": 2},
+            },
+        },
+    ]
+
+
+GOLDEN_RULE = (
+    "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored "
+    "bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the "
+    "projection field keys (or, for list-valued step facts, tool_calls, provider_tools and "
+    "extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' "
+    "('response:final' for the terminal document a stream carries). null means absent; "
+    "'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' "
+    "name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are "
+    "the parsed values; the 048 §7 exposure rule applies on top (every name here is "
+    "allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and "
+    "locators equal these."
+)
+SIZE_RULE = (
+    "Spec 050 §1.4 P1 exit (049 §7.4): sizes are synthetic. A request with one inline base64 "
+    "image is split (the part is extracted, the text stays in the skeleton) and reassembles "
+    "to source_sha256; a side above max_retain_bytes is truncated(body_cap). The bytes are "
+    "rebuilt from the recipe: the JSON template with '@IMAGE@' replaced by image_base64_length "
+    "copies of 'A', or a response of side_bytes copies of 'x' inside a JSON string."
+)
+
+
+def size_cases() -> list[dict[str, Any]]:
+    template = (
+        '{"model":"gpt-4o","messages":[{"role":"user","content":[{"type":"text","text":"Describe '
+        'this photo."},{"type":"image_url","image_url":{"url":"data:image/png;base64,@IMAGE@"}}]}]}'
+    )
+    total = 40 * 1024 * 1024
+    image = total - (len(template) - len("@IMAGE@"))
+    return [
+        {
+            "schema_version": "fabric.model-call-size-golden/v1",
+            "name": "request-40mib-one-image",
+            "rule": SIZE_RULE,
+            "api": "openai.chat_completions",
+            "limits": {
+                k: LIMITS[k]
+                for k in ("max_body_bytes", "max_retain_bytes", "part_min_bytes")
+            },
+            "recipe": {
+                "side": "request",
+                "template": template,
+                "image_base64_length": image,
+            },
+        },
+        {
+            "schema_version": "fabric.model-call-size-golden/v1",
+            "name": "response-70mib-side",
+            "rule": SIZE_RULE,
+            "api": "openai.chat_completions",
+            "limits": {
+                k: LIMITS[k]
+                for k in ("max_body_bytes", "max_retain_bytes", "part_min_bytes")
+            },
+            "recipe": {"side": "response", "side_bytes": 70 * 1024 * 1024},
+        },
+    ]
+
+
+def generate_goldens(w: Writer) -> None:
+    from contracts import model_fields_reference as fields  # noqa: PLC0415
+
+    for case in model_call_cases():
+        expected = fields.extract(
+            case["api"],
+            case["request"],
+            case["response"],
+            stream=case.get("stream", False),
+            key=KEY1,
+            known_responses=case.get("known_responses", ()),
+        )
+        w.json(
+            COVERAGE / f"fixtures/projection/{case['name']}.json",
+            {
+                "schema_version": "fabric.model-call-golden/v1",
+                "rule": GOLDEN_RULE,
+                **case,
+                "key": KEY1,
+                "expected": expected,
+            },
+        )
+    for case in size_cases():
+        case["expected"] = fields.size_outcome(case["recipe"], case["limits"])
+        w.json(COVERAGE / f"fixtures/projection/{case['name']}.json", case)
 
 
 # ===================================================================== content split vectors
@@ -2348,6 +4567,12 @@ def node_envelope_vectors() -> dict[str, Any]:
 # artifacts keep their records; new paths are appended in sorted order.
 INVALID = {
     COVERAGE: {
+        "invalid/evidence-content-class-value.json": "coverage.evidence.item",
+        "invalid/evidence-extra-key.json": "coverage.evidence.envelope",
+        "invalid/evidence-free-text-over-bound.json": "coverage.evidence.bounds",
+        "invalid/evidence-too-deep.json": "coverage.evidence.bounds",
+        "invalid/evidence-too-many-items.json": "coverage.evidence.bounds",
+        "invalid/evidence-unknown-type.json": "coverage.evidence.type",
         "invalid/manifest-chained-without-previous.json": "coverage.schema",
         "invalid/manifest-disabled-without-reason.json": "coverage.manifest.content_capture",
         "invalid/manifest-enabled-without-policy.json": "coverage.manifest.content_capture",
@@ -2409,6 +4634,25 @@ INVALID = {
         "fixtures/invalid/spool-record-record-structured-value.json": "capture.schema",
         "fixtures/invalid/spool-record-record-wrong-input.json": "capture.schema",
         "fixtures/invalid/spool-record-segment-seal-without-run.json": "capture.schema",
+        # capture/v1 1.3.0 (spec 050 §4.2)
+        "fixtures/invalid/loss-record-bad-segment-id.json": "capture.schema",
+        "fixtures/invalid/loss-record-id-basis-on-seal.json": "capture.schema",
+        "fixtures/invalid/loss-record-segment-range-not-exact.json": "capture.loss.segment",
+        "fixtures/invalid/loss-record-session-on-continuation.json": "capture.marker.root",
+        "fixtures/invalid/run-reconstruction-open-without-deadline.json": "capture.reconstruction.run_state",
+        "fixtures/invalid/run-reconstruction-run-open-on-terminated.json": "capture.reconstruction.run_state",
+        "fixtures/invalid/run-reconstruction-segment-bad-predecessor.json": "capture.reconstruction.segments",
+        "fixtures/invalid/spool-record-exchange-261.json": "capture.schema",
+        "fixtures/invalid/spool-record-loss-segment-range-not-exact.json": "capture.loss.segment",
+        "fixtures/invalid/spool-record-manifest-event-id-mismatch.json": "capture.marker.manifest",
+        "fixtures/invalid/spool-record-marker-bad-event-id.json": "capture.schema",
+        "fixtures/invalid/spool-record-marker-outcome-on-run-start.json": "capture.schema",
+        "fixtures/invalid/spool-record-marker-run-start-without-id-basis.json": "capture.marker.id_basis",
+        "fixtures/invalid/spool-record-marker-session-on-run-end.json": "capture.schema",
+        "fixtures/invalid/spool-record-record-body-other-attempt.json": "capture.spool.consistency",
+        "fixtures/invalid/spool-record-record-bodies-out-of-order.json": "capture.spool.consistency",
+        "fixtures/invalid/spool-record-record-nine-bodies.json": "capture.schema",
+        "fixtures/invalid/spool-record-record-two-evidence-objects.json": "capture.spool.consistency",
     },
     CONTENT: {
         "invalid/byte-range-outside-part-of.json": "evidence.schema",
@@ -2420,15 +4664,15 @@ INVALID = {
         "invalid/split-without-extract-parts.json": "evidence.schema",
     },
 }
-VERSIONS = {COVERAGE: "1.0.0", CAPTURE: "1.2.0", CONTENT: "2.2.0"}
+VERSIONS = {COVERAGE: "1.1.0", CAPTURE: "1.3.0", CONTENT: "2.3.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
     if rel in INVALID[family]:
         return "invalid", INVALID[family][rel]
-    if "/vectors/" in f"/{rel}":
+    if "/vectors/" in f"/{rel}" or "/projection/" in f"/{rel}":
         return "vectors", None
-    if rel.startswith("schema/"):
+    if rel.startswith(("schema/", "evidence/")):
         return "schema", None
     return "valid", None
 
@@ -2507,7 +4751,23 @@ GO_BY_KEY = {
     "fabric.manifest.unsealed_prior_epochs": "decimalEpochPattern",
     "fabric.mcp.protocol_version": "mcpProtocolVersionPattern",
     "fabric.run.predecessors": "predecessorPattern",
+    "fabric.wire.endpoint_id": "wireEndpointIDPattern",
+    "fabric.run.id": "recordRunIDPattern",
 }
+PLACEMENTS = (
+    "exchange",
+    "record",
+    "loss",
+    "run_start",
+    "run_end",
+    "segment_seal",
+    "periodic",
+    "final",
+    "manifest",
+)
+
+
+record_checks = coverage.record_checks
 
 
 def go_admitted(row: dict[str, Any]) -> bool:
@@ -2627,7 +4887,40 @@ def render_go_table(reg: dict[str, Any]) -> str:
         "var manifestSpanKeys = toSet(\n",
     ]
     out += [f"\t{json.dumps(k)},\n" for k in manifest_keys]
-    out += [")\n", "\n", "var (\n"]
+    placed = sorted(
+        (r["key"], r["placement"]) for r in reg["keys"]["keys"] if r.get("placement")
+    )
+    width = max(len(json.dumps(k)) for k, _ in placed) + 1
+    out += [
+        ")\n",
+        "\n",
+        "// coverageKeyPlacements: the capture record classes each key may appear on\n",
+        "// (registry placement; spec 050 §3.14): exchange, record, loss, a heartbeat kind\n",
+        "// or manifest. fabricguard's class bits and marker kinds follow it.\n",
+        "var coverageKeyPlacements = map[string][]string{\n",
+    ]
+    out += [
+        f"\t{(json.dumps(k) + ':').ljust(width)} {{"
+        + ", ".join(json.dumps(c) for c in where)
+        + "},\n"
+        for k, where in placed
+    ]
+    records = record_checks(reg)
+    width = max(len(json.dumps(k)) for k in records) + 1
+    out += [
+        "}\n",
+        "\n",
+        "// recordKeyValidators: the exact key set of the records class (spec 050 §3.14,\n",
+        "// rule A), each with its check (capture_check where the row has one; capture\n",
+        "// labels and identity_mode apply as for every key). The SDK's\n",
+        "// fabric/_records_keys_generated.py is generated from the same rows.\n",
+        "var recordKeyValidators = map[string]func(pcommon.Value) bool{\n",
+    ]
+    out += [
+        f"\t{(json.dumps(k) + ':').ljust(width)} {go(k, check)},\n"
+        for k, check in records.items()
+    ]
+    out += ["}\n", "\n", "var (\n"]
     width = max(len(name) for name in patterns.values())
     out += [
         f"\t{name.ljust(width)} = regexp.MustCompile(`{regex}`)\n"
@@ -2690,12 +4983,232 @@ def render_go_roles(reg: dict[str, Any]) -> str:
         f"\t{(json.dumps(r['value']) + ':').ljust(width)} true,\n"
         for r in reg["vocab"]["reason"]
     ]
+    extra = [
+        r["value"]
+        for r in reg["vocab"]["descriptor_reason"]
+        if r["value"] not in {x["value"] for x in reg["vocab"]["reason"]}
+    ]
+    width = max(len(json.dumps(v)) + 1 for v in extra)
+    out += [
+        "}\n",
+        "\n",
+        "// descriptorOnlyReasons are the producer reasons a descriptor-only records\n",
+        "// body (spec 050 §3.4 R5, status not_captured or unsupported) may name in\n",
+        "// status_reason besides statusReasons (vocabulary descriptor_reason).\n",
+        "var descriptorOnlyReasons = map[string]bool{\n",
+    ]
+    out += [f"\t{(json.dumps(v) + ':').ljust(width)} true,\n" for v in extra]
     out += ["}\n"]
     return "".join(out)
 
 
 def generate_go_roles(w: Writer) -> None:
     w.text(GO_ROLES, render_go_roles(registries(w)))
+
+
+# ===================================================================== P1 generated tables (spec 050)
+GO_EVIDENCE = Path(
+    "components/otel-collector-fabric/exporter/fabriccontentexporter/evidence_types_generated.go"
+)
+PY_RECORD_KEYS = Path("sdk/python/src/fabric/_records_keys_generated.py")
+PY_MANIFEST_FIELDS = Path("sdk/python/src/fabric/_manifest_fields_generated.py")
+PY_ROLES = Path("sdk/python/src/fabric/_roles.py")
+PY_BEGIN = (
+    "# BEGIN GENERATED by scripts/contracts/generate_p0_contracts.py; do not edit.\n"
+)
+PY_END = "# END GENERATED\n"
+PY_HEADER = (
+    "# Copyright 2026 AI5Labs Research OPC Private Limited\n"
+    "# SPDX-License-Identifier: Apache-2.0\n"
+    "# Code generated by scripts/contracts/generate_p0_contracts.py. DO NOT EDIT.\n"
+)
+
+
+def py_module(text: str) -> str:
+    """Silence E501 only when a generated line (a long regex) needs it."""
+    if any(len(line) > 100 for line in text.splitlines()):
+        return text.replace(PY_HEADER, PY_HEADER + "# ruff: noqa: E501\n", 1)
+    return text
+
+
+def py_literal(value: Any, indent: int = 0) -> str:
+    """A Python literal in the exploded, magic-trailing-comma form ruff format keeps."""
+    pad, inner = "    " * indent, "    " * (indent + 1)
+    if isinstance(value, dict):
+        if not value:
+            return "{}"
+        items = [
+            f"{inner}{json.dumps(k)}: {py_literal(v, indent + 1)},\n"
+            for k, v in value.items()
+        ]
+        return "{\n" + "".join(items) + pad + "}"
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "()"
+        if len(value) == 1:  # a one-element tuple's comma is not a magic trailing comma
+            return f"({py_literal(value[0], indent)},)"
+        items = [f"{inner}{py_literal(v, indent + 1)},\n" for v in value]
+        return "(\n" + "".join(items) + pad + ")"
+    if isinstance(value, bool):
+        return "True" if value else "False"
+    if value is None:
+        return "None"
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    return repr(value)
+
+
+def render_py_record_keys(reg: dict[str, Any]) -> str:
+    records = record_checks(reg)
+    return (
+        PY_HEADER + '"""The records-class key table (spec 050 §3.4 rule A, §3.14).\n'
+        "\n"
+        "Every key fabricguard admits on a records-input span, with the closed check it applies\n"
+        "(``contracts/coverage/v1/registry/telemetry-keys-v1.json``: rows whose ``placement`` names\n"
+        "``record``; ``capture_check`` where the row has one). fabricguard's ``recordKeyValidators``\n"
+        "is generated from the same rows. A key outside the table, or a value its check refuses, is\n"
+        "dropped by the emitter, never hashed or truncated. No content key is in the table.\n"
+        '"""\n'
+        "\n"
+        "from __future__ import annotations\n"
+        "\n"
+        "from collections.abc import Mapping\n"
+        "from typing import Any\n"
+        "\n"
+        f'RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@{reg["keys"]["registry_revision"]}"\n'
+        "\n"
+        f"RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {py_literal(records)}\n"
+    )
+
+
+def build_supplies(reg: dict[str, Any]) -> dict[str, list[str]]:
+    """Fields each capture point supplies in this build (spec 050 §3.8): the registry
+    ``supplies`` restricted to fields whose phase is ``built`` (relabelled as each phase
+    lands); a field the registry assigns but this build lacks is projected
+    ``unsupported(unsupported_version)``."""
+    built = {f["id"] for f in reg["fields"]["fields"] if f["phase"].startswith("built")}
+    return {
+        p["id"]: [f for f in p["supplies"] if f in built]
+        for p in reg["points"]["capture_points"]
+    }
+
+
+def render_py_manifest_fields(reg: dict[str, Any]) -> str:
+    return (
+        PY_HEADER
+        + '"""Per-build capture-point field table of the capture manifest (spec 050 §3.8).\n'
+        "\n"
+        "``fields`` of each ``capture_points[]`` row is what this build supplies: the registry's\n"
+        "``supplies`` (``contracts/coverage/v1/registry/capture-points-v1.json``, a superset)\n"
+        "restricted to fields whose registry phase is ``built``. A field the registry assigns to\n"
+        "the point but this build does not supply is omitted, so the projection reports it\n"
+        "``unsupported(unsupported_version)``.\n"
+        '"""\n'
+        "\n"
+        "from __future__ import annotations\n"
+        "\n"
+        "from collections.abc import Mapping\n"
+        "\n"
+        f'FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@{reg["fields"]["registry_revision"]}"\n'
+        "\n"
+        f"MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {py_literal(build_supplies(reg))}\n"
+    )
+
+
+def _py_role(row: dict[str, Any]) -> str:
+    """One ``Role(...)`` row in the layout ruff format keeps (line length 100)."""
+
+    def tup(values: list[str]) -> str:
+        comma = "," if len(values) == 1 else ""
+        inline = "(" + ", ".join(json.dumps(v) for v in values) + comma + ")"
+        if len(" " * 8 + inline + ",") <= 100:
+            return inline
+        return (
+            "(\n"
+            + "".join(f"{' ' * 12}{json.dumps(v)},\n" for v in values)
+            + " " * 8
+            + ")"
+        )
+
+    args = [
+        json.dumps(row["role"]),
+        tup(row["boundary"]),
+        tup(row["provenance"]),
+        tup(row["media_types"]),
+        json.dumps(row["default_policy"]),
+        json.dumps(row["cap"]),
+    ]
+    if "allowed_modes" in row:
+        args.append("allowed_modes=" + tup(row["allowed_modes"]))
+    return "    Role(\n" + "".join(f"{' ' * 8}{a},\n" for a in args) + "    ),\n"
+
+
+def render_py_roles(text: str, reg: dict[str, Any]) -> str:
+    table = reg["roles"]
+    start, end = text.index(PY_BEGIN), text.index(PY_END) + len(PY_END)
+    block = (
+        PY_BEGIN
+        + f'ROLE_TABLE_VERSION = "{table["schema_version"]}@{table["registry_revision"]}"\n'
+        + "ROLE_ROWS: tuple[Role, ...] = (\n"
+        + "".join(_py_role(row) for row in table["roles"])
+        + ")\n"
+        + PY_END
+    )
+    return text[:start] + block + text[end:]
+
+
+def render_go_evidence(reg: dict[str, Any]) -> str:
+    types = sorted(t["type"] for t in reg["fields"]["evidence_types"])
+    width = max(len(json.dumps(t)) for t in types) + 1
+    keys = ["schema_version", "evidence_type", "items", "continuation", "refs"]
+    kwidth = max(len(json.dumps(k)) for k in keys) + 1
+    return "".join(
+        [
+            "// Copyright 2026 AI5Labs Research OPC Private Limited\n",
+            "// SPDX-License-Identifier: Apache-2.0\n",
+            "\n",
+            "// Code generated by scripts/contracts/generate_p0_contracts.py from\n",
+            "// contracts/coverage/v1/registry/field-registry-v1.json (evidence_types).\n",
+            "// DO NOT EDIT.\n",
+            "\n",
+            "package fabriccontentexporter\n",
+            "\n",
+            "// The fabric.record-evidence/v1 envelope (spec 050 §3.4a): the pre-ack check\n",
+            "// refuses a record.evidence body that is not canonical JSON, has another\n",
+            "// top-level key, names an unregistered evidence_type or exceeds a bound.\n",
+            "// Per-type item schemas are validated by fabric.reconstruct.\n",
+            "const (\n",
+            f'\tevidenceRole          = "{ref.EVIDENCE_ROLE}"\n',
+            f'\tevidenceMediaType     = "{ref.EVIDENCE_MEDIA_TYPE}"\n',
+            f'\tevidenceSchemaVersion = "{ref.EVIDENCE_SCHEMA}"\n',
+            f"\tevidenceMaxItems      = {ref.EVIDENCE_MAX_ITEMS}\n",
+            f"\tevidenceMaxDepth      = {ref.EVIDENCE_MAX_DEPTH}\n",
+            f"\tevidenceMaxString     = {ref.EVIDENCE_MAX_STRING}\n",
+            f"\tevidenceMaxRefs       = {ref.EVIDENCE_MAX_REFS}\n",
+            ")\n",
+            "\n",
+            "// evidenceEnvelopeKeys are the closed top-level keys of the envelope.\n",
+            "var evidenceEnvelopeKeys = map[string]bool{\n",
+            *[
+                f"\t{(json.dumps(k) + ':').ljust(kwidth)} {str(k in ('schema_version', 'evidence_type', 'items')).lower()},\n"
+                for k in keys
+            ],
+            "}\n",
+            "\n",
+            "// registeredEvidenceTypes is every registered evidence type.\n",
+            "var registeredEvidenceTypes = map[string]bool{\n",
+            *[f"\t{(json.dumps(t) + ':').ljust(width)} true,\n" for t in types],
+            "}\n",
+        ]
+    )
+
+
+def generate_p1_tables(w: Writer) -> None:
+    reg = registries(w)
+    w.text(PY_RECORD_KEYS, py_module(render_py_record_keys(reg)))
+    w.text(PY_MANIFEST_FIELDS, py_module(render_py_manifest_fields(reg)))
+    w.text(PY_ROLES, render_py_roles(w.read_text(PY_ROLES), reg))
+    w.text(GO_EVIDENCE, render_go_evidence(reg))
 
 
 # ===================================================================== derived schema and spec blocks
@@ -2722,10 +5235,14 @@ def generate(root: Path, *, check: bool) -> list[str]:
     generate_rendered(w)
     generate_coverage(w)
     generate_capture(w)
+    generate_capture_p1(w)
+    generate_p1_vectors(w)
+    generate_goldens(w)
     generate_content(w)
     generate_pins(w)
     generate_go(w)
     generate_go_roles(w)
+    generate_p1_tables(w)
     return w.finish()
 
 
