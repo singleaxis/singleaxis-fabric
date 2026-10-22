@@ -15,7 +15,15 @@ checks every artifact this script writes. Derived here:
 - the fabriccontent exporter's role table and status-reason set
   (``roles_generated.go``, spec 049 §4.3);
 - the capture/v1 manifest-record schema and the spec's generated blocks (via
-  the validator's renderers).
+  the validator's renderers);
+- spec 050 (P1): the key ``capture_check`` rows, the capture/v1 1.3.0 examples,
+  the P1 vectors (seal digest, span category, records span, seal parity,
+  record evidence, resume token v2 and run identity, model-call projection
+  goldens, Node pre-acknowledgement) from the reference implementations in
+  ``p1_reference.py`` and ``model_fields_reference.py``, fabricguard's
+  placements and records-class table, fabriccontent's evidence-type table,
+  and the SDK's ``_records_keys_generated.py``, ``_manifest_fields_generated.py``
+  and ``_roles.py`` role rows.
 
 ``--check`` writes nothing and fails when any derived artifact would change;
 ``scripts/tests/test_contract_generators.py`` runs it. Without ``--check`` the
@@ -912,6 +920,7 @@ def generate_coverage(w: Writer) -> None:
         },
     )
     _resume_tokens(put)
+    _resume_tokens_v2(put)
     markers = _run_markers(put, m0)
     del markers
     _pseudonyms(put)
@@ -3192,7 +3201,13 @@ def _records_span_vectors(
         identity: str = "pseudonymous",
     ) -> None:
         kept, dropped = ref.project_record_attributes(
-            attrs, table, coverage.check_value, labels=labels, identity=identity
+            attrs,
+            table,
+            coverage.check_value,
+            labels=labels,
+            identity=identity,
+            conditions=coverage.record_conditions(reg),
+            point_kinds=coverage.point_kinds(reg),
         )
         cases.append(
             {
@@ -3276,6 +3291,7 @@ def _records_span_vectors(
         ),
         "table_revision": reg["keys"]["registry_revision"],
         "keys": sorted(table),
+        "conditions": coverage.record_conditions(reg),
         "cases": cases,
     }
 
@@ -3503,6 +3519,20 @@ def _evidence_vectors(
             "name": "an extra item property",
             "document": doc(items=[dict(good["items"][0], note="x")]),
         },
+        {
+            "name": "mapped actor id",
+            "document": doc(items=[dict(good["items"][0], actor="act-" + "5a" * 16)]),
+        },
+        {
+            "name": "clear actor id under a clear-mode manifest (R8)",
+            "identity_mode": "clear",
+            "document": doc(items=[dict(good["items"][0], actor="agent:planner")]),
+        },
+        {
+            "name": "clear actor id under a pseudonymous manifest",
+            "identity_mode": "pseudonymous",
+            "document": doc(items=[dict(good["items"][0], actor="agent:planner")]),
+        },
     ]
     type_row = reg["fields"]["evidence_types"][0]
     item_schema = w_cache["evidence_item_schema"]
@@ -3512,7 +3542,11 @@ def _evidence_vectors(
         case["refusal"] = refusal
         if refusal is None:
             document = json.loads(raw)
-            bad = ref.evidence_item_errors(document, item_schema)
+            bad = ref.evidence_item_errors(
+                document,
+                item_schema,
+                identity_mode=case.get("identity_mode", "pseudonymous"),
+            )
             case["item_errors"] = bad
             valid = dict(
                 document,
@@ -3578,6 +3612,16 @@ def _evidence_vectors(
         "invalid/evidence-content-class-value.json": doc(
             items=[{"name": "Jane Doe asked about her prescription", "count": 1}]
         ),
+        "valid/evidence-clear-mode-id.json": {
+            "schema_version": "fabric.record-evidence-fixture/v1",
+            "identity_mode": "clear",
+            "document": doc(items=[dict(good["items"][0], actor="agent:planner")]),
+        },
+        "invalid/evidence-clear-id-pseudonymous.json": {
+            "schema_version": "fabric.record-evidence-fixture/v1",
+            "identity_mode": "pseudonymous",
+            "document": doc(items=[dict(good["items"][0], actor="agent:planner")]),
+        },
     }
     return vector, fixtures
 
@@ -4362,6 +4406,308 @@ def generate_goldens(w: Writer) -> None:
         w.json(COVERAGE / f"fixtures/projection/{case['name']}.json", case)
 
 
+# ===================================================================== resume tokens v2 and run identity (spec 050 §3.6)
+MINTED = "r-" + hashlib.sha256(b"minted-correlation").hexdigest()[:32]
+MINTED_B = "r-" + hashlib.sha256(b"minted-correlation-b").hexdigest()[:32]
+
+
+def _resume_tokens_v2(put: Callable[[str, Any], None]) -> None:
+    corr_a = v1("r", "trip-planner-7", KEY1)
+    corr_b = v1("r", "trip-planner-8", KEY1)
+    entry_b = f"{seg(5)}/{SOURCE_B}/{EPOCH_B}/7/{DIG}"
+    tok = {
+        "a": f"fr3/{corr_a}/{ENTRY}",
+        "a_branch": f"fr3/{corr_a}/{ENTRY}/{br(1)}",
+        "a_other": f"fr3/{corr_a}/{entry_b}",
+        "b": f"fr3/{corr_b}/{entry_b}",
+        "legacy": f"fr2/{ENTRY}",
+        "legacy_b": f"fr2/{entry_b}",
+        "clear_low": f"fr3/Zeta-run/{ENTRY}",
+        "clear_high": f"fr3/alpha-run/{entry_b}",
+        "bad": f"fr3/{corr_a}/{seg(1)}/{SOURCE}/0/41/{DIG}",
+    }
+    token_cases: list[tuple[str, str]] = [
+        ("pseudonymous correlation id", tok["a"]),
+        ("branch token", tok["a_branch"]),
+        ("clear-mode correlation id", f"fr3/billing-run.42:eu/{ENTRY}"),
+        (
+            "h- correlation id (a clear id outside the opaque pattern)",
+            f"fr3/h-{'ab' * 20}/{ENTRY}",
+        ),
+        (
+            "clear source label",
+            f"fr3/{corr_a}/{seg(2)}/billing-agent.prod:7/{EPOCH}/3/{DIG}",
+        ),
+        ("zero-width segment", f"fr3/{corr_a}/{seg(3)}/{SOURCE}/{EPOCH}/-1/{DIG}"),
+        (
+            "largest epoch",
+            f"fr3/{corr_a}/{seg(4)}/{SOURCE}/9223372036854775807/0/{DIG}",
+        ),
+        ("legacy fr2 token (parsed for one release)", tok["legacy"]),
+        ("legacy fr2 branch token", f"fr2/{ENTRY}/{br(2)}"),
+        ("rev-3 prefix", f"fr1/{ENTRY}"),
+        ("empty correlation id", f"fr3//{ENTRY}"),
+        ("correlation id with a space", f"fr3/run 42/{ENTRY}"),
+        ("correlation id over 128 characters", f"fr3/{'r' * 129}/{ENTRY}"),
+        ("correlation id with a slash", f"fr3/orders/42/{ENTRY}"),
+        ("no correlation id (fr2 body under fr3)", f"fr3/{ENTRY}"),
+        ("epoch 0", tok["bad"]),
+        ("bare digest", f"fr3/{corr_a}/{seg(1)}/{SOURCE}/{EPOCH}/41/{'ab' * 32}"),
+        ("trailing slash", f"{tok['a']}/"),
+        ("two branch ids", f"{tok['a']}/{br(1)}/{br(2)}"),
+        (
+            "uppercase segment hex",
+            f"fr3/{corr_a}/{seg(1).upper()}/{SOURCE}/{EPOCH}/41/{DIG}",
+        ),
+        ("empty", ""),
+    ]
+    issue_cases = [
+        ("pseudonymous run", corr_a, ENTRY, None),
+        ("branch token", corr_a, ENTRY, br(3)),
+        ("clear run id as given", "billing-run.42:eu", ENTRY, None),
+        (
+            "clear run id with a slash is not issued (api_misuse)",
+            "orders/42",
+            ENTRY,
+            None,
+        ),
+        ("clear run id with a space is not issued", "order 42", ENTRY, None),
+        ("malformed branch id is not issued", corr_a, ENTRY, br(3)[:-1]),
+    ]
+    join = f"{tok['a']},{tok['legacy_b']},{tok['bad']}"
+    carriers = [
+        ("environment join", "env", join),
+        ("baggage, comma encoded", "baggage", join.replace(",", "%2C")),
+        ("baggage, fully percent-encoded", "baggage", quote(join, safe="")),
+    ]
+
+    def ident(
+        name: str, tokens: list[str], run_id: str | None, **kw: Any
+    ) -> dict[str, Any]:
+        inputs = {
+            "tokens": tokens,
+            "run_id": run_id,
+            "identity_mode": kw.get("identity_mode", "pseudonymous"),
+            "key": kw.get("key", KEY1),
+            "run_id_emitted": kw.get("run_id_emitted", False),
+            "minted": kw.get("minted", MINTED),
+        }
+        expected = ref.run_identity(
+            tokens,
+            run_id,
+            identity_mode=inputs["identity_mode"],
+            key=inputs["key"],
+            run_id_emitted=inputs["run_id_emitted"],
+            minted=inputs["minted"],
+        )
+        return {
+            "name": name,
+            "rule": kw["rule"],
+            "inputs": inputs,
+            "expected": expected,
+        }
+
+    identity = [
+        ident("one correlation id", [tok["a"], tok["a_other"]], None, rule=1),
+        ident(
+            "one correlation id; a clear run id also passed is ignored",
+            [tok["a"]],
+            "trip-planner-9",
+            rule=1,
+        ),
+        ident(
+            "key rotation keeps the token's id (never re-mapped)",
+            [tok["a"]],
+            None,
+            key=KEY2,
+            rule=1,
+        ),
+        ident(
+            "lost middle: C resumes from B's token carrying A's id (T7)",
+            [f"fr3/{corr_a}/{entry_b}"],
+            None,
+            rule=1,
+        ),
+        ident(
+            "branch tokens name their branch ids",
+            [tok["a_branch"], f"fr3/{corr_a}/{ENTRY}/{br(2)}"],
+            None,
+            rule=1,
+        ),
+        ident(
+            "fr3 and fr2 together: the fr3 correlation id decides",
+            [tok["a"], tok["legacy_b"]],
+            None,
+            rule=1,
+        ),
+        ident(
+            "differing correlation ids joined by a caller run id",
+            [tok["a"], tok["b"]],
+            "trip-planner-join",
+            rule=2,
+        ),
+        ident(
+            "caller join in clear mode: the clear id as given",
+            [tok["a"], tok["b"]],
+            "trip-join",
+            identity_mode="clear",
+            rule=2,
+        ),
+        ident(
+            "differing correlation ids, no run id: the lowest",
+            [tok["a"], tok["b"]],
+            None,
+            rule=3,
+        ),
+        ident(
+            "lowest is by byte order ('Z' < 'a')",
+            [tok["clear_high"], tok["clear_low"]],
+            None,
+            rule=3,
+        ),
+        ident("no token: the mapped clear run id", [], "run-travel-42", rule=4),
+        ident("an r--shaped caller id is mapped again", [], RUN, rule=4),
+        ident(
+            "an EmittedId of this handle passes through",
+            [],
+            MINTED_B,
+            run_id_emitted=True,
+            rule=4,
+        ),
+        ident(
+            "clear mode: the clear id as given",
+            [],
+            "run-travel-42",
+            identity_mode="clear",
+            rule=4,
+        ),
+        ident(
+            "clear mode: an id outside the opaque pattern takes its h- form",
+            [],
+            "orders/42",
+            identity_mode="clear",
+            rule=4,
+        ),
+        ident(
+            "local profile without a key: unkeyed v1",
+            [],
+            "run-travel-42",
+            key=None,
+            rule=4,
+        ),
+        ident(
+            "malformed tokens are dropped; the segment is a root",
+            [tok["bad"], f"fr1/{ENTRY}"],
+            "run-travel-42",
+            rule=4,
+        ),
+        ident(
+            "fr2 tokens only: caller id, legacy basis",
+            [tok["legacy"], tok["legacy_b"]],
+            "run-travel-42",
+            rule=4,
+        ),
+        ident("no token, no run id: minted", [], None, rule=5),
+        ident("clear mode still mints", [], None, identity_mode="clear", rule=5),
+        ident(
+            "malformed tokens only, no run id: minted root", [tok["bad"]], None, rule=5
+        ),
+        ident(
+            "fr2 tokens only, no run id: minted, legacy basis",
+            [tok["legacy"]],
+            None,
+            rule=5,
+        ),
+    ]
+    end_cases = []
+    for name, tokens, run_id in (
+        ("tokens of one run, run_id None", [tok["a"], tok["a_branch"]], None),
+        ("tokens of two runs, run_id None", [tok["a"], tok["b"]], None),
+        (
+            "tokens of two runs with a caller run id",
+            [tok["a"], tok["b"]],
+            "trip-planner-join",
+        ),
+        ("no valid token", [tok["bad"]], "trip-planner-7"),
+        ("no token at all", [], None),
+    ):
+        end_cases.append(
+            {
+                "name": name,
+                "inputs": {
+                    "tokens": tokens,
+                    "run_id": run_id,
+                    "identity_mode": "pseudonymous",
+                    "key": KEY1,
+                    "minted": MINTED,
+                },
+                "expected": ref.end_run_identity(
+                    tokens,
+                    run_id,
+                    key=KEY1,
+                    minted=MINTED,
+                ),
+            }
+        )
+    put(
+        "fixtures/vectors/resume-token-v2.json",
+        {
+            "schema_version": "fabric.resume-token-vectors/v2",
+            "rule": (
+                "Spec 050 §3.6: a resume token is 'fr3/' + the run correlation id + '/' + a "
+                "predecessor entry (<segment_id>/<source_id>/<epoch>/<last_sequence>/sha256:<manifest "
+                "digest>), optionally '/br-<32 hex>'. The correlation id is the root segment's run "
+                "id: r- + 32 hex (the mapped clear id, or minted when the caller gave none); in "
+                "clear mode (explicit opt-in, R8) a caller-rooted run's clear id as given (or its h- "
+                "form), which then crosses the boundary in baggage. It matches "
+                "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ (no '/'), else the token is not issued "
+                "(api_misuse). 'fr2/' tokens (no correlation id) are parsed for one release. A "
+                "malformed token is dropped (tokens_rejected). Run identity at segment open, first "
+                "rule that applies: 1 one correlation id among valid fr3 tokens -> it, verbatim "
+                "(token); 2 differing ids and a clear run id -> the mapped clear id (caller_join); "
+                "3 differing ids, no run id -> the lowest by byte order (token_conflict); 4 no "
+                "valid fr3 token and a clear run id (argument or same-host FABRIC_RUN_ID) -> the "
+                "mapped clear id (caller); 5 neither -> a minted r- + 32 CSPRNG hex (minted). Rules "
+                "4 and 5 report legacy when the only valid tokens are fr2. Mapping (identity rule): "
+                "pseudonymous mode maps every caller value whatever its shape (r- + 32 hex of "
+                "HMAC-SHA256(key, value), SHA-256 without a key); only an EmittedId of the handle "
+                "passes through; clear mode emits it as given (h- + 40 hex of SHA-256 when it is not "
+                "an opaque id). minted stands in for the CSPRNG draw. end_run refuses without a "
+                "valid token, and with run_id None and tokens of different runs."
+            ),
+            "tokens": [
+                {"name": n, "token": t, "parsed": ref.parse_token(t)}
+                for n, t in token_cases
+            ],
+            "issue": [
+                {
+                    "name": n,
+                    "correlation_id": c,
+                    "entry": e,
+                    "branch_id": b,
+                    "token": ref.format_token(c, e, b),
+                }
+                for n, c, e, b in issue_cases
+            ],
+            "carriers": [
+                {
+                    "name": n,
+                    "carrier": c,
+                    "value": v,
+                    "tokens": ref.split_carrier(v, carrier=c),
+                    "valid": [
+                        ref.parse_token(t) is not None
+                        for t in ref.split_carrier(v, carrier=c)
+                    ],
+                }
+                for n, c, v in carriers
+            ],
+            "run_identity": identity,
+            "end_run": end_cases,
+        },
+    )
+
+
 # ===================================================================== content split vectors
 def generate_content(w: Writer) -> None:
     png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
@@ -4567,6 +4913,7 @@ def node_envelope_vectors() -> dict[str, Any]:
 # artifacts keep their records; new paths are appended in sorted order.
 INVALID = {
     COVERAGE: {
+        "invalid/evidence-clear-id-pseudonymous.json": "coverage.evidence.item",
         "invalid/evidence-content-class-value.json": "coverage.evidence.item",
         "invalid/evidence-extra-key.json": "coverage.evidence.envelope",
         "invalid/evidence-free-text-over-bound.json": "coverage.evidence.bounds",
@@ -4920,6 +5267,25 @@ def render_go_table(reg: dict[str, Any]) -> str:
         f"\t{(json.dumps(k) + ':').ljust(width)} {go(k, check)},\n"
         for k, check in records.items()
     ]
+    conditions = coverage.record_conditions(reg)
+    out += [
+        "}\n",
+        "\n",
+        "// recordKeyConditions: conditional records placements (spec 050 §3.4 rule A):\n",
+        "// capture_point_kinds / capture_points matched against the id part of\n",
+        "// fabric.capture.point. P1 ships none.\n",
+        "var recordKeyConditions = map[string]map[string][]string{"
+        + ("\n" if conditions else ""),
+    ]
+    out += [
+        f"\t{json.dumps(k)}: {{"
+        + ", ".join(
+            f"{json.dumps(c)}: {{" + ", ".join(json.dumps(v) for v in vs) + "}"
+            for c, vs in cond.items()
+        )
+        + "},\n"
+        for k, cond in conditions.items()
+    ]
     out += ["}\n", "\n", "var (\n"]
     width = max(len(name) for name in patterns.values())
     out += [
@@ -5078,6 +5444,11 @@ def render_py_record_keys(reg: dict[str, Any]) -> str:
         f'RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@{reg["keys"]["registry_revision"]}"\n'
         "\n"
         f"RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {py_literal(records)}\n"
+        "\n"
+        "# Conditional records placements (capture_point_kinds / capture_points, matched against\n"
+        "# the id part of fabric.capture.point); P1 ships none.\n"
+        "RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = "
+        f"{py_literal(coverage.record_conditions(reg))}\n"
     )
 
 

@@ -57,9 +57,10 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_evidence_artifacts_validate() -> None:
     paths = validate_contracts(REPO_ROOT)
-    assert len(paths) == 33
+    assert len(paths) == 34
     assert "content/valid/split-reassembly-retain-original.json" in paths
     assert "content/fixtures/node-envelope-v1.json" in paths
+    assert "content/fixtures/node-prevalidate-v1.json" in paths  # spec 050 §3.14
     assert "content/valid/persisted-descriptor-review-copy.json" in paths
     assert "content/fixtures/bytes/binary-four-bytes.json" in paths
     assert "evidence/valid/complete-run.json" in paths

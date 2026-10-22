@@ -46,7 +46,7 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
-    assert len(validated) == 80
+    assert len(validated) == 105
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -628,3 +628,183 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
         "pattern"
     ]
     assert (re.fullmatch(pattern, pseudonym) is not None) is valid
+
+
+# ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
+def test_capture_family_is_version_1_3_0() -> None:
+    assert _json("manifest.json")["version"] == "1.3.0"
+
+
+def test_exchange_bodies_bound_is_260_and_record_bodies_8() -> None:
+    schema = _json("schema/spool-record-v1.schema.json")
+    exchange, record = schema["oneOf"][0], schema["oneOf"][1]
+    assert exchange["properties"]["bodies"]["maxItems"] == 260
+    assert record["properties"]["bodies"]["maxItems"] == 8
+    assert (
+        exchange["properties"]["bodies"]["items"]
+        == record["properties"]["bodies"]["items"]
+    )
+    validate_document(
+        _json("fixtures/valid/spool-record-exchange-260.json"), _schemas()
+    )
+    assert len(_json("fixtures/valid/spool-record-exchange-260.json")["bodies"]) == 260
+    _assert_error(
+        _json("fixtures/invalid/spool-record-exchange-261.json"), "capture.schema"
+    )
+
+
+def test_record_bodies_are_the_object_ids_in_order() -> None:
+    record = _json("fixtures/valid/spool-record-record-bodies.json")
+    validate_document(record, _schemas())
+    bodies = record["bodies"]
+    assert [b["descriptor"]["object_id"] for b in bodies] == record["span"][
+        "attributes"
+    ]["fabric.content.object_ids"]
+    # A descriptor-only body (R5) occupies no blob bytes and names a producer reason.
+    only = [b for b in bodies if b["descriptor"]["status"] == "not_captured"]
+    assert only and only[0]["length"] == 0
+    assert only[0]["descriptor"]["status_reason"] == "payload_too_large"
+    assert sum(b["descriptor"]["role"] == "record.evidence" for b in bodies) == 1
+    swapped = copy.deepcopy(record)
+    ids = swapped["span"]["attributes"]["fabric.content.object_ids"]
+    ids[0], ids[1] = ids[1], ids[0]
+    _assert_error(swapped, "capture.spool.consistency")
+    shifted = copy.deepcopy(record)
+    shifted["bodies"][2]["offset"] += 1
+    _assert_error(shifted, "capture.spool.consistency")
+
+
+def test_unsupported_descriptor_only_body() -> None:
+    record = _json("fixtures/valid/spool-record-record-bodies.json")
+    body = record["bodies"][1]["descriptor"]
+    body.update(status="unsupported", status_reason="not_exact_bytes")
+    validate_document(record, _schemas())
+    body.update(stored_byte_length=0)
+    _assert_error(record, "capture.schema")
+
+
+def test_loss_segment_range_is_exact() -> None:
+    loss = _json("fixtures/valid/loss-record-segment.json")
+    validate_document(loss, _schemas())
+    unattributed = copy.deepcopy(loss)
+    del unattributed["segment_id"]
+    unattributed["last_sequence"] += 3  # an unattributed range may hold other positions
+    validate_document(unattributed, _schemas())
+    loose = copy.deepcopy(loss)
+    loose["last_sequence"] += 1
+    _assert_error(loose, "capture.loss.segment")
+
+
+def test_marker_additions_are_placed_by_kind() -> None:
+    root = _json("fixtures/valid/spool-record-run-start-root-identity.json")
+    validate_document(root, _schemas())
+    run_end = _json("fixtures/valid/spool-record-marker-run-end-outcome.json")
+    validate_document(run_end, _schemas())
+    for key, value in (("outcome", "completed"), ("stop_reason", "goal_reached")):
+        broken = copy.deepcopy(root)
+        broken["marker"][key] = value
+        _assert_error(broken, "capture.schema")
+    for key in (
+        "session_id",
+        "user_id",
+        "links",
+        "id_basis",
+        "identity",
+        "parent_run_id",
+    ):
+        broken = copy.deepcopy(run_end)
+        broken["marker"][key] = root["marker"][key]
+        _assert_error(broken, "capture.schema")
+    final = {
+        "kind": "final",
+        "last_sequence": 9,
+        "event_id": run_end["marker"]["event_id"],
+    }
+    validate_document(dict(run_end, marker=final), _schemas())
+    bad = dict(final, event_id=final["event_id"].upper())
+    _assert_error(dict(run_end, marker=bad), "capture.schema")
+
+
+def test_root_only_run_fields_and_id_basis() -> None:
+    continuation = _json("fixtures/valid/loss-record-run-start-continuation.json")
+    assert continuation["id_basis"] == "token"
+    broken = copy.deepcopy(continuation)
+    broken["links"] = []
+    _assert_error(broken, "capture.marker.root")
+    no_basis = copy.deepcopy(continuation)
+    del no_basis["id_basis"]
+    _assert_error(no_basis, "capture.marker.id_basis")
+    # A pre-P1 run_start (no segment, no event id) stays readable.
+    legacy = {
+        k: v
+        for k, v in continuation.items()
+        if k
+        not in {
+            "segment_id",
+            "id_basis",
+            "event_id",
+            "predecessors",
+            "branch_ids",
+            "declared_branches",
+        }
+    }
+    validate_document(legacy, _schemas())
+
+
+def test_manifest_marker_event_id_is_the_manifests() -> None:
+    marker = _json("fixtures/valid/spool-record-manifest.json")
+    assert (
+        marker["marker"]["event_id"] == marker["marker"]["manifest"]["fabric.event_id"]
+    )
+    _assert_error(
+        _json("fixtures/invalid/spool-record-manifest-event-id-mismatch.json"),
+        "capture.marker.manifest",
+    )
+
+
+def test_reconstruction_run_states() -> None:
+    report = _json("fixtures/valid/run-reconstruction-segments.json")
+    validate_document(report, _schemas())
+    run = report["runs"][0]
+    assert run["run_state"] == "terminated" and run["segments"][0]["state"] == "sealed"
+    opened = copy.deepcopy(report)
+    opened["runs"][0].update(run_state="open", deadline_at="2026-10-25T00:00:00Z")
+    opened["runs"][0]["gaps"].append({"gap_type": "run_open", "effect": "info"})
+    opened["runs"][0]["counts"]["gaps_by_type"]["run_open"] = 1
+    validate_document(opened, _schemas())  # run_open never counts in the verdict
+    partial_open = copy.deepcopy(opened)
+    partial_open["runs"][0]["gaps"][-1]["effect"] = "partial"
+    with pytest.raises(CaptureContractError):
+        validate_document(partial_open, _schemas())
+    alias = copy.deepcopy(report)
+    alias["runs"][0]["run_aliases"] = [run["run_id"]]
+    _assert_error(alias, "capture.reconstruction.segments")
+    schema = _json("schema/run-reconstruction-v1.schema.json")
+    for gap in (
+        "segment_missing",
+        "segment_conflict",
+        "post_terminal_activity",
+        "run_unterminated",
+        "run_open",
+        "seal_mismatch",
+        "unsealed_segment",
+        "unsealed_epoch",
+        "manifest_gap",
+        "clock_uncertain",
+    ):
+        assert gap in schema["$defs"]["gapType"]["enum"]
+
+
+def test_content_descriptor_rules_are_shared_with_the_prevalidate_vector() -> None:
+    from contracts.validate_capture_contracts import content_descriptor_ok  # noqa: PLC0415
+
+    record = _json("fixtures/valid/spool-record-record-bodies.json")
+    for body in record["bodies"]:
+        attrs = dict(body["descriptor"], event_class="content")
+        assert content_descriptor_ok(attrs)
+    attrs = dict(
+        record["bodies"][2]["descriptor"],
+        event_class="content",
+        media_type="text/plain",
+    )
+    assert not content_descriptor_ok(attrs)

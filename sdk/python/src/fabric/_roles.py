@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """The content role table (spec 049 §4.3), as the agent applies it before spooling.
 
-One row per role: permitted boundaries, provenance and media types, default policy and
-cap. ``contracts/coverage/v1/registry/content-roles-v1.json`` is the source of truth; a
-test pins this copy to it (like ``model-exposure-v1.json`` and :mod:`fabric._model_names`).
+One row per role: permitted boundaries, provenance and media types, default policy, cap
+and (spec 050 §3.4a) the privacy modes a role allows. ``ROLE_ROWS`` is generated from
+``contracts/coverage/v1/registry/content-roles-v1.json`` by
+``scripts/contracts/generate_p0_contracts.py`` (``--check`` fails on drift), and a test pins
+it to the registry.
 A record the table refuses never reaches the spool: it is a counted loss, never sent.
 """
 

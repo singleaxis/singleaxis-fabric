@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.test.items-v1.schema.json",
   "title": "Evidence type fabric.test.items/v1 (spec 050 §3.4a item 7)",
-  "description": "One item of the carrier's test type: a named, counted, digested entry with an optional reference to a body object by its index in refs. Closed: no other property, no free text.",
+  "description": "One item of the carrier's test type: a named, counted, digested entry with an optional reference to a body object by its index in refs and an optional actor id. Closed: no other property, no free text. actor is an ID in mapped form (act- v2); its x-fabric-clear alternative (the opaque clear id or its h- form) is admitted only when the record's source manifest declares identity_mode clear (spec 050 §3.4a item 2, R8).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -47,6 +47,15 @@
       "items": {
         "type": "string",
         "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      }
+    },
+    "actor": {
+      "description": "ID: act- + 32 hex (v2), or the clear-mode form under identity_mode clear.",
+      "type": "string",
+      "pattern": "^act-[0-9a-f]{32}$",
+      "x-fabric-clear": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
       }
     }
   }

@@ -345,6 +345,11 @@ var recordKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.step.status":          oneOf(toSet("ok", "error", "cancelled", "timeout", "unknown")),
 }
 
+// recordKeyConditions: conditional records placements (spec 050 §3.4 rule A):
+// capture_point_kinds / capture_points matched against the id part of
+// fabric.capture.point. P1 ships none.
+var recordKeyConditions = map[string]map[string][]string{}
+
 var (
 	dbSystemPattern            = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 	coverageDigestPattern      = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)

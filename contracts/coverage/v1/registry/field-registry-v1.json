@@ -3741,10 +3741,15 @@
           "layer": "decisions_effects",
           "key": "x-fabric.test_item_counts",
           "pointer": "/items/*/count"
+        },
+        {
+          "layer": "structure",
+          "key": "x-fabric.test_item_actors",
+          "pointer": "/items/*/actor"
         }
       ],
       "definition": "Test type of the structured evidence carrier (spec 050 §3.4a item 7): a list of named, counted, digested items. Registered so the carrier, the Node envelope check and the projection decoder can be qualified before P2-P5 register real types; never emitted by a release build."
     }
   ],
-  "evidence_rule": "Spec 050 §3.4a: one generic closed carrier, fabric.record-evidence/v1, for structured metadata without a single telemetry key. P2-P5 add evidence types here, never a carrier. Each type names its closed item schema (schema/record-evidence-v1.schema.json is the envelope), the capture points allowed to emit it and, per projected field, the JSON pointer into the document ('*' stands for every item). Strings are at most 256 characters and pattern-checked by the type schema; no CONTENT-class value."
+  "evidence_rule": "Spec 050 §3.4a: one generic closed carrier, fabric.record-evidence/v1, for structured metadata without a single telemetry key. P2-P5 add evidence types here, never a carrier. Each type names its closed item schema (schema/record-evidence-v1.schema.json is the envelope), the capture points allowed to emit it and, per projected field, the JSON pointer into the document ('*' stands for every item). Strings are at most 256 characters and pattern-checked by the type schema; no CONTENT-class value. An ID property may name an x-fabric-clear alternative (the opaque clear id or its h- form); it is admitted only when the record's source manifest declares identity_mode clear (spec 050 §3.4a item 2, R8)."
 }

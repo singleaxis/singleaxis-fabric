@@ -229,3 +229,7 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "source": "vocabulary:result_status",
     },
 }
+
+# Conditional records placements (capture_point_kinds / capture_points, matched against
+# the id part of fabric.capture.point); P1 ships none.
+RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {}

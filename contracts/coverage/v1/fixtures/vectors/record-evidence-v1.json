@@ -53,7 +53,8 @@
         "decisions_effects.x-fabric.test_item_counts": [
           3,
           0
-        ]
+        ],
+        "structure.x-fabric.test_item_actors": []
       }
     },
     {
@@ -73,7 +74,8 @@
       "fields": {
         "content.x-fabric.test_item_names": [],
         "content.x-fabric.test_item_digests": [],
-        "decisions_effects.x-fabric.test_item_counts": []
+        "decisions_effects.x-fabric.test_item_counts": [],
+        "structure.x-fabric.test_item_actors": []
       }
     },
     {
@@ -424,7 +426,8 @@
         "content.x-fabric.test_item_digests": [],
         "decisions_effects.x-fabric.test_item_counts": [
           3
-        ]
+        ],
+        "structure.x-fabric.test_item_actors": []
       }
     },
     {
@@ -460,7 +463,129 @@
       "fields": {
         "content.x-fabric.test_item_names": [],
         "content.x-fabric.test_item_digests": [],
-        "decisions_effects.x-fabric.test_item_counts": []
+        "decisions_effects.x-fabric.test_item_counts": [],
+        "structure.x-fabric.test_item_actors": []
+      }
+    },
+    {
+      "name": "mapped actor id",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0,
+            "actor": "act-5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": null,
+      "item_errors": [],
+      "fields": {
+        "content.x-fabric.test_item_names": [
+          "orders.lookup"
+        ],
+        "content.x-fabric.test_item_digests": [],
+        "decisions_effects.x-fabric.test_item_counts": [
+          3
+        ],
+        "structure.x-fabric.test_item_actors": [
+          "act-5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+        ]
+      }
+    },
+    {
+      "name": "clear actor id under a clear-mode manifest (R8)",
+      "identity_mode": "clear",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0,
+            "actor": "agent:planner"
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": null,
+      "item_errors": [],
+      "fields": {
+        "content.x-fabric.test_item_names": [
+          "orders.lookup"
+        ],
+        "content.x-fabric.test_item_digests": [],
+        "decisions_effects.x-fabric.test_item_counts": [
+          3
+        ],
+        "structure.x-fabric.test_item_actors": [
+          "agent:planner"
+        ]
+      }
+    },
+    {
+      "name": "clear actor id under a pseudonymous manifest",
+      "identity_mode": "pseudonymous",
+      "document": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.test.items/v1",
+        "items": [
+          {
+            "name": "orders.lookup",
+            "count": 3,
+            "kind": "alpha",
+            "ref_index": 0,
+            "actor": "agent:planner"
+          }
+        ],
+        "continuation": {
+          "index": 0,
+          "final": true
+        },
+        "refs": [
+          {
+            "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "role": "tool.call.arguments",
+            "pointer": "/q"
+          }
+        ]
+      },
+      "refusal": null,
+      "item_errors": [
+        0
+      ],
+      "fields": {
+        "content.x-fabric.test_item_names": [],
+        "content.x-fabric.test_item_digests": [],
+        "decisions_effects.x-fabric.test_item_counts": [],
+        "structure.x-fabric.test_item_actors": []
       }
     }
   ],

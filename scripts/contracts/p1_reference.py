@@ -235,6 +235,24 @@ def span_category(name_hint: str, attribute_keys: Iterable[str]) -> str:
 
 
 # ------------------------------------------------------------------ rule A
+def condition_holds(
+    condition: Mapping[str, Sequence[str]] | None,
+    capture_point: str | None,
+    point_kinds: Mapping[str, Iterable[str]],
+) -> bool:
+    """A conditional ``record`` placement (050 §3.4 rule A, F1): ``capture_point_kinds``
+    and ``capture_points`` match the id part of ``fabric.capture.point`` (before ``@``)."""
+    if not condition:
+        return True
+    point = (capture_point or "").split("@", 1)[0]
+    kinds = set(point_kinds.get(point, ()))
+    if "capture_points" in condition and point not in condition["capture_points"]:
+        return False
+    return "capture_point_kinds" not in condition or bool(
+        kinds & set(condition["capture_point_kinds"])
+    )
+
+
 def project_record_attributes(
     attributes: Mapping[str, Any],
     table: Mapping[str, Mapping[str, Any]],
@@ -242,6 +260,8 @@ def project_record_attributes(
     *,
     labels: str = "pseudonymous",
     identity: str = "pseudonymous",
+    conditions: Mapping[str, Mapping[str, Sequence[str]]] | None = None,
+    point_kinds: Mapping[str, Iterable[str]] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Rule A (050 §3.4): keep exactly the keys of the records-class table whose value
     passes the key's check; drop (and count) everything else: unknown keys, failing
@@ -249,10 +269,16 @@ def project_record_attributes(
     is the registry check function (``validate_coverage_contracts.check_value``)."""
     kept: dict[str, Any] = {}
     dropped: list[str] = []
+    point = attributes.get("fabric.capture.point")
     for key, value in attributes.items():
         check = table.get(key)
         if (
             check is None
+            or not condition_holds(
+                (conditions or {}).get(key),
+                point if isinstance(point, str) else None,
+                point_kinds or {},
+            )
             or isinstance(value, (float, dict, bytes, bytearray))
             or (
                 isinstance(value, list)
@@ -563,14 +589,41 @@ def evidence_envelope_refusal(raw: bytes, registered: Iterable[str]) -> str | No
     return None
 
 
+CLEAR_KEYWORD = "x-fabric-clear"
+
+
+def _clear_mode_schema(schema: Any) -> Any:
+    """``schema`` with every property that names an ``x-fabric-clear`` alternative widened
+    to ``anyOf: [mapped form, clear form]`` (clear mode only)."""
+    if isinstance(schema, Mapping):
+        out = {
+            k: _clear_mode_schema(v) for k, v in schema.items() if k != CLEAR_KEYWORD
+        }
+        if CLEAR_KEYWORD in schema:
+            return {"anyOf": [out, dict(schema[CLEAR_KEYWORD])]}
+        return out
+    if isinstance(schema, list):
+        return [_clear_mode_schema(v) for v in schema]
+    return schema
+
+
 def evidence_item_errors(
-    doc: Mapping[str, Any], item_schema: Mapping[str, Any]
+    doc: Mapping[str, Any],
+    item_schema: Mapping[str, Any],
+    *,
+    identity_mode: str = "pseudonymous",
 ) -> list[int]:
     """Indexes of the items its registered type schema refuses; the fields an invalid item
-    carries project ``not_captured(parse_failed)`` (050 §3.4a item 6)."""
+    carries project ``not_captured(parse_failed)`` (050 §3.4a item 6). An ID property's
+    clear-mode alternative (``x-fabric-clear``) counts only when the record's source
+    manifest declares ``identity_mode: clear`` (item 2, R8); otherwise only the mapped form
+    is valid."""
     from jsonschema import Draft202012Validator, FormatChecker  # noqa: PLC0415
 
-    validator = Draft202012Validator(item_schema, format_checker=FormatChecker())
+    schema = (
+        _clear_mode_schema(item_schema) if identity_mode == "clear" else item_schema
+    )
+    validator = Draft202012Validator(schema, format_checker=FormatChecker())
     return [i for i, item in enumerate(doc["items"]) if not validator.is_valid(item)]
 
 
@@ -634,3 +687,27 @@ def prevalidate(
     if attributes["role"] == EVIDENCE_ROLE and attributes["status"] == "stored":
         return evidence_envelope_refusal(body, registered)
     return None
+
+
+def end_run_identity(
+    tokens: Sequence[str],
+    run_id: str | None,
+    *,
+    identity_mode: str = "pseudonymous",
+    key: str | None = None,
+    minted: str,
+) -> dict[str, Any]:
+    """``end_run`` (050 §3.6): without a valid token it is ``refused_no_token`` and emits
+    nothing; with ``run_id=None`` and tokens of different correlation ids it is
+    ``refused_conflicting_tokens``; otherwise the zero-width segment takes its run id by
+    the run-identity rules (``run_id=None``: the tokens' correlation id)."""
+    parsed = [p for p in (parse_token(t) for t in tokens) if p is not None]
+    if not parsed:
+        return {"status": "refused_no_token"}
+    correlations = {p["correlation_id"] for p in parsed if p["version"] == 3}
+    if run_id is None and len(correlations) > 1:
+        return {"status": "refused_conflicting_tokens"}
+    identity = run_identity(
+        tokens, run_id, identity_mode=identity_mode, key=key, minted=minted
+    )
+    return {"status": "ended", **identity}

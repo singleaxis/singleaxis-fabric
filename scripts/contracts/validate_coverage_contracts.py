@@ -655,6 +655,23 @@ def _schema_pointer_ok(schema: Mapping[str, Any], parts: Sequence[str]) -> bool:
     return True
 
 
+RECORD_CONDITION_COLUMNS = ("capture_point_kinds", "capture_points")
+
+
+def record_conditions(reg: Mapping[str, Any]) -> dict[str, dict[str, list[str]]]:
+    """Conditional records placements (050 §3.4 rule A, F1); P1 ships none."""
+    out: dict[str, dict[str, list[str]]] = {}
+    for row in reg["keys"]["keys"]:
+        cond = {c: list(row[c]) for c in RECORD_CONDITION_COLUMNS if c in row}
+        if cond and "record" in row.get("placement", []):
+            out[row["key"]] = cond
+    return dict(sorted(out.items()))
+
+
+def point_kinds(reg: Mapping[str, Any]) -> dict[str, list[str]]:
+    return {p["id"]: p["kind"].split("/") for p in reg["points"]["capture_points"]}
+
+
 def record_checks(reg: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
     """The records class (spec 050 §3.14, rule A): every key whose placement names
     ``record``, with its check (``capture_check`` where the row has one)."""
@@ -733,6 +750,23 @@ def check_p1_registries(root: Path, reg: Mapping[str, Any]) -> None:
                 where,
                 "a key placed on records needs a closed check",
             )
+        # Spec 050 §3.4 rule A (F1): a record placement may be conditional on the
+        # record's capture-point kind (053 WP4-01) or exact capture point (054 WP5-01).
+        for column, known in (
+            ("capture_points", {p["id"] for p in reg["points"]["capture_points"]}),
+            ("capture_point_kinds", {r["value"] for r in vocab["capture_point_kind"]}),
+        ):
+            if column in row and (
+                not placement
+                or "record" not in placement
+                or not row[column]
+                or not set(row[column]) <= known
+            ):
+                _fail(
+                    "coverage.keys.condition",
+                    where,
+                    f"{column} names known values of a record key",
+                )
     content = _load(root / CONTENT_SCHEMA)
     modes = list(content["properties"]["privacy_mode"]["enum"])
     if not set(PRIVACY_MODES) <= set(modes):
@@ -786,6 +820,18 @@ def check_p1_registries(root: Path, reg: Mapping[str, Any]) -> None:
             or item.get("additionalProperties") is not False
         ):
             _fail("coverage.evidence_types.schema", where, "an item schema is closed")
+        for name, prop in item.get("properties", {}).items():
+            clear = prop.get(ref.CLEAR_KEYWORD)
+            if clear is not None and (
+                prop.get("type") != "string"
+                or clear.get("type") != "string"
+                or not str(clear.get("pattern", "")).startswith("^")
+            ):
+                _fail(
+                    "coverage.evidence_types.schema",
+                    f"{where}.{name}",
+                    "a clear-mode alternative is a pattern-checked string of an ID property",
+                )
         for pid in row["capture_points"]:
             if pid not in points or "records" not in points[pid]["input"]:
                 _fail(
@@ -1872,6 +1918,8 @@ def validate_evidence_document(
     reg: Mapping[str, Any],
     root: Path,
     schemas: Mapping[str, Mapping[str, Any]],
+    *,
+    identity_mode: str = "pseudonymous",
 ) -> None:
     """``fabric.record-evidence/v1``: the Node's envelope check on the document's
     canonical bytes, the envelope schema, then each item against its registered type."""
@@ -1887,7 +1935,7 @@ def validate_evidence_document(
         )
     _schema_errors(document, schemas["evidence"])
     item_schema = _load(root / FAMILY / types[document["evidence_type"]]["schema"])
-    bad = ref.evidence_item_errors(document, item_schema)
+    bad = ref.evidence_item_errors(document, item_schema, identity_mode=identity_mode)
     if bad:
         _fail(
             "coverage.evidence.item",
@@ -1972,6 +2020,7 @@ def validate_p1_vectors(
         table = record_checks(reg)
         if (
             document["keys"] != sorted(table)
+            or document["conditions"] != record_conditions(reg)
             or document["table_revision"] != reg["keys"]["registry_revision"]
         ):
             _vector_fail(
@@ -1986,6 +2035,8 @@ def validate_p1_vectors(
                 check_value,
                 labels=case["capture_labels"],
                 identity=case["identity_mode"],
+                conditions=record_conditions(reg),
+                point_kinds=point_kinds(reg),
             )
             if kept != case["admitted"] or dropped != case["dropped"]:
                 _vector_fail(
@@ -2076,7 +2127,9 @@ def validate_p1_vectors(
                 parsed = json.loads(raw)
                 row = types[parsed["evidence_type"]]
                 bad = ref.evidence_item_errors(
-                    parsed, _load(root / FAMILY / row["schema"])
+                    parsed,
+                    _load(root / FAMILY / row["schema"]),
+                    identity_mode=case.get("identity_mode", "pseudonymous"),
                 )
                 valid = dict(
                     parsed,
@@ -2110,6 +2163,74 @@ def validate_p1_vectors(
         ):
             _vector_fail(
                 "coverage.vectors.evidence", "$.record", "record digest or seal differs"
+            )
+        return True
+    if kind == "fabric.resume-token-vectors/v2":
+        for index, case in enumerate(document["tokens"]):
+            if ref.parse_token(case["token"]) != case["parsed"]:
+                _vector_fail(
+                    "coverage.vectors.resume_token",
+                    f"$.tokens[{index}]",
+                    f"{case['name']}: parse differs",
+                )
+        for index, case in enumerate(document["issue"]):
+            token = ref.format_token(
+                case["correlation_id"], case["entry"], case["branch_id"]
+            )
+            if token != case["token"] or (
+                token is not None and ref.parse_token(token) is None
+            ):
+                _vector_fail(
+                    "coverage.vectors.resume_token",
+                    f"$.issue[{index}]",
+                    f"{case['name']}: issue differs",
+                )
+        for index, case in enumerate(document["carriers"]):
+            tokens = ref.split_carrier(case["value"], carrier=case["carrier"])
+            if tokens != case["tokens"] or case["valid"] != [
+                ref.parse_token(t) is not None for t in tokens
+            ]:
+                _vector_fail(
+                    "coverage.vectors.carrier",
+                    f"$.carriers[{index}]",
+                    f"{case['name']}: carrier parse differs",
+                )
+        for index, case in enumerate(document["run_identity"]):
+            inputs = case["inputs"]
+            got = ref.run_identity(
+                inputs["tokens"],
+                inputs["run_id"],
+                identity_mode=inputs["identity_mode"],
+                key=inputs["key"],
+                run_id_emitted=inputs["run_id_emitted"],
+                minted=inputs["minted"],
+            )
+            basis = {r["value"] for r in reg["vocab"]["run_id_basis"]}
+            if got != case["expected"] or got["id_basis"] not in basis:
+                _vector_fail(
+                    "coverage.vectors.run_identity",
+                    f"$.run_identity[{index}]",
+                    f"{case['name']}: identity differs",
+                )
+        for index, case in enumerate(document["end_run"]):
+            inputs = case["inputs"]
+            got = ref.end_run_identity(
+                inputs["tokens"],
+                inputs["run_id"],
+                identity_mode=inputs["identity_mode"],
+                key=inputs["key"],
+                minted=inputs["minted"],
+            )
+            if got != case["expected"]:
+                _vector_fail(
+                    "coverage.vectors.run_identity",
+                    f"$.end_run[{index}]",
+                    f"{case['name']}: end_run differs",
+                )
+        rules = {case["rule"] for case in document["run_identity"]}
+        if rules != {1, 2, 3, 4, 5}:
+            _vector_fail(
+                "coverage.vectors.run_identity", "$.run_identity", "every rule 1-5"
             )
         return True
     if kind == "fabric.model-call-golden/v1":
@@ -2366,6 +2487,19 @@ def validate_fixture(
         validate_manifest_document(document, reg, schemas["manifest"])
     elif kind == ref.EVIDENCE_SCHEMA:
         validate_evidence_document(document, reg, root, schemas)
+    elif kind == "fabric.record-evidence-fixture/v1":
+        # An evidence document with the identity mode its source manifest declares.
+        if set(document) != {"schema_version", "identity_mode", "document"} or (
+            document["identity_mode"] not in {"pseudonymous", "clear"}
+        ):
+            _fail("coverage.schema", "$", "closed evidence fixture wrapper")
+        validate_evidence_document(
+            document["document"],
+            reg,
+            root,
+            schemas,
+            identity_mode=document["identity_mode"],
+        )
     else:
         _fail(
             "coverage.fixture.unknown",

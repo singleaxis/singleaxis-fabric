@@ -24,6 +24,7 @@
     "fabric.step.parent_id",
     "fabric.step.status"
   ],
+  "conditions": {},
   "cases": [
     {
       "name": "every records key with a valid value",
