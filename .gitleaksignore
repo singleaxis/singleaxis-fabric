@@ -55,3 +55,7 @@ dcc028a17e6543b7e2b51a818f0eaab77ab7fa63:deploy/compose/docker-compose.s3-eval.y
 3762850efb42783955b76e3a1cd54d2c309856c1:sdk/python/tests/test_span_protection.py:generic-api-key:24
 3762850efb42783955b76e3a1cd54d2c309856c1:sdk/typescript/test/deployment-policy.test.ts:generic-api-key:20
 bf30709061985a8c7d22ed473bca7e1bf85ccfaf:docs/security-history-triage.md:generic-api-key:90
+# PR #191 squash-merge commit: the same two synthetic canaries triaged above
+# under 937301c/4254dfd. See "PR #191 squash-merge canaries".
+f4f8d914eb1fcf8ced43b2222760187e0e358db7:sdk/python/tests/test_wire_p0a_privacy.py:generic-api-key:44
+f4f8d914eb1fcf8ced43b2222760187e0e358db7:sdk/typescript/test/identity.test.ts:generic-api-key:247
