@@ -94,9 +94,13 @@ def test_reused_run_id_keeps_numbering_and_reconstructs_complete(tmp_path: Path)
     assert sequences == list(range(6))
     document = _verify(spans, store)
     run = _only_run(document, run_id_pseudonym("job-42"))
-    # H5: two scopes of one run id, each complete; the run claims only those.
-    assert run["verdict"] == "complete_for_observed_scopes", run["gaps"]
-    assert [s["verdict"] for s in document["scopes"]] == ["complete_for_declared_scope"] * 2
+    # H5: two scopes of one run id, each complete. 050 §8 K2: a non-resumable run ends at
+    # its outermost exit, so re-using the id sequentially is post-terminal activity
+    # ("one run id, one run"; a retried job uses a new run id or one session_id).
+    assert run["verdict"] == "partial", run["gaps"]
+    assert {g["gap_type"] for g in run["gaps"]} >= {"post_terminal_activity"}
+    verdicts = [s["verdict"] for s in document["scopes"]]
+    assert verdicts == ["complete_for_declared_scope", "partial"]  # the second is post-terminal
     assert len(run["exchanges"]) == 6
 
 

@@ -377,6 +377,7 @@ def test_clear_run_id_never_leaves_the_process(
     node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", KEY.decode())  # install() reads it
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     node.mode = "down"
     spool = tmp_path / "spool"
     handle = install_node(node, spool, id_key=None)  # the environment's key
@@ -393,7 +394,9 @@ def test_clear_run_id_never_leaves_the_process(
     (span,) = node.named("fabric.model_call")
     assert span["fabric.run.id"] == expected
     markers = [b for b in node.named("fabric.capture_heartbeat") if "fabric.run.id" in b]
-    assert {b["fabric.run.id"] for b in markers} == {expected} and len(markers) == 2
+    assert {b["fabric.run.id"] for b in markers} == {expected} and len(markers) == 3
+    assert sorted(b["fabric.heartbeat.kind"] for b in markers) == [
+        "run_end", "run_start", "segment_seal"]  # 050 §3.6: the run's terminal seal  # fmt: skip
     assert {attrs["run_id"] for attrs, _ in node.content} == {expected}
     with node.lock:
         assert all(CLEAR not in json.dumps(headers) for _, headers in node.requests)

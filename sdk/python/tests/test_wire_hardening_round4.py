@@ -478,6 +478,7 @@ def test_capture_telemetry_carries_no_operator_label_in_clear(
 def test_clear_labels_are_an_explicit_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: labels, not ids
     rows, _ = _capture_with_labels(tmp_path, monkeypatch, key=KEY, labels="clear")
     for row in rows:
         assert row["attributes"]["fabric.source_id"] == LABEL

@@ -479,7 +479,7 @@ def test_reinstall_starts_a_fresh_epoch(installed: list[Marker], tmp_path: Path)
     again = _install(tmp_path)
     assert again.allocator is allocator
     first, *changes, second = _manifests(installed)
-    # WP-14: unpatching aiohttp at uninstall is a state change of the first epoch (§3.8)
+    # WP-12/WP-14: uninstall is a state change of each active wire tee in the first epoch
     assert all(change["source_epoch"] == first["source_epoch"] for change in changes)
     assert second["source_epoch"] == allocator.epoch
     assert second["source_epoch"] not in (first_epoch, straggler_epoch)
