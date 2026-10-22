@@ -422,7 +422,8 @@ def test_seal_manifest_and_registration_stubs() -> None:
 def test_reconstruct_stubs() -> None:
     now = datetime.now(UTC)
     node = _graph.SegmentNode(SEG, "r-1", "s-a", 1, ("none",))
-    assert _graph.build_run_graphs([node], evaluated_at=now) == []
+    (graph,) = _graph.build_run_graphs([node], evaluated_at=now)  # WP-31: built
+    assert (graph.run_id, graph.run_state) == ("r-1", "not_resumable_unclosed")
     assert _graph.RunGraph("r-1", (node,), None).run_aliases == ()
     assert len(_graph.P1_GAP_TYPES) == 10
     assert (
