@@ -1,0 +1,698 @@
+{
+  "schema_version": "fabric.seal-digest-vectors/v1",
+  "rule": "Spec 050 §3.7 (049 §2.12 rule 1, deltas 8 and 17): a record digest is sha256: of the spec-029 canonical JSON (sorted keys, separators (',', ':'), UTF-8, no floats) of {name, start_ns, end_ns, status, attributes, content}; name is the category fabricguard derives, status unset/ok/error, attributes the emitted ones minus receiver-owned keys (fabric.source.authenticated), ints as ints, arrays as lists. content: for a wire exchange the stored_sha256 of the request then the response primary (the side object with no link) when present; for a record the stored_sha256 of each object of fabric.content.object_ids, in list order, null for a descriptor-only object. A seal digest is sha256: of the canonical JSON of the [sequence, entry] pairs sorted by sequence; entry is a record digest or 'loss:<reason>' for each position of a loss record naming this segment_id (a segment-attributed range is exact); a loss without segment_id is never a member; an empty segment hashes [].",
+  "records": [
+    {
+      "name": "wire exchange: request then response primary, the split part excluded",
+      "kind": "exchange",
+      "span": {
+        "name": "fabric.model_call",
+        "start_ns": 1791331201120000000,
+        "end_ns": 1791331202050000000,
+        "status": "unset",
+        "attributes": {
+          "fabric.wire.exchange_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+          "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 1,
+          "fabric.wire.api": "openai.chat_completions",
+          "fabric.content.request_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+          "fabric.content.result_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+          "fabric.wire.request_sha256": "bcf5f68a2cca5594a167ed3b93b524e943d99b03f07faeb32da691be470af585",
+          "fabric.wire.response_sha256": "8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+          "fabric.wire.response_state": "complete",
+          "fabric.wire.truncated": false,
+          "fabric.wire.store_status": "stored",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "openai",
+          "http.request.method": "POST",
+          "http.response.status_code": 200,
+          "gen_ai.response.model": "gpt-4o-2024-08-06",
+          "gen_ai.response.finish_reasons": [
+            "tool_calls"
+          ]
+        }
+      },
+      "descriptors": [
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+          "tenant_id": "tenant-a",
+          "role": "model.exchange.request",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "split",
+          "transformations": [
+            "extract_parts"
+          ],
+          "provenance": "protocol",
+          "boundary": "provider_bound",
+          "status": "stored",
+          "stored_byte_length": 108,
+          "stored_sha256": "sha256:bcf5f68a2cca5594a167ed3b93b524e943d99b03f07faeb32da691be470af585",
+          "source_byte_length": 112,
+          "source_sha256": "sha256:7dd19f8e09cb7342df0444ad3c04da3dd25ed78e45442c00e4d6d2f9fc5c48ca",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 1,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+          "captured_at": "2026-10-07T00:00:01.120000+00:00"
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "5c1d2e3f-6a7b-4c8d-9e0f-1a2b3c4d5e6f",
+          "tenant_id": "tenant-a",
+          "role": "model.exchange.part",
+          "media_type": "image/png",
+          "content_encoding": "base64",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "protocol",
+          "boundary": "provider_bound",
+          "status": "stored",
+          "stored_byte_length": 4,
+          "stored_sha256": "sha256:05aa3ac8d365559e81f8ad1b62918aedeabeaebab553e7b129ae95d9acdb77cc",
+          "source_byte_length": 4,
+          "source_sha256": "sha256:05aa3ac8d365559e81f8ad1b62918aedeabeaebab553e7b129ae95d9acdb77cc",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 1,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+          "captured_at": "2026-10-07T00:00:01.120000+00:00",
+          "links": [
+            {
+              "relation": "part_of",
+              "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+              "byte_range": [
+                101,
+                105
+              ]
+            }
+          ]
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "9d4e5f6a-7b8c-4d9e-8fa0-2b3c4d5e6f7a",
+          "tenant_id": "tenant-a",
+          "role": "model.exchange.part",
+          "media_type": "video/mp4",
+          "content_encoding": "base64",
+          "representation": "unavailable",
+          "transformations": [],
+          "provenance": "protocol",
+          "boundary": "provider_bound",
+          "status": "not_captured",
+          "source_byte_length": 73400320,
+          "source_sha256": "sha256:abababababababababababababababababababababababababababababababab",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 1,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+          "captured_at": "2026-10-07T00:00:01.120000+00:00",
+          "status_reason": "part_cap",
+          "links": [
+            {
+              "relation": "part_of",
+              "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+              "byte_range": [
+                10,
+                73400330
+              ]
+            }
+          ]
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a02",
+          "tenant_id": "tenant-a",
+          "role": "model.exchange.response",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "protocol",
+          "boundary": "provider_bound",
+          "status": "stored",
+          "stored_byte_length": 100,
+          "stored_sha256": "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+          "source_byte_length": 100,
+          "source_sha256": "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 1,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "6f1d2c3e-8a4b-4c5d-9e6f-0a1b2c3d4e5f",
+          "captured_at": "2026-10-07T00:00:02.050000+00:00"
+        }
+      ],
+      "content": [
+        "sha256:bcf5f68a2cca5594a167ed3b93b524e943d99b03f07faeb32da691be470af585",
+        "sha256:8c5ea8c65b2dfa3baa52723d5018840c55f048565e870c562cb674558fc05313"
+      ],
+      "digest": "sha256:3f63cae0ac3e91b1c5483d8d6040e3641f197250190330c618fc5969b236388f"
+    },
+    {
+      "name": "record with a stored body, a descriptor-only body and its evidence object",
+      "kind": "record",
+      "span": {
+        "name": "fabric.tool_call",
+        "start_ns": 1791331202050001000,
+        "end_ns": 1791331202053001000,
+        "status": "ok",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 3,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent",
+          "fabric.content.object_ids": [
+            "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "6185ee41-5e88-45a0-a895-f95e494f8584",
+            "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+          ]
+        }
+      },
+      "descriptors": [
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "tenant_id": "tenant-a",
+          "role": "tool.call.arguments",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "stored",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "retained",
+          "stored_byte_length": 33,
+          "stored_sha256": "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+          "source_byte_length": 33,
+          "source_sha256": "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571"
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "tenant_id": "tenant-a",
+          "role": "tool.call.result",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "unavailable",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "not_captured",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "withheld",
+          "status_reason": "payload_too_large"
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "e478b53c-3ba7-43d4-ad04-04a38d8d3a89",
+          "tenant_id": "tenant-a",
+          "role": "record.evidence",
+          "media_type": "application/vnd.fabric.record-evidence+json",
+          "content_encoding": "identity",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "stored",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "retained",
+          "stored_byte_length": 463,
+          "stored_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98",
+          "source_byte_length": 463,
+          "source_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+        }
+      ],
+      "content": [
+        "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+        null,
+        "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+      ],
+      "digest": "sha256:1c3bcf79f9b9383756119cbcc15d87fbef4fb4b534ba5909e78614bbe0a10ad8"
+    },
+    {
+      "name": "record with one descriptor-only body (null)",
+      "kind": "record",
+      "span": {
+        "name": "fabric.tool_call",
+        "start_ns": 1791331202050001000,
+        "end_ns": 1791331202053001000,
+        "status": "ok",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 3,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent",
+          "fabric.content.object_ids": [
+            "6185ee41-5e88-45a0-a895-f95e494f8584"
+          ]
+        }
+      },
+      "descriptors": [
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "tenant_id": "tenant-a",
+          "role": "tool.call.result",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "unavailable",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "not_captured",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "withheld",
+          "status_reason": "payload_too_large"
+        }
+      ],
+      "content": [
+        null
+      ],
+      "digest": "sha256:3ccc97b6aa82f1cf6a2459d2e8440762db07fa01618daa5dda5db39dba3140a2"
+    },
+    {
+      "name": "record with its evidence object only",
+      "kind": "record",
+      "span": {
+        "name": "fabric.tool_call",
+        "start_ns": 1791331202050001000,
+        "end_ns": 1791331202053001000,
+        "status": "ok",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 3,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent",
+          "fabric.content.object_ids": [
+            "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+          ]
+        }
+      },
+      "descriptors": [
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "e478b53c-3ba7-43d4-ad04-04a38d8d3a89",
+          "tenant_id": "tenant-a",
+          "role": "record.evidence",
+          "media_type": "application/vnd.fabric.record-evidence+json",
+          "content_encoding": "identity",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "stored",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "retained",
+          "stored_byte_length": 463,
+          "stored_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98",
+          "source_byte_length": 463,
+          "source_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+        }
+      ],
+      "content": [
+        "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+      ],
+      "digest": "sha256:933385ef54cde3e923f0dd71a738a49a7282d4cdde0fa58f900dc1c36d8cb4b4"
+    },
+    {
+      "name": "receiver-owned fabric.source.authenticated is excluded",
+      "kind": "record",
+      "span": {
+        "name": "fabric.tool_call",
+        "start_ns": 1791331202050001000,
+        "end_ns": 1791331202053001000,
+        "status": "ok",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 3,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent",
+          "fabric.content.object_ids": [
+            "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "6185ee41-5e88-45a0-a895-f95e494f8584",
+            "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+          ],
+          "fabric.source.authenticated": true
+        }
+      },
+      "descriptors": [
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "tenant_id": "tenant-a",
+          "role": "tool.call.arguments",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "stored",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "retained",
+          "stored_byte_length": 33,
+          "stored_sha256": "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+          "source_byte_length": 33,
+          "source_sha256": "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571"
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "tenant_id": "tenant-a",
+          "role": "tool.call.result",
+          "media_type": "application/json",
+          "content_encoding": "identity",
+          "representation": "unavailable",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "not_captured",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "withheld",
+          "status_reason": "payload_too_large"
+        },
+        {
+          "schema_version": "fabric.content-object/v2",
+          "object_id": "e478b53c-3ba7-43d4-ad04-04a38d8d3a89",
+          "tenant_id": "tenant-a",
+          "role": "record.evidence",
+          "media_type": "application/vnd.fabric.record-evidence+json",
+          "content_encoding": "identity",
+          "representation": "exact",
+          "transformations": [],
+          "provenance": "caller_reported",
+          "boundary": "caller",
+          "status": "stored",
+          "source_id": "wire-3f9a1c2b7d4e5f60",
+          "source_epoch": 1791331200000000000,
+          "source_sequence": 3,
+          "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "operation_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "attempt_id": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "captured_at": "2026-10-19T09:00:02.000000+00:00",
+          "privacy_mode": "retain_original",
+          "policy_id": "acme-capture",
+          "policy_version": 3,
+          "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+          "protection_status": "retained",
+          "stored_byte_length": 463,
+          "stored_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98",
+          "source_byte_length": 463,
+          "source_sha256": "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+        }
+      ],
+      "content": [
+        "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+        null,
+        "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+      ],
+      "digest": "sha256:1c3bcf79f9b9383756119cbcc15d87fbef4fb4b534ba5909e78614bbe0a10ad8",
+      "same_digest_as": "record with a stored body, a descriptor-only body and its evidence object"
+    },
+    {
+      "name": "int64 epoch and sequence, error status, no bodies",
+      "kind": "record",
+      "span": {
+        "name": "fabric.tool_call",
+        "start_ns": 1791331202050001000,
+        "end_ns": 1791331202053001000,
+        "status": "error",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "wire-3f9a1c2b7d4e5f60",
+          "fabric.source.epoch": 9223372036854775807,
+          "fabric.source.sequence": 9223372036854775806,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent"
+        }
+      },
+      "descriptors": [],
+      "content": [],
+      "digest": "sha256:088596a3f596400b5c80a8ee289b6c48e754b4680862aad631bee077d1fbcf74"
+    }
+  ],
+  "segments": [
+    {
+      "name": "empty segment (zero-width, end_run)",
+      "segment_id": "seg-a8057e331d719dbf8de5a507cfbc0465",
+      "records": [],
+      "losses": [],
+      "entries": [],
+      "seal_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    {
+      "name": "records and their own segment's losses; another segment's loss and an unattributed loss are not members",
+      "segment_id": "seg-c5721bcd3bd90511038a6548f7db83b6",
+      "records": [
+        [
+          3,
+          "wire exchange: request then response primary, the split part excluded"
+        ],
+        [
+          5,
+          "record with a stored body, a descriptor-only body and its evidence object"
+        ]
+      ],
+      "losses": [
+        {
+          "reason": "queue_full",
+          "count": 2,
+          "first_sequence": 6,
+          "last_sequence": 7,
+          "segment_id": "seg-c5721bcd3bd90511038a6548f7db83b6"
+        },
+        {
+          "reason": "queue_full",
+          "count": 1,
+          "first_sequence": 4,
+          "last_sequence": 4,
+          "segment_id": "seg-88622093f6d4fac734809edbef2fa773"
+        },
+        {
+          "reason": "shutdown",
+          "count": 1,
+          "first_sequence": 8,
+          "last_sequence": 8
+        }
+      ],
+      "entries": [
+        [
+          3,
+          "sha256:3f63cae0ac3e91b1c5483d8d6040e3641f197250190330c618fc5969b236388f"
+        ],
+        [
+          5,
+          "sha256:1c3bcf79f9b9383756119cbcc15d87fbef4fb4b534ba5909e78614bbe0a10ad8"
+        ],
+        [
+          6,
+          "loss:queue_full"
+        ],
+        [
+          7,
+          "loss:queue_full"
+        ]
+      ],
+      "seal_digest": "sha256:dcbb74c43b3a72439d53e551c9c155a3463a8e5cce29566a99b0a740cd229d8d"
+    },
+    {
+      "name": "interleaved segment on the same source (T8): only its own positions",
+      "segment_id": "seg-88622093f6d4fac734809edbef2fa773",
+      "records": [
+        [
+          9,
+          "record with its evidence object only"
+        ]
+      ],
+      "losses": [
+        {
+          "reason": "queue_full",
+          "count": 2,
+          "first_sequence": 6,
+          "last_sequence": 7,
+          "segment_id": "seg-c5721bcd3bd90511038a6548f7db83b6"
+        },
+        {
+          "reason": "queue_full",
+          "count": 1,
+          "first_sequence": 4,
+          "last_sequence": 4,
+          "segment_id": "seg-88622093f6d4fac734809edbef2fa773"
+        }
+      ],
+      "entries": [
+        [
+          4,
+          "loss:queue_full"
+        ],
+        [
+          9,
+          "sha256:933385ef54cde3e923f0dd71a738a49a7282d4cdde0fa58f900dc1c36d8cb4b4"
+        ]
+      ],
+      "seal_digest": "sha256:6d2fb76aff247b888bd07d3c6a701df202d3e2709ee0ac41b9b7fa17cb91e091"
+    },
+    {
+      "name": "loss-only segment",
+      "segment_id": "seg-32befdbecc05037fdb0142bc8b219b09",
+      "records": [],
+      "losses": [
+        {
+          "reason": "disk_full",
+          "count": 3,
+          "first_sequence": 10,
+          "last_sequence": 12,
+          "segment_id": "seg-32befdbecc05037fdb0142bc8b219b09"
+        }
+      ],
+      "entries": [
+        [
+          10,
+          "loss:disk_full"
+        ],
+        [
+          11,
+          "loss:disk_full"
+        ],
+        [
+          12,
+          "loss:disk_full"
+        ]
+      ],
+      "seal_digest": "sha256:2ea8f597daf213333fbc7f93525e86dc95ab474010ccf9be1c7d40682eb64558"
+    }
+  ]
+}

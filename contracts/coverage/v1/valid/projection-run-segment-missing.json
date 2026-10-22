@@ -16,7 +16,7 @@
     "manifests": [
       {
         "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-        "sha256": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+        "sha256": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
       }
     ],
     "telemetry_origin": "trusted_readback"
@@ -71,7 +71,7 @@
           "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
           "source_epoch": 4611686018427387905,
           "last_sequence": 41,
-          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
           "terminal": false,
           "predecessors": [
             "none"
@@ -90,10 +90,10 @@
           "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
           "source_epoch": 4611686018427387905,
           "last_sequence": 41,
-          "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+          "manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
           "terminal": true,
           "predecessors": [
-            "seg-d01b60a0bbee94e468dd3a52b8e72e4c/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+            "seg-d01b60a0bbee94e468dd3a52b8e72e4c/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
           ],
           "state": "sealed",
           "seal_digest": "sha256:d739a278d59b7be3008e2d6332a3e25fa806e4119d63f37d76a65085fd4206c4"

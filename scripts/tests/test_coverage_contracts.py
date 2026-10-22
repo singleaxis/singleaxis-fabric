@@ -573,3 +573,333 @@ def test_c0_5_contract_tree_is_release_qualifiable_and_drafts_stay_unpublished()
         m.relative_path.parts[:2] in {("coverage", "v1"), ("content", "v2")}
         for m in public
     )
+
+
+# ------------------------------------------------------------------ spec 050 (P1) contract deltas
+from contracts import p1_reference as ref  # noqa: E402
+from contracts.validate_coverage_contracts import (  # noqa: E402
+    record_checks,
+    record_conditions,
+    validate_vectors,
+)
+
+P1_ARTIFACTS = (
+    "fixtures/vectors/seal-digest-v1.json",
+    "fixtures/vectors/span-category-v1.json",
+    "fixtures/vectors/seal-parity-v1.json",
+    "fixtures/vectors/records-span-v1.json",
+    "fixtures/vectors/resume-token-v2.json",
+    "fixtures/vectors/record-evidence-v1.json",
+    "schema/record-evidence-v1.schema.json",
+    "evidence/fabric.test.items-v1.schema.json",
+    "valid/evidence-test-items.json",
+    "valid/evidence-clear-mode-id.json",
+    "invalid/evidence-unknown-type.json",
+    "invalid/evidence-extra-key.json",
+    "invalid/evidence-free-text-over-bound.json",
+    "invalid/evidence-too-deep.json",
+    "invalid/evidence-too-many-items.json",
+    "invalid/evidence-content-class-value.json",
+    "invalid/evidence-clear-id-pseudonymous.json",
+    "valid/projection-records-explicit-d2.json",
+    "valid/projection-many-records.json",
+    "fixtures/projection/chat.json",
+    "fixtures/projection/chat-stream.json",
+    "fixtures/projection/responses-hosted-tools-reasoning.json",
+    "fixtures/projection/responses-stream.json",
+    "fixtures/projection/responses-previous-response-resolved.json",
+    "fixtures/projection/responses-previous-response-unresolved.json",
+    "fixtures/projection/anthropic-thinking.json",
+    "fixtures/projection/anthropic-redacted-thinking.json",
+    "fixtures/projection/anthropic-server-tools.json",
+    "fixtures/projection/embeddings.json",
+    "fixtures/projection/chat-refusal.json",
+    "fixtures/projection/responses-unknown-item.json",
+    "fixtures/projection/responses-asset-references.json",
+    "fixtures/projection/request-40mib-one-image.json",
+    "fixtures/projection/response-70mib-side.json",
+)
+
+
+def _family_json(relative: str) -> Any:
+    return json.loads((REPO_ROOT / FAMILY / relative).read_text(encoding="utf-8"))
+
+
+def _vector_code(document: Any) -> str:
+    reg = load_registries(REPO_ROOT)
+    with pytest.raises(CoverageContractError) as caught:
+        validate_vectors(document, reg, REPO_ROOT, {})
+    return caught.value.code
+
+
+def test_p1_every_section_4_3_artifact_is_pinned() -> None:
+    manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
+    pinned = {record["path"]: record for record in manifest["artifacts"]}
+    assert manifest["version"] == "1.1.0"
+    for path in P1_ARTIFACTS:
+        assert path in pinned, path
+    assert (
+        pinned["evidence/fabric.test.items-v1.schema.json"]["expectation"] == "schema"
+    )
+    assert pinned["fixtures/projection/chat.json"]["expectation"] == "vectors"
+
+
+def test_p1_registry_rows() -> None:
+    reg = load_registries(REPO_ROOT)
+    fields = {f["id"]: f for f in reg["fields"]["fields"]}
+    assert fields["X48"]["lives_in"] == "T `fabric.content.object_ids`"
+    assert fields["X49"]["lives_in"] == "T `fabric.run.id_basis`"
+    assert "emitted as given in clear mode" in fields["X08"]["definition"]
+    assert fields["C35"]["lives_in"].startswith("T `fabric.wire.endpoint_id`")
+    assert fields["C40"]["lives_in"] == "T `fabric.wire.provider_request_id`"
+    assert not [f["id"] for f in fields.values() if "P0" in f["phase"]]
+    keys = {k["key"]: k for k in reg["keys"]["keys"]}
+    assert not [k for k, row in keys.items() if "P0" in row["phase"]]
+    assert keys["fabric.capture.source"]["check"]["values"] == ["observed", "reported"]
+    assert keys["fabric.run.segment_id"]["placement"] == [
+        "exchange", "record", "loss", "run_start", "run_end", "segment_seal"
+    ]  # fmt: skip
+    assert "manifest" in keys["fabric.event_id"]["placement"]
+    assert [r["value"] for r in reg["vocab"]["step_kind"]][:2] == ["run", "agent_turn"]
+    roles = {r["role"]: r for r in reg["roles"]["roles"]}
+    evidence = roles["record.evidence"]
+    assert evidence["default_policy"] == "metadata" and evidence["cap"] == "1 MiB"
+    assert evidence["allowed_modes"] == ["retain_original", "metadata_only", "omit"]
+    assert reg["roles"]["registry_revision"] == 4
+    assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
+        "fabric.test.items/v1"
+    ]
+
+
+def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
+    reg = load_registries(REPO_ROOT)
+    table = record_checks(reg)
+    assert "fabric.capture.input" in table and "fabric.attempt.uid" in table
+    assert not any(
+        marker in key
+        for key in table
+        for marker in ("content.ref", "arguments", "result", "message", "prompt")
+    )
+    namespace: dict[str, Any] = {}
+    exec(  # noqa: S102 - the generated module only imports typing helpers
+        (REPO_ROOT / "sdk/python/src/fabric/_records_keys_generated.py").read_text(),
+        namespace,
+    )
+    assert set(namespace["RECORD_KEY_CHECKS"]) == set(table)
+    assert dict(namespace["RECORD_KEY_CONDITIONS"]) == record_conditions(reg) == {}
+    go = (
+        REPO_ROOT
+        / "components/otel-collector-fabric/processor/fabricguardprocessor/coverage_keys.go"
+    ).read_text()
+    block = go[
+        go.index("var recordKeyValidators") : go.index("var recordKeyConditions")
+    ]
+    assert set(re.findall(r'^\t"([^"]+)":', block, re.M)) == set(table)
+
+
+def test_p1_role_tables_are_generated_from_the_registry() -> None:
+    reg = load_registries(REPO_ROOT)
+    text = (REPO_ROOT / "sdk/python/src/fabric/_roles.py").read_text()
+    assert "# BEGIN GENERATED" in text and "ROLE_ROWS" in text
+    go = (
+        REPO_ROOT
+        / "components/otel-collector-fabric/exporter/fabriccontentexporter/evidence_types_generated.go"
+    ).read_text()
+    for row in reg["fields"]["evidence_types"]:
+        assert f'"{row["type"]}"' in go
+
+
+@pytest.mark.parametrize(
+    ("name", "change", "code"),
+    [
+        (
+            "fixtures/vectors/seal-digest-v1.json",
+            lambda d: d["segments"][1]["entries"].pop(),
+            "coverage.vectors.seal",
+        ),
+        (
+            "fixtures/vectors/seal-digest-v1.json",
+            lambda d: d["records"][1]["content"].reverse(),
+            "coverage.vectors.seal",
+        ),
+        (
+            "fixtures/vectors/span-category-v1.json",
+            lambda d: d["cases"][0].update(category="fabric.capture_loss"),
+            "coverage.vectors.category",
+        ),
+        (
+            "fixtures/vectors/records-span-v1.json",
+            lambda d: d["cases"][2]["dropped"].clear(),
+            "coverage.vectors.records_span",
+        ),
+        (
+            "fixtures/vectors/seal-parity-v1.json",
+            lambda d: d["cases"][0]["expected_export"].update(name="fabric.activity"),
+            "coverage.vectors.parity",
+        ),
+        (
+            "fixtures/vectors/record-evidence-v1.json",
+            lambda d: d["cases"][6].update(refusal=None),
+            "coverage.vectors.evidence",
+        ),
+        (
+            "fixtures/vectors/resume-token-v2.json",
+            lambda d: d["run_identity"][8]["expected"].update(id_basis="token"),
+            "coverage.vectors.run_identity",
+        ),
+        (
+            "fixtures/vectors/resume-token-v2.json",
+            lambda d: d["tokens"][-2].update(parsed={"version": 3}),
+            "coverage.vectors.resume_token",
+        ),
+        (
+            "fixtures/projection/chat.json",
+            lambda d: d["expected"].update(finish_reasons=["stop"]),
+            "coverage.vectors.model_call",
+        ),
+    ],
+)
+def test_p1_vector_drift_is_detected(
+    name: str, change: Callable[[Any], Any], code: str
+) -> None:
+    document = _family_json(name)
+    change(document)
+    assert _vector_code(document) == code
+
+
+def test_p1_reference_seal_and_record_digest() -> None:
+    assert ref.seal_digest([]) == "sha256:" + hashlib.sha256(b"[]").hexdigest()
+    entries = [[2, "loss:queue_full"], [1, "sha256:" + "ab" * 32]]
+    assert ref.seal_digest(entries) == ref.seal_digest(list(reversed(entries)))
+    with pytest.raises(ValueError):
+        ref.seal_digest([[1, "a"], [1, "b"]])
+    with pytest.raises(ValueError):
+        ref.loss_entries(
+            {
+                "reason": "queue_full",
+                "count": 1,
+                "first_sequence": 3,
+                "last_sequence": 4,
+            }
+        )
+    span = {
+        "name": "fabric.tool_call",
+        "start_ns": 1,
+        "end_ns": 2,
+        "status": "ok",
+        "attributes": {"a": 1},
+    }
+    stamped = dict(span, attributes={"a": 1, "fabric.source.authenticated": True})
+    assert ref.record_digest(**span, content=[None]) == ref.record_digest(
+        **stamped, content=[None]
+    )
+    with pytest.raises(ValueError):
+        ref.record_digest(**dict(span, attributes={"a": 1.5}), content=[])
+    with pytest.raises(ValueError):
+        ref.record_digest(**dict(span, status="Error: boom"), content=[])
+
+
+def test_p1_reference_rule_a_conditions() -> None:
+    reg = load_registries(REPO_ROOT)
+    table = {"fabric.step.kind": record_checks(reg)["fabric.step.kind"]}
+    conditions = {"fabric.step.kind": {"capture_point_kinds": ["H"]}}
+    kinds = {"exec.audit": ["H"], "sdk.records": ["R"]}
+    attrs = {"fabric.step.kind": "terminal", "fabric.capture.point": "exec.audit@0.9.0"}
+    kept, _ = ref.project_record_attributes(
+        attrs, table, check_value, conditions=conditions, point_kinds=kinds
+    )
+    assert kept == {"fabric.step.kind": "terminal"}
+    attrs["fabric.capture.point"] = "sdk.records@0.9.0"
+    kept, dropped = ref.project_record_attributes(
+        attrs, table, check_value, conditions=conditions, point_kinds=kinds
+    )
+    assert kept == {} and "fabric.step.kind" in dropped
+
+
+def test_p1_reference_tokens_and_identity() -> None:
+    entry = f"seg-{'1' * 32}/s-{'2' * 32}/7/41/sha256:{'ab' * 32}"
+    token = ref.format_token("r-" + "3" * 32, entry, f"br-{'4' * 32}")
+    assert token is not None and ref.parse_token(token)["branch_id"] == f"br-{'4' * 32}"
+    assert ref.format_token("orders/42", entry) is None
+    with pytest.raises(ValueError):
+        ref.run_identity([], None, minted="not-minted")
+    out = ref.run_identity([token], "ignored", key="k" * 16, minted="r-" + "5" * 32)
+    assert (out["run_id"], out["id_basis"]) == ("r-" + "3" * 32, "token")
+
+
+def test_p1_reference_evidence_envelope() -> None:
+    doc = {
+        "schema_version": ref.EVIDENCE_SCHEMA,
+        "evidence_type": "fabric.test.items/v1",
+        "items": [],
+    }
+    raw = ref.canonical_bytes(doc)
+    assert ref.evidence_envelope_refusal(raw, ["fabric.test.items/v1"]) is None
+    assert ref.evidence_envelope_refusal(raw + b" ", ["fabric.test.items/v1"]) == (
+        "evidence_not_canonical"
+    )
+    assert ref.evidence_envelope_refusal(raw, []) == "evidence_type_unregistered"
+    big = b" " * (ref.EVIDENCE_MAX_BYTES + 1)
+    assert (
+        ref.evidence_envelope_refusal(big, ["fabric.test.items/v1"])
+        == "evidence_bounds"
+    )
+    schema = _family_json("evidence/fabric.test.items-v1.schema.json")
+    item = {"name": "a", "count": 1, "actor": "agent:planner"}
+    assert ref.evidence_item_errors({"items": [item]}, schema) == [0]
+    assert (
+        ref.evidence_item_errors({"items": [item]}, schema, identity_mode="clear") == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("registry", "change", "code"),
+    [
+        (
+            "keys",
+            lambda d: _key(d, "fabric.run.id_basis").update(
+                placement=["record", "exchange"]
+            ),
+            "coverage.keys.placement",
+        ),
+        (
+            "keys",
+            lambda d: _key(d, "fabric.run.id_basis").update(
+                capture_check={"type": "bool"}
+            ),
+            "coverage.keys.capture_check",
+        ),
+        (
+            "keys",
+            lambda d: _key(d, "fabric.step.kind").update(
+                capture_points=["no.such.point"]
+            ),
+            "coverage.keys.condition",
+        ),
+        (
+            "roles",
+            lambda d: next(
+                r for r in d["roles"] if r["role"] == "record.evidence"
+            ).update(allowed_modes=["redact", "omit"]),
+            "coverage.roles.modes",
+        ),
+        (
+            "fields",
+            lambda d: d["evidence_types"][0]["fields"][0].update(
+                pointer="/items/*/nope"
+            ),
+            "coverage.evidence_types.fields",
+        ),
+        (
+            "fields",
+            lambda d: d["evidence_types"][0].update(capture_points=["wire.py.httpx"]),
+            "coverage.evidence_types.points",
+        ),
+    ],
+)
+def test_p1_registry_rules_are_enforced(
+    tmp_path: Path, registry: str, change: Callable[[Any], None], code: str
+) -> None:
+    root = _copy_tree(tmp_path)
+    _edit_registry(root, registry, change)
+    _assert_code(root, code)

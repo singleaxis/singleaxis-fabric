@@ -691,6 +691,7 @@
           "items": {
             "enum": [
               "run",
+              "agent_turn",
               "model_call",
               "embedding",
               "input",
@@ -871,6 +872,7 @@
         "step_kind": {
           "enum": [
             "run",
+            "agent_turn",
             "model_call",
             "embedding",
             "input",

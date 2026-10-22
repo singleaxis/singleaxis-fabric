@@ -36,8 +36,12 @@ from typing import Any, Mapping, Sequence
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from contracts import p1_reference as ref  # noqa: E402
+
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.2.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.3.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -61,7 +65,20 @@ _MARKER_KEYS = (
     "manifest_digest",
     "manifest_seq",
     "scope_status",
+    # spec 050 §4.2 (capture/v1 1.3.0)
+    "event_id",
+    "id_basis",
+    "session_id",
+    "user_id",
+    "parent_run_id",
+    "resumed_from",
+    "links",
+    "outcome",
+    "stop_reason",
+    "identity",
 )
+# Spec 050 §4.2: carried only by the run's root run_start (predecessors ['none']).
+_ROOT_ONLY = ("session_id", "user_id", "parent_run_id", "resumed_from", "links")
 _INT64_MAX = 9223372036854775807
 _EXPECTATIONS = frozenset(
     {"schema", "valid", "invalid", "digests", "golden", "vectors"}
@@ -168,15 +185,33 @@ def _validate_loss(document: Mapping[str, Any]) -> None:
                 "$.scope_id",
                 "only run_start / run_end / segment_seal markers carry a scope_id",
             )
-        _check_marker(document, document["last_sequence"], "$")
+        _check_marker(
+            document, document["last_sequence"], "$", kind=document["heartbeat_kind"]
+        )
         return
     _check_range(document)
 
 
-def _check_marker(marker: Mapping[str, Any], last_sequence: int, path: str) -> None:
-    """Spec 049 run-marker rules a schema cannot express (sections 2.10, 2.12)."""
+def _check_marker(
+    marker: Mapping[str, Any], last_sequence: int, path: str, *, kind: str
+) -> None:
+    """Spec 049 run-marker rules a schema cannot express (sections 2.10, 2.12), and the
+    spec 050 §4.2 additions: root-only run fields, id_basis on every P1 run_start."""
 
     predecessors = marker.get("predecessors", [])
+    root_only = [k for k in _ROOT_ONLY if k in marker]
+    if root_only and predecessors != ["none"]:
+        raise CaptureContractError(
+            "capture.marker.root",
+            f"{path}.{root_only[0]}",
+            "session, user, parent, resumed_from and links ride only on the run's root run_start",
+        )
+    if kind == "run_start" and "segment_id" in marker and "id_basis" not in marker:
+        raise CaptureContractError(
+            "capture.marker.id_basis",
+            f"{path}.id_basis",
+            "a segment's run_start records the run-identity rule that decided its run id",
+        )
     if "none" in predecessors and predecessors != ["none"]:
         raise CaptureContractError(
             "capture.marker.predecessors",
@@ -216,6 +251,13 @@ def _check_range(document: Mapping[str, Any]) -> None:
             "capture.loss.range",
             "$.count",
             "a loss range needs first <= last and at most last - first + 1 lost exchanges",
+        )
+    if "segment_id" in document and document["count"] != last - first + 1:
+        raise CaptureContractError(
+            "capture.loss.segment",
+            "$.count",
+            "a segment-attributed loss range is exact: it never spans another segment's "
+            "positions (spec 050 R3), so the seal is recomputable",
         )
 
 
@@ -265,7 +307,7 @@ def _combination_ok(d: Mapping[str, Any]) -> bool:
         "source_byte_length" in d,
         "source_sha256" in d,
     )
-    if status == "not_captured":
+    if status in {"not_captured", "unsupported"}:
         return (
             representation == "unavailable"
             and transformations == []
@@ -311,7 +353,7 @@ def _protection_ok(d: Mapping[str, Any]) -> bool:
     retains = mode in {"retain_original", "original_plus_masked"}
     if has_source and mode in _NO_LENGTH_MODES:
         return False
-    if status == "not_captured":
+    if status in {"not_captured", "unsupported"}:
         if protection != "withheld":
             return False
         if reason == "protection_failed":
@@ -398,6 +440,29 @@ def _check_descriptor(descriptor: Mapping[str, Any], path: str) -> None:
             )
 
 
+def content_descriptor_ok(attributes: Mapping[str, Any]) -> bool:
+    """Whether a content-log-record attribute set passes the Node's descriptor rules: the
+    closed capture/v1 schema and the content-v2 rules of spec 049 §4.3 (no body check)."""
+    root = Path(__file__).resolve().parents[2] / ROOT
+    schema = json.loads(
+        (root / SCHEMAS["fabric.content-log-record/v1"]).read_text("utf-8")
+    )
+    document = {
+        "schema_version": "fabric.content-log-record/v1",
+        "body": {
+            "byte_length": 0,
+            "sha256": "sha256:" + hashlib.sha256(b"").hexdigest(),
+        },
+        "attributes": dict(attributes),
+    }
+    try:
+        _schema_error(document, schema)
+        _check_descriptor(attributes, "$.attributes")
+    except CaptureContractError:
+        return False
+    return True
+
+
 def _validate_content(document: Mapping[str, Any]) -> None:
     attributes, body = document["attributes"], document["body"]
     empty = "sha256:" + hashlib.sha256(b"").hexdigest()
@@ -423,7 +488,10 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
         return
     if kind == "marker":
         _check_marker(
-            document["marker"], document["marker"]["last_sequence"], "$.marker"
+            document["marker"],
+            document["marker"]["last_sequence"],
+            "$.marker",
+            kind=document["marker"]["kind"],
         )
         return
     if kind == "record":
@@ -438,6 +506,7 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
             )
         if span["end_time_unix_nano"] < span["start_time_unix_nano"]:
             raise _spool_inconsistent("$.span", "span ends before it starts")
+        _check_record_bodies(document)
         return
     if kind != "exchange":
         return
@@ -502,6 +571,44 @@ def _validate_spool(document: Mapping[str, Any]) -> None:
     for role, key in _ROLE_REF.items():
         if key in attrs and role not in primaries:
             raise _spool_inconsistent("$.bodies", f"{key} names no spooled body")
+
+
+def _check_record_bodies(document: Mapping[str, Any]) -> None:
+    """Spec 050 §3.5: a record's bodies are its fabric.content.object_ids, in order, each
+    bound to the record's attempt, run and source; one evidence object at most; a
+    descriptor-only body occupies no blob bytes."""
+    attrs = document["span"]["attributes"]
+    bodies = document.get("bodies", [])
+    ids = [body["descriptor"]["object_id"] for body in bodies]
+    if ids != list(attrs.get("fabric.content.object_ids", [])):
+        raise _spool_inconsistent(
+            "$.bodies", "bodies are the span's fabric.content.object_ids, in order"
+        )
+    offset = 0
+    for index, body in enumerate(bodies):
+        where = f"$.bodies[{index}]"
+        descriptor = body["descriptor"]
+        _check_descriptor(descriptor, f"{where}.descriptor")
+        expected = {
+            "attempt_id": attrs["fabric.attempt.uid"],
+            "source_id": attrs["fabric.source_id"],
+            "source_epoch": attrs["fabric.source.epoch"],
+            "source_sequence": attrs["fabric.source.sequence"],
+        }
+        if "fabric.run.id" in attrs:
+            expected["run_id"] = attrs["fabric.run.id"]
+        if (
+            body["offset"] != offset
+            or body["length"] != descriptor.get("stored_byte_length", 0)
+            or any(descriptor.get(k) != v for k, v in expected.items())
+        ):
+            raise _spool_inconsistent(
+                where,
+                "bodies are contiguous and bound to the record's attempt and source",
+            )
+        offset += body["length"]
+    if sum(b["descriptor"]["role"] == ref.EVIDENCE_ROLE for b in bodies) > 1:
+        raise _spool_inconsistent("$.bodies", "at most one evidence object per record")
 
 
 def _ranges_ok(ranges: Sequence[Sequence[int]]) -> bool:
@@ -700,7 +807,53 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
                     "continues_exchange_id must name an exchange in the run",
                 )
         _validate_scope(run, sources, path)
+        _check_run_state(run, path)
     _validate_scope_verdicts(document, sources)
+
+
+_DEADLINE_STATES = frozenset({"open", "unterminated", "deadline_uncertain"})
+
+
+def _check_run_state(run: Mapping[str, Any], path: str) -> None:
+    """Spec 050 §3.12 and §9 delta 5: run states, the info-only run_open gap, segments."""
+    state = run.get("run_state")
+    open_gaps = [g for g in run["gaps"] if g["gap_type"] == "run_open"]
+    if any(g["effect"] != "info" for g in open_gaps) or (open_gaps and state != "open"):
+        raise CaptureContractError(
+            "capture.reconstruction.run_state",
+            f"{path}.gaps",
+            "run_open is an info gap of an open run; it never counts in the verdict",
+        )
+    if state is not None and state != "terminated" and run["verdict"] == _COMPLETE:
+        raise CaptureContractError(
+            "capture.reconstruction.run_state",
+            f"{path}.verdict",
+            "a run that is not terminated is at best complete_for_observed_scopes",
+        )
+    if state in _DEADLINE_STATES and "deadline_at" not in run:
+        raise CaptureContractError(
+            "capture.reconstruction.run_state",
+            f"{path}.deadline_at",
+            f"run_state {state} has a deadline",
+        )
+    segments = run.get("segments", [])
+    ids = [segment["segment_id"] for segment in segments]
+    if len(set(ids)) != len(ids) or any(
+        entry != "none" and ref.parse_predecessor(entry) is None
+        for segment in segments
+        for entry in segment["predecessors"]
+    ):
+        raise CaptureContractError(
+            "capture.reconstruction.segments",
+            f"{path}.segments",
+            "segment ids are unique and predecessors are exact entries",
+        )
+    if run["run_id"] in run.get("run_aliases", []):
+        raise CaptureContractError(
+            "capture.reconstruction.segments",
+            f"{path}.run_aliases",
+            "a run is not its own alias",
+        )
 
 
 def _validate_scope_verdicts(
@@ -1118,6 +1271,14 @@ def _check_manifest_marker(
         raise CaptureContractError(
             "capture.marker.manifest", "$.marker.manifest", exc.message
         ) from exc
+    if "event_id" in marker and marker["event_id"] != marker["manifest"].get(
+        "fabric.event_id"
+    ):
+        raise CaptureContractError(
+            "capture.marker.manifest",
+            "$.marker.event_id",
+            "a manifest marker's event_id is the manifest's own event_id",
+        )
     if (
         marker["last_sequence"]
         != marker["manifest"]["fabric.manifest.after_source_sequence"]

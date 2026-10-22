@@ -1,0 +1,186 @@
+{
+  "schema_version": "fabric.model-call-golden/v1",
+  "rule": "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the projection field keys (or, for list-valued step facts, tool_calls, provider_tools and extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' ('response:final' for the terminal document a stream carries). null means absent; 'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are the parsed values; the 048 §7 exposure rule applies on top (every name here is allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and locators equal these.",
+  "name": "responses-hosted-tools-reasoning",
+  "api": "openai.responses",
+  "request": {
+    "model": "o4-mini",
+    "instructions": "You are a careful travel agent.",
+    "reasoning": {
+      "effort": "medium",
+      "summary": "auto"
+    },
+    "tools": [
+      {
+        "type": "web_search_preview"
+      },
+      {
+        "type": "file_search",
+        "vector_store_ids": [
+          "vs_1"
+        ]
+      },
+      {
+        "type": "function",
+        "name": "book_flight",
+        "parameters": {
+          "type": "object"
+        }
+      }
+    ],
+    "input": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Book the cheapest LIS flight."
+          }
+        ]
+      }
+    ]
+  },
+  "response": {
+    "id": "resp_A1",
+    "object": "response",
+    "model": "o4-mini-2025-04-16",
+    "status": "completed",
+    "output": [
+      {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "Compared fares."
+          }
+        ],
+        "encrypted_content": "gAAAAB..."
+      },
+      {
+        "type": "web_search_call",
+        "id": "ws_1",
+        "status": "completed"
+      },
+      {
+        "type": "file_search_call",
+        "id": "fs_1",
+        "status": "completed",
+        "queries": [
+          "LIS fares"
+        ]
+      },
+      {
+        "type": "function_call",
+        "id": "fc_1",
+        "call_id": "call_bk1",
+        "name": "book_flight",
+        "arguments": "{}"
+      },
+      {
+        "type": "message",
+        "id": "msg_1",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Booking."
+          }
+        ]
+      }
+    ],
+    "usage": {
+      "input_tokens": 300,
+      "output_tokens": 90,
+      "output_tokens_details": {
+        "reasoning_tokens": 64
+      },
+      "input_tokens_details": {
+        "cached_tokens": 0
+      }
+    }
+  },
+  "key": "fabric-test-id-key-not-a-secret",
+  "expected": {
+    "model.requested": "o4-mini",
+    "model.served": "o4-mini-2025-04-16",
+    "model.parameters": [
+      "reasoning"
+    ],
+    "instructions": [
+      "request:/instructions"
+    ],
+    "instructions.digest": "sha256:53b20af59896e5c1a2e1ab5b87903d97eacb260df664c2fc127dc356732b0a71",
+    "tools_offered": [
+      {
+        "name": "web_search_preview",
+        "type": "provider_hosted"
+      },
+      {
+        "name": "file_search",
+        "type": "provider_hosted"
+      },
+      {
+        "name": "book_flight",
+        "type": "function"
+      }
+    ],
+    "tools_offered.count": 3,
+    "tools_offered.digest": "sha256:47e3ba3101a7411b7ade5545a993a95c515f7a1f5ab041dac84f2cdd2b5244e1",
+    "context_dependencies": [],
+    "input.messages": [
+      {
+        "index": 0,
+        "role": "user",
+        "pointer": "request:/input/0"
+      }
+    ],
+    "output.messages": [
+      {
+        "index": 4,
+        "role": "assistant",
+        "pointer": "response:/output/4"
+      }
+    ],
+    "refusal": null,
+    "finish_reasons": [
+      "completed"
+    ],
+    "reasoning.format": "encrypted",
+    "reasoning.text": "redacted(provider_encrypted)",
+    "reasoning.summary": "response:/output/0/summary",
+    "reasoning.object": "response:/output/0",
+    "tool_calls": [
+      {
+        "id": "p-af247da72cc04eb7ed8337998644d346",
+        "name": "book_flight",
+        "type": "function",
+        "execution_side": "agent"
+      }
+    ],
+    "provider_tools": [
+      {
+        "kind": "web_search",
+        "status": "reported_completed",
+        "pointer": "response:/output/1"
+      },
+      {
+        "kind": "file_search",
+        "status": "reported_completed",
+        "pointer": "response:/output/2"
+      }
+    ],
+    "asset.reference": [],
+    "embedding.input": null,
+    "embedding.dimensions": null,
+    "usage": {
+      "input_tokens": 300,
+      "output_tokens": 90,
+      "cache_read": 0,
+      "reasoning_tokens": 64
+    },
+    "usage.basis": "provider_reported",
+    "error.code": null,
+    "extension_items": []
+  }
+}

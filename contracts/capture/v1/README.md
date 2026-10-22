@@ -173,3 +173,26 @@ emitters).**
 ```bash
 python scripts/contracts/validate_capture_contracts.py
 ```
+
+## Version 1.3.0 (spec 050 P1)
+
+- `spool-record-v1`: an exchange holds at most **260** bodies (two sides × one
+  primary, 64 parts, 64 part review copies and one side review copy) and a
+  `record` at most **8** (its `fabric.content.object_ids`, in order, the
+  evidence object and descriptor-only bodies included); the writer checks both
+  before writing. A descriptor-only body (`not_captured` or `unsupported`, no
+  bytes, length 0) may name a producer reason (`payload_too_large`,
+  `encoding_failed`, `not_exact_bytes`, vocabulary `descriptor_reason`).
+- Loss records and spool loss ranges carry the `segment_id` of their positions;
+  a segment-attributed range is exact (count = range size), so the segment
+  seal is recomputable and no range spans two segments.
+- Markers persist a uuid4 `event_id` (every kind; on a manifest marker the
+  manifest's own). A segment's `run_start` names its `id_basis`; only the root
+  `run_start` carries `session_id`, `user_id`, `parent_run_id`, `resumed_from`
+  and `links`; `outcome` and `stop_reason` ride only on `run_end`; `identity`
+  is the X05 block on `run_start`. Pre-1.3.0 markers without these stay
+  readable.
+- `run-reconstruction-v1`: `runs[]` gains `run_state`, `segments[]`,
+  `run_aliases`, `id_basis_conflicts`, `deadline_at` and `evaluated_at`;
+  `sources[]` gains `manifests[]` and `unsealed_epochs[]`; ten new gap types;
+  `run_open` is an `info` gap of an open run and never counts in the verdict.

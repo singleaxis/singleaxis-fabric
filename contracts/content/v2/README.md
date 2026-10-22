@@ -97,6 +97,18 @@ Version 2.2.0 (spec 049 P0-A) adds:
   NUL skeleton `object_id` NUL decimal `index`), so a reader holding only
   GetObject finds every part from the skeleton (`fabric._roles.part_object_id`).
 
+Version 2.3.0 (spec 050 P1) adds:
+
+- the role `record.evidence` (role table `v1@4`): the one structured-evidence
+  object of a records-input record (`application/vnd.fabric.record-evidence+json`,
+  1 MiB, every boundary, default policy `metadata`, modes `retain_original`,
+  `metadata_only` and `omit` only). Its document is
+  `contracts/coverage/v1/schema/record-evidence-v1.schema.json`;
+- `fixtures/node-prevalidate-v1.json`: one case per reason the exporter refuses a
+  record before acknowledging it (spec 050 §3.14: `bad_descriptor`,
+  `digest_mismatch`, `tenant_not_allowed`, `source_unbound` and the four
+  evidence-envelope reasons), each answered with HTTP 400 and nothing enqueued.
+
 The `fabriccontent` exporter enforces the role table and these rules on the
 content path (capture/v1 `content-log-record-v1`); nothing in this directory
 changes what recorder v1 emits.

@@ -60,7 +60,7 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "descriptor": {
-      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref to an object with bytes), as widened by spec 049 §4.3 (P0-A): every role of contracts/coverage/v1/registry/content-roles-v1.json (boundary, provenance, media type and cap per row are checked by the validator and the Node), the privacy fields, split parts and review copies, and descriptor-only not_captured records (no stored bytes, digest or ref; status_reason from the coverage reason vocabulary). source_authenticated is receiver-owned and never part of it. Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
+      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref to an object with bytes), as widened by spec 049 §4.3 (P0-A): every role of contracts/coverage/v1/registry/content-roles-v1.json (boundary, provenance, media type and cap per row are checked by the validator and the Node), the privacy fields, split parts and review copies, and descriptor-only not_captured records (no stored bytes, digest or ref; status_reason from the coverage reason vocabulary). source_authenticated is receiver-owned and never part of it. Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false. Spec 050 (R5): a records body that could not be produced is descriptor-only too, with status not_captured or unsupported and a status_reason that may also name a producer reason (vocabulary descriptor_reason: payload_too_large, encoding_failed, not_exact_bytes).",
       "type": "object",
       "required": [
         "schema_version",
@@ -164,7 +164,8 @@
             "media.frames",
             "media.events",
             "media.transcript",
-            "artifact.locator"
+            "artifact.locator",
+            "record.evidence"
           ]
         },
         "media_type": {
@@ -224,7 +225,8 @@
             "stored",
             "truncated",
             "redacted",
-            "not_captured"
+            "not_captured",
+            "unsupported"
           ]
         },
         "status_reason": {
@@ -274,7 +276,10 @@
             "uninstrumented_client",
             "sampling",
             "retention_expired",
-            "deleted"
+            "deleted",
+            "payload_too_large",
+            "encoding_failed",
+            "not_exact_bytes"
           ]
         },
         "stored_byte_length": {
@@ -423,7 +428,10 @@
           "if": {
             "properties": {
               "status": {
-                "const": "not_captured"
+                "enum": [
+                  "not_captured",
+                  "unsupported"
+                ]
               }
             }
           },

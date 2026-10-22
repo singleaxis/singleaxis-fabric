@@ -372,7 +372,12 @@ func TestWireCapture_RemovedRevision2KeysAreDropped(t *testing.T) {
 	keys := make([]string, 0, len(removedCaptureKeys))
 	for key := range removedCaptureKeys {
 		keys = append(keys, key)
-		if _, ok := TraceAllowedFields[key]; ok {
+		// Spec 050 §4.1 re-admits three revision-2 names with closed checks
+		// (fabric.run.id_basis, fabric.wire.endpoint_id,
+		// fabric.wire.provider_request_id); their revision-2 values below fail
+		// those checks and are still dropped on every span kind.
+		_, readmitted := coverageKeyValidators[key]
+		if _, ok := TraceAllowedFields[key]; ok && !readmitted {
 			t.Errorf("removed key %q is still in TraceAllowedFields", key)
 		}
 	}

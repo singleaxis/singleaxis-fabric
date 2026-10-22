@@ -23,6 +23,10 @@ from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from contracts import p1_reference as ref  # noqa: E402
+
 
 ROOTS = {
     "evidence": Path("contracts/evidence/v1"),
@@ -42,6 +46,8 @@ SCHEMAS = {
 }
 SPLIT_VECTOR = "fabric.split-reassembly-vector/v1"
 NODE_ENVELOPE_VECTOR = "fabric.node-envelope-vectors/v1"
+NODE_PREVALIDATE_VECTOR = "fabric.node-prevalidate-vectors/v1"
+FIELD_REGISTRY = Path("contracts/coverage/v1/registry/field-registry-v1.json")
 NODE_ENVELOPE_MAGIC = b"FABRIC-NODE-CONTENT-1\n"
 NODE_ENVELOPE_SCHEMA = "fabric.node-content-envelope/v1"
 BAD_STATUSES = frozenset(
@@ -810,6 +816,63 @@ def _validate_node_envelope_vector(document: Mapping[str, Any]) -> None:
             )
 
 
+def _validate_node_prevalidate_vector(document: Mapping[str, Any]) -> None:
+    """Spec 050 §3.14: every case's expected outcome is the reference pre-ack check's, the
+    evidence types are the registry's, and every refusal reason has a case."""
+    from contracts import validate_capture_contracts as capture  # noqa: PLC0415
+
+    if set(document) != {
+        "schema_version",
+        "rule",
+        "reasons",
+        "config",
+        "registered_evidence_types",
+        "cases",
+    } or document["reasons"] != list(ref.PREVALIDATE_REASONS):
+        raise EvidenceContractError(
+            "evidence.prevalidate.shape", "$", "closed vector shape and reason list"
+        )
+    registry = json.loads(
+        (Path(__file__).resolve().parents[2] / FIELD_REGISTRY).read_text("utf-8")
+    )
+    registered = [row["type"] for row in registry.get("evidence_types", [])]
+    if document["registered_evidence_types"] != registered:
+        raise EvidenceContractError(
+            "evidence.prevalidate.types", "$", "evidence types differ from the registry"
+        )
+    config = document["config"]
+    seen: set[str] = set()
+    for index, case in enumerate(document["cases"]):
+        if "body_repeat" in case:
+            body = bytes([case["body_repeat"]["byte"]]) * case["body_repeat"]["count"]
+        else:
+            body = base64.b64decode(case["body_base64"], validate=True)
+        got = (
+            ref.prevalidate(
+                case["attributes"],
+                body,
+                allowed_tenants=config["allowed_tenants"],
+                source_binding=config.get("source_binding"),
+                descriptor_ok=capture.content_descriptor_ok,
+                registered=registered,
+            )
+            or "accepted"
+        )
+        if got != case["expected"]:
+            raise EvidenceContractError(
+                "evidence.prevalidate.case",
+                f"$.cases[{index}]",
+                f"{case['name']}: expected {case['expected']}, got {got}",
+            )
+        seen.add(got)
+    if not set(ref.PREVALIDATE_REASONS) | {"accepted"} <= seen:
+        raise EvidenceContractError(
+            "evidence.prevalidate.coverage",
+            "$.cases",
+            f"no case for {sorted(set(ref.PREVALIDATE_REASONS) - seen)}",
+        )
+
+
 def validate_document(
     document: Mapping[str, Any], schemas: Mapping[str, Mapping[str, Any]]
 ) -> None:
@@ -819,6 +882,9 @@ def validate_document(
         return
     if version == NODE_ENVELOPE_VECTOR:
         _validate_node_envelope_vector(document)
+        return
+    if version == NODE_PREVALIDATE_VECTOR:
+        _validate_node_prevalidate_vector(document)
         return
     selected = SCHEMAS.get(version) if isinstance(version, str) else None
     if selected is None:
@@ -1061,7 +1127,7 @@ def validate_contracts(repo_root: Path) -> list[str]:
             )
         if (manifest["contract"], manifest["version"], manifest["digest_scope"]) != (
             f"singleaxis.fabric.{family}",
-            "1.0.0" if family == "evidence" else "2.2.0",
+            "1.0.0" if family == "evidence" else "2.3.0",
             "exact_file_bytes",
         ):
             raise EvidenceContractError(

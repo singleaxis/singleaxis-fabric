@@ -1,0 +1,111 @@
+{
+  "schema_version": "fabric.model-call-golden/v1",
+  "rule": "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the projection field keys (or, for list-valued step facts, tool_calls, provider_tools and extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' ('response:final' for the terminal document a stream carries). null means absent; 'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are the parsed values; the 048 §7 exposure rule applies on top (every name here is allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and locators equal these.",
+  "name": "anthropic-redacted-thinking",
+  "api": "anthropic.messages",
+  "request": {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "system": "You book travel.",
+    "thinking": {
+      "type": "enabled",
+      "budget_tokens": 512
+    },
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "LIS?"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "https://images.example.com/p/2.png"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "response": {
+    "id": "msg_01B",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-4-5-20250929",
+    "stop_reason": "end_turn",
+    "content": [
+      {
+        "type": "redacted_thinking",
+        "data": "EuYB..."
+      },
+      {
+        "type": "text",
+        "text": "Found one."
+      }
+    ],
+    "usage": {
+      "input_tokens": 50,
+      "output_tokens": 20,
+      "cache_read_input_tokens": 32,
+      "cache_creation_input_tokens": 0
+    }
+  },
+  "key": "fabric-test-id-key-not-a-secret",
+  "expected": {
+    "model.requested": "claude-sonnet-4-5",
+    "model.served": "claude-sonnet-4-5-20250929",
+    "model.parameters": [
+      "max_tokens",
+      "thinking"
+    ],
+    "instructions": [
+      "request:/system"
+    ],
+    "instructions.digest": "sha256:0ffab7e474da0fb10e8769929fa681421c1b40cd7a27c8a54ba81b570e01e7b9",
+    "tools_offered": [],
+    "tools_offered.count": 0,
+    "tools_offered.digest": null,
+    "context_dependencies": [],
+    "input.messages": [
+      {
+        "index": 0,
+        "role": "user",
+        "pointer": "request:/messages/0"
+      }
+    ],
+    "output.messages": [
+      {
+        "index": 0,
+        "role": "assistant",
+        "pointer": "response:/content"
+      }
+    ],
+    "refusal": null,
+    "finish_reasons": [
+      "end_turn"
+    ],
+    "reasoning.format": "redacted_marker",
+    "reasoning.text": "redacted(provider_redacted)",
+    "reasoning.summary": null,
+    "reasoning.object": null,
+    "tool_calls": [],
+    "provider_tools": [],
+    "asset.reference": [
+      "request:/messages/0/content/1/source/url"
+    ],
+    "embedding.input": null,
+    "embedding.dimensions": null,
+    "usage": {
+      "input_tokens": 50,
+      "output_tokens": 20,
+      "cache_read": 32,
+      "cache_creation": 0
+    },
+    "usage.basis": "provider_reported",
+    "error.code": null,
+    "extension_items": []
+  }
+}

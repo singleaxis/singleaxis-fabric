@@ -50,6 +50,10 @@
           "description": "Spec 049 \u00a77.9, decision 20: trusted_readback when the span files are the Node's own telemetry export or destination read from a trusted location; imported otherwise (no record of them is authenticated).",
           "enum": ["trusted_readback", "imported"]
         },
+        "evaluated_at": {
+          "description": "Spec 050 §3.12: the time run states and deadlines were evaluated at (--evaluated-at; default the run time).",
+          "type": "string", "format": "date-time"
+        },
         "profile": {
           "description": "Spec 049 \u00a77.3: the deployment profile the verifier evaluated; production requires every record to carry the Node's source stamp.",
           "enum": ["local", "production"]
@@ -85,9 +89,31 @@
                 "reason": {"$ref": "#/$defs/lossReason"},
                 "first_sequence": {"type": "integer", "minimum": 0},
                 "last_sequence": {"type": "integer", "minimum": 0},
-                "count": {"type": "integer", "minimum": 1}
+                "count": {"type": "integer", "minimum": 1},
+                "segment_id": {"$ref": "#/$defs/segmentId"}
               }
             }
+          },
+          "manifests": {
+            "description": "Spec 050 §3.12: the capture manifests seen for this (source, epoch), in manifest_seq order.",
+            "type": "array",
+            "maxItems": 4096,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["manifest_id", "sha256", "manifest_seq"],
+              "properties": {
+                "manifest_id": {"$ref": "#/$defs/scopeId"},
+                "sha256": {"$ref": "#/$defs/digest"},
+                "manifest_seq": {"type": "integer", "minimum": 0}
+              }
+            }
+          },
+          "unsealed_epochs": {
+            "description": "Spec 050 §3.12 (049 X45): prior epochs of this spool declared unsealed by a manifest 0, or seen only through an orphan heartbeat (a periodic heartbeat for an epoch with no final). A run with a segment there is partial(unsealed_epoch).",
+            "type": "array",
+            "maxItems": 4096,
+            "items": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807}
           }
         }
       }
@@ -105,6 +131,28 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
     },
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "segmentId": {"type": "string", "pattern": "^seg-[0-9a-f]{32}$"},
+    "segment": {
+      "description": "Spec 050 §3.12: one segment of a run, in the shape of the step projection's run segments (contracts/coverage/v1/schema/step-projection-v1.schema.json).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["segment_id", "state", "predecessors"],
+      "properties": {
+        "segment_id": {"$ref": "#/$defs/segmentId"},
+        "source_id": {"type": "string", "maxLength": 160},
+        "source_epoch": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "last_sequence": {"type": "integer", "minimum": -1},
+        "manifest_digest": {"$ref": "#/$defs/digest"},
+        "terminal": {"type": "boolean"},
+        "predecessors": {"type": "array", "maxItems": 64, "items": {"type": "string", "maxLength": 320}},
+        "state": {"enum": ["sealed", "unsealed", "missing", "conflict"]},
+        "seal_digest": {"$ref": "#/$defs/digest"},
+        "declared_branches": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/segmentId"}},
+        "branch_ids": {"type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^br-[0-9a-f]{32}$"}},
+        "consumes_branch_ids": {"type": "array", "maxItems": 64, "items": {"type": "string", "pattern": "^br-[0-9a-f]{32}$"}},
+        "resumable": {"type": "boolean"}
+      }
+    },
     "scopeId": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "pseudonym": {
       "description": "A provider-derived id (response, previous-response or tool-call id) as the report carries it. Keyed (spec 049 §2.9 rule 4, v2 type 'provider'): 'p-' + the first 32 hex of HMAC-SHA256(k_provider, value) when the verifier has FABRIC_WIRE_ID_KEY. Legacy unkeyed: 'p-' + the first 16 hex of sha256(value), still readable; the length tells them apart. Equal ids map to equal pseudonyms under one key.",
@@ -131,7 +179,10 @@
         "sequence_gap", "loss", "tail_unverified", "missing_object", "digest_mismatch",
         "truncated", "unparsed_exchange", "prefix_break", "unmatched_tool_call",
         "unresolved_previous_response",
-        "source_unauthenticated"
+        "source_unauthenticated",
+        "segment_missing", "segment_conflict", "post_terminal_activity", "run_unterminated",
+        "run_open", "seal_mismatch", "unsealed_segment", "unsealed_epoch", "manifest_gap",
+        "clock_uncertain"
       ]
     },
     "check": {"enum": ["passed", "failed", "skipped", "not_applicable"]},
@@ -254,6 +305,7 @@
         "tool_call_id": {"$ref": "#/$defs/pseudonym"},
         "previous_response_id": {"$ref": "#/$defs/pseudonym"},
         "object_role": {"enum": ["request", "response"]},
+        "segment_id": {"$ref": "#/$defs/segmentId"},
         "reason": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$"}
       },
       "dependentRequired": {
@@ -333,7 +385,32 @@
             }
           }
         },
-        "checks": {"$ref": "#/$defs/checks"}
+        "checks": {"$ref": "#/$defs/checks"},
+        "run_state": {
+          "description": "Spec 050 §3.12 (049 §2.10 G1-G10): absent for pre-P1 captures. The exit code is 0 only when every run is complete and its run_state is absent or terminated; the run_open gap (effect info) does not count in the verdict (spec 050 §9 delta 5).",
+          "enum": ["terminated", "open", "unterminated", "conflicted", "not_resumable_unclosed", "deadline_uncertain"]
+        },
+        "segments": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/segment"}},
+        "run_aliases": {
+          "description": "Run ids merged into this run: caller_join fan-in (union-find over segment ids) and legacy predecessor union (spec 050 §3.12).",
+          "type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/opaqueId"}
+        },
+        "id_basis_conflicts": {
+          "description": "Segments whose run_start joined tokens of different runs without a caller run id (id_basis token_conflict), with the run ids its tokens named; each is also a segment_conflict gap.",
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["segment_id", "run_ids"],
+            "properties": {
+              "segment_id": {"$ref": "#/$defs/segmentId"},
+              "run_ids": {"type": "array", "minItems": 2, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/opaqueId"}}
+            }
+          }
+        },
+        "deadline_at": {"type": "string", "format": "date-time"},
+        "evaluated_at": {"type": "string", "format": "date-time"}
       }
     }
   }

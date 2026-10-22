@@ -1,0 +1,233 @@
+{
+  "schema_version": "fabric.seal-parity-vectors/v1",
+  "rule": "Spec 050 §3.14 (T3): each span as the Python emitter writes it passes a Node (capture_labels and identity_mode pseudonymous, ingress bound to the source) with its name and every attribute intact; the Node adds only the receiver-owned fabric.source.authenticated stamp. The record digest the agent sealed equals the digest recomputed from the export (receiver-owned keys excluded), so the seal verifies from a Node export byte for byte. A loss contributes 'loss:<reason>' entries for its exact range to its segment's seal only.",
+  "node": {
+    "capture_labels": "pseudonymous",
+    "identity_mode": "pseudonymous",
+    "bound_source": "s-b94f348e8d6890782b2af72c847dc77b"
+  },
+  "cases": [
+    {
+      "name": "records span with bodies and an evidence object",
+      "class": "record",
+      "emitted": {
+        "name": "fabric.tool_call",
+        "start_ns": 1791331202050001000,
+        "end_ns": 1791331202053001000,
+        "status": "ok",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 3,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent",
+          "fabric.content.object_ids": [
+            "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "6185ee41-5e88-45a0-a895-f95e494f8584",
+            "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+          ]
+        }
+      },
+      "content": [
+        "sha256:7a9b245776ca29998c014efe846225e81be1fd0375b1ed7f74442977339b3571",
+        null,
+        "sha256:a2770a6599438f05a0ddb9f53450ab7bfaec9c52a29c63fa0573bcf195145b98"
+      ],
+      "expected_export": {
+        "name": "fabric.tool_call",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "reported",
+          "fabric.capture.point": "sdk.records@0.9.0",
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 1791331200000000000,
+          "fabric.source.sequence": 3,
+          "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+          "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "tool_call",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.actor.type": "agent",
+          "fabric.content.object_ids": [
+            "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+            "6185ee41-5e88-45a0-a895-f95e494f8584",
+            "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+          ],
+          "fabric.source.authenticated": true
+        }
+      },
+      "digest": "sha256:16184799b02a66000b5b330f5558f8d825e48751fd79ae95753576b01a4ae5a4"
+    },
+    {
+      "name": "wire exchange span with the P1 enrichment, content disabled",
+      "class": "exchange",
+      "emitted": {
+        "name": "fabric.model_call",
+        "start_ns": 1791331202051000000,
+        "end_ns": 1791331202053000000,
+        "status": "unset",
+        "attributes": {
+          "fabric.wire.exchange_id": "ac022a32-246a-4de3-a54f-045781f45c23",
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.source.sequence": 4,
+          "fabric.event_id": "5c647b2a-9499-4138-af4b-9c085aadb4c9",
+          "fabric.capture.input": "wire",
+          "fabric.capture.point": "wire.py.httpx@0.9.0",
+          "fabric.capture.source": "observed",
+          "fabric.step.kind": "model_call",
+          "fabric.actor.type": "agent",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.wire.endpoint_id": "openai.default",
+          "fabric.wire.api": "openai.chat_completions",
+          "fabric.wire.response_state": "complete",
+          "fabric.wire.truncated": false,
+          "fabric.wire.store_status": "disabled",
+          "fabric.wire.store_reason": "no_store",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "openai",
+          "http.request.method": "POST",
+          "http.response.status_code": 200
+        }
+      },
+      "content": [],
+      "expected_export": {
+        "name": "fabric.model_call",
+        "attributes": {
+          "fabric.wire.exchange_id": "ac022a32-246a-4de3-a54f-045781f45c23",
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.source.sequence": 4,
+          "fabric.event_id": "5c647b2a-9499-4138-af4b-9c085aadb4c9",
+          "fabric.capture.input": "wire",
+          "fabric.capture.point": "wire.py.httpx@0.9.0",
+          "fabric.capture.source": "observed",
+          "fabric.step.kind": "model_call",
+          "fabric.actor.type": "agent",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.wire.endpoint_id": "openai.default",
+          "fabric.wire.api": "openai.chat_completions",
+          "fabric.wire.response_state": "complete",
+          "fabric.wire.truncated": false,
+          "fabric.wire.store_status": "disabled",
+          "fabric.wire.store_reason": "no_store",
+          "gen_ai.operation.name": "chat",
+          "gen_ai.provider.name": "openai",
+          "http.request.method": "POST",
+          "http.response.status_code": 200,
+          "fabric.source.authenticated": true
+        }
+      },
+      "digest": "sha256:92dcf8b24878c23554c0ddccbd3633fb2e847cfe0baabdbc148bcb5c229d2307"
+    },
+    {
+      "name": "segment-attributed loss",
+      "class": "loss",
+      "emitted": {
+        "name": "fabric.capture_loss",
+        "start_ns": 1791331202051000000,
+        "end_ns": 1791331202051000000,
+        "status": "unset",
+        "attributes": {
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.loss.reason": "queue_full",
+          "fabric.loss.count": 2,
+          "fabric.loss.first_sequence": 6,
+          "fabric.loss.last_sequence": 7,
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.event_id": "4f1351c6-e9fe-4196-a723-259548feadb8"
+        }
+      },
+      "expected_export": {
+        "name": "fabric.capture_loss",
+        "attributes": {
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.loss.reason": "queue_full",
+          "fabric.loss.count": 2,
+          "fabric.loss.first_sequence": 6,
+          "fabric.loss.last_sequence": 7,
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.event_id": "4f1351c6-e9fe-4196-a723-259548feadb8",
+          "fabric.source.authenticated": true
+        }
+      },
+      "seal_entries": [
+        [
+          6,
+          "loss:queue_full"
+        ],
+        [
+          7,
+          "loss:queue_full"
+        ]
+      ]
+    },
+    {
+      "name": "terminal segment seal with its persisted event id",
+      "class": "segment_seal",
+      "emitted": {
+        "name": "fabric.capture_heartbeat",
+        "start_ns": 1791331202051000000,
+        "end_ns": 1791331202051000000,
+        "status": "unset",
+        "attributes": {
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.heartbeat.kind": "segment_seal",
+          "fabric.heartbeat.last_sequence": 9,
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.segment.last_sequence": 9,
+          "fabric.segment.manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+          "fabric.segment.seal_digest": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+          "fabric.run.terminal": true,
+          "fabric.capture.manifest_seq": 0,
+          "fabric.event_id": "cf8f710b-341a-41d7-a556-b2ea1452ad50"
+        }
+      },
+      "expected_export": {
+        "name": "fabric.capture_heartbeat",
+        "attributes": {
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.heartbeat.kind": "segment_seal",
+          "fabric.heartbeat.last_sequence": 9,
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.segment.last_sequence": 9,
+          "fabric.segment.manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+          "fabric.segment.seal_digest": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+          "fabric.run.terminal": true,
+          "fabric.capture.manifest_seq": 0,
+          "fabric.event_id": "cf8f710b-341a-41d7-a556-b2ea1452ad50",
+          "fabric.source.authenticated": true
+        }
+      }
+    }
+  ]
+}

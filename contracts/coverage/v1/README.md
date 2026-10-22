@@ -22,6 +22,7 @@ spec differs from its rendering; `--write` regenerates the blocks.
 | `registry/telemetry-keys-v1.json` | `fabric.telemetry-key-registry/v1` — every new telemetry key and every changed validator of an existing key |
 | `schema/step-projection-v1.schema.json` | `fabric.step-projection/v1` — per-step four-layer field wrappers and verdicts |
 | `schema/capture-manifest-v1.schema.json` | `fabric.capture-manifest/v1` — JSON form of the per-source-epoch manifest record |
+| `schema/record-evidence-v1.schema.json` | `fabric.record-evidence/v1` — the structured-evidence carrier (spec 050 §3.4a) |
 
 Fixtures and vectors (spec 049 P0, section 8.2; each pinned with its
 expectation, and each invalid fixture with the error code it must raise):
@@ -35,6 +36,30 @@ expectation, and each invalid fixture with the error code it must raise):
 | `fixtures/vectors/resume-token-v1.json` | `fr2/` resume tokens, branch tokens, predecessor entries, environment and percent-encoded `baggage` joins |
 | `fixtures/vectors/run-marker-v1.json` | `run_start`, `segment_seal` and `run_end` attribute sets fabricguard admits intact, and values it strips |
 | `fixtures/vectors/pseudonym-v2.json` | function v2 for all 18 prefixes and their type strings (§2.9), `kid-` key ids, domain separation between types, from v1 and between keys, the legacy `p-` + 16 hex form; capture/v1's v1 vectors are re-verified unchanged |
+
+Spec 050 (P1) adds, in version 1.1.0:
+
+| Path | Pins |
+|---|---|
+| `schema/record-evidence-v1.schema.json`, `evidence/*.schema.json` | the structured-evidence carrier `fabric.record-evidence/v1` (one per records-input record, role `record.evidence`) and each registered evidence type's closed item schema (`field-registry-v1.json` `evidence_types`; P1 registers only `fabric.test.items/v1`) |
+| `valid/evidence-*.json`, `invalid/evidence-*.json` | carrier documents: an unknown type, an extra key, free text over the bound, too deep, too many items, a CONTENT-class value; a clear-mode id valid only under a clear-mode manifest |
+| `fixtures/vectors/seal-digest-v1.json` | record digests (exchange, record with bodies, descriptor-only body, evidence object, receiver-owned key exclusion, int64 typing) and segment seal digests with segment-attributed losses |
+| `fixtures/vectors/span-category-v1.json` | every branch of fabricguard's span-name category, which a record's span name must equal |
+| `fixtures/vectors/records-span-v1.json` | the records-class key table (registry `placement` and `capture_check`) and rule A: admitted and dropped attributes |
+| `fixtures/vectors/seal-parity-v1.json` | spans as the emitter writes them, the Node export and the digest it must reproduce (T3) |
+| `fixtures/vectors/resume-token-v2.json` | `fr3/` tokens with the run correlation id, the `fr2/` legacy parse, token issue, carriers, run-identity rules 1–5 and `end_run` |
+| `fixtures/vectors/record-evidence-v1.json` | the Node envelope check, per-type item errors, projected fields, and a record's evidence object in its digest and seal |
+| `fixtures/projection/*.json` | model-call field extraction per dialect (chat, responses, Anthropic messages, embeddings; document and stream) and the 40 MiB / 70 MiB size outcomes |
+| `valid/projection-records-explicit-d2.json`, `valid/projection-many-records.json` | D2 `deferred_to_explicit` fields; an attempt with 300 records (64 `event_ids`, `collection: partial`) |
+
+The vectors are produced and re-checked by the reference implementations in
+`scripts/contracts/p1_reference.py` and `scripts/contracts/model_fields_reference.py`.
+Telemetry-key rows may carry `placement` (the capture record classes a key may
+appear on: `exchange`, `record`, `loss`, a heartbeat kind or `manifest`) and,
+for a reused key, `capture_check` (its closed check on those classes). The
+records class admits exactly the keys placed on `record`; fabricguard's
+`recordKeyValidators` and the SDK's `fabric/_records_keys_generated.py` are
+generated from those rows.
 
 Each telemetry-key row carries `check`, the machine-readable form of its
 validator that fabricguard applies key by key (the Go test reads this file).

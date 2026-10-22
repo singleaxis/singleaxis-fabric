@@ -1,0 +1,64 @@
+{
+  "schema_version": "fabric.model-call-golden/v1",
+  "rule": "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the projection field keys (or, for list-valued step facts, tool_calls, provider_tools and extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' ('response:final' for the terminal document a stream carries). null means absent; 'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are the parsed values; the 048 §7 exposure rule applies on top (every name here is allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and locators equal these.",
+  "name": "embeddings",
+  "api": "openai.embeddings",
+  "request": {
+    "model": "text-embedding-3-small",
+    "input": [
+      "a",
+      "b"
+    ],
+    "dimensions": 256
+  },
+  "response": {
+    "object": "list",
+    "model": "text-embedding-3-small",
+    "data": [
+      {
+        "index": 0,
+        "embedding": [
+          0,
+          1
+        ]
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 2,
+      "total_tokens": 2
+    }
+  },
+  "key": "fabric-test-id-key-not-a-secret",
+  "expected": {
+    "model.requested": "text-embedding-3-small",
+    "model.served": "text-embedding-3-small",
+    "model.parameters": [
+      "dimensions"
+    ],
+    "instructions": [],
+    "instructions.digest": null,
+    "tools_offered": [],
+    "tools_offered.count": 0,
+    "tools_offered.digest": null,
+    "context_dependencies": [],
+    "input.messages": [],
+    "output.messages": [],
+    "refusal": null,
+    "finish_reasons": [],
+    "reasoning.format": "not_applicable",
+    "reasoning.text": "not_applicable",
+    "reasoning.summary": null,
+    "reasoning.object": null,
+    "tool_calls": [],
+    "provider_tools": [],
+    "asset.reference": [],
+    "embedding.input": "request:/input",
+    "embedding.dimensions": 256,
+    "usage": {
+      "input_tokens": 2
+    },
+    "usage.basis": "provider_reported",
+    "error.code": null,
+    "extension_items": []
+  }
+}

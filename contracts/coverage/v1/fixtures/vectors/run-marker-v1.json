@@ -20,7 +20,7 @@
         "fabric.run.resumable": true,
         "fabric.run.open_deadline_s": 259200,
         "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+        "fabric.capture.manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
       }
     },
     {
@@ -36,7 +36,7 @@
         "fabric.run.scope_id": "19fdf6ef-56a0-4947-aab6-b198cf754e10",
         "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
         "fabric.segment.last_sequence": 41,
-        "fabric.segment.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+        "fabric.segment.manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
         "fabric.segment.seal_digest": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
         "fabric.segment.branch_ids": [
           "br-064e57314e3f26e664ffcbc1526ac062",
@@ -68,7 +68,7 @@
           "seg-9b5d77c2bd0ee9da3edce8d75bd99f45"
         ],
         "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+        "fabric.capture.manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
       }
     },
     {
@@ -84,7 +84,7 @@
         "fabric.run.scope_id": "d3195887-04f7-4628-a1d1-c00adf9b7e3b",
         "fabric.run.segment_id": "seg-a8639869696e1abb8d4af8e7cac6f0e0",
         "fabric.segment.last_sequence": 9,
-        "fabric.segment.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+        "fabric.segment.manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
         "fabric.segment.seal_digest": "sha256:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
         "fabric.run.terminal": true
       }
@@ -103,7 +103,7 @@
         "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
         "fabric.run.scope_status": "ok",
         "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+        "fabric.capture.manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
       }
     },
     {
@@ -128,7 +128,7 @@
           "seg-9b5d77c2bd0ee9da3edce8d75bd99f45"
         ],
         "fabric.capture.manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-        "fabric.capture.manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+        "fabric.capture.manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
       }
     }
   ],

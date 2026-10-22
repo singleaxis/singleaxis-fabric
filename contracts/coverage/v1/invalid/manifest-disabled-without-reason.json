@@ -24,7 +24,7 @@
     "encrypted_store_required": true
   },
   "content_capture": "disabled",
-  "role_table_version": "fabric.content-role-table/v1@3",
+  "role_table_version": "fabric.content-role-table/v1@4",
   "limits": {
     "max_body_bytes": 33554432,
     "max_retain_bytes": 67108864,
@@ -75,6 +75,7 @@
         "X44",
         "X45",
         "X47",
+        "X48",
         "C16",
         "S01",
         "S03",
@@ -293,6 +294,7 @@
         "X43",
         "X44",
         "X46",
+        "X49",
         "S34"
       ]
     },

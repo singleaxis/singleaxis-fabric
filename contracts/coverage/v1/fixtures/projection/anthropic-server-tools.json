@@ -1,0 +1,151 @@
+{
+  "schema_version": "fabric.model-call-golden/v1",
+  "rule": "Spec 050 §3.13: the model-call fields fabric.reconstruct parses from one exchange's stored bytes, recomputed by scripts/contracts/model_fields_reference.py. Keys are the projection field keys (or, for list-valued step facts, tool_calls, provider_tools and extension_items); locators are 'request:<JSON pointer>' or 'response:<JSON pointer>' ('response:final' for the terminal document a stream carries). null means absent; 'not_applicable', 'absent', 'captured', 'redacted(<reason>)' and 'not_captured(<reason>)' name the wrapper status. Provider ids are keyed p- pseudonyms under key. Model names are the parsed values; the 048 §7 exposure rule applies on top (every name here is allowlisted). WP-33's _fields_model must produce wrappers whose statuses, values and locators equal these.",
+  "name": "anthropic-server-tools",
+  "api": "anthropic.messages",
+  "request": {
+    "model": "claude-sonnet-4-5",
+    "max_tokens": 1024,
+    "system": "You book travel.",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "LIS?"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "url",
+              "url": "https://images.example.com/p/2.png"
+            }
+          }
+        ]
+      }
+    ],
+    "tools": [
+      {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": 2
+      },
+      {
+        "name": "book_flight",
+        "input_schema": {
+          "type": "object"
+        }
+      }
+    ]
+  },
+  "response": {
+    "id": "msg_01C",
+    "type": "message",
+    "role": "assistant",
+    "model": "claude-sonnet-4-5-20250929",
+    "stop_reason": "tool_use",
+    "content": [
+      {
+        "type": "server_tool_use",
+        "id": "srvtoolu_1",
+        "name": "web_search",
+        "input": {
+          "query": "LIS fares"
+        }
+      },
+      {
+        "type": "web_search_tool_result",
+        "tool_use_id": "srvtoolu_1",
+        "content": []
+      },
+      {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "book_flight",
+        "input": {}
+      }
+    ],
+    "usage": {
+      "input_tokens": 80,
+      "output_tokens": 30,
+      "server_tool_use": {
+        "web_search_requests": 1
+      }
+    }
+  },
+  "key": "fabric-test-id-key-not-a-secret",
+  "expected": {
+    "model.requested": "claude-sonnet-4-5",
+    "model.served": "claude-sonnet-4-5-20250929",
+    "model.parameters": [
+      "max_tokens"
+    ],
+    "instructions": [
+      "request:/system"
+    ],
+    "instructions.digest": "sha256:0ffab7e474da0fb10e8769929fa681421c1b40cd7a27c8a54ba81b570e01e7b9",
+    "tools_offered": [
+      {
+        "name": "web_search",
+        "type": "provider_hosted"
+      },
+      {
+        "name": "book_flight",
+        "type": "function"
+      }
+    ],
+    "tools_offered.count": 2,
+    "tools_offered.digest": "sha256:8736917bd56d5bffbf1a61bcd40e3a4ec1549682c7e6b2f028d02bd594e1d559",
+    "context_dependencies": [],
+    "input.messages": [
+      {
+        "index": 0,
+        "role": "user",
+        "pointer": "request:/messages/0"
+      }
+    ],
+    "output.messages": [
+      {
+        "index": 0,
+        "role": "assistant",
+        "pointer": "response:/content"
+      }
+    ],
+    "refusal": null,
+    "finish_reasons": [
+      "tool_use"
+    ],
+    "reasoning.format": "none",
+    "reasoning.text": "not_applicable",
+    "reasoning.summary": null,
+    "reasoning.object": null,
+    "tool_calls": [
+      {
+        "id": "p-f0def192c8b91bacf1e502bff9880fb2",
+        "name": "book_flight",
+        "type": "function",
+        "execution_side": "agent"
+      }
+    ],
+    "provider_tools": [
+      {
+        "kind": "web_search",
+        "status": "reported_completed",
+        "pointer": "response:/content/0"
+      }
+    ],
+    "asset.reference": [
+      "request:/messages/0/content/1/source/url"
+    ],
+    "embedding.input": null,
+    "embedding.dimensions": null,
+    "usage": {
+      "input_tokens": 80,
+      "output_tokens": 30
+    },
+    "usage.basis": "provider_reported",
+    "error.code": null,
+    "extension_items": []
+  }
+}
