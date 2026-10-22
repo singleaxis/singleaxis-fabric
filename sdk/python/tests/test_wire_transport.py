@@ -55,6 +55,10 @@ EXCHANGE_KEYS = {
     "http.request.method", "http.response.status_code", "error.type", "gen_ai.response.model",
     "gen_ai.response.finish_reasons", "gen_ai.usage.input_tokens",
     "gen_ai.usage.output_tokens",
+    # spec 050 §3.9 (WP-14): the P1 enrichment
+    "fabric.event_id", "fabric.capture.input", "fabric.capture.point", "fabric.capture.source",
+    "fabric.step.kind", "fabric.actor.type", "fabric.step.lifecycle_state", "fabric.step.status",
+    "fabric.wire.first_chunk_offset_ns", "fabric.wire.endpoint_id",
 }  # fmt: skip
 
 
@@ -506,7 +510,7 @@ def test_injected_tee_crash_leaves_http_result_unchanged(
         raise RuntimeError("injected")
 
     if hook == "finish_build":
-        monkeypatch.setattr("fabric.wire._stream.CaptureJob", boom)
+        monkeypatch.setattr("fabric.wire._stream.WireJob", boom)
     elif hook == "reaper":  # inside attach(), after the response head was seen
         monkeypatch.setattr("fabric.wire._stream._ensure_reaper", boom)
     elif hook == "submit":

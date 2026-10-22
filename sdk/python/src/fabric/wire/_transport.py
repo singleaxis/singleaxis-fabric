@@ -20,8 +20,10 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from .._capture_scope import current_explicit_model_scope
+from .._capture_types import Allocation, new_event_id
 from .._loss import LossEmitter, LossReason, PrivateFallback
 from .._sequence import SourceAllocator, current_run_scope
+from ._attrs import WireEnrichment
 from ._forks import ForkLedger
 from ._match import EndpointIndex
 from ._model import CaptureJob
@@ -128,6 +130,13 @@ class WireTee:
         self._active: set[Exchange] = set()
         self.forks = ForkLedger()  # what forked children allocate survives their death
         loss.add_beat_source(self._child_beats)
+        # 050 §3.9: the install's P1 enrichment (points, endpoint ids, X05, C40 opt-in),
+        # resolved once here; without it exchange spans carry only the job-derived keys.
+        self.enrichment: WireEnrichment | None = None
+        try:
+            self.enrichment = WireEnrichment.build(config)
+        except Exception as exc:
+            _LOG.warning("fabric.wire: wire span enrichment unavailable (%s)", type(exc).__name__)
         self.pipeline = pipeline or CapturePipeline(
             store=config.store, tracer_provider=config.tracer_provider, loss=loss,
             queue_max_items=config.queue_max_items, on_job_done=self._release, sender=sender,
@@ -157,12 +166,16 @@ class WireTee:
             if found is None:
                 return False, None
             if (deferral := current_explicit_model_scope()) is None:
-                epoch, sequence, scope = self._allocate()
-            else:  # provisional: nothing allocated until it is adopted
-                epoch, sequence, scope = -1, -1, current_run_scope()
+                # 050 §3.9, R2: the record's id, minted once (before allocating, so nothing
+                # after the allocation can fail) and persisted with the record
+                event_id: str | None = new_event_id()
+                allocation = self._allocate()
+            else:  # provisional: nothing allocated (and no id) until it is adopted
+                event_id, allocation = None, Allocation(-1, -1, current_run_scope())
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
             return False, None
+        epoch, sequence, scope, segment_id, _ = allocation
         exchange: Exchange | None = None
         try:
             if deferral is None:
@@ -171,6 +184,7 @@ class WireTee:
                     self.loss.note_activity(self.allocator)
             kind = Exchange if factory is None else factory  # resolved now (tests patch it)
             exchange = kind(self, found[0], found[1], epoch, sequence, scope, deferral=deferral)
+            exchange.segment_id, exchange.event_id = segment_id, event_id
             exchange.start(request)
             self._active.add(exchange)
             return True, exchange
@@ -180,7 +194,7 @@ class WireTee:
                     exchange.end_request()  # drop the private copy; the caller's is unchanged
                     exchange.detach(lost=True)
                 elif deferral is None:
-                    self.lose(epoch, sequence, "internal_error")
+                    self.lose(epoch, sequence, "internal_error", segment_id=segment_id)
                 else:
                     self.internal_errors += 1
             return True, None
@@ -191,11 +205,13 @@ class WireTee:
         return [(source, epoch, last, None, None, "periodic")
                 for _, epoch, last in self.forks.children()]  # fmt: skip
 
-    def _allocate(self, scope: Any = None, *, adopted: bool = False) -> tuple[Any, ...]:
-        found = self.allocator.next_sequence_for(scope) if adopted else (
-            self.allocator.next_sequence())  # fmt: skip
-        self.forks.note(found[0], found[1])
-        return found
+    def _allocate(self, scope: Any = None, *, adopted: bool = False) -> Allocation:
+        """One position on the shared allocator (050 §3.3), with the open segment of its
+        run. A forked child's fork-ledger slot is written by the allocator itself, under its
+        lock, on every allocation."""
+        if adopted:
+            return self.allocator.allocate_for(scope)
+        return self.allocator.allocate()
 
     def adopt(self, exchange: Exchange) -> bool:
         """A finished provisional exchange: ``False`` (bytes released) when its explicit model
@@ -209,7 +225,9 @@ class WireTee:
             exchange.release()
             return False
         try:
-            exchange.assign(*self._allocate(exchange.scope, adopted=True))
+            event_id = new_event_id()  # before allocating: nothing after it can fail
+            epoch, sequence, scope, segment_id, _ = self._allocate(exchange.scope, adopted=True)
+            exchange.assign(epoch, sequence, scope, segment_id=segment_id, event_id=event_id)
         except Exception:  # nothing allocated: nothing to account for
             self.internal_errors += 1
             exchange.release()
@@ -276,14 +294,17 @@ class WireTee:
     def lose_uninstrumented(self) -> None:
         """A model call sent through a client this tee does not see (wire/_detect.py): it
         takes a sequence, recorded as an ``uninstrumented_client`` loss."""
-        epoch, sequence, _ = self._allocate()
+        epoch, sequence, _, segment_id, _ = self._allocate()
         with contextlib.suppress(Exception):
             self.loss.note_activity(self.allocator)
-        self.lose(epoch, sequence, "uninstrumented_client")
+        self.lose(epoch, sequence, "uninstrumented_client", segment_id=segment_id)
 
-    def lose(self, epoch: int, sequence: int, reason: LossReason) -> None:
+    def lose(
+        self, epoch: int, sequence: int, reason: LossReason, *, segment_id: str | None = None
+    ) -> None:
+        """Record one allocated position as lost, settled in its segment's seal."""
         self.internal_errors += reason == "internal_error"
-        self.loss.record(self.allocator.source_id, epoch, reason, sequence)
+        self.loss.record(self.allocator.source_id, epoch, reason, sequence, segment_id=segment_id)
 
     def shut(self, exchange: Exchange) -> None:
         """Claim an exchange still open at shutdown (capture closing, or its client
@@ -295,13 +316,14 @@ class WireTee:
                 return
             if deferral is None:
                 epoch, sequence = exchange.epoch, exchange.sequence
+                segment_id = getattr(exchange, "segment_id", None)
             elif deferral.defers:  # its explicit call is still live and owns it
                 self.deferred_to_explicit += 1
                 return
             else:  # it outlived its explicit call: wire's, and now lost
-                epoch, sequence, _ = self._allocate(None, adopted=True)
+                epoch, sequence, _, segment_id, _ = self._allocate(None, adopted=True)
             self.stranded += 1
-            self.lose(epoch, sequence, "shutdown")
+            self.lose(epoch, sequence, "shutdown", segment_id=segment_id)
 
     def close(self, timeout_s: float) -> bool:
         """Stop capturing; exchanges still open become ``shutdown`` losses, then drain."""

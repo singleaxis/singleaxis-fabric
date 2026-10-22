@@ -24,6 +24,7 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 
 from .._sequence import RunScope, encode_opaque_id, resolve_run_id
+from ._attrs import POINT_HTTPX, WireEnrichment, WireJob, read_provider_request_id
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ResponseState, WireApi
 from ._pipeline import capture_parent
 
@@ -109,11 +110,14 @@ class ExchangeOwner(Protocol):
     max_retain_bytes: int
     budget: Budget
     internal_errors: int
+    enrichment: WireEnrichment | None  # 050 §3.9, resolved at install
 
     def adopt(self, exchange: Exchange) -> bool: ...
     def forget(self, exchange: Exchange) -> None: ...
     def submit(self, job: CaptureJob) -> None: ...
-    def lose(self, epoch: int, sequence: int, reason: LossReason) -> None: ...
+    def lose(
+        self, epoch: int, sequence: int, reason: LossReason, *, segment_id: str | None = None
+    ) -> None: ...
     def shut(self, exchange: Exchange) -> None: ...
 
 
@@ -211,10 +215,13 @@ class Exchange:
     allocates its sequence then (:meth:`ExchangeOwner.adopt`)."""
 
     __slots__ = (
-        "__weakref__", "api", "deferral", "done", "epoch", "exchange_id", "finalizer", "handoff",
-        "matcher", "outgoing", "parent_context", "request", "request_sent", "request_tee",
-        "response", "run_id", "scope", "sequence", "started_ns", "status_code", "tee", "trace_id",
+        "__weakref__", "api", "deferral", "done", "epoch", "event_id", "exchange_id",
+        "finalizer", "first_chunk_ns", "handoff", "matcher", "outgoing", "parent_context",
+        "provider_request_id", "request", "request_sent", "request_tee", "response", "run_id",
+        "scope", "segment_id", "sequence", "started_mono", "started_ns", "status_code", "tee",
+        "trace_id",
     )  # fmt: skip
+    point = POINT_HTTPX  # fabric.capture.point id (050 §3.9)
 
     def __init__(
         self, tee: ExchangeOwner, matcher: EndpointMatcher, api: WireApi, epoch: int, sequence: int,
@@ -223,6 +230,13 @@ class Exchange:
         self.tee, self.matcher, self.api, self.scope = tee, matcher, api, scope
         self.epoch, self.sequence, self.done = epoch, sequence, False
         self.deferral = deferral
+        # 050 §3.9: set by the tee at allocation (begin or adopt); a provisional exchange
+        # has neither until it is adopted.
+        self.segment_id: str | None = None
+        self.event_id: str | None = None
+        self.started_mono = 0  # time.monotonic_ns() at start()
+        self.first_chunk_ns: int | None = None  # S30: offset of the first non-empty chunk
+        self.provider_request_id: str | None = None  # C40 header value (opt-in only)
         self.trace_id: int | None = None
         self.finalizer: weakref.finalize[Any, Any] | None = None
         self.status_code: int | None = None
@@ -246,7 +260,7 @@ class Exchange:
         a streamed body, this invocation's own tee wrapping the caller's stream. Overlapping
         sends of one request therefore each read through their own tee, whatever the order
         in which they reach, read or finish their transport calls."""
-        self.started_ns = time.time_ns()
+        self.started_ns, self.started_mono = time.time_ns(), time.monotonic_ns()
         self.parent_context, trace_id = _capture_parent()
         self.trace_id = trace_id
         scope = self.scope  # the innermost open run scope at allocation (spec 048 §6)
@@ -305,8 +319,12 @@ class Exchange:
             side.stop("inflight_budget")
 
     def add(self, chunk: bytes) -> None:
+        """One response chunk, as the client received it. The first non-empty one also
+        takes S30, its offset from the request start: one ``monotonic_ns()`` call, once."""
         try:
             if self.response is not None:
+                if self.first_chunk_ns is None and chunk:
+                    self.first_chunk_ns = time.monotonic_ns() - self.started_mono
                 self._retain(self.response, chunk)
         except Exception:
             self.detach(lost=True)
@@ -322,6 +340,7 @@ class Exchange:
         try:
             self.status_code = response.status_code
             self.response = _Side(response.headers)
+            self.note_request_id(response.headers)
             byte_stream, sync_tee, async_tee = _tee_types(response)
             stream: Any = response.stream
             if isinstance(stream, byte_stream):  # already in memory: may never be iterated
@@ -339,11 +358,25 @@ class Exchange:
         except Exception:
             self.detach(lost=True)
 
-    def assign(self, epoch: int, sequence: int, scope: RunScope | None) -> None:
-        """Give a provisional exchange the sequence the tee allocated when it adopted it;
-        a run scope closed meanwhile no longer applies (spec 048 §6)."""
+    def note_request_id(self, headers: Any) -> None:
+        """C40 at response start: the one named header's value, only when the install opted
+        in with a key; never the header block. A failure reads nothing (never a loss)."""
+        with contextlib.suppress(Exception):
+            enrichment = getattr(self.tee, "enrichment", None)
+            if enrichment is not None and enrichment.reads_provider_request_id:
+                self.provider_request_id = read_provider_request_id(
+                    enrichment, self.matcher.dialect, headers)  # fmt: skip
+
+    def assign(
+        self, epoch: int, sequence: int, scope: RunScope | None, *,
+        segment_id: str | None = None, event_id: str | None = None,
+    ) -> None:  # fmt: skip
+        """Give a provisional exchange the sequence the tee allocated when it adopted it
+        (with its segment and the event id minted then); a run scope closed meanwhile no
+        longer applies (spec 048 §6)."""
         begun_in = self.scope
         self.deferral, self.epoch, self.sequence, self.scope = None, epoch, sequence, scope
+        self.segment_id, self.event_id = segment_id, event_id
         if scope is not begun_in:
             allocator, trace_id = self.tee.allocator, self.trace_id
             self.run_id = scope.run_id if scope else (
@@ -385,7 +418,7 @@ class Exchange:
             if self.deferral is not None and not tee.adopt(self):
                 return  # owned by the explicit record (or not allocatable: counted)
             response = self.response.body() if self.response is not None else None
-            tee.submit(CaptureJob(
+            tee.submit(WireJob(
                 exchange_id=self.exchange_id, api=self.api,
                 provider_name=self.matcher.provider_name, source_id=tee.allocator.source_id,
                 source_epoch=self.epoch, source_sequence=self.sequence, run_id=self.run_id,
@@ -394,6 +427,10 @@ class Exchange:
                 response_state=state, http_status_code=self.status_code,
                 error_type=error_type if state == "error" else None,
                 scope_id=self.scope.scope_id if self.scope else None,
+                segment_id=self.segment_id, event_id=self.event_id, capture_point=self.point,
+                endpoint_id=self.matcher.endpoint_id, first_chunk_offset_ns=self.first_chunk_ns,
+                provider_request_id=self.provider_request_id,
+                enrichment=getattr(tee, "enrichment", None),
             ))  # fmt: skip
         except Exception:
             self.done = False
@@ -407,7 +444,8 @@ class Exchange:
         if lost:
             with contextlib.suppress(Exception):
                 if self.deferral is None:
-                    self.tee.lose(self.epoch, self.sequence, "internal_error")
+                    self.tee.lose(self.epoch, self.sequence, "internal_error",
+                                  segment_id=self.segment_id)  # fmt: skip
                 else:  # provisional: no sequence was allocated, nothing to account for
                     self.tee.internal_errors += 1
         with contextlib.suppress(Exception):

@@ -478,7 +478,9 @@ def test_reinstall_starts_a_fresh_epoch(installed: list[Marker], tmp_path: Path)
     straggler_epoch = allocator.epoch
     again = _install(tmp_path)
     assert again.allocator is allocator
-    _, second = _manifests(installed)
+    first, *changes, second = _manifests(installed)
+    # WP-14: unpatching aiohttp at uninstall is a state change of the first epoch (§3.8)
+    assert all(change["source_epoch"] == first["source_epoch"] for change in changes)
     assert second["source_epoch"] == allocator.epoch
     assert second["source_epoch"] not in (first_epoch, straggler_epoch)
     assert (second["manifest_seq"], second["after_source_sequence"]) == (0, -1)

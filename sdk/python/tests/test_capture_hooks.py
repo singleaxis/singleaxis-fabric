@@ -226,22 +226,24 @@ def test_p1_attributes_merge_into_the_exchange_span(monkeypatch: pytest.MonkeyPa
         job, request_sha256=None, response_sha256=None, request_ref=None, response_ref=None,
         store_status="disabled", truncated=False, metadata={},
     )  # fmt: skip
-    assert _attrs.p1_attributes(job) == {}
+    p1 = _attrs.p1_attributes(job)  # WP-14 filled the hook (050 §3.9)
+    assert p1 and p1.items() <= plain.items()
     monkeypatch.setattr(_pipeline, "p1_attributes", lambda job: {"fabric.capture.input": "wire"})
     merged = _pipeline.exchange_attributes(
         job, request_sha256=None, response_sha256=None, request_ref=None, response_ref=None,
         store_status="disabled", truncated=False, metadata={},
     )  # fmt: skip
-    assert merged == {**plain, "fabric.capture.input": "wire"}
+    base = {key: value for key, value in plain.items() if key not in p1}
+    assert merged == {**base, "fabric.capture.input": "wire"}
 
     def broken(job: Any) -> dict[str, Any]:
         raise RuntimeError("enrichment bug")
 
-    monkeypatch.setattr(_pipeline, "p1_attributes", broken)
+    monkeypatch.setattr(_pipeline, "p1_attributes", broken)  # never costs the record
     assert _pipeline.exchange_attributes(
         job, request_sha256=None, response_sha256=None, request_ref=None, response_ref=None,
         store_status="disabled", truncated=False, metadata={},
-    ) == plain  # fmt: skip
+    ) == base  # fmt: skip
 
 
 def test_a_written_exchange_settles_its_segment(monkeypatch: pytest.MonkeyPatch) -> None:
