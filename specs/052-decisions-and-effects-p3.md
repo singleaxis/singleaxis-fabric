@@ -133,7 +133,7 @@ record, the `update` phase, `mode_of` and `v2`.
 | B3 | 051 side-effect lifecycle (`with d.side_effect()`, `SideEffectHandle`, `record_side_effect(state=, started_at=, ended_at=, target=)`) exists | 051 §4.5, WP2-4 |
 | B4 | 051 verifier modules (`_records_classify.py`, `_links.py`, `_records_steps.py`) and the ref join exist; P3 registers its kinds there | 051 §4.13, WP2-9a/9b |
 | B5 | P1 projects D17 (`prefix_break`, tentative) | 049 §8.2 P1 field list; 050 §3.13 |
-| B6 | Run identity follows R1: control resolutions in another service join by the control's clear business id (`ctl-`), never by a propagated run id | 051 §4.2 "Entity refs" |
+| B6 | Run identity follows 050's rule table (R1, 050 §3.6, OD-7): a run's correlation id is the mapped clear run id when the caller gives one, otherwise minted (the clear id in clear mode, an explicit opt-in), and only resume tokens carry it across services. Control resolutions in another service join by the control's clear business id (`ctl-`), never by a propagated clear run id | 050 §3.6; 051 A10, §4.2 "Entity refs" |
 
 Control, selection and context-change records are instant records: one
 `end` emit with `lifecycle=completed`, `result_status=ok` and OTLP status

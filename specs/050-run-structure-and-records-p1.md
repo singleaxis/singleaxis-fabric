@@ -507,6 +507,13 @@ defaults in this table:
   the seal recomputable (§3.7).
 - No content key exists in the table. A CI test asserts that the table and the
   Go table are equal.
+- Placement conditions are table columns, not code. A key row may restrict
+  its `record` placement by capture-point kind (`capture_point_kinds`, added
+  by 053 WP4-01) or by exact capture-point id (`capture_points`, added by 054
+  WP5-01), matched against the id part of `fabric.capture.point` (before
+  `@`). The generator emits both columns to this table and to the Go table;
+  rule A and fabricguard apply them identically, and the table-equality test
+  covers them. P1 ships no conditional row.
 
 **Rule N — names.**
 - The record's span name is `category(name_hint, attributes)`, a Python port of
@@ -600,10 +607,18 @@ only by locator.
   ```
 
 - **Allowed value classes:** META (bounded ints, enums, times), LABEL
-  (pattern-checked), DIGEST, and ID only in mapped form (`v2`, `run_pseudonym`)
-  or as Fabric-generated ids. Strings are at most 256 characters and must match
+  (pattern-checked), DIGEST, and ID in mapped form (`v2`, `run_pseudonym`) or
+  as Fabric-generated ids. Strings are at most 256 characters and must match
   the type schema's pattern. Every type schema is closed
   (`additionalProperties: false`), so free text cannot enter.
+- **Clear-mode ids (R8).** An ID property may instead take the clear-mode
+  forms (the opaque clear id or the `h-` form a type schema names) only when
+  the record's source manifest declares `identity_mode: clear`, as for the
+  marker ids of §4.1. This is the single clear-mode rule (R8): `clear` is an
+  explicit opt-in, recorded in the manifest, never a default.
+  `fabric.reconstruct` refuses a clear form under any other manifest, and a
+  Node configured for pseudonymous identity refuses clear-mode sources (049
+  §2.9 rule 7). 053 §3.2 and 054 §7.1 use this alternative.
 - **Building:** `EvidenceDoc.build(evidence_type, items, refs=(), continuation=None)`
   checks the item count, depth and string lengths **before** serialising
   (R9). It is serialised on the capture worker. Over a bound, the record
@@ -636,7 +651,11 @@ This exemption from precedence rule 1 is §9, delta 15.
   - `evidence_type` is in the generated registered-type list (`E/evidence_types_generated.go`);
   - the item count, depth and string-length bounds.
 - Per-type schemas are validated by `fabric.reconstruct`. An invalid item makes
-  the fields it carries `not_captured(parse_failed)`.
+  the fields it carries `not_captured(parse_failed)`. That validation, and
+  WP-00's reference envelope check, apply item 2's id rule, including the
+  clear-mode alternative gated on the manifest's `identity_mode`; WP-00 adds
+  a valid clear-mode fixture and an invalid clear id under a pseudonymous
+  manifest.
 
 **5. Seal representation.** The evidence object is one of the record's
 bodies. Its `object_id` is in `fabric.content.object_ids` and its
@@ -861,7 +880,14 @@ applies. The basis is emitted as `fabric.run.id_basis` on every `run_start`
   - Two runs whose ids differ only by key (rotation with rule-4 ids) are joined
     as aliases only through a predecessor entry, as in 049 rev 6.4.
 - In clear mode (R8), rules 4 and 2 emit the clear id as given. Rule 5 still
-  mints.
+  mints. A caller-rooted run's correlation id is therefore its clear id, and
+  its tokens carry that clear id across service and host boundaries (W3C
+  `baggage` `fabric.resume` or the message attribute). Clear mode is an
+  explicit opt-in (`identity_mode="clear"`, R8), never a default; the OD-7
+  docs state this next to K7.
+- This rule (correlation id = the mapped clear id when the caller gives one,
+  otherwise minted) is the one 051, 052 and 055 follow (055 TS-OD-8). The
+  resume-token-v2 vectors of WP-00 encode it.
 
 **Argument rules.**
 - `run_id` (clear), `parent_run_id`, `resumed_from` and `links` follow the
@@ -892,8 +918,10 @@ applies. The basis is emitted as `fabric.run.id_basis` on every `run_start`
   fr3/<run correlation id>/<seg-id>/<source_id>/<epoch>/<last_seq>/sha256:<manifest digest>[/br-<32 hex>]
   ```
 
-  - The correlation id is `r-` + 32 hex. In clear mode it is the clear run id
-    as given; it must match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` (no `/`),
+  - The correlation id is `r-` + 32 hex (minted, or the mapped clear id). In
+    clear mode (an explicit opt-in) a caller-rooted run's correlation id is
+    the clear run id as given, so the token in `baggage` carries it; it must
+    match `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` (no `/`),
     else the token is not issued (`api_misuse`).
   - `fr2/` tokens (no correlation) are still parsed for one release. A segment
     opened from them takes its run id by rule 4 or 5 with
@@ -1793,6 +1821,13 @@ Rules for every WP:
   `wire/_spool.py` (WP-11b) and `reconstruct/**` (WP-30–WP-33). Python exit
   gates never depend on a TypeScript WP.
 
+**Pre-requisites (outside this spec's WPs).**
+
+| Id | What | Must be merged to main before |
+|---|---|---|
+| H0 | The v0.8.1 hotfix branch `fix/decision-line-privacy` (rewrites `decision.py`, `integrations/mcp.py`, `_identity.py`, `decision.ts`, `identity.ts`; 051 marks its items "landed in v0.8.1 (hotfix)") | **WP-15** here; 051 WP2-1a; 055 WP-08a |
+| R16 | `test/agent-matrix` and `test/chaos` (§6.3) | WP-43, WP-50 |
+
 ### Wave 0 (foundation: WP-00 and WP-01 in parallel; WP-21 independent)
 
 | WP | Owner area | Depends | Deliverables | Tests | Exit check |
@@ -1828,7 +1863,7 @@ merges. Until then they run against the WP-01 spool stub.
 |---|---|---|---|---|---|
 | **WP-12 Segments and run API** | `_segments.py`, `wire/__init__.py` | 10, 11a, 11b | §3.6: `RunTable`, run identity rules 1–5 and `id_basis`, `fr3/` tokens, segment open and seal triggers, continuation `run_start`, fork hooks, `run()` arguments, `resume_token(s)`, `end_run(run_id=None)`, `set_run_outcome`, environment intake, records-only install documentation | Unit: every seal-trigger row; every run-identity rule with the v2 token vectors. Concurrency: `gather` and `to_thread` share a segment. Fork: child segment and fresh scope ids; parent `declared_branches`. `end_run` refusals. Canaries: clear run id in env and arguments, and never in baggage-shaped outputs. | LR-1 single-host subset (re-entry, fork, branch tokens, lost middle with token-only hops) passes against WP-30 and WP-31 |
 | **WP-14 Wire enrichment** | `wire/_attrs.py`, `wire/_stream.py`, `wire/_aiohttp.py`, `wire/_transport.py` (event id minting, the provider-request-id header read) | 11a (hook) | §3.9, including C35 `endpoint_id` and C40 | Exchange spans carry the keys and pass the fabricguard tests (WP-20 vectors). First-chunk offset is present for streams and absent for empty responses. C40: no header read unless opted in; never the header block; omitted without a key. The 047 §4.10 budgets. | `test_wire_passivity.py` and `test_wire_aiohttp_passivity.py` green |
-| **WP-15 Decision records** | `decision.py`, `_calls.py`, `_records_mirror.py` | 11a | §3.11, all 13 event sites | Every `record_*` gives one sequenced record. A sampled-out host span still gives the record. No content key reaches the record. Host spans have no `fabric.source.*`. No `str()` or `repr()` of application objects. Passivity: `record_*` overhead ≤ 30 µs median. | Suites green |
+| **WP-15 Decision records** | `decision.py`, `_calls.py`, `_records_mirror.py` | 11a; **H0** (hotfix `fix/decision-line-privacy` merged to main) | §3.11, all 13 event sites | Every `record_*` gives one sequenced record. A sampled-out host span still gives the record. No content key reaches the record. Host spans have no `fabric.source.*`. No `str()` or `repr()` of application objects. Passivity: `record_*` overhead ≤ 30 µs median. | Suites green |
 | **WP-16 Explicit producers** | `call_recorder.py`, `adapters/synthetic_evidence.py`, `adapters/byte_boundary.py`, `http_dispatch.py`, `byte_evidence.py` (config-conflict check only) | 11a | §3.10 three-way mode | Records mode: one record per journal event; ids per §3.10; bodies protected; the 16 MiB + 1 outcome as a descriptor-only body; `not_exact_bytes` as a descriptor-only body. Journal mode unchanged. Legacy mode warning. | `test_wire_explicit_coexistence.py` green in records mode |
 | **WP-31 Segment graph and run states** | `reconstruct/_graph.py` | 30 | G1–G10, the run-identity merge rules (`id_basis`), deadline and clocks, `run_aliases`, run states | One test per G rule using the 7 `projection-run-*` fixtures as expected outputs, plus synthetic graphs: cycle, two roots, replayed `br-`, post-terminal, skew, token-conflict fan-in, caller-join fan-in, lost middle. | All G-rule tests green |
 | **WP-32 Projection core** (**sequential after WP-31 and WP-33** within the wave) | `reconstruct/_project.py`, `reconstruct/_evidence.py` | 30, **31**, **33** | §3.13 document, steps, aliases, parents, field wrappers, bounded `event_ids`, evidence decoding, manifest-driven statuses, R1–R6 and RR1–RR7 | C1-3 schema validation of every produced projection. C1-5: one fixture per verdict row. The `projection-*` valid fixtures reproduced from synthetic inputs. `projection-many-records`. | T1 |
@@ -1858,7 +1893,8 @@ merges. Until then they run against the WP-01 spool stub.
 | 33 | 00, 01 | — |
 | 21 | — | Uses the generated evidence-type list from 00 when merged |
 | 12 | 10, 11a, 11b | — |
-| 14, 15, 16 | 11a | — |
+| 14, 16 | 11a | — |
+| 15 | 11a, **H0** | H0: hotfix `fix/decision-line-privacy` merged to main first (pre-requisites above) |
 | 31 | 30 | — |
 | 32 | 30, 31, 33 | **Intra-wave:** starts after WP-31 merges |
 | 50 | every WP of waves 0–2 | — |
@@ -1883,8 +1919,11 @@ merges. Until then they run against the WP-01 spool stub.
 - `wire/__init__.py`: WP-01 → WP-12.
 - `_sequence.py`: WP-01 → WP-10.
 - `reconstruct/_project.py`: WP-32 → WP-40.
-- Contracts: WP-00 → WP-43 (one field) → 051 WP2-0 (serial chain).
-- `decision.py` in P1: WP-15 only. P2's integration owner (051 WP2-1) starts
+- Contracts: WP-00 → WP-43 (one field) → 051 WP2-0 (serial chain). 055
+  WP-01's TS-only rows (055 §8) take the next free slot after WP-00 and
+  never block WP-43 or 051 WP2-0; its shared rows stay last in the chain,
+  after 054 WP5-01.
+- `decision.py` in P1: WP-15 only, after H0 merges. P2's integration owner (051 WP2-1) starts
   after WP-50.
 
 ---
@@ -2006,6 +2045,7 @@ Build agents follow these defaults unless the owner changes them.
 | K5 | Seal accumulator memory on very long segments | Forced seal at 1,000,000 positions (§3.7). |
 | K6 | Records-mode `CallRecorder.snapshot()` reports `pending` where legacy reported final statuses | Documented; parity tests compare after `flush()`. |
 | K7 | Under `FABRIC_WIRE_LABELS=clear`, a resume token carries the operator's clear source label across the boundary (049:1100) | Stated in the OD-7 docs. The pseudonymous default emits `s-`. |
+| K7a | In clear mode (explicit opt-in, R8), a caller-rooted run's tokens carry the application's clear run id across the boundary (rule 4 emits the clear id) | Stated in the OD-7 docs. The pseudonymous default carries the mapped `r-` id. |
 | K8 | A token-only hop without a token, or a lost token, yields a separate run | Stated limit; branch tokens and the open-run deadline still detect the declared cases. |
 
 | # | Decision | Default | Status |
@@ -2016,7 +2056,7 @@ Build agents follow these defaults unless the owner changes them.
 | OD-4 | Decision span step kind | `agent_turn` (a new kind); its required fields are P2's. | RPOC |
 | OD-5 | Decision content on the unified spool | P2, not P1. P1 claims no privacy parity for legacy decision payload hashes. | RPOC |
 | OD-6 | Orphan-registration retention | Until declared and delivered, or `open_run_deadline_s`, whichever is later; at most 4096 files. `status()["registration"]` reports `registered`, `failed`, `registration_full` or `unregistered_*` explicitly. | RPOC |
-| OD-7 | What carries a run across processes (privacy; R1) | **Only Fabric-emitted resume tokens cross service or host boundaries** (`baggage` `fabric.resume`, message attribute `fabric.resume`). Tokens carry the **run correlation id**: the root's run id, minted (`r-` + 32 CSPRNG hex) when the caller gave none, else the mapped clear id. A → B → C keeps one run id even if B is lost entirely, and key rotation does not change it. Fan-in with differing correlation ids is `segment_conflict` unless the caller supplies a clear run id (`caller_join`). Clear run ids are passed only in process and through same-host `FABRIC_RUN_ID`. The earlier token-derived hash design is withdrawn. | RPOC |
+| OD-7 | What carries a run across processes (privacy; R1) | **Only Fabric-emitted resume tokens cross service or host boundaries** (`baggage` `fabric.resume`, message attribute `fabric.resume`). Tokens carry the **run correlation id**: the root's run id, minted (`r-` + 32 CSPRNG hex) when the caller gave none, else the mapped clear id. A → B → C keeps one run id even if B is lost entirely, and key rotation does not change it. Fan-in with differing correlation ids is `segment_conflict` unless the caller supplies a clear run id (`caller_join`). Clear run ids are passed only in process and through same-host `FABRIC_RUN_ID`. In clear mode (an explicit opt-in, R8) a caller-rooted run's correlation id is its clear id, so the token in `baggage` carries the clear id across the boundary; the OD-7 docs say so. 051, 052 and 055 (TS-OD-8) follow this rule. The earlier token-derived hash design is withdrawn. | RPOC |
 | OD-8 | Marker and inferred-step event ids (R2) | Markers: a uuid4 minted once and persisted in the spool and ledger record. Inferred-step attempt ids: see §3.13 (the one reviewed exception). | RPOC |
 | OD-9 | Structured evidence carrier (R7) | §3.4a: one evidence object per record, role `record.evidence` with `default_policy: metadata`, registered closed types. No W-class records; hooks use `records` with `fabric.capture.source=observed`. | RPOC |
 | OD-10 | Identity rule (R8) | Pseudonymous by default and always mapped. `clear` is an explicit opt-in that emits ids as given, recorded in the manifest, in every language. | RPOC |
