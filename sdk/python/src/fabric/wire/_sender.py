@@ -262,26 +262,34 @@ class Sender:
         admission, one fsync'd file, one rename, one directory fsync per batch; each record
         counts as spooled only once its file and the directory were fsync'd). They may use
         the spool's reserve. A batch that does not fit under the bound as one file is
-        written one record per file, so as many as fit are kept. After a batch not wholly
-        written nothing later is tried (it waits in memory for the next pump, after the
-        earlier ones: markers keep their order). Per record: whether it was spooled."""
+        written one record per file, in order, until the first one refused or failed.
+        What is spooled is always a prefix: nothing after an unwritten record is written
+        in this pump (it waits in memory for the next one, after the earlier ones), so a
+        later marker, a ``final`` above all, never overtakes an earlier one. Per record:
+        whether it was spooled."""
         done = [False] * len(docs)
         for start in range(0, len(docs), _BATCH):
             chunk = [(doc, ()) for doc in docs[start : start + _BATCH]]
-            try:
-                results = self.spool.write_batch(chunk, reserve=True, group=len(chunk) > 1)
-                if len(chunk) > 1:  # one file: its outcome is every record's
-                    (result,) = results
-                    results = (self.spool.write_batch(chunk, reserve=True) if result is None
-                               else [result] * len(chunk))  # fmt: skip
-            except Exception:
-                break
-            for offset, result in enumerate(results):
-                if isinstance(result, str):
-                    done[start + offset] = True
-                    self._stats["spooled"] += 1
-            if not all(done[start : start + len(chunk)]):
-                break
+            if len(chunk) > 1:  # one file: its outcome is every record's
+                try:
+                    (result,) = self.spool.write_batch(chunk, reserve=True, group=True)
+                except Exception:
+                    return done
+                if result is not None:  # written, or failed (not merely over the bound)
+                    if not isinstance(result, str):
+                        return done
+                    done[start : start + len(chunk)] = [True] * len(chunk)
+                    self._stats["spooled"] += len(chunk)
+                    continue
+            for offset, record in enumerate(chunk):  # one per file, a prefix only
+                try:
+                    (result,) = self.spool.write_batch([record], reserve=True)
+                except Exception:
+                    return done
+                if not isinstance(result, str):
+                    return done
+                done[start + offset] = True
+                self._stats["spooled"] += 1
         return done
 
     def _hold(self, marker: Marker) -> None:
@@ -353,8 +361,14 @@ class Sender:
 
     def final_durable(self, source_id: str, epoch: int) -> bool:
         """Whether this sender wrote the ``final`` marker of ``(source_id, epoch)`` to the
-        spool (fsync'd) and the spool's directory barrier holds (050 §3.2 rule 3)."""
-        return (source_id, epoch) in self._finals and bool(self.spool.durable)
+        spool (fsync'd) and the spool's directory barrier holds (050 §3.2 rule 3), and no
+        earlier marker of that epoch is still held. :meth:`_write_docs` spools a prefix
+        only, so a held one cannot precede a spooled ``final``; this is a guard, read
+        without the pump lock (a pump stalled in disk I/O never delays a close)."""
+        if (source_id, epoch) not in self._finals or not self.spool.durable:
+            return False
+        held = list(self._held)
+        return not any(m.source_id == source_id and m.epoch == epoch for m in held)
 
     def _marker_span(self, marker: Marker, at: int) -> ReadableSpan:
         """A directly exported marker (a periodic heartbeat); its ids derive from its event

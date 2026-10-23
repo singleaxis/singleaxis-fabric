@@ -451,3 +451,53 @@ def test_held_run_markers_survive_a_crash_through_the_ledger(tmp_path: Path) -> 
         assert all(scope["state"] == "closed" for scope in run["scopes"]), run["scopes"]
         assert all(s["state"] == "sealed" for s in run["segments"]), run["segments"]
         assert run["verdict"] not in COMPLETE  # its record was lost to the full disk
+
+
+def test_the_per_record_fallback_never_lets_a_later_marker_overtake_a_refused_one(
+    tmp_path: Path,
+) -> None:
+    """P1 confirmation review item 3: with room for a small ``final`` but not for the
+    larger ``segment_seal`` queued before it, the one-record-per-file fallback wrote the
+    final and held the seal, so ``final_durable`` was True with an earlier seal of that
+    epoch still held, and the disk order became ``[final, segment_seal]``. Now the
+    fallback stops at the first refused record: nothing after it is written in that pump."""
+    loss = _loss.LossEmitter()
+    loss.attach(lambda: None)
+    spool = Spool(str(tmp_path / "spool"), 1, 4096)
+    spool._reserve_bytes = 2000  # room for a final (~400 bytes), not for the large seal
+    assert spool.establish_barrier()
+    sender = _sender.Sender(spool, _Recording(), loss, content=None, service_name="test")
+    branches = tuple(f"br-{index:032x}" for index in range(64))
+    seal = Marker(
+        "segment_seal", "src-test", 7, 0, run_id="r-" + "a" * 32, segment_id="seg-" + "b" * 32,
+        terminal=False, resumable=True, branch_ids=branches,
+        seal=SealInfo(0, "sha256:" + "c" * 64, "sha256:" + "d" * 64, branches),
+    )  # fmt: skip
+    final = Marker("final", "src-test", 7, 0)
+    try:
+        assert loss.queue_marker(seal) and loss.queue_marker(final)
+        sender.pump()
+        assert _spooled_events(spool) == []  # the final waits behind the refused seal
+        assert [m.event_id for m in sender._held] == [seal.event_id, final.event_id]
+        assert not sender.final_durable("src-test", 7)
+        spool.max_bytes = 1 << 20  # space returns
+        sender.pump()
+        assert _spooled_events(spool) == [seal.event_id, final.event_id]
+        assert sender._held == []
+        assert sender.final_durable("src-test", 7)
+    finally:
+        loss.attach(None)
+        loss._stop.set()
+        spool.release()
+
+
+def test_final_durable_is_false_while_an_earlier_marker_of_its_epoch_is_held(
+    sender: _sender.Sender,
+) -> None:
+    assert sender.spool.establish_barrier()
+    sender._finals.add(("src-burst", 7))
+    sender._held = [_seal_marker(0)]  # an earlier marker of that epoch, not spooled yet
+    assert not sender.final_durable("src-burst", 7)
+    sender._held = [_seal_marker(0, epoch=8)]  # another epoch's does not matter
+    assert sender.final_durable("src-burst", 7)
+    sender._held = []
