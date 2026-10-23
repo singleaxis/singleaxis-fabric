@@ -614,8 +614,8 @@ class CapturePipeline:
                 continue
             if self._store is None:
                 staged.append((obj.descriptor, obj.data))
-            elif obj.stored and not self._store_object(obj):
-                continue  # never named by the record: its digest could not be verified
+            elif not self._store_object(obj):
+                continue  # never named by the record: it could not be verified
             kept.append(obj)
         attrs: dict[str, AttributeValue] = dict(job.attributes)
         if kept:
@@ -886,12 +886,20 @@ class CapturePipeline:
             self._stats["internal_errors"] += 1
 
     def _store_object(self, obj: Obj) -> bool:
-        """Write one protected object to the direct store, with retries."""
+        """Write one protected object to the direct store, with retries. A descriptor-only
+        object (R5) is written as its descriptor alone, as the Node persists one (a store
+        without ``put_descriptor_only`` keeps it unwritten, as before)."""
         store = self._store
         if store is None:
             return False
+        descriptor_only = getattr(store, "put_descriptor_only", None)
+        if not obj.stored and descriptor_only is None:
+            return True
         for delay in (*self._backoffs, None):
             try:
+                if descriptor_only is not None and not obj.stored:
+                    descriptor_only(obj.descriptor)
+                    return True
                 ref = store.evidence_ref_for(obj.object_id)
                 descriptor = {**obj.descriptor, "encoding": "binary", "ref": ref}
                 result = store.put_bytes_object(descriptor, obj.data)

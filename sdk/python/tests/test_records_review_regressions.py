@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -532,3 +533,52 @@ def test_strict_mode_raises_a_schema_refusal_at_build(monkeypatch: pytest.Monkey
     monkeypatch.setenv(ct.STRICT_ENV, "1")
     with pytest.raises(RecordsMisuseError):
         EvidenceDoc.build(TYPE, [{"name": "x", "count": 1, "body": SECRET}])
+
+
+# --- direct store: a descriptor-only record body is persisted as its descriptor ------------------
+
+
+@pytest.fixture
+def small_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("FABRIC_RECORDS_MAX_OBJECT_BYTES", "16")  # read at install
+
+
+def test_an_over_cap_body_in_direct_mode_is_a_recorded_not_captured_body(
+    small_cap: None, actual: Any
+) -> None:
+    """A body over the object cap is a descriptor-only object (R5): named by the record and
+    written to the store as its descriptor, as the Node persists one, so the verifier finds
+    it ``not_stored`` and the run complete; the body projects ``not_captured(body_cap)``."""
+    from fabric.reconstruct import reconstruct  # noqa: PLC0415
+    from fabric.reconstruct._graph import RunGraph  # noqa: PLC0415
+    from fabric.reconstruct._project import (  # noqa: PLC0415
+        ProjectionCollector,
+        build_projection,
+    )
+
+    handle, store, spans, _ = actual
+    big = b'{"answer":"' + b"x" * 64 + b'"}'
+    with wire.run("over-cap"):
+        body = RecordBody("tool.call.result", big, "application/json", "caller")
+        assert _emit(handle.records.begin("tool_call", "sdk.records"), bodies=[body])
+    assert handle.close(5)
+    rows = [json.loads(line) for line in spans.read_text().splitlines()]
+    [row] = [r for r in rows if r["attributes"].get("fabric.capture.input") == "records"]
+    [object_id] = row["attributes"]["fabric.content.object_ids"]
+    descriptor = store.read_descriptor(store.evidence_ref_for(object_id))
+    assert (descriptor["status"], descriptor["status_reason"]) == (
+        "not_captured", "payload_too_large")  # fmt: skip
+    assert "stored_sha256" not in descriptor
+    assert not store.exists(store.evidence_ref_for(object_id))  # no bytes
+    collector, graphs = ProjectionCollector(), list[RunGraph]()
+    report = reconstruct([spans], store=store, graphs_out=graphs, projection_sink=collector)
+    [run] = report["runs"]
+    assert run["verdict"] == "complete_for_observed_scopes"
+    assert run["gaps"] == []
+    projection = build_projection(report, graphs=graphs, reconstruction_sha256="sha256:" + "0" * 64,
+                                  evaluated_at=datetime.now(UTC), collector=collector)  # fmt: skip
+    assert projection is not None
+    [tool] = [step for step in projection["steps"] if step["step_kind"] == "tool_call"]
+    result = next(fields["tool.execution.result"] for fields in tool["layers"].values()
+                  if "tool.execution.result" in fields)  # fmt: skip
+    assert (result["status"], result.get("reason")) == ("not_captured", "body_cap")

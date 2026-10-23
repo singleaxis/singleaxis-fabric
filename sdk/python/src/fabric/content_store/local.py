@@ -20,6 +20,7 @@ from urllib.parse import unquote, urlparse
 from fabric.content_store.base import (
     ContentRef,
     CorruptedObjectError,
+    check_descriptor_only,
     check_safe_identifier,
     content_hash,
     content_hash_bytes,
@@ -311,6 +312,25 @@ class LocalFilesystemContentStore:
                 else:
                     _atomic_write_at(directory, meta.name, body)
         return ContentRef(uri=ref, content_hash=digest)
+
+    def put_descriptor_only(self, descriptor: Mapping[str, Any]) -> str:
+        """Persist a descriptor-only object's descriptor sidecar, no bytes (as the Node does
+        for one, so a reader finds it ``not_stored``); create-only, idempotent. Returns its
+        reference."""
+        object_id = check_descriptor_only(descriptor, self.tenant_id)
+        target = self._tenant_root() / "evidence" / object_id
+        body = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        name = f"{object_id}.json"
+        with (
+            _directory(target.parent, create=True) as evidence,
+            _subdirectory(evidence, "meta", create=True) as directory,
+        ):
+            if _exists_at(directory, name):
+                if _read_at(directory, name) != body:
+                    raise CorruptedObjectError(f"pre-existing evidence descriptor {name} differs")
+            else:
+                _atomic_write_at(directory, name, body)
+        return f"file://{target}"
 
     def write_manifest(
         self, manifest: Mapping[str, Any], *, decision_id: str, manifest_id: str

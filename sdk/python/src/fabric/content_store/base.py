@@ -150,6 +150,21 @@ class ByteEvidenceStore(Protocol):
     def put_bytes_object(self, descriptor: Mapping[str, Any], content: bytes) -> ContentRef: ...
 
 
+def check_descriptor_only(descriptor: Mapping[str, Any], tenant_id: str | None) -> str:
+    """The object id of a descriptor-only content-v2 object (049 §7.3, 050 R5: a record body
+    that could not be produced) a store may persist without bytes: no stored digest, no
+    ``ref``. Raises ``ValueError`` (fixed text) otherwise."""
+    if descriptor.get("schema_version") != "fabric.content-object/v2":
+        raise ValueError("a descriptor-only object is a content-object/v2 descriptor")
+    if tenant_id is None or descriptor.get("tenant_id") != tenant_id:
+        raise ValueError("descriptor tenant_id does not match store tenant_id")
+    if descriptor.get("status") != "not_captured" or {
+        "stored_sha256", "stored_byte_length", "encoding", "ref"
+    } & set(descriptor):  # fmt: skip
+        raise ValueError("a descriptor-only object has no stored bytes")
+    return check_safe_identifier("object_id", descriptor["object_id"])
+
+
 def content_hash(content: str) -> str:
     """SHA-256 hex of the content's UTF-8 bytes. Shared key strategy
     so the same content lands at the same address (content-addressed).
