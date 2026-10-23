@@ -702,6 +702,38 @@ describe("transcript manifest and export", () => {
     expect(roles).toContain("model.output.messages");
   });
 
+  it.each(["inline", "process"] as const)(
+    "close() leaves a %s manifest whose rollup matches its settled items",
+    async (durability) => {
+      const root = tmpRoot();
+      const fabric = governedFabric(root, { durability });
+      let uri: string | undefined;
+      fabric.decision({ sessionId: "s1", requestId: "r1" }, (d) => {
+        d.recordContext("a.txt", "hello");
+        d.recordSideEffect({
+          type: "api_mutation",
+          targetSystem: "crm",
+          operation: "update",
+          sideEffectId: "e1",
+          requestPayload: "req",
+          resultPayload: "res",
+        });
+        uri = d.contentManifestUri;
+      });
+      // No flush: the item writes settle inside close(), which must still
+      // deliver the manifest rewrites they trigger.
+      await fabric.close();
+      const doc = store(root).readManifest(uri as string) as {
+        items: Array<{ status: string }>;
+        completeness: Record<string, number>;
+      };
+      const statuses: Record<string, number> = {};
+      for (const item of doc.items) statuses[item.status] = (statuses[item.status] ?? 0) + 1;
+      expect(statuses).toEqual({ stored: 3 });
+      expect(doc.completeness).toEqual(statuses);
+    },
+  );
+
   it("resolves pending and missing refs honestly", async () => {
     const root = tmpRoot();
     const s = store(root);
