@@ -12,6 +12,7 @@ silently no-op and spans land on the original provider.
 
 from __future__ import annotations
 
+import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric_reference_agent.__main__ import run_one_turn
@@ -54,9 +55,12 @@ def test_turn_emits_llm_and_tool_child_spans(
 
 def test_workflow_and_execution_ids_propagate(
     span_exporter: InMemorySpanExporter,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When the reference agent sets workflow_id/execution_id on
-    FabricConfig, they appear on the decision span."""
+    FabricConfig, they appear on the decision span (as given in the clear
+    identity mode; the default pseudonymous mode maps caller ids)."""
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "clear")
     run_one_turn(
         prompt="Hello",
         tenant_id="acme",

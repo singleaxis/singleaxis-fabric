@@ -324,14 +324,19 @@ def test_content_ref_store_failure_warns_but_does_not_raise(
         content_store=_BrokenStore(),  # type: ignore[arg-type]
     )
     with (
-        caplog.at_level("WARNING", logger="fabric.decision"),
+        caplog.at_level("WARNING", logger="fabric.content_store"),
         client.decision(session_id="s", request_id="r") as d,
     ):
         d.remember(kind="semantic", key="k", content="c")
+        client.flush_content(timeout_s=5)  # v0.8.1: the write runs on a background worker
 
     event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
+    # No deterministic ref_for on this store: the event carries no ref.
     assert "fabric.content.ref" not in dict(event.attributes or {})
-    assert any("content store" in r.message for r in caplog.records)
+    assert any("content_store" in r.message for r in caplog.records)
+    assert client.content_store_stats() == {
+        "enqueued": 1, "stored": 0, "dropped": 0, "failed": 1, "pending": 0,
+    }  # fmt: skip
 
 
 @pytest.mark.parametrize("component", ["tenant", "evidence", "meta"])

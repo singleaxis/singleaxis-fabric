@@ -16,6 +16,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ._safe_log import safe_log
 from ._sequence import (
     LABELS_ENV,
     IdentityMode,
@@ -57,10 +58,11 @@ class IdentityPolicy:
         )
         if policy.mode == "pseudonymous" and policy.key is None and not _WARNED.is_set():
             _WARNED.set()  # class-only text, once per process
-            _LOG.warning(
+            safe_log(
+                _LOG, logging.WARNING,
                 "fabric: identity mode is pseudonymous and FABRIC_WIRE_ID_KEY is not set; "
-                "session, user and other caller-supplied ids are omitted from telemetry"
-            )
+                "session, user and other caller-supplied ids are omitted from telemetry",
+            )  # fmt: skip
         return policy
 
     @property
@@ -78,6 +80,12 @@ class IdentityPolicy:
         if self.clear:
             return value
         return label_pseudonym("lbl-", value, self.key) if self.key is not None else None
+
+    def minted_or_opaque(self, value: str, *, minted: bool) -> str | None:
+        """An id Fabric mints when the caller gives none (decision, execution id) as
+        emitted: the minted uuid4 as is, a caller's value as :meth:`opaque` emits it,
+        whatever its shape (a plain string is always caller input)."""
+        return value if minted else self.opaque(value)
 
     def label(self, value: str) -> str | None:
         """An operator label (step name, tool name, tag; 049 §4.2) as emitted: clear in

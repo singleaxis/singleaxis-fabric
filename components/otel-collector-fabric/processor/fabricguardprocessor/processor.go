@@ -175,6 +175,7 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 		allowed = EnvelopeAllowedFields
 	}
 
+	carried := decisionLineKeysIn(attrs, allowed)
 	g.filterAttributes(attrs, allowed, "log-record")
 	if class == "evidence" && !validEvidenceRecord(record) {
 		g.stats.notAllowedRemoved.Add(1)
@@ -191,7 +192,7 @@ func (g *guard) applyToRecord(record plog.LogRecord) bool {
 		if class == "evidence" {
 			return false // validEvidenceRecord accepted only fixed AEEP names.
 		}
-		if normalized := activityCategory(name, attrs); normalized != name {
+		if normalized := categorise(name, attrs, carried); normalized != name {
 			record.SetEventName(normalized)
 			g.stats.nativeTextNormalized.Add(1)
 		}
@@ -778,15 +779,17 @@ func clearEntityRefs(res pcommon.Resource, g *guard) {
 }
 
 func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool {
+	var carried []string
 	if isCaptureSpan(span) {
 		g.applyCaptureProfile(span)
 	} else {
+		carried = decisionLineKeysIn(span.Attributes(), allowed)
 		g.filterAttributes(span.Attributes(), allowed, "span")
 		if span.Name() == "fabric.capture_manifest" {
 			g.applyManifestProfile(span.Attributes())
 		}
 	}
-	normalizedName := activityCategory(span.Name(), span.Attributes())
+	normalizedName := categorise(span.Name(), span.Attributes(), carried)
 	if span.Name() != normalizedName {
 		span.SetName(normalizedName)
 		g.stats.nativeTextNormalized.Add(1)
@@ -811,8 +814,9 @@ func (g *guard) applyToSpan(span ptrace.Span, allowed map[string]struct{}) bool 
 			return true
 		}
 		keptEvents++
+		eventCarried := decisionLineKeysIn(event.Attributes(), allowed)
 		g.filterAttributes(event.Attributes(), allowed, "span-event")
-		normalizedEventName := activityCategory(event.Name(), event.Attributes())
+		normalizedEventName := categorise(event.Name(), event.Attributes(), eventCarried)
 		if event.Name() != normalizedEventName {
 			event.SetName(normalizedEventName)
 			g.stats.nativeTextNormalized.Add(1)
@@ -888,6 +892,27 @@ func (g *guard) scrubTraceScope(scopeSpan ptrace.ScopeSpans) {
 	}
 }
 
+// categorise names a span or event after filtering. A decision-line key the
+// Node dropped for its value alone (a clear value under a pseudonymous Node)
+// still counts as carried, so a third-party tool span whose clear
+// gen_ai.tool.name is dropped stays a tool call (round-2 review). Only the key
+// counts: its value never reaches the category, a fixed enum. Capture markers
+// are not decision-line keys, so an invalid marker still cannot claim a
+// capture name.
+func categorise(name string, attrs pcommon.Map, carried []string) string {
+	if len(carried) == 0 {
+		return activityCategory(name, attrs)
+	}
+	view := pcommon.NewMap()
+	attrs.CopyTo(view)
+	for _, key := range carried {
+		if _, ok := view.Get(key); !ok {
+			view.PutStr(key, "")
+		}
+	}
+	return activityCategory(name, view)
+}
+
 // activityCategory maps arbitrary native span/event names to a fixed public
 // vocabulary. Attribute metadata wins, preserving reconstruction without
 // exporting a caller-controlled name that may contain PHI or credentials.
@@ -904,6 +929,11 @@ func activityCategory(name string, attrs pcommon.Map) string {
 		if _, ok := attrs.Get(key); ok {
 			return "fabric.tool_call"
 		}
+	}
+	// v0.8.1: a pseudonymous SDK without an id key omits the tool name; the
+	// GenAI operation still marks the span as a tool call.
+	if operation, ok := attrs.Get("gen_ai.operation.name"); ok && operation.Str() == "execute_tool" {
+		return "fabric.tool_call"
 	}
 	for _, key := range []string{"fabric.llm.system", "gen_ai.request.model", "fabric.wire.exchange_id"} {
 		if _, ok := attrs.Get(key); ok {

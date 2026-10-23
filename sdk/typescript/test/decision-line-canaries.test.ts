@@ -6,7 +6,10 @@
  * §8.3), in parity with Python `tests/test_decision_line_canaries.py`. A
  * canary is planted in every field the v0.8.1 fixes cover: idempotency keys,
  * document ids, MCP tool names, the checkpoint step name, tags, exception text
- * and low-entropy payloads (whose digests would reveal them). In the
+ * and low-entropy payloads (whose digests would reveal them), and (round-2
+ * review F4) the caller's execution, workflow, decision, parent-decision,
+ * attempt and step ids, the workflow, prompt and skill names and versions,
+ * the tool description and the agent name. In the
  * pseudonymous identity mode, with and without `FABRIC_WIRE_ID_KEY`, no
  * canary and no digest of a canary payload may appear in telemetry, in the
  * SDK's console output or in the governed content spool and store.
@@ -43,7 +46,44 @@ const CANARIES = {
   tag: "canary:CANARY-tag-q8z",
   memoryTag: "CANARY-memory-tag-q8z",
   exception: "CANARY-exception-text-q8z",
+  previousResponse: "CANARY-prev-q8z",
+  response: "CANARY-response-q8z",
+  toolCall: "CANARY-call-q8z",
+  request: "CANARY-request-q8z",
+  sideEffectId: "CANARY-effect-q8z",
+  targetSystem: "CANARY-patient-crm-q8z",
+  operation: "CANARY-update-jane-q8z",
+  metadata: "CANARY-metadata-q8z",
+  executionId: "CANARY-execution-q8z",
+  workflowId: "CANARY-workflow-q8z",
+  workflowName: "CANARY-workflow-name-q8z",
+  decisionId: "CANARY-decision-q8z",
+  parentDecisionId: "CANARY-parent-decision-q8z",
+  executionAttemptId: "CANARY-exec-attempt-q8z",
+  executionPreviousAttemptId: "CANARY-exec-prev-attempt-q8z",
+  stepId: "CANARY-step-id-q8z",
+  stepAttemptId: "CANARY-step-attempt-q8z",
+  stepPreviousAttemptId: "CANARY-step-prev-attempt-q8z",
+  llmStepId: "CANARY-llm-step-id-q8z",
+  promptName: "CANARY-prompt-name-q8z",
+  promptVersion: "CANARY-prompt-version-q8z",
+  toolDescription: "CANARY tool description q8z",
+  skillName: "CANARY-skill-name-q8z",
+  skillVersion: "CANARY-skill-version-q8z",
+  agentName: "CANARY-agent-name-q8z",
 };
+/** Governed content keeps its bindings (request, tool call, decision,
+ * execution, workflow and step ids) as given: the content store is the
+ * customer's destination for content (spec 049 §2.9). */
+const CONTENT_BINDINGS = new Set([
+  "request",
+  "toolCall",
+  "decisionId",
+  "executionId",
+  "workflowId",
+  "stepId",
+  "llmStepId",
+]);
 const PAYLOADS = ["yes", "no", "CANARY-payload-q8z"]; // low entropy: digests are lookups
 const DIGESTS = PAYLOADS.map((p) => sha256Hex(p));
 const providers: BasicTracerProvider[] = [];
@@ -63,47 +103,100 @@ function exercise(fabric: Fabric): void {
     throw new CanaryError(CANARIES.exception);
   };
   expect(() =>
-    fabric.execution({}, () =>
-      fabric.decision({ sessionId: "s", requestId: "r" }, (d: Decision) => {
-        d.recordSideEffect({
-          type: "other",
-          targetSystem: "crm",
-          operation: "update",
-          idempotencyKey: CANARIES.idempotency,
-          requestPayload: PAYLOADS[0],
-          resultPayload: PAYLOADS[1],
-        });
-        expect(() =>
-          d.toolCall("lookup", {}, (tool) => {
-            tool.setIdempotency({ idempotent: true, key: CANARIES.toolIdempotency });
-            tool.setArguments(PAYLOADS[0]!);
-            tool.setResult(PAYLOADS[1]!);
+    fabric.execution(
+      {
+        executionId: CANARIES.executionId,
+        workflowId: CANARIES.workflowId,
+        executionAttemptId: CANARIES.executionAttemptId,
+        executionRetryPreviousAttemptId: CANARIES.executionPreviousAttemptId,
+      },
+      () =>
+        fabric.decision(
+          {
+            sessionId: "s",
+            requestId: CANARIES.request,
+            decisionId: CANARIES.decisionId,
+            workflowName: CANARIES.workflowName,
+            context: {
+              tenantId: "acme",
+              agentId: "upstream",
+              decisionId: CANARIES.parentDecisionId,
+            },
+          },
+          (d: Decision) => {
+            d.recordSkill(CANARIES.skillName, CANARIES.skillVersion);
+            d.recordSideEffect({
+              type: "other",
+              targetSystem: CANARIES.targetSystem,
+              operation: CANARIES.operation,
+              idempotencyKey: CANARIES.idempotency,
+              sideEffectId: CANARIES.sideEffectId,
+              parentToolCallId: CANARIES.toolCall,
+              requestPayload: PAYLOADS[0],
+              resultPayload: PAYLOADS[1],
+            });
+            d.recordReplayMetadata();
+            expect(() =>
+              d.toolCall(
+                CANARIES.toolName,
+                {
+                  callId: CANARIES.toolCall,
+                  description: CANARIES.toolDescription,
+                  stepId: CANARIES.stepId,
+                  stepAttemptId: CANARIES.stepAttemptId,
+                  stepRetryPreviousAttemptId: CANARIES.stepPreviousAttemptId,
+                },
+                (tool) => {
+                  tool.setIdempotency({ idempotent: true, key: CANARIES.toolIdempotency });
+                  tool.setArguments(PAYLOADS[0]!);
+                  tool.setResult(PAYLOADS[1]!);
+                  raise();
+                },
+              ),
+            ).toThrow(CanaryError);
+            expect(() =>
+              d.llmCall(
+                {
+                  provider: "openai",
+                  model: "m",
+                  previousResponseId: CANARIES.previousResponse,
+                  promptName: CANARIES.promptName,
+                  promptVersion: CANARIES.promptVersion,
+                  stepId: CANARIES.llmStepId,
+                },
+                (llm) => {
+                  llm.setResponse({ responseId: CANARIES.response });
+                  raise();
+                },
+              ),
+            ).toThrow(CanaryError);
+            d.recordRetrieval({
+              source: "rag",
+              query: PAYLOADS[2]!,
+              resultCount: 1,
+              resultHashes: [DIGESTS[2]!],
+              sourceDocumentIds: [CANARIES.document],
+            });
+            d.remember({
+              kind: MemoryKind.SEMANTIC,
+              content: PAYLOADS[0]!,
+              tags: [CANARIES.memoryTag],
+            });
+            d.recall({ kind: MemoryKind.SEMANTIC, key: "k", content: PAYLOADS[1]! });
+            d.checkpoint(CANARIES.step);
+            d.recordInteraction("message.send", "t", {
+              payload: PAYLOADS[2],
+              tags: [CANARIES.tag],
+              metadata: { note: CANARIES.metadata },
+            });
+            d.recordMcpInventory({
+              server: "srv",
+              transport: "stdio",
+              tools: [{ name: CANARIES.toolName, description: "d", inputSchema: {} }],
+            });
             raise();
-          }),
-        ).toThrow(CanaryError);
-        expect(() => d.llmCall({ provider: "openai", model: "m" }, raise)).toThrow(CanaryError);
-        d.recordRetrieval({
-          source: "rag",
-          query: PAYLOADS[2]!,
-          resultCount: 1,
-          resultHashes: [DIGESTS[2]!],
-          sourceDocumentIds: [CANARIES.document],
-        });
-        d.remember({
-          kind: MemoryKind.SEMANTIC,
-          content: PAYLOADS[0]!,
-          tags: [CANARIES.memoryTag],
-        });
-        d.recall({ kind: MemoryKind.SEMANTIC, key: "k", content: PAYLOADS[1]! });
-        d.checkpoint(CANARIES.step);
-        d.recordInteraction("message.send", "t", { payload: PAYLOADS[2], tags: [CANARIES.tag] });
-        d.recordMcpInventory({
-          server: "srv",
-          transport: "stdio",
-          tools: [{ name: CANARIES.toolName, description: "d", inputSchema: {} }],
-        });
-        raise();
-      }),
+          },
+        ),
     ),
   ).toThrow(CanaryError);
 }
@@ -132,8 +225,9 @@ function files(root: string): string {
   return out.join("\n");
 }
 
-function assertClean(haystack: string, where: string): void {
+function assertClean(haystack: string, where: string, skip = new Set<string>()): void {
   for (const [name, canary] of Object.entries(CANARIES)) {
+    if (skip.has(name)) continue;
     expect(haystack, `${name} canary in ${where}`).not.toContain(canary);
   }
   for (const digest of DIGESTS) {
@@ -153,6 +247,7 @@ function harness(config: { identityMode: "pseudonymous" | "clear"; idKey?: strin
   const fabric = new Fabric({
     tenantId: "acme",
     agentId: "bot",
+    agentName: CANARIES.agentName,
     tracerProvider: provider,
     contentCapture: {
       store: new LocalFilesystemContentStore(join(root, "store"), "acme"),
@@ -184,7 +279,7 @@ describe("decision-line privacy canaries", () => {
       assertClean(lines.join("\n"), "console output");
       const written = files(h.root);
       expect(written.length).toBeGreaterThan(0);
-      assertClean(written, "spool and store");
+      assertClean(written, "spool and store", CONTENT_BINDINGS);
     });
   }
 
@@ -194,7 +289,8 @@ describe("decision-line privacy canaries", () => {
     await h.fabric.close();
     const blob = telemetry(h.exporter);
     for (const [name, canary] of Object.entries(CANARIES)) {
-      if (name === "exception") continue; // TS never exports exception text, in any mode
+      // TS never exports exception text, and metadata is only ever hashed.
+      if (name === "exception" || name === "metadata") continue;
       expect(blob, name).toContain(canary);
     }
     expect(blob).toContain(DIGESTS[2]);

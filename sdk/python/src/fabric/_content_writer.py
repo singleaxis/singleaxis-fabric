@@ -5,8 +5,10 @@
 Moves object-store I/O off the agent's execution path. Three durability
 modes:
 
-- ``inline``: write on the caller's thread (legacy ``content_store=``
-  semantics; no loss window but store latency is on the agent path).
+- ``inline``: the write runs on a worker thread and the caller waits for
+  it at most ``inline_deadline_ms`` (default 50 ms, spec 049 §7.1); past
+  the deadline the item is ``pending`` and the write settles it in the
+  background. ``flush``/``close`` wait for it.
 - ``process``: bounded in-process queue + background worker. Process
   death loses queued, unwritten objects — the documented loss window.
 - ``spooled``: fsync'd spool entry on enqueue, then the worker uploads.
@@ -30,6 +32,7 @@ import stat
 import tempfile
 import threading
 import time
+import weakref
 from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -37,17 +40,21 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from ._content import DESCRIPTOR_STATUSES, ContentDescriptor, ContentStatus
+from ._safe_log import exc_class, safe_log
 from .content_store.local import _directory
 
 if TYPE_CHECKING:
     from .content_store.base import GovernedStore
 
 _LOG = logging.getLogger("fabric.content_writer")
+_INLINE_CONTEXT = threading.local()  # set on inline worker threads
 
 _DURABILITY_MODES = frozenset({"inline", "process", "spooled"})
 _QUEUE_MAX_CAP = 65536
 _PAYLOAD_MAX_CAP = 16 * 1024 * 1024
 _ENQUEUE_TIMEOUT_CAP_MS = 100
+_INLINE_DEADLINE_CAP_MS = 5000
+_INLINE_WORKERS = 4
 _SPOOL_VERSION = "fabric.content-spool/v2"
 _LEGACY_SPOOL_VERSION = 1
 _SPOOL_SUFFIX = ".corrupt"
@@ -75,6 +82,9 @@ class ContentCaptureConfig:
     retry_max_elapsed_s: float = 300.0
     worker_flush_interval_ms: int = 250
     shutdown_flush_timeout_s: float = 10.0
+    # Spec 049 §7.1: the most an ``inline`` write may hold the caller before the item is
+    # reported ``pending`` and the write completes in the background.
+    inline_deadline_ms: int = 50
 
     def __post_init__(self) -> None:
         if self.store is None:
@@ -89,6 +99,7 @@ class ContentCaptureConfig:
         if self.durability == "spooled" and not self.spool_dir:
             raise ValueError("ContentCaptureConfig: spooled durability requires spool_dir")
         for name, value, cap in (
+            ("inline_deadline_ms", self.inline_deadline_ms, _INLINE_DEADLINE_CAP_MS),
             ("queue_max_items", self.queue_max_items, _QUEUE_MAX_CAP),
             ("payload_max_bytes", self.payload_max_bytes, _PAYLOAD_MAX_CAP),
             ("enqueue_timeout_ms", self.enqueue_timeout_ms, _ENQUEUE_TIMEOUT_CAP_MS),
@@ -190,6 +201,8 @@ class ContentWriter:
         # spool record or reach the destination.
         self._manifest_revisions: dict[str, int] = {}
         self._manifest_revision_counters: dict[str, int] = {}
+        self._inline_workers: _InlineWorkers | None = None
+        self._inline_in_flight = 0
         self._worker: threading.Thread | None = None
         self._wake = threading.Event()
         self._spool_dir: Path | None = None
@@ -249,7 +262,9 @@ class ContentWriter:
         Never raises — failures map to ``dropped``/``failed`` statuses.
         """
         if self._closed:
-            _LOG.warning("fabric.content_writer: submit after close; marking failed")
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: submit after close; marking failed"
+            )
             return ContentStatus.FAILED
         task = _Task(
             kind="object",
@@ -279,7 +294,7 @@ class ContentWriter:
         document wins (spec 032 §5).
         """
         if self._closed:
-            _LOG.warning("fabric.content_writer: manifest submit after close")
+            safe_log(_LOG, logging.WARNING, "fabric.content_writer: manifest submit after close")
             return ContentStatus.FAILED
         with self._pending_lock:
             revision = self._manifest_revision_counters.get(manifest_id, 0) + 1
@@ -332,17 +347,16 @@ class ContentWriter:
             if self._config.durability == "spooled":
                 self._remove_spool(task)
             self._stats["dropped"] += 1
-            _LOG.warning(
-                "fabric.content_writer: queue full (%d); dropping %s",
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: queue full (%d); dropping an item",
                 self._config.queue_max_items,
-                task.key,
-            )
+            )  # fmt: skip
             return ContentStatus.DROPPED
         self._stats["enqueued"] += 1
         self._wake.set()
         return ContentStatus.PENDING
 
-    def _submit_inline(self, task: _Task) -> str:
+    def _deliver_inline(self, task: _Task) -> str:
         try:
             return self._deliver(task)
         except _RetryLaterError:
@@ -351,6 +365,66 @@ class ContentWriter:
             self._stats["failed"] += 1
             self._settle(task, ContentStatus.FAILED)
             return ContentStatus.FAILED
+
+    def _submit_inline(self, task: _Task) -> str:
+        """Spec 049 §7.1: an inline write runs on a worker thread; the caller waits at
+        most ``inline_deadline_ms``, after which the item is ``pending`` and the write
+        settles it in the background (``flush``/``close`` wait for it). A settlement
+        callback already on a worker thread delivers directly."""
+        if getattr(_INLINE_CONTEXT, "worker", False):
+            return self._deliver_inline(task)
+        with self._pending_lock:
+            if self._inline_in_flight >= self._config.queue_max_items:
+                self._stats["dropped"] += 1
+                return ContentStatus.DROPPED
+            self._inline_in_flight += 1
+            self._pending[task.key] = task
+        done = threading.Event()
+        outcome: list[str] = []
+
+        def run() -> None:
+            _INLINE_CONTEXT.worker = True
+            try:
+                outcome.append(self._deliver_inline(task))
+            except Exception:  # _deliver settles every outcome; never escape the worker
+                outcome.append(ContentStatus.FAILED)
+            finally:
+                with self._pending_lock:
+                    self._inline_in_flight -= 1
+                    if self._pending.get(task.key) is task:
+                        self._pending.pop(task.key, None)
+                done.set()
+
+        try:
+            self._inline_executor().submit(run)
+        except RuntimeError:  # executor shut down: the writer is closing
+            with self._pending_lock:
+                self._inline_in_flight -= 1
+                self._pending.pop(task.key, None)
+            self._stats["failed"] += 1
+            return ContentStatus.FAILED
+        if done.wait(self._config.inline_deadline_ms / 1000.0) and outcome:
+            return outcome[0]
+        return ContentStatus.PENDING
+
+    def _inline_executor(self) -> _InlineWorkers:
+        with self._pending_lock:
+            if self._inline_workers is None:
+                self._inline_workers = _InlineWorkers(_INLINE_WORKERS)
+                _FORK_AWARE.add(self)
+            return self._inline_workers
+
+    def _after_fork_in_child(self) -> None:
+        """A forked child has none of the parent's threads: fresh locks and workers.
+        The parent's in-flight inline writes are the parent's to deliver; the child
+        neither waits for them nor reports them as its own pending work."""
+        self._pending_lock = threading.Lock()
+        self._submission_lock = threading.RLock()
+        if self._inline_workers is not None:
+            self._inline_workers.after_fork_in_child()
+        if self._config.durability == "inline":
+            self._pending.clear()
+            self._inline_in_flight = 0
 
     # -- spool --------------------------------------------------------------
 
@@ -406,10 +480,7 @@ class ContentWriter:
         with contextlib.suppress(OSError):
             previous_size = path.stat().st_size
         if self._spool_usage() - previous_size + len(entry) > self._config.spool_max_bytes:
-            _LOG.warning(
-                "fabric.content_writer: spool full; dropping %s",
-                task.key,
-            )
+            safe_log(_LOG, logging.WARNING, "fabric.content_writer: spool full; dropping an item")
             return False
         try:
             fd, tmp = tempfile.mkstemp(dir=str(spool_dir), prefix=".spool-", suffix=".tmp")
@@ -428,8 +499,11 @@ class ContentWriter:
             if count:
                 self._stats["spooled"] += 1
             return True
-        except OSError:
-            _LOG.warning("fabric.content_writer: spool write failed", exc_info=True)
+        except OSError as exc:
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: spool write failed (%s)",
+                exc_class(exc),
+            )  # fmt: skip
             return False
 
     def _spool_usage(self) -> int:
@@ -527,11 +601,13 @@ class ContentWriter:
         """Move an unreadable record aside; the explicit outcome is a
         ``corrupt`` stat + ``.corrupt`` marker, never silent loss."""
         self._stats["corrupt"] += 1
-        _LOG.warning("fabric.content_writer: quarantining corrupt spool entry %s", path)
+        safe_log(_LOG, logging.WARNING, "fabric.content_writer: quarantining a corrupt spool entry")
         try:
             os.replace(path, path.with_suffix(path.suffix + _SPOOL_SUFFIX))
         except OSError:
-            _LOG.warning("fabric.content_writer: corrupt entry %s could not be moved", path)
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: a corrupt entry could not be moved"
+            )
 
     # -- delivery -----------------------------------------------------------
 
@@ -558,23 +634,22 @@ class ContentWriter:
                 self._store.put_object(task.descriptor.to_json(), task.content)
                 if not self._has_subscriber(task.key) and task.manifest_id:
                     self._reconcile_recovered_object(task, ContentStatus.STORED)
-        except Exception:
+        except Exception as exc:
             if (
                 task.attempts < self._config.retry_max_attempts
                 and time.time() - task.first_enqueued < self._config.retry_max_elapsed_s
             ):
                 if self._spool_dir is not None and not self._spool(task, count=False):
-                    _LOG.warning(
-                        "fabric.content_writer: could not persist retry metadata for %s",
-                        task.key,
-                    )
+                    safe_log(
+                        _LOG, logging.WARNING,
+                        "fabric.content_writer: could not persist retry metadata",
+                    )  # fmt: skip
                 raise _RetryLaterError from None
             self._stats["failed"] += 1
-            _LOG.warning(
-                "fabric.content_writer: delivery failed permanently for %s",
-                task.key,
-                exc_info=True,
-            )
+            safe_log(
+                _LOG, logging.WARNING, "fabric.content_writer: delivery failed permanently (%s)",
+                exc_class(exc),
+            )  # fmt: skip
             if task.kind == "object" and task.manifest_id and not self._has_subscriber(task.key):
                 with contextlib.suppress(Exception):
                     self._reconcile_recovered_object(task, ContentStatus.FAILED)
@@ -584,7 +659,10 @@ class ContentWriter:
             # The destination accepted the write, but source cleanup is not
             # durably settled. Keep the task pending so flush cannot certify
             # a drained source; the spool is recoverable on the next start.
-            _LOG.warning("fabric.content_writer: spool cleanup failed; delivery remains pending")
+            safe_log(
+                _LOG, logging.WARNING,
+                "fabric.content_writer: spool cleanup failed; delivery remains pending",
+            )  # fmt: skip
             return ContentStatus.PENDING
         self._stats["stored"] += 1
         self._settle(task, ContentStatus.STORED)
@@ -610,8 +688,11 @@ class ContentWriter:
         if callback is not None and task.descriptor is not None:
             try:
                 callback(task.descriptor, status)
-            except Exception:
-                _LOG.warning("fabric.content_writer: settled callback failed", exc_info=True)
+            except Exception as exc:
+                safe_log(
+                    _LOG, logging.WARNING, "fabric.content_writer: settled callback failed (%s)",
+                    exc_class(exc),
+                )  # fmt: skip
         # A subscriber may submit a manifest rewrite. Do not let flush see
         # zero pending work until that follow-on publication has finished.
         with self._pending_lock:
@@ -789,14 +870,19 @@ class ContentWriter:
         self.flush(timeout_s=self._config.shutdown_flush_timeout_s)
         self._closed = True
         self._wake.set()
+        if self._inline_workers is not None:
+            self._inline_workers.close()
         if self._worker is not None:
             self._worker.join(timeout=5.0)
         close = getattr(self._store, "close", None)
         if callable(close):
             try:
                 close()
-            except Exception:
-                _LOG.warning("fabric.content_writer: store close failed", exc_info=True)
+            except Exception as exc:
+                safe_log(
+                    _LOG, logging.WARNING, "fabric.content_writer: store close failed (%s)",
+                    exc_class(exc),
+                )  # fmt: skip
 
     def stats(self) -> dict[str, int]:
         with self._pending_lock:
@@ -828,3 +914,77 @@ def _descriptor_from_json(doc: Mapping[str, Any]) -> ContentDescriptor:
 
 class _RetryLaterError(Exception):
     """Internal control flow: delivery failed but retries remain."""
+
+
+class _InlineWorkers:
+    """Up to ``size`` daemon threads running inline writes (spec 049 §7.1).
+
+    Daemon threads, so a slow or hung store never holds interpreter exit past
+    ``close()``'s bound. A forked child starts with fresh state: the parent's threads
+    do not exist there, and its locks may have been held at the fork."""
+
+    def __init__(self, size: int) -> None:
+        self._size = size
+        self._closed = False
+        self._reset()
+
+    def _reset(self) -> None:
+        self._cond = threading.Condition(threading.Lock())
+        self._jobs: deque[Callable[[], None]] = deque()
+        self._live = 0
+        self._idle = 0
+
+    def after_fork_in_child(self) -> None:
+        self._reset()  # the parent's queued jobs are the parent's
+
+    def submit(self, job: Callable[[], None]) -> None:
+        """Queue ``job``; ``RuntimeError`` when closed or no worker can run it."""
+        with self._cond:
+            if self._closed:
+                raise RuntimeError("inline workers closed")
+            self._jobs.append(job)
+            if len(self._jobs) > self._idle and self._live < self._size:
+                try:
+                    threading.Thread(
+                        target=self._run, name="fabric-content-inline", daemon=True
+                    ).start()
+                except RuntimeError:
+                    if self._live == 0:
+                        self._jobs.pop()
+                        raise
+                else:
+                    self._live += 1
+            self._cond.notify()
+
+    def _run(self) -> None:
+        cond = self._cond  # a forked child replaces it; none of these threads exist there
+        while True:
+            with cond:
+                while not self._jobs:
+                    if self._closed:
+                        self._live -= 1
+                        return
+                    self._idle += 1
+                    cond.wait()
+                    self._idle -= 1
+                job = self._jobs.popleft()
+            with contextlib.suppress(BaseException):  # never lose a worker to a job
+                job()  # the job settles every outcome itself
+
+    def close(self) -> None:
+        with self._cond:
+            self._closed = True
+            self._cond.notify_all()
+
+
+# Writers whose inline workers must be rebuilt in a forked child.
+_FORK_AWARE: weakref.WeakSet[ContentWriter] = weakref.WeakSet()
+
+
+def _reset_writers_after_fork() -> None:
+    for writer in list(_FORK_AWARE):
+        writer._after_fork_in_child()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_writers_after_fork)

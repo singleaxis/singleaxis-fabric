@@ -238,7 +238,7 @@ func decisionSpan(key string, value pcommon.Value) ptrace.Traces {
 	td := ptrace.NewTraces()
 	span := td.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
 	span.SetName("fabric.decision")
-	span.Attributes().PutStr("fabric.decision_id", "dec-1")
+	span.Attributes().PutStr("fabric.decision_id", "7c9e6679-7425-40de-944b-e07fc1f90ae7")
 	value.CopyTo(span.Attributes().PutEmpty(key))
 	return td
 }

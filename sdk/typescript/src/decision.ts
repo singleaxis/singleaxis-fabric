@@ -64,6 +64,7 @@ import { activeExecution } from "./execution.js";
 import { assertSha256Hex, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
 import { warnIfPiiShaped } from "./id-validators.js";
 import { IdentityPolicy } from "./identity.js";
+import { onRecordingError, safeSpan, safeStartSpan, takeStartFailure } from "./safe-span.js";
 import {
   applyCrossCutting,
   type AttrValue,
@@ -87,6 +88,7 @@ import {
   startToolSpan,
   type GovernedCaptureFn,
   type LlmCallOptions,
+  type StepOptions,
   type ToolCallOptions,
 } from "./calls.js";
 import { ContentRole, rfc3339Now, type TranscriptManifest } from "./content.js";
@@ -639,10 +641,14 @@ export class Decision implements DecisionLike {
   private readonly sessionIdStored: string;
   private readonly requestIdStored: string;
   private readonly decisionIdValue: string;
+  /** The decision id as emitted (049 §2.9): minted as is, a caller's mapped. */
+  private readonly emittedDecisionId?: string;
   private readonly userIdStored?: string;
   private readonly conversationCompacted: boolean;
   private readonly resolvedWorkflowId?: string;
   private readonly resolvedExecutionId?: string;
+  /** The resolved execution id as emitted: minted as is, a caller's mapped. */
+  private readonly emittedExecutionId?: string;
   private readonly resolvedExecutionAttemptId?: string;
   private readonly resolvedExecutionAttempt?: number;
   private readonly resolvedExecutionRetryReason?: string;
@@ -661,12 +667,19 @@ export class Decision implements DecisionLike {
   // is recorded anyway and counted (never thrown, 049 §7.1).
   private busy = false;
   private concurrentUse = 0;
+  // Recording failures caught fail-open (049 §7.1 rule 3); any makes capture partial.
+  private internalErrors = 0;
   // 049 §4.2: operator labels (tags, step names, tool names) as emitted.
   private readonly labelFn = (value: string): string | undefined => this.ids.label(value);
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
-    this.span = span;
+    // Fail-open (049 §7.1): every recording call on the span is guarded and counted.
+    this.span = safeSpan(span);
+    onRecordingError(this.span, () => {
+      this.internalErrors += 1;
+    });
+    if (takeStartFailure(span)) this.internalErrors += 1;
     let recording: boolean | null = null;
     try {
       const value = span.isRecording();
@@ -690,7 +703,9 @@ export class Decision implements DecisionLike {
     span.setAttribute(ATTR_AGENT, identity.agentId);
     span.setAttribute(ATTR_PROFILE, identity.profile);
     span.setAttribute("gen_ai.operation.name", "invoke_agent");
-    span.setAttribute("gen_ai.agent.name", identity.agentName);
+    // 049 §2.9 (round-2 review F4): the agent name is an agent identity, `agt-`.
+    const agentName = this.ids.id("agt", identity.agentName);
+    if (agentName !== undefined) span.setAttribute("gen_ai.agent.name", agentName);
     span.setAttribute("gen_ai.agent.id", identity.agentId);
     if (session !== undefined) {
       span.setAttribute("gen_ai.conversation.id", session);
@@ -712,8 +727,16 @@ export class Decision implements DecisionLike {
     const active = activeExecution();
     const workflowId = ids.workflowId ?? active?.workflowId ?? identity.workflowId;
     const executionId = ids.executionId ?? active?.executionId ?? identity.executionId;
+    const executionIdMinted =
+      ids.executionId === undefined &&
+      active?.executionId !== undefined &&
+      active.executionIdMinted === true;
     this.resolvedWorkflowId = workflowId;
     this.resolvedExecutionId = executionId;
+    this.emittedExecutionId =
+      executionId !== undefined
+        ? this.ids.mintedOrOpaque(executionId, executionIdMinted)
+        : undefined;
     // The attempt/retry metadata has no per-decision kwarg, so it is inherited
     // from the active execution when present and otherwise the config value.
     this.resolvedExecutionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
@@ -722,22 +745,27 @@ export class Decision implements DecisionLike {
       active?.executionRetryReason ?? identity.executionRetryReason;
     this.resolvedExecutionRetryPreviousAttemptId =
       active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
-    if (workflowId !== undefined) {
-      span.setAttribute(ATTR_WORKFLOW, workflowId);
+    // 049 §2.9 (round-2 review F4): caller ids are their keyed `lbl-` form
+    // when pseudonymous (a minted execution id stays as is).
+    const workflow = this.opaque(workflowId);
+    if (workflow !== undefined) {
+      span.setAttribute(ATTR_WORKFLOW, workflow);
     }
     // `gen_ai.workflow.name` resolves to the supplied name or the workflow
     // id, and is stamped whenever either is present — even without a
     // resolved workflow_id (mirrors Python decision.py:504-506). An empty
-    // name falls back to the id exactly like Python's `or`.
-    const semanticWorkflowName = ids.workflowName || workflowId;
+    // name falls back to the id exactly like Python's `or`. A name is an
+    // operator label (049 §4.2); the fallback is the mapped workflow id.
+    const semanticWorkflowName = ids.workflowName ? this.ids.label(ids.workflowName) : workflow;
     if (semanticWorkflowName !== undefined) {
       span.setAttribute("gen_ai.workflow.name", semanticWorkflowName);
     }
-    if (executionId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION, executionId);
+    if (this.emittedExecutionId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION, this.emittedExecutionId);
     }
-    if (this.resolvedExecutionAttemptId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, this.resolvedExecutionAttemptId);
+    const attemptId = this.opaque(this.resolvedExecutionAttemptId);
+    if (attemptId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, attemptId);
     }
     if (this.resolvedExecutionAttempt !== undefined) {
       span.setAttribute(ATTR_EXECUTION_ATTEMPT, this.resolvedExecutionAttempt);
@@ -745,11 +773,9 @@ export class Decision implements DecisionLike {
     if (this.resolvedExecutionRetryReason !== undefined) {
       span.setAttribute(ATTR_EXECUTION_RETRY_REASON, this.resolvedExecutionRetryReason);
     }
-    if (this.resolvedExecutionRetryPreviousAttemptId !== undefined) {
-      span.setAttribute(
-        ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-        this.resolvedExecutionRetryPreviousAttemptId,
-      );
+    const previousAttempt = this.opaque(this.resolvedExecutionRetryPreviousAttemptId);
+    if (previousAttempt !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previousAttempt);
     }
     this.sessionIdStored = ids.sessionId;
     this.requestIdStored = ids.requestId;
@@ -757,9 +783,19 @@ export class Decision implements DecisionLike {
     if (session !== undefined) {
       span.setAttribute(ATTR_SESSION, session);
     }
-    span.setAttribute(ATTR_REQUEST, ids.requestId);
+    // 049 §2.9: the caller's request id (no v2 type yet) as the keyed `lbl-` form.
+    const request = this.ids.opaque(ids.requestId);
+    if (request !== undefined) span.setAttribute(ATTR_REQUEST, request);
     this.decisionIdValue = ids.decisionId ?? randomUuid();
-    span.setAttribute(ATTR_DECISION_ID, this.decisionIdValue);
+    // 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its
+    // keyed `lbl-` form when pseudonymous; a minted uuid4 stays as is.
+    this.emittedDecisionId = this.ids.mintedOrOpaque(
+      this.decisionIdValue,
+      ids.decisionId === undefined,
+    );
+    if (this.emittedDecisionId !== undefined) {
+      span.setAttribute(ATTR_DECISION_ID, this.emittedDecisionId);
+    }
     const user = ids.userId !== undefined ? this.ids.id("usr", ids.userId) : undefined;
     if (user !== undefined) {
       span.setAttribute(ATTR_USER, user);
@@ -773,8 +809,10 @@ export class Decision implements DecisionLike {
       if (parentAgent !== undefined) {
         span.setAttribute(A.ATTR_PARENT_AGENT_ID, parentAgent);
       }
-      if (ids.context.decisionId !== undefined) {
-        span.setAttribute(A.ATTR_PARENT_DECISION_ID, ids.context.decisionId);
+      // A carrier's decision id is caller input: `lbl-` when pseudonymous.
+      const parentDecision = this.opaque(ids.context.decisionId);
+      if (parentDecision !== undefined) {
+        span.setAttribute(A.ATTR_PARENT_DECISION_ID, parentDecision);
       }
     }
     // Caller-supplied extras sit on top of the client-level
@@ -853,6 +891,26 @@ export class Decision implements DecisionLike {
     if (sink === undefined || content === undefined || content === null) {
       return undefined;
     }
+    try {
+      return this.captureWith(sink, role, content, options);
+    } catch {
+      this.internalErrors += 1; // 049 §7.1: a capture failure is a loss, never an error
+      return undefined;
+    }
+  }
+
+  private captureWith(
+    sink: ContentSink,
+    role: string,
+    content: unknown,
+    options: {
+      mediaType?: string;
+      bindings?: Record<string, unknown>;
+      links?: Record<string, unknown>;
+      statusReason?: string;
+      representation?: string;
+    },
+  ): string | undefined {
     const bindings: Record<string, unknown> = {
       decision_id: this.decisionIdValue,
       session_id: this.sessionIdStored,
@@ -876,7 +934,11 @@ export class Decision implements DecisionLike {
    * recording surface.
    */
   closeContent(): void {
-    this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
+    try {
+      this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
+    } catch {
+      this.internalErrors += 1; // 049 §7.1: a capture failure is a loss, never an error
+    }
   }
 
   // -- concurrency overlap guard ---------------------------------------
@@ -915,6 +977,14 @@ export class Decision implements DecisionLike {
   private retainsOriginal(role: string): boolean {
     if (this.ids.clear) return true;
     return this.contentSink !== undefined && (this.identity.contentRoles?.has(role) ?? false);
+  }
+
+  /** Count a child span's recording failures with this decision's (049 §7.1). */
+  private countChildFailures(span: Span): void {
+    if (takeStartFailure(span)) this.internalErrors += 1;
+    onRecordingError(span, () => {
+      this.internalErrors += 1;
+    });
   }
 
   /** How many mutating calls overlapped another on this decision (recorded, never thrown). */
@@ -1009,10 +1079,21 @@ export class Decision implements DecisionLike {
     const resolved = {
       ...options,
       conversationId,
+      // 049 §2.9 rule 4 (C39): a provider id as its keyed `p-` form.
+      previousResponseId:
+        options.previousResponseId !== undefined
+          ? this.ids.id("p", options.previousResponseId)
+          : undefined,
       conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
+      // 049 §4.2 (round-2 review F4): prompt name and version are operator labels.
+      promptName: options.promptName !== undefined ? this.ids.label(options.promptName) : undefined,
+      promptVersion:
+        options.promptVersion !== undefined ? this.ids.label(options.promptVersion) : undefined,
+      ...this.stepIds(options),
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startLlmSpan(this.tracer, resolved);
+    this.countChildFailures(span);
     // Governed request capture (spec 028): exact request components to
     // customer storage; the span carries only the reference.
     const requestRef = this.captureLlmRequest(span, options);
@@ -1026,6 +1107,7 @@ export class Decision implements DecisionLike {
         options.captureContent ?? false,
         options.emitLegacyAttributes ?? true,
         this.llmCaptureFn(span, options),
+        this.ids,
       );
       return runAndEnd(span, () => fn(call));
     });
@@ -1125,12 +1207,23 @@ export class Decision implements DecisionLike {
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {
     const extra: Record<string, AttrValue> = {};
     applyCrossCutting(extra, options, this.labelFn);
+    // 049 §4.2: the tool name is an operator label (`lbl-` when pseudonymous);
+    // without a key the span is "execute_tool" and carries no tool name.
+    const toolName = this.ids.label(name);
     const resolved = {
       ...options,
-      agentName: options.agentName ?? this.identity.agentName,
+      emitToolName: toolName !== undefined,
+      // N12: a tool-call id is a provider id, its keyed `p-` form.
+      callId: options.callId !== undefined ? this.ids.id("p", options.callId) : undefined,
+      // Round-2 review F4: the agent name is an agent identity (`agt-`); the
+      // description is free text with no identity value, kept only in clear mode.
+      agentName: this.ids.id("agt", options.agentName ?? this.identity.agentName),
+      description: this.ids.clear ? options.description : undefined,
+      ...this.stepIds(options),
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
-    const span = startToolSpan(this.tracer, name, resolved);
+    const span = startToolSpan(this.tracer, toolName ?? "execute_tool", resolved);
+    this.countChildFailures(span);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
       const tool = new ToolCall(
@@ -1142,6 +1235,26 @@ export class Decision implements DecisionLike {
       );
       return runAndEnd(span, () => fn(tool));
     });
+  }
+
+  /** A caller id as emitted (049 §2.9): clear, `lbl-`, or `undefined`. */
+  private opaque(value: string | undefined): string | undefined {
+    return value === undefined ? undefined : this.ids.opaque(value);
+  }
+
+  /**
+   * The caller's step and attempt ids as emitted (round-2 review F4): their
+   * keyed `lbl-` form when pseudonymous, omitted without a key. A value that
+   * is not a non-empty string passes through, so validation still rejects it.
+   */
+  private stepIds(options: StepOptions): StepOptions {
+    const map = (value: string | undefined): string | undefined =>
+      typeof value === "string" && value !== "" ? this.ids.opaque(value) : value;
+    return {
+      stepId: map(options.stepId),
+      stepAttemptId: map(options.stepAttemptId),
+      stepRetryPreviousAttemptId: map(options.stepRetryPreviousAttemptId),
+    };
   }
 
   /** The capture callback handed to a child ToolCall. */
@@ -1468,13 +1581,22 @@ export class Decision implements DecisionLike {
 
       this.sideEffectCount += 1;
       this.sideEffectTypes.add(record.effectType);
-      this.sideEffectSystems.add(record.targetSystem);
+      // 049 §4.2: target systems and operations are operator labels (`lbl-`
+      // when pseudonymous, as given with FABRIC_WIRE_LABELS=clear).
+      const system = this.ids.label(record.targetSystem);
+      const operation = this.ids.label(record.operation);
+      if (system !== undefined) this.sideEffectSystems.add(system);
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_COUNT, this.sideEffectCount);
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_TYPES, sortedSet(this.sideEffectTypes));
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_SYSTEMS, sortedSet(this.sideEffectSystems));
+      // A minted uuid4 is Fabric's own id; a caller's id is mapped (`lbl-`).
+      const effectId =
+        options.sideEffectId === undefined
+          ? record.sideEffectId
+          : this.ids.opaque(record.sideEffectId);
 
-      if (record.replayBehavior === "suppress") {
-        this.suppressedSideEffectIds.push(record.sideEffectId);
+      if (record.replayBehavior === "suppress" && effectId !== undefined) {
+        this.suppressedSideEffectIds.push(effectId);
       }
       // Governed capture (spec 028): verbatim payloads to customer
       // storage; the event carries only the references.
@@ -1491,17 +1613,17 @@ export class Decision implements DecisionLike {
         options.resultPayload,
         { bindings: seBindings },
       );
-      const attrs: Record<string, AttrValue> = {
-        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_SE_ID]: record.sideEffectId,
-        [A.ATTR_SE_TYPE]: record.effectType,
-        [A.ATTR_SE_TARGET_SYSTEM]: record.targetSystem,
-        [A.ATTR_SE_OPERATION]: record.operation,
+      const attrs: Record<string, AttrValue> = { [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION };
+      if (effectId !== undefined) attrs[A.ATTR_SE_ID] = effectId;
+      attrs[A.ATTR_SE_TYPE] = record.effectType;
+      if (system !== undefined) attrs[A.ATTR_SE_TARGET_SYSTEM] = system;
+      if (operation !== undefined) attrs[A.ATTR_SE_OPERATION] = operation;
+      Object.assign(attrs, {
         [A.ATTR_SE_APPROVAL_REQUIRED]: record.approvalRequired,
         [A.ATTR_SE_COMMITTED]: record.committed,
         [A.ATTR_SE_ROLLBACK_SUPPORTED]: record.rollbackSupported,
         [A.ATTR_SE_REPLAY_BEHAVIOR]: record.replayBehavior,
-      };
+      });
       // 049 §7.5: computed or caller-supplied, a digest of the original only
       // where its role retains it.
       if (
@@ -1524,9 +1646,12 @@ export class Decision implements DecisionLike {
       if (idempotencyKey !== undefined) {
         attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = idempotencyKey;
       }
-      if (record.parentToolCallId !== undefined) {
-        attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = record.parentToolCallId;
-      }
+      // N12: the parent tool-call id is a provider id, its keyed `p-` form.
+      const parent =
+        record.parentToolCallId !== undefined
+          ? this.ids.id("p", record.parentToolCallId)
+          : undefined;
+      if (parent !== undefined) attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = parent;
       this.span.addEvent(A.EVENT_NAME_SIDE_EFFECT, attrs);
       return record;
     });
@@ -1578,10 +1703,12 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_REPLAY_METADATA_VERSION]: "1",
-        [A.ATTR_REPLAY_DECISION_ID]: this.decisionIdValue,
       };
-      if (this.resolvedExecutionId !== undefined) {
-        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.resolvedExecutionId;
+      if (this.emittedDecisionId !== undefined) {
+        attrs[A.ATTR_REPLAY_DECISION_ID] = this.emittedDecisionId;
+      }
+      if (this.emittedExecutionId !== undefined) {
+        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.emittedExecutionId;
       }
       if (this.checkpointIds.length > 0) {
         attrs[A.ATTR_REPLAY_CHECKPOINT_IDS] = [...this.checkpointIds];
@@ -1673,9 +1800,12 @@ export class Decision implements DecisionLike {
       this.span.setAttribute(A.ATTR_SKILL_COUNT, this.skillCount);
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_SKILL_NAME]: name,
-        [A.ATTR_SKILL_VERSION]: version,
       };
+      // 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+      const skillName = this.ids.label(name);
+      if (skillName !== undefined) attrs[A.ATTR_SKILL_NAME] = skillName;
+      const skillVersion = this.ids.label(version);
+      if (skillVersion !== undefined) attrs[A.ATTR_SKILL_VERSION] = skillVersion;
       if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
       if (options.manifestHash !== undefined) {
         attrs[A.ATTR_SKILL_MANIFEST_HASH] = assertSha256Hex(
@@ -1794,7 +1924,15 @@ export class Decision implements DecisionLike {
         parentAgentId: this.identity.agentId,
       };
       const carrier: Record<string, string> = {};
-      inject(carrier, context, trace.setSpanContext(otelContext.active(), this.span.spanContext()));
+      try {
+        inject(
+          carrier,
+          context,
+          trace.setSpanContext(otelContext.active(), this.span.spanContext()),
+        );
+      } catch {
+        this.internalErrors += 1; // 049 §7.1: the delegation proceeds without a carrier
+      }
 
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -1934,7 +2072,8 @@ export class Decision implements DecisionLike {
       if (payloadRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = payloadRef;
       }
-      if (options.metadata !== undefined) {
+      // 049 §7.5: the metadata digest only where the interaction's content is retained.
+      if (options.metadata !== undefined && retainsPayload) {
         attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
       }
       const resolved = applyCrossCutting(attrs, options, this.labelFn);
@@ -2010,7 +2149,10 @@ export class Decision implements DecisionLike {
     const status =
       this.recordingAtStart === false
         ? "disabled"
-        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0 || this.concurrentUse > 0
+        : (droppedEvents ?? 0) > 0 ||
+            (droppedAttributes ?? 0) > 0 ||
+            this.concurrentUse > 0 ||
+            this.internalErrors > 0
           ? "partial"
           : "unverified";
     if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {
@@ -2162,7 +2304,7 @@ export function runDecision<T>(
   fn: (d: Decision) => T,
 ): T {
   validateIds(ids);
-  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
   const ctx = trace.setSpan(otelContext.active(), span);
   return otelContext.with(ctx, () => {
     const decision = new Decision(tracer, span, identity, ids);
@@ -2204,7 +2346,7 @@ export function startDecision(
   ids: DecisionIds,
 ): Decision {
   validateIds(ids);
-  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
   return new Decision(tracer, span, identity, ids);
 }
 
