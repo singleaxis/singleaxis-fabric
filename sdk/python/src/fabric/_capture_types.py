@@ -663,13 +663,16 @@ EvidenceValue = Any  # EvidenceScalar or nested lists/objects, bounded by Eviden
 @dataclass(frozen=True, slots=True)
 class EvidenceDoc:
     """The record's one structured evidence object (§3.4a), ``fabric.record-evidence/v1``.
-    Build it with :meth:`build`, which checks the bounds before anything is serialised
-    (serialisation happens on the capture worker)."""
+    Build it with :meth:`build`, which checks the bounds and the type's closed item schema
+    before anything is serialised (serialisation, ID mapping and a second check happen on
+    the capture worker). ``charge`` is what it holds of ``max_inflight_bytes`` until the
+    worker has encoded it: measured by :meth:`build`, else the 1 MiB cap (conservative)."""
 
     evidence_type: str
     items: tuple[Mapping[str, EvidenceValue], ...]
     refs: tuple[EvidenceRef, ...] = ()
     continuation: EvidenceContinuation | None = None
+    charge: int = field(default=EVIDENCE_MAX_BYTES, init=False, repr=False, compare=False)
 
     @classmethod
     def build(
@@ -677,17 +680,30 @@ class EvidenceDoc:
         refs: Sequence[EvidenceRef] = (), continuation: EvidenceContinuation | None = None,
         *, boundary: str = "caller",
     ) -> EvidenceDoc | DescriptorOnlyBody:  # fmt: skip
-        """The evidence object, or ``DescriptorOnlyBody(record.evidence, payload_too_large)``
-        when an item-count, depth or string-length bound is exceeded. A malformed document
-        (unknown type, float, bytes, non-string key) is :class:`RecordsMisuseError`."""
-        from ._evidence import check_evidence  # noqa: PLC0415 - _evidence imports this module
+        """The evidence object, or a descriptor-only ``record.evidence``:
+        ``payload_too_large`` when an item-count, depth, string-length or total-work bound
+        is exceeded; ``parse_failed`` (counted ``api_misuse``; raised under
+        ``FABRIC_RECORDS_STRICT=1``) when an item is outside its type's closed schema. A
+        malformed document (unknown type, float, bytes, non-string key) is
+        :class:`RecordsMisuseError`."""
+        from ._evidence import EvidenceSchemaError, measure_evidence  # noqa: PLC0415 - cycle
 
         doc = cls(evidence_type, tuple(items), tuple(refs), continuation)
-        if check_evidence(doc):
-            return doc
-        return DescriptorOnlyBody.for_reason(
-            EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE, boundary, "payload_too_large"
-        )
+        try:
+            charge = measure_evidence(doc)
+        except EvidenceSchemaError:
+            COUNTERS.api_misuse += 1
+            if strict():
+                raise
+            return DescriptorOnlyBody.for_reason(
+                EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE, boundary, "parse_failed"
+            )
+        if charge is None:
+            return DescriptorOnlyBody.for_reason(
+                EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE, boundary, "payload_too_large"
+            )
+        object.__setattr__(doc, "charge", charge)
+        return doc
 
 
 @dataclass(frozen=True, slots=True)
@@ -744,5 +760,12 @@ class RecordJob:
 
     @property
     def inflight_charge(self) -> int:
-        """Bytes charged to ``max_inflight_bytes`` (§3.4 step 3)."""
-        return sum(body.inflight_charge for body in self.bodies)
+        """Bytes charged to ``max_inflight_bytes`` (§3.4 step 3): the bodies and the
+        evidence object held by reference (its bounded :attr:`EvidenceDoc.charge`)."""
+        held = sum(body.inflight_charge for body in self.bodies)
+        evidence = self.evidence
+        if evidence is not None:
+            charge = getattr(evidence, "charge", EVIDENCE_MAX_BYTES)
+            held += charge if type(charge) is int and 0 < charge <= EVIDENCE_MAX_BYTES else (
+                EVIDENCE_MAX_BYTES)  # fmt: skip
+        return held

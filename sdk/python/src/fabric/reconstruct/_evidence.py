@@ -42,7 +42,13 @@ from fabric._capture_types import (
     EVIDENCE_SCHEMA_VERSION,
     UUID4_RE,
 )
-from fabric._evidence import EVIDENCE_ENVELOPE_KEYS, EVIDENCE_MAX_REFS, POINTER_RE
+from fabric._evidence import (
+    CLEAR_KEYWORD,
+    EVIDENCE_ENVELOPE_KEYS,
+    EVIDENCE_ITEM_SCHEMAS,
+    EVIDENCE_MAX_REFS,
+    POINTER_RE,
+)
 from fabric._seal import canonical_bytes
 
 from ._fields_model import FieldValue
@@ -56,34 +62,12 @@ _REF_KEYS = frozenset({"object_id", "role", "pointer", "byte_range"})
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
 _ROLE_MAX = 64
 _INT64_MAX = (1 << 63) - 1
-CLEAR_KEYWORD = "x-fabric-clear"
 _QUOTE, _BACKSLASH = 0x22, 0x5C
 _OPEN, _CLOSE = frozenset({0x5B, 0x7B}), frozenset({0x5D, 0x7D})  # [ {  and  ] }
 _RANGE = 2  # a byte_range is [start, end)
 
-# --- the twin of field-registry-v1.json evidence_types (pinned by test) ---------------------
-_TEST_ITEMS_SCHEMA: Mapping[str, Any] = {
-    "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.test.items-v1.schema.json",
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["name", "count"],
-    "properties": {
-        "name": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,63}$"},
-        "count": {"type": "integer", "minimum": 0, "maximum": 1000000},
-        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "kind": {"enum": ["alpha", "beta", "other"]},
-        "ref_index": {"type": "integer", "minimum": 0, "maximum": 63},
-        "tags": {
-            "type": "array", "maxItems": 8,
-            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$"},
-        },
-        "actor": {
-            "type": "string", "pattern": "^act-[0-9a-f]{32}$",
-            CLEAR_KEYWORD: {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
-        },
-    },
-}  # fmt: skip
+# --- the twin of field-registry-v1.json evidence_types (pinned by test); the item schemas
+# are the capture side's (fabric._evidence), so the agent and the decoder check one schema --
 #: Registered evidence types: the capture points allowed to emit each, its projected fields
 #: as ``(layer, key, pointer)`` and its closed item schema.
 EVIDENCE_TYPES: Mapping[str, Mapping[str, Any]] = MappingProxyType({
@@ -95,7 +79,7 @@ EVIDENCE_TYPES: Mapping[str, Mapping[str, Any]] = MappingProxyType({
             ("decisions_effects", "x-fabric.test_item_counts", "/items/*/count"),
             ("structure", "x-fabric.test_item_actors", "/items/*/actor"),
         ),
-        "schema": _TEST_ITEMS_SCHEMA,
+        "schema": EVIDENCE_ITEM_SCHEMAS["fabric.test.items/v1"],
     }),
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------

@@ -52,7 +52,9 @@ from .._capture_types import (
     SpanIds,
     settle_noop,
 )
+from .._evidence import OMIT_IDS, EvidenceIds
 from .._evidence import encode as encode_evidence
+from .._evidence import encode_raw as encode_raw_evidence
 from .._loss import LossEmitter, LossReason, PrivateFallback, resolve_capture_provider
 from .._model_names import expose_model
 from .._records import BudgetRefusedBody, records_max_object_bytes
@@ -265,6 +267,7 @@ class CapturePipeline:
         # budget at emit (the records input attaches it) and released when the job is done;
         # one object is at most min(role cap, max_body_bytes, records_max_object_bytes).
         self._record_budget: Callable[[], Budget | None] = _no_budget
+        self._evidence_ids: EvidenceIds = OMIT_IDS  # until a records input binds its rule
         self._max_body = max_body_bytes if protector is None else protector.max_body
         self._records_max = records_max_object_bytes(os.environ)
         self._init_state()
@@ -297,6 +300,11 @@ class CapturePipeline:
         """How to reach the in-flight budget records-input bodies are charged to (read at
         each charge: a forked child's tee has a new one)."""
         self._record_budget = budget if budget is not None else _no_budget
+
+    def set_evidence_ids(self, ids: EvidenceIds | None) -> None:
+        """The records input's identity rule for evidence ID properties (R8); without one
+        they are omitted (§3.4a item 3)."""
+        self._evidence_ids = ids if ids is not None else OMIT_IDS
 
     def charge_record(self, job: RecordJob) -> bool:
         """Charge ``job``'s bodies to the in-flight budget (application thread: one short
@@ -674,8 +682,14 @@ class CapturePipeline:
         if len(data) > cap:
             return [self._record_withheld(base, role, mode, "payload_too_large",
                                           observed=len(data))]  # fmt: skip
-        if role == EVIDENCE_ROLE:  # caller-made evidence bytes: stored as the role allows
-            return [self._evidence_object(base, mode, data)]
+        if role == EVIDENCE_ROLE:  # caller-made evidence bytes: the built document's path
+            try:  # closed schema and ids mapped before anything is written (§3.4a, R8)
+                document = encode_raw_evidence(data, self._evidence_ids)
+            except Exception:
+                return [self._record_withheld(base, role, mode, "parse_failed")]
+            if document is None or len(document) > cap:
+                return [self._record_withheld(base, role, mode, "payload_too_large")]
+            return [self._evidence_object(base, mode, document)]
         if self._protector is None:
             return []
         return self._protector.side(
@@ -694,7 +708,7 @@ class CapturePipeline:
         base = self._record_base(job, media_type=EVIDENCE_MEDIA_TYPE, boundary=boundary,
                                  provenance=provenance)  # fmt: skip
         try:
-            data = encode_evidence(job.evidence)
+            data = encode_evidence(job.evidence, self._evidence_ids)
         except Exception:  # the items changed since emit: no longer a valid document
             return [self._record_withheld(base, EVIDENCE_ROLE, mode, "encoding_failed")]
         cap = min(ROLES[EVIDENCE_ROLE].cap_bytes(self._max_body), self._records_max)
