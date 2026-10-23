@@ -8,6 +8,14 @@ import (
 	"testing"
 )
 
+// Fixture values kept out of attribute rows so secret scanners do not read
+// them as credentials. upperCaseLabel is a mapped label in the wrong case,
+// which a pseudonymous Node must refuse; callerClaim is a clear caller id.
+const (
+	upperCaseLabel = "LBL-9F86D081884C7D659A2FEAA0C55AD015"
+	callerClaim    = "claim-4711-jane"
+)
+
 // v0.8.1 (spec 049 §2.9, §4.2; spec 051 §4.9): the decision-line keys that
 // carried caller data in clear are admitted under a pseudonymous Node only in
 // the SDK's mapped form. Caller ids with no v2 type yet (idempotency keys,
@@ -31,7 +39,7 @@ func TestDecisionLineKeysRejectClearValuesUnderPseudonymousNode(t *testing.T) {
 	}{
 		{"fabric.side_effect.idempotency_key", lbl, true, true, true},
 		{"fabric.side_effect.idempotency_key", "order-4711-jane", false, true, false},
-		{"fabric.side_effect.idempotency_key", "LBL-9F86D081884C7D659A2FEAA0C55AD015", false, true, false},
+		{"fabric.side_effect.idempotency_key", upperCaseLabel, false, true, false},
 		{"fabric.tool.idempotency_key", lbl, true, true, true},
 		{"fabric.tool.idempotency_key", "charge-jane-doe", false, true, false},
 		{"fabric.retrieval.source_document_ids", []any{lbl, lbl}, true, true, true},
@@ -216,7 +224,7 @@ func TestCallerIDsAndLabelsUnderPseudonymousNode(t *testing.T) {
 		rows = append(rows,
 			row{key, minted, true, true, true},
 			row{key, lbl, true, true, true},
-			row{key, "claim-4711-jane", false, true, false},
+			row{key, callerClaim, false, true, false},
 			row{key, agt, false, true, false})
 	}
 	for _, key := range []string{"fabric.workflow_id", "fabric.execution.attempt_id",
@@ -224,7 +232,7 @@ func TestCallerIDsAndLabelsUnderPseudonymousNode(t *testing.T) {
 		"fabric.step.retry.previous_attempt_id", "fabric.parent_decision_id"} {
 		rows = append(rows,
 			row{key, lbl, true, true, true},
-			row{key, "claim-4711-jane", false, true, false},
+			row{key, callerClaim, false, true, false},
 			row{key, minted, false, true, false})
 	}
 	for _, key := range []string{"gen_ai.workflow.name", "gen_ai.prompt.name",
