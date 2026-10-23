@@ -140,6 +140,7 @@ def test_seal_accumulator_after_fork_drops_the_parents_segments(
     assert seals.stats() == {**dict.fromkeys(seals.stats(), 0)}
     seals.request_seal("seg-" + "b" * 32, last_sequence=-1, manifest_digest=None,
                        terminal=False, resumable=False)  # fmt: skip
+    assert seals.drain(10.0)  # built on the seal worker
     assert seals.stats()["seal_markers_unqueued"] == 1  # no sink: counted, never blocked
 
 
