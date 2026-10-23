@@ -20,7 +20,7 @@ import hashlib
 import os
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1265,6 +1265,23 @@ class _Bodies:
     skipped: bool
 
 
+def _unstamped(result: ObjectResult | None) -> str | None:
+    """049 §7.9: why an object the verdict consumes is not authenticated in the production
+    profile (``unstamped_object``: its persisted descriptor lacks the Node's stamp;
+    ``unstamped_part``: a part a split side was reassembled from does), else ``None``. Only
+    a ``verified`` object, or a bound descriptor-only ``not_stored`` records object, is
+    consumed; every other outcome is already a gap of its own."""
+    if result is None or result.verification not in ("verified", "not_stored"):
+        return None
+    if result.verification == "not_stored" and result.descriptor is None:
+        return None  # an exchange side that stored nothing: no object to authenticate
+    if not result.source_authenticated:
+        return "unstamped_object"
+    if not result.parts_authenticated:
+        return "unstamped_part"
+    return None
+
+
 def _object_id_list(object_ids: Any) -> TypeGuard[list[str]]:
     """A record's ``fabric.content.object_ids``: 1-8 uuid4 object ids (§3.4)."""
     return (
@@ -1706,27 +1723,39 @@ class _Run:
         binding to the record). A deleted or altered object is a ``missing_object`` or
         ``digest_mismatch`` gap (partial) of the record's scope, so the run is never
         complete; without a store nothing is read (the seal check reports ``no_store``)."""
+        for record, result in self._record_objects():
+            if result.verification not in ("missing", "digest_mismatch"):
+                continue
+            gap_type: GapType = (
+                "missing_object" if result.verification == "missing" else "digest_mismatch"
+            )
+            self._record_gap(record, gap_type, "partial", result.reason)
+
+    def _record_objects(self) -> Iterator[tuple[RecordObs, ObjectResult]]:
+        """Every object a records-input record of the run names, with its verification
+        (:meth:`_Verifier.record_object`); nothing without a store."""
         verifier = self.verifier
         if verifier.reader is None:
             return
         for run_id in verifier.run_ids_of(self.run_id):
             for record in verifier.run_records.get(run_id, ()):
                 object_ids = record.span.attributes.get(A_OBJECT_IDS)
-                if not _object_id_list(object_ids):
-                    continue
-                for object_id in object_ids:
-                    result = verifier.record_object(record, object_id)
-                    if result.verification not in ("missing", "digest_mismatch"):
-                        continue
-                    self._add(
-                        Gap("missing_object" if result.verification == "missing"
-                            else "digest_mismatch", "partial", source_id=record.source_id,
-                            source_epoch=record.source_epoch,
-                            first_sequence=record.source_sequence,
-                            last_sequence=record.source_sequence, segment_id=record.segment_id,
-                            reason=result.reason),
-                        () if record.scope_id is None else (record.scope_id,),
-                    )  # fmt: skip
+                if _object_id_list(object_ids):
+                    for object_id in object_ids:
+                        yield record, verifier.record_object(record, object_id)
+
+    def _record_gap(
+        self, record: RecordObs, gap_type: GapType, effect: Literal["partial", "unverified"],
+        reason: str | None,
+    ) -> None:  # fmt: skip
+        """A gap about one record's object: its position and segment, counted against the
+        record's scope."""
+        self._add(
+            Gap(gap_type, effect, source_id=record.source_id, source_epoch=record.source_epoch,
+                first_sequence=record.source_sequence, last_sequence=record.source_sequence,
+                segment_id=record.segment_id, reason=reason),
+            () if record.scope_id is None else (record.scope_id,),
+        )  # fmt: skip
 
     def _structure(self) -> dict[str, Any]:
         """``run_state``, ``segments``, ``run_aliases``, ``deadline_at`` and ``evaluated_at``
@@ -1800,15 +1829,8 @@ class _Run:
                 ("request", body.request), ("response", body.response),
             ]  # fmt: skip
             for side, result in sides:
-                if result is None or result.verification != "verified":
-                    continue
-                # Every object the verdict consumes: the side's object and, for a split
-                # side, each part it was reassembled from (Sol P0-A #3).
-                if not result.source_authenticated:
-                    reason = "unstamped_object"
-                elif not result.parts_authenticated:
-                    reason = "unstamped_part"
-                else:
+                reason = _unstamped(result)
+                if reason is None:
                     continue
                 self._add(
                     Gap(
@@ -1820,6 +1842,12 @@ class _Run:
                     ),
                     self._scopes_of(exchange.exchange_id),
                 )
+        # A records-input object the verdict consumes (a verified body, or a bound
+        # descriptor-only object) is authenticated by its persisted descriptor's stamp too.
+        for record, result in self._record_objects():
+            reason = _unstamped(result)
+            if reason is not None:
+                self._record_gap(record, "source_unauthenticated", "unverified", reason)
 
     def _scopes_of(self, exchange_id: str | None) -> tuple[str, ...]:
         if exchange_id is None:
