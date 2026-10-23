@@ -308,7 +308,8 @@ class WireHandle:
             deadline = time.monotonic() + max(0.0, timeout)
             drained = self._tee.close(timeout * _DRAIN_SHARE)
             _p1_uninstalled(self)  # 050 §3.8: the wire points' state change, before final
-            _p1_final(self)  # 050 §3.6: final() seals every open segment first
+            # 050 §3.6: final() seals every open segment first (seal markers before final)
+            _p1_final(self, max(0.0, deadline - time.monotonic()))
             self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
             _p1_detach(self)
             remaining = max(0.0, deadline - time.monotonic())
@@ -462,7 +463,8 @@ def _p1_attach(
         if callable(bind):
             bind(allocator=allocator, loss=loss, seals=tee.pipeline.seals,
                  key=config.id_key if config is not None else None,
-                 production=gate is not None and gate.profile == "production")  # fmt: skip
+                 production=gate is not None and gate.profile == "production",
+                 labels=config.labels if config is not None else None)  # fmt: skip
     with contextlib.suppress(Exception):
         allocator.attach(segments=table, seals=tee.pipeline.seals)
         tee.pipeline.set_settle(allocator.settle)
@@ -530,13 +532,17 @@ def _p1_installed(handle: WireHandle, registration: Registration | None) -> None
         _manifest.emit_initial(handle)
 
 
-def _p1_final(handle: WireHandle) -> None:
-    """050 §3.6 ``final()`` trigger: seal the open segments before the ``final`` marker."""
+def _p1_final(handle: WireHandle, timeout_s: float = 1.0) -> None:
+    """050 §3.6 ``final()`` trigger: seal the open segments, and wait (bounded) for the seal
+    worker to queue their ``segment_seal`` markers, before the ``final`` marker. The
+    registration is not finalized here: only once the ``final`` marker is durably in the
+    spool (:func:`_p1_closed`)."""
     with contextlib.suppress(Exception):
         handle.allocator.segments.on_final()
     with contextlib.suppress(Exception):
-        if handle.registration is not None:
-            handle.registration.final()
+        drain = getattr(handle._tee.pipeline.seals, "drain", None)
+        if callable(drain):
+            drain(timeout_s)
 
 
 def _p1_detach(handle: WireHandle) -> None:
@@ -549,10 +555,23 @@ def _p1_detach(handle: WireHandle) -> None:
 
 
 def _p1_closed(handle: WireHandle) -> None:
-    """After delivery: release the registration (its file goes once ``final`` is spooled)."""
+    """After delivery (050 §3.2 rule 3): finalize the registration only when this epoch's
+    ``final`` marker is durably in the spool, then release it (a finalized file is
+    removed). On a timeout, a refusal or a spool without its directory barrier the file
+    stays unflagged: released, the next drainer declares the epoch an orphan at its
+    high-water mark (a ``final`` that did reach the spool then only covers it twice)."""
     with contextlib.suppress(Exception):
-        if handle.registration is not None:
-            handle.registration.close()
+        registration = handle.registration
+        if registration is None:
+            return
+        try:
+            sender = handle._tee.sender
+            if sender is not None and sender.final_durable(
+                registration.source_id, registration.epoch
+            ):
+                registration.final()
+        finally:
+            registration.close()
 
 
 def _patch_clients(config: WireConfig) -> None:

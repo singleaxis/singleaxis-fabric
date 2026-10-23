@@ -119,6 +119,9 @@ class Sender:
         # Run markers not spooled yet (a full spool or disk): retried on every pump and,
         # with the loss ranges still in memory, mirrored to the spool's loss ledger (D1).
         self._held: list[Marker] = []
+        # (source_id, epoch) of the ``final`` markers this sender wrote to the spool: the
+        # registration of that epoch is finalized only then (050 §3.2 rule 3).
+        self._finals: set[tuple[str, int]] = set()
         # Heartbeats declaring orphaned epochs (§3.2 rule 5), kept until exported.
         self._orphan_beats: list[Marker] = []
         # The ledger copy of each held record: (order, written_at) fixed when first held.
@@ -306,7 +309,15 @@ class Sender:
             self._stats["markers_invalid"] += 1
             self._stats["markers_dropped"] += 1
             return True
-        return self._write(doc)
+        written = self._write(doc)
+        if written and marker.kind == "final":
+            self._finals.add((marker.source_id, marker.epoch))
+        return written
+
+    def final_durable(self, source_id: str, epoch: int) -> bool:
+        """Whether this sender wrote the ``final`` marker of ``(source_id, epoch)`` to the
+        spool (fsync'd) and the spool's directory barrier holds (050 §3.2 rule 3)."""
+        return (source_id, epoch) in self._finals and bool(self.spool.durable)
 
     def _marker_span(self, marker: Marker, at: int) -> ReadableSpan:
         """A directly exported marker (a periodic heartbeat); its ids derive from its event

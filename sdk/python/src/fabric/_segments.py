@@ -40,6 +40,7 @@ import secrets
 import threading
 import uuid
 import weakref
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal, cast
@@ -97,6 +98,12 @@ OPEN_DEADLINE_ENV, DEFAULT_OPEN_DEADLINE_S = "FABRIC_RUN_OPEN_DEADLINE_S", 60480
 OPEN_DEADLINE_RANGE = (60, 31536000)  # capture/v1 marker check
 MAX_PREDECESSORS = MAX_BRANCHES  # capture/v1: a run_start names at most 64 predecessors
 MAX_SEALED_KEPT = 64  # sealed segments remembered per run (diagnostics; the graph is offline)
+# Runs whose outermost block here exited leave the live table; the most recent ones are
+# kept (LRU) so a re-entered run still continues locally (its last sealed segment as the
+# predecessor) and post-terminal reuse is still counted (K2). A run re-entered after more
+# than this many others ended opens a new root instead: the verifier reports the second
+# root (G1), never silently. Bounded memory in a long-lived process (049 §7.1).
+MAX_RETIRED_RUNS = 1024
 # A manifest digest stands in for "no manifest in force" (its build failed or the epoch has
 # no chain): the token grammar needs one; the verifier reports that epoch manifest-less.
 NO_MANIFEST_DIGEST = "sha256:" + "0" * 64
@@ -209,13 +216,17 @@ class Identity:
 
 def resolve_identity(
     tokens: Sequence[str], run_id: str | None, *, map_run: Callable[[str], str],
-    mint: Callable[[], str],
+    mint: Callable[[], str], correlation_ok: Callable[[str], bool] | None = None,
 ) -> Identity:  # fmt: skip
     """Run identity at segment open (§3.6, the five rules; module docstring). ``map_run``
     is the identity rule for a clear run id (``EmittedId`` pass-through, keyed mapping,
     clear mode); ``mint`` draws a fresh ``r-`` correlation id (called only by rule 5).
-    Malformed tokens are dropped and counted; without a valid token the segment is a root."""
-    parsed = [p for p in map(parse_token, tokens) if p is not None]
+    ``correlation_ok`` is the consumer's identity mode for a token's correlation id (R8):
+    a token whose id it refuses (a clear id in a pseudonymous consumer) is dropped like a
+    malformed one. Dropped tokens are counted; without a valid token the segment is a root."""
+    parsed = [p for p in map(parse_token, tokens) if p is not None
+              and (p.correlation_id is None or correlation_ok is None
+                   or correlation_ok(p.correlation_id))]  # fmt: skip
     correlations = tuple(sorted(
         {p.correlation_id for p in parsed if p.correlation_id is not None},
         key=lambda c: c.encode("utf-8", "surrogatepass"),
@@ -375,6 +386,8 @@ class SegmentTable:
         self._seals: SealAccumulator | None = None
         self.rule = IdentityRule(key=None, mode="pseudonymous", production=False)
         self._runs: dict[str, _Run] = {}
+        self._retired: OrderedDict[str, _Run] = OrderedDict()  # ended here (LRU, bounded)
+        self._correlation_ok: Callable[[str], bool] | None = None
         self._segment_runs: dict[str, str] = {}  # open segment id -> run id (forced seals)
         self._closed = False
         self._warned = False
@@ -392,11 +405,22 @@ class SegmentTable:
     def bind(
         self, *, allocator: SourceAllocator, loss: LossEmitter, seals: SealAccumulator,
         key: bytes | None = None, production: bool = False,
-        identity_mode: IdentityMode | None = None,
+        identity_mode: IdentityMode | None = None, labels: str | None = None,
     ) -> None:  # fmt: skip
-        """Bind to the install (``wire.install``, before the handle is published)."""
+        """Bind to the install (``wire.install``, before the handle is published).
+        ``labels`` is the install's label mode (``FABRIC_WIRE_LABELS``)."""
+        from ._records import compile_check  # noqa: PLC0415 - records imports the run API
+        from ._records_keys_generated import RECORD_KEY_CHECKS  # noqa: PLC0415
+
         self._allocator, self._loss, self._seals = allocator, loss, seals
         mode = identity_mode or identity_mode_from_env(os.environ)
+        # R8 (049 §2.9 rule 7): a token's correlation id becomes this process's emitted
+        # run id, so it must be one the records input emits as ``fabric.run.id`` in this
+        # identity mode; a pseudonymous consumer never takes a clear id from a token.
+        self._correlation_ok = compile_check(
+            RECORD_KEY_CHECKS["fabric.run.id"], labels=cast("Any", labels or "pseudonymous"),
+            identity=mode,
+        )  # fmt: skip
         self.rule = IdentityRule(key=key, mode=mode, production=production,
                                  fallback=self._source_fallback)  # fmt: skip
         on_forced = getattr(seals, "on_forced", ...)
@@ -452,7 +476,29 @@ class SegmentTable:
         return {**self._stats, "open_runs": sum(1 for r in self._runs.values() if r.depth)}
 
     def get(self, run_id: str) -> RunEntry | None:
-        return self._runs.get(run_id)
+        """The run's entry: live, or ended here and still remembered (diagnostics)."""
+        return self._runs.get(run_id) or self._retired.get(run_id)
+
+    def _retire(self, run: _Run) -> None:
+        """Outermost exit (lock held): a run with nothing open leaves the live table for
+        the bounded LRU of ended runs (:data:`MAX_RETIRED_RUNS`)."""
+        if run.depth > 0 or run.open_segment is not None or run.pending_declared:
+            return
+        if self._runs.get(run.run_id) is not run:
+            return
+        del self._runs[run.run_id]
+        del run.sealed[:-1]  # diagnostics only: the last sealed segment
+        self._retired[run.run_id] = run
+        self._retired.move_to_end(run.run_id)
+        while len(self._retired) > MAX_RETIRED_RUNS:
+            self._retired.popitem(last=False)
+
+    def _revive(self, run_id: str) -> _Run | None:
+        """The live entry of ``run_id``, taking a remembered ended run back (lock held)."""
+        run = self._runs.get(run_id)
+        if run is None and (run := self._retired.pop(run_id, None)) is not None:
+            self._runs[run_id] = run
+        return run
 
     # -- markers and seals (allocator lock held) -----------------------------------------------
 
@@ -617,7 +663,8 @@ class SegmentTable:
             tokens, self._env_tokens = self._env_tokens, None  # consumed once
         clear = run_id if isinstance(run_id, str) else self._env_run_id
         identity = resolve_identity(tokens, clear, map_run=self.rule.run,
-                                    mint=self.rule.mint_run)  # fmt: skip
+                                    mint=self.rule.mint_run,
+                                    correlation_ok=self._correlation_ok)  # fmt: skip
         self._rejected(identity.tokens_rejected)
         deadline = None
         if open_deadline_s is not None:
@@ -685,7 +732,7 @@ class SegmentTable:
             if self._closed:
                 return
             last, epoch = self._last(), cast("SourceAllocator", self._allocator).epoch
-            run = self._runs.get(plan.run_id)
+            run = self._revive(plan.run_id)
             new = run is None
             if run is None:
                 run = self._runs[plan.run_id] = _Run(
@@ -764,6 +811,7 @@ class SegmentTable:
                 self._request(self._seal(run, terminal=terminal))
                 run.final_block = run.fork_child = False
                 run.outcome = run.stop_reason = None
+                self._retire(run)
 
     # -- the protocol hooks (frozen by WP-01) ----------------------------------------------------
 
@@ -860,10 +908,16 @@ class SegmentTable:
         tokens), ``run_end`` with the outcome, and a terminal ``segment_seal``."""
         if not self.active:
             return "not_capturing"
-        parsed = [p for p in map(parse_token, tokens) if p is not None]
+        ok = self._correlation_ok
+        parsed = [
+            p
+            for p in map(parse_token, tokens)
+            if p is not None and (p.correlation_id is None or ok is None or ok(p.correlation_id))
+        ]
         self._rejected(len(tokens) - len(parsed))
         if not parsed:
             return "refused_no_token"
+        tokens = [t for t in tokens if (p := parse_token(t)) is not None and p in parsed]
         correlations = {p.correlation_id for p in parsed if p.correlation_id is not None}
         if run_id is None and len(correlations) > 1:
             return "refused_conflicting_tokens"
@@ -883,7 +937,7 @@ class SegmentTable:
                                scope_status="ok", outcome=outcome,
                                stop_reason=stop_reason))  # fmt: skip
             self._request(self._seal(run, terminal=True))
-            if (local := self._runs.get(identity.run_id)) is not None:
+            if (local := self.get(identity.run_id)) is not None:
                 local.terminal_sealed = True  # later activity here is post-terminal (K2)
             self._stats["end_runs"] += 1
         return "ended"
@@ -960,6 +1014,7 @@ class SegmentTable:
             allocator = cast("SourceAllocator", self._allocator)
             self.refresh_manifest()
             runs, self._runs, self._segment_runs = self._runs, {}, {}
+            self._retired = OrderedDict()  # forgotten, like every run outside the chain
             epoch = allocator.epoch
             for scope in chain:  # innermost first: C's run_start names the innermost block
                 run = self._runs.get(scope.run_id)
