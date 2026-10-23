@@ -164,7 +164,7 @@ def test_periodic_heartbeat_only_for_active_sources(
 def test_heartbeat_queue_overflow_drops_only_the_marker(
     emitter: LossEmitter, exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_loss, "_MAX_QUEUED_HEARTBEATS", 2)
+    monkeypatch.setattr(_loss, "MAX_QUEUED_MARKERS", 2)
     allocator = SourceAllocator("wire-full", "wire")
     for index in range(5):
         scope = RunScope(f"run-{index}", f"3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f6{index}", None)

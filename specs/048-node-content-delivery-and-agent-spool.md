@@ -345,7 +345,8 @@ records together (every body, then every span) and retires, receipts or
 quarantines the file as one unit; a damaged batch file explains the
 sequence of every frame that still verifies. A batch that does not fit
 under the bound is written one record per file instead, so as many as fit
-are kept. Loss and marker records are always single frames. Per-record
+are kept. The sender spools loss and marker records the same way, up to 64
+to a batch file in queue order (P1 review P2-4). Per-record
 files made every exchange pay ~6 syscalls (each a GIL hand-off) and a
 directory scan; under CPU-bound host threads the worker then shed load at
 ~20–60 exchanges/s.
@@ -430,9 +431,11 @@ a `queue_full` loss. A write that fails because the volume or quota is full
 loss, never `internal_error`. Loss and marker records may use a 1 MiB
 reserve above the bound (the loss ledger below included); past it, loss
 ranges stay in the in-memory table (merged per key, as 047) and are spooled
-when space frees, and a marker is held (up to 1,024; past that dropped and
-counted: its scope then stays open, `unverified`, never false complete) and
-retried on every pump.
+when space frees, and a marker is held (within the marker queue's bounds,
+16,384 markers and 16 MiB; past them dropped and counted: its scope or
+segment then stays open, a reported gap, never false complete) and retried
+on every pump. The in-memory marker queue has the same bounds; a marker
+past them is dropped and counted the same way.
 
 **Loss ledger (chaos report D1).** Evidence of a loss must survive a full
 disk and the death of the process that lost the data: kept only in memory,

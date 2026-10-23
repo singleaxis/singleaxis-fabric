@@ -1,7 +1,9 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
 """The spool sender (spec 048 §2), one daemon thread per process: spools loss and marker
-records, exports periodic heartbeats and, holding the spool lock, drains records in name
+records (64 to a batch file, D4, in queue order; what the spool cannot take is held and
+mirrored to the loss ledger, D1), exports periodic heartbeats and, holding the spool lock,
+drains records in name
 order (an exchange's or a record's bodies to the Node, then its span via
 ``SpanExporter.export``), retiring each only after every part succeeded; failures retry
 with capped backoff.
@@ -59,9 +61,10 @@ _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_r
           "quarantined", "markers_dropped", "spool_undecryptable", "spool_migrated",
           "disk_full_drops", "ledger_recovered", "over_bound_refused", "markers_invalid",
           "orphan_heartbeats")  # fmt: skip
-# Markers that could not be spooled are held (retried, mirrored to the loss ledger) up to
-# this many; past it one is dropped and counted (its scope stays open: unverified).
-_MAX_HELD_MARKERS = 1024
+# Markers that could not be spooled (a full spool or disk) are held, retried on every pump
+# and mirrored to the loss ledger (D1), within the marker queue's bounds (_loss); past them
+# the newest is dropped and counted (its scope or segment stays open: a reported gap).
+_MAX_HELD_MARKERS, _MAX_HELD_MARKER_BYTES = _loss.MAX_QUEUED_MARKERS, _loss.MAX_QUEUED_MARKER_BYTES
 _MAX_ORPHAN_BEATS = 4096  # orphan heartbeats awaiting export (registration files are bounded)
 _RECORDS_INPUT = "records"  # fabric.capture.input of a records-input span (X06)
 _SPAN_KIND = {"internal": SpanKind.INTERNAL, "client": SpanKind.CLIENT,
@@ -119,6 +122,7 @@ class Sender:
         # Run markers not spooled yet (a full spool or disk): retried on every pump and,
         # with the loss ranges still in memory, mirrored to the spool's loss ledger (D1).
         self._held: list[Marker] = []
+        self._held_bytes = 0  # _loss.marker_bytes() of the held markers
         # Heartbeats declaring orphaned epochs (§3.2 rule 5), kept until exported.
         self._orphan_beats: list[Marker] = []
         # The ledger copy of each held record: (order, written_at) fixed when first held.
@@ -250,37 +254,72 @@ class Sender:
         build = record_doc if attrs.get("fabric.capture.input") == _RECORDS_INPUT else exchange_doc
         return build(source_id, epoch, self.service_name, span, staged)
 
-    def _write(self, doc: Mapping[str, Any]) -> bool:
-        with contextlib.suppress(Exception):
-            if self.spool.write(doc, reserve=True) is not None:
-                self._stats["spooled"] += 1
-                return True
-        return False
+    def _write_docs(self, docs: Sequence[Mapping[str, Any]]) -> list[bool]:
+        """Spool loss and marker records in order, :data:`_BATCH` to a batch file (D4: one
+        admission, one fsync'd file, one rename, one directory fsync per batch; each record
+        counts as spooled only once its file and the directory were fsync'd). They may use
+        the spool's reserve. A batch that does not fit under the bound as one file is
+        written one record per file, so as many as fit are kept. After a batch not wholly
+        written nothing later is tried (it waits in memory for the next pump, after the
+        earlier ones: markers keep their order). Per record: whether it was spooled."""
+        done = [False] * len(docs)
+        for start in range(0, len(docs), _BATCH):
+            chunk = [(doc, ()) for doc in docs[start : start + _BATCH]]
+            try:
+                results = self.spool.write_batch(chunk, reserve=True, group=len(chunk) > 1)
+                if len(chunk) > 1:  # one file: its outcome is every record's
+                    (result,) = results
+                    results = (self.spool.write_batch(chunk, reserve=True) if result is None
+                               else [result] * len(chunk))  # fmt: skip
+            except Exception:
+                break
+            for offset, result in enumerate(results):
+                if isinstance(result, str):
+                    done[start + offset] = True
+                    self._stats["spooled"] += 1
+            if not all(done[start : start + len(chunk)]):
+                break
+        return done
+
+    def _hold(self, marker: Marker) -> None:
+        """Keep an unspooled marker for the next pump (mirrored to the ledger), within the
+        held bounds; past them it is dropped and counted."""
+        size = _loss.marker_bytes(marker)
+        if len(self._held) < _MAX_HELD_MARKERS and (
+            self._held_bytes + size <= _MAX_HELD_MARKER_BYTES
+        ):  # fmt: skip
+            self._held.append(marker)
+            self._held_bytes += size
+        else:
+            self._stats["markers_dropped"] += 1  # its scope or segment stays open: a gap
 
     def pump(self, *, every_source: bool = False, deadline: float | None = None) -> bool:
-        """Spool pending losses and markers, export due periodic heartbeats (best effort);
-        ``False`` when a periodic heartbeat was not exported, or when ``deadline`` passed
-        before another pump (perhaps stalled in disk I/O) released the lock."""
+        """Spool pending losses and markers (in batch files, D4), export due periodic
+        heartbeats (best effort); ``False`` when a periodic heartbeat was not exported, or
+        when ``deadline`` passed before another pump (perhaps stalled in disk I/O)
+        released the lock."""
         timeout = -1.0 if deadline is None else max(0.0, deadline - time.monotonic())
         if not self._pump_lock.acquire(timeout=timeout):
             return False
         try:
             due = every_source or self.loss.periodic_due()
             losses, beats = self.loss.take(periodic=due, every_source=every_source)
+            fresh = [m for m in beats if m.kind != "periodic"]
+            markers, docs = [], [loss_doc(loss) for loss in losses]
+            for marker in [*self._held, *fresh]:  # held first: they are older
+                if (doc := self._marker_doc(marker)) is not None:
+                    markers.append(marker)
+                    docs.append(doc)
+            self._held, self._held_bytes = [], 0
+            done = self._write_docs(docs)
             unspooled = []
-            for loss in losses:
-                if not self._write(loss_doc(loss)):
+            for loss, spooled in zip(losses, done[: len(losses)], strict=True):
+                if not spooled:
                     self.loss.retain(loss)  # kept in memory, spooled when space frees
                     unspooled.append(loss)
-            held = [m for m in beats if m.kind != "periodic"]
-            markers, self._held = [*self._held, *held], []
-            for marker in markers:
-                if self._spool_marker(marker):
-                    continue
-                if len(self._held) < _MAX_HELD_MARKERS:
-                    self._held.append(marker)  # retried on the next pump
-                else:
-                    self._stats["markers_dropped"] += 1  # its scope stays open: unverified
+            for marker, spooled in zip(markers, done[len(losses) :], strict=True):
+                if not spooled:
+                    self._hold(marker)  # retried on the next pump
             self._mirror(unspooled, self._held)
             now = time.time_ns()
             orphans = list(self._orphan_beats)
@@ -293,20 +332,19 @@ class Sender:
         finally:
             self._pump_lock.release()
 
-    def _spool_marker(self, marker: Marker) -> bool:
-        """Spool one marker; ``True`` when written, or when it can never be (a marker the
-        reader would refuse: dropped and counted, never written to be quarantined)."""
+    def _marker_doc(self, marker: Marker) -> dict[str, Any] | None:
+        """A marker's spool record; ``None`` (dropped and counted, never written to be
+        quarantined) for a marker the reader would refuse."""
         try:
             doc = marker_doc(marker)
             checked = {**doc, "schema_version": SCHEMA, "order": 0, "written_at_unix_nano": 0}
-            valid = valid_header(checked, 0)
-        except Exception:
-            valid = False
-        if not valid:
-            self._stats["markers_invalid"] += 1
-            self._stats["markers_dropped"] += 1
-            return True
-        return self._write(doc)
+            if valid_header(checked, 0):
+                return doc
+        except Exception:  # noqa: S110 - counted below
+            pass
+        self._stats["markers_invalid"] += 1
+        self._stats["markers_dropped"] += 1
+        return None
 
     def _marker_span(self, marker: Marker, at: int) -> ReadableSpan:
         """A directly exported marker (a periodic heartbeat); its ids derive from its event

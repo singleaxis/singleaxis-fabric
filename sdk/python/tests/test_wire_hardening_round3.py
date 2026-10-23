@@ -172,7 +172,7 @@ def test_flush_and_close_are_false_when_losses_and_markers_cannot_be_spooled(
     loss = LossEmitter()
     sender = Sender(spool, _OkExporter(), loss, content=None, service_name="fabric-wire")
     loss.attach(sender.wake)
-    spool.write = _full_disk  # type: ignore[method-assign]
+    spool.write = spool.write_batch = _full_disk  # type: ignore[method-assign]
     allocator = SourceAllocator("disk-agent", "wire")
     allocator.next_sequence()
     loss.record("disk-agent", allocator.epoch, "queue_full", 0)

@@ -450,7 +450,7 @@ def test_a_ledger_replay_keeps_the_marker_event_id(tmp_path: Path) -> None:
             def full(*_: Any, **__: Any) -> Any:
                 raise OSError(errno.ENOSPC, "full")
 
-            spool.write = full  # type: ignore[method-assign]
+            spool.write = spool.write_batch = full  # type: ignore[method-assign]
             loss = LossEmitter()
             sender = _sender(spool, _Exporter(), loss, content=None, service_name="svc")
             marker = _markers(random.Random(9))[2]  # a run_end
@@ -536,7 +536,7 @@ def test_spooled_losses_name_one_segment_each(tmp_path: Path) -> None:
     for sequence in (1, 2, 3, 4):
         loss.record("s-a", 7, "queue_full", sequence, segment_id=(SEG_A, SEG_B)[sequence % 2])
     sender.pump()
-    docs = [unframe(spool.read(name))[0] for name in spool.names()]
+    docs = [doc for name in spool.names() for doc, _ in unframe_all(spool.read(name))]
     segments = sorted((d["loss"]["segment_id"], d["loss"]["first_sequence"]) for d in docs)
     assert segments == [(SEG_A, 2), (SEG_A, 4), (SEG_B, 1), (SEG_B, 3)]
     assert spool.try_lock()
@@ -584,7 +584,7 @@ def test_disk_full_losses_settle_and_survive_in_the_ledger(tmp_path: Path) -> No
         return [OSError(errno.ENOSPC, "full") for _ in records]
 
     spool.write_group = full_group  # type: ignore[method-assign]
-    spool.write = full  # type: ignore[method-assign,assignment]
+    spool.write = spool.write_batch = full  # type: ignore[method-assign,assignment]
     pipeline = CapturePipeline(store=None, tracer_provider=None, loss=loss, sender=sender)
     allocator = SourceAllocator("node-1", "wire")
     jobs = [_capture_job(allocator, SEG_A), _capture_job(allocator, SEG_B)]

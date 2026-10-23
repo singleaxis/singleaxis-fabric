@@ -213,14 +213,14 @@ def _stalled_sender(tmp_path: Path) -> tuple[Sender, threading.Event, threading.
     sender = Sender(spool, _Ok(), loss, content=None, service_name="svc-test")
     loss.attach(lambda: None)
     entered, release = threading.Event(), threading.Event()
-    original = spool.write
+    original = spool.write_batch
 
     def stalled_write(*args: Any, **kwargs: Any) -> Any:
         entered.set()
         release.wait(30)
         return original(*args, **kwargs)
 
-    spool.write = stalled_write  # type: ignore[method-assign]
+    spool.write_batch = stalled_write  # type: ignore[method-assign]
     loss.record("agent", 1, "queue_full", 0)
     pump = threading.Thread(target=sender.pump, daemon=True)  # holds the lock, stalled
     pump.start()

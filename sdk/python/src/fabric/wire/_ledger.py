@@ -189,7 +189,9 @@ class LossLedger:
     def store(self, records: Sequence[Mapping[str, Any]]) -> bool:
         """Make this process's slots hold exactly ``records`` (loss records first, then
         markers, as given), fsync'd; ``[]`` clears and releases them. ``False`` when not all
-        of them fit (the rest stay in memory only; counted) or the write failed."""
+        of them fit (the rest, the newest, stay in memory only; counted) or the write
+        failed. Encoding stops once :data:`MAX_OWN_SLOTS` are full, so a long list of
+        held records costs no more than the slots it can fill."""
         with self._lock:
             chunks: list[bytes] = []
             batch: list[Mapping[str, Any]] = []
@@ -198,16 +200,17 @@ class LossLedger:
                 if _encode(self._owner, [*batch, record]) is None and batch:
                     chunks.append(_encode(self._owner, batch) or b"")
                     batch = []
+                    if len(chunks) >= MAX_OWN_SLOTS:  # the rest cannot be mirrored
+                        fits = False
+                        break
                 if _encode(self._owner, [record]) is None:
                     # a single record larger than a slot: a manifest is not mirrored (050
                     # §3.5, counted apart); any other never happens in practice
                     fits = self._unledger(record) and fits
                     continue
                 batch.append(record)
-            if batch:
+            if batch:  # at most MAX_OWN_SLOTS chunks: the loop stops at the last one
                 chunks.append(_encode(self._owner, batch) or b"")
-            if len(chunks) > MAX_OWN_SLOTS:
-                chunks, fits = chunks[:MAX_OWN_SLOTS], False
             try:
                 while len(self._own) < len(chunks):
                     if (index := self._claim()) is None:
