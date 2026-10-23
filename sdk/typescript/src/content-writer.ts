@@ -206,6 +206,8 @@ export class ContentWriter {
     corrupt: 0,
   };
   private closed = false;
+  /** Set once close()'s final flush has returned: no rewrite is accepted. */
+  private finalized = false;
   private draining = false;
   private readonly inlineQueue: Task[] = [];
   private inlineTimer: ReturnType<typeof setImmediate> | undefined;
@@ -318,7 +320,9 @@ export class ContentWriter {
     manifestId: string,
     tenantId: string,
   ): string {
-    if (this.closed) {
+    // While close() flushes, item writes still settle and rewrite the manifest
+    // they belong to; only a manifest not yet submitted is refused then.
+    if (this.finalized || (this.closed && !this.manifestRevisions.has(manifestId))) {
       console.warn("fabric.contentWriter: manifest submit after close");
       return ContentStatus.FAILED;
     }
@@ -327,7 +331,9 @@ export class ContentWriter {
     const task: Task = {
       kind: "manifest",
       key: `manifest:${manifestId}`,
-      manifest: { ...manifest },
+      // A snapshot: the caller keeps mutating its items as they settle, and the
+      // bytes of this revision must agree with its own completeness rollup.
+      manifest: JSON.parse(JSON.stringify(manifest)) as Record<string, unknown>,
       manifestId,
       manifestRevision: revision,
       decisionId,
@@ -909,6 +915,7 @@ export class ContentWriter {
   async close(): Promise<FlushResult> {
     this.closed = true;
     const result = await this.flush(this.config.shutdownFlushTimeoutS);
+    this.finalized = true;
     if (this.timer !== undefined) {
       clearTimeout(this.timer);
       this.timer = undefined;
