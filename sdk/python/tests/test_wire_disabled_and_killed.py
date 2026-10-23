@@ -85,19 +85,35 @@ def test_an_active_install_reports_capture_active(tmp_path: Path) -> None:
     assert handle.status()["capture"] == "active"
 
 
+# The agent waits until its three exchange records are in the spool before it kills
+# itself. ``stats().spooled`` counts every spooled record, run markers included (P1: the
+# epoch's manifest 0 is spooled at install), so it can reach 3 before the third exchange.
 KILLED_AGENT = textwrap.dedent(
     """
     import os, signal, time
     from openai import OpenAI
     import fabric.wire as wire
+    from fabric.wire._spool import unframe_all
 
     client = OpenAI(base_url=os.environ["LIVE_MODEL_BASE"], api_key="sk-live-fake")
     for i in range(3):
         client.chat.completions.create(model="m", messages=[{"role": "user", "content": str(i)}])
-    handle = wire.current_handle()
+    spool = wire.current_handle()._tee.sender.spool
+
+    def exchanges():
+        count = 0
+        for name in spool.names():
+            try:
+                docs = unframe_all(spool.read(name))
+            except OSError:
+                continue  # delivered and retired meanwhile
+            count += sum(doc["record_kind"] == "exchange" for doc, _ in docs)
+        return count
+
     deadline = time.monotonic() + 10
-    while handle.stats().spooled < 3 and time.monotonic() < deadline:
+    while exchanges() < 3 and time.monotonic() < deadline:
         time.sleep(0.01)
+    print("spooled exchanges:", exchanges(), flush=True)
     os.kill(os.getpid(), signal.SIGKILL)
     """
 )
@@ -117,6 +133,7 @@ def test_file_mode_keeps_what_it_captured_through_sigkill(tmp_path: Path) -> Non
         (killed := tmp_path / "killed.py").write_text(KILLED_AGENT, encoding="utf-8")
         result = run_agent(killed, dead)
         assert result["returncode"] == -signal.SIGKILL, result["stderr"][-2000:]
+        assert "spooled exchanges: 3" in result["stdout"], result["stdout"]
         assert len(model.requests) == 3 and not sink.exchanges()
         (later := tmp_path / "later.py").write_text("print('later')\n", encoding="utf-8")
         assert run_agent(later, capture_env(model, sink, store))["returncode"] == 0
