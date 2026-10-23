@@ -125,23 +125,13 @@ class PCapture(Capture):
         self.store.put_bytes_object(descriptor, data)
         return object_id
 
-    def _put_record_object(self, object_id: str, sequence: int, data: bytes | None) -> str | None:
-        if not self.object_roles or data is None:
-            return super()._put_record_object(object_id, sequence, data)
-        role, media = self.object_roles.pop(0)
-        assert self.store is not None
-        digest = "sha256:" + sha_hex(data)
-        self.store.put_bytes_object(
-            {"schema_version": "fabric.content-object/v2", "object_id": object_id,
-             "tenant_id": TENANT, "role": role, "media_type": media, "boundary": "caller",
-             "provenance": "caller_reported", "source_id": self.source_id,
-             "source_epoch": self.epoch, "source_sequence": sequence,
-             "captured_at": stamp(self._ns(sequence)), "status": "stored",
-             "representation": "exact", "stored_byte_length": len(data),
-             "stored_sha256": digest, "ref": self.store.evidence_ref_for(object_id)},
-            data,
-        )  # fmt: skip
-        return digest
+    def _put_record_object(
+        self, object_id: str, sequence: int, data: bytes | None, **binding: Any
+    ) -> str | None:
+        if self.object_roles and data is not None:
+            role, media = self.object_roles.pop(0)
+            binding.update(role=role, media_type=media)
+        return super()._put_record_object(object_id, sequence, data, **binding)
 
     def run_end(self, run_id: str, scope_id: str | None = None, *, status: str = "ok") -> str:
         p1 = run_id in self.open_segments
@@ -1009,9 +999,9 @@ def test_records_bodies_project_by_role(capture: PCapture) -> None:
     (tool,) = steps_of(projection, "tool_call")
     arguments = field(tool, "tool.execution.arguments")
     assert arguments["status"] == "captured" and arguments["ref"]["role"] == "tool.call.arguments"
-    # The descriptor-only object has role tool.result (no registry field): not projected; the
-    # result field is the manifest's (sdk.records lists N17, a reporting point).
-    assert status(tool, "tool.execution.result") == "not_captured(caller_omitted)"
+    # The descriptor-only object (payload_too_large) is a tool.call.result, verified and bound
+    # to its record (review E): the result field reports its descriptor's status.
+    assert status(tool, "tool.execution.result") == "not_captured(body_cap)"
 
 
 def test_retry_link_and_attempt_kind(capture: PCapture) -> None:

@@ -290,7 +290,13 @@ def test_seal_mismatch_for_an_edited_object_descriptor(capture: Capture) -> None
     descriptor["stored_sha256"] = "sha256:" + "0" * 64
     meta.write_text(json.dumps(descriptor))
     run = only_run(capture.reconstruct())
-    assert _seal_gaps(run) == [("seal_mismatch", segment, "digest_differs")]
+    # Review E: the body no longer matches its descriptor, so its seal contribution is
+    # refused (the seal cannot be recomputed) and the body itself is a digest mismatch.
+    assert run["verdict"] == "partial"
+    assert _seal_gaps(run) == [("seal_mismatch", segment, "content_unavailable")]
+    assert [
+        (g["gap_type"], g["reason"]) for g in run["gaps"] if g["gap_type"] == "digest_mismatch"
+    ] == [("digest_mismatch", "content_digest")]
 
 
 def test_seal_mismatch_for_a_record_moved_between_segments(capture: Capture) -> None:

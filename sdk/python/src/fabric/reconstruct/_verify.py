@@ -24,7 +24,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol, TypeGuard, cast
 
 from fabric import _seal
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
@@ -53,7 +53,6 @@ from fabric.reconstruct._inputs import (
     object_id_from_ref,
     observe,
     opaque_id,
-    prefixed_digest,
     read_span_file,
     uuid4_value,
 )
@@ -573,7 +572,6 @@ def _span_file_entry(path: str | os.PathLike[str], fmt: SpanFormat, count: int) 
 SegmentMember = ExchangeObs | RecordObs
 SegmentState = Literal["sealed", "unsealed", "conflict"]
 SealCheck = Literal["verified", "mismatch", "unverified", "unsealed", "conflict"]
-_DESCRIPTOR_ONLY = frozenset({"not_captured", "unsupported"})
 
 
 @dataclass(slots=True)
@@ -717,7 +715,9 @@ class _Verifier:
         self.graphs: dict[str, RunGraph] = {}
         self.evaluated_at: str | None = None
         self.p1 = False
-        self._descriptors: dict[str, tuple[str | None, bool]] = {}
+        # Spec 050 §3.5: each records-input object read and verified once, per naming
+        # record (object id, source, sequence); kept without its bytes.
+        self._record_objects: dict[tuple[str, SourceKey, int], ObjectResult] = {}
         self.projection_sink: ProjectionSink | None = None  # WP-32: the step projection
 
     def _scope(self, scope_id: str, run_id: str) -> _Scope:
@@ -977,8 +977,9 @@ class _Verifier:
             segment.check = self._check_seal(segment, seal)
         elif segment.seals:
             segment.check = "conflict"
-        elif segment.members or segment.losses:
-            # 049 §2.12 rule 3: a segment with records and no seal (X44).
+        else:
+            # 049 §2.12 rule 3, X44: a segment without a seal is unsealed, whether or not any
+            # of its records survived (an empty ancestor's lost seal is never silent).
             segment.gap("unsealed_segment", "partial", reason="source_lost")
         conflicted = any(gap.gap_type == "segment_conflict" for gap in segment.gaps)
         if conflicted or segment.check in ("mismatch", "conflict"):
@@ -1055,7 +1056,7 @@ class _Verifier:
             sides = (attributes.get(A_REQUEST_SHA256), attributes.get(A_RESPONSE_SHA256))
             content = [digest for digest in map(digest_value, sides) if digest is not None]
         else:
-            found, why = self._record_content(attributes.get(A_OBJECT_IDS))
+            found, why = self._record_content(member)
             if why is not None:
                 return None, why
             if found is None:  # malformed object ids: a value no emitter writes
@@ -1072,49 +1073,52 @@ class _Verifier:
             return f"unhashable:{member.source_sequence}", None
         return digest, None
 
-    def _record_content(self, object_ids: Any) -> tuple[list[str | None] | None, str | None]:
-        """The ``stored_sha256`` of each object a record names, in list order, ``None``
-        for a descriptor-only object (§3.7). Read from the configured store's descriptors;
-        ``(None, why)`` when there is no store or a descriptor cannot be read."""
+    def _record_content(self, record: RecordObs) -> tuple[list[str | None] | None, str | None]:
+        """The ``stored_sha256`` of each object ``record`` names, in list order, ``None``
+        for a descriptor-only object (§3.7). An object's contribution is accepted only once
+        its bytes are read and verified against its descriptor, the record contract and the
+        record (:meth:`record_object`); ``(None, why)`` when there is no store or an object
+        does not verify (its own gap is the run's, :meth:`_Run._record_bodies`)."""
+        object_ids = record.span.attributes.get(A_OBJECT_IDS)
         if object_ids is None:
             return [], None
-        if (
-            not isinstance(object_ids, list)
-            or not 1 <= len(object_ids) <= _MAX_RECORD_OBJECTS
-            or any(uuid4_value(object_id) is None for object_id in object_ids)
-        ):
+        if not _object_id_list(object_ids):
             return None, None
-        if self.store is None or self.reader is None:
+        if self.reader is None:
             return None, "no_store"
         content: list[str | None] = []
         for object_id in object_ids:
-            if object_id not in self._descriptors:
-                self._descriptors[object_id] = self._stored_digest(object_id)
-            digest, ok = self._descriptors[object_id]
-            if not ok:
+            result = self.record_object(record, object_id)
+            if result.verification == "verified":
+                content.append(result.sha256)
+            elif result.verification == "not_stored":
+                content.append(None)
+            else:
                 return None, "content_unavailable"
-            content.append(digest)
         return content, None
 
-    def _stored_digest(self, object_id: str) -> tuple[str | None, bool]:
-        if self.store is None or self.reader is None:
-            return None, False
-        try:
-            descriptor = self.store.read_descriptor(self.store.evidence_ref_for(object_id))
-        except ImportError:
-            raise  # a missing reader dependency is a setup error
-        except Exception:
-            return None, False
-        if (
-            not isinstance(descriptor, Mapping)
-            or descriptor.get("object_id") != object_id
-            or descriptor.get("tenant_id") != self.reader.tenant_id
-        ):
-            return None, False
-        stored = descriptor.get("stored_sha256")
-        if stored is None and descriptor.get("status") in _DESCRIPTOR_ONLY:
-            return None, True
-        return (stored, True) if prefixed_digest(stored) is not None else (None, False)
+    def record_object(
+        self, record: RecordObs, object_id: str, *, data: bool = False
+    ) -> ObjectResult:
+        """``object_id`` as ``record`` names it, read and verified by the exchanges' path
+        (:meth:`StoreReader.fetch_record`): ``verified`` (with its descriptor),
+        ``not_stored`` (a bound descriptor-only object), ``missing``, ``digest_mismatch``;
+        ``not_checked`` without a store. Read once and kept without its bytes; ``data``
+        reads it again for its bytes (the projection's evidence objects)."""
+        key = (object_id, record.source, record.source_sequence)
+        cached = self._record_objects.get(key)
+        if cached is not None and not data:
+            return cached
+        if self.reader is None:
+            return ObjectResult("not_checked", object_id)
+        binding = {
+            "source_id": record.source_id, "source_epoch": record.source_epoch,
+            "source_sequence": record.source_sequence, "run_id": record.run_id,
+            "operation_id": record.attempt_uid, "attempt_id": record.attempt_uid,
+        }  # fmt: skip
+        result = self.reader.fetch_record(object_id, binding=binding, id_key=self.key)
+        self._record_objects[key] = dataclasses.replace(result, data=None)
+        return result
 
     def segment_nodes(self) -> list[SegmentNode]:
         """The segment graph's input: one node per segment whose run is known."""
@@ -1259,6 +1263,14 @@ class _Bodies:
     request: ObjectResult
     response: ObjectResult | None
     skipped: bool
+
+
+def _object_id_list(object_ids: Any) -> TypeGuard[list[str]]:
+    """A record's ``fabric.content.object_ids``: 1-8 uuid4 object ids (§3.4)."""
+    return (
+        isinstance(object_ids, list) and 1 <= len(object_ids) <= _MAX_RECORD_OBJECTS
+        and all(uuid4_value(object_id) is not None for object_id in object_ids)
+    )  # fmt: skip
 
 
 def _ranges(sequences: Iterable[int]) -> list[list[int]]:
@@ -1606,6 +1618,7 @@ class _Run:
         for gap in stitched.gaps:
             self._add(gap, self._scopes_of(gap.exchange_id))
         self._structure_gaps()
+        self._record_bodies()
         if self.verifier.production:
             self._authentication(bodies)
         for entry in exchanges:
@@ -1686,6 +1699,34 @@ class _Run:
                         reason=reason),
                     () if window.scope_id is None else (window.scope_id,),
                 )  # fmt: skip
+
+    def _record_bodies(self) -> None:
+        """Spec 050 §3.5: every object a records-input record of the run names is read and
+        verified as an exchange body is (availability, length, digest, descriptor contract,
+        binding to the record). A deleted or altered object is a ``missing_object`` or
+        ``digest_mismatch`` gap (partial) of the record's scope, so the run is never
+        complete; without a store nothing is read (the seal check reports ``no_store``)."""
+        verifier = self.verifier
+        if verifier.reader is None:
+            return
+        for run_id in verifier.run_ids_of(self.run_id):
+            for record in verifier.run_records.get(run_id, ()):
+                object_ids = record.span.attributes.get(A_OBJECT_IDS)
+                if not _object_id_list(object_ids):
+                    continue
+                for object_id in object_ids:
+                    result = verifier.record_object(record, object_id)
+                    if result.verification not in ("missing", "digest_mismatch"):
+                        continue
+                    self._add(
+                        Gap("missing_object" if result.verification == "missing"
+                            else "digest_mismatch", "partial", source_id=record.source_id,
+                            source_epoch=record.source_epoch,
+                            first_sequence=record.source_sequence,
+                            last_sequence=record.source_sequence, segment_id=record.segment_id,
+                            reason=result.reason),
+                        () if record.scope_id is None else (record.scope_id,),
+                    )  # fmt: skip
 
     def _structure(self) -> dict[str, Any]:
         """``run_state``, ``segments``, ``run_aliases``, ``deadline_at`` and ``evaluated_at``

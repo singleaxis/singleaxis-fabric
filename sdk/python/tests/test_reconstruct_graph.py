@@ -260,11 +260,13 @@ def test_g1_predecessor_entry_disagrees_with_the_sealed_segment(bad: str) -> Non
 
 
 def test_g1_unsealed_predecessor_is_checked_by_source_only() -> None:
+    """An entry naming an unsealed segment is compared by source epoch only (no G1); the
+    unsealed ancestor itself keeps the run from terminating (G7, review B1)."""
     graph = one(
         node(1, last_sequence=None, manifest_digest=None, sealed_ns=None),
         node(2, entry(1, last=7), terminal=True),
     )
-    assert graph.run_state == "terminated"
+    assert (graph.rule, why(graph)) == ("G7", [("segment_missing", "predecessor_unsealed", seg(1))])
     graph = one(node(1, last_sequence=None), node(2, entry(1, epoch=9), terminal=True))
     assert graph.rule == "G1"
 
@@ -528,7 +530,11 @@ def test_g7_branch_consumer_unsealed() -> None:
         node(2, 1, branch_ids=(br(1),), state="unsealed"),
         node(3, 2, terminal=True),
     )
-    assert why(graph) == [("segment_missing", "branch_unsealed", seg(2))]
+    # The consumer is also an unsealed segment of the terminal's closure (review B1).
+    assert why(graph) == [
+        ("segment_missing", "branch_unsealed", seg(2)),
+        ("segment_missing", "predecessor_unsealed", seg(2)),
+    ]
 
 
 def test_g7_fork_child_lost_or_unsealed() -> None:

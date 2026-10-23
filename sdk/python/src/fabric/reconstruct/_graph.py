@@ -33,6 +33,11 @@ predecessor entry; G4 post-terminal activity (clock-compared); G5 terminated; G7
 but G5 fails; G8 ``not_resumable_unclosed``; G9 ``open``; G10 ``unterminated``; and
 ``deadline_uncertain`` when the clocks cannot decide G9 against G10.
 
+**Branch ids (049 X46).** A consumed ``br-`` id must be issued by the seal of a predecessor
+the consumer names; when those predecessors are present and sealed, an id none of them issued
+is G1 ``segment_conflict`` (``branch_not_issued``). A missing or unsealed issuer is G2, or
+G7 (``predecessor_unsealed``) once a terminal exists.
+
 **Declared branches before a terminal.** A declared fork child, or the consumer of an
 issued ``br-`` id, that is not present fails the run only once a terminal exists (G5/G7,
 ``segment_missing``). Before that it is pending work of a run that is still going (LR-1
@@ -464,11 +469,30 @@ class _RunBuilder:
         for node in self.members:
             for branch in dict.fromkeys(node.branch_ids):
                 consumers[branch].append(node)
+            gaps.extend(self._branches_not_issued(node))
         for branch in sorted(consumers):
             if len(consumers[branch]) > 1:
                 gaps.extend(self._gap("segment_conflict", "partial", node, "branch_replayed")
                             for node in consumers[branch])  # fmt: skip
         return gaps if gaps or conflicting else None
+
+    def _branches_not_issued(self, node: SegmentNode) -> list[Gap]:
+        """049 X46: a consumed ``br-`` id is bound to the sealed segment that issued it, which
+        the consumer names as a predecessor (its token's entry). When every predecessor it
+        names is present and sealed, an id none of their seals issued is a conflict (a root
+        consuming a branch id has no issuer at all). A named predecessor that is missing
+        (G2), conflicting (G1) or unsealed (G7, or the run's ``unsealed_segment``) leaves
+        the issuer unknown: those rules keep the run from completing."""
+        if not node.branch_ids:
+            return []
+        named = [self.present.get(entry.segment_id) for entry in self.entries[node.segment_id]]
+        if any(issuer is None or issuer.seal_state != "sealed" for issuer in named):
+            return []
+        issued = {branch for issuer in named if issuer is not None
+                  for branch in issuer.issued_branch_ids}  # fmt: skip
+        if set(node.branch_ids) <= issued:
+            return []
+        return [self._gap("segment_conflict", "partial", node, "branch_not_issued")]
 
     def _entry_conflicts(self) -> list[Gap]:
         """G1 by identity and entries: ``token_conflict`` segments, predecessors in another
@@ -567,13 +591,21 @@ class _RunBuilder:
 
     def _g5_failures(self, terminals: list[SegmentNode]) -> list[Gap]:
         """``[]`` when G5 holds for the one terminal T: every present segment is in T's
-        predecessor closure or in a declared fork child's closure (all sealed), and every
-        ``br-`` id issued in them has one present, sealed consumer. Else the G7 gaps."""
+        predecessor closure or in a declared fork child's closure, all of them sealed, and
+        every ``br-`` id issued in them has one present, sealed consumer. Else the G7 gaps
+        (``predecessor_unsealed``: a segment of T's closure without its seal)."""
         if len(terminals) > 1:
             return [self._gap("segment_conflict", "partial", node, "multiple_terminals")
                     for node in terminals]  # fmt: skip
         closure = self._ancestors(terminals[0].segment_id)
+        # 049 G5: every segment of T's predecessor closure is sealed. An ancestor whose seal
+        # never arrived is reported whether or not any of its records survived.
+        unsealed = [self._gap("segment_missing", "partial", self.present[segment_id],
+                              "predecessor_unsealed")
+                    for segment_id in sorted(closure)
+                    if self.present[segment_id].seal_state != "sealed"]  # fmt: skip
         forked, gaps = self._fork_closures(closure)
+        gaps[:0] = unsealed
         joined = closure | forked
         gaps.extend(self._gap("segment_missing", "partial", node, "branch_not_joined")
                     for node in self.members if node.segment_id not in joined)  # fmt: skip

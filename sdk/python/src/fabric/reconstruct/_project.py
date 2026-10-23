@@ -1674,14 +1674,15 @@ def _record_outcome(attrs: Mapping[str, Any]) -> tuple[str, str]:
 
 class _RecordBodies:
     """Projects a records attempt's content objects (by role) and decodes its evidence
-    objects, reading descriptors and evidence bytes from the verifier's store (R9: an
-    evidence object over 1 MiB is never read)."""
+    objects. Every object is the verifier's (``_Verifier.record_object``): read and verified
+    by the exchanges' path (bytes, length, digest, descriptor contract, binding to the
+    record) before it counts as captured; a deleted or altered object is never captured
+    (R9: an evidence object over 1 MiB is never decoded)."""
 
     def __init__(
         self, verifier: Any, fields: _Fields, point: str, provenance: str, identity_mode: str
     ) -> None:
-        self.store = verifier.store
-        self.tenant = getattr(verifier.reader, "tenant_id", None)
+        self.verifier = verifier
         self.fields = fields
         self.point = point
         self.provenance = provenance
@@ -1690,36 +1691,22 @@ class _RecordBodies:
         self.evidence: list[EvidenceDecode] = []
 
     def add(self, records: Sequence[tuple[RecordObs, SpanRecord]]) -> None:
-        for _, span in records:
+        for record, span in records:
             for object_id in _object_ids(span.attributes):
-                self._object(object_id)
+                self._object(record, object_id)
         for key, wrappers in self.by_key.items():
             self.fields.put(key, _merge(wrappers))
         self._evidence_fields()
 
-    def _descriptor(self, object_id: str) -> Mapping[str, Any] | None:
-        if self.store is None:
-            return None
-        try:
-            descriptor = self.store.read_descriptor(self.store.evidence_ref_for(object_id))
-        except ImportError:
-            raise
-        except Exception:
-            return None
-        if (
-            not isinstance(descriptor, Mapping) or descriptor.get("object_id") != object_id
-            or descriptor.get("tenant_id") != self.tenant
-        ):  # fmt: skip
-            return None
-        return descriptor
-
-    def _object(self, object_id: str) -> None:
-        descriptor = self._descriptor(object_id)
-        if descriptor is None:
+    def _object(self, record: RecordObs, object_id: str) -> None:
+        result: ObjectResult = self.verifier.record_object(record, object_id)
+        descriptor = result.descriptor
+        if result.verification not in ("verified", "not_stored") or descriptor is None:
+            self._unverified(result)
             return
         role = descriptor.get("role")
         if role == "record.evidence":
-            self._evidence_object(object_id, descriptor)
+            self._evidence_object(record, object_id, descriptor)
             return
         key = ROLE_FIELDS.get(str(role))
         if key is None:
@@ -1730,27 +1717,46 @@ class _RecordBodies:
             )
         )
 
-    def _evidence_object(self, object_id: str, descriptor: Mapping[str, Any]) -> None:
-        stored = descriptor.get("stored_sha256")
-        length = descriptor.get("stored_byte_length")
-        if descriptor.get("status") != "stored" or not isinstance(stored, str):
-            return  # a descriptor-only evidence object: its fields stay manifest-driven
-        if not isinstance(length, int) or length > _EVIDENCE_MAX_BYTES:
-            self.evidence.append(EvidenceDecode("parse_failed"))
+    def _unverified(self, result: ObjectResult) -> None:
+        """An object that did not verify (``missing``, ``digest_mismatch``) is never
+        captured: when its stored descriptor still names a role with a field, that field is
+        ``not_captured(store_failed)``, as an exchange side's is. The descriptor only places
+        the status; nothing of it is reported. Without a store nothing is established."""
+        if result.verification not in ("missing", "digest_mismatch") or result.object_id is None:
             return
+        store = self.verifier.store
         try:
-            data = self.store.read(str(self.store.evidence_ref_for(object_id)))
+            descriptor = store.read_descriptor(store.evidence_ref_for(result.object_id))
         except ImportError:
             raise
         except Exception:
             return
-        if not isinstance(data, bytes | bytearray) or len(data) > _EVIDENCE_MAX_BYTES:
+        role = descriptor.get("role") if isinstance(descriptor, Mapping) else None
+        key = ROLE_FIELDS.get(str(role))  # an evidence object's fields stay manifest-driven
+        if key is not None:
+            self.by_key[key].append(wrapper("not_captured", provenance=self.provenance,
+                                            point=self.point, reason="store_failed"))  # fmt: skip
+
+    def _evidence_object(
+        self, record: RecordObs, object_id: str, descriptor: Mapping[str, Any]
+    ) -> None:
+        length = descriptor.get("stored_byte_length")
+        if descriptor.get("status") != "stored" or "stored_sha256" not in descriptor:
+            return  # a descriptor-only evidence object: its fields stay manifest-driven
+        if not isinstance(length, int) or length > _EVIDENCE_MAX_BYTES:
             self.evidence.append(EvidenceDecode("parse_failed"))
             return
-        if "sha256:" + hashlib.sha256(bytes(data)).hexdigest() != stored:
+        # The verifier keeps no bytes: the object is read and verified again for them.
+        result: ObjectResult = self.verifier.record_object(record, object_id, data=True)
+        data = result.data
+        if result.verification != "verified" or data is None:
+            self.evidence.append(EvidenceDecode("parse_failed"))
+            return
+        if len(data) > _EVIDENCE_MAX_BYTES:
+            self.evidence.append(EvidenceDecode("parse_failed"))
             return
         self.evidence.append(decode_evidence(
-            bytes(data), evidence_types=EVIDENCE_TYPES, provenance=self.provenance,
+            data, evidence_types=EVIDENCE_TYPES, provenance=self.provenance,
             capture_point=self.point, identity_mode=self.identity_mode,
         ))  # fmt: skip
 

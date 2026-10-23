@@ -506,6 +506,7 @@ class Capture:
         if segment_id is _OPEN:
             segment_id = None if run_id is None else self.open_segments.get(run_id)
         event_id = self.new_id()
+        attempt_uid = attempt_uid or self.new_id()
         attrs: dict[str, Any] = {
             "fabric.capture.input": "records",
             "fabric.capture.source": "reported",
@@ -514,7 +515,7 @@ class Capture:
             "fabric.source.epoch": self.epoch,
             "fabric.source.sequence": sequence,
             "fabric.event_id": event_id,
-            "fabric.attempt.uid": attempt_uid or self.new_id(),
+            "fabric.attempt.uid": attempt_uid,
             "fabric.step.kind": kind,
             "fabric.step.lifecycle_state": "completed",
             "fabric.step.status": "ok",
@@ -533,7 +534,11 @@ class Capture:
             object_ids = [self.new_id() for _ in objects]
             attrs["fabric.content.object_ids"] = object_ids
             for object_id, data in zip(object_ids, objects, strict=True):
-                content.append(self._put_record_object(object_id, sequence, data))
+                content.append(
+                    self._put_record_object(
+                        object_id, sequence, data, run_id=run_id, attempt_uid=attempt_uid
+                    )
+                )
         attrs.update(attributes or {})
         self.record_content[event_id] = content
         start = self._ns(sequence) + 100_000_000
@@ -552,22 +557,25 @@ class Capture:
         self.rows.append(row)
         return row
 
-    def _put_record_object(self, object_id: str, sequence: int, data: bytes | None) -> str | None:
-        """Store one record object; ``None`` data writes a descriptor-only object."""
+    def _put_record_object(
+        self, object_id: str, sequence: int, data: bytes | None, *, run_id: str | None,
+        attempt_uid: str, role: str = "tool.call.result", media_type: str = "application/json",
+    ) -> str | None:  # fmt: skip
+        """Store one record object as the Node persists it (spec 050 §3.5: the record
+        contract, bound to the record by source triple, run id and attempt uid); ``None``
+        data writes a descriptor-only object."""
         assert self.store is not None
         descriptor: dict[str, Any] = {
-            "schema_version": "fabric.content-object/v2",
-            "object_id": object_id,
-            "tenant_id": TENANT,
-            "role": "tool.result",
-            "media_type": "application/json",
-            "boundary": "caller",
-            "provenance": "caller_reported",
-            "source_id": self.source_id,
-            "source_epoch": self.epoch,
-            "source_sequence": sequence,
+            "schema_version": "fabric.content-object/v2", "object_id": object_id,
+            "tenant_id": TENANT, "role": role, "media_type": media_type,
+            "content_encoding": "identity", "transformations": [], "boundary": "caller",
+            "provenance": "caller_reported", "source_id": self.source_id,
+            "source_epoch": self.epoch, "source_sequence": sequence,
+            "operation_id": attempt_uid, "attempt_id": attempt_uid,
             "captured_at": stamp(self._ns(sequence)),
-        }
+        }  # fmt: skip
+        if run_id is not None:
+            descriptor["run_id"] = run_id
         if data is None:
             descriptor.update(status="not_captured", status_reason="payload_too_large",
                               representation="unavailable")  # fmt: skip
@@ -578,7 +586,8 @@ class Capture:
         digest = "sha256:" + sha_hex(data)
         descriptor.update(
             status="stored", representation="exact", stored_byte_length=len(data),
-            stored_sha256=digest, ref=self.store.evidence_ref_for(object_id),
+            stored_sha256=digest, source_byte_length=len(data), source_sha256=digest,
+            encoding="binary", ref=self.store.evidence_ref_for(object_id),
         )  # fmt: skip
         self.store.put_bytes_object(descriptor, data)
         return digest
