@@ -334,6 +334,61 @@ def test_e_record_contract_accepts_the_capture_fixture() -> None:
 
 
 # --------------------------------------------------------------------------
+# E (confirmation review, item 4): production object authentication of record objects
+# --------------------------------------------------------------------------
+
+
+def stamped_record(capture: Capture, *objects: bytes | None) -> tuple[dict[str, Any], list[str]]:
+    """A sealed record whose telemetry all carries the Node's stamp (049 §7.9) and whose
+    objects' persisted descriptors carry it too; returns the record row and its object ids."""
+    row = sealed_record(capture, *objects)
+    for each in capture.rows:
+        each["attributes"]["fabric.source.authenticated"] = True
+    object_ids = list(row["attributes"]["fabric.content.object_ids"])
+    for object_id in object_ids:
+        _rewrite_descriptor(capture, object_id, source_authenticated=True)
+    return row, object_ids
+
+
+def production(capture: Capture, **kwargs: Any) -> dict[str, Any]:
+    return only_run(capture.reconstruct(profile="production", trusted_source=True, **kwargs))
+
+
+def auth_gaps(run: dict[str, Any]) -> list[tuple[str | None, int | None]]:
+    return sorted((g.get("reason"), g.get("first_sequence"))
+                  for g in run["gaps"] if g["gap_type"] == "source_unauthenticated")  # fmt: skip
+
+
+def test_e_stamped_record_objects_authenticate_in_production(capture: Capture) -> None:
+    stamped_record(capture, b'{"a":1}', None)
+    run = production(capture)
+    assert auth_gaps(run) == []
+    assert run["verdict"] == "complete_for_observed_scopes"
+
+
+@pytest.mark.parametrize("unstamped", [0, 1], ids=["stored_body", "descriptor_only"])
+def test_e_an_unstamped_record_object_is_unauthenticated(capture: Capture, unstamped: int) -> None:
+    row, object_ids = stamped_record(capture, b'{"a":1}', None)
+    _rewrite_descriptor(capture, object_ids[unstamped], source_authenticated=None)
+    run = production(capture)
+    sequence = row["attributes"]["fabric.source.sequence"]
+    assert auth_gaps(run) == [("unstamped_object", sequence)]
+    (gap,) = [g for g in run["gaps"] if g["gap_type"] == "source_unauthenticated"]
+    assert gap["effect"] == "unverified"
+    assert gap["segment_id"] == row["attributes"]["fabric.run.segment_id"]
+    assert run["verdict"] == "unverified"
+
+
+def test_e_record_object_stamps_are_not_required_outside_production(capture: Capture) -> None:
+    _, object_ids = stamped_record(capture, b'{"a":1}', None)
+    for object_id in object_ids:
+        _rewrite_descriptor(capture, object_id, source_authenticated=None)
+    run = only_run(capture.reconstruct(profile="local", trusted_source=True))
+    assert auth_gaps(run) == []
+    assert run["verdict"] == "complete_for_observed_scopes"
+
+
+# --------------------------------------------------------------------------
 # E against real SDK output
 # --------------------------------------------------------------------------
 

@@ -699,8 +699,11 @@ class StoreReader:
             return ObjectResult("digest_mismatch", object_id, reason="sidecar_mismatch")
         if not _bound(descriptor, binding, id_key):
             return ObjectResult("digest_mismatch", object_id, reason="binding_mismatch")
-        return ObjectResult("not_stored", object_id, reason=str(descriptor["status_reason"]),
-                            descriptor=descriptor)  # fmt: skip
+        return ObjectResult(
+            "not_stored", object_id, reason=str(descriptor["status_reason"]),
+            source_authenticated=descriptor.get("source_authenticated") is True,
+            descriptor=descriptor,
+        )  # fmt: skip
 
     def _descriptor_ok(
         self,
