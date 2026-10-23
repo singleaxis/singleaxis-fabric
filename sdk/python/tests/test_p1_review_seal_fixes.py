@@ -162,7 +162,8 @@ def test_drain_builds_on_the_caller_when_no_worker_can_start(
     seals.request_seal(SEG, last_sequence=-1, manifest_digest=None, terminal=True,
                        resumable=False, source_id=SOURCE, epoch=7)  # fmt: skip
     assert markers == [] and seals.stats()["seal_worker_failures"] == 1
-    assert seals.drain(1.0)
+    assert seals.drain(1.0) is False  # bounded: left pending, never hashed on the caller
+    assert seals.drain(None)  # unbounded: built on the caller
     assert [m.kind for m in markers] == ["segment_seal"]
 
 

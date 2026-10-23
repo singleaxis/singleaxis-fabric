@@ -210,7 +210,8 @@ def test_drain_without_a_worker_honours_its_deadline(monkeypatch: pytest.MonkeyP
     assert seals.drain(0) is False
     assert time.monotonic() - begun < 0.1
     assert seals.stats()["seals_pending"] == 1 and markers == []  # still pending, counted
-    assert seals.drain(5.0) is True  # with time for it, built on the caller
+    assert seals.drain(5.0) is False  # bounded: never hashed on the caller (050 final review)
+    assert seals.drain(None) is True  # an unbounded drain builds on its caller
     assert [m.kind for m in markers] == ["segment_seal"]
 
 
