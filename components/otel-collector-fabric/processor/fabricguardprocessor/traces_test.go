@@ -94,7 +94,7 @@ func TestProcessTraces_ProtectsByDefaultWithExactMetadataAllowlist(t *testing.T)
 
 func TestProcessTraces_FiltersResourcesScopesEventsLinksAndStatus(t *testing.T) {
 	g := newTestGuard(t, nil)
-	td := makeTraces(spanFixture{name: "patient Jane Doe bearerToken=secret", attrs: map[string]any{"fabric.tool.name": "ehr_write"}})
+	td := makeTraces(spanFixture{name: "patient Jane Doe bearerToken=secret", attrs: map[string]any{"fabric.tool.name": "lbl-9f86d081884c7d659a2feaa0c55ad015"}})
 	rs := td.ResourceSpans().At(0)
 	rs.SetSchemaUrl("https://schemas.invalid/patient/Jane-Doe?x-api-key=secret")
 	putAttrs(rs.Resource().Attributes(), map[string]any{
@@ -118,7 +118,7 @@ func TestProcessTraces_FiltersResourcesScopesEventsLinksAndStatus(t *testing.T) 
 	link := span.Links().AppendEmpty()
 	link.TraceState().FromRaw("vendor=Bearer-secret")
 	putAttrs(link.Attributes(), map[string]any{
-		"fabric.decision_id": "d-1", "http.request.headers": "Authorization: secret",
+		"fabric.decision_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7", "http.request.headers": "Authorization: secret",
 	})
 
 	out, _ := g.processTraces(context.Background(), td)
@@ -179,7 +179,7 @@ func TestProcessTraces_UnknownNativeNamesBecomeFixedActivityCategory(t *testing.
 	td := makeTraces(spanFixture{name: "patient@example.com password=hunter2", attrs: map[string]any{"fabric.tenant_id": "acme"}})
 	event := firstSpan(td).Events().AppendEmpty()
 	event.SetName("ASR transcript for John Smith")
-	event.Attributes().PutStr("fabric.decision_id", "d-1")
+	event.Attributes().PutStr("fabric.decision_id", "7c9e6679-7425-40de-944b-e07fc1f90ae7") // minted uuid4 (v0.8.1)
 
 	out, _ := g.processTraces(context.Background(), td)
 	span := firstSpan(out)

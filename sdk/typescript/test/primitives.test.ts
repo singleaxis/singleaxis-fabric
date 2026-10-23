@@ -40,7 +40,9 @@ beforeEach(() => {
 });
 
 function fabric(): Fabric {
-  return new Fabric({ tenantId: "t", agentId: "a", profile: "p" });
+  // v0.8 output (payload digests included): pinned to the clear identity mode,
+  // which reproduces it; digest gating is covered by digest-gating.test.ts.
+  return new Fabric({ tenantId: "t", agentId: "a", profile: "p", identityMode: "clear" });
 }
 
 function decisionSpan(): ReadableSpan {
@@ -217,6 +219,7 @@ describe("execution retry metadata", () => {
       tenantId: "t",
       agentId: "a",
       profile: "p",
+      identityMode: "clear", // v0.8.1: caller ids are mapped when pseudonymous
       workflowId: "refunds",
       executionId: "refund-task-123",
       executionAttemptId: "attempt-002",
@@ -299,6 +302,7 @@ describe("execution span + inheritance (ALS)", () => {
       tenantId: "t",
       agentId: "a",
       profile: "p",
+      identityMode: "clear", // v0.8.1: caller ids are mapped when pseudonymous
       executionId: "cfg-exec",
       workflowId: "cfg-wf",
       executionAttempt: 3,
@@ -315,6 +319,7 @@ describe("execution span + inheritance (ALS)", () => {
       tenantId: "t",
       agentId: "a",
       profile: "p",
+      identityMode: "clear", // v0.8.1: caller ids are mapped when pseudonymous
       executionId: "cfg-exec",
     });
     client.execution({ executionId: "active-exec" }, () => {

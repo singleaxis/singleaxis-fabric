@@ -98,8 +98,19 @@ import {
   GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_LEGACY,
 } from "./attributes.js";
 import { sha256Hex } from "./hash.js";
+import { safeStartSpan } from "./safe-span.js";
 import { ATTR_CONTENT_REQUEST_REF, ATTR_CONTENT_RESULT_REF } from "./attributes.js";
 import { type CrossCuttingOptions } from "./crosscut.js";
+import { IdentityPolicy } from "./identity.js";
+
+/** The identity policy of a call built outside a decision: from the environment. */
+function environmentIdentity(): IdentityPolicy {
+  return IdentityPolicy.resolve(
+    undefined,
+    undefined,
+    typeof process !== "undefined" ? process.env : {},
+  );
+}
 import {
   assertIntAtLeast,
   assertNonEmpty,
@@ -224,12 +235,18 @@ export interface LlmCacheUsage {
  * (kind=CLIENT). Obtained inside the `d.llmCall(...)` callback.
  */
 export class LlmCall {
+  /** The decision's identity policy (049 §2.9); standalone, resolved from the environment. */
+  private readonly ids: IdentityPolicy;
+
   constructor(
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly emitLegacyAttributes = true,
     private readonly governedCapture?: GovernedCaptureFn,
-  ) {}
+    ids?: IdentityPolicy,
+  ) {
+    this.ids = ids ?? environmentIdentity();
+  }
 
   /**
    * Attach token counts and finish reason from the LLM response. Writes
@@ -280,7 +297,9 @@ export class LlmCall {
       if (options.responseId === "") {
         throw new Error("responseId must be non-empty");
       }
-      this.span.setAttribute(GEN_AI_RESPONSE_ID, options.responseId);
+      // 049 §2.9 rule 4: the provider response id as its keyed `p-` form.
+      const responseId = this.ids.id("p", options.responseId);
+      if (responseId !== undefined) this.span.setAttribute(GEN_AI_RESPONSE_ID, responseId);
     }
     if (options.model !== undefined) this.setResponseModel(options.model);
     if (options.finishReasons !== undefined) {
@@ -431,11 +450,25 @@ export interface ToolCallOptions extends StepOptions, CrossCuttingOptions {
  * (kind=INTERNAL). Obtained inside the `d.toolCall(...)` callback.
  */
 export class ToolCall {
+  /** The decision's identity policy (049 §2.9); standalone, resolved from the environment. */
+  private readonly ids: IdentityPolicy;
+  /**
+   * Whether a role retains the original (049 §7.5). Standalone: only the
+   * clear identity mode keeps payload digests (as Python's helper does).
+   */
+  private readonly retainsOriginal: (role: string) => boolean;
+
   constructor(
     private readonly span: Span,
     private readonly captureContent = false,
     private readonly governedCapture?: GovernedCaptureFn,
-  ) {}
+    ids?: IdentityPolicy,
+    retainsOriginal?: (role: string) => boolean,
+  ) {
+    this.ids = ids ?? environmentIdentity();
+    const policy = this.ids;
+    this.retainsOriginal = retainsOriginal ?? (() => policy.clear);
+  }
 
   /** Record how many results/items the tool returned. */
   setResultCount(count: number): void {
@@ -453,7 +486,9 @@ export class ToolCall {
    */
   setArguments(payload: string, options: { capture?: boolean } = {}): void {
     assertStringPayload(payload);
-    this.span.setAttribute(FABRIC_TOOL_ARGS_HASH, sha256Hex(payload));
+    if (this.retainsOriginal("tool.call.arguments")) {
+      this.span.setAttribute(FABRIC_TOOL_ARGS_HASH, sha256Hex(payload)); // 049 §7.5
+    }
     if (this.governedCapture !== undefined) {
       const ref = this.governedCapture("tool.call.arguments", payload);
       if (ref !== undefined) {
@@ -467,7 +502,9 @@ export class ToolCall {
   /** Record a SHA-256 hash of the tool call's result. */
   setResult(payload: string, options: { capture?: boolean } = {}): void {
     assertStringPayload(payload);
-    this.span.setAttribute(FABRIC_TOOL_RESULT_HASH, sha256Hex(payload));
+    if (this.retainsOriginal("tool.call.result")) {
+      this.span.setAttribute(FABRIC_TOOL_RESULT_HASH, sha256Hex(payload)); // 049 §7.5
+    }
     if (this.governedCapture !== undefined) {
       const ref = this.governedCapture("tool.call.result", payload);
       if (ref !== undefined) {
@@ -516,7 +553,9 @@ export class ToolCall {
     this.span.setAttribute(FABRIC_TOOL_IDEMPOTENT, options.idempotent);
     if (options.key !== undefined) {
       assertNonEmpty("idempotency key", options.key);
-      this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, options.key);
+      // Caller data: `lbl-` when pseudonymous, omitted without a key.
+      const key = this.ids.opaque(options.key);
+      if (key !== undefined) this.span.setAttribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key);
     }
   }
 
@@ -638,7 +677,9 @@ export function startLlmSpan(
   validateStepMetadata(options);
   const emitLegacyAttributes = options.emitLegacyAttributes ?? true;
 
-  const span = tracer.startSpan(`${operationName} ${options.model}`, { kind: SpanKind.CLIENT });
+  const span = safeStartSpan(tracer, `${operationName} ${options.model}`, {
+    kind: SpanKind.CLIENT,
+  });
   span.setAttribute(GEN_AI_OPERATION_NAME, operationName);
   span.setAttribute(GEN_AI_PROVIDER_NAME, provider);
   span.setAttribute(GEN_AI_REQUEST_MODEL, options.model);
@@ -709,16 +750,18 @@ export function startLlmSpan(
 export function startToolSpan(
   tracer: Tracer,
   name: string,
-  options: ToolCallOptions & { extraAttributes?: Attributes },
+  options: ToolCallOptions & { extraAttributes?: Attributes; emitToolName?: boolean },
 ): Span {
   if (!name) {
     throw new Error("toolCall: name is required");
   }
   validateStepMetadata(options);
-  const span = tracer.startSpan(name, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, name, { kind: SpanKind.INTERNAL });
   span.setAttribute(GEN_AI_OPERATION_NAME, "execute_tool");
-  span.setAttribute(GEN_AI_TOOL_NAME, name);
-  span.setAttribute(FABRIC_TOOL_NAME, name);
+  if (options.emitToolName !== false) {
+    span.setAttribute(GEN_AI_TOOL_NAME, name);
+    span.setAttribute(FABRIC_TOOL_NAME, name);
+  }
   if (options.type !== undefined) {
     span.setAttribute(GEN_AI_TOOL_TYPE, options.type);
     span.setAttribute(FABRIC_TOOL_KIND, options.type);

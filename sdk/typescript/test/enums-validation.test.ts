@@ -47,7 +47,9 @@ afterAll(async () => {
 beforeEach(() => exporter.reset());
 
 function fabric(): Fabric {
-  return new Fabric({ tenantId: "t", agentId: "a", profile: "p" });
+  // v0.8 output: these parity checks pin the clear identity mode, which
+  // reproduces it (pseudonymous labels are covered by decision-line-identity).
+  return new Fabric({ tenantId: "t", agentId: "a", profile: "p", identityMode: "clear" });
 }
 
 function inDecision(fn: (decision: Decision) => void): () => void {

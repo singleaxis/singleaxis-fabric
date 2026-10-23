@@ -124,3 +124,20 @@ line number of the Python canary differs (an import line was added above it).
 
 Only these exact commit/path/rule/line fingerprints are baselined; the
 synthetic new-commit probe must still fail.
+
+## v0.8 squash merge and v0.8.1 fixture findings (2026-10-23)
+
+PR #197 was squash-merged as `36f7a8927387e1e4b90cb2cc6ba7a7e446cbb210`,
+which re-created three canaries already classified above at new line numbers,
+and the v0.8.1 decision-line work added fabricguard test fixtures. The
+scheduled all-branch scan on `main` reported seven matches, all test values:
+
+| Commit / path / line | Source evidence and classification |
+| --- | --- |
+| `36f7a89…` `scripts/tests/test_coverage_contracts.py:366` | The test key label `fabric-test-id-key-not-a-secret` and a fake provider id, classified above at `9771866…:335`. |
+| `36f7a89…` `sdk/python/tests/test_wire_p0a_privacy.py:44` | The planted canary `canary-ssn-078-05-1120`, classified above at `937301c…:43`. |
+| `36f7a89…` `sdk/typescript/test/identity.test.ts:247` | The planted canary `CANARY-MKEY-q8z`, classified above at `4254dfd…:247`. |
+| `67d32c8…`, `e7f5182…` `components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:31` | The upper-case `LBL-…` value is a negative fixture: fabricguard must refuse it because mapped labels are lower-case. It is a pseudonym-shaped string, not a credential. |
+| `1464bf9…` `components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:219`, `:227` | The synthetic caller id `claim-4711-jane`, which the test asserts a pseudonymous Node drops. No access is granted. |
+
+As above, only exact commit/path/rule/line fingerprints are baselined.

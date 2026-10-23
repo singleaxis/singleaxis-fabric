@@ -62,7 +62,14 @@ beforeEach(() => {
 });
 
 function fabric(): Fabric {
-  return new Fabric({ tenantId: "t", agentId: "a", profile: "permissive-dev" });
+  // v0.8 output (payload digests included): pinned to the clear identity mode,
+  // which reproduces it; digest gating is covered by digest-gating.test.ts.
+  return new Fabric({
+    tenantId: "t",
+    agentId: "a",
+    profile: "permissive-dev",
+    identityMode: "clear",
+  });
 }
 
 function ids(): { sessionId: string; requestId: string } {

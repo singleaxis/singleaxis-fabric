@@ -59,3 +59,10 @@ bf30709061985a8c7d22ed473bca7e1bf85ccfaf:docs/security-history-triage.md:generic
 # under 937301c/4254dfd. See "PR #191 squash-merge canaries".
 f4f8d914eb1fcf8ced43b2222760187e0e358db7:sdk/python/tests/test_wire_p0a_privacy.py:generic-api-key:44
 f4f8d914eb1fcf8ced43b2222760187e0e358db7:sdk/typescript/test/identity.test.ts:generic-api-key:247
+1464bf9754f535d354243c98d39ee1095fe823e2:components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:generic-api-key:219
+1464bf9754f535d354243c98d39ee1095fe823e2:components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:generic-api-key:227
+36f7a8927387e1e4b90cb2cc6ba7a7e446cbb210:scripts/tests/test_coverage_contracts.py:generic-api-key:366
+36f7a8927387e1e4b90cb2cc6ba7a7e446cbb210:sdk/python/tests/test_wire_p0a_privacy.py:generic-api-key:44
+36f7a8927387e1e4b90cb2cc6ba7a7e446cbb210:sdk/typescript/test/identity.test.ts:generic-api-key:247
+67d32c8654e712be4776dc242a505e877625f798:components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:generic-api-key:31
+e7f51825264e116a36e00ce4b29d26e8fbb4f975:components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:generic-api-key:31

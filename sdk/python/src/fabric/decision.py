@@ -10,19 +10,20 @@ evaluation, authorization, policy, escalation or other enforcement behavior.
 Concurrency contract
 --------------------
 
-A :class:`Decision` instance represents a single agent turn and is
-**not** safe to share across threads or asyncio tasks. Open one
-``Decision`` per agent turn; do not pass the same instance into
-parallel coroutines or workers.
+A :class:`Decision` instance represents a single agent turn. Open one
+``Decision`` per agent turn; sharing one instance across threads or
+asyncio tasks is supported only as a degraded mode.
 
-Mutation methods on a single ``Decision`` (``record_retrieval``, ``remember``,
-``record_side_effect`` and ``set_attribute``) are **not** internally
-synchronized. The
+Recording never raises into the application because of concurrent use
+(spec 049 §7.1). Mutating calls on one ``Decision`` are serialised by a
+non-blocking sentinel; a call that overlaps another is still recorded,
+without serialisation, and counted (:attr:`Decision.concurrent_use_count`,
+``capture_health["status"] == "partial"``): its events are kept, but the
 rolling counter attributes (``fabric.retrieval_count``,
-``fabric.memory_write_count``, ``fabric.side_effect_count``) and the
-internal lists they update would race under concurrent access. The
-``Fabric`` client itself is safe to share — only ``Decision`` instances
-have this constraint.
+``fabric.memory_write_count``, ``fabric.side_effect_count`` ...) may be
+off. ``FABRIC_RECORDS_STRICT=1`` restores the old fail-fast
+:class:`ConcurrentDecisionUseError` for tests only. The ``Fabric`` client
+itself is safe to share.
 
 Async usage
 -----------
@@ -131,7 +132,9 @@ from ._content_sink import ContentSink
 from ._crosscut import apply_cross_cutting
 from ._hashes import require_sha256_hex, require_sha256_hex_values, sha256_hex
 from ._id_validators import warn_if_pii_shaped
-from ._identity import IdentityPolicy
+from ._identity import IdentityPolicy, record_exception
+from ._safe_log import safe_log
+from ._safe_span import SafeSpan, SpanScope, child_span, log_recording_error
 from .baseline import BaselineCheck
 from .checkpoint import CheckpointEvent
 from .memory import MemoryKind, MemoryRecord
@@ -250,6 +253,16 @@ __all__ = [
 ]
 
 _LOG = logging.getLogger("fabric.decision")
+_CONCURRENT_WARNED = threading.Event()  # one class-only warning per process
+# The roles whose payloads the legacy (non-governed) content store receives as given.
+_LEGACY_STORE_ROLES = frozenset(
+    {
+        ContentRole.MEMORY_WRITE_CONTENT.value,
+        ContentRole.MEMORY_READ_CONTENT.value,
+        ContentRole.SIDE_EFFECT_REQUEST.value,
+        ContentRole.SIDE_EFFECT_RESULT.value,
+    }
+)
 
 SPAN_NAME = "fabric.decision"
 
@@ -377,28 +390,26 @@ class DelegationContext:
     carrier: dict[str, str]
 
 
+# Strict test mode (spec 049 §7.1): only when set to "1" does an overlapping mutating call
+# raise ConcurrentDecisionUseError; otherwise it is recorded degraded and counted.
+RECORDS_STRICT_ENV = "FABRIC_RECORDS_STRICT"
+
+
 class ConcurrentDecisionUseError(RuntimeError):
-    """Raised when one :class:`Decision` is mutated concurrently.
+    """Raised for overlapping use of one :class:`Decision`, in strict mode only.
 
-    A :class:`Decision` represents a single agent turn and is not safe
-    to share across threads or asyncio tasks (see the module docstring's
-    concurrency contract). The SDK detects *genuinely overlapping*
-    mutating calls on the same instance via a non-blocking sentinel lock
-    and raises this rather than letting the internal record lists and
-    rolling span-counter attributes race silently.
-
-    Note the async ``a*`` methods are NOT a false trigger: each offloads
-    its sync sibling to a worker thread and is awaited to completion
-    before the next call begins, so sequential ``await`` calls never
-    overlap. Firing two such coroutines concurrently on ONE decision
-    (e.g. via ``asyncio.gather``) is the real footgun this catches.
+    Recording never raises into the application (spec 049 §7.1): by default
+    an overlapping mutating call is recorded without serialisation and
+    counted (:attr:`Decision.concurrent_use_count`). Only with
+    ``FABRIC_RECORDS_STRICT=1`` (a test mode) does the SDK raise this
+    instead, so a test suite can catch a shared ``Decision``.
     """
 
 
 class Decision(AbstractContextManager["Decision"]):
     """Per-agent-call context. Enter once, exit once."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0915 - one assignment per recorder field
         self,
         *,
         client: _ClientLike,
@@ -437,6 +448,11 @@ class Decision(AbstractContextManager["Decision"]):
         # Canonical decision identity: host-supplied verbatim, else a
         # freshly minted uuid4. Independent of ``request_id``.
         self._decision_id = decision_id or str(uuid4())
+        # 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its keyed
+        # ``lbl-`` form when pseudonymous; a minted uuid4 stays as is.
+        self._emitted_decision_id = self._identity.minted_or_opaque(
+            self._decision_id, minted=not decision_id
+        )
         # Explicit per-decision overrides for the execution correlation
         # ids. ``None`` means "not supplied" — resolved at enter time with
         # precedence: explicit > active Execution (contextvar) > config.
@@ -448,6 +464,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._workflow_name = workflow_name
         self._conversation_compacted = conversation_compacted
         self._resolved_execution_id: str | None = None
+        self._resolved_execution_id_minted = False
         self._resolved_workflow_id: str | None = None
         # Resolved attempt/retry metadata, cached on enter. There is no
         # per-decision kwarg for these (they belong to the enclosing
@@ -471,11 +488,12 @@ class Decision(AbstractContextManager["Decision"]):
         # ``fabric.parent_decision_id`` so the child's spans link back to
         # the delegating parent across the service boundary.
         self._parent_context = parent_context
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        self._span: SafeSpan | None = None
         self._retrievals: list[RetrievalRecord] = []
         self._memory_writes: list[MemoryRecord] = []
         self._side_effects: list[SideEffectRecord] = []
+        # Emitted forms of the suppressed side-effect ids, for record_replay_metadata.
+        self._suppressed_effect_ids: list[str] = []
         self._checkpoints: list[CheckpointEvent] = []
         # Agent-surface-logging rolling counters (spec 022). Monotonic
         # totals stamped on the decision span so the Telemetry Bridge can
@@ -497,11 +515,15 @@ class Decision(AbstractContextManager["Decision"]):
         # Concurrency overlap sentinel. A non-blocking lock that is held
         # only for the duration of a single mutating call. Two operations
         # that genuinely overlap in time on the same instance contend for
-        # it and the loser raises ConcurrentDecisionUseError. Sequential
-        # calls — including the async to_thread offload, where each await
-        # completes before the next starts — never contend. See
-        # ``_exclusive`` and the module concurrency contract.
+        # it; the loser is recorded without serialisation and counted
+        # (never raised, spec 049 §7.1). Sequential calls never contend.
+        # See ``_exclusive`` and the module concurrency contract.
         self._busy = threading.Lock()
+        # Recording failures caught fail-open (049 §7.1 rule 3); any makes capture partial.
+        self._internal_errors = 0
+        self._scope = SpanScope(self._note_internal_error)
+        self._concurrent_use = 0
+        self._concurrent_use_lock = threading.Lock()  # O(1) counter update only
         # Lifecycle flag: "new" before enter, "open" between enter/exit,
         # "closed" after exit. Mirrors LLMCall/ToolCall double-enter
         # rejection; shared by the sync and async context-manager paths.
@@ -517,28 +539,68 @@ class Decision(AbstractContextManager["Decision"]):
 
     @contextmanager
     def _exclusive(self) -> Iterator[None]:
-        """Hold the overlap sentinel for one mutating call, else raise.
+        """Hold the overlap sentinel for one mutating call; never raise on overlap.
 
-        Non-blocking ``acquire`` so a second *concurrent* mutating call
-        fails fast with :class:`ConcurrentDecisionUseError` instead of
-        silently racing the record lists / span counters. The acquire is
-        a couple of microseconds, so the hot path is not meaningfully
-        regressed. Do NOT call a guarded method from inside another
-        guarded method on the same instance — that would self-deadlock
-        on this non-reentrant lock (none of the public methods do).
+        Non-blocking ``acquire``: recording never waits on another thread
+        (spec 049 §7.1). A second *concurrent* mutating call is recorded
+        without serialisation (degraded: its events are kept, the rolling
+        counters may be off) and counted in :attr:`concurrent_use_count`.
+        Only ``FABRIC_RECORDS_STRICT=1`` (a test mode) raises
+        :class:`ConcurrentDecisionUseError` instead. Guarded methods never
+        call each other, so the sentinel is never re-entered by the SDK.
         """
-        if not self._busy.acquire(blocking=False):
+        if self._busy.acquire(blocking=False):
+            try:
+                yield
+            finally:
+                self._busy.release()
+            return
+        if os.environ.get(RECORDS_STRICT_ENV) == "1":
             raise ConcurrentDecisionUseError(
                 "Decision used concurrently from multiple threads/tasks; "
                 "open one Decision per agent turn — see the concurrency "
                 "contract in the module docstring"
             )
-        try:
-            yield
-        finally:
-            self._busy.release()
+        self._note_concurrent_use()
+        yield
+
+    def _note_concurrent_use(self) -> None:
+        """Count one overlapping call and warn once per process (class-only text)."""
+        with self._concurrent_use_lock:
+            self._concurrent_use += 1
+        if not _CONCURRENT_WARNED.is_set():
+            _CONCURRENT_WARNED.set()
+            safe_log(
+                _LOG, logging.WARNING,
+                "fabric: a Decision was used concurrently from several threads or tasks; "
+                "the overlapping call was recorded without serialisation and the "
+                "decision's rolling counters may be off (see Decision.capture_health)",
+            )  # fmt: skip
+
+    def _note_internal_error(self, exc: BaseException) -> None:
+        """A recording step failed and was skipped (049 §7.1 rule 3): count it, class-only."""
+        self._internal_errors += 1
+        log_recording_error(exc)
+
+    @property
+    def concurrent_use_count(self) -> int:
+        """How many mutating calls overlapped another on this decision (degraded, never
+        raised; spec 049 §7.1)."""
+        return self._concurrent_use
 
     # -- execution-id resolution -----------------------------------------
+
+    def _opaque(self, value: str | None) -> str | None:
+        """A caller id as emitted (049 §2.9): clear, ``lbl-``, or ``None``."""
+        return None if value is None else self._identity.opaque(value)
+
+    def _emitted_execution_id(self) -> str | None:
+        """The resolved execution id as emitted: minted as is, a caller's mapped."""
+        if self._resolved_execution_id is None:
+            return None
+        return self._identity.minted_or_opaque(
+            self._resolved_execution_id, minted=self._resolved_execution_id_minted
+        )
 
     def _resolve_execution_metadata(self) -> None:
         """Resolve and cache the execution-correlation metadata by precedence.
@@ -568,10 +630,12 @@ class Decision(AbstractContextManager["Decision"]):
         active = active_execution()
         config = self._client.config
         execution_id = self._execution_id
+        minted = False
         if execution_id is None and active is not None:
-            execution_id = active.execution_id
+            execution_id, minted = active.execution_id, active.execution_id_minted
         if execution_id is None:
             execution_id = config.execution_id
+        self._resolved_execution_id_minted = minted
         workflow_id = self._workflow_id
         if workflow_id is None and active is not None:
             workflow_id = active.workflow_id
@@ -614,24 +678,28 @@ class Decision(AbstractContextManager["Decision"]):
         self._started_at_rfc3339 = _rfc3339_now()
         tracer = self._client.tracer
         # We own exception recording, so disable the tracer's automatic
-        # handler to avoid duplicate exception events.
-        self._cm = tracer.start_as_current_span(
+        # handler to avoid duplicate exception events. Fail-open (049 §7.1):
+        # a failing tracer yields a non-recording span, never an exception.
+        self._span = self._scope.enter(
+            tracer,
             SPAN_NAME,
             kind=SpanKind.INTERNAL,
             record_exception=False,
             set_status_on_exception=False,
         )
-        self._span = self._cm.__enter__()
-        self._recording_at_start = recording_state(self._span)
-        self._capture_health = capture_health(self._span, self._recording_at_start)
+        self._recording_at_start = recording_state(self._span.inner)
+        self._capture_health = capture_health(self._span.inner, self._recording_at_start)
         warn_capture_health(self._capture_health)
         self._span.set_attribute(ATTR_SCHEMA_VERSION, SCHEMA_VERSION)
-        self._span.set_attribute(ATTR_DECISION_ID, self._decision_id)
+        if self._emitted_decision_id is not None:
+            self._span.set_attribute(ATTR_DECISION_ID, self._emitted_decision_id)
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
         self._span.set_attribute("gen_ai.operation.name", "invoke_agent")
-        self._span.set_attribute("gen_ai.agent.name", self._client.agent_name)
+        # 049 §2.9 (round-2 review F4): the agent name is an agent identity, ``agt-``.
+        if (agent_name := self._identity.id("agt", self._client.agent_name)) is not None:
+            self._span.set_attribute("gen_ai.agent.name", agent_name)
         self._span.set_attribute("gen_ai.agent.id", self._client.agent_id)
         if (session := self._identity.id("sess", self._session_id)) is not None:
             self._span.set_attribute("gen_ai.conversation.id", session)
@@ -642,23 +710,26 @@ class Decision(AbstractContextManager["Decision"]):
         if self._conversation_compacted:
             self._span.set_attribute("gen_ai.conversation.compacted", True)
         self._resolve_execution_metadata()
-        if self._resolved_workflow_id is not None:
-            self._span.set_attribute(ATTR_WORKFLOW, self._resolved_workflow_id)
-        semantic_workflow_name = self._workflow_name or self._resolved_workflow_id
+        # 049 §2.9 (round-2 review F4): caller ids are their keyed ``lbl-`` form when
+        # pseudonymous (a minted execution id stays as is); the workflow name is an
+        # operator label, and falls back to the mapped workflow id.
+        workflow = self._opaque(self._resolved_workflow_id)
+        if workflow is not None:
+            self._span.set_attribute(ATTR_WORKFLOW, workflow)
+        semantic_workflow_name = (
+            self._identity.label(self._workflow_name) if self._workflow_name else workflow
+        )
         if semantic_workflow_name is not None:
             self._span.set_attribute("gen_ai.workflow.name", semantic_workflow_name)
-        if self._resolved_execution_id is not None:
-            self._span.set_attribute(ATTR_EXECUTION, self._resolved_execution_id)
+        if (execution := self._emitted_execution_id()) is not None:
+            self._span.set_attribute(ATTR_EXECUTION, execution)
         # Attempt/retry metadata, inherited from the active execution when
         # present and otherwise stamped from config (precedence:
         # active Execution > FabricConfig). Resolved in
         # ``_resolve_execution_metadata`` so the introspection properties and
         # cross-service propagation reflect exactly what was stamped here.
-        if self._resolved_execution_attempt_id is not None:
-            self._span.set_attribute(
-                ATTR_EXECUTION_ATTEMPT_ID,
-                self._resolved_execution_attempt_id,
-            )
+        if (attempt_id := self._opaque(self._resolved_execution_attempt_id)) is not None:
+            self._span.set_attribute(ATTR_EXECUTION_ATTEMPT_ID, attempt_id)
         if self._resolved_execution_attempt is not None:
             self._span.set_attribute(
                 ATTR_EXECUTION_ATTEMPT,
@@ -669,14 +740,14 @@ class Decision(AbstractContextManager["Decision"]):
                 ATTR_EXECUTION_RETRY_REASON,
                 self._resolved_execution_retry_reason,
             )
-        if self._resolved_execution_retry_previous_attempt_id is not None:
-            self._span.set_attribute(
-                ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-                self._resolved_execution_retry_previous_attempt_id,
-            )
+        previous_attempt = self._opaque(self._resolved_execution_retry_previous_attempt_id)
+        if previous_attempt is not None:
+            self._span.set_attribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previous_attempt)
         if session is not None:
             self._span.set_attribute(ATTR_SESSION, session)
-        self._span.set_attribute(ATTR_REQUEST, self._request_id)
+        # 049 §2.9: the caller's request id (no v2 type yet) as the keyed ``lbl-`` form.
+        if (request := self._identity.opaque(self._request_id)) is not None:
+            self._span.set_attribute(ATTR_REQUEST, request)
         if self._user_id is not None and (user := self._identity.id("usr", self._user_id)):
             self._span.set_attribute(ATTR_USER, user)
         # Delegation lineage from a propagated context. ``parent_agent_id``
@@ -689,11 +760,9 @@ class Decision(AbstractContextManager["Decision"]):
             )
             if parent_agent is not None:
                 self._span.set_attribute(ATTR_PARENT_AGENT_ID, parent_agent)
-            if self._parent_context.decision_id is not None:
-                self._span.set_attribute(
-                    ATTR_PARENT_DECISION_ID,
-                    self._parent_context.decision_id,
-                )
+            # A carrier's decision id is caller input: ``lbl-`` when pseudonymous.
+            if (parent_decision := self._opaque(self._parent_context.decision_id)) is not None:
+                self._span.set_attribute(ATTR_PARENT_DECISION_ID, parent_decision)
         for key, value in self._extra_attrs.items():
             self._span.set_attribute(key, value)
         return self
@@ -704,27 +773,39 @@ class Decision(AbstractContextManager["Decision"]):
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> bool | None:
-        if self._span is None or self._cm is None:  # pragma: no cover
+        span = self._span
+        if span is None:  # pragma: no cover
             return None
+        # Fail-open (049 §7.1): nothing below raises, and the return value is
+        # falsy, so the application's own exception propagates unchanged.
         if exc is not None:
             # ``error.type`` mirrors the GenAI error convention; it also
             # covers non-``Exception`` exits (CancelledError & friends),
             # which we already record so cancellations stay visible.
-            self._span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
-            self._span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
-            self._span.record_exception(exc)
+            span.set_attribute(ATTR_ERROR_TYPE, type(exc).__name__)
+            span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
+            # 049 §7.6: class only in the pseudonymous mode (no message, no stack).
+            record_exception(span, exc, clear=self._identity.clear)
         # Governed content: write the transcript manifest and stamp its
         # ref before the span ends. Pending items stay pending — honest
         # gap, never claimed delivered (spec 032 §5).
         if self._content_sink is not None:
-            self._content_sink.close(decision_span=self._span, closed_at=_rfc3339_now())
-        result = self._cm.__exit__(exc_type, exc, tb)
-        self._capture_health = capture_health(self._span, self._recording_at_start)
-        warn_capture_health(self._capture_health)
+            try:
+                self._content_sink.close(decision_span=span, closed_at=_rfc3339_now())
+            except Exception as failure:
+                self._note_internal_error(failure)
+        self._scope.exit(exc)
+        try:
+            self._capture_health = capture_health(
+                span.inner, self._recording_at_start,
+                concurrent_use=self._concurrent_use + self._internal_errors,
+            )  # fmt: skip
+            warn_capture_health(self._capture_health)
+        except Exception as failure:  # pragma: no cover - capture_health never raises
+            self._note_internal_error(failure)
         self._span = None
-        self._cm = None
         self._state = "closed"
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #
@@ -898,26 +979,24 @@ class Decision(AbstractContextManager["Decision"]):
     # raw bytes. Without a store every event stays byte-identical.
 
     def _store_content_ref(self, content: str, *, key_hint: str | None = None) -> str | None:
-        """Write ``content`` to the configured store; return its ref URI.
+        """Queue ``content`` for the configured legacy store; return its ref URI.
 
         ``None`` when no :class:`~fabric.content_store.ContentStore` is
-        configured. ``key_hint`` forwards the caller's logical key (e.g.
-        the memory ``key``) for stores that organize by hint. A store
-        failure warns and returns ``None`` — passive recording must never
-        break the agent's path because the evidence pipeline hiccuped.
+        configured, when the bounded queue is full (the drop is counted) or
+        when the store has no deterministic ``ref_for``. The write itself runs
+        on a background worker: recording never waits on storage, and a store
+        failure is counted and logged class-only, never raised.
         """
-        store = self._client.content_store
-        if store is None:
+        # 049 §7.1: never wait on storage; the write is queued for a background worker.
+        writer = getattr(self._client, "content_store_writer", None)
+        if writer is None:
             return None
         try:
-            return store.put(content, key_hint=key_hint).uri
-        except Exception:
-            _LOG.warning(
-                "fabric.decision: content store put() failed; emitting the "
-                "event without a content ref",
-                exc_info=True,
-            )
+            ref: str | None = writer.submit(content, key_hint=key_hint)
+        except Exception as exc:  # pragma: no cover - submit never raises
+            self._note_internal_error(exc)
             return None
+        return ref
 
     # -- governed content (spec 028/029) -----------------------------------
     #
@@ -994,23 +1073,40 @@ class Decision(AbstractContextManager["Decision"]):
         """
         if content is None:
             return None
-        sink = self._governed_sink()
-        if sink is None:
+        try:
+            sink = self._governed_sink()
+            if sink is None:
+                return None
+            return sink.capture(
+                role,
+                content,
+                media_type=media_type,
+                bindings=self._content_bindings(bindings),
+                links=links,
+                status_reason=status_reason,
+                representation=representation,
+            )
+        except Exception as exc:  # 049 §7.1: a capture failure is a loss, never an error
+            self._note_internal_error(exc)
             return None
-        return sink.capture(
-            role,
-            content,
-            media_type=media_type,
-            bindings=self._content_bindings(bindings),
-            links=links,
-            status_reason=status_reason,
-            representation=representation,
-        )
 
     @property
     def governed_capture(self) -> bool:
         """True when governed content capture is configured on the client."""
         return self._client.content_capture is not None
+
+    def _retains_original(self, role: ContentRole | str) -> bool:
+        """Whether ``role``'s privacy mode retains the original payload (spec 049 §7.5,
+        spec 051 D-14): only then may a ``*_hash`` digest of it leave the process. The
+        governed roles of a configured content capture retain it; without one, the legacy
+        content store retains the memory and side-effect payloads it is given; nothing
+        else does (metadata-only: no digest, since a digest of a low-entropy payload
+        reveals it). The ``clear`` identity mode keeps the v0.8.0 digests."""
+        if self._identity.clear:
+            return True
+        if self.governed_capture:
+            return str(role) in self._client.content_roles
+        return self._client.content_store is not None and str(role) in _LEGACY_STORE_ROLES
 
     def _reject_raw_capture(self, capture_content: bool) -> None:
         if capture_content and self.governed_capture:
@@ -1104,27 +1200,36 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.retrieval.source": record.source.value,
-                "fabric.retrieval.query_hash": record.query_hash,
-                "fabric.retrieval.result_count": record.result_count,
             }
-            if record.result_hashes:
+            # 049 §7.5: a digest of the original only where its role retains it.
+            if self._retains_original(ContentRole.RETRIEVAL_QUERY):
+                event_attrs["fabric.retrieval.query_hash"] = record.query_hash
+            event_attrs["fabric.retrieval.result_count"] = record.result_count
+            if record.result_hashes and self._retains_original(ContentRole.RETRIEVAL_RESULTS):
                 event_attrs["fabric.retrieval.result_hashes"] = record.result_hashes
-            if record.source_document_ids:
-                event_attrs["fabric.retrieval.source_document_ids"] = record.source_document_ids
+            document_ids = tuple(
+                emitted
+                for doc_id in record.source_document_ids
+                if (emitted := self._identity.opaque(doc_id)) is not None
+            )
+            if document_ids:
+                event_attrs["fabric.retrieval.source_document_ids"] = document_ids
             if record.latency_ms is not None:
                 event_attrs["fabric.retrieval.latency_ms"] = record.latency_ms
             retrieval_ref = results_ref or query_ref
             if retrieval_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = retrieval_ref
             span.add_event("fabric.retrieval", attributes=event_attrs)
-            semantic_name = f"retrieval {data_source_id}" if data_source_id else "retrieval"
-            with self._client.tracer.start_as_current_span(
-                semantic_name,
-                kind=SpanKind.CLIENT,
-            ) as retrieval_span:
+            # The caller's data-source id (no v2 type yet) as the keyed ``lbl-`` form.
+            data_source = self._identity.opaque(data_source_id) if data_source_id else None
+            semantic_name = f"retrieval {data_source}" if data_source else "retrieval"
+            with child_span(
+                self._client.tracer, semantic_name, kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as retrieval_span:  # fmt: skip
                 retrieval_span.set_attribute("gen_ai.operation.name", "retrieval")
-                if data_source_id is not None:
-                    retrieval_span.set_attribute("gen_ai.data_source.id", data_source_id)
+                if data_source is not None:
+                    retrieval_span.set_attribute("gen_ai.data_source.id", data_source)
                 if provider is not None:
                     retrieval_span.set_attribute("gen_ai.provider.name", provider)
                 if top_k is not None:
@@ -1217,13 +1322,16 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.memory.direction": record.direction,
                 "fabric.memory.kind": record.kind.value,
             }
-            # from_content always populates content_hash (write side).
-            if record.content_hash is not None:
+            # from_content always populates content_hash (write side); 049 §7.5: emitted
+            # only where the role retains the original.
+            if record.content_hash is not None and self._retains_original(
+                ContentRole.MEMORY_WRITE_CONTENT
+            ):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.key is not None and (memory_key := self._identity.id("mkey", record.key)):
                 event_attrs["fabric.memory.key"] = memory_key
-            if record.tags:
-                event_attrs["fabric.memory.tags"] = record.tags
+            if memory_tags := self._identity.labels(record.tags):
+                event_attrs["fabric.memory.tags"] = memory_tags
             if record.ttl_seconds is not None:
                 event_attrs["fabric.memory.ttl_seconds"] = record.ttl_seconds
             if record.invalidates is not None and (
@@ -1233,13 +1341,14 @@ class Decision(AbstractContextManager["Decision"]):
             if content_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
-            with self._client.tracer.start_as_current_span(
-                "create_memory", kind=SpanKind.CLIENT
-            ) as memory_span:
+            with child_span(
+                self._client.tracer, "create_memory", kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as memory_span:  # fmt: skip
                 memory_span.set_attribute("gen_ai.operation.name", "create_memory")
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if key is not None and (record_id := self._identity.id("mkey", key)):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 if provider is not None:
@@ -1313,23 +1422,26 @@ class Decision(AbstractContextManager["Decision"]):
             recalled = record.key if record.key is not None else key
             if memory_key := self._identity.id("mkey", recalled):
                 event_attrs["fabric.memory.key"] = memory_key
-            # from_recall always populates content_hash (read side).
-            if record.content_hash is not None:
+            # from_recall always populates content_hash (read side); 049 §7.5 as above.
+            if record.content_hash is not None and self._retains_original(
+                ContentRole.MEMORY_READ_CONTENT
+            ):
                 event_attrs["fabric.memory.content_hash"] = record.content_hash
             if record.source is not None:
                 event_attrs["fabric.memory.source"] = record.source
             if content_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = content_ref
             span.add_event("fabric.memory", attributes=event_attrs)
-            with self._client.tracer.start_as_current_span(
-                "search_memory", kind=SpanKind.CLIENT
-            ) as memory_span:
+            with child_span(
+                self._client.tracer, "search_memory", kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as memory_span:  # fmt: skip
                 memory_span.set_attribute("gen_ai.operation.name", "search_memory")
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
                 if capture_content:
@@ -1396,15 +1508,16 @@ class Decision(AbstractContextManager["Decision"]):
             if record.tenant_scope:
                 event_attrs["fabric.memory.tenant_scope"] = True
             span.add_event("fabric.memory", attributes=event_attrs)
-            with self._client.tracer.start_as_current_span(
-                "delete_memory", kind=SpanKind.CLIENT
-            ) as memory_span:
+            with child_span(
+                self._client.tracer, "delete_memory", kind=SpanKind.CLIENT,
+                on_error=self._note_internal_error,
+            ) as memory_span:  # fmt: skip
                 memory_span.set_attribute("gen_ai.operation.name", "delete_memory")
                 if record_id := self._identity.id("mkey", key):
                     memory_span.set_attribute("gen_ai.memory.record.id", record_id)
                 memory_span.set_attribute("gen_ai.memory.record.count", 1)
-                if store_id is not None:
-                    memory_span.set_attribute("gen_ai.memory.store.id", store_id)
+                if store_id is not None and (store := self._identity.id("mst", store_id)):
+                    memory_span.set_attribute("gen_ai.memory.store.id", store)
                 if provider is not None:
                     memory_span.set_attribute("gen_ai.provider.name", provider)
             return record
@@ -1527,35 +1640,74 @@ class Decision(AbstractContextManager["Decision"]):
             self._side_effects.append(record)
             span.set_attribute(ATTR_SIDE_EFFECT_COUNT, len(self._side_effects))
             unique_types = sorted({r.effect_type.value for r in self._side_effects})
-            unique_systems = sorted({r.target_system for r in self._side_effects})
+            # 049 §4.2: target systems and operations are operator labels (``lbl-`` when
+            # pseudonymous, as given with FABRIC_WIRE_LABELS=clear).
+            unique_systems = sorted(set(self._identity.labels(
+                r.target_system for r in self._side_effects
+            )))  # fmt: skip
             span.set_attribute(ATTR_SIDE_EFFECT_TYPES, tuple(unique_types))
             span.set_attribute(ATTR_SIDE_EFFECT_SYSTEMS, tuple(unique_systems))
+            # A minted uuid4 is Fabric's own id; a caller's id is mapped (``lbl-``).
+            effect_id: str | None = (
+                record.side_effect_id
+                if side_effect_id is None
+                else self._identity.opaque(record.side_effect_id)
+            )
+            if effect_id is not None and record.replay_behavior == ReplayBehavior.SUPPRESS:
+                self._suppressed_effect_ids.append(effect_id)
 
-            event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
-                "fabric.schema_version": SCHEMA_VERSION,
-                "fabric.side_effect.side_effect_id": record.side_effect_id,
-                "fabric.side_effect.type": record.effect_type.value,
-                "fabric.side_effect.target_system": record.target_system,
-                "fabric.side_effect.operation": record.operation,
-                "fabric.side_effect.approval_required": record.approval_required,
-                "fabric.side_effect.committed": record.committed,
-                "fabric.side_effect.rollback_supported": record.rollback_supported,
-                "fabric.side_effect.replay_behavior": record.replay_behavior.value,
-            }
-            if record.request_hash is not None:
-                event_attrs["fabric.side_effect.request_hash"] = record.request_hash
-            if record.result_hash is not None:
-                event_attrs["fabric.side_effect.result_hash"] = record.result_hash
-            if record.idempotency_key is not None:
-                event_attrs["fabric.side_effect.idempotency_key"] = record.idempotency_key
-            if record.parent_tool_call_id is not None:
-                event_attrs["fabric.side_effect.parent_tool_call_id"] = record.parent_tool_call_id
-            if request_ref is not None:
-                event_attrs[ATTR_CONTENT_REQUEST_REF] = request_ref
-            if result_ref is not None:
-                event_attrs[ATTR_CONTENT_RESULT_REF] = result_ref
+            event_attrs = self._side_effect_attributes(record, effect_id, request_ref, result_ref)
             span.add_event("fabric.side_effect", attributes=event_attrs)
             return record
+
+    def _side_effect_attributes(
+        self,
+        record: SideEffectRecord,
+        effect_id: str | None,
+        request_ref: str | None,
+        result_ref: str | None,
+    ) -> dict[str, str | int | float | bool | tuple[str, ...]]:
+        """The ``fabric.side_effect`` event attributes as emitted (049 §2.9, §4.2, §7.5)."""
+        event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
+            "fabric.schema_version": SCHEMA_VERSION,
+        }
+        if effect_id is not None:
+            event_attrs["fabric.side_effect.side_effect_id"] = effect_id
+        event_attrs["fabric.side_effect.type"] = record.effect_type.value
+        if (system := self._identity.label(record.target_system)) is not None:
+            event_attrs["fabric.side_effect.target_system"] = system
+        if (operation := self._identity.label(record.operation)) is not None:
+            event_attrs["fabric.side_effect.operation"] = operation
+        event_attrs |= {
+            "fabric.side_effect.approval_required": record.approval_required,
+            "fabric.side_effect.committed": record.committed,
+            "fabric.side_effect.rollback_supported": record.rollback_supported,
+            "fabric.side_effect.replay_behavior": record.replay_behavior.value,
+        }
+        # 049 §7.5: computed or caller-supplied, a digest of the original only where
+        # its role retains it.
+        if record.request_hash is not None and self._retains_original(
+            ContentRole.SIDE_EFFECT_REQUEST
+        ):
+            event_attrs["fabric.side_effect.request_hash"] = record.request_hash
+        if record.result_hash is not None and self._retains_original(
+            ContentRole.SIDE_EFFECT_RESULT
+        ):
+            event_attrs["fabric.side_effect.result_hash"] = record.result_hash
+        if record.idempotency_key is not None and (
+            idempotency_key := self._identity.opaque(record.idempotency_key)
+        ):
+            event_attrs["fabric.side_effect.idempotency_key"] = idempotency_key
+        # N12: the parent tool-call id is a provider id, its keyed ``p-`` form.
+        if record.parent_tool_call_id is not None and (
+            parent := self._identity.id("p", record.parent_tool_call_id)
+        ):
+            event_attrs["fabric.side_effect.parent_tool_call_id"] = parent
+        if request_ref is not None:
+            event_attrs[ATTR_CONTENT_REQUEST_REF] = request_ref
+        if result_ref is not None:
+            event_attrs[ATTR_CONTENT_RESULT_REF] = result_ref
+        return event_attrs
 
     # -- checkpoints -----------------------------------------------------
 
@@ -1597,8 +1749,10 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 "fabric.checkpoint.checkpoint_id": str(event.checkpoint_id),
-                "fabric.checkpoint.step_name": event.step_name,
             }
+            # 049 §4.2: the step name is an operator label (``lbl-`` when pseudonymous).
+            if (emitted_step := self._identity.label(event.step_name)) is not None:
+                event_attrs["fabric.checkpoint.step_name"] = emitted_step
             if event.state_hash is not None:
                 event_attrs["fabric.checkpoint.state_hash"] = event.state_hash
 
@@ -1653,19 +1807,16 @@ class Decision(AbstractContextManager["Decision"]):
             span = self.span
 
             checkpoint_ids = tuple(str(c.checkpoint_id) for c in self._checkpoints)
-            suppressed_side_effect_ids = tuple(
-                s.side_effect_id
-                for s in self._side_effects
-                if s.replay_behavior == ReplayBehavior.SUPPRESS
-            )
+            suppressed_side_effect_ids = tuple(self._suppressed_effect_ids)
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
                 ATTR_REPLAY_METADATA_VERSION: REPLAY_METADATA_VERSION,
-                ATTR_REPLAY_DECISION_ID: self._decision_id,
             }
-            if self._resolved_execution_id is not None:
-                event_attrs[ATTR_REPLAY_EXECUTION_ID] = self._resolved_execution_id
+            if self._emitted_decision_id is not None:
+                event_attrs[ATTR_REPLAY_DECISION_ID] = self._emitted_decision_id
+            if (execution := self._emitted_execution_id()) is not None:
+                event_attrs[ATTR_REPLAY_EXECUTION_ID] = execution
             if checkpoint_ids:
                 event_attrs[ATTR_REPLAY_CHECKPOINT_IDS] = checkpoint_ids
             if suppressed_side_effect_ids:
@@ -1770,7 +1921,8 @@ class Decision(AbstractContextManager["Decision"]):
             self._interaction_count += 1
             self._interaction_kinds.add(kind)
             span.set_attribute(ATTR_INTERACTION_COUNT, self._interaction_count)
-            span.set_attribute(ATTR_INTERACTION_KINDS, tuple(sorted(self._interaction_kinds)))
+            kinds = tuple(sorted(self._interaction_kinds.copy()))  # copy: safe when degraded
+            span.set_attribute(ATTR_INTERACTION_KINDS, kinds)
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
@@ -1783,27 +1935,37 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_INTERACTION_TARGET] = emitted
             if direction is not None:
                 event_attrs[ATTR_INTERACTION_DIRECTION] = direction
-            if payload_hash is not None:
-                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = require_sha256_hex(
-                    "payload_hash", payload_hash
-                )
-            elif payload is not None:
-                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = _sha256_hex(payload)
+            if (digest := self._payload_digest(payload, payload_hash)) is not None:
+                event_attrs[ATTR_INTERACTION_PAYLOAD_HASH] = digest
             if payload_ref is not None:
                 event_attrs[ATTR_CONTENT_REF] = payload_ref
-            if metadata:
+            if metadata and self._retains_original(ContentRole.INTERACTION_PAYLOAD):
                 # Canonicalize then hash the whole dict — raw metadata
-                # (which may carry secrets) never lands on the span.
+                # (which may carry secrets) never lands on the span; 049 §7.5:
+                # a digest only where the interaction's content is retained.
                 canonical = json.dumps(metadata, sort_keys=True, default=str)
                 event_attrs[ATTR_INTERACTION_METADATA_HASH] = _sha256_hex(canonical)
 
             resolved = apply_cross_cutting(
-                event_attrs, tags=tags, baseline=baseline, signature=signature
-            )
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.interaction", attributes=event_attrs)
 
             # Improvement loop: a one-shot, low-rate coverage signal.
             self._emit_coverage_signals(kind, resolved.baseline_status, resolved.has_tags)
+
+    def _payload_digest(self, payload: str | None, payload_hash: str | None) -> str | None:
+        """The interaction payload digest as emitted: only where ``interaction.payload``
+        retains the original (049 §7.5); a caller-supplied digest is validated either way."""
+        checked = (
+            require_sha256_hex("payload_hash", payload_hash) if payload_hash is not None else None
+        )
+        if not self._retains_original(ContentRole.INTERACTION_PAYLOAD):
+            return None
+        if checked is not None:
+            return checked
+        return _sha256_hex(payload) if payload is not None else None
 
     def record_context(
         self,
@@ -1920,9 +2082,12 @@ class Decision(AbstractContextManager["Decision"]):
 
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
-                ATTR_SKILL_NAME: name,
-                ATTR_SKILL_VERSION: version,
             }
+            # 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+            if (skill_name := self._identity.label(name)) is not None:
+                event_attrs[ATTR_SKILL_NAME] = skill_name
+            if (skill_version := self._identity.label(version)) is not None:
+                event_attrs[ATTR_SKILL_VERSION] = skill_version
             if source is not None:
                 event_attrs[ATTR_SKILL_SOURCE] = source
             if manifest_hash is not None:
@@ -1931,7 +2096,10 @@ class Decision(AbstractContextManager["Decision"]):
                 )
             if signed is not None:
                 event_attrs[ATTR_SKILL_SIGNED] = signed
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.skill", attributes=event_attrs)
 
     def _open_delegation(
@@ -1982,7 +2150,10 @@ class Decision(AbstractContextManager["Decision"]):
                 parent_agent_id=self.agent_id,
             )
             carrier: dict[str, str] = {}
-            inject(carrier, context)
+            try:
+                inject(carrier, context)
+            except Exception as exc:  # 049 §7.1: the delegation proceeds without a carrier
+                self._note_internal_error(exc)
 
             depth = self._delegation_depth + 1
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
@@ -1992,7 +2163,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_DELEGATION_TO_AGENT] = agent
             event_attrs[ATTR_DELEGATION_PROTOCOL] = protocol
             event_attrs[ATTR_DELEGATION_DEPTH] = depth
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             self._delegation_count += 1
             self._delegation_depth += 1
             span.set_attribute(ATTR_DELEGATION_COUNT, self._delegation_count)
@@ -2135,7 +2309,10 @@ class Decision(AbstractContextManager["Decision"]):
                 event_attrs[ATTR_HOOK_INPUT_HASH] = require_sha256_hex("input_hash", input_hash)
             if output_hash is not None:
                 event_attrs[ATTR_HOOK_OUTPUT_HASH] = require_sha256_hex("output_hash", output_hash)
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.hook", attributes=event_attrs)
 
     def record_file_access(
@@ -2205,7 +2382,10 @@ class Decision(AbstractContextManager["Decision"]):
                 )
             if size_bytes is not None:
                 event_attrs[ATTR_FILE_SIZE_BYTES] = size_bytes
-            apply_cross_cutting(event_attrs, tags=tags, baseline=baseline, signature=signature)
+            apply_cross_cutting(
+                event_attrs, tags=tags, baseline=baseline, signature=signature,
+                label=self._identity.label,
+            )  # fmt: skip
             span.add_event("fabric.file", attributes=event_attrs)
 
     # -- child spans (LLM call / tool call) ------------------------------
@@ -2320,6 +2500,8 @@ class Decision(AbstractContextManager["Decision"]):
             step_attempt=step_attempt,
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
+            identity=self._identity,
+            on_recording_error=self._note_internal_error,
         )
 
     def embeddings(
@@ -2385,7 +2567,9 @@ class Decision(AbstractContextManager["Decision"]):
         """
         _ = self.span
         extra: dict[str, str | int | float | bool | tuple[str, ...]] = {}
-        apply_cross_cutting(extra, tags=tags, baseline=baseline, signature=signature)
+        apply_cross_cutting(
+            extra, tags=tags, baseline=baseline, signature=signature, label=self._identity.label
+        )
         return ToolCall(
             tracer=self._client.tracer,
             meter=self._client.meter,
@@ -2403,6 +2587,9 @@ class Decision(AbstractContextManager["Decision"]):
             step_retry_reason=step_retry_reason,
             step_retry_previous_attempt_id=step_retry_previous_attempt_id,
             extra_attributes=extra or None,
+            identity=self._identity,
+            retains_original=self._retains_original,
+            on_recording_error=self._note_internal_error,
         )
 
     # -- OTel passthrough -------------------------------------------------

@@ -31,7 +31,7 @@ from .baseline import BaselineCheck
 from .signing import SignatureCheck
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
 # The attribute-value union OTel span events accept.
 AttrValue = str | int | float | bool | tuple[str, ...]
@@ -74,8 +74,13 @@ def apply_cross_cutting(
     tags: Sequence[str] | None = None,
     baseline: BaselineCheck | None = None,
     signature: SignatureCheck | None = None,
+    label: Callable[[str], str | None] | None = None,
 ) -> CrossCutting:
     """Stamp tags / baseline / signature results onto ``event_attrs``.
+
+    ``label`` maps each tag as it is emitted (spec 049 §4.2: tags are operator labels,
+    ``lbl-`` in the pseudonymous identity mode); a tag it maps to ``None`` is omitted.
+    ``None`` keeps the tags as given.
 
     Each capability is stamped only when its kwarg is supplied, so a call
     that passes none leaves ``event_attrs`` byte-identical (additive). The
@@ -97,8 +102,11 @@ def apply_cross_cutting(
         )
 
     tag_tuple = normalize_tags(tags)
-    if tag_tuple:
-        event_attrs[ATTR_TAGS] = tag_tuple
+    emitted = tag_tuple if label is None else tuple(
+        mapped for tag in tag_tuple if (mapped := label(tag)) is not None
+    )  # fmt: skip
+    if emitted:
+        event_attrs[ATTR_TAGS] = emitted
 
     baseline_status: str | None = None
     if baseline is not None:

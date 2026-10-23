@@ -20,6 +20,8 @@ import { createHash, createHmac } from "node:crypto";
 export const ENV_IDENTITY_MODE = "FABRIC_IDENTITY_MODE";
 /** Environment variable holding the pseudonym key (a secret). */
 export const ENV_ID_KEY = "FABRIC_WIRE_ID_KEY";
+/** `FABRIC_WIRE_LABELS=clear`: operator labels exported as chosen (049 §2.9 rule 7). */
+export const ENV_WIRE_LABELS = "FABRIC_WIRE_LABELS";
 /** Minimum id-key length in bytes; a shorter key is a configuration error. */
 export const MIN_ID_KEY_BYTES = 16;
 
@@ -193,13 +195,16 @@ let warnedMissingKey = false;
 export class IdentityPolicy {
   readonly mode: IdentityMode;
   readonly keyed: boolean;
+  /** `FABRIC_WIRE_LABELS=clear`: operator labels as chosen (ids stay mapped). */
+  readonly labelsClear: boolean;
   readonly #key: Uint8Array | undefined;
   readonly #typeKeys = new Map<string, Buffer>();
 
-  constructor(mode: IdentityMode, key?: Uint8Array) {
+  constructor(mode: IdentityMode, key?: Uint8Array, labelsClear = false) {
     this.mode = checkIdentityMode(mode);
     this.#key = key === undefined ? undefined : checkIdKey(key);
     this.keyed = this.#key !== undefined;
+    this.labelsClear = labelsClear;
   }
 
   /**
@@ -215,6 +220,7 @@ export class IdentityPolicy {
     const policy = new IdentityPolicy(
       mode !== undefined ? checkIdentityMode(mode) : identityModeFromEnv(env),
       key !== undefined ? checkIdKey(key) : idKeyFromEnv(env),
+      (env[ENV_WIRE_LABELS] ?? "").trim() === "clear",
     );
     if (policy.mode === "pseudonymous" && !policy.keyed && !warnedMissingKey) {
       warnedMissingKey = true;
@@ -245,6 +251,47 @@ export class IdentityPolicy {
     }
     const digest = createHmac("sha256", kType).update(utf8SurrogatePass(value)).digest("hex");
     return `${prefix}-${digest.slice(0, 32)}`;
+  }
+
+  /**
+   * A caller id whose type has no v2 prefix yet (idempotency key, document
+   * id) as emitted: clear, the keyed generic label `lbl-` (049 §2.9 rule 3),
+   * or `undefined` without a key (an unkeyed hash of a low-entropy id is not
+   * a pseudonym).
+   */
+  opaque(value: string): string | undefined {
+    if (this.clear) {
+      return value;
+    }
+    return this.#key === undefined ? undefined : labelPseudonym("lbl", value, this.#key);
+  }
+
+  /**
+   * An id Fabric mints when the caller gives none (decision, execution id)
+   * as emitted: the minted uuid4 as is, a caller's value as {@link opaque}
+   * emits it, whatever its shape (a plain string is always caller input).
+   */
+  mintedOrOpaque(value: string, minted: boolean): string | undefined {
+    return minted ? value : this.opaque(value);
+  }
+
+  /**
+   * An operator label (step name, tool name, tag; 049 §4.2) as emitted:
+   * clear in `clear` mode or with `FABRIC_WIRE_LABELS=clear`, else the keyed
+   * `lbl-` label, or `undefined` without a key.
+   */
+  label(value: string): string | undefined {
+    return this.labelsClear ? value : this.opaque(value);
+  }
+
+  /** Each of `values` as {@link label} emits it; the omitted ones dropped. */
+  labels(values: readonly string[]): string[] {
+    const out: string[] = [];
+    for (const value of values) {
+      const emitted = this.label(value);
+      if (emitted !== undefined) out.push(emitted);
+    }
+    return out;
   }
 
   toJSON(): Record<string, unknown> {

@@ -96,6 +96,8 @@ var TraceAllowedFields = unionSets(EnvelopeAllowedFields, toSet(
 	"fabric.memory.content_hash", "fabric.memory.direction", "fabric.memory.kind",
 	"fabric.memory.source", "fabric.memory.tenant_scope", "fabric.memory.ttl_seconds",
 	"fabric.memory.invalidates", "fabric.memory_kinds", "fabric.memory_erase_count",
+	// v0.8.1: admitted only in the SDK's mapped forms (decision_line_identity.go).
+	"gen_ai.memory.store.id", "fabric.tags", "fabric.memory.tags",
 	"fabric.side_effect.idempotency_key",
 	"fabric.side_effect.operation", "fabric.side_effect.parent_tool_call_id",
 	"fabric.side_effect.replay_behavior", "fabric.side_effect.request_hash",

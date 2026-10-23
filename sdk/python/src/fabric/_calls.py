@@ -23,6 +23,7 @@ once the call returns. Setters write to both namespaces.
 from __future__ import annotations
 
 import json
+import os
 import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
@@ -34,6 +35,8 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from ._attributes import check_attribute_key
 from ._hashes import sha256_hex
+from ._identity import IdentityPolicy, record_exception
+from ._safe_span import SafeSpan, SpanScope, log_recording_error
 
 if TYPE_CHECKING:
     from opentelemetry.metrics import Histogram, Meter
@@ -231,6 +234,7 @@ def _validate_step_metadata(
 def _stamp_step_metadata(
     span: Span,
     *,
+    identity: IdentityPolicy,
     default_step_type: str,
     step_id: str | None,
     step_type: str | None,
@@ -246,19 +250,23 @@ def _stamp_step_metadata(
     that opt out stay byte-identical to the pre-taxonomy emission.
     """
     span.set_attribute(FABRIC_STEP_TYPE, step_type or default_step_type)
-    if step_id is not None:
-        span.set_attribute(FABRIC_STEP_ID, step_id)
-    if step_attempt_id is not None:
-        span.set_attribute(FABRIC_STEP_ATTEMPT_ID, step_attempt_id)
+    # 049 §2.9 (round-2 review F4): the caller's step and attempt ids are their keyed
+    # ``lbl-`` form when pseudonymous, omitted without a key.
+    for key, value in (
+        (FABRIC_STEP_ID, step_id),
+        (FABRIC_STEP_ATTEMPT_ID, step_attempt_id),
+    ):
+        if value is not None and (emitted := identity.opaque(value)) is not None:
+            span.set_attribute(key, emitted)
     if step_attempt is not None:
         span.set_attribute(FABRIC_STEP_ATTEMPT, step_attempt)
     if step_retry_reason is not None:
         span.set_attribute(FABRIC_STEP_RETRY_REASON, step_retry_reason)
-    if step_retry_previous_attempt_id is not None:
-        span.set_attribute(
-            FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID,
-            step_retry_previous_attempt_id,
-        )
+    if (
+        step_retry_previous_attempt_id is not None
+        and (previous := identity.opaque(step_retry_previous_attempt_id)) is not None
+    ):
+        span.set_attribute(FABRIC_STEP_RETRY_PREVIOUS_ATTEMPT_ID, previous)
 
 
 class LLMCall(AbstractContextManager["LLMCall"]):
@@ -307,6 +315,8 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         step_attempt: int | None = None,
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
+        identity: IdentityPolicy | None = None,
+        on_recording_error: Callable[[BaseException], None] | None = None,
     ) -> None:
         if not provider:
             raise ValueError("LLMCall: provider is required (e.g. 'anthropic')")
@@ -356,8 +366,11 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._step_attempt = step_attempt
         self._step_retry_reason = step_retry_reason
         self._step_retry_previous_attempt_id = step_retry_previous_attempt_id
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        # 049 §2.9/§7.6: the decision's identity policy (standalone: from the environment).
+        self._identity = identity or IdentityPolicy.resolve(None, None, os.environ)
+        self._on_error = on_recording_error or log_recording_error
+        self._span: SafeSpan | None = None
+        self._cm: SpanScope | None = None
         self._started_at: float | None = None
         self._response_model: str | None = None
         self._input_tokens: int | None = None
@@ -367,27 +380,30 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         self._duration_histogram: Histogram | None = None
         self._ttft_histogram: Histogram | None = None
         self._chunk_histogram: Histogram | None = None
-        if meter is not None:
-            self._token_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_TOKEN_USAGE,
-                unit="{token}",
-                description="Number of input and output tokens used.",
-            )
-            self._duration_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_OPERATION_DURATION,
-                unit="s",
-                description="GenAI operation duration.",
-            )
-            self._ttft_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_TIME_TO_FIRST_CHUNK,
-                unit="s",
-                description="Time from request issuance to the first response chunk.",
-            )
-            self._chunk_histogram = meter.create_histogram(
-                GEN_AI_CLIENT_TIME_PER_OUTPUT_CHUNK,
-                unit="s",
-                description="Time elapsed between output chunks.",
-            )
+        try:  # fail-open (049 §7.1): no metrics rather than an error
+            if meter is not None:
+                self._token_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_TOKEN_USAGE,
+                    unit="{token}",
+                    description="Number of input and output tokens used.",
+                )
+                self._duration_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_OPERATION_DURATION,
+                    unit="s",
+                    description="GenAI operation duration.",
+                )
+                self._ttft_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_TIME_TO_FIRST_CHUNK,
+                    unit="s",
+                    description="Time from request issuance to the first response chunk.",
+                )
+                self._chunk_histogram = meter.create_histogram(
+                    GEN_AI_CLIENT_TIME_PER_OUTPUT_CHUNK,
+                    unit="s",
+                    description="Time elapsed between output chunks.",
+                )
+        except Exception as failure:
+            self._on_error(failure)
 
     def __enter__(self) -> Self:  # noqa: PLR0912
         if self._cm is not None:
@@ -397,13 +413,16 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 "LLMCall is already entered; call __exit__ before re-entering "
                 "(do not nest `with call:` on the same instance)"
             )
-        self._cm = self._tracer.start_as_current_span(
+        # The OTel default records the message and stack (and the message in the status):
+        # only in the clear identity mode; otherwise ``__exit__`` records the class only.
+        self._cm = SpanScope(self._on_error)  # fail-open (049 §7.1)
+        self._span = self._cm.enter(
+            self._tracer,
             f"{self._operation_name} {self._model}",
             kind=SpanKind.CLIENT,
-            record_exception=True,
-            set_status_on_exception=True,
+            record_exception=self._identity.clear,
+            set_status_on_exception=self._identity.clear,
         )
-        self._span = self._cm.__enter__()
         self._started_at = time.perf_counter()
         # Standard GenAI conventions
         self._span.set_attribute(GEN_AI_OPERATION_NAME, self._operation_name)
@@ -418,6 +437,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         # "llm_call"); id + attempt/retry metadata only when supplied.
         _stamp_step_metadata(
             self._span,
+            identity=self._identity,
             default_step_type=_DEFAULT_LLM_STEP_TYPE,
             step_id=self._step_id,
             step_type=self._step_type,
@@ -441,10 +461,11 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self._span.set_attribute(GEN_AI_REQUEST_STREAM, True)
         if self._reasoning_level is not None:
             self._span.set_attribute(GEN_AI_REQUEST_REASONING_LEVEL, self._reasoning_level)
-        if self._previous_response_id is not None:
-            self._span.set_attribute(
-                GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID, self._previous_response_id
-            )
+        # 049 §2.9 rule 4 (C39): a provider id is its keyed ``p-`` form when pseudonymous.
+        if self._previous_response_id is not None and (
+            previous := self._identity.id("p", self._previous_response_id)
+        ):
+            self._span.set_attribute(GEN_AI_REQUEST_PREVIOUS_RESPONSE_ID, previous)
         if self._encoding_formats:
             self._span.set_attribute(GEN_AI_REQUEST_ENCODING_FORMATS, self._encoding_formats)
         if self._output_type is not None:
@@ -453,10 +474,17 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self._span.set_attribute(GEN_AI_CONVERSATION_ID, self._conversation_id)
         if self._conversation_compacted:
             self._span.set_attribute(GEN_AI_CONVERSATION_COMPACTED, True)
-        if self._prompt_name is not None:
-            self._span.set_attribute(GEN_AI_PROMPT_NAME, self._prompt_name)
-        if self._prompt_version is not None:
-            self._span.set_attribute(GEN_AI_PROMPT_VERSION, self._prompt_version)
+        # 049 §4.2 (round-2 review F4): the prompt name and version are operator labels.
+        if (
+            self._prompt_name is not None
+            and (prompt_name := self._identity.label(self._prompt_name)) is not None
+        ):
+            self._span.set_attribute(GEN_AI_PROMPT_NAME, prompt_name)
+        if (
+            self._prompt_version is not None
+            and (prompt_version := self._identity.label(self._prompt_version)) is not None
+        ):
+            self._span.set_attribute(GEN_AI_PROMPT_VERSION, prompt_version)
         if self._capture_content:
             if self._system_instructions is not None:
                 self._span.set_attribute(
@@ -576,29 +604,33 @@ class LLMCall(AbstractContextManager["LLMCall"]):
                 # KeyboardInterrupt, GeneratorExit) would otherwise end the
                 # span UNSET with no exception event — a silent gap for
                 # cancellations. Record + mark ERROR ourselves.
-                if not isinstance(exc, Exception):
-                    span.record_exception(exc)
+                if not isinstance(exc, Exception) or not self._identity.clear:
+                    record_exception(span, exc, clear=self._identity.clear)
                     span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
-        if elapsed is not None and self._duration_histogram is not None:
-            self._duration_histogram.record(elapsed, attributes=metric_attrs)
-        if self._token_histogram is not None:
-            if self._input_tokens is not None:
-                self._token_histogram.record(
-                    self._input_tokens,
-                    attributes={**metric_attrs, "gen_ai.token.type": "input"},
-                )
-            if self._output_tokens is not None:
-                self._token_histogram.record(
-                    self._output_tokens,
-                    attributes={**metric_attrs, "gen_ai.token.type": "output"},
-                )
-        if self._ttft_seconds is not None and self._ttft_histogram is not None:
-            self._ttft_histogram.record(self._ttft_seconds, attributes=metric_attrs)
-        result = self._cm.__exit__(exc_type, exc, tb)
+        try:  # fail-open (049 §7.1): a metric failure never reaches the application
+            if elapsed is not None and self._duration_histogram is not None:
+                self._duration_histogram.record(elapsed, attributes=metric_attrs)
+            if self._token_histogram is not None:
+                if self._input_tokens is not None:
+                    self._token_histogram.record(
+                        self._input_tokens,
+                        attributes={**metric_attrs, "gen_ai.token.type": "input"},
+                    )
+                if self._output_tokens is not None:
+                    self._token_histogram.record(
+                        self._output_tokens,
+                        attributes={**metric_attrs, "gen_ai.token.type": "output"},
+                    )
+            if self._ttft_seconds is not None and self._ttft_histogram is not None:
+                self._ttft_histogram.record(self._ttft_seconds, attributes=metric_attrs)
+        except Exception as failure:
+            self._on_error(failure)
+        # Never raises; a falsy return lets the application's exception propagate as is.
+        self._cm.exit(exc)
         self._span = None
         self._cm = None
         self._started_at = None
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #
@@ -702,7 +734,9 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         if response_id is not None:
             if not response_id:
                 raise ValueError("response_id must be non-empty")
-            self.span.set_attribute(GEN_AI_RESPONSE_ID, response_id)
+            # 049 §2.9 rule 4: the provider response id as its keyed ``p-`` form.
+            if (emitted := self._identity.id("p", response_id)) is not None:
+                self.span.set_attribute(GEN_AI_RESPONSE_ID, emitted)
         if model is not None:
             self.set_response_model(model)
         if finish_reasons is not None:
@@ -853,14 +887,17 @@ class LLMCall(AbstractContextManager["LLMCall"]):
         if elapsed_ms < 0:
             raise ValueError("elapsed_ms must be non-negative")
         if self._chunk_histogram is not None:
-            self._chunk_histogram.record(
-                float(elapsed_ms) / 1000.0,
-                attributes={
-                    GEN_AI_OPERATION_NAME: self._operation_name,
-                    GEN_AI_PROVIDER_NAME: self._provider,
-                    GEN_AI_REQUEST_MODEL: self._model,
-                },
-            )
+            try:  # fail-open (049 §7.1)
+                self._chunk_histogram.record(
+                    float(elapsed_ms) / 1000.0,
+                    attributes={
+                        GEN_AI_OPERATION_NAME: self._operation_name,
+                        GEN_AI_PROVIDER_NAME: self._provider,
+                        GEN_AI_REQUEST_MODEL: self._model,
+                    },
+                )
+            except Exception as failure:
+                self._on_error(failure)
 
     def set_retry(self, *, count: int, reason: str | None = None) -> None:
         """Record per-call provider/transport retries for this LLM call.
@@ -930,6 +967,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         step_retry_reason: str | None = None,
         step_retry_previous_attempt_id: str | None = None,
         extra_attributes: dict[str, str | int | float | bool | tuple[str, ...]] | None = None,
+        identity: IdentityPolicy | None = None,
+        retains_original: Callable[[str], bool] | None = None,
+        on_recording_error: Callable[[BaseException], None] | None = None,
     ) -> None:
         if not name:
             raise ValueError("ToolCall: name is required")
@@ -964,16 +1004,30 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         # baseline / signing imports. ``None``/empty leaves the span
         # byte-identical to the pre-023 emission (additive).
         self._extra_attributes = extra_attributes
-        self._span: Span | None = None
-        self._cm: AbstractContextManager[Span] | None = None
+        # 049 §2.9: how caller ids leave the process (the decision's policy; standalone,
+        # FABRIC_IDENTITY_MODE / FABRIC_WIRE_ID_KEY as a decision without one resolves it).
+        self._identity = identity or IdentityPolicy.resolve(None, None, os.environ)
+        self._emitted_agent_name = (
+            None if agent_name is None else self._identity.id("agt", agent_name)
+        )
+        # 049 §7.5: whether a role retains the original, so its digest may be emitted
+        # (the decision's rule; standalone, only the clear identity mode keeps digests).
+        self._retains_original = retains_original or (lambda _role: self._identity.clear)
+        self._on_error = on_recording_error or log_recording_error
+        self._emitted_name: str | None = None
+        self._span: SafeSpan | None = None
+        self._cm: SpanScope | None = None
         self._started_at: float | None = None
         self._duration_histogram: Histogram | None = None
-        if meter is not None:
-            self._duration_histogram = meter.create_histogram(
-                GEN_AI_EXECUTE_TOOL_DURATION,
-                unit="s",
-                description="Duration of a single tool execution.",
-            )
+        try:  # fail-open (049 §7.1): no metrics rather than an error
+            if meter is not None:
+                self._duration_histogram = meter.create_histogram(
+                    GEN_AI_EXECUTE_TOOL_DURATION,
+                    unit="s",
+                    description="Duration of a single tool execution.",
+                )
+        except Exception as failure:
+            self._on_error(failure)
 
     def __enter__(self) -> Self:
         if self._cm is not None:
@@ -981,28 +1035,37 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 "ToolCall is already entered; call __exit__ before re-entering "
                 "(do not nest `with tool:` on the same instance)"
             )
-        self._cm = self._tracer.start_as_current_span(
-            self._name,
+        # As LLMCall: the OTel exception default only in the clear identity mode.
+        # 049 §4.2: the tool name is an operator label (``lbl-`` when pseudonymous, as
+        # given with FABRIC_WIRE_LABELS=clear); without a key the span is "execute_tool".
+        self._emitted_name = self._identity.label(self._name)
+        self._cm = SpanScope(self._on_error)  # fail-open (049 §7.1)
+        self._span = self._cm.enter(
+            self._tracer,
+            self._emitted_name or "execute_tool",
             kind=SpanKind.INTERNAL,
-            record_exception=True,
-            set_status_on_exception=True,
+            record_exception=self._identity.clear,
+            set_status_on_exception=self._identity.clear,
         )
-        self._span = self._cm.__enter__()
         self._started_at = time.perf_counter()
         self._span.set_attribute(GEN_AI_OPERATION_NAME, "execute_tool")
-        self._span.set_attribute(GEN_AI_TOOL_NAME, self._name)
-        self._span.set_attribute(FABRIC_TOOL_NAME, self._name)
+        if self._emitted_name is not None:
+            self._span.set_attribute(GEN_AI_TOOL_NAME, self._emitted_name)
+            self._span.set_attribute(FABRIC_TOOL_NAME, self._emitted_name)
         if self._tool_type is not None:
             self._span.set_attribute(GEN_AI_TOOL_TYPE, self._tool_type)
             self._span.set_attribute(FABRIC_TOOL_KIND, self._tool_type)
-        if self._description is not None:
+        # Round-2 review F4: the description is free text with no identity value, kept
+        # only in the clear mode; the agent name is an agent identity (``agt-``).
+        if self._description is not None and self._identity.clear:
             self._span.set_attribute(GEN_AI_TOOL_DESCRIPTION, self._description)
-        if self._agent_name is not None:
-            self._span.set_attribute("gen_ai.agent.name", self._agent_name)
+        if self._emitted_agent_name is not None:
+            self._span.set_attribute("gen_ai.agent.name", self._emitted_agent_name)
         # Step taxonomy: ``fabric.step.type`` always (defaults to
         # "tool_call"); id + attempt/retry metadata only when supplied.
         _stamp_step_metadata(
             self._span,
+            identity=self._identity,
             default_step_type=_DEFAULT_TOOL_STEP_TYPE,
             step_id=self._step_id,
             step_type=self._step_type,
@@ -1011,9 +1074,10 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             step_retry_reason=self._step_retry_reason,
             step_retry_previous_attempt_id=self._step_retry_previous_attempt_id,
         )
-        if self._call_id is not None:
-            self._span.set_attribute(GEN_AI_TOOL_CALL_ID, self._call_id)
-            self._span.set_attribute(FABRIC_TOOL_CALL_ID, self._call_id)
+        # N12: a tool-call id is a provider id, its keyed ``p-`` form when pseudonymous.
+        if self._call_id is not None and (call_id := self._identity.id("p", self._call_id)):
+            self._span.set_attribute(GEN_AI_TOOL_CALL_ID, call_id)
+            self._span.set_attribute(FABRIC_TOOL_CALL_ID, call_id)
         if self._extra_attributes:
             for key, value in self._extra_attributes.items():
                 self._span.set_attribute(key, value)
@@ -1037,28 +1101,32 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 # ``BaseException`` (CancelledError / KeyboardInterrupt /
                 # GeneratorExit) would otherwise end UNSET with no
                 # exception event. Record + mark ERROR ourselves.
-                if not isinstance(exc, Exception):
-                    span.record_exception(exc)
+                if not isinstance(exc, Exception) or not self._identity.clear:
+                    record_exception(span, exc, clear=self._identity.clear)
                     span.set_status(Status(StatusCode.ERROR, description=type(exc).__name__))
         if self._duration_histogram is not None and self._started_at is not None:
-            attrs: dict[str, str] = {
-                GEN_AI_TOOL_NAME: self._name,
-            }
+            attrs: dict[str, str] = {}
+            if self._emitted_name is not None:
+                attrs[GEN_AI_TOOL_NAME] = self._emitted_name
             if self._tool_type is not None:
                 attrs[GEN_AI_TOOL_TYPE] = self._tool_type
-            if self._agent_name is not None:
-                attrs["gen_ai.agent.name"] = self._agent_name
+            if self._emitted_agent_name is not None:
+                attrs["gen_ai.agent.name"] = self._emitted_agent_name
             if exc is not None:
                 attrs[ERROR_TYPE] = type(exc).__name__
-            self._duration_histogram.record(
-                time.perf_counter() - self._started_at,
-                attributes=attrs,
-            )
-        result = self._cm.__exit__(exc_type, exc, tb)
+            try:  # fail-open (049 §7.1)
+                self._duration_histogram.record(
+                    time.perf_counter() - self._started_at,
+                    attributes=attrs,
+                )
+            except Exception as failure:
+                self._on_error(failure)
+        # Never raises; a falsy return lets the application's exception propagate as is.
+        self._cm.exit(exc)
         self._span = None
         self._cm = None
         self._started_at = None
-        return result
+        return None
 
     # -- async context manager -------------------------------------------
     #
@@ -1115,7 +1183,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         The tenant serializes their arguments (e.g. a dict) to a string
         and passes it here. The raw payload is hashed locally; only
         ``fabric.tool.arguments_hash`` lands on the span — raw args
-        never touch the trace stream. Under governed mode the serialized
+        never touch the trace stream — and only when the
+        ``tool.call.arguments`` role retains the original (spec 049 §7.5;
+        always in the ``clear`` identity mode). Under governed mode the serialized
         payload is stored verbatim (``tool.call.arguments`` role) and the
         span carries ``fabric.content.request_ref``.
         """
@@ -1123,7 +1193,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
         if capture and self._governed_capture is not None:
             raise ValueError("raw span capture is incompatible with protected content capture")
-        self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
+        if self._retains_original("tool.call.arguments"):  # 049 §7.5
+            self.span.set_attribute(FABRIC_TOOL_ARGS_HASH, _sha256_hex(payload))
         if self._governed_capture is not None:
             ref = self._governed_capture(
                 "tool.call.arguments",
@@ -1142,7 +1213,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
 
         Same privacy contract as :meth:`set_arguments` — the tenant
         serializes the result to a string; only the hash
-        (``fabric.tool.result_hash``) lands on the span. Under governed
+        (``fabric.tool.result_hash``) lands on the span, and only when the
+        ``tool.call.result`` role retains the original. Under governed
         mode the serialized payload is stored verbatim
         (``tool.call.result`` role) and the span carries
         ``fabric.content.result_ref``.
@@ -1151,7 +1223,8 @@ class ToolCall(AbstractContextManager["ToolCall"]):
             raise TypeError(f"payload must be str, got {type(payload).__name__}")
         if capture and self._governed_capture is not None:
             raise ValueError("raw span capture is incompatible with protected content capture")
-        self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
+        if self._retains_original("tool.call.result"):  # 049 §7.5
+            self.span.set_attribute(FABRIC_TOOL_RESULT_HASH, _sha256_hex(payload))
         if self._governed_capture is not None:
             ref = self._governed_capture(
                 "tool.call.result",
@@ -1236,7 +1309,9 @@ class ToolCall(AbstractContextManager["ToolCall"]):
                 raise TypeError(f"key must be str, got {type(key).__name__}")
             if not key:
                 raise ValueError("idempotency key must be non-empty")
-            self.span.set_attribute(FABRIC_TOOL_IDEMPOTENCY_KEY, key)
+            # Caller data: ``lbl-`` in the pseudonymous mode, omitted without a key.
+            if (emitted := self._identity.opaque(key)) is not None:
+                self.span.set_attribute(FABRIC_TOOL_IDEMPOTENCY_KEY, emitted)
 
     def set_attribute(self, key: str, value: str | int | float | bool) -> None:
         """Set a custom attribute on the tool call span.

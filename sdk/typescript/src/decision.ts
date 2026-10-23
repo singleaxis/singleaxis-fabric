@@ -16,16 +16,15 @@
  * Concurrency contract
  * --------------------
  *
- * A {@link Decision} instance represents a single agent turn and is
- * **not** safe to share across async tasks. Open one `Decision` per
- * turn; do not pass the same instance into parallel callbacks or
- * workers. Mutation methods on a single `Decision` are not internally
- * synchronized — the rolling counter attributes and the internal record
- * lists they update would race under concurrent access. A genuinely
- * *overlapping* mutating call (a re-entrant mutation from inside another
- * mutating call) raises {@link ConcurrentDecisionUseError} rather than
- * racing silently — the analogue of Python's non-blocking sentinel lock.
- * The `Fabric` client itself is safe to share.
+ * A {@link Decision} instance represents a single agent turn. Open one
+ * `Decision` per turn. Recording never throws into the application
+ * because of concurrent use (spec 049 §7.1): a genuinely *overlapping*
+ * mutating call (a re-entrant mutation from inside another mutating call)
+ * is still recorded and counted ({@link Decision.concurrentUseCount},
+ * `captureHealth.status === "partial"`). Only `FABRIC_RECORDS_STRICT=1`
+ * (a test mode) throws {@link ConcurrentDecisionUseError} instead — the
+ * analogue of Python's non-blocking sentinel lock. The `Fabric` client
+ * itself is safe to share.
  */
 
 import {
@@ -65,6 +64,7 @@ import { activeExecution } from "./execution.js";
 import { assertSha256Hex, pythonJsonStringify, randomUuid, sha256Hex } from "./hash.js";
 import { warnIfPiiShaped } from "./id-validators.js";
 import { IdentityPolicy } from "./identity.js";
+import { onRecordingError, safeSpan, safeStartSpan, takeStartFailure } from "./safe-span.js";
 import {
   applyCrossCutting,
   type AttrValue,
@@ -88,6 +88,7 @@ import {
   startToolSpan,
   type GovernedCaptureFn,
   type LlmCallOptions,
+  type StepOptions,
   type ToolCallOptions,
 } from "./calls.js";
 import { ContentRole, rfc3339Now, type TranscriptManifest } from "./content.js";
@@ -517,17 +518,14 @@ export interface McpInventory {
   readonly promptCount?: number;
 }
 
+/** Strict test mode: only `"1"` makes an overlapping mutating call throw (049 §7.1). */
+export const ENV_RECORDS_STRICT = "FABRIC_RECORDS_STRICT";
+
 /**
- * Raised when one {@link Decision} is mutated concurrently (re-entrantly).
- *
- * A `Decision` represents a single agent turn and is not safe to share
- * across tasks (see the module concurrency contract). The SDK detects
- * *genuinely overlapping* mutating calls on the same instance via a
- * non-blocking sentinel flag and throws this rather than letting the
- * internal record lists and rolling span-counter attributes race
- * silently — the analogue of Python's `ConcurrentDecisionUseError`,
- * which guards a `threading.Lock` held only for the duration of a single
- * mutating call.
+ * Thrown for overlapping (re-entrant) use of one {@link Decision}, in strict
+ * mode only. By default an overlapping call is recorded and counted, never
+ * thrown (spec 049 §7.1); `FABRIC_RECORDS_STRICT=1` (a test mode) throws
+ * this instead — the analogue of Python's `ConcurrentDecisionUseError`.
  */
 export class ConcurrentDecisionUseError extends Error {
   constructor(message?: string) {
@@ -568,6 +566,26 @@ export function resetCoverageRegistry(): void {
 }
 
 const CAPTURE_WARNED = new Set<string>();
+
+function strictRecords(): boolean {
+  return typeof process !== "undefined" && process.env[ENV_RECORDS_STRICT] === "1";
+}
+
+let warnedConcurrentUse = false;
+
+/** One class-only warning per process for overlapping use (never a value). */
+function warnConcurrentUseOnce(): void {
+  if (warnedConcurrentUse) return;
+  warnedConcurrentUse = true;
+  try {
+    console.warn(
+      "singleaxis-fabric: a Decision was used concurrently; the overlapping call was " +
+        "recorded and the decision's rolling counters may be off (see captureHealth).",
+    );
+  } catch {
+    // A host logger must not break the monitored application.
+  }
+}
 
 /** Reset local capture warnings for isolated tests. */
 export function resetCaptureHealthWarnings(): void {
@@ -623,10 +641,14 @@ export class Decision implements DecisionLike {
   private readonly sessionIdStored: string;
   private readonly requestIdStored: string;
   private readonly decisionIdValue: string;
+  /** The decision id as emitted (049 §2.9): minted as is, a caller's mapped. */
+  private readonly emittedDecisionId?: string;
   private readonly userIdStored?: string;
   private readonly conversationCompacted: boolean;
   private readonly resolvedWorkflowId?: string;
   private readonly resolvedExecutionId?: string;
+  /** The resolved execution id as emitted: minted as is, a caller's mapped. */
+  private readonly emittedExecutionId?: string;
   private readonly resolvedExecutionAttemptId?: string;
   private readonly resolvedExecutionAttempt?: number;
   private readonly resolvedExecutionRetryReason?: string;
@@ -641,14 +663,23 @@ export class Decision implements DecisionLike {
   private interactionCount = 0;
   private readonly interactionKinds = new Set<string>();
   // Concurrency overlap sentinel. Held only for the duration of a single
-  // mutating call; two operations that genuinely overlap in time on the
-  // same instance contend for it and the loser throws
-  // ConcurrentDecisionUseError. Sequential calls never contend.
+  // mutating call; an operation that overlaps another on the same instance
+  // is recorded anyway and counted (never thrown, 049 §7.1).
   private busy = false;
+  private concurrentUse = 0;
+  // Recording failures caught fail-open (049 §7.1 rule 3); any makes capture partial.
+  private internalErrors = 0;
+  // 049 §4.2: operator labels (tags, step names, tool names) as emitted.
+  private readonly labelFn = (value: string): string | undefined => this.ids.label(value);
 
   constructor(tracer: Tracer, span: Span, identity: DecisionClientIdentity, ids: DecisionIds) {
     this.tracer = tracer;
-    this.span = span;
+    // Fail-open (049 §7.1): every recording call on the span is guarded and counted.
+    this.span = safeSpan(span);
+    onRecordingError(this.span, () => {
+      this.internalErrors += 1;
+    });
+    if (takeStartFailure(span)) this.internalErrors += 1;
     let recording: boolean | null = null;
     try {
       const value = span.isRecording();
@@ -672,7 +703,9 @@ export class Decision implements DecisionLike {
     span.setAttribute(ATTR_AGENT, identity.agentId);
     span.setAttribute(ATTR_PROFILE, identity.profile);
     span.setAttribute("gen_ai.operation.name", "invoke_agent");
-    span.setAttribute("gen_ai.agent.name", identity.agentName);
+    // 049 §2.9 (round-2 review F4): the agent name is an agent identity, `agt-`.
+    const agentName = this.ids.id("agt", identity.agentName);
+    if (agentName !== undefined) span.setAttribute("gen_ai.agent.name", agentName);
     span.setAttribute("gen_ai.agent.id", identity.agentId);
     if (session !== undefined) {
       span.setAttribute("gen_ai.conversation.id", session);
@@ -694,8 +727,16 @@ export class Decision implements DecisionLike {
     const active = activeExecution();
     const workflowId = ids.workflowId ?? active?.workflowId ?? identity.workflowId;
     const executionId = ids.executionId ?? active?.executionId ?? identity.executionId;
+    const executionIdMinted =
+      ids.executionId === undefined &&
+      active?.executionId !== undefined &&
+      active.executionIdMinted === true;
     this.resolvedWorkflowId = workflowId;
     this.resolvedExecutionId = executionId;
+    this.emittedExecutionId =
+      executionId !== undefined
+        ? this.ids.mintedOrOpaque(executionId, executionIdMinted)
+        : undefined;
     // The attempt/retry metadata has no per-decision kwarg, so it is inherited
     // from the active execution when present and otherwise the config value.
     this.resolvedExecutionAttemptId = active?.executionAttemptId ?? identity.executionAttemptId;
@@ -704,22 +745,27 @@ export class Decision implements DecisionLike {
       active?.executionRetryReason ?? identity.executionRetryReason;
     this.resolvedExecutionRetryPreviousAttemptId =
       active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
-    if (workflowId !== undefined) {
-      span.setAttribute(ATTR_WORKFLOW, workflowId);
+    // 049 §2.9 (round-2 review F4): caller ids are their keyed `lbl-` form
+    // when pseudonymous (a minted execution id stays as is).
+    const workflow = this.opaque(workflowId);
+    if (workflow !== undefined) {
+      span.setAttribute(ATTR_WORKFLOW, workflow);
     }
     // `gen_ai.workflow.name` resolves to the supplied name or the workflow
     // id, and is stamped whenever either is present — even without a
     // resolved workflow_id (mirrors Python decision.py:504-506). An empty
-    // name falls back to the id exactly like Python's `or`.
-    const semanticWorkflowName = ids.workflowName || workflowId;
+    // name falls back to the id exactly like Python's `or`. A name is an
+    // operator label (049 §4.2); the fallback is the mapped workflow id.
+    const semanticWorkflowName = ids.workflowName ? this.ids.label(ids.workflowName) : workflow;
     if (semanticWorkflowName !== undefined) {
       span.setAttribute("gen_ai.workflow.name", semanticWorkflowName);
     }
-    if (executionId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION, executionId);
+    if (this.emittedExecutionId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION, this.emittedExecutionId);
     }
-    if (this.resolvedExecutionAttemptId !== undefined) {
-      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, this.resolvedExecutionAttemptId);
+    const attemptId = this.opaque(this.resolvedExecutionAttemptId);
+    if (attemptId !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_ATTEMPT_ID, attemptId);
     }
     if (this.resolvedExecutionAttempt !== undefined) {
       span.setAttribute(ATTR_EXECUTION_ATTEMPT, this.resolvedExecutionAttempt);
@@ -727,11 +773,9 @@ export class Decision implements DecisionLike {
     if (this.resolvedExecutionRetryReason !== undefined) {
       span.setAttribute(ATTR_EXECUTION_RETRY_REASON, this.resolvedExecutionRetryReason);
     }
-    if (this.resolvedExecutionRetryPreviousAttemptId !== undefined) {
-      span.setAttribute(
-        ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID,
-        this.resolvedExecutionRetryPreviousAttemptId,
-      );
+    const previousAttempt = this.opaque(this.resolvedExecutionRetryPreviousAttemptId);
+    if (previousAttempt !== undefined) {
+      span.setAttribute(ATTR_EXECUTION_RETRY_PREVIOUS_ATTEMPT_ID, previousAttempt);
     }
     this.sessionIdStored = ids.sessionId;
     this.requestIdStored = ids.requestId;
@@ -739,9 +783,19 @@ export class Decision implements DecisionLike {
     if (session !== undefined) {
       span.setAttribute(ATTR_SESSION, session);
     }
-    span.setAttribute(ATTR_REQUEST, ids.requestId);
+    // 049 §2.9: the caller's request id (no v2 type yet) as the keyed `lbl-` form.
+    const request = this.ids.opaque(ids.requestId);
+    if (request !== undefined) span.setAttribute(ATTR_REQUEST, request);
     this.decisionIdValue = ids.decisionId ?? randomUuid();
-    span.setAttribute(ATTR_DECISION_ID, this.decisionIdValue);
+    // 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its
+    // keyed `lbl-` form when pseudonymous; a minted uuid4 stays as is.
+    this.emittedDecisionId = this.ids.mintedOrOpaque(
+      this.decisionIdValue,
+      ids.decisionId === undefined,
+    );
+    if (this.emittedDecisionId !== undefined) {
+      span.setAttribute(ATTR_DECISION_ID, this.emittedDecisionId);
+    }
     const user = ids.userId !== undefined ? this.ids.id("usr", ids.userId) : undefined;
     if (user !== undefined) {
       span.setAttribute(ATTR_USER, user);
@@ -755,8 +809,10 @@ export class Decision implements DecisionLike {
       if (parentAgent !== undefined) {
         span.setAttribute(A.ATTR_PARENT_AGENT_ID, parentAgent);
       }
-      if (ids.context.decisionId !== undefined) {
-        span.setAttribute(A.ATTR_PARENT_DECISION_ID, ids.context.decisionId);
+      // A carrier's decision id is caller input: `lbl-` when pseudonymous.
+      const parentDecision = this.opaque(ids.context.decisionId);
+      if (parentDecision !== undefined) {
+        span.setAttribute(A.ATTR_PARENT_DECISION_ID, parentDecision);
       }
     }
     // Caller-supplied extras sit on top of the client-level
@@ -835,6 +891,26 @@ export class Decision implements DecisionLike {
     if (sink === undefined || content === undefined || content === null) {
       return undefined;
     }
+    try {
+      return this.captureWith(sink, role, content, options);
+    } catch {
+      this.internalErrors += 1; // 049 §7.1: a capture failure is a loss, never an error
+      return undefined;
+    }
+  }
+
+  private captureWith(
+    sink: ContentSink,
+    role: string,
+    content: unknown,
+    options: {
+      mediaType?: string;
+      bindings?: Record<string, unknown>;
+      links?: Record<string, unknown>;
+      statusReason?: string;
+      representation?: string;
+    },
+  ): string | undefined {
     const bindings: Record<string, unknown> = {
       decision_id: this.decisionIdValue,
       session_id: this.sessionIdStored,
@@ -858,22 +934,30 @@ export class Decision implements DecisionLike {
    * recording surface.
    */
   closeContent(): void {
-    this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
+    try {
+      this.contentSink?.close({ decisionSpan: this.span, closedAt: rfc3339Now() });
+    } catch {
+      this.internalErrors += 1; // 049 §7.1: a capture failure is a loss, never an error
+    }
   }
 
   // -- concurrency overlap guard ---------------------------------------
 
   /**
-   * Hold the overlap sentinel for one mutating call, else throw.
-   * Non-blocking so a second *concurrent* (re-entrant) mutating call
-   * fails fast with {@link ConcurrentDecisionUseError} instead of
-   * silently racing the record lists / span counters. Do NOT call a
-   * guarded method from inside another guarded method on the same
-   * instance — none of the public methods do.
+   * Hold the overlap sentinel for one mutating call; never throw on overlap.
+   * A second *concurrent* (re-entrant) mutating call is recorded anyway and
+   * counted in {@link concurrentUseCount} (049 §7.1); only
+   * `FABRIC_RECORDS_STRICT=1` throws {@link ConcurrentDecisionUseError}.
+   * None of the public methods call each other.
    */
   private exclusive<T>(fn: () => T): T {
     if (this.busy) {
-      throw new ConcurrentDecisionUseError();
+      if (strictRecords()) {
+        throw new ConcurrentDecisionUseError();
+      }
+      this.concurrentUse += 1;
+      warnConcurrentUseOnce();
+      return fn();
     }
     this.busy = true;
     try {
@@ -881,6 +965,31 @@ export class Decision implements DecisionLike {
     } finally {
       this.busy = false;
     }
+  }
+
+  /**
+   * Whether `role`'s privacy mode retains the original payload (spec 049
+   * §7.5, spec 051 D-14): only then may a `*_hash` digest of it leave the
+   * process. The governed roles of a configured content capture retain it;
+   * nothing else does (a digest of a low-entropy payload reveals it). The
+   * clear identity mode keeps the v0.8.0 digests.
+   */
+  private retainsOriginal(role: string): boolean {
+    if (this.ids.clear) return true;
+    return this.contentSink !== undefined && (this.identity.contentRoles?.has(role) ?? false);
+  }
+
+  /** Count a child span's recording failures with this decision's (049 §7.1). */
+  private countChildFailures(span: Span): void {
+    if (takeStartFailure(span)) this.internalErrors += 1;
+    onRecordingError(span, () => {
+      this.internalErrors += 1;
+    });
+  }
+
+  /** How many mutating calls overlapped another on this decision (recorded, never thrown). */
+  get concurrentUseCount(): number {
+    return this.concurrentUse;
   }
 
   // -- introspection ----------------------------------------------------
@@ -961,7 +1070,7 @@ export class Decision implements DecisionLike {
    */
   llmCall<T>(options: LlmCallOptions, fn: (call: LlmCall) => T): T {
     const extra: Record<string, AttrValue> = {};
-    applyCrossCutting(extra, options);
+    applyCrossCutting(extra, options, this.labelFn);
     // 049 §2.9: the session default carries `sess-`, an explicit
     // conversation id `conv-`; both omitted without a key, clear unchanged.
     const conversationId = options.conversationId
@@ -970,10 +1079,21 @@ export class Decision implements DecisionLike {
     const resolved = {
       ...options,
       conversationId,
+      // 049 §2.9 rule 4 (C39): a provider id as its keyed `p-` form.
+      previousResponseId:
+        options.previousResponseId !== undefined
+          ? this.ids.id("p", options.previousResponseId)
+          : undefined,
       conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
+      // 049 §4.2 (round-2 review F4): prompt name and version are operator labels.
+      promptName: options.promptName !== undefined ? this.ids.label(options.promptName) : undefined,
+      promptVersion:
+        options.promptVersion !== undefined ? this.ids.label(options.promptVersion) : undefined,
+      ...this.stepIds(options),
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
     const span = startLlmSpan(this.tracer, resolved);
+    this.countChildFailures(span);
     // Governed request capture (spec 028): exact request components to
     // customer storage; the span carries only the reference.
     const requestRef = this.captureLlmRequest(span, options);
@@ -987,6 +1107,7 @@ export class Decision implements DecisionLike {
         options.captureContent ?? false,
         options.emitLegacyAttributes ?? true,
         this.llmCaptureFn(span, options),
+        this.ids,
       );
       return runAndEnd(span, () => fn(call));
     });
@@ -1085,22 +1206,55 @@ export class Decision implements DecisionLike {
    */
   toolCall<T>(name: string, options: ToolCallOptions, fn: (tool: ToolCall) => T): T {
     const extra: Record<string, AttrValue> = {};
-    applyCrossCutting(extra, options);
+    applyCrossCutting(extra, options, this.labelFn);
+    // 049 §4.2: the tool name is an operator label (`lbl-` when pseudonymous);
+    // without a key the span is "execute_tool" and carries no tool name.
+    const toolName = this.ids.label(name);
     const resolved = {
       ...options,
-      agentName: options.agentName ?? this.identity.agentName,
+      emitToolName: toolName !== undefined,
+      // N12: a tool-call id is a provider id, its keyed `p-` form.
+      callId: options.callId !== undefined ? this.ids.id("p", options.callId) : undefined,
+      // Round-2 review F4: the agent name is an agent identity (`agt-`); the
+      // description is free text with no identity value, kept only in clear mode.
+      agentName: this.ids.id("agt", options.agentName ?? this.identity.agentName),
+      description: this.ids.clear ? options.description : undefined,
+      ...this.stepIds(options),
       extraAttributes: Object.keys(extra).length > 0 ? extra : undefined,
     };
-    const span = startToolSpan(this.tracer, name, resolved);
+    const span = startToolSpan(this.tracer, toolName ?? "execute_tool", resolved);
+    this.countChildFailures(span);
     const ctx = trace.setSpan(otelContext.active(), span);
     return otelContext.with(ctx, () => {
       const tool = new ToolCall(
         span,
         options.captureContent ?? false,
         this.toolCaptureFn(span, name, options),
+        this.ids,
+        (role) => this.retainsOriginal(role),
       );
       return runAndEnd(span, () => fn(tool));
     });
+  }
+
+  /** A caller id as emitted (049 §2.9): clear, `lbl-`, or `undefined`. */
+  private opaque(value: string | undefined): string | undefined {
+    return value === undefined ? undefined : this.ids.opaque(value);
+  }
+
+  /**
+   * The caller's step and attempt ids as emitted (round-2 review F4): their
+   * keyed `lbl-` form when pseudonymous, omitted without a key. A value that
+   * is not a non-empty string passes through, so validation still rejects it.
+   */
+  private stepIds(options: StepOptions): StepOptions {
+    const map = (value: string | undefined): string | undefined =>
+      typeof value === "string" && value !== "" ? this.ids.opaque(value) : value;
+    return {
+      stepId: map(options.stepId),
+      stepAttemptId: map(options.stepAttemptId),
+      stepRetryPreviousAttemptId: map(options.stepRetryPreviousAttemptId),
+    };
   }
 
   /** The capture callback handed to a child ToolCall. */
@@ -1188,20 +1342,27 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_RETRIEVAL_SOURCE]: record.source,
-        [A.ATTR_RETRIEVAL_QUERY_HASH]: record.queryHash,
-        [A.ATTR_RETRIEVAL_RESULT_COUNT]: record.resultCount,
       };
+      // 049 §7.5: a digest of the original only where its role retains it.
+      if (this.retainsOriginal(ContentRole.RETRIEVAL_QUERY)) {
+        attrs[A.ATTR_RETRIEVAL_QUERY_HASH] = record.queryHash;
+      }
+      attrs[A.ATTR_RETRIEVAL_RESULT_COUNT] = record.resultCount;
       if (queryRef !== undefined) {
         attrs[ATTR_CONTENT_REQUEST_REF] = queryRef;
       }
       if (resultsRef !== undefined) {
         attrs[ATTR_CONTENT_RESULT_REF] = resultsRef;
       }
-      if (record.resultHashes.length > 0) {
+      if (record.resultHashes.length > 0 && this.retainsOriginal(ContentRole.RETRIEVAL_RESULTS)) {
         attrs[A.ATTR_RETRIEVAL_RESULT_HASHES] = [...record.resultHashes];
       }
-      if (record.sourceDocumentIds.length > 0) {
-        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = [...record.sourceDocumentIds];
+      // Caller document ids: `lbl-` when pseudonymous, omitted without a key.
+      const documentIds = record.sourceDocumentIds
+        .map((id) => this.ids.opaque(id))
+        .filter((id): id is string => id !== undefined);
+      if (documentIds.length > 0) {
+        attrs[A.ATTR_RETRIEVAL_SOURCE_DOC_IDS] = documentIds;
       }
       if (record.latencyMs !== undefined) {
         attrs[A.ATTR_RETRIEVAL_LATENCY_MS] = record.latencyMs;
@@ -1242,8 +1403,10 @@ export class Decision implements DecisionLike {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MEMORY_DIRECTION]: "write",
         [A.ATTR_MEMORY_KIND]: record.kind,
-        [A.ATTR_MEMORY_CONTENT_HASH]: record.contentHash!,
       };
+      if (this.retainsOriginal(ContentRole.MEMORY_WRITE_CONTENT)) {
+        attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!; // 049 §7.5
+      }
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1251,8 +1414,9 @@ export class Decision implements DecisionLike {
       if (memoryKey !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
-      if (record.tags.length > 0) {
-        attrs[A.ATTR_MEMORY_TAGS] = [...record.tags];
+      const memoryTags = this.ids.labels(record.tags);
+      if (memoryTags.length > 0) {
+        attrs[A.ATTR_MEMORY_TAGS] = memoryTags;
       }
       if (record.ttlSeconds !== undefined) {
         attrs[A.ATTR_MEMORY_TTL_SECONDS] = record.ttlSeconds;
@@ -1300,7 +1464,9 @@ export class Decision implements DecisionLike {
       if (memoryKey !== undefined) {
         attrs[A.ATTR_MEMORY_KEY] = memoryKey;
       }
-      attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!;
+      if (this.retainsOriginal(ContentRole.MEMORY_READ_CONTENT)) {
+        attrs[A.ATTR_MEMORY_CONTENT_HASH] = record.contentHash!; // 049 §7.5
+      }
       if (contentRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = contentRef;
       }
@@ -1415,13 +1581,22 @@ export class Decision implements DecisionLike {
 
       this.sideEffectCount += 1;
       this.sideEffectTypes.add(record.effectType);
-      this.sideEffectSystems.add(record.targetSystem);
+      // 049 §4.2: target systems and operations are operator labels (`lbl-`
+      // when pseudonymous, as given with FABRIC_WIRE_LABELS=clear).
+      const system = this.ids.label(record.targetSystem);
+      const operation = this.ids.label(record.operation);
+      if (system !== undefined) this.sideEffectSystems.add(system);
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_COUNT, this.sideEffectCount);
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_TYPES, sortedSet(this.sideEffectTypes));
       this.span.setAttribute(A.ATTR_SIDE_EFFECT_SYSTEMS, sortedSet(this.sideEffectSystems));
+      // A minted uuid4 is Fabric's own id; a caller's id is mapped (`lbl-`).
+      const effectId =
+        options.sideEffectId === undefined
+          ? record.sideEffectId
+          : this.ids.opaque(record.sideEffectId);
 
-      if (record.replayBehavior === "suppress") {
-        this.suppressedSideEffectIds.push(record.sideEffectId);
+      if (record.replayBehavior === "suppress" && effectId !== undefined) {
+        this.suppressedSideEffectIds.push(effectId);
       }
       // Governed capture (spec 028): verbatim payloads to customer
       // storage; the event carries only the references.
@@ -1438,21 +1613,26 @@ export class Decision implements DecisionLike {
         options.resultPayload,
         { bindings: seBindings },
       );
-      const attrs: Record<string, AttrValue> = {
-        [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_SE_ID]: record.sideEffectId,
-        [A.ATTR_SE_TYPE]: record.effectType,
-        [A.ATTR_SE_TARGET_SYSTEM]: record.targetSystem,
-        [A.ATTR_SE_OPERATION]: record.operation,
+      const attrs: Record<string, AttrValue> = { [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION };
+      if (effectId !== undefined) attrs[A.ATTR_SE_ID] = effectId;
+      attrs[A.ATTR_SE_TYPE] = record.effectType;
+      if (system !== undefined) attrs[A.ATTR_SE_TARGET_SYSTEM] = system;
+      if (operation !== undefined) attrs[A.ATTR_SE_OPERATION] = operation;
+      Object.assign(attrs, {
         [A.ATTR_SE_APPROVAL_REQUIRED]: record.approvalRequired,
         [A.ATTR_SE_COMMITTED]: record.committed,
         [A.ATTR_SE_ROLLBACK_SUPPORTED]: record.rollbackSupported,
         [A.ATTR_SE_REPLAY_BEHAVIOR]: record.replayBehavior,
-      };
-      if (record.requestHash !== undefined) {
+      });
+      // 049 §7.5: computed or caller-supplied, a digest of the original only
+      // where its role retains it.
+      if (
+        record.requestHash !== undefined &&
+        this.retainsOriginal(ContentRole.SIDE_EFFECT_REQUEST)
+      ) {
         attrs[A.ATTR_SE_REQUEST_HASH] = record.requestHash;
       }
-      if (record.resultHash !== undefined) {
+      if (record.resultHash !== undefined && this.retainsOriginal(ContentRole.SIDE_EFFECT_RESULT)) {
         attrs[A.ATTR_SE_RESULT_HASH] = record.resultHash;
       }
       if (requestRef !== undefined) {
@@ -1461,12 +1641,17 @@ export class Decision implements DecisionLike {
       if (resultRef !== undefined) {
         attrs[ATTR_CONTENT_RESULT_REF] = resultRef;
       }
-      if (record.idempotencyKey !== undefined) {
-        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = record.idempotencyKey;
+      const idempotencyKey =
+        record.idempotencyKey !== undefined ? this.ids.opaque(record.idempotencyKey) : undefined;
+      if (idempotencyKey !== undefined) {
+        attrs[A.ATTR_SE_IDEMPOTENCY_KEY] = idempotencyKey;
       }
-      if (record.parentToolCallId !== undefined) {
-        attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = record.parentToolCallId;
-      }
+      // N12: the parent tool-call id is a provider id, its keyed `p-` form.
+      const parent =
+        record.parentToolCallId !== undefined
+          ? this.ids.id("p", record.parentToolCallId)
+          : undefined;
+      if (parent !== undefined) attrs[A.ATTR_SE_PARENT_TOOL_CALL_ID] = parent;
       this.span.addEvent(A.EVENT_NAME_SIDE_EFFECT, attrs);
       return record;
     });
@@ -1498,8 +1683,12 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_CHECKPOINT_ID]: event.checkpointId,
-        [A.ATTR_CHECKPOINT_STEP_NAME]: event.stepName,
       };
+      // 049 §4.2: the step name is an operator label (`lbl-` when pseudonymous).
+      const emittedStep = this.ids.label(event.stepName);
+      if (emittedStep !== undefined) {
+        attrs[A.ATTR_CHECKPOINT_STEP_NAME] = emittedStep;
+      }
       if (event.stateHash !== undefined) {
         attrs[A.ATTR_CHECKPOINT_STATE_HASH] = event.stateHash;
       }
@@ -1514,10 +1703,12 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_REPLAY_METADATA_VERSION]: "1",
-        [A.ATTR_REPLAY_DECISION_ID]: this.decisionIdValue,
       };
-      if (this.resolvedExecutionId !== undefined) {
-        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.resolvedExecutionId;
+      if (this.emittedDecisionId !== undefined) {
+        attrs[A.ATTR_REPLAY_DECISION_ID] = this.emittedDecisionId;
+      }
+      if (this.emittedExecutionId !== undefined) {
+        attrs[A.ATTR_REPLAY_EXECUTION_ID] = this.emittedExecutionId;
       }
       if (this.checkpointIds.length > 0) {
         attrs[A.ATTR_REPLAY_CHECKPOINT_IDS] = [...this.checkpointIds];
@@ -1559,19 +1750,25 @@ export class Decision implements DecisionLike {
           inputSchema: inputSchema ?? null,
         };
       });
-      const tools = definitions.map(
-        (definition) =>
-          `${definition.name}:${sha256Hex(pythonJsonStringify(definition)).slice(0, 12)}`,
+      const defHashes = definitions.map((definition) =>
+        sha256Hex(pythonJsonStringify(definition)).slice(0, 12),
       );
+      const tools = definitions.map((definition, i) => `${definition.name}:${defHashes[i]}`);
       const toolsHash = sha256Hex(pythonJsonStringify(definitions));
+      // 049 §4.2: a tool name is an operator label (`lbl-` when pseudonymous);
+      // without a key the names are omitted (count and hashes remain). The
+      // returned inventory keeps the caller's own view.
+      const names = definitions.map((definition) => this.ids.label(String(definition.name)));
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
         [A.ATTR_MCP_SERVER]: options.server,
         [A.ATTR_MCP_TRANSPORT]: options.transport,
         [A.ATTR_MCP_TOOL_COUNT]: definitions.length,
-        [A.ATTR_MCP_TOOLS]: tools,
-        [A.ATTR_MCP_TOOLS_HASH]: toolsHash,
       };
+      if (names.every((name) => name !== undefined)) {
+        attrs[A.ATTR_MCP_TOOLS] = names.map((name, i) => `${name}:${defHashes[i]}`);
+      }
+      attrs[A.ATTR_MCP_TOOLS_HASH] = toolsHash;
       const resourceCount = options.resources === undefined ? undefined : options.resources.length;
       const promptCount = options.prompts === undefined ? undefined : options.prompts.length;
       if (resourceCount !== undefined) {
@@ -1580,7 +1777,7 @@ export class Decision implements DecisionLike {
       if (promptCount !== undefined) {
         attrs[A.ATTR_MCP_PROMPT_COUNT] = promptCount;
       }
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_MCP_INVENTORY, attrs);
       return {
         server: options.server,
@@ -1603,9 +1800,12 @@ export class Decision implements DecisionLike {
       this.span.setAttribute(A.ATTR_SKILL_COUNT, this.skillCount);
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
-        [A.ATTR_SKILL_NAME]: name,
-        [A.ATTR_SKILL_VERSION]: version,
       };
+      // 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+      const skillName = this.ids.label(name);
+      if (skillName !== undefined) attrs[A.ATTR_SKILL_NAME] = skillName;
+      const skillVersion = this.ids.label(version);
+      if (skillVersion !== undefined) attrs[A.ATTR_SKILL_VERSION] = skillVersion;
       if (options.source !== undefined) attrs[A.ATTR_SKILL_SOURCE] = options.source;
       if (options.manifestHash !== undefined) {
         attrs[A.ATTR_SKILL_MANIFEST_HASH] = assertSha256Hex(
@@ -1614,7 +1814,7 @@ export class Decision implements DecisionLike {
         );
       }
       if (options.signed !== undefined) attrs[A.ATTR_SKILL_SIGNED] = options.signed;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_SKILL, attrs);
     });
   }
@@ -1724,7 +1924,15 @@ export class Decision implements DecisionLike {
         parentAgentId: this.identity.agentId,
       };
       const carrier: Record<string, string> = {};
-      inject(carrier, context, trace.setSpanContext(otelContext.active(), this.span.spanContext()));
+      try {
+        inject(
+          carrier,
+          context,
+          trace.setSpanContext(otelContext.active(), this.span.spanContext()),
+        );
+      } catch {
+        this.internalErrors += 1; // 049 §7.1: the delegation proceeds without a carrier
+      }
 
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
@@ -1735,7 +1943,7 @@ export class Decision implements DecisionLike {
       }
       attrs[A.ATTR_DELEGATION_PROTOCOL] = protocol;
       attrs[A.ATTR_DELEGATION_DEPTH] = depth;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_DELEGATION, attrs);
       return { toAgent, protocol, depth, context, carrier };
     });
@@ -1770,7 +1978,7 @@ export class Decision implements DecisionLike {
           options.outputHash,
         );
       }
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_HOOK, attrs);
     });
   }
@@ -1801,7 +2009,7 @@ export class Decision implements DecisionLike {
         );
       }
       if (options.sizeBytes !== undefined) attrs[A.ATTR_FILE_SIZE_BYTES] = options.sizeBytes;
-      applyCrossCutting(attrs, options);
+      applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_FILE, attrs);
     });
   }
@@ -1852,21 +2060,23 @@ export class Decision implements DecisionLike {
       if (options.direction !== undefined) {
         attrs[A.ATTR_INTERACTION_DIRECTION] = options.direction;
       }
+      // 049 §7.5: a digest of the payload only where its role retains the
+      // original (a caller-supplied digest is still validated).
+      const retainsPayload = this.retainsOriginal(ContentRole.INTERACTION_PAYLOAD);
       if (options.payloadHash !== undefined) {
-        attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = assertSha256Hex(
-          "recordInteraction: payloadHash",
-          options.payloadHash,
-        );
-      } else if (options.payload !== undefined) {
+        const checked = assertSha256Hex("recordInteraction: payloadHash", options.payloadHash);
+        if (retainsPayload) attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = checked;
+      } else if (options.payload !== undefined && retainsPayload) {
         attrs[A.ATTR_INTERACTION_PAYLOAD_HASH] = sha256Hex(options.payload);
       }
       if (payloadRef !== undefined) {
         attrs[ATTR_CONTENT_REF] = payloadRef;
       }
-      if (options.metadata !== undefined) {
+      // 049 §7.5: the metadata digest only where the interaction's content is retained.
+      if (options.metadata !== undefined && retainsPayload) {
         attrs[A.ATTR_INTERACTION_METADATA_HASH] = sha256Hex(pythonJsonStringify(options.metadata));
       }
-      const resolved = applyCrossCutting(attrs, options);
+      const resolved = applyCrossCutting(attrs, options, this.labelFn);
       this.span.addEvent(A.EVENT_NAME_INTERACTION, attrs);
 
       // Improvement loop: a one-shot, low-rate coverage signal. Two
@@ -1939,7 +2149,10 @@ export class Decision implements DecisionLike {
     const status =
       this.recordingAtStart === false
         ? "disabled"
-        : (droppedEvents ?? 0) > 0 || (droppedAttributes ?? 0) > 0
+        : (droppedEvents ?? 0) > 0 ||
+            (droppedAttributes ?? 0) > 0 ||
+            this.concurrentUse > 0 ||
+            this.internalErrors > 0
           ? "partial"
           : "unverified";
     if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {
@@ -2091,7 +2304,7 @@ export function runDecision<T>(
   fn: (d: Decision) => T,
 ): T {
   validateIds(ids);
-  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
   const ctx = trace.setSpan(otelContext.active(), span);
   return otelContext.with(ctx, () => {
     const decision = new Decision(tracer, span, identity, ids);
@@ -2133,7 +2346,7 @@ export function startDecision(
   ids: DecisionIds,
 ): Decision {
   validateIds(ids);
-  const span = tracer.startSpan(SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
+  const span = safeStartSpan(tracer, SPAN_NAME_DECISION, { kind: SpanKind.INTERNAL });
   return new Decision(tracer, span, identity, ids);
 }
 
