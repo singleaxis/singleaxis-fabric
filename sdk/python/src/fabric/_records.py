@@ -18,7 +18,10 @@ failure and counts it (:data:`fabric._capture_types.COUNTERS`); it raises only u
 
 Identity (R8): in the pseudonymous mode (the default) every caller-supplied id is mapped,
 whatever its shape; only an :class:`~fabric._sequence.EmittedId` of this input's issuer
-passes through. The ``clear`` mode (``FABRIC_IDENTITY_MODE=clear``) emits ids as given.
+passes through. The ``clear`` mode (``FABRIC_IDENTITY_MODE=clear``) emits ids as given. In
+the production profile without ``FABRIC_WIRE_ID_KEY`` nothing derived from a caller id
+leaves the process in either mode (049 §2.9 rule 5): join ids are generated ``g-`` ids and
+v2 identities are omitted, by the run table's :class:`~fabric._segments.IdentityRule`.
 """
 
 from __future__ import annotations
@@ -39,6 +42,7 @@ from opentelemetry import context as otel_context
 
 from ._capture_types import COUNTERS as _COUNTERS
 from ._capture_types import (
+    EVIDENCE_MEDIA_TYPE,
     EVIDENCE_ROLE,
     MAX_RECORD_BODIES,
     PROVENANCES,
@@ -63,6 +67,7 @@ from ._capture_types import (
     resolve_status_inputs,
     strict,
 )
+from ._evidence import EvidenceIds
 from ._records_keys_generated import RECORD_KEY_CHECKS, RECORD_KEY_CONDITIONS
 from ._roles import ROLES
 from ._sequence import (
@@ -74,7 +79,6 @@ from ._sequence import (
     Labels,
     encode_opaque_id,
     identity_mode_from_env,
-    pseudonym_v2,
 )
 from ._version import __version__
 
@@ -231,22 +235,33 @@ def _condition_holds(condition: Mapping[str, Sequence[str]] | None, point: Any) 
     return "capture_point_kinds" not in condition
 
 
-def _admissible_shape(value: Any) -> bool:
-    if isinstance(value, (float, dict, bytes, bytearray, memoryview)):
-        return False
-    if isinstance(value, list):
-        return not any(isinstance(v, (float, dict, list, tuple, bytes, bytearray)) for v in value)
-    return True
+def _array_bound(table: Mapping[str, Mapping[str, Any]]) -> int:
+    bounds = [int(check["max_items"]) for check in table.values() if check.get("type") == "array"]
+    return max(bounds, default=0)
 
 
-def _normalise(value: Any) -> Any:
-    if isinstance(value, tuple):
-        return [_normalise(v) for v in value]
-    if isinstance(value, list):
-        return [_normalise(v) for v in value]
-    if isinstance(value, str):
-        return str.__str__(value)
-    return value
+# The longest array any records-class key admits: a longer sequence is refused by its
+# length alone, before any element is looked at.
+MAX_ATTRIBUTE_ITEMS = _array_bound(RECORD_KEY_CHECKS)
+_SCALARS = (str, bool, int)
+
+
+def _admitted_value(value: Any) -> tuple[bool, Any]:
+    """``(True, value as projected)`` when ``value`` has an admissible shape: a ``str``,
+    ``bool`` or ``int``, or a flat ``list``/``tuple`` of them no longer than any admitted
+    array. Shapes and lengths are checked before anything is copied, and a nested element
+    refuses the value without entering it (so a cyclic or huge value costs one bounded
+    look). ``str`` subclasses become ``str``; tuples become lists."""
+    if isinstance(value, _SCALARS):
+        return True, str.__str__(value) if isinstance(value, str) else value
+    if not isinstance(value, (list, tuple)) or len(value) > MAX_ATTRIBUTE_ITEMS:
+        return False, None
+    out: list[Any] = []
+    for element in value:
+        if not isinstance(element, _SCALARS):
+            return False, None
+        out.append(str.__str__(element) if isinstance(element, str) else element)
+    return True, out
 
 
 def project_attributes(
@@ -263,15 +278,14 @@ def project_attributes(
     dropped: list[str] = []
     where = point if point is not None else attributes.get("fabric.capture.point")
     for key, raw in attributes.items():
-        check = checks.get(key)
-        value = _normalise(raw)
-        if (
-            check is None
-            or not _condition_holds(conditions.get(key), where)
-            or not _admissible_shape(value)
-            or not check(value)
-        ):
-            dropped.append(str(key))
+        # The key is admitted (its table row and placement) before its value is touched.
+        check = checks.get(key) if isinstance(key, str) else None
+        if check is None or not _condition_holds(conditions.get(key), where):
+            dropped.append(str.__str__(key) if isinstance(key, str) else "<non-str key>")
+            continue
+        admissible, value = _admitted_value(raw)
+        if not admissible or not check(value):
+            dropped.append(key)
         else:
             kept[key] = value
     return kept, sorted(dropped)
@@ -454,21 +468,33 @@ class RecordsInput:
     def __init__(self, handle: WireHandle | None = None) -> None:
         self.handle = handle
         self.stats = RecordsStats()
+        from ._segments import IdentityRule  # noqa: PLC0415 - imported by install already
+
         config = getattr(handle, "config", None)
         self._labels: Labels = cast("Labels", getattr(config, "labels", None) or "pseudonymous")
         self._identity: IdentityMode = identity_mode_from_env(os.environ)
         self._key: bytes | None = getattr(config, "id_key", None)
-        pseudonymous_key = self._key is not None and self._identity == "pseudonymous"
-        self._ids: KeyedIds | GeneratedIds = (
-            KeyedIds(cast("bytes", self._key)) if pseudonymous_key else GeneratedIds()
-        )  # fmt: skip
-        self._checks = compile_checks(labels=self._labels, identity=self._identity)
+        gate = getattr(handle, "gate", None)
+        # The run identity rule (049 §2.9 rule 5 included), shared with the run table: the
+        # production profile without a key derives nothing from a caller id in either mode.
+        self._rule = IdentityRule(
+            key=self._key,
+            mode=self._identity,
+            production=getattr(gate, "profile", None) == "production",
+        )
+        self._clear = self._identity == "clear" and not self._rule.production_without_key
+        self._ids: KeyedIds | GeneratedIds = self._rule._ids
+        self._checks = compile_checks(
+            labels=self._labels, identity="clear" if self._clear else "pseudonymous"
+        )
         self._point_version = __version__
         self._modes: tuple[int, dict[str, PrivacyMode]] = (-1, {})
+        self.evidence_ids = EvidenceIds(self._evidence_id, clear=self._clear)
         tee = getattr(handle, "_tee_or_none", None)
         self._tee = tee
         if tee is not None:
             tee.pipeline.set_record_budget(lambda: tee.budget)
+            tee.pipeline.set_evidence_ids(self.evidence_ids)
 
     # -- state ------------------------------------------------------------------------------
 
@@ -482,7 +508,9 @@ class RecordsInput:
 
     @property
     def identity_mode(self) -> IdentityMode:
-        return self._identity
+        """The identity mode ids are emitted in: ``clear`` only as the explicit opt-in and
+        never in the production profile without a key (049 §2.9 rule 5)."""
+        return "clear" if self._clear else "pseudonymous"
 
     # -- the API ----------------------------------------------------------------------------
 
@@ -546,26 +574,34 @@ class RecordsInput:
     @fail_open(None)
     def v2(self, prefix: str, value: str) -> str | None:
         """The identity rule (R8): an ``EmittedId`` of this input's issuer unchanged; the
-        keyed v2 pseudonym in pseudonymous mode (``None`` without a key); the value as given
-        in clear mode. An unknown ``prefix`` or a non-string value is misuse."""
+        keyed v2 pseudonym in pseudonymous mode; ``None`` (omit it) without a key or in the
+        production profile without one (049 §2.9 rule 5); in clear mode the value as given
+        (``h-`` when not opaque). An unknown ``prefix`` or a non-string value is misuse."""
         if prefix not in V2_TYPES:
             raise RecordsMisuseError("records API misuse: unknown v2 prefix")
         if not isinstance(value, str) or not value:
             raise RecordsMisuseError("records API misuse: v2 value must be a non-empty str")
+        return self._evidence_id(prefix, value)
+
+    def _evidence_id(self, prefix: str, value: str) -> str | None:
+        """:meth:`v2` without the argument checks: also the evidence ID rule the capture
+        worker applies (:class:`~fabric._evidence.EvidenceIds`)."""
         if self._ids._mine(value):
             return value
-        if self._identity == "clear":
-            return value
-        mapped = pseudonym_v2(prefix, value, self._key)
-        return None if mapped is None else self._ids.mint(mapped)
+        mapped = self._rule.v2(prefix, value)
+        if mapped is None or self._clear:
+            return mapped
+        return self._ids.mint(mapped)
 
     def map_id(self, value: str) -> str:
         """A caller-supplied step, operation or stream id as emitted (R8): pseudonymous:
         the keyed ``lbl-`` label, or a random ``g-`` id remembered per process without a key
-        (nothing derived from the value); clear: as given (``h-`` when not opaque)."""
-        if self._identity == "clear" and not self._ids._mine(value):
+        (nothing derived from the value; always so in the production profile without a
+        key); clear: as given (``h-`` when not opaque). The result is an ``EmittedId`` of
+        this input in the pseudonymous mode, so passed back it is not mapped again."""
+        if self._clear and not self._ids._mine(value):
             return encode_opaque_id(value)
-        return str.__str__(self._ids.other(value))
+        return self._ids.other(value)
 
     def _map(self, value: object, what: str) -> str:
         if not isinstance(value, str) or not value:
@@ -674,7 +710,7 @@ class RecordsInput:
         if dropped + len(refused):
             self.stats.add("keys_dropped", dropped + len(refused))
         bodies = tuple(
-            replace(body, stream_id=self.map_id(body.stream_id))
+            replace(body, stream_id=str.__str__(self.map_id(body.stream_id)))
             if isinstance(body, RecordBody) and body.stream_id is not None else body
             for body in bodies
         )  # fmt: skip
@@ -696,7 +732,11 @@ class RecordsInput:
                 BudgetRefusedBody.of(body) if isinstance(body, RecordBody) else body
                 for body in bodies
             )  # fmt: skip
-            job = replace(job, bodies=refused_bodies)
+            if evidence is not None:  # the reference is dropped; the record says why
+                boundary = next((body.boundary for body in bodies), "caller")
+                refused_bodies += (BudgetRefusedBody(EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE,
+                                   boundary, "not_captured", "payload_too_large"),)  # fmt: skip
+            job = replace(job, bodies=refused_bodies, evidence=None)
             self.stats.add("budget_refused")
         if pipeline.submit(job):
             self.stats.add("emitted")

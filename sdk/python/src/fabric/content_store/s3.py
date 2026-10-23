@@ -21,6 +21,7 @@ from urllib.parse import urlparse
 from fabric.content_store.base import (
     ContentRef,
     CorruptedObjectError,
+    check_descriptor_only,
     check_safe_identifier,
     content_hash,
     content_hash_bytes,
@@ -240,6 +241,26 @@ class S3ContentStore:
                         f"pre-existing evidence object s3://{self.bucket}/{dest} differs"
                     ) from exc
         return ContentRef(uri=ref, content_hash=digest)
+
+    def put_descriptor_only(self, descriptor: Mapping[str, Any]) -> str:
+        """Persist a descriptor-only object's descriptor sidecar, no bytes (as the Node does
+        for one, so a reader finds it ``not_stored``); create-only, idempotent. Returns its
+        reference."""
+        object_id = check_descriptor_only(descriptor, self.tenant_id)
+        meta_key = f"{self.prefix}{self.tenant_id}/evidence/meta/{object_id}.json"
+        body = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        client = self._get_client()
+        try:
+            client.put_object(Bucket=self.bucket, Key=meta_key, Body=body, IfNoneMatch="*",
+                              **self._put_kwargs())  # fmt: skip
+        except Exception as exc:
+            if not _is_precondition_failed(exc):
+                raise
+            if client.get_object(Bucket=self.bucket, Key=meta_key)["Body"].read() != body:
+                raise CorruptedObjectError(
+                    f"pre-existing evidence descriptor s3://{self.bucket}/{meta_key} differs"
+                ) from exc
+        return self.evidence_ref_for(object_id)
 
     def write_manifest(
         self, manifest: Mapping[str, Any], *, decision_id: str, manifest_id: str

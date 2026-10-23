@@ -19,6 +19,7 @@ from fabric._capture_types import (
     EVIDENCE_MAX_DEPTH,
     EVIDENCE_MAX_ITEMS,
     EVIDENCE_MAX_STRING,
+    STRICT_ENV,
     DescriptorOnlyBody,
     EvidenceContinuation,
     EvidenceDoc,
@@ -26,12 +27,17 @@ from fabric._capture_types import (
     RecordsMisuseError,
 )
 from fabric._seal import canonical_bytes, record_digest, seal_digest
+from fabric._sequence import encode_opaque_id, pseudonym_v2
 
 from ._records_harness import REPO, reference, vector
 
 GO = REPO / ("components/otel-collector-fabric/exporter/fabriccontentexporter/"
              "evidence_types_generated.go")  # fmt: skip
 REGISTRY = REPO / "contracts/coverage/v1/registry/field-registry-v1.json"
+KEY = b"k" * 32
+# The identity rules the worker applies to an ID property (RecordsInput builds these).
+KEYED = _evidence.EvidenceIds(lambda prefix, value: pseudonym_v2(prefix, value, KEY))
+CLEAR = _evidence.EvidenceIds(lambda prefix, value: encode_opaque_id(value), clear=True)
 
 
 def test_registered_types_are_the_twin_of_the_generated_go_table() -> None:
@@ -78,9 +84,32 @@ def _cases() -> list[dict[str, Any]]:
 
 
 @pytest.mark.parametrize("case", _cases(), ids=lambda c: c["name"])
-def test_evidence_documents_against_the_vectors(case: dict[str, Any]) -> None:
+def test_evidence_documents_against_the_vectors(case: dict[str, Any]) -> None:  # noqa: PLR0912
     document, refusal = case["document"], case["refusal"]
-    if refusal is None:  # the envelope passes: the agent builds and writes it
+    actors = [item["actor"] for item in document.get("items", ()) if "actor" in item]
+    if refusal is None and actors:  # caller ids: accepted at build, mapped on the worker (R8)
+        built = _doc(document)
+        assert isinstance(built, EvidenceDoc)
+        expected = copy.deepcopy(document)
+        if not expected.get("refs"):
+            expected.pop("refs", None)
+        for rule, mapped in ((None, None), (_evidence.OMIT_IDS, None),
+                             (KEYED, [pseudonym_v2("act", a, KEY) for a in actors]),
+                             (CLEAR, actors)):  # fmt: skip
+            data = _evidence.encode(built, rule)
+            assert data is not None
+            for item in expected["items"]:
+                item.pop("actor", None)
+            for item, actor in zip(expected["items"], mapped or (), strict=False):
+                item["actor"] = actor
+            assert data == canonical_bytes(expected)
+            assert b"agent:planner" not in data or rule is CLEAR
+    elif refusal is None and case.get("item_errors"):  # outside the closed schema (§3.17)
+        built = _doc(document)
+        assert isinstance(built, DescriptorOnlyBody)
+        assert (built.role, built.status, built.reason) == (
+            "record.evidence", "not_captured", "parse_failed")  # fmt: skip
+    elif refusal is None:  # the envelope passes: the agent builds and writes it
         built = _doc(document)
         assert isinstance(built, EvidenceDoc)
         data = _evidence.encode(built)
@@ -103,9 +132,17 @@ def test_evidence_documents_against_the_vectors(case: dict[str, Any]) -> None:
         "fabric.record-evidence/v1"
     ):  # fmt: skip
         return  # the agent always writes v1
-    else:  # unregistered type, a bad continuation or ref: refused at build (misuse)
-        with pytest.raises((RecordsMisuseError, KeyError, TypeError)):
-            _doc(document)
+    else:  # unregistered type, a bad continuation or ref: misuse, fail-open (R9)
+        cont = document.get("continuation")
+        if cont is not None and set(cont) != {"index", "final"}:
+            return  # not expressible as EvidenceContinuation: the agent never writes one
+        built = _doc(document)
+        assert isinstance(built, DescriptorOnlyBody)
+        assert (built.status, built.reason) == ("not_captured", "parse_failed")
+        with pytest.MonkeyPatch.context() as patch:  # strict mode raises it
+            patch.setenv(STRICT_ENV, "1")
+            with pytest.raises((RecordsMisuseError, KeyError, TypeError)):
+                _doc(document)
 
 
 def test_the_vector_record_digest_and_seal() -> None:
@@ -133,10 +170,19 @@ def test_encode_rechecks_on_the_worker() -> None:
     items[0]["count"] = 1.5  # the application changed its object after emit
     with pytest.raises(RecordsMisuseError):
         _evidence.encode(built)
-    big = EvidenceDoc.build("fabric.test.items/v1",
-                            [{"name": "x" * EVIDENCE_MAX_STRING}] * EVIDENCE_MAX_ITEMS)  # fmt: skip
+    items[0]["count"] = 1
+    items[0]["body"] = "SECRET_MEDICAL_NOTE"  # a field outside the closed schema, after emit
+    with pytest.raises(RecordsMisuseError):
+        _evidence.encode(built)
+    item = {"name": "a" * 64, "count": 1_000_000, "digest": "sha256:" + "0" * 64,
+            "tags": ["t" * 32] * 3}  # fmt: skip
+    big = EvidenceDoc.build("fabric.test.items/v1", [item] * EVIDENCE_MAX_ITEMS)
     assert isinstance(big, EvidenceDoc)
     assert _evidence.encode(big) is None  # over 1 MiB serialised
+    wide = [{"name": "x" * EVIDENCE_MAX_STRING}] * EVIDENCE_MAX_ITEMS
+    long = EvidenceDoc.build("fabric.test.items/v1", wide)
+    assert isinstance(long, DescriptorOnlyBody)  # over 1 MiB of characters: never walked on
+    assert long.reason == "payload_too_large"
 
 
 def test_ref_and_refs_bounds() -> None:
@@ -154,5 +200,10 @@ def test_ref_and_refs_bounds() -> None:
     assert isinstance(EvidenceDoc.build("fabric.test.items/v1", [], [long_role]),
                       DescriptorOnlyBody)  # fmt: skip
     for bad in (EvidenceRef(ref.object_id, ""), EvidenceRef(ref.object_id, "r", "no-slash")):
-        with pytest.raises(RecordsMisuseError):
-            EvidenceDoc.build("fabric.test.items/v1", [], [bad])
+        refused = EvidenceDoc.build("fabric.test.items/v1", [], [bad])
+        assert isinstance(refused, DescriptorOnlyBody)
+        assert refused.reason == "parse_failed"
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv(STRICT_ENV, "1")
+            with pytest.raises(RecordsMisuseError):
+                EvidenceDoc.build("fabric.test.items/v1", [], [bad])

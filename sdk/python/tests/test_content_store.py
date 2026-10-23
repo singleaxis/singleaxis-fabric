@@ -467,3 +467,63 @@ def test_s3_bytes_object_conditional_write_is_idempotent_and_detects_divergence(
     assert all("tenant-a/evidence/" in item["Key"] for item in fake.writes)
     with pytest.raises(CorruptedObjectError):
         store.put_bytes_object({**descriptor, "run_id": "other"}, b"\x00\xff")
+
+
+def _descriptor_only(store: Any, object_id: str) -> dict[str, Any]:
+    return {"schema_version": "fabric.content-object/v2", "object_id": object_id,
+            "tenant_id": store.tenant_id, "status": "not_captured",
+            "status_reason": "payload_too_large", "representation": "unavailable"}  # fmt: skip
+
+
+def test_local_descriptor_only_object_is_its_descriptor_alone(tmp_path: Path) -> None:
+    store = LocalFilesystemContentStore(str(tmp_path / "store"), tenant_id="tenant-a")
+    descriptor = _descriptor_only(store, "obj-1")
+    ref = store.put_descriptor_only(descriptor)
+    assert ref == store.evidence_ref_for("obj-1")
+    assert store.put_descriptor_only(descriptor) == ref  # idempotent
+    assert store.read_descriptor(ref) == descriptor
+    assert not store.exists(ref)  # no bytes
+    with pytest.raises(FileNotFoundError):
+        store.read(ref)
+    with pytest.raises(CorruptedObjectError):
+        store.put_descriptor_only({**descriptor, "status_reason": "parse_failed"})
+    for bad in ({**descriptor, "stored_sha256": "sha256:" + "0" * 64}, {**descriptor, "ref": ref},
+                {**descriptor, "status": "stored"}, {**descriptor, "tenant_id": "tenant-b"},
+                {**descriptor, "schema_version": "x"}):  # fmt: skip
+        with pytest.raises(ValueError):
+            store.put_descriptor_only(bad)
+
+
+def test_s3_descriptor_only_object_is_a_conditional_descriptor_write() -> None:
+    class PreconditionFailedError(Exception):
+        def __init__(self) -> None:
+            super().__init__("precondition failed")
+            self.response = {"Error": {"Code": "PreconditionFailed"}}
+
+    class FakeS3:
+        def __init__(self) -> None:
+            self.objects: dict[str, bytes] = {}
+            self.writes: list[dict[str, Any]] = []
+
+        def put_object(self, **kwargs: Any) -> None:
+            self.writes.append(kwargs)
+            if kwargs["Key"] in self.objects:
+                raise PreconditionFailedError()
+            self.objects[kwargs["Key"]] = kwargs["Body"]
+
+        def get_object(self, **kwargs: Any) -> dict[str, Any]:
+            return {"Body": io.BytesIO(self.objects[kwargs["Key"]])}
+
+    fake = FakeS3()
+    store = S3ContentStore(bucket="evidence-bucket", tenant_id="tenant-a")
+    store._client = fake
+    descriptor = _descriptor_only(store, "obj-1")
+    assert store.put_descriptor_only(descriptor) == store.evidence_ref_for("obj-1")
+    store.put_descriptor_only(descriptor)  # the same descriptor: accepted
+    assert [item["Key"] for item in fake.writes] == [
+        "fabric/content/tenant-a/evidence/meta/obj-1.json"
+    ] * 2
+    assert all(item["IfNoneMatch"] == "*" for item in fake.writes)
+    assert store.read_descriptor(store.evidence_ref_for("obj-1")) == descriptor
+    with pytest.raises(CorruptedObjectError):
+        store.put_descriptor_only({**descriptor, "status_reason": "parse_failed"})

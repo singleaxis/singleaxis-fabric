@@ -55,7 +55,7 @@ from ._capture_types import (
 )
 from ._records import DEFAULT_MAX_OBJECT_BYTES, records_max_object_bytes
 from ._roles import ROLES
-from ._sequence import GeneratedIds
+from ._sequence import GeneratedIds, encode_opaque_id
 from .byte_evidence import ByteEvidenceRecorder
 from .content_join import CONTENT_JOIN_FIELDS, capture_content_binding
 from .source_spool import _MAX_SEAL_TIMEOUT_S, SyntheticSourceSpool
@@ -96,6 +96,13 @@ def _seal_refusal(snapshot: dict[str, Any]) -> str | None:
 def _identifier(value: str) -> str:
     if not isinstance(value, str) or not _ID.fullmatch(value):
         raise ValueError("identity must be an opaque ASCII identifier of 1 to 128 characters")
+    return value
+
+
+def _caller_id(value: str) -> str:
+    """Records mode (R8): any non-empty caller string; it is mapped, never emitted clear."""
+    if not isinstance(value, str) or not value:
+        raise ValueError("identity must be a non-empty str")
     return value
 
 
@@ -431,6 +438,8 @@ class _Call:
     attempt: Attempt | None = None
     start_ns: int = 0
     step_ids: tuple[str, str] | None = None  # (operation, attempt) as given, for the input
+    # Records mode: recording this call failed; the delegate runs and nothing is recorded.
+    unrecorded: bool = False
 
 
 class CallRecorder:
@@ -629,7 +638,7 @@ class CallRecorder:
             with self._lock:
                 event["source_spool_submission_failed"] = True
 
-    def _start(  # noqa: PLR0912 - the three modes' ids in one place
+    def _start(  # noqa: PLR0912, PLR0915 - the three modes' ids in one place
         self,
         payload: object,
         *,
@@ -649,20 +658,24 @@ class CallRecorder:
         boundary, input_role, output_role = _KINDS[kind]
         parent = self._current.get()
         call_id = uuid.uuid4().hex
+        records_mode = self.mode == "records"
+        # Records mode maps any caller string (R8); the other modes keep spec 043's opaque ids.
+        ident = _caller_id if records_mode else _identifier
         attempt = self._begin(kind, _point, parent, parent_call_id)
         step_ids: tuple[str, str] | None = None
         if attempt is not None:  # 050 §3.10 ids: the records input's identity rule (R8)
             records = attempt.records
             call_id = attempt.uid
             if parent_call_id is not None:
-                parent_call_id = records.map_id(_identifier(parent_call_id))
-            if agent_id is not None and (ids := self._ids) is not None:
-                agent_id = ids.agent(_identifier(agent_id))
+                parent_call_id = records.map_id(ident(parent_call_id))
+            if agent_id is not None:
+                agent_id = (ids.agent(ident(agent_id)) if (ids := self._ids) is not None
+                            else encode_opaque_id(ident(agent_id)))  # fmt: skip
             # The records input maps the caller's ids itself (once); unnamed, they are the
             # attempt uid, which it passes through. The view keeps the emitted forms.
             step_ids = (
-                _identifier(operation_id) if operation_id is not None else attempt.uid,
-                _identifier(attempt_id) if attempt_id is not None else attempt.uid,
+                ident(operation_id) if operation_id is not None else attempt.uid,
+                ident(attempt_id) if attempt_id is not None else attempt.uid,
             )
             operation_id, attempt_id = (
                 records.map_id(value) if value is not attempt.uid else value for value in step_ids
@@ -671,12 +684,17 @@ class CallRecorder:
             # Fabric's own ids map to themselves (a parent call id of this recorder too).
             call_id = ids.mint(call_id)
             if parent_call_id is not None:
-                parent_call_id = ids.other(_identifier(parent_call_id))
+                parent_call_id = ids.other(ident(parent_call_id))
             if agent_id is not None:
-                agent_id = ids.agent(_identifier(agent_id))
+                agent_id = ids.agent(ident(agent_id))
             operation_id, attempt_id = (
-                ids.other(_identifier(value)) if value is not None else ids.mint(uuid.uuid4().hex)
+                ids.other(ident(value)) if value is not None else ids.mint(uuid.uuid4().hex)
                 for value in (operation_id, attempt_id)
+            )
+        elif records_mode:  # ids as given: the clear mode's opaque form of any caller string
+            parent_call_id, agent_id, operation_id, attempt_id = (
+                encode_opaque_id(ident(value)) if value is not None else None
+                for value in (parent_call_id, agent_id, operation_id, attempt_id)
             )
         fields = {
             "call_id": call_id,
@@ -746,17 +764,11 @@ class CallRecorder:
             records = self._producer.records(point)
             if records is None:
                 return None
-            parent_ref = (  # mapped by begin(), once
-                _identifier(parent_call_id) if parent_call_id is not None
+            parent_ref = (  # mapped by begin(), once, whatever its shape (R8)
+                _caller_id(parent_call_id) if parent_call_id is not None
                 else parent.fields["call_id"] if parent is not None else None
             )  # fmt: skip
             return records.begin(STEP_KIND[kind], point, parent_attempt=parent_ref)
-        except ValueError:
-            if parent_call_id is not None and not _ID.fullmatch(str(parent_call_id)):
-                raise  # a malformed caller id is refused exactly as in the other modes
-            if strict():
-                raise
-            return None
         except Exception:
             if strict():
                 raise
@@ -866,6 +878,9 @@ class CallRecorder:
 
     @contextmanager
     def _activate(self, call: _Call) -> Iterator[None]:
+        if call.unrecorded:  # no span, no explicit scope: the wire input is left as it is
+            yield
+            return
         token = self._current.set(call)
         # Disable exception recording: exception messages can contain data.
         # The call's explicit scope (fabric._capture_scope) only tells an installed
@@ -894,6 +909,8 @@ class CallRecorder:
         boundary: str | None = None,
         chunk_index: int | None = None,
     ) -> None:
+        if call.unrecorded:
+            return
         if call.records:
             self._record_capture(call, value, role=role, boundary=boundary,
                                  chunk_index=chunk_index)  # fmt: skip
@@ -960,6 +977,8 @@ class CallRecorder:
         if call.ended:
             return
         call.ended = True
+        if call.unrecorded:
+            return
         if call.capture_scope is not None:
             call.capture_scope.end()
         try:
@@ -996,8 +1015,26 @@ class CallRecorder:
             "cancelled" if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)) else "error"
         )
 
+    def _open(
+        self, payload: bytes, options: Mapping[str, Any], *, streaming: bool = False
+    ) -> _Call:
+        """The call record of one delegate run. In records mode a recording failure never
+        stops the delegate (R9): the call runs unrecorded (a counted recording gap) and
+        only ``FABRIC_RECORDS_STRICT=1`` raises; the other modes keep spec 043's errors."""
+        if self.mode != "records":
+            return self._start(payload, streaming=streaming, **options)
+        try:
+            return self._start(payload, streaming=streaming, **options)
+        except Exception:
+            if strict():
+                raise
+            self._fault()
+            fields = {"call_id": uuid.uuid4().hex, "agent_id": self.agent_id,
+                      "output_role": "", "chunk_count": 0}  # fmt: skip
+            return _Call(fields, None, False, unrecorded=True)
+
     def call(self, payload: bytes, delegate: Callable[[bytes], _T], **options: Any) -> _T:
-        call = self._start(payload, **options)
+        call = self._open(payload, options)
         try:
             with self._activate(call):
                 result = delegate(payload)
@@ -1012,7 +1049,7 @@ class CallRecorder:
     async def acall(
         self, payload: bytes, delegate: Callable[[bytes], Awaitable[_T]], **options: Any
     ) -> _T:
-        call = self._start(payload, **options)
+        call = self._open(payload, options)
         try:
             with self._activate(call):
                 result = await delegate(payload)
@@ -1027,7 +1064,7 @@ class CallRecorder:
     def stream(
         self, payload: bytes, delegate: Callable[[bytes], Iterator[_T]], **options: Any
     ) -> RecordedStream[_T]:
-        call = self._start(payload, streaming=True, **options)
+        call = self._open(payload, options, streaming=True)
         try:
             with self._activate(call):
                 iterator = iter(delegate(payload))
@@ -1039,7 +1076,7 @@ class CallRecorder:
     def astream(
         self, payload: bytes, delegate: Callable[[bytes], AsyncIterator[_T]], **options: Any
     ) -> RecordedAsyncStream[_T]:
-        call = self._start(payload, streaming=True, **options)
+        call = self._open(payload, options, streaming=True)
         try:
             with self._activate(call):
                 iterator = aiter(delegate(payload))
