@@ -62,6 +62,8 @@ MAX_PENDING_SEAL_POSITIONS = 262_144
 # seal nor the allocator lock (:func:`hold`), at most FORCED_SEAL_ENTRIES positions (counted:
 # ``seal_state_freed_inline``).
 MAX_RECLAIM_POSITIONS = 4 * MAX_PENDING_SEAL_POSITIONS
+# The same backlog in segments (an empty segment holds no position but is still an object).
+MAX_RECLAIM_SEGMENTS = MAX_PENDING_SEALS
 _RECLAIM_SLICE = 4096
 LOSS_ENTRY_PREFIX = "loss:"
 DIGEST_PREFIX = "sha256:"
@@ -259,6 +261,7 @@ class SegmentSeals:
         # Dropped segments' state, released by the reclaimer thread (never the caller).
         self._reclaim: deque[_Segment] = deque()
         self._reclaim_positions = 0
+        self._reclaim_segments = 0  # queued and being freed
         self._reclaim_wake = threading.Condition(self._lock)
         self._reclaimer: threading.Thread | None = None
         self._stats = dict.fromkeys(
@@ -467,17 +470,22 @@ class SegmentSeals:
 
     def _discard(self, segment: _Segment, positions: int) -> threading.Thread | None:
         """Holds ``_lock``: a dropped segment's state goes to the reclaimer while its backlog
-        (queued and being freed) is within :data:`MAX_RECLAIM_POSITIONS`, whether or not the
-        reclaimer runs now. Past that bound the dropping thread releases it, but only once
+        (queued and being freed) is within :data:`MAX_RECLAIM_POSITIONS` and
+        :data:`MAX_RECLAIM_SEGMENTS`, whether or not the reclaimer runs now. Past either bound
+        the dropping thread releases it, but only once
         it holds neither this lock nor the allocator lock (``_HELD``); a segment holds at
         most :data:`FORCED_SEAL_ENTRIES` positions, so that is a bounded, constant cost.
         Returns the reclaimer to start when none runs."""
-        if self._reclaim_positions + positions > MAX_RECLAIM_POSITIONS:
+        if (
+            self._reclaim_positions + positions > MAX_RECLAIM_POSITIONS
+            or self._reclaim_segments >= MAX_RECLAIM_SEGMENTS
+        ):
             self._stats["seal_state_freed_inline"] += 1
             _HELD.deferred.append(segment)
             return None
         self._reclaim.append(segment)
         self._reclaim_positions += positions
+        self._reclaim_segments += 1
         self._reclaim_wake.notify()
         if self._reclaimer is not None:
             return None
@@ -504,6 +512,7 @@ class SegmentSeals:
             del segment, entries  # the emptied dict and the segment go here
             with self._lock:  # counted until freed: a stalled reclaimer stays within bound
                 self._reclaim_positions -= positions
+                self._reclaim_segments -= 1
 
     def _start(self, thread: threading.Thread | None) -> bool:
         """Start a worker or the reclaimer handed out under the lock; ``False`` when there
