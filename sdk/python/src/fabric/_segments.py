@@ -49,6 +49,7 @@ from urllib.parse import unquote
 from . import (
     _loss,  # noqa: F401 - its after-fork hook (marker queue reset) runs before ours
     _manifest,  # its after-fork hook (the child's manifest 0) runs before ours
+    _seal,
 )
 from ._capture_types import (
     BRANCH_ID_RE,
@@ -460,9 +461,10 @@ class SegmentTable:
     def active(self) -> bool:
         return self._allocator is not None and not self._closed
 
-    def _lock(self) -> threading.Lock:
-        allocator = cast("SourceAllocator", self._allocator)
-        return allocator._lock
+    def _lock(self) -> _AllocatorLock:
+        """The allocator lock, entered through :func:`_seal.hold`: a seal state this thread
+        drops under it is released only after it is released (049 §7.1)."""
+        return _AllocatorLock(cast("SourceAllocator", self._allocator)._lock)
 
     def _last(self) -> int:
         """The allocator's last allocated sequence (-1 before the first); lock held."""
@@ -971,7 +973,7 @@ class SegmentTable:
         self._fork, self._fork_seals, self._fork_locked = {}, [], None
         if not self.active:
             return
-        lock = self._lock()
+        lock = cast("SourceAllocator", self._allocator)._lock  # held across the fork
         if not lock.acquire(timeout=1.0):
             self._stats["fork_skipped"] += 1
             return
@@ -1052,6 +1054,29 @@ class SegmentTable:
                 self._queue(marker)
         except Exception:
             self._stats["internal_errors"] += 1
+
+
+class _AllocatorLock:
+    """``with`` the allocator lock, marking the thread inside it for the seal accumulator."""
+
+    __slots__ = ("_lock",)
+
+    def __init__(self, lock: threading.Lock) -> None:
+        self._lock = lock
+
+    def __enter__(self) -> None:
+        _seal.hold()
+        try:
+            self._lock.acquire()
+        except BaseException:
+            _seal.unhold()
+            raise
+
+    def __exit__(self, *exc: object) -> None:
+        try:
+            self._lock.release()
+        finally:
+            _seal.unhold()
 
 
 def _flag(value: object, what: str) -> bool:

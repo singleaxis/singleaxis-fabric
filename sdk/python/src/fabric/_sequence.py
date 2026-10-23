@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
+from . import _seal
 from ._capture_types import (
     Allocation,
     NullRunTable,
@@ -287,17 +288,25 @@ class SourceAllocator:
 
     def allocate(self) -> Allocation:
         """Allocate one position in the innermost open run scope (050 §3.3)."""
-        with self._lock:
-            return self._allocated(_open_scope())
+        _seal.hold()  # a seal state dropped under the lock is released after it (049 §7.1)
+        try:
+            with self._lock:
+                return self._allocated(_open_scope())
+        finally:
+            _seal.unhold()
 
     def allocate_for(self, scope: RunScope | None) -> Allocation:
         """Allocate one position for work begun earlier under ``scope``: the innermost of
         its scopes still open now, read under the lock ``run_end`` closes scopes under, so
         the sequence never lies outside a closed scope's markers."""
-        with self._lock:
-            while scope is not None and scope.closed:
-                scope = scope.parent
-            return self._allocated(scope)
+        _seal.hold()
+        try:
+            with self._lock:
+                while scope is not None and scope.closed:
+                    scope = scope.parent
+                return self._allocated(scope)
+        finally:
+            _seal.unhold()
 
     def settle(self, segment_id: str | None, sequence: int, entry: SealEntry) -> None:
         """A position of ``segment_id`` was written (``entry`` its record digest) or lost

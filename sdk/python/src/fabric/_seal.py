@@ -42,7 +42,10 @@ from ._capture_types import (
 )
 
 RECEIVER_OWNED_KEYS: frozenset[str] = frozenset({"fabric.source.authenticated"})
-FORCED_SEAL_ENTRIES = 1_000_000  # §3.7: a segment this long is force-sealed
+# §3.7: a segment this long is force-sealed (non-terminal; the run continues in a new local
+# segment). It bounds what one segment retains here, and so the cost of releasing any one
+# segment's state wherever that happens (049 §7.1).
+FORCED_SEAL_ENTRIES = 65_536
 SEAL_WORKER_IDLE_S = 1.0  # the seal worker exits after this long with nothing to build
 # Bounds of the seals handed to the seal worker and not built yet (049 §7.1 bounded
 # memory): at most this many segments, retaining at most this many settled positions in
@@ -50,21 +53,56 @@ SEAL_WORKER_IDLE_S = 1.0  # the seal worker exits after this long with nothing t
 # FORCED_SEAL_ENTRIES). Past a bound the segment's state is dropped and counted
 # (``seals_dropped``): no ``segment_seal`` is written, so the verifier reports the segment
 # unsealed, never complete. A dropped segment's state is freed by the ``fabric-seal-reclaim``
-# thread, never by the caller (O(1) there); until then it counts against the same position
-# bound.
+# thread, never by the caller; until then it counts against the same position bound.
 MAX_PENDING_SEALS = 4096
 MAX_PENDING_SEAL_POSITIONS = 262_144
-# A dropped segment this small is released by its caller (a bounded, constant cost).
-RECLAIM_INLINE_POSITIONS = 1024
-# Dropped state awaiting the reclaimer, in positions, past which (the reclaimer cannot run:
-# no thread can start) it is released where it is dropped (counted:
-# ``seal_state_freed_inline``), so memory stays bounded in that pathological case too.
+# Dropped state held for the reclaimer (queued or being freed), in positions, whether or not
+# the reclaimer runs. Past it (the reclaimer is stalled, or no thread can start) a dropped
+# segment is released by the thread that dropped it, once that thread holds neither the
+# seal nor the allocator lock (:func:`hold`), at most FORCED_SEAL_ENTRIES positions (counted:
+# ``seal_state_freed_inline``).
 MAX_RECLAIM_POSITIONS = 4 * MAX_PENDING_SEAL_POSITIONS
 _RECLAIM_SLICE = 4096
 LOSS_ENTRY_PREFIX = "loss:"
 DIGEST_PREFIX = "sha256:"
 _DIGEST_LENGTH = len(DIGEST_PREFIX) + 64
 _STATUSES = frozenset({"unset", "ok", "error"})
+
+
+class _Held(threading.local):
+    """Per thread: how deep in the allocator lock (or the run table's) it is, and the dropped
+    segments it must release once out of it."""
+
+    def __init__(self) -> None:
+        self.depth = 0
+        self.deferred: list[object] = []
+
+
+_HELD = _Held()
+
+
+def hold() -> None:
+    """The calling thread takes the allocator lock (the allocator and the run table call
+    this around it): a dropped segment is not released before :func:`unhold`."""
+    _HELD.depth += 1
+
+
+def unhold() -> None:
+    """The calling thread released the allocator lock: release what it dropped meanwhile."""
+    held = _HELD
+    held.depth -= 1
+    if held.depth <= 0:
+        held.depth = 0
+        if held.deferred:
+            held.deferred.clear()  # freed here, outside every lock
+
+
+def _release_deferred() -> None:
+    """At the end of an accumulator entry point (its lock released): release what this
+    thread dropped, unless it is still inside the allocator lock."""
+    held = _HELD
+    if held.deferred and held.depth <= 0:
+        held.deferred.clear()
 
 
 def loss_entry(reason: str) -> SealEntry:
@@ -283,10 +321,11 @@ class SegmentSeals:
                 segment.entries[sequence] = compact
                 segment.outstanding = max(0, segment.outstanding - 1)
                 worker = self._hand_off(segment_id, segment)
-                del segment  # never the last owner of a dropped segment (the reclaimer is)
+                del segment  # never the last owner of a dropped segment
             self._start(worker)
         except Exception:
             self._stats["internal_errors"] += 1
+        _release_deferred()
 
     def request_seal(
         self, segment_id: str, *, last_sequence: int, manifest_digest: str | None,
@@ -309,10 +348,11 @@ class SegmentSeals:
                     run_id, source,
                 )  # fmt: skip
                 worker = self._hand_off(segment_id, segment)
-                del segment  # never the last owner of a dropped segment (the reclaimer is)
+                del segment  # never the last owner of a dropped segment
             self._start(worker)
         except Exception:
             self._stats["internal_errors"] += 1
+        _release_deferred()
 
     def outstanding(self, segment_id: str) -> int:
         with self._lock:
@@ -329,6 +369,16 @@ class SegmentSeals:
         deadline. Only an unbounded drain (``timeout_s=None``) builds on its caller then.
         Callers are the pipeline's ``flush``/``close`` and ``final``, never a recording
         path."""
+        try:
+            return self._drain(timeout_s)
+        except Exception:  # never into the caller: the seal stays pending (counted)
+            with contextlib.suppress(Exception):
+                self._stats["internal_errors"] += 1
+            return False
+        finally:
+            _release_deferred()
+
+    def _drain(self, timeout_s: float | None) -> bool:
         deadline = None if timeout_s is None else time.monotonic() + max(0.0, timeout_s)
         while True:
             start: threading.Thread | None = None
@@ -338,8 +388,9 @@ class SegmentSeals:
                     return not dropped
                 worker = self._worker
                 if worker is None and self._ready:  # none runs: (re)start one
-                    self._worker = start = threading.Thread(
-                        target=self._work, name="fabric-seal", daemon=True)  # fmt: skip
+                    self._worker = start = self._new_thread(self._work, "fabric-seal")
+                    if start is None and deadline is not None:  # cannot be built: pending
+                        return False
                 else:  # a worker builds (or is being started), or a build is in progress
                     if deadline is None:
                         self._idle.wait(0.05)
@@ -354,6 +405,16 @@ class SegmentSeals:
             if deadline is not None:
                 return False  # no worker can run: left pending, never hashed here
             self._build_next()
+
+    def _new_thread(self, target: Callable[[], None], name: str) -> threading.Thread | None:
+        """Holds ``_lock``: a daemon thread for ``target``, or ``None`` when one cannot even be
+        constructed (e.g. daemon threads refused at interpreter shutdown; counted). Never
+        raises: the work stays pending."""
+        try:
+            return threading.Thread(target=target, name=name, daemon=True)
+        except Exception:
+            self._stats["seal_worker_failures"] += 1
+            return None
 
     def dropped(self) -> int:
         """Seals dropped at the pending bound since this accumulator started (sticky: a
@@ -401,29 +462,26 @@ class SegmentSeals:
         self._idle.notify_all()
         if self._worker is not None:
             return None
-        self._worker = worker = threading.Thread(target=self._work, name="fabric-seal",
-                                                 daemon=True)  # fmt: skip
+        self._worker = worker = self._new_thread(self._work, "fabric-seal")
         return worker
 
     def _discard(self, segment: _Segment, positions: int) -> threading.Thread | None:
-        """Holds ``_lock``: a dropped segment's state goes to the reclaimer, so freeing a
-        large entries dict never runs on the caller (an app thread, under the allocator
-        lock). A small one is released by the caller (constant cost). Returns the
-        reclaimer to start when none runs."""
-        if positions <= RECLAIM_INLINE_POSITIONS:
-            return None
-        reclaimer = self._reclaimer
-        if reclaimer is None and self._reclaim_positions + positions > MAX_RECLAIM_POSITIONS:
-            # no reclaimer could run and the backlog is at its bound: released here
+        """Holds ``_lock``: a dropped segment's state goes to the reclaimer while its backlog
+        (queued and being freed) is within :data:`MAX_RECLAIM_POSITIONS`, whether or not the
+        reclaimer runs now. Past that bound the dropping thread releases it, but only once
+        it holds neither this lock nor the allocator lock (``_HELD``); a segment holds at
+        most :data:`FORCED_SEAL_ENTRIES` positions, so that is a bounded, constant cost.
+        Returns the reclaimer to start when none runs."""
+        if self._reclaim_positions + positions > MAX_RECLAIM_POSITIONS:
             self._stats["seal_state_freed_inline"] += 1
+            _HELD.deferred.append(segment)
             return None
         self._reclaim.append(segment)
         self._reclaim_positions += positions
         self._reclaim_wake.notify()
-        if reclaimer is not None:
+        if self._reclaimer is not None:
             return None
-        self._reclaimer = reclaimer = threading.Thread(
-            target=self._reclaim_work, name="fabric-seal-reclaim", daemon=True)  # fmt: skip
+        self._reclaimer = reclaimer = self._new_thread(self._reclaim_work, "fabric-seal-reclaim")
         return reclaimer
 
     def _reclaim_work(self) -> None:
@@ -438,12 +496,14 @@ class SegmentSeals:
                         self._reclaimer = None
                     return
                 segment = self._reclaim.popleft()
-                self._reclaim_positions -= len(segment.entries)
+            positions = len(segment.entries)
             entries = segment.entries
             while entries:  # in slices: the interpreter can switch threads in between
                 for _ in range(min(len(entries), _RECLAIM_SLICE)):
                     entries.popitem()
             del segment, entries  # the emptied dict and the segment go here
+            with self._lock:  # counted until freed: a stalled reclaimer stays within bound
+                self._reclaim_positions -= positions
 
     def _start(self, thread: threading.Thread | None) -> bool:
         """Start a worker or the reclaimer handed out under the lock; ``False`` when there
@@ -526,6 +586,7 @@ _ACCUMULATORS: weakref.WeakSet[SegmentSeals] = weakref.WeakSet()
 
 
 def _after_fork_in_child() -> None:
+    _HELD.depth, _HELD.deferred = 0, []  # the forking thread's copy: nothing held here
     for accumulator in list(_ACCUMULATORS):
         with contextlib.suppress(Exception):
             accumulator._init_state()

@@ -1006,9 +1006,10 @@ range.
 - When a seal is requested and `outstanding == 0`, it builds the
   `segment_seal` marker and queues it through `LossEmitter.queue_beat`.
 - Memory is bounded: each open or unsealed segment holds at most one
-  32-byte digest per position. At 1,000,000 entries for a segment, the
+  32-byte digest per position. At 65,536 entries for a segment, the
   segment is forced to seal (non-terminal, a new segment continues it locally,
-  `segment_forced_seal` stat).
+  `segment_forced_seal` stat). The bound also caps the cost of releasing any one
+  segment's state, wherever that happens (P1 review).
 - At `close()`, positions still outstanding become `shutdown` losses (existing
   behaviour), so pending seals complete before `final`. A crash leaves the
   segment unsealed, which the verifier reports as `partial(source_lost)`
@@ -2042,7 +2043,7 @@ Build agents follow these defaults unless the owner changes them.
 | K2 | Reusing a run id sequentially in one process after a non-resumable block exits is `post_terminal_activity` (049 X42) | Keep 049 semantics. Document "one run id, one run; use `session_id` across requests". Status counter `post_terminal_allocations`. |
 | K3 | `global` tracer mode cannot reuse host span ids, so `records.span_id` aliases for decision and tool spans are unresolved and a wire exchange's parent falls back to the run-scope step | State it in the manifest (`uncaptured_classes: ["global_tracer_parent_join"]`); recommend spool or `private` mode. |
 | K4 | Drain order across epochs follows random epoch values (file names start with the epoch, `wire/_spool.py:3-4`) | Accept. The verifier is order-free. The 048 name format is unchanged. |
-| K5 | Seal accumulator memory on very long segments | Forced seal at 1,000,000 positions (§3.7). |
+| K5 | Seal accumulator memory on very long segments | Forced seal at 65,536 positions (§3.7). |
 | K6 | Records-mode `CallRecorder.snapshot()` reports `pending` where legacy reported final statuses | Documented; parity tests compare after `flush()`. |
 | K7 | Under `FABRIC_WIRE_LABELS=clear`, a resume token carries the operator's clear source label across the boundary (049:1100) | Stated in the OD-7 docs. The pseudonymous default emits `s-`. |
 | K7a | In clear mode (explicit opt-in, R8), a caller-rooted run's tokens carry the application's clear run id across the boundary (rule 4 emits the clear id) | Stated in the OD-7 docs. The pseudonymous default carries the mapped `r-` id. |

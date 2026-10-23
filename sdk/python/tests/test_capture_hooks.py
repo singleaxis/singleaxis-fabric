@@ -360,7 +360,9 @@ def test_the_p1_hooks_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(handle.allocator.segments, "on_final", broken)
     with wire.run("run-2"):
         pass
-    assert handle.close(2.0)
+    # Fail open: nothing raises. on_final() failed, so the epoch's seals are unproven and
+    # close() does not claim a complete record (P1 seal review).
+    assert handle.close(2.0) is False
 
 
 # --- stubs: typed, fail-open, today's behaviour ----------------------------------------------

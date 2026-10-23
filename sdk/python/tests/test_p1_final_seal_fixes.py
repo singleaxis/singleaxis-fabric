@@ -218,6 +218,8 @@ def test_a_dropped_large_segment_is_freed_off_the_caller(monkeypatch: pytest.Mon
         while not reclaimed and time.monotonic() < deadline:
             time.sleep(0.01)
         assert reclaimed and reclaimed[0][0] != caller and reclaimed[0][1] == 1_000_000
+        while getattr(seals, "_reclaim_positions", 0) and time.monotonic() < deadline:
+            time.sleep(0.01)  # counted until its release has finished
         assert getattr(seals, "_reclaim_positions", 0) == 0
     finally:
         release.set()
