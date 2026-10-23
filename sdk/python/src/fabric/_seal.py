@@ -49,12 +49,18 @@ SEAL_WORKER_IDLE_S = 1.0  # the seal worker exits after this long with nothing t
 # all. One seal is always admitted when none is waiting (a forced segment holds up to
 # FORCED_SEAL_ENTRIES). Past a bound the segment's state is dropped and counted
 # (``seals_dropped``): no ``segment_seal`` is written, so the verifier reports the segment
-# unsealed, never complete.
+# unsealed, never complete. A dropped segment's state is freed by the ``fabric-seal-reclaim``
+# thread, never by the caller (O(1) there); until then it counts against the same position
+# bound.
 MAX_PENDING_SEALS = 4096
 MAX_PENDING_SEAL_POSITIONS = 262_144
-# Without a worker, drain() builds a seal on its caller only when this conservative
-# estimate of the digest fits the time left (never an unbounded digest in a bounded drain).
-_INLINE_BASE_S, _INLINE_S_PER_ENTRY = 0.001, 2e-6
+# A dropped segment this small is released by its caller (a bounded, constant cost).
+RECLAIM_INLINE_POSITIONS = 1024
+# Dropped state awaiting the reclaimer, in positions, past which (the reclaimer cannot run:
+# no thread can start) it is released where it is dropped (counted:
+# ``seal_state_freed_inline``), so memory stays bounded in that pathological case too.
+MAX_RECLAIM_POSITIONS = 4 * MAX_PENDING_SEAL_POSITIONS
+_RECLAIM_SLICE = 4096
 LOSS_ENTRY_PREFIX = "loss:"
 DIGEST_PREFIX = "sha256:"
 _DIGEST_LENGTH = len(DIGEST_PREFIX) + 64
@@ -212,9 +218,15 @@ class SegmentSeals:
         self._dropped_since_drain = False
         self._building = 0
         self._worker: threading.Thread | None = None
+        # Dropped segments' state, released by the reclaimer thread (never the caller).
+        self._reclaim: deque[_Segment] = deque()
+        self._reclaim_positions = 0
+        self._reclaim_wake = threading.Condition(self._lock)
+        self._reclaimer: threading.Thread | None = None
         self._stats = dict.fromkeys(
             ("sealed", "seal_markers_unqueued", "segment_forced_seal", "late_settles",
-             "internal_errors", "seal_worker_failures", "seals_dropped"), 0,
+             "internal_errors", "seal_worker_failures", "seals_dropped",
+             "seal_state_freed_inline"), 0,
         )  # fmt: skip
 
     # -- wiring -----------------------------------------------------------------------
@@ -271,6 +283,7 @@ class SegmentSeals:
                 segment.entries[sequence] = compact
                 segment.outstanding = max(0, segment.outstanding - 1)
                 worker = self._hand_off(segment_id, segment)
+                del segment  # never the last owner of a dropped segment (the reclaimer is)
             self._start(worker)
         except Exception:
             self._stats["internal_errors"] += 1
@@ -296,6 +309,7 @@ class SegmentSeals:
                     run_id, source,
                 )  # fmt: skip
                 worker = self._hand_off(segment_id, segment)
+                del segment  # never the last owner of a dropped segment (the reclaimer is)
             self._start(worker)
         except Exception:
             self._stats["internal_errors"] += 1
@@ -305,31 +319,47 @@ class SegmentSeals:
             segment = self._segments.get(segment_id)
             return segment.outstanding if segment is not None else 0
 
-    def drain(self, timeout_s: float = 5.0) -> bool:
+    def drain(self, timeout_s: float | None = 5.0) -> bool:
         """Wait until every seal handed off so far is built and its marker queued; ``False``
         when ``timeout_s`` passed first, or when a seal was dropped at the pending bound
-        since the previous drain (the record is then incomplete). Without a running worker
-        (it could not start, e.g. at interpreter shutdown) a seal is built on the calling
-        thread only when its estimated digest time fits the time left; otherwise it stays
-        pending and ``False`` is returned. Callers are the pipeline's ``flush``/``close``
-        and ``final``, never a recording path."""
-        deadline = time.monotonic() + max(0.0, timeout_s)
+        since the previous drain (:meth:`dropped` keeps the total for shutdown
+        accounting). Seals are built only on the seal worker: without one (it cannot
+        start, e.g. late in interpreter shutdown) a bounded drain returns ``False`` at once
+        and the seal stays pending (``seals_pending``), never hashed on the caller past its
+        deadline. Only an unbounded drain (``timeout_s=None``) builds on its caller then.
+        Callers are the pipeline's ``flush``/``close`` and ``final``, never a recording
+        path."""
+        deadline = None if timeout_s is None else time.monotonic() + max(0.0, timeout_s)
         while True:
+            start: threading.Thread | None = None
             with self._lock:
                 if not self._ready and not self._building:
                     dropped, self._dropped_since_drain = self._dropped_since_drain, False
                     return not dropped
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    return False
                 worker = self._worker
-                if (worker is not None and worker.is_alive()) or not self._ready:
+                if worker is None and self._ready:  # none runs: (re)start one
+                    self._worker = start = threading.Thread(
+                        target=self._work, name="fabric-seal", daemon=True)  # fmt: skip
+                else:  # a worker builds (or is being started), or a build is in progress
+                    if deadline is None:
+                        self._idle.wait(0.05)
+                        continue
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False
                     self._idle.wait(min(remaining, 0.05))  # the worker notifies each build
                     continue
-                cost = _INLINE_BASE_S + _INLINE_S_PER_ENTRY * len(self._ready[0][1].entries)
-                if cost > remaining:
-                    return False  # left pending (counted in seals_pending)
+            if self._start(start):
+                continue
+            if deadline is not None:
+                return False  # no worker can run: left pending, never hashed here
             self._build_next()
+
+    def dropped(self) -> int:
+        """Seals dropped at the pending bound since this accumulator started (sticky: a
+        drain never resets it); a non-zero value fails the epoch's ``close()``."""
+        with self._lock:
+            return self._stats["seals_dropped"]
 
     # -- reading ------------------------------------------------------------------------
 
@@ -360,11 +390,12 @@ class SegmentSeals:
         positions = len(segment.entries)
         if self._ready and (
             len(self._ready) >= MAX_PENDING_SEALS
-            or self._ready_positions + positions > MAX_PENDING_SEAL_POSITIONS
+            or self._ready_positions + self._reclaim_positions + positions
+            > MAX_PENDING_SEAL_POSITIONS
         ):  # fail open: the state goes, the missing seal is counted (never blocks)
             self._stats["seals_dropped"] += 1
             self._dropped_since_drain = True
-            return None
+            return self._discard(segment, positions)
         self._ready.append((segment_id, segment, request))
         self._ready_positions += positions
         self._idle.notify_all()
@@ -374,16 +405,62 @@ class SegmentSeals:
                                                  daemon=True)  # fmt: skip
         return worker
 
-    def _start(self, worker: threading.Thread | None) -> None:
-        if worker is None:
-            return
-        try:
-            worker.start()
-        except Exception:  # e.g. interpreter shutdown: drain() builds on its caller
+    def _discard(self, segment: _Segment, positions: int) -> threading.Thread | None:
+        """Holds ``_lock``: a dropped segment's state goes to the reclaimer, so freeing a
+        large entries dict never runs on the caller (an app thread, under the allocator
+        lock). A small one is released by the caller (constant cost). Returns the
+        reclaimer to start when none runs."""
+        if positions <= RECLAIM_INLINE_POSITIONS:
+            return None
+        reclaimer = self._reclaimer
+        if reclaimer is None and self._reclaim_positions + positions > MAX_RECLAIM_POSITIONS:
+            # no reclaimer could run and the backlog is at its bound: released here
+            self._stats["seal_state_freed_inline"] += 1
+            return None
+        self._reclaim.append(segment)
+        self._reclaim_positions += positions
+        self._reclaim_wake.notify()
+        if reclaimer is not None:
+            return None
+        self._reclaimer = reclaimer = threading.Thread(
+            target=self._reclaim_work, name="fabric-seal-reclaim", daemon=True)  # fmt: skip
+        return reclaimer
+
+    def _reclaim_work(self) -> None:
+        """The reclaimer: release dropped segments' state off the caller; exit when idle."""
+        me = threading.current_thread()
+        while True:
             with self._lock:
-                if self._worker is worker:
+                if not self._reclaim:
+                    self._reclaim_wake.wait(SEAL_WORKER_IDLE_S)
+                if not self._reclaim:
+                    if self._reclaimer is me:
+                        self._reclaimer = None
+                    return
+                segment = self._reclaim.popleft()
+                self._reclaim_positions -= len(segment.entries)
+            entries = segment.entries
+            while entries:  # in slices: the interpreter can switch threads in between
+                for _ in range(min(len(entries), _RECLAIM_SLICE)):
+                    entries.popitem()
+            del segment, entries  # the emptied dict and the segment go here
+
+    def _start(self, thread: threading.Thread | None) -> bool:
+        """Start a worker or the reclaimer handed out under the lock; ``False`` when there
+        was none or it could not start (counted; e.g. late interpreter shutdown)."""
+        if thread is None:
+            return False
+        try:
+            thread.start()
+        except Exception:
+            with self._lock:
+                if self._worker is thread:
                     self._worker = None
+                if self._reclaimer is thread:
+                    self._reclaimer = None
                 self._stats["seal_worker_failures"] += 1
+            return False
+        return True
 
     def _work(self) -> None:
         """The seal worker: build queued seals in order; exit when idle (restarted on the

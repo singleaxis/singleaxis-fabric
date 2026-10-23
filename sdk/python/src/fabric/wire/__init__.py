@@ -309,11 +309,12 @@ class WireHandle:
             drained = self._tee.close(timeout * _DRAIN_SHARE)
             _p1_uninstalled(self)  # 050 §3.8: the wire points' state change, before final
             # 050 §3.6: final() seals every open segment first (seal markers before final)
-            _p1_final(self, max(0.0, deadline - time.monotonic()))
+            sealed = _p1_final(self, max(0.0, deadline - time.monotonic()))
             self._tee.loss.final(self.allocator)  # this epoch allocates nothing more
             _p1_detach(self)
             remaining = max(0.0, deadline - time.monotonic())
-            self._result = self._deliver(remaining, closing=True, exiting=exiting) and drained
+            delivered = self._deliver(remaining, closing=True, exiting=exiting)
+            self._result = delivered and drained and sealed
             _p1_closed(self)
         return self._result
 
@@ -532,17 +533,26 @@ def _p1_installed(handle: WireHandle, registration: Registration | None) -> None
         _manifest.emit_initial(handle)
 
 
-def _p1_final(handle: WireHandle, timeout_s: float = 1.0) -> None:
+def _p1_final(handle: WireHandle, timeout_s: float = 1.0) -> bool:
     """050 §3.6 ``final()`` trigger: seal the open segments, and wait (bounded) for the seal
-    worker to queue their ``segment_seal`` markers, before the ``final`` marker. The
-    registration is not finalized here: only once the ``final`` marker is durably in the
-    spool (:func:`_p1_closed`)."""
+    worker to queue their ``segment_seal`` markers, before the ``final`` marker. ``False``
+    when a seal is still pending at the deadline, or when any seal of this epoch was
+    dropped at the pending bound (sticky: an earlier flush's drain never hides it), so
+    ``close()`` reports the record incomplete. The registration is not finalized here: only
+    once the ``final`` marker is durably in the spool (:func:`_p1_closed`); a dropped seal
+    does not hold that back (the verifier reports its segment unsealed)."""
     with contextlib.suppress(Exception):
         handle.allocator.segments.on_final()
+    sealed = True
     with contextlib.suppress(Exception):
-        drain = getattr(handle._tee.pipeline.seals, "drain", None)
+        seals = handle._tee.pipeline.seals
+        drain = getattr(seals, "drain", None)
         if callable(drain):
-            drain(timeout_s)
+            sealed = bool(drain(timeout_s))
+        dropped = getattr(seals, "dropped", None)
+        if callable(dropped):
+            sealed = sealed and not dropped()
+    return sealed
 
 
 def _p1_detach(handle: WireHandle) -> None:
