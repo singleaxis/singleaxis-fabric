@@ -42,13 +42,14 @@ fabric.decision({sessionId:'session', requestId:'request'}, d => {
   d.recordSideEffect({type:'api_mutation',targetSystem:'crm',operation:'update',sideEffectId:'effect-1',requestPayload:'request',resultPayload:'result'});
   uri=d.contentManifestUri;
 });
-const manifest=store.readManifest(uri);
 let emptyTextUri;
 fabric.decision({sessionId:'session',requestId:'empty-text'},d=>{
   d.recordContext('empty.txt','');
   emptyTextUri=d.contentManifestUri;
 });
+// Inline writes are deferred off the decision path; close() delivers them.
 await fabric.close();
+const manifest=store.readManifest(uri);
 const emptyText=store.readManifest(emptyTextUri);
 const emptyTextBytes=store.read(emptyText.items[0].ref).length;
 const mixed=new TranscriptManifest({manifestId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',tenantId:'acme',agentId:'agent',decisionId:'decision',producer:{name:'test',version:'1',language:'typescript'},rolesEnabled:new Set(['context.file','tool.call.result'])});
