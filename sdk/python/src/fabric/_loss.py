@@ -51,7 +51,19 @@ HeartbeatKind = Literal["periodic", "run_start", "run_end", "final"]
 SPAN_LOSS, SPAN_HEARTBEAT = "fabric.capture_loss", "fabric.capture_heartbeat"
 SPAN_MANIFEST = "fabric.capture_manifest"  # a manifest marker's span (spec 049 §2.8)
 _RUN_KINDS = ("run_start", "run_end")
-_TICK_S, _MAX_QUEUED_HEARTBEATS, _MAX_PENDING_RANGES = 1.0, 1024, 1024
+_TICK_S, _MAX_PENDING_RANGES = 1.0, 1024
+# The marker queue (spec 048 §2, 050 §3.5): bounded in entries and in estimated bytes. A
+# run block queues three markers (run_start, run_end, segment_seal) and the spool sender
+# writes them 64 to a batch file (D4; two fsyncs per file, the file's and the
+# directory's): ~80,000 markers/s measured on a laptop SSD, ~16,000/s where an fsync
+# takes 2 ms. 16,384 markers hold about one second of the slower disk's throughput, i.e.
+# a burst of ~5,000 run blocks between two pumps, in at most 16 MiB (a run marker is
+# ~700 bytes in memory, charged 768 + 128 per seal, tuple item or manifest attribute).
+# Past either bound a marker is dropped and counted (``markers_dropped``): flush() and
+# close() then return False and the verifier reports the scope or segment it would have
+# closed as a gap (run_not_closed, unsealed_segment), never complete.
+MAX_QUEUED_MARKERS, MAX_QUEUED_MARKER_BYTES = 16384, 16 * 1024 * 1024
+_MARKER_BYTES, _ITEM_BYTES = 768, 128  # estimate: a marker, plus per tuple item/attribute
 _LOG = logging.getLogger("fabric.capture")
 _EMITTERS: weakref.WeakSet[LossEmitter] = weakref.WeakSet()
 _Beat = LegacyBeat  # the pre-050 heartbeat tuple; still accepted, converted to a Marker
@@ -236,6 +248,21 @@ def marker_span(
     return SPAN_HEARTBEAT, attrs
 
 
+def marker_bytes(marker: Marker) -> int:
+    """The memory a queued marker is charged against :data:`MAX_QUEUED_MARKER_BYTES`: an
+    O(1) estimate (a few ``len`` calls; nothing is serialised on the app thread)."""
+    try:
+        items = (len(marker.predecessors) + len(marker.declared_branches)
+                 + len(marker.branch_ids) + len(marker.links))  # fmt: skip
+        if marker.manifest is not None:
+            items += len(marker.manifest)
+        if marker.seal is not None:
+            items += 1 + len(marker.seal.branch_ids)
+    except Exception:  # never raised by a Fabric-built marker; charged the bound then
+        return MAX_QUEUED_MARKER_BYTES
+    return _MARKER_BYTES + _ITEM_BYTES * items
+
+
 def beat_attributes(beat: Marker | LegacyBeat) -> dict[str, AttributeValue]:
     """The span attributes of a heartbeat marker (a legacy beat tuple is accepted)."""
     marker = as_marker(beat)
@@ -347,6 +374,7 @@ class LossEmitter:
         self._pending: dict[_LossKey, list[tuple[int, int, int]]] = {}
         self._ranges = 0  # ranges in ``_pending`` (bounded by _MAX_PENDING_RANGES)
         self._beats: list[Marker] = []
+        self._beat_bytes = 0  # marker_bytes() of the queued markers
         self._sources: weakref.WeakKeyDictionary[SourceAllocator, bool]
         self._sources, self._last_periodic = weakref.WeakKeyDictionary(), time.monotonic()
         self._thread: threading.Thread | None = None
@@ -454,10 +482,16 @@ class LossEmitter:
         return self._queue(marker)
 
     def _queue(self, marker: Marker) -> bool:
+        """O(1) on the app thread: an append under the table lock, never I/O or a wait for
+        the sender. Past :data:`MAX_QUEUED_MARKERS` or :data:`MAX_QUEUED_MARKER_BYTES` the
+        marker is dropped and counted."""
+        size = marker_bytes(marker)
         with self._lock:
-            queued = len(self._beats) < _MAX_QUEUED_HEARTBEATS
+            queued = (len(self._beats) < MAX_QUEUED_MARKERS
+                      and self._beat_bytes + size <= MAX_QUEUED_MARKER_BYTES)  # fmt: skip
             if queued:
                 self._beats.append(marker)
+                self._beat_bytes += size
             else:
                 self.markers_dropped += 1
         self._ensure_thread()
@@ -520,7 +554,7 @@ class LossEmitter:
         and markers, plus a periodic heartbeat per (active or every) source."""
         with self._lock:
             pending, beats, self._pending, self._beats = self._pending, self._beats, {}, []
-            self._ranges = 0
+            self._ranges = self._beat_bytes = 0
             due = [a for a, on in self._sources.items() if every_source or (periodic and on)]
             self._sources.update(dict.fromkeys(due, False))
         if periodic or every_source:
