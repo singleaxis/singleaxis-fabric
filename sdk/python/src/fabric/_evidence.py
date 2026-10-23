@@ -112,9 +112,9 @@ class _OverBound(Exception):  # noqa: N818 - internal control flow, never raised
 
 class EvidenceSchemaError(RecordsMisuseError):
     """An item outside its type's closed schema (an extra or free-text property, an ID
-    property that is not a string). ``EvidenceDoc.build`` fails open on it (R9): the record
-    carries a descriptor-only ``record.evidence`` (``parse_failed``); it raises only under
-    ``FABRIC_RECORDS_STRICT=1``."""
+    property that is not a string). ``EvidenceDoc.build`` fails open on it, as on every
+    malformed document (R9): the record carries a descriptor-only ``record.evidence``
+    (``parse_failed``); it raises only under ``FABRIC_RECORDS_STRICT=1``."""
 
 
 def _misuse(what: str) -> RecordsMisuseError:

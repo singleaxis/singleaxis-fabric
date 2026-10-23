@@ -19,6 +19,7 @@ from fabric._capture_types import (
     EVIDENCE_MAX_DEPTH,
     EVIDENCE_MAX_ITEMS,
     EVIDENCE_MAX_STRING,
+    STRICT_ENV,
     DescriptorOnlyBody,
     EvidenceContinuation,
     EvidenceDoc,
@@ -83,7 +84,7 @@ def _cases() -> list[dict[str, Any]]:
 
 
 @pytest.mark.parametrize("case", _cases(), ids=lambda c: c["name"])
-def test_evidence_documents_against_the_vectors(case: dict[str, Any]) -> None:
+def test_evidence_documents_against_the_vectors(case: dict[str, Any]) -> None:  # noqa: PLR0912
     document, refusal = case["document"], case["refusal"]
     actors = [item["actor"] for item in document.get("items", ()) if "actor" in item]
     if refusal is None and actors:  # caller ids: accepted at build, mapped on the worker (R8)
@@ -131,9 +132,17 @@ def test_evidence_documents_against_the_vectors(case: dict[str, Any]) -> None:
         "fabric.record-evidence/v1"
     ):  # fmt: skip
         return  # the agent always writes v1
-    else:  # unregistered type, a bad continuation or ref: refused at build (misuse)
-        with pytest.raises((RecordsMisuseError, KeyError, TypeError)):
-            _doc(document)
+    else:  # unregistered type, a bad continuation or ref: misuse, fail-open (R9)
+        cont = document.get("continuation")
+        if cont is not None and set(cont) != {"index", "final"}:
+            return  # not expressible as EvidenceContinuation: the agent never writes one
+        built = _doc(document)
+        assert isinstance(built, DescriptorOnlyBody)
+        assert (built.status, built.reason) == ("not_captured", "parse_failed")
+        with pytest.MonkeyPatch.context() as patch:  # strict mode raises it
+            patch.setenv(STRICT_ENV, "1")
+            with pytest.raises((RecordsMisuseError, KeyError, TypeError)):
+                _doc(document)
 
 
 def test_the_vector_record_digest_and_seal() -> None:
@@ -191,5 +200,10 @@ def test_ref_and_refs_bounds() -> None:
     assert isinstance(EvidenceDoc.build("fabric.test.items/v1", [], [long_role]),
                       DescriptorOnlyBody)  # fmt: skip
     for bad in (EvidenceRef(ref.object_id, ""), EvidenceRef(ref.object_id, "r", "no-slash")):
-        with pytest.raises(RecordsMisuseError):
-            EvidenceDoc.build("fabric.test.items/v1", [], [bad])
+        refused = EvidenceDoc.build("fabric.test.items/v1", [], [bad])
+        assert isinstance(refused, DescriptorOnlyBody)
+        assert refused.reason == "parse_failed"
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv(STRICT_ENV, "1")
+            with pytest.raises(RecordsMisuseError):
+                EvidenceDoc.build("fabric.test.items/v1", [], [bad])

@@ -680,19 +680,30 @@ class EvidenceDoc:
         refs: Sequence[EvidenceRef] = (), continuation: EvidenceContinuation | None = None,
         *, boundary: str = "caller",
     ) -> EvidenceDoc | DescriptorOnlyBody:  # fmt: skip
-        """The evidence object, or a descriptor-only ``record.evidence``:
+        """The evidence object, or a descriptor-only ``record.evidence`` (fail-open, R9):
         ``payload_too_large`` when an item-count, depth, string-length or total-work bound
-        is exceeded; ``parse_failed`` (counted ``api_misuse``; raised under
-        ``FABRIC_RECORDS_STRICT=1``) when an item is outside its type's closed schema. A
-        malformed document (unknown type, float, bytes, non-string key) is
-        :class:`RecordsMisuseError`."""
-        from ._evidence import EvidenceSchemaError, measure_evidence  # noqa: PLC0415 - cycle
+        is exceeded; ``parse_failed``, counted ``api_misuse``, for a malformed document (an
+        unknown type, a float, bytes, a non-string key, a bad ref or continuation, an item
+        outside its type's closed schema). Never raises into the application, except under
+        ``FABRIC_RECORDS_STRICT=1`` (:class:`RecordsMisuseError`, or ``TypeError`` for
+        non-sequence ``items``/``refs``)."""
+        from ._evidence import measure_evidence  # noqa: PLC0415 - _evidence imports this
 
-        doc = cls(evidence_type, tuple(items), tuple(refs), continuation)
+        if not isinstance(boundary, str) or not boundary:
+            misuse("evidence boundary must be a non-empty str")
+            boundary = "caller"
         try:
+            doc = cls(evidence_type, tuple(items), tuple(refs), continuation)
             charge = measure_evidence(doc)
-        except EvidenceSchemaError:
+        except (RecordsMisuseError, TypeError):
             COUNTERS.api_misuse += 1
+            if strict():
+                raise
+            return DescriptorOnlyBody.for_reason(
+                EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE, boundary, "parse_failed"
+            )
+        except Exception:  # an application object misbehaving while it is read
+            COUNTERS.internal_errors += 1
             if strict():
                 raise
             return DescriptorOnlyBody.for_reason(

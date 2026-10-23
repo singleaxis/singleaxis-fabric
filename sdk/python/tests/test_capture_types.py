@@ -430,13 +430,44 @@ def test_evidence_over_a_bound_becomes_a_descriptor_only_body(items: list[Any]) 
         (TEST_TYPE, [{}], {"refs": ["x"]}),
         (TEST_TYPE, [{}], {"continuation": EvidenceContinuation(-1, final=False)}),
         (TEST_TYPE, [{}], {"continuation": EvidenceContinuation(0, final=1)}),  # type: ignore[arg-type]
+        (TEST_TYPE, 5, {}),  # not a sequence
+        (TEST_TYPE, [{}], {"refs": 5}),
     ],
 )
-def test_malformed_evidence_is_misuse(
-    evidence_type: str, items: list[Any], kwargs: dict[str, Any]
+def test_malformed_evidence_fails_open_and_raises_only_under_strict(
+    monkeypatch: pytest.MonkeyPatch, evidence_type: str, items: Any, kwargs: dict[str, Any]
 ) -> None:
-    with pytest.raises(RecordsMisuseError):
+    """R9: a malformed document (a float can come straight from application data) never
+    raises into the application: the record carries a descriptor-only ``parse_failed``
+    evidence object, counted ``api_misuse``. ``FABRIC_RECORDS_STRICT=1`` raises."""
+    ct.COUNTERS.reset()
+    got = EvidenceDoc.build(evidence_type, items, boundary="tool_bound", **kwargs)
+    assert isinstance(got, DescriptorOnlyBody)
+    assert (got.role, got.boundary, got.status, got.reason) == (
+        ct.EVIDENCE_ROLE, "tool_bound", "not_captured", "parse_failed")  # fmt: skip
+    assert ct.COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 0}
+    monkeypatch.setenv(ct.STRICT_ENV, "1")
+    with pytest.raises((RecordsMisuseError, TypeError)):
         EvidenceDoc.build(evidence_type, items, **kwargs)
+    ct.COUNTERS.reset()
+
+
+def test_evidence_build_contains_a_misbehaving_application_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Hostile(dict[str, Any]):
+        def items(self) -> Any:
+            raise RuntimeError("application bug")
+
+    ct.COUNTERS.reset()
+    got = EvidenceDoc.build(TEST_TYPE, [Hostile(name="x")], boundary="")
+    assert isinstance(got, DescriptorOnlyBody)
+    assert (got.boundary, got.reason) == ("caller", "parse_failed")  # a bad boundary is misuse
+    assert ct.COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 1}
+    monkeypatch.setenv(ct.STRICT_ENV, "1")
+    with pytest.raises(RuntimeError):
+        EvidenceDoc.build(TEST_TYPE, [Hostile(name="x")])
+    ct.COUNTERS.reset()
 
 
 # --- typed markers (§3.5, R2) ---------------------------------------------------------------
