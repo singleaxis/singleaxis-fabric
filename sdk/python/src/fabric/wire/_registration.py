@@ -93,8 +93,10 @@ class Registration:
                 _U64.pack_into(mapped, OFF_NEXT_SEQUENCE, next_sequence)
 
     def final(self) -> None:
-        """Set the ``final`` flag: from now on no scan takes the epoch for an orphan. The
-        file is removed by :meth:`close`, after the ``final`` marker is spooled."""
+        """Set the ``final`` flag: from now on no scan takes the epoch for an orphan. Called
+        only once the epoch's ``final`` marker is durably in the spool (``close()``), never
+        before: a writer that dies or fails to spool it first stays declarable. The file
+        is then removed by :meth:`close`."""
         if (mapped := self._map) is not None and self._owner == os.getpid():
             with contextlib.suppress(Exception):
                 mapped[OFF_FINAL] = 1

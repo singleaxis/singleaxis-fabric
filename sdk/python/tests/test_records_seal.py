@@ -98,6 +98,7 @@ def test_seal_digest_vectors(segment: dict[str, Any]) -> None:
     seals.request_seal(seg, last_sequence=last, manifest_digest=None, terminal=True,
                        resumable=False, run_id="r-" + "1" * 32, source_id=SOURCE,
                        epoch=7)  # fmt: skip
+    assert seals.drain(10.0)  # built on the seal worker (049 §7.1)
     assert [m.seal.seal_digest for m in markers if m.seal] == [segment["seal_digest"]]
 
 
@@ -154,6 +155,7 @@ def test_a_seal_waits_for_every_outstanding_position() -> None:
     seals.settle(SEG_A, 4, DIGEST)  # one outcome per position: ignored
     assert seals.entries(SEG_A) == [(3, DIGEST), (4, "loss:queue_full")]
     seals.settle(SEG_A, 5, DIGEST)
+    assert seals.drain(10.0)
     [marker] = markers
     assert (marker.kind, marker.source_id, marker.epoch, marker.segment_id) == (
         "segment_seal", SOURCE, 7, SEG_A)  # fmt: skip
@@ -171,6 +173,7 @@ def test_an_empty_segment_seals_at_once_and_failures_are_counted() -> None:
     seals, markers = _seals()
     seals.request_seal(SEG_B, last_sequence=-1, manifest_digest=None, terminal=True,
                        resumable=False)  # fmt: skip
+    assert seals.drain(10.0)
     assert markers[0].seal is not None
     assert markers[0].seal.seal_digest == seal_digest([])
     seals.settle(SEG_A, 0, "not an entry")
@@ -182,6 +185,7 @@ def test_an_empty_segment_seals_at_once_and_failures_are_counted() -> None:
     orphan.settle(SEG_B, 0, DIGEST)
     orphan.request_seal(SEG_B, last_sequence=0, manifest_digest=None, terminal=True,
                         resumable=False, source_id=SOURCE, epoch=3)  # fmt: skip
+    assert orphan.drain(10.0)
     assert orphan.stats()["seal_markers_unqueued"] == 2
     assert orphan.stats()["sealed"] == 1
 
@@ -242,6 +246,8 @@ def test_queue_full_losses_settle_their_own_segment_only() -> None:
     for segment, last in ((SEG_A, 4), (SEG_B, 5)):
         handle.pipeline.seals.request_seal(segment, last_sequence=last, manifest_digest=None,
                                            terminal=True, resumable=False)  # fmt: skip
+    seals = handle.pipeline.seals
+    assert isinstance(seals, SegmentSeals) and seals.drain(10.0)
     by_segment = {m.segment_id: m for m in handle.markers}
     assert handle.sender is not None
     spans = {item[2]["attributes"]["fabric.source.sequence"]: item for item in handle.sender.items}

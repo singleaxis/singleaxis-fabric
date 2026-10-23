@@ -408,9 +408,15 @@ class CapturePipeline:
                 self._on_job_done(job)
 
     def flush(self, timeout_s: float = 5.0) -> bool:
-        """Wait until every accepted job has been processed."""
+        """Wait until every accepted job has been processed and every segment seal it
+        completed is built and queued (050 §3.7: seals are built on the seal worker)."""
+        deadline = time.monotonic() + max(0.0, timeout_s)
         with self._cond:
-            return self._cond.wait_for(lambda: not self._pending, max(0.0, timeout_s))
+            drained = self._cond.wait_for(lambda: not self._pending, max(0.0, timeout_s))
+        drain = getattr(self.seals, "drain", None)
+        if callable(drain):
+            drained = bool(drain(max(0.0, deadline - time.monotonic()))) and drained
+        return drained
 
     def close(self, timeout_s: float = 2.0) -> bool:
         """Drain within ``timeout_s``; every job unfinished then (the one in progress too, its

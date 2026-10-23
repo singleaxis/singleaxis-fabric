@@ -74,12 +74,21 @@ class _Queue:
     """The marker queue (``LossEmitter.queue_marker``) as a list."""
 
     def __init__(self) -> None:
-        self.markers: list[Marker] = []
+        self._markers: list[Marker] = []
         self.lock = threading.Lock()
+        self.seals: SegmentSeals | None = None
+
+    @property
+    def markers(self) -> list[Marker]:
+        """Every marker queued so far, once the seal worker built the seals handed to it."""
+        if self.seals is not None:
+            assert self.seals.drain(10.0)
+        with self.lock:
+            return list(self._markers)
 
     def queue_marker(self, marker: Marker) -> bool:
         with self.lock:
-            self.markers.append(marker)
+            self._markers.append(marker)
         return True
 
     def note_activity(self, allocator: Any) -> None:
@@ -98,6 +107,7 @@ class Rig:
         self.queue = _Queue()
         self.seals = SegmentSeals(self.queue.queue_marker, forced_at=forced_at)
         self.seals.bind_source(lambda: (self.allocator.source_id, self.allocator.epoch))
+        self.queue.seals = self.seals
         self.table = SegmentTable()
         loss: Any = self.queue
         self.table.bind(allocator=self.allocator, loss=loss, seals=self.seals, key=key,

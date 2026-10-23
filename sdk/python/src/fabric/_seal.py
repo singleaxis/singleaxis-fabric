@@ -10,9 +10,12 @@ verifier (WP-30) recomputes seals through these same functions, so the agent and
 
 The accumulator keeps, per open or unsealed segment, one entry per settled position (a
 32-byte digest or a loss reason) and the count of positions allocated but not yet
-settled. When a seal was requested and nothing is outstanding it builds the
-``segment_seal`` marker and queues it. Every method is O(1) except the seal itself, never
-does I/O and never raises.
+settled. When a seal was requested and nothing is outstanding the segment is handed to
+the accumulator's seal worker (a ``fabric-seal`` thread), which builds the seal digest and
+the ``segment_seal`` marker and queues it, in hand-off order. Every entry point the
+application thread reaches (``note_allocated``, ``settle``, ``request_seal``, often under
+the allocator lock) is O(1): the digest, linear in the segment, never runs there (049 §7.1,
+050 §3.16). Nothing here does I/O or raises.
 """
 
 from __future__ import annotations
@@ -22,7 +25,9 @@ import hashlib
 import json
 import os
 import threading
+import time
 import weakref
+from collections import deque
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -38,6 +43,7 @@ from ._capture_types import (
 
 RECEIVER_OWNED_KEYS: frozenset[str] = frozenset({"fabric.source.authenticated"})
 FORCED_SEAL_ENTRIES = 1_000_000  # §3.7: a segment this long is force-sealed
+SEAL_WORKER_IDLE_S = 1.0  # the seal worker exits after this long with nothing to build
 LOSS_ENTRY_PREFIX = "loss:"
 DIGEST_PREFIX = "sha256:"
 _DIGEST_LENGTH = len(DIGEST_PREFIX) + 64
@@ -149,13 +155,19 @@ def _expand(entry: bytes | str) -> SealEntry:
     return LOSS_ENTRY_PREFIX + entry
 
 
+_Ready = tuple[str, _Segment, _SealRequest]
+
+
 class SegmentSeals:
     """The pipeline's :class:`~fabric._capture_types.SealAccumulator` (§3.7).
 
     ``note_allocated`` runs under the allocator lock; ``settle`` on the capture worker and
-    the loss paths; ``request_seal`` from the run table. A segment seals once a seal is
-    requested and no position is outstanding: its ``segment_seal`` marker goes to the sink
-    (``LossEmitter.queue_marker``) and the segment is forgotten. Every entry point swallows
+    the loss paths (an application thread on ``queue_full``); ``request_seal`` from the run
+    table, under the allocator lock. A segment seals once a seal is requested and no
+    position is outstanding: it is forgotten here and handed, O(1), to the seal worker,
+    which builds its digest and ``segment_seal`` marker and queues the marker to the sink
+    (``LossEmitter.queue_marker``) in hand-off order. :meth:`drain` waits for the hand-offs
+    (the pipeline's ``flush``, and ``final`` before its marker). Every entry point swallows
     its own failures (counted in :meth:`stats`)."""
 
     def __init__(
@@ -171,17 +183,25 @@ class SegmentSeals:
         _ACCUMULATORS.add(self)
 
     def _init_state(self) -> None:
-        """Fresh lock, no segments, zero counters: at construction and in a forked child
-        (049 §7.1: a parent thread inside ``settle``/``request_seal`` at the fork would
-        otherwise hold the child's lock forever, and ``note_allocated`` runs on the app
-        thread under the allocator lock). The parent's segments are the parent's to seal:
+        """Fresh locks, no segments, no queued seals, no worker, zero counters: at
+        construction and in a forked child (049 §7.1: a parent thread inside
+        ``settle``/``request_seal`` or building a seal at the fork would otherwise hold the
+        child's lock forever, and ``note_allocated`` runs on the app thread under the
+        allocator lock). The parent's segments and queued seals are the parent's to seal:
         the child's pipeline starts empty, so their outstanding positions never settle
         here."""
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        # One builder at a time (the worker, or :meth:`drain` without one): markers are
+        # queued in hand-off order.
+        self._build_lock = threading.Lock()
         self._segments: dict[str, _Segment] = {}
+        self._ready: deque[_Ready] = deque()
+        self._building = 0
+        self._worker: threading.Thread | None = None
         self._stats = dict.fromkeys(
             ("sealed", "seal_markers_unqueued", "segment_forced_seal", "late_settles",
-             "internal_errors"), 0,
+             "internal_errors", "seal_worker_failures"), 0,
         )  # fmt: skip
 
     # -- wiring -----------------------------------------------------------------------
@@ -237,9 +257,8 @@ class SegmentSeals:
                     return
                 segment.entries[sequence] = compact
                 segment.outstanding = max(0, segment.outstanding - 1)
-                ready = self._take_ready(segment_id, segment)
-            if ready is not None:
-                self._emit(segment_id, *ready)
+                worker = self._hand_off(segment_id, segment)
+            self._start(worker)
         except Exception:
             self._stats["internal_errors"] += 1
 
@@ -248,10 +267,10 @@ class SegmentSeals:
         terminal: bool, resumable: bool, branch_ids: tuple[str, ...] = (),
         run_id: str | None = None, source_id: str | None = None, epoch: int | None = None,
     ) -> None:  # fmt: skip
-        """Seal ``segment_id`` once nothing is outstanding. ``run_id``, ``source_id`` and
-        ``epoch`` are optional (the frozen protocol does not carry them): the run table
-        passes them when it knows them, else the ones seen on the segment's jobs or the
-        bound allocator's are used."""
+        """Seal ``segment_id`` once nothing is outstanding (O(1): the digest is built on the
+        seal worker). ``run_id``, ``source_id`` and ``epoch`` are optional (the frozen
+        protocol does not carry them): the run table passes them when it knows them, else
+        the ones seen on the segment's jobs or the bound allocator's are used."""
         try:
             source = (source_id, epoch) if source_id is not None and epoch is not None else None
             with self._lock:
@@ -263,9 +282,8 @@ class SegmentSeals:
                     last_sequence, manifest_digest, terminal, resumable, tuple(branch_ids),
                     run_id, source,
                 )  # fmt: skip
-                ready = self._take_ready(segment_id, segment)
-            if ready is not None:
-                self._emit(segment_id, *ready)
+                worker = self._hand_off(segment_id, segment)
+            self._start(worker)
         except Exception:
             self._stats["internal_errors"] += 1
 
@@ -273,6 +291,28 @@ class SegmentSeals:
         with self._lock:
             segment = self._segments.get(segment_id)
             return segment.outstanding if segment is not None else 0
+
+    def drain(self, timeout_s: float = 5.0) -> bool:
+        """Wait until every seal handed off so far is built and its marker queued; ``False``
+        when ``timeout_s`` passed first. Without a running worker (it could not start, e.g.
+        at interpreter shutdown) the seals are built on the calling thread: callers are the
+        pipeline's ``flush``/``close`` and ``final``, never a recording path."""
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while True:
+            with self._lock:
+                if not self._ready and not self._building:
+                    return True
+                worker = self._worker
+                if (worker is not None and worker.is_alive()) or not self._ready:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        return False
+                    self._idle.wait(min(remaining, 0.05))  # the worker notifies each build
+                    continue
+            self._build_next()
+            if time.monotonic() >= deadline:
+                with self._lock:
+                    return not self._ready and not self._building
 
     # -- reading ------------------------------------------------------------------------
 
@@ -284,23 +324,77 @@ class SegmentSeals:
         return [(sequence, _expand(entry)) for sequence, entry in items]
 
     def stats(self) -> dict[str, int]:
+        """Counters, ``open_segments`` (unsealed) and ``seals_pending`` (handed to the seal
+        worker, not yet queued as markers)."""
         with self._lock:
-            return {**self._stats, "open_segments": len(self._segments)}
+            return {**self._stats, "open_segments": len(self._segments),
+                    "seals_pending": len(self._ready) + self._building}  # fmt: skip
 
     # -- sealing --------------------------------------------------------------------------
 
-    def _take_ready(
-        self, segment_id: str, segment: _Segment
-    ) -> tuple[_Segment, _SealRequest] | None:
-        """Holds ``_lock``: the segment when it can seal now (it is then forgotten)."""
+    def _hand_off(self, segment_id: str, segment: _Segment) -> threading.Thread | None:
+        """Holds ``_lock``: when the segment can seal now, forget it and queue it for the
+        seal worker (O(1)). Returns a worker to start (outside the lock) when none runs."""
         request = segment.request
         if request is None or segment.outstanding > 0:
             return None
         del self._segments[segment_id]
-        return segment, request
+        self._ready.append((segment_id, segment, request))
+        self._idle.notify_all()
+        if self._worker is not None:
+            return None
+        self._worker = worker = threading.Thread(target=self._work, name="fabric-seal",
+                                                 daemon=True)  # fmt: skip
+        return worker
+
+    def _start(self, worker: threading.Thread | None) -> None:
+        if worker is None:
+            return
+        try:
+            worker.start()
+        except Exception:  # e.g. interpreter shutdown: drain() builds on its caller
+            with self._lock:
+                if self._worker is worker:
+                    self._worker = None
+                self._stats["seal_worker_failures"] += 1
+
+    def _work(self) -> None:
+        """The seal worker: build queued seals in order; exit when idle (restarted on the
+        next hand-off)."""
+        me = threading.current_thread()
+        while True:
+            with self._lock:
+                if not self._ready:
+                    self._idle.wait(SEAL_WORKER_IDLE_S)
+                if not self._ready:
+                    if self._worker is me:
+                        self._worker = None
+                    self._idle.notify_all()
+                    return
+            self._build_next()
+
+    def _build_next(self) -> bool:
+        """Build and queue the oldest handed-off seal; ``False`` when none was waiting."""
+        with self._build_lock:
+            with self._lock:
+                if not self._ready:
+                    return False
+                segment_id, segment, request = self._ready.popleft()
+                self._building += 1
+            try:
+                self._emit(segment_id, segment, request)
+            except Exception:
+                with self._lock:
+                    self._stats["internal_errors"] += 1
+            finally:
+                with self._lock:
+                    self._building -= 1
+                    self._idle.notify_all()
+        return True
 
     def _emit(self, segment_id: str, segment: _Segment, request: _SealRequest) -> None:
-        """Build the ``segment_seal`` marker (outside the lock) and queue it."""
+        """Build the ``segment_seal`` marker and queue it (the seal worker, or
+        :meth:`drain` without one; never an application recording path)."""
         entries = [(sequence, _expand(entry)) for sequence, entry in segment.entries.items()]
         digest = seal_digest(entries)
         source = request.source or segment.source
