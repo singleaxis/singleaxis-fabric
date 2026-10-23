@@ -540,19 +540,19 @@ def _p1_final(handle: WireHandle, timeout_s: float = 1.0) -> bool:
     dropped at the pending bound (sticky: an earlier flush's drain never hides it), so
     ``close()`` reports the record incomplete. The registration is not finalized here: only
     once the ``final`` marker is durably in the spool (:func:`_p1_closed`); a dropped seal
-    does not hold that back (the verifier reports its segment unsealed)."""
+    does not hold that back (the verifier reports its segment unsealed). Any exception
+    here also makes it ``False``."""
+    requested = sealed = False  # any failure below leaves the epoch's seals unproven
     with contextlib.suppress(Exception):
         handle.allocator.segments.on_final()
-    sealed = True
+        requested = True
     with contextlib.suppress(Exception):
         seals = handle._tee.pipeline.seals
         drain = getattr(seals, "drain", None)
-        if callable(drain):
-            sealed = bool(drain(timeout_s))
+        drained = bool(drain(timeout_s)) if callable(drain) else True
         dropped = getattr(seals, "dropped", None)
-        if callable(dropped):
-            sealed = sealed and not dropped()
-    return sealed
+        sealed = drained and not (dropped() if callable(dropped) else 0)
+    return requested and sealed
 
 
 def _p1_detach(handle: WireHandle) -> None:
