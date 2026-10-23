@@ -276,6 +276,13 @@ class IdentityRule:
         )  # fmt: skip
         self._fallback = fallback
 
+    @property
+    def effective_mode(self) -> IdentityMode:
+        """The mode ids are emitted in: ``clear`` only as the explicit opt-in and never in
+        the production profile without a key (049 §2.9 rule 5; as ``RecordsInput``)."""
+        return "clear" if self.mode == "clear" and not self.production_without_key else (
+            "pseudonymous")  # fmt: skip
+
     def mine(self, value: object) -> bool:
         """Whether ``value`` is an ``EmittedId`` this rule issued (passes through)."""
         return self._ids._mine(value) if isinstance(value, str) else False
@@ -414,15 +421,17 @@ class SegmentTable:
 
         self._allocator, self._loss, self._seals = allocator, loss, seals
         mode = identity_mode or identity_mode_from_env(os.environ)
-        # R8 (049 §2.9 rule 7): a token's correlation id becomes this process's emitted
-        # run id, so it must be one the records input emits as ``fabric.run.id`` in this
-        # identity mode; a pseudonymous consumer never takes a clear id from a token.
-        self._correlation_ok = compile_check(
-            RECORD_KEY_CHECKS["fabric.run.id"], labels=cast("Any", labels or "pseudonymous"),
-            identity=mode,
-        )  # fmt: skip
         self.rule = IdentityRule(key=key, mode=mode, production=production,
                                  fallback=self._source_fallback)  # fmt: skip
+        # R8 (049 §2.9 rules 5 and 7): a token's correlation id becomes this process's
+        # emitted run id, so it must be one the records input emits as ``fabric.run.id``
+        # in the *effective* identity mode (pseudonymous in the production profile without
+        # a key, whatever was requested); a pseudonymous consumer never takes a clear id
+        # from a token. Refused at intake, before any marker names it.
+        self._correlation_ok = compile_check(
+            RECORD_KEY_CHECKS["fabric.run.id"], labels=cast("Any", labels or "pseudonymous"),
+            identity=self.rule.effective_mode,
+        )  # fmt: skip
         on_forced = getattr(seals, "on_forced", ...)
         if on_forced is None or callable(on_forced):
             with contextlib.suppress(Exception):

@@ -44,6 +44,17 @@ from ._capture_types import (
 RECEIVER_OWNED_KEYS: frozenset[str] = frozenset({"fabric.source.authenticated"})
 FORCED_SEAL_ENTRIES = 1_000_000  # §3.7: a segment this long is force-sealed
 SEAL_WORKER_IDLE_S = 1.0  # the seal worker exits after this long with nothing to build
+# Bounds of the seals handed to the seal worker and not built yet (049 §7.1 bounded
+# memory): at most this many segments, retaining at most this many settled positions in
+# all. One seal is always admitted when none is waiting (a forced segment holds up to
+# FORCED_SEAL_ENTRIES). Past a bound the segment's state is dropped and counted
+# (``seals_dropped``): no ``segment_seal`` is written, so the verifier reports the segment
+# unsealed, never complete.
+MAX_PENDING_SEALS = 4096
+MAX_PENDING_SEAL_POSITIONS = 262_144
+# Without a worker, drain() builds a seal on its caller only when this conservative
+# estimate of the digest fits the time left (never an unbounded digest in a bounded drain).
+_INLINE_BASE_S, _INLINE_S_PER_ENTRY = 0.001, 2e-6
 LOSS_ENTRY_PREFIX = "loss:"
 DIGEST_PREFIX = "sha256:"
 _DIGEST_LENGTH = len(DIGEST_PREFIX) + 64
@@ -197,11 +208,13 @@ class SegmentSeals:
         self._build_lock = threading.Lock()
         self._segments: dict[str, _Segment] = {}
         self._ready: deque[_Ready] = deque()
+        self._ready_positions = 0  # settled positions the queued seals retain
+        self._dropped_since_drain = False
         self._building = 0
         self._worker: threading.Thread | None = None
         self._stats = dict.fromkeys(
             ("sealed", "seal_markers_unqueued", "segment_forced_seal", "late_settles",
-             "internal_errors", "seal_worker_failures"), 0,
+             "internal_errors", "seal_worker_failures", "seals_dropped"), 0,
         )  # fmt: skip
 
     # -- wiring -----------------------------------------------------------------------
@@ -294,25 +307,29 @@ class SegmentSeals:
 
     def drain(self, timeout_s: float = 5.0) -> bool:
         """Wait until every seal handed off so far is built and its marker queued; ``False``
-        when ``timeout_s`` passed first. Without a running worker (it could not start, e.g.
-        at interpreter shutdown) the seals are built on the calling thread: callers are the
-        pipeline's ``flush``/``close`` and ``final``, never a recording path."""
+        when ``timeout_s`` passed first, or when a seal was dropped at the pending bound
+        since the previous drain (the record is then incomplete). Without a running worker
+        (it could not start, e.g. at interpreter shutdown) a seal is built on the calling
+        thread only when its estimated digest time fits the time left; otherwise it stays
+        pending and ``False`` is returned. Callers are the pipeline's ``flush``/``close``
+        and ``final``, never a recording path."""
         deadline = time.monotonic() + max(0.0, timeout_s)
         while True:
             with self._lock:
                 if not self._ready and not self._building:
-                    return True
+                    dropped, self._dropped_since_drain = self._dropped_since_drain, False
+                    return not dropped
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
                 worker = self._worker
                 if (worker is not None and worker.is_alive()) or not self._ready:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        return False
                     self._idle.wait(min(remaining, 0.05))  # the worker notifies each build
                     continue
+                cost = _INLINE_BASE_S + _INLINE_S_PER_ENTRY * len(self._ready[0][1].entries)
+                if cost > remaining:
+                    return False  # left pending (counted in seals_pending)
             self._build_next()
-            if time.monotonic() >= deadline:
-                with self._lock:
-                    return not self._ready and not self._building
 
     # -- reading ------------------------------------------------------------------------
 
@@ -324,8 +341,9 @@ class SegmentSeals:
         return [(sequence, _expand(entry)) for sequence, entry in items]
 
     def stats(self) -> dict[str, int]:
-        """Counters, ``open_segments`` (unsealed) and ``seals_pending`` (handed to the seal
-        worker, not yet queued as markers)."""
+        """Counters (``seals_dropped``: segments whose seal was never built, past the
+        pending bound), ``open_segments`` (unsealed) and ``seals_pending`` (handed to the
+        seal worker, not yet queued as markers)."""
         with self._lock:
             return {**self._stats, "open_segments": len(self._segments),
                     "seals_pending": len(self._ready) + self._building}  # fmt: skip
@@ -339,7 +357,16 @@ class SegmentSeals:
         if request is None or segment.outstanding > 0:
             return None
         del self._segments[segment_id]
+        positions = len(segment.entries)
+        if self._ready and (
+            len(self._ready) >= MAX_PENDING_SEALS
+            or self._ready_positions + positions > MAX_PENDING_SEAL_POSITIONS
+        ):  # fail open: the state goes, the missing seal is counted (never blocks)
+            self._stats["seals_dropped"] += 1
+            self._dropped_since_drain = True
+            return None
         self._ready.append((segment_id, segment, request))
+        self._ready_positions += positions
         self._idle.notify_all()
         if self._worker is not None:
             return None
@@ -380,6 +407,7 @@ class SegmentSeals:
                 if not self._ready:
                     return False
                 segment_id, segment, request = self._ready.popleft()
+                self._ready_positions -= len(segment.entries)
                 self._building += 1
             try:
                 self._emit(segment_id, segment, request)

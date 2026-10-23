@@ -41,7 +41,7 @@ from fabric._records import (
     records_max_object_bytes,
 )
 from fabric._records_keys_generated import RECORD_KEY_CHECKS
-from fabric._seal import record_digest
+from fabric._seal import SegmentSeals, record_digest
 from fabric._sequence import V2_TYPES, EmittedId, pseudonym_v2
 from fabric._version import __version__
 from fabric.wire._policy import CapturePolicy, ContentGate
@@ -522,8 +522,10 @@ def test_provider_path_emits_and_settles_the_record() -> None:
     assert first.status.status_code is StatusCode.ERROR
     assert second.status.status_code is StatusCode.OK
     assert second.context.span_id != 0xDEF  # the override held for one start_span only
-    handle.pipeline.seals.request_seal(SEG_A, last_sequence=1, manifest_digest=None,
-                                       terminal=True, resumable=False)  # fmt: skip
+    seals = handle.pipeline.seals
+    seals.request_seal(SEG_A, last_sequence=1, manifest_digest=None, terminal=True,
+                       resumable=False)  # fmt: skip
+    assert isinstance(seals, SegmentSeals) and seals.drain(10.0)  # built on the seal worker
     [marker] = handle.markers
     entries = []
     for span in (first, second):
