@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (spec 049 §7.1, §7.6): Fabric's diagnostics never carry an exception message or
+"""Spec 049 §7.1, §7.6: Fabric's diagnostics never carry an exception message or
 a traceback (they can hold payload text), and a failing log handler never changes what
 the application gets."""
 

@@ -1,6 +1,6 @@
 ---
 title: Node content delivery, agent durable spool and run scopes
-status: draft
+status: implemented
 qualification: NO_COVERAGE_CLAIM
 revision: 4
 last_updated: 2026-10-13
@@ -57,7 +57,7 @@ Decisions F1–F10:
 - **F10 Reconstruct** reads Node-written content from the same file/S3
   layout, including S3-compatible stores (endpoint, path-style) (§10).
 
-**2026-10-13 — revision 2 (Codex review).** Decisions F11–F13:
+**2026-10-13 — revision 2 (external review).** Decisions F11–F13:
 
 - **F11 One tenant per Node by default.** A content record names its own
   tenant and every authenticated agent reaches the same receiver, so a Node
@@ -77,7 +77,7 @@ Decisions F1–F10:
   leaves no record and cannot be detected; the verifier therefore claims
   only observed scopes.)
 
-**2026-10-13 — revision 3 (Sol review of `faac3d2`).** Decisions H1–H5:
+**2026-10-13 — revision 3 (external review of `faac3d2`).** Decisions H1–H5:
 
 - **H1 No redirects.** Every HTTP client Fabric constructs for delivery (the
   content client and the private OTLP trace exporter's session) never
@@ -108,7 +108,7 @@ Decisions F1–F10:
   `complete_for_observed_scopes`, because a scope that left no record cannot
   be claimed (§2 "Window", §6).
 
-**2026-10-13 — revision 4 (Sol re-check of `03484d5`).** Decisions J1–J4
+**2026-10-13 — revision 4 (external re-check of `03484d5`).** Decisions J1–J4
 and the capture/verifier fixes:
 
 - **J1 Pseudonymous labels by default.** Capture emits `fabric.source_id`
@@ -131,7 +131,7 @@ and the capture/verifier fixes:
   three tokens) is not a number and may appear once; a decimal `N.N` (1–2
   digits each) is one number (§7). `gpt-4o-123-45-6789` and
   `gpt-4o-919876543210` are hashed.
-- **J2b Digits in every token** (Sol re-check of fd84163). Within a
+- **J2b Digits in every token** (external re-check of fd84163). Within a
   `prefix*` match no token of any class (number, version token, word) may
   contain a run of more than 4 digits, except a token that is exactly an
   8-digit date; and the whole suffix holds at most 6 digits not counting
@@ -185,7 +185,7 @@ and the capture/verifier fixes:
    evicted from the private `BatchSpanProcessor`, or in memory when the
    process died, was an unexplained gap. With F2 an event is either on disk
    (and eventually delivered) or explicitly counted as a loss.
-5. *Run scopes close Codex findings* "false run closure from scope
+5. *Run scopes close review findings* "false run closure from scope
    collisions", "serial run closure" and "nested-run false completeness":
    047 paired markers by run id and parity, which a reused, serial or nested
    run id could satisfy falsely.
@@ -1069,7 +1069,7 @@ projected. `--run` values go through the same projection.
     `ENOSPC` the record stays pending and is exported once, then retired
     without a second export; an untruncated receipt is truncated by rescan;
     an expired receipt makes its writer's `flush()`/`close()` `False`; the
-    J2b vectors (Sol's `gpt-4o-v919876543210`,
+    J2b vectors (the reviewer's `gpt-4o-v919876543210`,
     `gpt-4o-a12345678901234567890`, `gpt-4o-919876543210b`) are hashed in
     actual capture telemetry and the report, in Python and Go.
 15. Revision 6 (`tests/test_wire_spool_accounting.py`): a failed receipt

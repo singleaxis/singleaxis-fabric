@@ -28,10 +28,9 @@ Report privately via either channel:
 1. **GitHub Security Advisory** — the preferred path; use the
    "Report a vulnerability" button on the project's Security tab. This
    creates a private, coordinated disclosure thread with the maintainers.
-2. **Email** — `security@singleaxis.ai`, PGP-encrypted if the finding
-   includes proof-of-concept or exploitable details. PGP key fingerprint
-   and public key will be published as a `.well-known/security.txt`
-   on `singleaxis.ai` in a future release.
+2. **Email** — `security@singleaxis.ai`. For a finding with
+   proof-of-concept or exploitable details, prefer the private GitHub
+   Security Advisory.
 
 Please include:
 
@@ -80,20 +79,31 @@ Out of scope:
 Fabric is architected around the following non-negotiable properties.
 Issues that undermine any of these will be treated as critical:
 
-1. **Protection before Node egress** — traces and logs routed through
-   Fabric Node pass its exact-key metadata allowlist before export. Raw
-   prompts, tool payloads and memory values are denied on that route.
-   Opt-in content capture uses separately authorized customer storage;
-   its privacy, encryption and access controls must be configured and
-   qualified independently. Arbitrary host exporters remain host-owned.
-2. **Metadata-only export** — caller-controlled free-form channels (log
-   bodies, severity text, span/link tracestate, status messages, event
-   names, resource entity refs) are cleared or normalized to a fixed
-   vocabulary; content survives only as SHA-256 hashes or governed
-   references. This guarantee holds on traces and logs pipelines only; the
-   image's `fabric-gate` entrypoint refuses to boot a config that defines
-   any other pipeline (bare-binary builds rely on
-   `qualify-distribution-config.sh`).
+1. **Protection before the record leaves the agent** — content (request
+   and response bodies, extracted parts) is protected in the agent process,
+   before it reaches the agent spool, by the privacy mode the customer's
+   capture policy gives each content role (a role the policy does not name
+   is omitted). In the production profile content capture stays disabled
+   without a capture policy, an id key and a spool key. Content travels to
+   the Fabric Node only on its separate content route (`otlp/content`
+   receiver, `logs/content` pipeline, `fabriccontent` exporter) and is
+   written to a file directory or S3-compatible store the customer
+   chooses. In the production profile it is encrypted at rest in the agent
+   spool (AES-256-GCM), in the Node's content queue (`fabricenvelope`) and
+   in the file-backend store; S3 delivery always requires server-side
+   encryption. Arbitrary host exporters remain host-owned.
+2. **Metadata-only telemetry** — traces and logs on the telemetry route
+   pass `fabricguard`'s exact-key metadata allowlist before export.
+   Caller-controlled free-form channels (log bodies, severity text,
+   span/link tracestate, status messages, event names, resource entity
+   refs) are cleared or normalized to a fixed vocabulary; content appears
+   there only as digests and references, never as bodies. The image's
+   `fabric-gate` entrypoint refuses to boot a config with a pipeline for
+   any other signal, a traces or logs pipeline without `fabricguard`, or a
+   content pipeline that runs anything other than `memory_limiter` and
+   `fabriccontent` (bare-binary builds rely on
+   `qualify-distribution-config.sh`). See
+   [privacy and security](docs/privacy-and-security.md).
 3. **Durable, authenticated delivery** — ingress is authenticated
    (bearer token in the compose overlay, mTLS in the production Helm
    profile); delivery uses a persistent fsync queue with
@@ -101,9 +111,11 @@ Issues that undermine any of these will be treated as critical:
    admission. Finite capacity, pre-admission loss and terminal rejection
    remain explicit failure boundaries; acceptance is not destination durability.
 4. **Passive non-interference** — recording does not authorize or alter
-   monitored actions. Instrumentation and synchronous privacy transforms
-   have overhead; exporter backpressure and shutdown must be kept off the
-   application critical path and measured in the target deployment.
+   monitored actions. Instrumentation has overhead. Wire-capture
+   protection and calls to a customer redaction service run on the
+   recorder's worker, never on the application's thread; exporter
+   backpressure and shutdown must be kept off the application critical
+   path and measured in the target deployment.
    Release artifacts contain no
    enforcement, judge, guardrail, policy, red-team, or management
    capability — enforced by artifact-content tests, not just defaults.
@@ -131,8 +143,8 @@ Image publication rebuilds from the CI-qualified source commit; it does not
 promote the exact previously scanned image bytes. Verify the published digest
 and repeat required artifact checks before relying on a deployment claim.
 
-Helm chart `.prov` provenance files are a roadmap item for a future
-minor release — cosign signing of the OCI artifact is the current path.
+Helm chart `.prov` provenance files are not published. The chart is
+published as an OCI artifact signed with cosign.
 
 Verification instructions are published alongside each release.
 

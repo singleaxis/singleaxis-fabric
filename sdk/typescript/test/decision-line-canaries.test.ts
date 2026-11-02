@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 privacy canaries for the decision line (spec 049 §7.6, spec 051
- * §8.3), in parity with Python `tests/test_decision_line_canaries.py`. A
- * canary is planted in every field the v0.8.1 fixes cover: idempotency keys,
+ * Privacy canaries for the decision line (spec 049 §7.6), in parity with Python `tests/test_decision_line_canaries.py`. A
+ * canary is planted in every field the decision-line privacy rules cover: idempotency keys,
  * document ids, MCP tool names, the checkpoint step name, tags, exception text
  * and low-entropy payloads (whose digests would reveal them), and (round-2
  * review F4) the caller's execution, workflow, decision, parent-decision,

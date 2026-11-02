@@ -442,7 +442,7 @@ def test_otlp_json_negative_int_values_are_read(tmp_path: Path) -> None:
 
 
 def test_report_names_no_input_paths(tmp_path: Path) -> None:
-    """Codex r2 #2: span file and store root paths (which can name a user's home directory)
+    """Review r2 #2: span file and store root paths (which can name a user's home directory)
     never reach the report; span files are identified by digest, format and count."""
     from fabric.reconstruct.__main__ import main  # noqa: PLC0415
 

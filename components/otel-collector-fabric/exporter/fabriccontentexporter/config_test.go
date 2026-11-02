@@ -148,10 +148,10 @@ func TestConfigValidation(t *testing.T) {
 		"bad sse":             s3(map[string]any{"sse": "aws:kms:dsse"}),
 		"kms without aws:kms": s3(map[string]any{"sse": "AES256", "kms_key_id": "alias/x"}),
 		"kms without sse":     s3(map[string]any{"sse": "", "kms_key_id": "alias/x"}),
-		// Codex r2 #3: S3 content is never written without requested SSE.
+		// Review r2 #3: S3 content is never written without requested SSE.
 		"s3 without sse": s3(map[string]any{"sse": ""}),
 		"s3 sse unset":   func() map[string]any { m := s3(nil); delete(m["s3"].(map[string]any), "sse"); return m }(),
-		// Codex r2 #1: a record names its tenant, so several tenants on one
+		// Review r2 #1: a record names its tenant, so several tenants on one
 		// Node need the explicit trust flag.
 		"two tenants":          with(file(), "allowed_tenants", []any{"tenant-a", "tenant-b"}),
 		"two tenants flag off": with(with(file(), "allowed_tenants", []any{"tenant-a", "tenant-b"}), "allow_multiple_tenants", false),

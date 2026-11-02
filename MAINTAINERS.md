@@ -7,8 +7,7 @@ Maintainer roles are defined in [`GOVERNANCE.md`](GOVERNANCE.md).
 
 ## Project lead
 
-SingleAxis Fabric is in **Phase 1a** (OSS pre-release). The project
-currently has a **single maintainer**: the AI5 Labs founder/operator.
+The project currently has a **single maintainer**: the AI5 Labs founder/operator.
 Per [`GOVERNANCE.md`](GOVERNANCE.md#technical-steering-committee-tsc),
 once there are 5+ maintainers from 2+ organisations, the project will
 transition to a Technical Steering Committee (TSC). Until then, the
@@ -20,7 +19,7 @@ project's technical direction is led by the AI5 Labs technical lead.
 
 ## Core maintainers
 
-Phase 1a has a single maintainer across all components. As additional
+The project has a single maintainer across all components. As additional
 maintainers are onboarded, this section will list them with their
 primary component ownership.
 
@@ -63,7 +62,7 @@ contributor ladder in [`CONTRIBUTING.md`](CONTRIBUTING.md). In short:
    component.
 3. Current maintainers decide by lazy consensus over 7 days.
 
-Growing the maintainer bench is a Phase 1a priority — reach out via the
+Growing the maintainer bench is a priority — reach out via the
 addresses below if you are interested.
 
 ## How to reach a maintainer privately

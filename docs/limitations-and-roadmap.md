@@ -10,7 +10,7 @@ not built.
 
 | Not captured | Why | What the record shows |
 |---|---|---|
-| TypeScript model calls at the wire | TypeScript wire capture (`undici`) is not built (spec 049 TS-1). TypeScript has only the explicit, app-reported APIs. | Nothing. Use the [explicit APIs](explicit-apis.md). |
+| TypeScript model calls at the wire | TypeScript wire capture (`undici`) is not built (planned). TypeScript has only the explicit, app-reported APIs. | Nothing. Use the [explicit APIs](explicit-apis.md). |
 | Python model calls through `requests` or `urllib3` | Only `httpx`, `httpx2` and `aiohttp` are teed. | An `uninstrumented_client` loss per matched call (method and URL only are read): the run is `partial`, and `WireHandle.status()` lists the client under `uninstrumented_clients`. |
 | Python model calls through `boto3` (including Bedrock), gRPC or raw sockets, an httpx client on a custom transport not wrapped in `fabric.wire.WireTransport` / `AsyncWireTransport`, or any client with `FABRIC_WIRE_AIOHTTP=0` (aiohttp) | Not teed. `boto3` sends through urllib3, but Bedrock hosts are not matched by default. | Nothing. The call is invisible, and a run can still be complete for the calls that were captured (see below). |
 | Endpoints other than chat completions, responses, completions, embeddings and messages | The endpoint matcher (`fabric/wire/_match.py`) recognises only those five APIs. Images, audio, moderations, rerank, fine-tuning, files, provider batch and realtime are not matched. | Nothing. |
@@ -46,7 +46,7 @@ reconstruct reported `partial`, `unverified` or no run; it never reported
 | **`with Pool()` loses calls.** `Pool.__exit__` sends SIGTERM to its workers; no exit hook runs, and a call a worker's capture thread had not yet written dies with it. | Under a sub-millisecond fake model, up to 364 of 408 calls were lost. Forked workers' losses are always visible (the parent records each worker's last sequence), so no run is `complete`; a spawned worker killed before its first record write leaves no trace. | Accounted, not lossless. End pools with `pool.close(); pool.join()`: fork and spawn pools then delivered every call and reconstructed complete, locally and through a Node. Making `with Pool()` lossless would need I/O on the call path or a SIGTERM handler, both excluded by spec 049 §7.1. |
 | **Capture throughput is bound by the GIL under heavy CPU contention.** One capture worker per process writes the spool and needs the GIL; CPU-bound application threads starve it. | With 16 CPU-bound threads about 530 exchanges/s were spooled and 15–19% shed; with 64, about 130/s and 27–34% shed. With I/O-bound threads (agents waiting on a model) or up to 4 CPU-bound threads, capture kept up (1,600–1,800/s, nothing shed). Every shed exchange is a `queue_full` loss and the run is `partial`. Numbers: [operations](operations/README.md#throughput). | Open. Going further needs work off the GIL (a native writer or a helper process). |
 | **A full disk can still lose loss records.** A process that opens the spool on an already-full volume cannot create the loss ledger, and losses recorded after the sender's last pass before a SIGKILL stay in memory. On copy-on-write filesystems (btrfs, ZFS) writing the ledger may need free blocks. | Those sequences are unexplained gaps: the run is `partial`, never complete. | Open. The `disk_full` path was exercised on a real volume on macOS and by fault injection; not on a real ext4 or xfs volume. |
-| **Host sensors have no production ingress.** | See below. | Planned for P4. |
+| **Host sensors have no production ingress.** | See below. | Planned, not built. |
 
 Fixed in v0.8 (found by the same matrix): fork pools on macOS crashing or
 hanging with capture on (a forked child now answers system proxy lookups
@@ -85,7 +85,7 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
   so it does not run on Windows. Local file mode on Windows has no spool
   and exports directly.
 - **Host sensors are local-profile only.** A production Node refuses
-  them; a production ingress for host sensors is planned for P4 (see
+  them; a production ingress for host sensors is planned but not built (see
   [host sensors](host-sensors.md)).
 - **Delivery is at least once.** Destinations must deduplicate. Fabric does
   not prove that a destination durably persisted a record.

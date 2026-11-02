@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (spec 049 §7.1 rule 1, Sol review item 5): recording never waits on storage.
+"""Spec 049 §7.1 rule 1: recording never waits on storage.
 
 - The legacy ``content_store`` is written by a background worker behind a bounded queue;
   on overflow the write is dropped and counted, never waited for.

@@ -25,7 +25,8 @@ release scope.
 
 ## Status
 
-Recorder v1 is being qualified for enterprise testing. Components that
+No customer production deployment has been qualified; see
+[limitations](../docs/limitations-and-roadmap.md). Components that
 previously shipped as sibling subcharts (guardrail sidecars, the third-party
 observability UI, the GitOps pull agent, the relay) are out of recorder
 scope and were removed; their history is in git.

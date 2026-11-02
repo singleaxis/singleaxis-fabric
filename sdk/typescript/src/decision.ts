@@ -703,7 +703,7 @@ export class Decision implements DecisionLike {
     span.setAttribute(ATTR_AGENT, identity.agentId);
     span.setAttribute(ATTR_PROFILE, identity.profile);
     span.setAttribute("gen_ai.operation.name", "invoke_agent");
-    // 049 §2.9 (round-2 review F4): the agent name is an agent identity, `agt-`.
+    // 049 §2.9: the agent name is an agent identity, `agt-`.
     const agentName = this.ids.id("agt", identity.agentName);
     if (agentName !== undefined) span.setAttribute("gen_ai.agent.name", agentName);
     span.setAttribute("gen_ai.agent.id", identity.agentId);
@@ -745,7 +745,7 @@ export class Decision implements DecisionLike {
       active?.executionRetryReason ?? identity.executionRetryReason;
     this.resolvedExecutionRetryPreviousAttemptId =
       active?.executionRetryPreviousAttemptId ?? identity.executionRetryPreviousAttemptId;
-    // 049 §2.9 (round-2 review F4): caller ids are their keyed `lbl-` form
+    // 049 §2.9: caller ids are their keyed `lbl-` form
     // when pseudonymous (a minted execution id stays as is).
     const workflow = this.opaque(workflowId);
     if (workflow !== undefined) {
@@ -787,7 +787,7 @@ export class Decision implements DecisionLike {
     const request = this.ids.opaque(ids.requestId);
     if (request !== undefined) span.setAttribute(ATTR_REQUEST, request);
     this.decisionIdValue = ids.decisionId ?? randomUuid();
-    // 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its
+    // 049 §2.9: a caller's decision id is caller data, its
     // keyed `lbl-` form when pseudonymous; a minted uuid4 stays as is.
     this.emittedDecisionId = this.ids.mintedOrOpaque(
       this.decisionIdValue,
@@ -969,10 +969,10 @@ export class Decision implements DecisionLike {
 
   /**
    * Whether `role`'s privacy mode retains the original payload (spec 049
-   * §7.5, spec 051 D-14): only then may a `*_hash` digest of it leave the
+   * §7.5): only then may a `*_hash` digest of it leave the
    * process. The governed roles of a configured content capture retain it;
    * nothing else does (a digest of a low-entropy payload reveals it). The
-   * clear identity mode keeps the v0.8.0 digests.
+   * clear identity mode keeps the digests releases before 0.8.0 emitted.
    */
   private retainsOriginal(role: string): boolean {
     if (this.ids.clear) return true;
@@ -1085,7 +1085,7 @@ export class Decision implements DecisionLike {
           ? this.ids.id("p", options.previousResponseId)
           : undefined,
       conversationCompacted: options.conversationCompacted ?? this.conversationCompacted,
-      // 049 §4.2 (round-2 review F4): prompt name and version are operator labels.
+      // 049 §4.2: prompt name and version are operator labels.
       promptName: options.promptName !== undefined ? this.ids.label(options.promptName) : undefined,
       promptVersion:
         options.promptVersion !== undefined ? this.ids.label(options.promptVersion) : undefined,
@@ -1215,7 +1215,7 @@ export class Decision implements DecisionLike {
       emitToolName: toolName !== undefined,
       // N12: a tool-call id is a provider id, its keyed `p-` form.
       callId: options.callId !== undefined ? this.ids.id("p", options.callId) : undefined,
-      // Round-2 review F4: the agent name is an agent identity (`agt-`); the
+      // The agent name is an agent identity (`agt-`); the
       // description is free text with no identity value, kept only in clear mode.
       agentName: this.ids.id("agt", options.agentName ?? this.identity.agentName),
       description: this.ids.clear ? options.description : undefined,
@@ -1243,7 +1243,7 @@ export class Decision implements DecisionLike {
   }
 
   /**
-   * The caller's step and attempt ids as emitted (round-2 review F4): their
+   * The caller's step and attempt ids as emitted: their
    * keyed `lbl-` form when pseudonymous, omitted without a key. A value that
    * is not a non-empty string passes through, so validation still rejects it.
    */
@@ -1801,7 +1801,7 @@ export class Decision implements DecisionLike {
       const attrs: Record<string, AttrValue> = {
         [ATTR_SCHEMA_VERSION]: SCHEMA_VERSION,
       };
-      // 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+      // 049 §4.2: skill name and version are operator labels.
       const skillName = this.ids.label(name);
       if (skillName !== undefined) attrs[A.ATTR_SKILL_NAME] = skillName;
       const skillVersion = this.ids.label(version);

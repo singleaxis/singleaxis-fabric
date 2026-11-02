@@ -95,7 +95,7 @@ scope are deliberately unusable until you set them.
   sent by the emitter are refused. In v0.8 host sensors are a
   local-profile feature: run them against a separate, local-profile Node.
   A production ingress for host sensors (its own source binding, source id
-  and epoch) is planned for phase P4; its design is not yet settled.
+  and epoch) is planned but not built; its design is not yet settled.
 - **Not in the Helm chart or Compose.** There are no chart values or Compose
   overlays for either sensor.
 - **No run identity.** Host records carry no `fabric.run.*` or source-epoch

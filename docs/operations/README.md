@@ -214,8 +214,8 @@ PY
 ## Upgrade and migration
 
 - Upgrade every process that shares a spool together.
-- Upgrading the Node to v0.8 requires the P0-A settings (source id, and
-  with content the content key); agents in node mode need a capture policy,
+- Upgrading the Node to v0.8 requires the source binding and content key
+  settings (source id, and with content the content key); agents in node mode need a capture policy,
   `FABRIC_WIRE_ID_KEY` and `FABRIC_WIRE_SPOOL_KEY`. See
   [deployment](../deployment.md#upgrading-from-earlier-releases).
 - Losing the Node content key loses queued and file-stored content. Rotate

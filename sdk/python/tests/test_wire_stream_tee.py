@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Streamed request bodies are teed, and retention keeps whole chunks only (Codex r1 #1, #3).
+"""Streamed request bodies are teed, and retention keeps whole chunks only (review r1 #1, #3).
 
 A request whose body is a stream (not already ``bytes``) used to pass through unretained and
 be marked truncated. The tee now wraps the request stream: the transport iterates the same

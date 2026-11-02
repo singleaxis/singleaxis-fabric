@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 round-2 review F4 (spec 049 §2.9, §4.2), in parity with Python
+ * Spec 049 §2.9, §4.2, in parity with Python
  * `tests/test_caller_ids_and_labels.py`: the caller's execution, workflow,
  * decision, attempt and step ids, the workflow, prompt and skill names and the
  * agent name are mapped in pseudonymous mode, like `fabric.request_id`.
@@ -128,7 +128,7 @@ function run(identityMode: "pseudonymous" | "clear", idKey?: string, minted = fa
     );
 }
 
-describe("caller ids and labels (round-2 review F4)", () => {
+describe("caller ids and labels", () => {
   it("maps them with a key", () => {
     vi.stubEnv("FABRIC_WIRE_LABELS", "");
     const values = run("pseudonymous", KEY);

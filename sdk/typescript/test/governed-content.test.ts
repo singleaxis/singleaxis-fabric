@@ -430,7 +430,7 @@ describe("ContentWriter", () => {
       durability: "inline",
     });
     const { descriptor, text } = descriptorFor({ m: 1 });
-    // v0.8.1 (spec 049 §7.1): queued and pending; delivered on the next turn.
+    // Spec 049 §7.1: queued and pending; delivered on the next turn.
     expect(writer.submit(descriptor, text)).toBe(ContentStatus.PENDING);
     const result = await writer.close();
     expect(result.stored).toBe(1);
@@ -581,7 +581,7 @@ describe("governed capture surfaces", () => {
     });
     const result = await fabric.flushContent(5);
     // retrieval query+results, memory write+read, side effect req+res,
-    // context file, interaction payload = 8 objects. v0.8.1: inline writes
+    // context file, interaction payload = 8 objects. Inline writes
     // settle after the decision closed, so the writer's `stored` counter
     // also holds the manifest at close plus one idempotent rewrite per
     // settlement (spec 032 §5) = 8 + 1 + 8.
@@ -616,7 +616,7 @@ describe("governed capture surfaces", () => {
       );
       manifest = d.contentManifest;
     });
-    // v0.8.1: inline writes settle off the caller's stack; read after flush.
+    // Inline writes settle off the caller's stack; read after flush.
     await fabric.flushContent(5);
     const manifestItems = manifest?.items.map((i) => ({ role: i.role, status: i.status }));
     const instructions = manifestItems?.find((i) => i.role === "model.request.instructions");
@@ -635,7 +635,7 @@ describe("governed capture surfaces", () => {
       });
       manifest = d.contentManifest;
     });
-    // v0.8.1: inline writes settle off the caller's stack; read after flush.
+    // Inline writes settle off the caller's stack; read after flush.
     await fabric.flushContent(5);
     const item = manifest?.items.find((i) => i.role === "model.output.messages");
     const itemStatus = item?.status;

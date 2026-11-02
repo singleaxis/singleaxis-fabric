@@ -356,11 +356,20 @@ is never overwritten. `<prefix>` defaults to `fabric/content/`.
   mode without `FABRIC_CAPTURE_POLICY`, `FABRIC_WIRE_ID_KEY` and
   `FABRIC_WIRE_SPOOL_KEY` stops recording content on upgrade (metadata
   continues; each span reports the missing item).
-- **The Node needs its P0-A settings.** Compose preflight and the Helm
+- **The Node needs its source binding and content key settings.** Compose preflight and the Helm
   render fail until `FABRIC_SOURCE_ID` /
   `receiver.workloadAuthentication.sourceId` (and, with content,
   `FABRIC_CONTENT_KEY_FILE` / `content.encryption.keySecret`) are set. The
   agents are never affected by a Node configuration error.
+- **Explicit-API caller ids are keyed pseudonyms by default.** Session,
+  user, request, decision and other caller-supplied ids on the explicit
+  APIs are emitted as keyed pseudonyms, and omitted without
+  `FABRIC_WIRE_ID_KEY` (see
+  [identifiers](explicit-apis.md#identifiers-pseudonym-v2)). For the
+  previous clear output, set `FABRIC_IDENTITY_MODE=clear` in the SDK and
+  `identity_mode: clear` on the Node's `fabricguard` processor (Helm
+  `fabric.guard.identityMode: clear`), and only with ids that are not
+  personal data.
 - **Customer redaction moved to a redaction service.** Module-reference
   and callable transformations (Python `Transformation(..., ref)`,
   `BytePrivacyPolicy.transform`, `ContentProtector` `redactors`) and

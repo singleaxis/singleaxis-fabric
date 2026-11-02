@@ -202,7 +202,10 @@ def _task(
 
 
 def test_writer_inline_stores_synchronously(tmp_path: Path) -> None:
-    writer = ContentWriter(_config(tmp_path))
+    # The 50 ms default can pass while a loaded runner starts the first worker;
+    # the write is then correctly pending. The cap keeps this about a write that
+    # lands within the call.
+    writer = ContentWriter(_config(tmp_path, inline_deadline_ms=5000))
     descriptor, content = _task(content="hello governed")
     status = writer.submit(descriptor, content)
     assert status == ContentStatus.STORED

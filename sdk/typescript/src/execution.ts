@@ -208,7 +208,7 @@ export function runExecution<T>(
   span.setAttribute(ATTR_TENANT, identity.tenantId);
   span.setAttribute(ATTR_AGENT, identity.agentId);
   span.setAttribute(ATTR_PROFILE, identity.profile);
-  // 049 §2.9 (round-2 review F4): caller ids are their keyed `lbl-` form when
+  // 049 §2.9: caller ids are their keyed `lbl-` form when
   // pseudonymous (omitted without a key); a minted execution id stays as is.
   const ids =
     identity.identityPolicy ??

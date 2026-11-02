@@ -831,7 +831,7 @@ def test_heartbeat_reveals_lost_tail_exchange(capture: Capture) -> None:
 def test_lost_final_call_after_a_heartbeat_without_markers_is_unverified(
     capture: Capture, kind: str | None
 ) -> None:
-    """Codex re-review report1 #4 / report3 #3.
+    """Re-review report1 #4 / report3 #3.
 
     Exchange 0 and a heartbeat at 0 arrive; call 1 is allocated and the
     process dies before anything else is exported. Without a final heartbeat
@@ -855,7 +855,7 @@ def test_lost_final_call_after_a_heartbeat_without_markers_is_unverified(
 
 
 def test_retried_run_start_never_closes_a_run(capture: Capture) -> None:
-    """Codex re-review report1 #5 / report3 #2.
+    """Re-review report1 #5 / report3 #2.
 
     The Node stored the run_start but its acknowledgement was lost, so the
     retry exported the same record again under a new span id. Counting spans
@@ -1260,7 +1260,7 @@ def test_store_objects_are_resolved_by_object_id_not_recorded_path(capture: Capt
 
 
 def test_report_never_names_a_store_location(capture: Capture) -> None:
-    """Codex re-review report2: the report carried each object's resolved path."""
+    """Re-review report2: the report carried each object's resolved path."""
     react_run(capture)
     document = capture.reconstruct()
     text = json.dumps(document)
@@ -1844,7 +1844,7 @@ def test_body_model_wins_over_the_span_value(capture: Capture) -> None:
         "gpt 4o",
         "-gpt",
         "m" * 129,
-        # Codex re-review report2 #1: a credential-bearing URL passed the old pattern.
+        # Re-review report2 #1: a credential-bearing URL passed the old pattern.
         "https://user:sk-live-secret@example.com/private",
         "a://b",
         "gpt-4o@vendor",
@@ -1909,7 +1909,7 @@ def test_report_model_follows_the_shared_exposure_vectors(
     "unlisted", ["accounts/fireworks/models/llama-v3p1", "m" * 128, "a:/b", "my-private-ft-model"]
 )
 def test_pattern_valid_but_unlisted_models_are_digests(capture: Capture, unlisted: str) -> None:
-    """Codex 'raw model exposure': a valid-looking name is not necessarily a public one."""
+    """Review 'raw model exposure': a valid-looking name is not necessarily a public one."""
     request, response = react_turns()[0]
     exchange = capture.exchange(request, {**response, "model": unlisted})
     exchange.span["attributes"]["gen_ai.response.model"] = unlisted
@@ -2041,7 +2041,7 @@ def test_provider_ids_with_a_trailing_newline_are_pseudonymised(capture: Capture
 def test_provider_ids_never_reach_the_report_but_still_correlate(
     capture: Capture, raw: str
 ) -> None:
-    """Codex re-review report2 #1: valid-looking personal ids passed through unchanged.
+    """Re-review report2 #1: valid-looking personal ids passed through unchanged.
 
     Response, previous-response and tool-call ids are pseudonymised the same
     way everywhere in the report, so stitching and tool-call matching still

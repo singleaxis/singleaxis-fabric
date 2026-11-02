@@ -190,7 +190,7 @@ content path, set `FABRIC_TENANT_ID` in `.env` to the tenant id your agents
 send (required; the content exporter writes no other tenant, and the shipped
 configs allow exactly one: run one Node per tenant).
 
-**Production profile (spec 049 P0-A).** The production configuration is a
+**Production profile (spec 049).** The production configuration is a
 production-profile Node. Every agent batch is bound to one tenant and one
 source, `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID`, and the ingress token is
 that source's single credential. `fabricguard` refuses a span batch that
@@ -215,7 +215,7 @@ encryption.
 
 The Compose stack refuses to start without these settings, and preflight
 and `fabric-gate` fail on them too. **Upgrading a Node configured before
-P0-A therefore stops at preflight until they are set; the agents are never
+v0.8 therefore stops at preflight until they are set; the agents are never
 affected.**
 
 Agents in node mode now need a capture policy (`FABRIC_CAPTURE_POLICY`) and

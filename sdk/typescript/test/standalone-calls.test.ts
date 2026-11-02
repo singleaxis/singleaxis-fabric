@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 (Sol review item 2): an exported `ToolCall` / `LlmCall` built
+ * An exported `ToolCall` / `LlmCall` built
  * outside a decision resolves the identity mode from the environment, as
  * Python's standalone helpers do, and keeps a payload digest only when the
  * policy keeps the original (the clear mode).

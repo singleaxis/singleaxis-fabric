@@ -8,785 +8,643 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### v0.8.1 release notes (draft)
+## [0.8.0] - 2026-11-02
 
-Fabric v0.8.1 fixes privacy and passivity defects in the v0.8 decision line:
-`Fabric.decision()` in both SDKs and the Python MCP wrapper. Spec 051 (P2)
-carries these fixes forward.
+Fabric 0.8.0 is the first stable release of the passive recorder for AI
+agents: CAPTURE -> PROTECT -> DELIVER. It adds zero-code capture of model
+calls at the LLM wire for Python (`fabric.wire`), protection of captured
+content on the agent before it reaches disk, governed content delivery through
+the Fabric Node to a customer-chosen directory or S3 store, and offline
+verification of a run with `python -m fabric.reconstruct`. The explicit
+(app-reported) line now defaults to privacy: caller identifiers are emitted as
+keyed pseudonyms or omitted, metadata-only recording carries no payload
+digests, and recording fails open instead of affecting the application.
 
-**Passivity (spec 049 §7.1, §7.2)**
+This release also contains everything in 0.8.0-rc.1 and 0.8.0-rc.2 (below).
+The documentation was rewritten to describe exactly this release
+([docs/README.md](docs/README.md)); superseded pages moved to `docs/archive/`
+and superseded specs to `specs/archive/`.
 
-- Concurrent use of one `Decision` no longer raises `ConcurrentDecisionUseError`
-  into the application (Python `_exclusive`, TypeScript `exclusive`; it could
-  even replace the application's own exception on `delegate()` exit). An
-  overlapping mutating call is recorded without serialisation (its events are
-  kept; the rolling counters may be off), counted in
-  `Decision.concurrent_use_count` / `concurrentUseCount` and reported as
-  `capture_health` status `partial`, with one class-only warning per process.
-  `FABRIC_RECORDS_STRICT=1` restores the old error, as a test mode only.
-- MCP `call_tool`: `traced_call_tool` and `InstrumentedMCPSession.call_tool`
-  never raise because of recording. A recording failure after `call_tool` has
-  returned no longer replaces the result (the application gets exactly the
-  object `call_tool` returned); a failure before it no longer skips the call;
-  an exception from `call_tool` is re-raised as the same object.
-  `InstrumentedMCPSession.call_tool` now passes further arguments
-  (`read_timeout_seconds`, `progress_callback` ...) to the wrapped session.
-- MCP inventory: `InstrumentedMCPSession` no longer makes requests of its own.
-  When the application calls `list_tools()`, `list_resources()` or
-  `list_prompts()` through the proxy, the call is forwarded unchanged and its
-  returned value is recorded as the `fabric.mcp.inventory` event.
-  **Deprecated:** `InstrumentedMCPSession.snapshot_inventory()` used to call
-  `list_tools()`, `list_resources()` and `list_prompts()` itself. It is now a
-  no-op that records nothing and returns the last inventory recorded from an
-  observed listing, or `None` (return type `MCPInventory | None`), with a
-  `DeprecationWarning`. It will be removed in a later minor release. To keep
-  recording inventories, call `list_tools()` (and the others) through the
-  proxy.
-- Recording fails open. A tracer, span or span processor that raises no
-  longer escapes a reporting API (`record_*`, `remember`, `checkpoint`,
-  `set_attribute` ...) and never replaces the application's own exception on
-  exit from a decision, `delegate`, LLM call, tool call or execution block:
-  that exception object always propagates unchanged. Caught failures are
-  counted and make `capture_health` `partial`. A delegation whose carrier
-  injection fails now proceeds with an empty carrier instead of raising.
-  Argument validation errors are unchanged.
-- Recording never waits on storage.
-  - Python legacy `content_store=`: writes go to a bounded background queue
-    (`Fabric(content_store_queue_items=1024)`); a full queue drops the write
-    and counts it (`Fabric.content_store_stats()`), and `flush_content()` /
-    `close()` wait for the queue. The event's `fabric.content.ref` is the
-    store's deterministic `ref_for()` of the content digest, stamped only when
-    the write was accepted; a custom store without `ref_for` gets no ref.
-  - Python governed `durability="inline"`: the write runs on a worker thread
-    and the caller waits at most `ContentCaptureConfig.inline_deadline_ms`
-    (default 50 ms); after that the item stays `pending` and the write settles
-    it in the background.
-  - Python governed `durability="inline"` runs on a small pool of daemon
-    threads: a forked child (prefork servers, `multiprocessing`) gets fresh
-    workers, and a slow or hung store never holds interpreter exit past
-    `close()`'s bound.
-  - **Behaviour change, TypeScript governed `durability: "inline"`:** the
-    write never runs on the caller's stack. The record call queues it and
-    returns at once with the item `pending`; the write runs on the next
-    event-loop turn and `flush()` / `close()` wait for it. The queued write
-    keeps the process alive until it has run, so a process that records and
-    exits without `flush()` still delivers the object and the manifest its
-    span references. The caller never
-    waits, but a synchronous store still occupies the event loop while its
-    write runs, as `process` durability does. `inline` therefore no longer
-    means "durable before the call returns": call `flush()` when you need
-    that. (Node runs a synchronous store call to completion, so a deadline on
-    the caller's stack cannot be enforced; Python can, and does.)
-- Diagnostics are class-only and never raise. Fabric's logs carry an
-  exception's class name, never its message or traceback (a store's error can
-  echo the payload), and no id, key or path; a log handler that raises drops
-  the diagnostic instead of reaching the application (this also fixes the MCP
-  wrapper's diagnostics).
-- TypeScript: an exported `ToolCall` or `LlmCall` built outside a decision now
-  resolves the identity mode from the environment, as Python's do, and keeps a
-  payload digest only in the clear mode.
+### Upgrading from 0.7.x
 
-**Privacy in the pseudonymous identity mode (spec 049 §2.9, §4.2, §7.5, §7.6)**
+- Read **Breaking** below and the 0.8.0-rc.1 and 0.8.0-rc.2 sections.
+- **Identifiers and labels.** The explicit line (`Fabric.decision()`,
+  `record_*`, the MCP wrapper and the explicit recorders) runs in the
+  `pseudonymous` identity mode by default: with `FABRIC_WIRE_ID_KEY` set,
+  caller ids, provider ids and operator labels are emitted as keyed
+  pseudonyms; without the key they are omitted. Host spans record only the
+  exception class, and payload digests are emitted only for roles whose
+  original is retained. To keep the 0.7.x output, set
+  `FABRIC_IDENTITY_MODE=clear` on every agent (Python
+  `FabricConfig(identity_mode="clear")`, TypeScript
+  `new Fabric({ identityMode: "clear" })`) **and** run the Fabric Node's
+  `fabricguard` with `identity_mode: clear` (Helm
+  `otel-collector.fabric.guard.identityMode: clear`) so it keeps admitting
+  the clear values. `FABRIC_WIRE_LABELS=clear` (Node `capture_labels: clear`)
+  keeps only operator labels clear. In either clear setting you guarantee the
+  values contain no personal data.
+- **Framework capture.** The CrewAI adapter and Python auto-instrumentation
+  (and the `openai`, `anthropic`, `bedrock`, `otel-langchain` and `cohere`
+  extras) are removed. Use wire capture (`FABRIC_WIRE_AUTOLOAD=1` or
+  `fabric.wire.install()`) and the explicit record APIs.
+- **Concurrent decisions.** Overlapping use of one `Decision` no longer raises
+  `ConcurrentDecisionUseError`; set `FABRIC_RECORDS_STRICT=1` in tests to get
+  the error back.
+- **MCP inventory.** `InstrumentedMCPSession.snapshot_inventory()` no longer
+  calls the server; call `list_tools()`, `list_resources()` and
+  `list_prompts()` through the proxy to record inventories.
+- **Fabric Node configuration.** The Node image validates its configuration at
+  start (`fabric-gate`), and the production profile needs a source binding
+  (and, with content, a content key). Custom collector configurations and
+  `.env` / Helm values must be updated as described below; the shipped
+  Compose and Helm configurations comply.
 
-These change the default output (`FABRIC_IDENTITY_MODE` unset or
-`pseudonymous`). **To keep the v0.8.0 output exactly, set
-`FABRIC_IDENTITY_MODE=clear`** (Python `FabricConfig(identity_mode="clear")`,
-TypeScript `new Fabric({ identityMode: "clear" })`), and configure the Fabric
-Node with `identity_mode: clear` so it keeps admitting the clear values.
+### Breaking
 
-- Caller data on decision-line keys is mapped. With `FABRIC_WIRE_ID_KEY`:
-  `gen_ai.memory.store.id` is `mst-` + 32 hex (pseudonym v2);
-  `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key` and each
-  `fabric.retrieval.source_document_ids` entry are `lbl-` + 32 hex (the keyed
-  generic label: these id types have no v2 prefix yet; spec 051 will assign
-  dedicated ones); `fabric.checkpoint.step_name`, the tool names in
-  `fabric.mcp.tools` (`lbl-<32 hex>:<12 hex>`), `fabric.tags` and
-  `fabric.memory.tags` are operator labels, `lbl-` + 32 hex, or as given with
-  `FABRIC_WIRE_LABELS=clear`. Without the key these values are omitted, like the
-  decision line's other caller ids. Values returned to the application
-  (records, `MCPInventory`) are unchanged.
-- Provider and caller correlation ids are mapped. With the key, provider ids
-  (`gen_ai.request.previous_response.id`, `gen_ai.response.id`,
-  `gen_ai.tool.call.id`, `fabric.tool.call.id`,
-  `fabric.side_effect.parent_tool_call_id`) are the keyed v2 `p-` form, the
-  same function as the wire line's provider ids; `fabric.request_id` and, in
-  Python, `gen_ai.data_source.id` (also in the retrieval span's name) are
-  `lbl-`. Without the key they are omitted.
-- Side effects: a caller-supplied `fabric.side_effect.side_effect_id` is `lbl-`
-  (a minted uuid4 stays as is), in the event and in
-  `fabric.replay.suppressed_side_effect_ids`; `target_system`, `operation` and
-  `fabric.side_effect_systems` are operator labels (`lbl-`, or as given with
-  `FABRIC_WIRE_LABELS=clear`).
-- Tool names on tool spans (the span name, `gen_ai.tool.name`,
-  `fabric.tool.name` and the duration metric) are operator labels; without a
-  key the span is named `execute_tool` and carries no tool name.
-- Execution, workflow, decision and step ids and names. With the key, a
-  caller's `fabric.execution_id`, `fabric.workflow_id`, `fabric.decision_id`,
-  `fabric.execution.attempt_id`, `fabric.execution.retry.previous_attempt_id`,
-  `fabric.step.id`, `fabric.step.attempt_id`,
-  `fabric.step.retry.previous_attempt_id` and `fabric.parent_decision_id` are
-  `lbl-`, as are `fabric.replay.execution_id` and `fabric.replay.decision_id`.
-  A decision or execution id the SDK minted (uuid4) is emitted as is; a
-  caller's is mapped whatever its shape. A parent decision id comes from a
-  carrier and is always treated as caller input. `gen_ai.workflow.name`,
-  `gen_ai.prompt.name` / `version` and `fabric.skill.name` / `version` are
-  operator labels (`lbl-`, or as given with `FABRIC_WIRE_LABELS=clear`; a
-  workflow name that falls back to the workflow id is the mapped id).
-  `gen_ai.agent.name` is the keyed v2 `agt-` form, also in the tool duration
-  metric. `gen_ai.tool.description` is free text and is recorded only in the
-  clear mode. Without the key these values are omitted. Propagation carriers
-  still carry the ids as given, so the application can read them back.
-- Host spans (`fabric.decision`, LLM and tool call spans, `fabric.execution`)
-  record only the exception class (`exception.type`): no `exception.message`,
-  no `exception.stacktrace`, and no message in the status description. The
-  TypeScript SDK already did this.
-- Payload digests follow the content role's privacy mode: `*_hash` keys that
-  digest an original payload (`fabric.retrieval.query_hash` and
-  `result_hashes`, `fabric.memory.content_hash`,
-  `fabric.side_effect.request_hash` and `result_hash`,
-  `fabric.interaction.payload_hash`, `fabric.tool.arguments_hash` and
-  `result_hash`) are emitted only when the role retains the original: a role
-  captured by governed content capture or, in Python without one, the memory
-  and side-effect payloads written to a legacy `content_store`. Caller-supplied
-  digests follow the same rule, and `fabric.interaction.metadata_hash` follows
-  the `interaction.payload` role. Metadata-only recording therefore carries no
-  payload digest: a digest of a low-entropy payload reveals it.
-- Fabric Node (`fabricguard`): under `identity_mode: pseudonymous` the
-  idempotency keys and document ids are admitted only as `lbl-` + 32 hex, and
-  the checkpoint step name and MCP tool entries only in their `lbl-` form
-  unless `capture_labels` or `identity_mode` is `clear`; a clear value from an
-  older agent is dropped. The same holds for the provider ids (`p-` + 32 hex
-  only, never the unkeyed 16-hex form), `fabric.request_id` and
-  `gen_ai.data_source.id` (`lbl-`), side-effect ids (uuid4 or `lbl-`), side
-  effect target systems and operations, and tool names (`lbl-` unless labels
-  are clear). Clear values from third-party instrumentation under these keys
-  are dropped by a pseudonymous Node too. The Node now admits the SDK's
-  `mst-` `gen_ai.memory.store.id` and `lbl-` lists under `fabric.tags` and
-  `fabric.memory.tags` (they were dropped before; other values still are), and
-  categorises a tool span without a tool name as a tool call. Execution and
-  decision ids (also in replay metadata) are admitted as a uuid4 or `lbl-`;
-  the workflow, attempt, step and parent decision ids as `lbl-`; workflow,
-  prompt and skill names and versions as `lbl-` unless labels are clear; the
-  agent name as `agt-`. A span, event or log record keeps its category when a
-  clear value under one of these keys is dropped (a third-party tool span
-  with a clear `gen_ai.tool.name` stays `fabric.tool_call`).
+- **Default identity output.** In the default `pseudonymous` identity mode
+  (`FABRIC_IDENTITY_MODE` unset), caller data on the decision line is no
+  longer exported in clear: ids, idempotency keys, document ids, provider and
+  request ids, tool, step, workflow, prompt and skill names, tags and side
+  effect targets are keyed pseudonyms with `FABRIC_WIRE_ID_KEY` and omitted
+  without it. Free-text tool descriptions are recorded only in the clear
+  mode. See **Changed** for the per-key mapping and the upgrade note above
+  for the clear mode.
+- **Exceptions on host spans.** `fabric.decision`, LLM and tool call spans and
+  `fabric.execution` record only `exception.type`: no `exception.message`, no
+  `exception.stacktrace` and no message in the status description (the
+  TypeScript SDK already did this). The clear identity mode keeps them.
+- **Payload digests.** `*_hash` keys that digest an original payload
+  (`fabric.retrieval.query_hash` and `result_hashes`,
+  `fabric.memory.content_hash`, `fabric.side_effect.request_hash` and
+  `result_hash`, `fabric.interaction.payload_hash` and `metadata_hash`,
+  `fabric.tool.arguments_hash` and `result_hash`) are emitted only when the
+  content role retains the original (governed content capture, or in Python
+  the memory and side-effect payloads written to a legacy `content_store`).
+  Caller-supplied digests follow the same rule. Metadata-only recording
+  therefore carries no payload digest: a digest of a low-entropy payload
+  reveals it.
+- **Removed framework capture.** The CrewAI adapter (`fabric.adapters.crewai`,
+  `attach_callbacks`) is removed; `fabricguard` no longer allowlists
+  `fabric.crewai.*` attributes, and `fabric.crewai.step` / `fabric.crewai.task`
+  events normalize to `fabric.activity`; telemetry from older SDKs that
+  still emits them loses those attributes. Python auto-instrumentation
+  (`fabric.auto_instrument`, `Fabric.enable_auto_instrumentation`) and the
+  `openai`, `anthropic`, `bedrock`, `otel-langchain` and `cohere` extras that
+  pulled the upstream `opentelemetry-instrumentation-*` hooks are removed.
+  `install_default_provider` is unchanged; the protected managed span export
+  is documented in `docs/python-span-export-protection.md`.
+- **Fabric Node production profile.** Node mode is the `production` profile
+  (spec 049; this supersedes spec 048 §1). An agent in node mode records
+  content only with a capture policy (`FABRIC_CAPTURE_POLICY`),
+  `FABRIC_WIRE_ID_KEY` and `FABRIC_WIRE_SPOOL_KEY`; otherwise content stops
+  and metadata continues, and every exchange span reports
+  `fabric.wire.store_reason`. The TypeScript `ByteEvidenceRecorder` applies
+  the same gate (`idKey` or `FABRIC_WIRE_ID_KEY`). The application never
+  fails; Compose preflight, Compose itself and the Helm render fail until the
+  Node is configured:
+  - Compose `.env` needs `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID` (the
+    agents' source id as it travels, `s-<32 hex>`), and with content
+    `FABRIC_CONTENT_KEY_FILE` (a Compose secret).
+  - Helm `shadow-production` pins `fabric.profile: production` and needs
+    `receiver.workloadAuthentication.sourceId`, and with content
+    `content.encryption.keySecret`.
+  - The bound source id is the keyed pseudonym of the agent's id:
+    `s-` + HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, agent `FABRIC_SOURCE_ID`). A
+    configured source id is pseudonymised even when it is already shaped
+    `s-` + 32 hex.
+- **`fabric-gate` at Node start.** The gate refuses a configuration unless:
+  - every `otlphttp` / `otlp_http` exporter lists the `noredirect` client
+    middleware (`middlewares: [{id: noredirect}]`), defined under
+    `extensions` and enabled in `service.extensions`, so a 3xx is never
+    followed;
+  - every `traces` and `logs` pipeline runs `fabricguard` itself, followed
+    only by `batch` / `memory_limiter` (a pipeline without processors, or one
+    relying on a sibling pipeline's guard, is refused);
+  - no `--feature-gates` flag is passed (a gate such as
+    `confmap.enableMergeAppendOption` changes how `--config` sources merge);
+  - receivers, protocols, `auth` / `tls` blocks, extensions, processors,
+    pipelines, pipeline component lists and `service.extensions` are literal
+    YAML (a whole-value `${env:...}` is refused; leaf fields may still use
+    `${env:...}`);
+  - a content receiver is at least as strict as the telemetry receivers: same
+    authenticator, TLS with no older `min_version` when they serve TLS, and
+    client certificates when they require mTLS;
+  - in the production profile, one single-token bearer authenticator is shared
+    by the OTLP and `otlp/content` receivers and no other receiver is
+    configured.
+- **Source authentication at the Node.** `fabricguard`'s
+  `evidence_source_binding` covers every trace span. A span, resource or scope
+  that names another source (`fabric.source_id`) or tenant
+  (`fabric.tenant_id`) is a forgery signal and the whole batch is refused with
+  `INVALID_ARGUMENT`; a span that names no source (such as an application
+  span batched with capture records in global-tracer mode) is dropped on its
+  own and counted. Admitted spans are stamped
+  `fabric.source.authenticated=true`; an agent-supplied value is stripped.
+- **Node identity validators.** Under `identity_mode: pseudonymous` (the
+  default), `fabricguard` admits `fabric.session_id` only as `sess-<32 hex>`,
+  `fabric.delegation.to_agent` only as `agt-<32 hex>`, and the decision-line
+  keys only in the forms listed under **Changed**; clear values from older
+  agents or third-party instrumentation under these keys are dropped.
 
-**Known limitations (deferred to spec 051, P2)**
+### Added
 
-- Dedicated v2 prefixes: idempotency keys, document ids, request ids, data
-  source ids and caller side-effect ids use the generic keyed `lbl-` until
-  spec 051 assigns `idk-`, `eff-` and others; the fabricguard rules for the
-  legacy decision-line keys are hand-written until they move into the
+- **Zero-code LLM wire capture for Python** (`fabric.wire`, spec 047). An
+  in-process tee of `httpx`, `httpx2` and `aiohttp` records the exact request
+  and response bytes of chat completions, responses, completions, embeddings
+  and messages calls. It covers the official `openai` (>= 3 on httpx2,
+  earlier on httpx) and `anthropic` (>= 1) SDKs, LiteLLM and DSPy (aiohttp
+  by default; also the OpenAI SDK's `DefaultAioHttpClient`) and frameworks
+  built on them. Enabled only by `FABRIC_WIRE_AUTOLOAD=1` with the autoload
+  directory on `PYTHONPATH`, or by `fabric.wire.install()`;
+  `FABRIC_WIRE_AIOHTTP=0` (`patch_aiohttp=False`) turns the aiohttp tee off.
+  Each call emits one digest-only span with sequenced loss records and
+  heartbeats; run scopes bracket exchanges with run markers.
+  - A POST to a matched model endpoint through `requests` or `urllib3` is
+    recorded as an `uninstrumented_client` loss (method and URL only are
+    read), so its run is `partial`. `WireHandle.status()` reports
+    `capture_points` and `uninstrumented_clients`;
+    `WireStats.uninstrumented_calls` counts the calls.
+  - `OTEL_SDK_DISABLED=true` disables capture with one warning and `status()`
+    reports `capture: disabled` (`otel_sdk_disabled`).
+  - The tracer provider is resolved at emit time: records are never sent
+    through a Fabric-protected (metadata-only) route; without a private
+    provider they are counted as `span_dropped` losses and `flush()` returns
+    `False`.
+  - The capture worker writes queued exchanges in batches (up to 64, one
+    spool file and one `fsync` per batch); the capture queue is bounded by
+    bytes (256 MiB) with a 16,384-entry cap.
+    `scripts/qualification/bench_wire_capture_throughput.py` measures
+    per-process throughput.
+- **Durable agent spool** (spec 048). Captured calls are fsync'd to an
+  AES-256-GCM encrypted spool (`FABRIC_WIRE_SPOOL_KEY`) and delivered at least
+  once, with replay after a restart. A preallocated loss ledger (`.ledger`,
+  260 KiB) keeps loss ranges and run markers when the volume fills (`ENOSPC`,
+  `EDQUOT`, reason `disk_full`), and the next drainer exports them
+  (`disk_full_drops`, `markers_held`, `ledger_recovered`). Local file mode
+  (`FABRIC_WIRE_STORE=file://…`) spools by default at
+  `<store>/.fabric-wire-spool/<tenant>` when an OTLP endpoint is set;
+  `FABRIC_WIRE_SPOOL_DIR=off` restores direct export. The wire spool refuses
+  a directory another spool owns.
+- **Multiprocessing.** Forked workers close capture on normal exit, the
+  draining process delivers every record pending at its close, and the parent
+  records each forked worker's last allocated sequence so a lost worker is
+  never reported complete. Pools ended with `close()` / `join()` deliver every
+  call. On macOS a forked child answers `getproxies` / `proxy_bypass` from a
+  snapshot taken at install instead of the system proxy lookup.
+- **Content delivery through the Fabric Node** (spec 048). Agents deliver
+  bodies to the Node's `fabriccontent` exporter, so only the Node writes to a
+  directory store or an S3 / S3-compatible store (SSE required) and the agent
+  holds no store credentials.
+  - `fabriccontent` is driven by the `contracts/coverage/v1` content-roles-v1
+    table (boundary, provenance, media type and cap per role;
+    `max_body_bytes` default 32 MiB, at most 63 MiB). It accepts `redacted` /
+    `tokenized`, descriptor-only `not_captured`, the privacy fields, split
+    skeletons and parts, `masked_only`, `original_plus_masked` review copies
+    and `protection_failed` withholding. It takes the same source binding as
+    `fabricguard`, drops other sources (`source_unbound`) and writes the
+    receiver-owned `source_authenticated: true` into every persisted
+    descriptor.
+  - The directory store writes objects and descriptors into hash-sharded
+    subdirectories (`evidence/<h0h1>/<h2h3>/`) and still reads flat objects;
+    upgrade `fabric.reconstruct` together with the Node.
+  - Content upload requires verified HTTPS, or plain HTTP to a loopback host
+    only.
+  - The Compose content path is the opt-in `docker-compose.content.yml`
+    (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
+    `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's
+    `content.requireServerSideEncryption`); the Compose production overlay is
+    otherwise telemetry only. The S3 evaluation overlay is
+    `docker-compose.s3-eval.yml` (`make up-s3-eval`, SeaweedFS), replacing
+    the MinIO overlay whose pinned image is no longer published.
+- **Encryption at rest on the Node.** The `fabricenvelope` storage extension
+  seals everything the persistent `fabric_content` queue holds (AES-256-GCM,
+  Node-side customer key from a file; delivery semantics unchanged), and
+  `fabriccontent` `file.encryption_key_file` seals every object and
+  descriptor of the directory backend. Both are required in production; S3
+  keeps mandatory SSE. The envelope format is pinned by
+  `contracts/content/v2/fixtures/node-envelope-v1.json`.
+- **Agent-side content protection before disk** (spec 049): seven privacy
+  modes per content role, keyed pseudonyms (v2), encryption at rest for the
+  agent spool, the production profile gate and typed extraction of large
+  inline media. An extracted `model.exchange.part` under
+  `original_plus_masked` gets a masked review copy, and a failed copy
+  withholds the part too.
+- **Customer-run redaction service** (`contracts/redaction/v1`). Fabric never
+  runs customer redaction code in-process, in a child process or in a worker.
+  `redact`, `masked_only` and the review copy of `original_plus_masked` are
+  performed by a service the customer runs beside the application:
+  `POST /v1/transform` with the raw bytes of one object and the
+  `X-Fabric-Transformation`, `X-Fabric-Transformation-Version`, `X-Fabric-Role`
+  and `X-Fabric-Mode` headers; `200` returns the masked bytes. `tokenize`,
+  `omit`, `metadata_only` and `retain_original` need no service.
+  - Configure `FABRIC_REDACTION_ENDPOINT` (or Python
+    `redaction=RedactionService(...)`, TypeScript `redaction: { endpoint }`):
+    only `unix:///absolute/path.sock`, `http://127.0.0.1:<port>` or
+    `http://[::1]:<port>`; anything else raises at `install()` or
+    construction. No proxy, no redirect (a `3xx` is a failure), no TLS on
+    loopback. An optional bearer token is read once from
+    `FABRIC_REDACTION_TOKEN_FILE` (a `0600` file owned by the process user)
+    and never logged.
+  - A transformation is only its identity: Python
+    `Transformation(id, version)`,
+    `BytePrivacyPolicy(mode, transformation_id, transformation_version)`,
+    `ContentProtector(policy, transformations={role: Transformation(...)},
+    redaction=...)`; TypeScript
+    `ContentProtector(policy, { transformations: { role: { id, version } },
+    redaction })`. Callables and module references raise at construction with
+    a pointer to `docs/wire-capture-deployment.md#redaction-service`.
+  - Calls run only on the recorder's worker (the capture worker thread in
+    Python, the recorder's asynchronous drain in Node.js), over one connection
+    pool per recorder that `close()` closes. Each call has a hard timeout
+    (`RedactionService.timeout_s` / `timeoutMs`, default 5 s, at most 300 s)
+    and at most two are in flight per recorder (`max_in_flight` /
+    `maxInFlight`); above the bound a call is withheld at once and counted.
+    Any failure (non-200 status, timeout, oversized answer, connection error,
+    saturation) withholds the object as `not_captured(protection_failed)`,
+    with no raw fallback and no error body or exception text kept. The
+    redacted result is re-checked against `payload_max_bytes` before
+    persistence. Counters: `redaction_stats()`, `WireStats.redaction_timeouts`,
+    `redaction_saturated` and `redaction_failures`;
+    `ContentProtector.needs_redaction_service` / `needsRedactionService`.
+  - Stored masked objects of a deployment-policy role carry
+    `transformation_id` and `transformation_version` in both SDKs.
+  - `examples/redaction-service/` is a stdlib-only reference service (Unix
+    socket or loopback HTTP, regex rules from JSON, Dockerfile, Compose and
+    Kubernetes sidecar snippets). It is an example, not a release artifact.
+- **Offline verification**: `python -m fabric.reconstruct` grades a run
+  `complete_for_declared_scope`, `complete_for_observed_scopes`, `partial` or
+  `unverified`. It validates exchange claims before marker classes and checks
+  each content descriptor against the full content-v2 contract and the
+  exchange identity. A response the transport did not finish (`closed_early`,
+  `abandoned`, `error`) whose bytes do not prove their own end (a whole JSON
+  document, or a stream ending at `[DONE]`, `message_stop`,
+  `response.completed` / `incomplete` / `failed` or a provider `error`) is a
+  `truncated` gap (`stream_closed_early` or `transport_incomplete`), so the
+  run is `partial`. Source gaps list up to 16 segments per stretch and
+  summarise longer stretches as one gap per reason (exact ranges stay in
+  `sources[].missing_sequences`), and the report is streamed, so heavy loss
+  does not exhaust memory.
+- **Explicit capture APIs.** Python and TypeScript `ByteEvidenceRecorder`;
+  Python `CallRecorder` and byte-boundary adapters; opt-in qualified-run
+  mode (spec 049 §2.13). The Python capture reference build provides
+  protected metadata export, the encrypted durable byte spool and
+  journal-backed metadata replay; `DeploymentPolicy` validates and digests
+  the capture configuration. Durable governed-content joins and fresh
+  authorized reconstruction validate policy, identity, representation, digest
+  and length.
+- **Governed content `durability` modes.** Python `durability="inline"` runs
+  the write on a small pool of daemon worker threads and the caller waits at
+  most `ContentCaptureConfig.inline_deadline_ms` (default 50 ms); after that
+  the item stays `pending` and the write settles in the background. A forked
+  child gets fresh workers, and a slow or hung store never holds interpreter
+  exit past `close()`'s bound. TypeScript `durability: "inline"` never runs
+  the write on the caller's stack: the record call queues it and returns at
+  once with the item `pending`, the write runs on the next event-loop turn,
+  and `flush()` / `close()` wait for it. The queued write keeps the process
+  alive until it has run, so a process that records and exits without
+  `flush()` still delivers the object and the manifest its span references.
+  A synchronous store still occupies the event loop while its write runs, so
+  `inline` does not mean "durable before the call returns" in TypeScript:
+  call `flush()` when you need that. TypeScript manifests that settle during
+  `close()` keep a valid rollup.
+- **Explicit-line identity** (spec 049 §2.9). With `FABRIC_WIRE_ID_KEY` set
+  in the `pseudonymous` mode, descriptors, `CallRecorder` snapshots, journals
+  and seals, `SyntheticCaptureSession` events and the call OTLP projection
+  carry the run id as `r-`, the source id as `s-`, the agent id as `agt-`
+  and any other caller id (operation, attempt, stream, parent call) as the
+  keyed operator label `lbl-`. Only ids the recorder minted or emitted map to
+  themselves, so parent joins hold. Provenance is carried by type, never
+  inferred from shape: emitted ids are typed values (Python
+  `fabric._sequence.EmittedId`, a `str` subclass; TypeScript `EmittedId`),
+  and a plain string of any shape, or an emitted id that lost its type, is
+  caller input and is pseudonymised. Continuity across processes comes from
+  passing the same clear id (the keyed mapping is deterministic per key).
+  New: `ByteEvidenceRecorder.emitted_source_id()` / `emittedSourceId()`,
+  `emitted_run_id()` / `emittedRunId()` and `emitted_ids`. A `CallRecorder` /
+  `SyntheticCaptureSession` source spool is keyed by the emitted run id (a
+  spool keyed by the clear run id is refused); qualified-run expectations,
+  independent feeds and attestations bind the emitted ids. In the production
+  profile without `FABRIC_WIRE_ID_KEY`, the explicit line emits no
+  caller-supplied id: a random per-process source id, a generated run id and
+  generated ids for the rest. The verifier shows an `s-` source id read from
+  a record as is.
+- **Coexistence of the two capture lines.** Inside an explicit model call
+  (`CallRecorder` or `ByteBoundaryAdapter` with `kind="model"`) the wire tee
+  defers ("explicit wins") for exactly as long as the call; a response that
+  outlives the call is wire-captured, and `fabric.bind_capture_context()`
+  keeps the call's scope on thread-pool workers. A Fabric-protected global
+  tracer provider never carries wire spans; `fabric-gate` and the Helm chart
+  refuse the content path on a dedicated evidence ingress.
+- **Fabric Node and deployment.** `fabric-gate`, Helm (`shadow-dev`,
+  `shadow-production`) and Compose (local and production profiles) for the
+  Node; the `profile: local|production` setting on `fabricguard` and
+  `fabriccontent`; auditd (with logfile cursor and recovery) and eBPF host
+  sensors (corroboration only, local profile only, not qualified for
+  production).
+- **Contracts.** capture/v1 1.2.0, content/v2 2.2.0, deployment-policy/v1
+  1.1.0 (`masked_only`, `original_plus_masked`), the new
+  `contracts/redaction/v1`, and the new loss reasons `uninstrumented_client`,
+  `disk_full` and `missing_spool_key`.
+- **Specification.** Spec 049 (draft): the four-layer capture coverage plan
+  (context, structure, content, decisions and effects), building on the
+  explicit evidence line (specs 035–046) and wire capture (specs 047/048).
+  Record-only; no evaluation or enforcement.
+
+### Changed
+
+- **Decision-line passivity** (`Fabric.decision()` in both SDKs and the Python
+  MCP wrapper, spec 049 §7.1, §7.2):
+  - Concurrent use of one `Decision` no longer raises
+    `ConcurrentDecisionUseError` into the application (it could even replace
+    the application's own exception on `delegate()` exit). An overlapping
+    mutating call is recorded without serialisation (its events are kept; the
+    rolling counters may be off), counted in `Decision.concurrent_use_count` /
+    `concurrentUseCount` and reported as `capture_health` status `partial`,
+    with one class-only warning per process. `FABRIC_RECORDS_STRICT=1`
+    restores the error, as a test mode only.
+  - MCP `traced_call_tool` and `InstrumentedMCPSession.call_tool` never raise
+    because of recording: a recording failure after `call_tool` returned no
+    longer replaces the result, a failure before it no longer skips the call,
+    and an exception from `call_tool` is re-raised as the same object.
+    `InstrumentedMCPSession.call_tool` passes further arguments
+    (`read_timeout_seconds`, `progress_callback` ...) to the wrapped session.
+  - `InstrumentedMCPSession` makes no requests of its own. When the
+    application calls `list_tools()`, `list_resources()` or `list_prompts()`
+    through the proxy, the call is forwarded unchanged and its returned value
+    is recorded as the `fabric.mcp.inventory` event. **Deprecated:**
+    `snapshot_inventory()` is now a no-op that records nothing and returns the
+    last inventory recorded from an observed listing, or `None` (return type
+    `MCPInventory | None`), with a `DeprecationWarning`. It will be removed in
+    a later minor release.
+  - Recording fails open. A tracer, span or span processor that raises no
+    longer escapes a reporting API (`record_*`, `remember`, `checkpoint`,
+    `set_attribute` ...) and never replaces the application's own exception
+    on exit from a decision, `delegate`, LLM call, tool call or execution
+    block: that exception object always propagates unchanged. Caught failures
+    are counted and make `capture_health` `partial`. A delegation whose
+    carrier injection fails proceeds with an empty carrier. Argument
+    validation errors are unchanged.
+  - Recording never waits on storage. Python legacy `content_store=` writes go
+    to a bounded background queue (`Fabric(content_store_queue_items=1024)`);
+    a full queue drops the write and counts it (`Fabric.content_store_stats()`),
+    and `flush_content()` / `close()` wait for the queue. The event's
+    `fabric.content.ref` is the store's deterministic `ref_for()` of the
+    content digest, stamped only when the write was accepted; a custom store
+    without `ref_for` gets no ref.
+  - Diagnostics are class-only and never raise: Fabric's logs carry an
+    exception's class name, never its message or traceback, and no id, key or
+    path; a log handler that raises drops the diagnostic instead of reaching
+    the application (this also covers the MCP wrapper).
+- **Decision-line privacy in the pseudonymous mode** (spec 049 §2.9, §4.2,
+  §7.5, §7.6). With `FABRIC_WIRE_ID_KEY`; without it these values are omitted.
+  Values returned to the application (records, `MCPInventory`) and
+  propagation carriers are unchanged.
+  - `gen_ai.memory.store.id` is `mst-` + 32 hex (pseudonym v2).
+    `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key` and
+    each `fabric.retrieval.source_document_ids` entry are `lbl-` + 32 hex.
+  - Operator labels are `lbl-` + 32 hex, or as given with
+    `FABRIC_WIRE_LABELS=clear`: `fabric.checkpoint.step_name`, the tool names
+    in `fabric.mcp.tools` (`lbl-<32 hex>:<12 hex>`), `fabric.tags`,
+    `fabric.memory.tags`, side-effect `target_system` and `operation`,
+    `fabric.side_effect_systems`, `gen_ai.workflow.name`,
+    `gen_ai.prompt.name` / `version` and `fabric.skill.name` / `version`.
+  - Tool names on tool spans (the span name, `gen_ai.tool.name`,
+    `fabric.tool.name` and the duration metric) are operator labels; without
+    a key the span is named `execute_tool` and carries no tool name.
+  - Provider ids (`gen_ai.request.previous_response.id`,
+    `gen_ai.response.id`, `gen_ai.tool.call.id`, `fabric.tool.call.id`,
+    `fabric.side_effect.parent_tool_call_id`) are the keyed v2 `p-` form, the
+    same function as the wire line's provider ids; `fabric.request_id` and, in
+    Python, `gen_ai.data_source.id` (also in the retrieval span's name) are
+    `lbl-`.
+  - A caller-supplied `fabric.side_effect.side_effect_id` is `lbl-` (a minted
+    uuid4 stays as is), in the event and in
+    `fabric.replay.suppressed_side_effect_ids`.
+  - A caller's `fabric.execution_id`, `fabric.workflow_id`,
+    `fabric.decision_id`, `fabric.execution.attempt_id`,
+    `fabric.execution.retry.previous_attempt_id`, `fabric.step.id`,
+    `fabric.step.attempt_id`, `fabric.step.retry.previous_attempt_id`,
+    `fabric.parent_decision_id`, `fabric.replay.execution_id` and
+    `fabric.replay.decision_id` are `lbl-`. A decision or execution id the
+    SDK minted (uuid4) is emitted as is; a parent decision id from a carrier
+    is always treated as caller input. A workflow name that falls back to the
+    workflow id is the mapped id. `gen_ai.agent.name` is the keyed v2 `agt-`
+    form, also in the tool duration metric.
+  - TypeScript: an exported `ToolCall` or `LlmCall` built outside a decision
+    resolves the identity mode from the environment, as Python's do, and
+    keeps a payload digest only in the clear mode.
+- **Fabric Node (`fabricguard`) admission of decision-line keys** under
+  `identity_mode: pseudonymous`: idempotency keys, document ids,
+  `fabric.request_id` and `gen_ai.data_source.id` only as `lbl-` + 32 hex;
+  provider ids only as `p-` + 32 hex (never the unkeyed 16-hex form);
+  side-effect ids as uuid4 or `lbl-`; execution and decision ids (also in
+  replay metadata) as uuid4 or `lbl-`; workflow, attempt, step and parent
+  decision ids as `lbl-`; the agent name as `agt-`; the checkpoint step name,
+  MCP tool entries, tool names, side-effect targets and operations, and
+  workflow, prompt and skill names and versions as `lbl-` unless
+  `capture_labels` or `identity_mode` is `clear`. The Node now admits the
+  SDK's `mst-` `gen_ai.memory.store.id` and `lbl-` lists under `fabric.tags`
+  and `fabric.memory.tags`, and categorises a tool span without a tool name
+  as a tool call. A span, event or log record keeps its category when a clear
+  value under one of these keys is dropped (a third-party tool span with a
+  clear `gen_ai.tool.name` stays `fabric.tool_call`).
+- **One source per production Node.** A production Node binds exactly one
+  agent source (one tenant, one `fabric.source_id`, one ingress token).
+  Agents with different source ids need one Node each; pods that should share
+  a Node must run with the same `FABRIC_SOURCE_ID`.
+- `fabricguard` recognises capture records by their marker keys only, so a
+  second guard pass leaves governed LLM spans unchanged.
+- Documented Python reference support and the narrower TypeScript capture
+  subset, including target-specific production qualification gates.
+- `examples/kind-quickstart/up.sh` installs `singleaxis-fabric[otlp]` and, for
+  a real model run, the `anthropic` client the demo agent imports; the README
+  and quickstart point at `examples/wire-capture`.
+
+### Removed
+
+- The CrewAI adapter, Python auto-instrumentation and the five
+  instrumentation extras (see **Breaking**). The Python SDK connector
+  manifest declares `framework_lifecycle` as `caller_reported`; the connector
+  capability manifests in `contracts/connect/v1/manifests` are the
+  machine-readable capability declaration.
+- The release policy and wheel qualifier treat the removed modules as
+  forbidden wheel/sdist members and the five removed extras as forbidden
+  extras. The same applies to modules that existed only on the development
+  branch and are not part of any release (`fabric.capture_capabilities`,
+  `fabric.coverage_manifest`, `fabric.enterprise`,
+  `fabric.enterprise_preflight`, `fabric.deployment_state`,
+  `fabric.capture_identity`, `fabric.capture_readback`,
+  `fabric.control_protocol`, `fabric.reference_receipts`,
+  `fabric.distributed_closure`). Policy rollout, approval, readback and
+  external control are outside the recorder; qualified-run mode verifies
+  delivery v1 receipt sets and attestations offline.
+- Legacy source trees that 0.8.0-rc release artifacts already excluded:
+  `components/fabric-relay`, `langfuse-bootstrap`, `nemo-sidecar`,
+  `presidio-sidecar`, `prompt-guard-sidecar`, `redteam-runner` and
+  `update-agent`, and the Collector's `fabricpolicyprocessor`,
+  `fabricredactprocessor` and `fabricsamplerprocessor`. The Node image no
+  longer includes the `zpages` extension.
+- The standalone example agent scripts under `examples/` (customer support,
+  coding, data analysis, RAG, multi-agent supervisor, human-in-the-loop,
+  guardrail-judge, content-governance and treasury demos) and the manual
+  `examples/e2e-smoke` script; `examples/harness-smoke` and the `e2e.yml`
+  fixture path cover the same check.
+- Documentation that described removed scope (assurance findings, decision
+  graph, compliance mappings, capture-control compatibility and enterprise
+  journeys).
+- Unused qualification tooling and historical records: laptop-stage rehearsal
+  scripts and the local "GO" simulation, the composed-collector journey, the
+  C8 network journey and capture-acceptance runner, and the historical
+  `qualification/` records and `docs/cloud-qualification-2026-10-02.md`. Only
+  the four `qualification/synthetic-slice/kind-production-*.yaml` files that
+  `e2e-production-profile.yml` installs remain.
+
+### Fixed
+
+- `fabricguard` refuses a batch that repeats a `fabric.*` key or a binding key
+  on any attribute map, so a duplicate key can no longer pose as the bound
+  source.
+- Confined Python local content adapter operations through no-follow
+  directory descriptors, including replacements after initialization, and
+  verified effective local directory permissions before persistence.
+- Rejected TypeScript content-store symlink redirection and nonregular
+  objects, using opened file descriptors for file-type decisions (a remaining
+  ancestor-replacement race is documented).
+- Bounded propagated context headers and rejected deeply nested malformed or
+  oversized inbound context.
+- Preserved truncated partial-output status, bounded terminal child lifetime
+  after pipe closure, and removed raw exception and identifier values from
+  SDK diagnostics.
+- Required exact protected readback and source-bound release evidence;
+  rejected incomplete artifact sets and cross-tenant nested descriptors.
+- Corrected TypeScript transcript serialization against the published
+  contract, handled partial local writes, and retained pending spool bytes
+  when recovered-manifest reconciliation fails. An empty transcript is no
+  longer published when no content observations exist; an empty string
+  remains an explicit content observation.
+- Aligned the draft evidence-event contract with closed governed-content
+  bindings and observed call lifecycle records.
+- Corrected Compose privacy and recovery checks and protocol TLS preflight,
+  isolated Helm test pods from runtime selectors, and preserved explicit zero
+  PodDisruptionBudget limits.
+- Corrected native audit netlink framing, rule structure and constants,
+  architecture filters, control response matching and bounded assembly loss
+  reporting.
+- Repaired the orchestration reconstruction root and synthetic audit
+  provenance.
+- Made TLS minimums explicit without reducing stronger platform defaults.
+- Made missing-instrumentor and asynchronous permission tests deterministic
+  without weakening their assertions.
+
+### Security
+
+- Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter (integer
+  overflow in `LoadCollectionSpecFromReader`).
+- License enforcement now covers the host emitter, the entrypoint gate, the
+  published optional dependencies and the patched Collector, requires the
+  durable governed modules in released Python artifacts, and rejects
+  malformed, restrictive, conflicting and missing license inventories; a
+  missing tool fails the scan.
+- The live qualification harness rejects S3 bucket names the run does not
+  own.
+
+### Known limitations
+
+See also [docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md).
+
+- No customer production deployment has been qualified. Local reference
+  evidence does not qualify a customer deployment or establish universal
+  performance claims. This release adds no client portal UI and no action
+  enforcement.
+- TypeScript wire capture is not built.
+- Wire capture covers `httpx`, `httpx2` and `aiohttp`. Calls through
+  `requests` and `urllib3` are not captured (they are reported as
+  `uninstrumented_client` losses); `boto3`, gRPC and other clients are not
+  captured or detected. Model endpoints other than chat completions,
+  responses, completions, embeddings and messages are not captured.
+- A `with Pool()` block (SIGTERM) can lose calls a worker had not yet
+  written; the loss is accounted (never `complete`). Use
+  `pool.close(); pool.join()`.
+- Capture is GIL-bound under heavy CPU contention: with about 16 or more
+  CPU-bound threads in one process it sheds load as `queue_full` losses
+  (every loss is recorded and the run reported `partial`).
+- A production Node binds exactly one agent source and does not accept host
+  sensors; both are planned for a later release.
+- The four-layer run structure, context, and decisions and effects of spec
+  049 are not built beyond what is listed above.
+- Python `process` and `spooled` governed-content durability: the background
+  content worker is not restarted in a forked child. Writes from the child
+  are reported pending or dropped, never as stored.
+- Dedicated v2 prefixes for idempotency keys, document ids, request ids, data
+  source ids and caller side-effect ids are planned for a later release; they
+  use the generic keyed `lbl-` until then. The `fabricguard` rules for the
+  older decision-line keys are hand-written until they move into the
   generated telemetry-key registry.
-- Digests without a content role are still emitted as given in every mode:
+- Digests without a content role are emitted as given in every mode:
   caller-supplied `fabric.checkpoint.state_hash`, `fabric.replay.state_hash`,
   `fabric.replay.tool_result_hashes`, `fabric.hook.input_hash` /
   `output_hash`, `fabric.file.content_hash` and `fabric.skill.manifest_hash`;
   the SDK's `fabric.interaction.target_hash` and `fabric.file.path_hash`
-  (unkeyed SHA-256 of the target or path, spec 049 N46); and the MCP
-  `fabric.mcp.tools_hash` and per-tool definition digests. A digest of a
-  low-entropy value reveals it: avoid putting personal data in these inputs.
+  (unkeyed SHA-256 of the target or path); and the MCP `fabric.mcp.tools_hash`
+  and per-tool definition digests. A digest of a low-entropy value reveals
+  it: avoid putting personal data in these inputs.
+- Retry reasons (`fabric.execution.retry.reason`, `fabric.step.retry.reason`),
+  `fabric.skill.source`, hook names and LLM span names (`{operation}
+  {model}`) are emitted as given.
 - Governed content keeps its decision bindings (session, request, tool-call,
   decision, execution, workflow and step ids) as given in descriptors and
   manifests: the content store is the customer's destination for content,
   whose bodies carry the same ids.
 - Cross-service lineage in the pseudonymous mode: a child's
-  `fabric.parent_decision_id` is the `lbl-` form of the carrier's decision id,
-  and an execution id passed on from a carrier is mapped as a caller id. When
-  the parent's id was minted (emitted as is), joining the two needs the id key.
-- Retry reasons (`fabric.execution.retry.reason`, `fabric.step.retry.reason`),
-  `fabric.skill.source` and hook names are still emitted as given.
-- The concurrent-use and fail-open counters are local
-  (`capture_health`, `concurrent_use_count`); no telemetry key reports them
-  yet.
-- LLM span names carry the request model (`{operation} {model}`) as given.
-- On a pseudonymous Node, fabricguard does not restrict the values of the
+  `fabric.parent_decision_id` is the `lbl-` form of the carrier's decision
+  id, and an execution id passed on from a carrier is mapped as a caller id.
+  When the parent's id was minted (emitted as is), joining the two needs the
+  id key.
+- The concurrent-use and fail-open counters (`capture_health`,
+  `concurrent_use_count`) are local; no telemetry key reports them yet.
+- On a pseudonymous Node, `fabricguard` does not restrict the values of the
   bare log envelope keys (`decision_id`, `request_id` and similar). No Fabric
   SDK emits them; a third-party log source that does is admitted as given.
-- Python `process` and `spooled` durability: the background content worker
-  is not restarted in a forked child. Writes from the child are reported
-  pending or dropped (never as stored); fixed in v0.8.2.
 
-### v0.8.0 release notes (draft)
-
-Fabric v0.8 is a passive recorder for AI agents: CAPTURE -> PROTECT ->
-DELIVER. Documentation was rewritten to describe exactly this release
-([docs/README.md](docs/README.md)); superseded pages moved to `docs/archive/`
-and superseded specs to `specs/archive/`.
-
-**Highlights**
-
-- Zero-code model-call capture for Python (`fabric.wire`): an in-process tee
-  of `httpx`, `httpx2` and `aiohttp` records the exact request and response
-  bytes of chat completions, responses, completions, embeddings and messages
-  calls, so it covers the official `openai` (>= 3 on httpx2, earlier on
-  httpx) and `anthropic` (>= 1) SDKs, LiteLLM and DSPy (aiohttp by default)
-  and frameworks built on them. A model call through `requests` or `urllib3`
-  is recorded as an `uninstrumented_client` loss, so its run is `partial`.
-  Enabled only by `FABRIC_WIRE_AUTOLOAD=1` with the autoload directory on
-  `PYTHONPATH`, or by `fabric.wire.install()`.
-- Durable agent spool: fsync'd, AES-256-GCM encrypted
-  (`FABRIC_WIRE_SPOOL_KEY`), batched writes, at-least-once delivery with
-  restart replay, a preallocated loss ledger so a full disk (`disk_full`)
-  never hides a loss; on by default in local file mode too. Multiprocessing
-  pools ended with `close()`/`join()` deliver every call.
-- Delivery through the Fabric Node to a file directory or an S3 /
-  S3-compatible store (SSE required); the agent holds no store credentials.
-- `python -m fabric.reconstruct`: offline verification with the verdicts
-  `complete_for_declared_scope`, `complete_for_observed_scopes`, `partial`
-  and `unverified`.
-- Spec 049 P0-A protection before disk: seven privacy modes per content
-  role, customer redaction by a customer-run redaction service
-  (`contracts/redaction/v1`, reference service in
-  `examples/redaction-service/`), the production profile gate,
-  keyed pseudonyms (v2), encryption at rest for the agent spool, the Node
-  content directory and the Node content queue, source authentication at
-  the Node, and typed extraction of large inline media.
-- Explicit app-reported APIs in Python and TypeScript (`decision()` /
-  `record_*`, `ByteEvidenceRecorder`); `CallRecorder` and byte-boundary
-  adapters in Python; opt-in qualified-run mode (spec 049 §2.13).
-- Fabric Node, `fabric-gate`, Helm chart (`shadow-dev`, `shadow-production`)
-  and Compose (local and production profiles); auditd and eBPF host sensors
-  (corroboration only, local profile only, not enterprise-qualified).
-
-**Breaking changes**
-
-- The CrewAI adapter (`fabric.adapters.crewai`) and the Python
-  auto-instrumentation (`fabric.auto_instrument` and the `openai`,
-  `anthropic`, `bedrock`, `otel-langchain` and `cohere` extras) are removed.
-  Use wire capture and the explicit APIs.
-- `fabric.enterprise` (`PolicyCaptureSession`),
-  `fabric.enterprise_preflight`, `fabric.deployment_state` (with
-  `fabric.capture_identity` and `fabric.capture_readback`) and
-  `fabric.control_protocol` are removed and are forbidden release members.
-- Customer redaction is performed by a redaction service you run
-  (`contracts/redaction/v1`), reached at `FABRIC_REDACTION_ENDPOINT` (a Unix
-  socket or a loopback port only) with an optional `0600`
-  `FABRIC_REDACTION_TOKEN_FILE`; each call has a 5 s timeout and at most two
-  are in flight per recorder, and any failure withholds the object
-  (`protection_failed`). A transformation is only its identity
-  (`Transformation(id, version)`; TypeScript `{ id, version }`). Callables,
-  module references (`Transformation.apply`/`ref`,
-  `BytePrivacyPolicy.transform`, `ContentProtector` `redactors`) and
-  TypeScript worker redactors (`{ module, exportName }`) raise or throw at
-  construction; `transform_env_allowlist`, `transform_timeout_s` and
-  `transformTimeoutMs` are removed; `WireStats.transform_*` counters are
-  `redaction_*`.
-- Node mode is the production profile: an agent records content only with
-  a capture policy (`FABRIC_CAPTURE_POLICY`), `FABRIC_WIRE_ID_KEY` and
-  `FABRIC_WIRE_SPOOL_KEY`; otherwise content stops and metadata continues.
-  The Node needs its source binding (`FABRIC_SOURCE_ID` /
-  `receiver.workloadAuthentication.sourceId`) and, with content, its content
-  key; Compose preflight and the Helm render fail until they are set.
-- With the id key set, the explicit line emits caller ids as keyed
-  pseudonyms (`r-`, `s-`, `agt-`, `lbl-`) by default; set
-  `FABRIC_IDENTITY_MODE=clear` for the previous output. Source spools are
-  keyed by the emitted run id. Caller-supplied ids are always
-  pseudonymised, whatever their shape; only ids a recorder returned (typed
-  `EmittedId` values) pass through. For continuity across processes, pass
-  the same clear id.
-- The wire line's `FABRIC_SOURCE_ID` is now pseudonymised even when it is
-  already `s-` + 32 hex; recompute the Node's bound source id
-  (`s-` + HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, agent `FABRIC_SOURCE_ID`)).
-- The Node's directory content store writes objects and descriptors into
-  hash-sharded subdirectories (`evidence/<h0h1>/<h2h3>/`); flat objects are
-  still read. Upgrade `fabric.reconstruct` with the Node.
-- `fabric-gate` refuses configurations it accepted before (no `noredirect`
-  middleware, a telemetry pipeline without `fabricguard`, `--feature-gates`,
-  non-literal pipeline blocks). The shipped Compose and Helm configurations
-  comply.
-
-**Known limitations** ([docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md))
-
-- TypeScript wire capture is not built.
-- Calls through `requests` and `urllib3` are not captured (they are
-  reported as `uninstrumented_client` losses); `boto3`, gRPC and other
-  clients are not captured or detected.
-- A `with Pool()` block (SIGTERM) can lose calls a worker had not yet
-  written; the loss is accounted (never `complete`). Use
-  `pool.close(); pool.join()`.
-- Capture is GIL-bound under heavy CPU contention: with 16 or more
-  CPU-bound threads in one process it sheds load (every loss is recorded
-  and reported `partial`).
-- A production Node binds exactly one agent source and does not accept
-  host sensors (planned for P4).
-- Model endpoints other than the five above are not captured.
-- The four-layer run structure, context, and decisions and effects (spec 049
-  P1-P5) are not built.
-- No customer production deployment has been qualified.
-
-### Changed (breaking, explicit-line identity)
-
-- With `FABRIC_WIRE_ID_KEY` set, in the default `pseudonymous` identity mode
-  (spec 049 §2.9), the explicit line no longer exports caller-supplied ids in clear:
-  descriptors (Python and TypeScript `ByteEvidenceRecorder`), `CallRecorder`
-  snapshots, journals and seals, `SyntheticCaptureSession` events and the call OTLP
-  projection carry the run id as `r-`, the source id as `s-` (function v1, keyed, as
-  the wire line), the agent id as `agt-` (v2) and any other caller id (operation,
-  attempt, stream, parent call) as the keyed operator label `lbl-`. Only ids the
-  recorder itself minted (call ids) or emitted map to themselves, so parent joins still
-  hold. Provenance is carried by type, never inferred from shape or looked up in a
-  bounded cache (Sol P0-A round 6 #1): emitted and minted ids are returned as typed
-  values (Python `fabric._sequence.EmittedId`, a `str` subclass; TypeScript
-  `EmittedId`, accepted wherever an id is), so a recorder's run and source ids never
-  change for its lifetime, whatever other traffic it sees. A plain string, even a
-  32-hex (UUID-shaped) or `r-`/`s-`/`lbl-`-shaped one, or an emitted id that lost its
-  type (serialised and read back), is caller input and is pseudonymised. New:
-  `ByteEvidenceRecorder.emitted_source_id()` (TypeScript `emittedSourceId()`). Continuity across
-  processes and hosts comes from passing the same clear id (the keyed mapping is
-  deterministic per key), never from passing an emitted value to another process.
-- The wire line's source id: a configured `source_id` / `FABRIC_SOURCE_ID` that is
-  already shaped like `s-` + 32 hex is now mapped through the keyed function like any
-  other label (previously exported unchanged), matching the explicit line. Wire run ids
-  were already always mapped (`fabric.wire.run("r-…")` emits the pseudonym of that
-  value); `FABRIC_WIRE_LABELS=clear` still exports source labels unchanged. The
-  verifier still shows an `s-` source id read from a record as is. `FABRIC_IDENTITY_MODE=clear` (or
-  `identity_mode="clear"` / `identityMode: "clear"`) keeps the previous output. A
-  `CallRecorder` / `SyntheticCaptureSession` source spool must now be keyed by the
-  emitted run id (`ByteEvidenceRecorder.emitted_run_id(run_id)`, TS `emittedRunId`); a
-  spool keyed by the clear run id is refused. Qualified-run expectations, independent
-  feeds and attestations bind the emitted ids. `ByteEvidenceRecorder.generated_ids` is
-  renamed `emitted_ids`.
-
-### Changed (breaking, customer redaction is a customer-run redaction service)
-
-- Fabric no longer runs customer redaction code in any form: no imported module, no
-  callable, no child process, no worker thread (spec 049 §7.7, owner decision
-  2026-10-21). `redact`, `masked_only` and the review copy of `original_plus_masked`
-  are performed by a **redaction service the customer runs** beside the
-  application, which the recorder calls: `POST /v1/transform` with the raw bytes of
-  one object and `X-Fabric-Transformation`, `X-Fabric-Transformation-Version`,
-  `X-Fabric-Role` and `X-Fabric-Mode` headers; `200` returns the masked bytes. The
-  new public contract `contracts/redaction/v1` (README plus the closed error-body
-  schema, pinned in the data-plane contract validator) defines it. `tokenize`,
-  `omit`, `metadata_only` and `retain_original` are unchanged and need no service.
-- Configure the endpoint with `FABRIC_REDACTION_ENDPOINT` (or `redaction=
-  RedactionService(...)` in Python, `redaction: { endpoint }` in TypeScript): only
-  `unix:///absolute/path.sock` or `http://127.0.0.1:<port>` / `http://[::1]:<port>`;
-  anything else raises at `install()` or construction. No proxy, no redirect (a
-  `3xx` is a failure), no TLS on loopback. An optional bearer token is read once
-  from `FABRIC_REDACTION_TOKEN_FILE` (a `0600` file owned by the process user) and
-  never logged.
-- A transformation is now only its identity: Python `Transformation(id, version)`,
-  `BytePrivacyPolicy(mode, transformation_id, transformation_version)`,
-  `ContentProtector(policy, transformations={role: Transformation(...)},
-  redaction=...)`; TypeScript `ContentProtector(policy, { transformations: { role:
-  { id, version } }, redaction })`. Module references
-  (`Transformation(..., ref)`, `BytePrivacyPolicy.transform`, `ContentProtector`
-  `redactors`, TypeScript `redactors: { role: { module } }`) and callables raise at
-  construction with a pointer to `docs/wire-capture-deployment.md#redaction-service`.
-  Deleted settings: `transform_env_allowlist` (wire, byte evidence, protector),
-  `timeout_s` on `Transformation`/`BytePrivacyPolicy`, `transform_timeout_s` and
-  TypeScript `transformTimeoutMs` (which throws); the timeout is now
-  `RedactionService.timeout_s` / `timeoutMs`. Removed modules: `fabric._transform_runner`,
-  `fabric._transform_child` (and its guardian process) and TypeScript
-  `redactor-worker` (`RedactorModule`). `ContentProtector.runs_customer_code` /
-  `runsCustomerCode` is renamed `needs_redaction_service` /
-  `needsRedactionService`; `ByteEvidenceRecorder.transform_stats()` is
-  `redaction_stats()`; `WireStats.transform_timeouts`, `transform_saturated` and
-  `transform_abandoned` are `redaction_timeouts`, `redaction_saturated` and
-  `redaction_failures`.
-- Calls are made only on the recorder's worker (the capture worker thread in
-  Python, the recorder's asynchronous drain in Node.js), never on the application's
-  thread or event loop, over one connection pool per recorder that `close()`
-  closes. Each call has a hard timeout (default 5 s, at most 300 s) and at most two
-  calls are in flight per recorder (`max_in_flight` / `maxInFlight`); above the
-  bound a call is withheld at once and counted. Any failure (a non-200 status, a
-  timeout, an answer above the object cap, a connection error, saturation)
-  withholds the object as `not_captured(protection_failed)`, with no raw fallback
-  and no error body or exception text kept. An oversized answer is now
-  `protection_failed`, not `protected_payload_too_large`. Stored masked objects of a
-  deployment-policy role now carry `transformation_id` and `transformation_version`
-  in both SDKs.
-- `examples/redaction-service/` adds a stdlib-only reference service (Unix socket
-  or loopback HTTP, regex rules from JSON, Dockerfile, Compose and Kubernetes
-  sidecar snippets). It is an example, not part of the recorder release artifacts.
-- The TypeScript `ByteEvidenceRecorder.close()` now also closes its protector's
-  service connections.
-
-### Changed (breaking, TypeScript explicit line)
-
-- The TypeScript `ByteEvidenceRecorder` applies the spec 049 §7.3 production gate:
-  a production-profile policy needs the id key (`idKey` or `FABRIC_WIRE_ID_KEY`);
-  without it content capture is disabled with the reason (Sol P0-A review #4).
+## [0.8.0-rc.2] - 2026-08-31
 
 ### Added
 
-- Added the Python capture reference build with protected metadata export,
-  encrypted durable byte spool, journal-backed metadata replay, authenticated
-  reference receipts/readback, and conservative distributed closure.
-- Added versioned capture configuration, health/canary/readback interfaces,
-  auditd logfile cursor/recovery, developer guidance, and a matched local
-  benchmark with published synthetic evidence.
-- Added durable governed-content joins and fresh authorized reconstruction
-  with policy, identity, representation, digest and length validation.
-- Added an actual Collector crash/restart/readback fixture and a C0–C10
-  acceptance runner that records executed checks and unsupported scenarios.
-- Added a controlled HTTP semantics fixture with physical retries, error
-  responses, independent effect readback and fresh authorized derivative reads.
-- Added opt-in LLM wire capture (spec 047, draft): an in-process httpx/httpx2
-  tee records the exact request/response bytes of each model call to a
-  customer store, emits one digest-only span per call with sequenced loss
-  records and heartbeats, and `python -m fabric.reconstruct` verifies a run
-  offline. No coverage claim beyond instrumented httpx/httpx2 calls.
-- Added Fabric Node content delivery and the agent durable spool (spec 048,
-  draft): agents spool capture events to disk and deliver bodies to the
-  Node's `fabriccontent` exporter, so only the Node writes to S3, an
-  S3-compatible store or a directory store; run scopes bracket exchanges with
-  run markers. The Compose S3 evaluation overlay is
-  `docker-compose.s3-eval.yml` (`make up-s3-eval`, SeaweedFS), replacing the
-  MinIO overlay whose pinned image is no longer published.
-- Added spec 049 (draft): the four-layer capture coverage plan (context,
-  structure, content, decisions and effects) with phases P0–P5, building on
-  both the explicit evidence line (035–046) and wire capture (047/048).
-  Record-only; no evaluation or enforcement.
-- Added coexistence rules for the two capture lines: inside an explicit model
-  call (`CallRecorder` or `ByteBoundaryAdapter` with `kind="model"`) the wire
-  tee defers (`fabric/_capture_scope.py`, "explicit wins"); a
-  Fabric-protected global tracer provider never carries wire spans; the wire
-  spool refuses a directory another spool owns; `fabric-gate` and the Helm
-  chart refuse the content path on a dedicated evidence ingress and require
-  content receivers to share the telemetry receivers' authenticator.
-
-- Added the `wire.py.aiohttp` capture point: `aiohttp.ClientSession` requests to
-  matched endpoints go through the same matching, PROTECT, spool and sender path as
-  httpx (LiteLLM's and DSPy's default transport, the OpenAI SDK's
-  `DefaultAioHttpClient`). On whenever wire capture is installed;
-  `FABRIC_WIRE_AIOHTTP=0` (or `patch_aiohttp=False`) turns it off.
-- Added the `uninstrumented_client` loss reason: a POST to a matched model
-  endpoint through `requests` or `urllib3` takes a source sequence and is recorded
-  as a `fabric.capture_loss` (method and URL only are read), so its run is
-  `partial`. `WireHandle.status()` reports `capture_points` and
-  `uninstrumented_clients`; `WireStats.uninstrumented_calls` counts the calls.
-- Added the `disk_full` loss reason and the spool's preallocated loss ledger
-  (`.ledger`, 260 KiB): when the spool's volume fills (`ENOSPC`, `EDQUOT`), the loss
-  ranges and run markers that cannot be spooled survive the process and are exported
-  by the next drainer (`disk_full_drops`, `markers_held`, `ledger_recovered`).
-- Local file mode (`FABRIC_WIRE_STORE=file://…`) spools by default at
-  `<store>/.fabric-wire-spool/<tenant>` when an OTLP endpoint is set, so captured
-  calls survive a crash or SIGKILL and the next process delivers them;
-  `FABRIC_WIRE_SPOOL_DIR=off` restores direct export.
-- Multiprocessing: forked workers close capture on normal exit, the draining process
-  delivers every record pending at its close, and the parent records each forked
-  worker's last allocated sequence so a lost worker is never reported complete.
-- `scripts/qualification/bench_wire_capture_throughput.py` measures per-process
-  capture throughput.
-
-### Security
-
-- Bumped `github.com/cilium/ebpf` to v0.22.0 in the host emitter
-  (integer overflow in `LoadCollectionSpecFromReader`).
-
-### Fixed
-
-- `fabric.reconstruct`: a response the transport did not finish (`closed_early`,
-  `abandoned`, `error`) whose bytes do not prove their own end (a whole JSON document,
-  or a stream ending at `[DONE]`, `message_stop`, `response.completed`/`incomplete`/
-  `failed` or a provider `error`) is a `truncated` gap (reason `stream_closed_early` or
-  `transport_incomplete`), so `partial`, streamed or not. Before, a cut stream was
-  graded complete and a cut JSON body `unverified` (D5).
-- The capture worker writes queued exchanges in batches (up to 64, one batch spool
-  file, one `fsync` per batch) and the capture queue is bounded by bytes (256 MiB)
-  with a 16,384-entry cap (was 256 entries): bursts that overflowed the queue are
-  captured, and per-process throughput under CPU-bound threads rose 8–9×; beyond
-  about 16 CPU-bound threads capture remains GIL-bound and sheds load as
-  `queue_full` losses.
-- macOS: a forked child of a capturing process no longer crashes or hangs in the
-  system proxy lookup; it answers `getproxies`/`proxy_bypass` from a snapshot taken
-  at install.
-- `OTEL_SDK_DISABLED=true` disables capture with one warning, and `status()` reports
-  `capture: disabled` (`otel_sdk_disabled`); before, capture stopped silently.
-- `fabric.reconstruct` computes source gaps once, lists up to 16 segments per stretch
-  and summarises longer stretches as one gap per reason (exact ranges stay in
-  `sources[].missing_sequences`), and streams the report: heavy loss no longer
-  exhausts memory. Verdicts and checks are unchanged.
-- `fabricguard` refuses a batch that repeats a `fabric.*` key or a binding key on any
-  attribute map, so a duplicate key can no longer pose as the bound source.
-- The Node's directory content store shards objects into two levels of hash-named
-  subdirectories; flat objects written earlier are still read and checked for replay
-  and conflict.
-
-- An extracted `model.exchange.part` under `original_plus_masked` gets a masked
-  review copy, and a failed copy withholds the part too (Sol P0-A round 2 #1).
-- In the production profile without `FABRIC_WIRE_ID_KEY`, the explicit line
-  (Python and TypeScript `ByteEvidenceRecorder`, Python `CallRecorder` and its OTLP
-  projection) emits no caller-supplied id: a random per-process source id, the
-  generated run fallback and generated ids for the rest (spec 049 §2.9 rule 5;
-  round 2 #3).
-- Deferred redaction rechecks the recorder's `payload_max_bytes` before persistence
-  in both SDKs (round 2 #4).
-- Confined Python local content adapter operations through no-follow directory
-  descriptors, including replacements after initialization.
-- Rejected TypeScript content-store symlink redirection and nonregular objects,
-  while documenting its remaining ancestor-replacement race.
-- Bounded propagated context headers and rejected deeply nested malformed input.
-- Preserved truncated partial-output status, bounded terminal child lifetime
-  after pipe closure, and removed raw exception/identifier values from SDK
-  diagnostics.
-- Required exact protected readback and successful source-bound release evidence;
-  rejected incomplete artifact sets and cross-tenant nested descriptors.
-- Required durable governed modules in released Python artifacts and included
-  the Fabric gate in local license inventories; missing tools now fail the scan.
-- Aligned the draft evidence-event contract with closed governed-content
-  bindings and observed call lifecycle records.
-- Corrected Compose privacy/recovery checks and protocol TLS preflight, isolated
-  Helm test pods from runtime selectors, and preserved explicit zero PDB limits.
-- Corrected TypeScript transcript serialization against the published contract,
-  rejected oversized inbound context, handled partial local writes, and retained
-  pending spool bytes when recovered-manifest reconciliation fails.
-- Omitted empty transcript publication when no content observations exist;
-  an empty string remains an explicit content observation.
-- Corrected native audit netlink framing, rule structure/constants, architecture
-  filters, control response matching and bounded assembly loss reporting.
-- Repaired the orchestration reconstruction root and synthetic audit provenance.
-- Included host-emitter and entrypoint-gate inventories in license enforcement.
-- Made missing-instrumentor and asynchronous permission tests deterministic
-  without weakening their assertions.
-- Verified effective local directory permissions before persistence and made
-  TLS minimums explicit without reducing stronger platform defaults.
-- Rejected malformed, restrictive, conflicting and missing license inventories;
-  expanded scans to published optional dependencies and the patched Collector.
-- Used opened file descriptors for TypeScript file-type decisions and rejected
-  unowned S3 bucket names in the live qualification harness.
+- Added an isolated end-to-end shadow workload example that uses the public
+  Python SDK to record a synthetic healthcare-scenario agent execution
+  containing model, retrieval, tool, held side-effect, and checkpoint
+  activity.
+- Added retained CI evidence for causal reconstruction, metadata-only export,
+  destination outage, persistent queue recovery, and Collector recreation.
 
 ### Changed
 
-- **Release note and migration: spec 049 P0-A on the Fabric Node.** This
-  supersedes spec 048 §1. Node mode is the `production` profile.
-  - **Agents.** An agent in node mode records content only with a capture
-    policy (`FABRIC_CAPTURE_POLICY`) and `FABRIC_WIRE_ID_KEY`. Without them,
-    content capture stops on upgrade, metadata continues, and every exchange
-    span reports `fabric.wire.store_reason`.
-  - **Node preflight and render fail; the application never does.** Compose
-    preflight, Compose itself and the Helm render fail until the Node has
-    its P0-A settings, and they state this supersession.
-  - **Source authentication (§7.9).** `fabricguard`'s
-    `evidence_source_binding` now covers every trace span: exchanges, loss
-    records, heartbeats, markers and manifests. A span, resource or scope
-    that names another source (`fabric.source_id`) or tenant
-    (`fabric.tenant_id`) is a forgery signal: the whole batch is refused
-    with `INVALID_ARGUMENT`. A span that names no source at all, such as an
-    application span batched with capture records in global-tracer mode, is
-    dropped on its own, never stamped and counted; the rest of the batch
-    goes through. Admitted spans are stamped
-    `fabric.source.authenticated=true`; an agent's value is stripped.
-    `fabriccontent` takes the same `source_binding`, drops other sources
-    (`source_unbound`) and writes the receiver-owned
-    `source_authenticated: true` into every persisted descriptor.
-  - **Production profile (§7.3).** A new `profile: local|production` on
-    both components. Production requires the binding, and `fabric-gate`
-    enforces it on the effective configuration: one single-token bearer
-    authenticator shared by the OTLP and `otlp/content` receivers, and no
-    other receiver.
-  - **Encryption at rest (§7.8).** The new `fabricenvelope` storage
-    extension seals everything the persistent `fabric_content` queue holds
-    (AES-256-GCM, Node-side customer key from a file; delivery semantics
-    unchanged). `fabriccontent` `file.encryption_key_file` seals every
-    object and descriptor of the directory backend. Both are required in
-    production; S3 keeps mandatory SSE. The Node envelope is pinned by
-    `contracts/content/v2/fixtures/node-envelope-v1.json`.
-  - **Role table (§4.3).** `fabriccontent` is driven by
-    `contracts/coverage/v1` content-roles-v1: every role, with its
-    boundary, provenance, media type and cap (`max_body_bytes`, default
-    32 MiB, at most 63 MiB). It now accepts `redacted`/`tokenized`,
-    descriptor-only `not_captured`, the privacy fields, split
-    skeletons/parts, `masked_only`, `original_plus_masked` review copies and
-    `protection_failed` withholding.
-  - **Identity validators (§4.2, C0A-4).** `fabric.session_id` is admitted
-    only as `sess-<32 hex>` unless the Node runs `identity_mode: clear`;
-    `fabric.delegation.to_agent` only as `agt-<32 hex>`.
-  - **Compose.** `.env` needs `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID`
-    (the agents' source id as it travels, `s-<32 hex>`). With content it
-    also needs `FABRIC_CONTENT_KEY_FILE` (a Compose secret).
-  - **Helm.** `shadow-production` pins `fabric.profile: production` and
-    needs `receiver.workloadAuthentication.sourceId`. With content it also
-    needs `content.encryption.keySecret`.
-  - **Contracts.** capture/v1 1.2.0, content/v2 2.2.0, deployment-policy/v1
-    1.1.0 (`masked_only`, `original_plus_masked`), and the new reason
-    `missing_spool_key`.
-  - **Limit: one source per production Node.** A production Node binds
-    exactly one agent source (one tenant, one `fabric.source_id`, one
-    ingress token). Agents with different source ids need one Node each; a
-    shared Node, such as one DaemonSet Node serving many pods that each run
-    as their own source, cannot be a production Node in P0-A. Pods that
-    should share a Node must run with the same `FABRIC_SOURCE_ID`.
-- **Migration: `fabric-gate` tightenings.** Existing collector configurations
-  that the gate accepted before may now be refused at container start; the
-  shipped Compose, Helm and example configurations already comply:
-  - every `otlphttp`/`otlp_http` exporter must list the `noredirect` client
-    middleware (`middlewares: [{id: noredirect}]`), defined under
-    `extensions` and enabled in `service.extensions`, so a 3xx is never
-    followed (spec 048 J4);
-  - every `traces` and `logs` pipeline must run `fabricguard` itself,
-    followed only by `batch`/`memory_limiter`; a pipeline without
-    processors, or one relying on a sibling pipeline's guard, is refused;
-  - `--feature-gates` is refused (a gate such as
-    `confmap.enableMergeAppendOption` changes how `--config` sources merge);
-  - receivers, protocols, `auth`/`tls` blocks, extensions, processors,
-    pipelines, pipeline component lists and `service.extensions` must be
-    literal YAML (a whole-value `${env:...}` is refused; leaf fields may
-    still use `${env:...}`);
-  - a content receiver must be at least as strict as the telemetry
-    receivers: same authenticator, TLS (no older `min_version`) when they
-    serve TLS, client certificates when they require mTLS.
-  Main's gate tests were updated for the first two rules only (they now add
-  the middleware and a guard to fixtures that lacked them).
-- The Compose production overlay is telemetry only (superseded in part by
-  spec 049 P0-A above: it now needs the source binding) and once started with an
-  existing `.env`; the content path is the opt-in
-  `docker-compose.content.yml` (`FABRIC_CONTENT_BACKEND=s3`, or `file` with
-  `FABRIC_CONTENT_REQUIRE_SSE=false`, mirroring Helm's
-  `content.requireServerSideEncryption`).
-- Wire capture resolves its tracer provider at emit time: records are never
-  sent through a Fabric-protected (metadata-only) route; without a private
-  provider they are counted `span_dropped` losses and `flush()` is `False`.
-- Explicit-wins deferral lasts exactly as long as the explicit call; a
-  response that outlives the call is wire-captured, and
-  `fabric.bind_capture_context()` keeps the call's scope on thread-pool
-  workers.
-- Node content upload requires verified HTTPS, or plain HTTP to a loopback
-  host only.
-- `fabricguard` recognises capture records by their marker keys only, so a
-  second guard pass leaves governed LLM spans unchanged.
-- `fabric.reconstruct` validates exchange claims before marker classes and
-  checks each content descriptor against the full content-v2 contract and
-  the exchange identity.
-- Documented Python reference support and the narrower TypeScript capture
-  subset, including target-specific production qualification gates.
-- Pinned the optional OpenAI instrumentation dependency combination verified
-  by the real-SDK loopback benchmark.
-- Enabled existing CI workflows for the exact #164 parent branch so the
-  stacked capture draft receives validation.
+- Release artifacts now contain only the passive recorder product:
+  `CAPTURE -> PROTECT -> DELIVER`. Legacy assurance, management, judge,
+  red-team, runtime-control, and regulatory surfaces are excluded by
+  artifact-content tests.
+- The Collector allowlist and both SDK vocabularies now preserve compatible
+  causal reconstruction fields while continuing to exclude raw content by
+  default.
 
-### Removed
+### Fixed
 
-- **Breaking: removed the CrewAI adapter** (`fabric.adapters.crewai`,
-  `attach_callbacks`). Fabric captures at the LLM wire and through
-  app-reported records, not through framework adapters. Callers that used it
-  should drop the callbacks; `fabric.wire` (zero-code model capture) and the
-  `Decision` record APIs (`record_hook`, `tool_call`, `llm_call`) cover the
-  same activity without framework coupling. The Fabric Node guard
-  (`fabricguard`) no longer allowlists the `fabric.crewai.*` attributes, and
-  `fabric.crewai.step` / `fabric.crewai.task` event names now normalize to
-  `fabric.activity`; telemetry from older SDKs that still emit them loses
-  those attributes. The module is now a forbidden wheel/sdist member in the
-  release policy and wheel qualifier, and the Python SDK connector manifest
-  declares `framework_lifecycle` as `caller_reported`.
-- **Breaking: removed `fabric.capture_capabilities`** (`sdk_capabilities`).
-  The static `fabric.capture-sdk-capabilities/v1` matrix duplicated the
-  connector capability manifests in `contracts/connect/v1/manifests`, which
-  stay the machine-readable declaration. The module is now a forbidden
-  wheel/sdist member.
-- **Breaking: removed `fabric.enterprise` (`PolicyCaptureSession`) and
-  `fabric.enterprise_preflight`** (including `python -m
-  fabric.enterprise_preflight`). The session was a thin wrapper; compose
-  `ByteEvidenceRecorder` (with `ByteEvidenceConfig(deployment_policy=...,
-  content_protector=ContentProtector(...))`) and `CallRecorder` directly.
-  Governed redaction before persistence is unchanged. The preflight's
-  offline checks and fixture canary are gone without a replacement; the
-  session's early refusal of a store bound to a different deployment policy
-  is gone too (`GovernedLocalContentStore` still rejects a write whose
-  descriptor carries another policy binding). Both modules are now forbidden
-  wheel/sdist members.
-- **Breaking: removed the local capture-policy registry and principal
-  binding** (`fabric.deployment_state`: `CapturePolicyRegistry`,
-  `validate_policy`, `RevisionConflictError`; `fabric.capture_identity`:
-  `IdentityBoundAuthority`, `PrincipalBinding`; `fabric.capture_readback`:
-  `CaptureReadback`, `assess_readback`). Policy rollout, approval and
-  readback are management scope, outside the recorder. `DeploymentPolicy`
-  (`fabric.deployment_policy`) still validates and digests the capture
-  configuration. The three modules are now forbidden wheel/sdist members.
-- **Breaking: removed `fabric.control_protocol`** (`FinalBoundaryRequest`,
-  `ExternalControlReply`, `BoundaryOutcomeObservation`,
-  `ExternalFinalBoundaryController`, `correlate_external_exchange`). The
-  contract existed for a future external Control Runtime and was never
-  invoked by the recorder; AGENTS.md keeps any Control Runtime outside the
-  default recorder. `fabric.control_evidence.ControlObservation` (metadata
-  about an external control decision) stays. The module is now a forbidden
-  wheel/sdist member, and `docs/capture-control-compatibility.md` is removed.
-- **Breaking: removed `fabric.reference_receipts`** (`ReferenceReceiptService`,
-  `ReferenceReceiptClient`, `ReferenceByteStore` and `python -m
-  fabric.reference_receipts`). It was an HTTP + SQLite receipt service
-  shipped inside the SDK wheel; a server is outside the recorder package.
-  Qualified-run mode does not depend on it: `receipt_sets`,
-  `evidence_attestation` and `qualified_run` still verify the delivery v1
-  receipt sets and attestations offline. The module is now a forbidden
-  wheel/sdist member.
-- **Breaking: removed `fabric.distributed_closure`** (`ClosureEvidenceStore`,
-  `verify_distributed_closure`, `authenticate_propagated_context` and the
-  signed closure documents). The multi-source closure verifier was used only
-  by the enterprise reference example and is not part of qualified-run mode,
-  whose single-epoch route closure in `qualified_run` is unchanged. The
-  module is now a forbidden wheel/sdist member, and
-  `docs/enterprise-distributed-closure.md` is removed.
-- **Breaking: removed Python auto-instrumentation**
-  (`fabric.auto_instrument`, `Fabric.enable_auto_instrumentation`,
-  `enable_auto_instrumentation_with_manifest`) together with
-  `fabric.coverage_manifest`, `fabric._coverage_canary` and
-  `fabric._instrumentation_registry`, and the `openai`, `anthropic`,
-  `bedrock`, `otel-langchain` and `cohere` extras that pulled the upstream
-  `opentelemetry-instrumentation-*` hooks. Fabric captures model calls at
-  the LLM wire (`fabric.wire`) and through app-reported records
-  (`llm_call`, `tool_call`); the upstream hooks also coupled the SDK to a
-  framework (langchain). `install_default_provider` and
-  `trace_export_protection_status` (the protected managed span export) are
-  unchanged; `docs/python-auto-capture-privacy.md` is now
-  `docs/python-span-export-protection.md`. The modules are forbidden
-  wheel/sdist members and the five extras are forbidden extras; the license
-  scan no longer inventories them.
-- Removed the manual `examples/e2e-smoke` span-landing script. Nothing ran
-  it, and `examples/harness-smoke` plus the `e2e.yml` fixture path cover the
-  same check.
-- Removed the `benchmarks/fabric-comparison` SDK instrumentation comparison
-  and its frozen evidence (45,189 lines). No workflow, test or Make target ran
-  it, and its evidence was pinned to `18ec69a`, whose SDK hashes had already
-  drifted. History stays in git.
-- Removed the Codex/Sol laptop-stage rehearsal (`run_sol_local_stage.py`,
-  `project_sol_stage_to_fabric.py`, `verify_sol_sink_readback.py`) and the
-  laptop "local GO" simulation (`run_local_go_simulation.sh`,
-  `summarize_local_go_simulation.py`) with their tests and
-  `qualification/sol-local-stage` and `qualification/local-go-simulation`
-  records. Nothing invoked them. The qualification-status links now point
-  at commit `4a5c945`.
-- Removed `scripts/qualification/run_composed_collector_journey.py` and its
-  `qualification/composed-collector-capture-matrix.json` record. Only docs
-  referred to it; the spec 048 Compose content path and the wire-capture Node
-  E2E tests in `scripts/tests` exercise a real Collector instead.
-- Removed the enterprise examples (`examples/enterprise-orchestration`,
-  `examples/enterprise-reference`, `examples/enterprise/scope.local.json`),
-  the enterprise journeys (`scripts/qualification/run_enterprise_local.py`,
-  `scripts/qualification/enterprise_preflight.py`), their repository tests,
-  and the docs that only described them (`enterprise-testing-quickstart.md`,
-  `enterprise-reference-validation.md`, `enterprise-release-traceability.md`,
-  `specs/enterprise-capture-build.md`). The README and quickstart now point
-  at `examples/wire-capture`. `examples/enterprise/policy.local.json` stays
-  as the deployment-policy test fixture.
-- Removed the C8 network journey (`run_c8_network_journey.py`), the C0–C10
-  acceptance runner (`run_capture_acceptance.py`) and its
-  `capture_measurements.py` helper, with their tests, the
-  `qualification/c8-network-capture-matrix.json` and
-  `capture-level-matrix.json` records, and `docs/evidence-qualification-map.md`.
-  Only their own tests ran them.
-- Removed the historical `qualification/` records (cloud audits, the
-  2026-10-02 cloud run, Python test-contract snapshots, the production GO
-  packet and the synthetic-slice plans and reports) and
-  `docs/cloud-qualification-2026-10-02.md`. No test or release step read
-  them, and nothing verified their source-hash pins. Only the four
-  `qualification/synthetic-slice/kind-production-*.yaml` files that
-  `e2e-production-profile.yml` installs remain. The qualification-status
-  links now point at commit `4a5c945`.
-- Removed the remaining doc references to `PolicyCaptureSession` and
-  `test_auto_instrument.py` outside the SDK, which the SDK cleanup removes.
-- `examples/kind-quickstart/up.sh` no longer installs the removed
-  `anthropic` extra; it installs `singleaxis-fabric[otlp]` and, for a real
-  model run, the `anthropic` client the demo agent imports.
+- Fixed persistent queue volume ownership and restart recovery in the
+  production Helm posture.
+- Fixed release qualification fail-safety, dependency/version drift, the
+  `fabricctl` YAML runtime dependency, and high-severity vulnerabilities in
+  the exact TypeScript and Collector-image release artifacts.
 
-### Known limitations
+### Security
 
-- Production remains NO_GO pending target infrastructure and security-owner
-  acceptance. Local reference and benchmark evidence does not qualify a
-  customer deployment or establish universal performance superiority.
-- This capture build adds neither client portal UI nor action enforcement.
+- The credential-free end-to-end example workflow shows that synthetic raw
+  content does not reach the destination, reconstructable metadata retains
+  its causal structure, and at-least-once delivery recovers after an outage.
+  It makes no exactly-once or arbitrary-destination persistence claim.
+  Separate chart tests show that the production recorder exposes no sampling
+  control.
+- Security qualification now scans the exact image and package bytes intended
+  for publication and fails closed on high or critical findings.
 
 ## [0.8.0-rc.1] - 2026-08-31
 
@@ -2408,7 +2266,9 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0
+[0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
 [0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1
 [0.7.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.6.0...v0.7.0

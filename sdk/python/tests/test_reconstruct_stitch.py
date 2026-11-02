@@ -582,7 +582,7 @@ def test_non_ascii_ids_are_pseudonymised() -> None:
     ["chatcmpl-B9x2kQ", "patient-123-45-6789", "alice@example.com", "call with space"],
 )
 def test_every_provider_id_is_a_consistent_pseudonym(raw: str) -> None:
-    """Codex re-review report2 #1: valid-looking personal ids passed through unchanged."""
+    """Re-review report2 #1: valid-looking personal ids passed through unchanged."""
     keys = _keys(
         "openai.chat_completions",
         {"messages": [{"role": "tool", "tool_call_id": raw, "content": "x"}]},

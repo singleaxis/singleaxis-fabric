@@ -82,7 +82,7 @@ Scope should identify the component (`otel-collector-fabric`,
 
 ### Python
 
-- Python 3.12+.
+- Python 3.11+ (CI runs 3.11, 3.12 and 3.13).
 - Formatter: `ruff format`.
 - Linter: `ruff check` with the Fabric base ruleset.
 - Typing: `mypy --strict` on new code; no `# type: ignore` without a

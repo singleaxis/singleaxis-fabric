@@ -306,7 +306,7 @@ func TestMergedConfigSources(t *testing.T) {
 
 // The collector merges --set overrides after every --config source, so a
 // guarded configuration plus --set could drop fabricguard after the gate
-// approved it (Codex re-review probe). Both pflag spellings are refused,
+// approved it (re-review probe). Both pflag spellings are refused,
 // wherever they appear, and even when the override looks harmless.
 func TestSetOverrideRejected(t *testing.T) {
 	cfg := writeConfig(t, baseConfig)

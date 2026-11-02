@@ -10,13 +10,13 @@ import (
 )
 
 // Decision-line keys that carried caller data in clear up to v0.8.0 (spec 049
-// §2.9, §4.2; spec 051 §4.9). From v0.8.1 the SDK maps them in its
+// §2.9, §4.2). The SDK maps them in its
 // pseudonymous identity mode, and a pseudonymous Node admits only the mapped
 // form: a clear value from an old or non-conforming agent is dropped,
 // consistently with the identity validators of coverage_keys.go. identity_mode
-// clear keeps their pre-v0.8.1 admission (the generic metadata checks still
+// clear keeps their clear admission (the generic metadata checks still
 // apply). These hand-written rules hold until the P2 contracts work package
-// (spec 051 WP2-0) moves the keys into the generated registry table with
+// moves the keys into the generated registry table with
 // dedicated v2 prefixes.
 
 // decisionLineIDKeys are caller ids with no v2 type yet: the SDK emits the
@@ -27,7 +27,7 @@ var decisionLineIDKeys = toSet(
 	"fabric.retrieval.source_document_ids",
 	"fabric.request_id",
 	"gen_ai.data_source.id",
-	// Round-2 review F4: the caller's workflow, attempt and step ids, and a
+	// The caller's workflow, attempt and step ids, and a
 	// parent decision id (a carrier's value is caller input).
 	"fabric.workflow_id",
 	"fabric.execution.attempt_id",
@@ -63,7 +63,7 @@ var decisionLineLabelKeys = toSet(
 	"fabric.side_effect.target_system",
 	"fabric.side_effect.operation",
 	"fabric.side_effect_systems",
-	// Round-2 review F4: workflow, prompt and skill names and versions.
+	// Workflow, prompt and skill names and versions.
 	"gen_ai.workflow.name",
 	"gen_ai.prompt.name",
 	"gen_ai.prompt.version",
@@ -72,7 +72,7 @@ var decisionLineLabelKeys = toSet(
 )
 
 // decisionLineAgentKeys are agent identities: the keyed v2 agt- + 32 hex
-// (round-2 review F4).
+//.
 var decisionLineAgentKeys = toSet(
 	"gen_ai.agent.name",
 )
@@ -81,7 +81,7 @@ var agentPseudonymPattern = pseudonymPattern("agt")
 
 // decisionLineMintedOrIDKeys carry an id Fabric minted (uuid4, as is) or a
 // caller's id (lbl- + 32 hex): side-effect ids and the replay list of them,
-// and (round-2 review F4) execution and decision ids, also in replay metadata.
+// and execution and decision ids, also in replay metadata.
 var decisionLineMintedOrIDKeys = toSet(
 	"fabric.side_effect.side_effect_id",
 	"fabric.replay.suppressed_side_effect_ids",
@@ -98,8 +98,7 @@ var mintedUUIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3
 var mcpToolEntryPattern = regexp.MustCompile(`^lbl-[0-9a-f]{32}:[0-9a-f]{12}$`)
 
 // decisionLineMappedOnlyKeys were never admitted clear: the Node admits them
-// only in the SDK's mapped form, whatever its identity_mode (v0.8.1 Sol
-// review item 7): the memory store id as mst- (pseudonym v2) and tags as
+// only in the SDK's mapped form, whatever its identity_mode: the memory store id as mst- (pseudonym v2) and tags as
 // lists of lbl- operator labels.
 var decisionLineMappedOnlyKeys = map[string]func(pcommon.Value) bool{
 	"gen_ai.memory.store.id": matches(pseudonymPattern("mst")),
