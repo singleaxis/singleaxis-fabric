@@ -55,7 +55,8 @@ def test_a_gather_fan_out_is_captured_whole_at_default_settings(tmp_path: Path) 
         assert result["returncode"] == 0, str(result["stderr"])[-2000:]
         calls = LOOPS * STEPS
         assert len(model.requests) == calls
-        assert wait_for(lambda: len(sink.exchanges()) >= calls, timeout_s=20)
+        delivered = wait_for(lambda: len(sink.exchanges()) >= calls, timeout_s=20)
+        assert delivered, (len(sink.exchanges()), sink.losses(), str(result["stderr"])[-2000:])
         assert len(sink.exchanges()) == calls
         assert not sink.losses()
         found = verdicts(reconstruct(sink.directory, store, tmp_path / "report.json"))
