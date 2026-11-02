@@ -435,7 +435,9 @@ def test_real_node_queue_survives_sink_outage_and_node_restart() -> None:
                 span["traceId"] = trace_id
                 for attribute in span["attributes"]:
                     if attribute["key"] == "fabric.request_id":
-                        attribute["value"] = {"stringValue": "outage-" + trace_id}
+                        # A pseudonymous Node drops a clear request id, so the
+                        # needle takes the SDK's lbl- + 32 hex form.
+                        attribute["value"] = {"stringValue": "lbl-" + trace_id}
     payload = json.dumps(document).encode()
     _compose("stop", "test-sink")
     try:
@@ -453,7 +455,7 @@ def test_real_node_queue_survives_sink_outage_and_node_restart() -> None:
     finally:
         _compose("start", "test-sink")
     assert _wait_delivery(before, timeout_s=120) > before
-    _wait_contains("outage-" + trace_id, timeout_s=120)
+    _wait_contains("lbl-" + trace_id, timeout_s=120)
     assert not _sink_contains("MUST_NOT_LEAVE_FABRIC_NODE")
 
 
