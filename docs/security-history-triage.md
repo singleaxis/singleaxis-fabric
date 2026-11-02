@@ -1,10 +1,10 @@
 # Historical secret-scan triage for recorder qualification
 
-Status: **historical matches classified; production NO-GO**. Source review
-identifies eight fixture matches across the two scans. On 2026-09-30 the requesting user answered
-the specific provenance question about the old Basic-auth example with
-“never used.” That statement closes its reported live-credential ambiguity for
-this technical triage; it is not a general production security sign-off.
+Status: **historical matches classified; not a production security
+sign-off**. Source review identifies eight fixture matches across the two
+scans. On 2026-09-30 the maintainer confirmed the example credential was
+never used. That closes its reported live-credential ambiguity for this
+technical triage; it is not a general production security sign-off.
 Do not copy the candidate values into release evidence.
 
 On 2026-09-30, the eight entries in the locally redacted Gitleaks 8.30.1
@@ -23,7 +23,7 @@ exact fingerprint; no candidate value is reproduced.
 | `7e0806c0c62be25064721c2aa616be88ae6d9f7a:.github/workflows/ci.yml:generic-api-key:321` | Commit `7e0806c0c62be25064721c2aa616be88ae6d9f7a`, `.github/workflows/ci.yml:321`, rule `generic-api-key`. Helm template command supplies the shared predictable HMAC fixture. | **Predictable shared fixture;** live reuse unverified. |
 | `519d518d280a12067ee0bea645e44ce5ec5a7a9e:.github/workflows/e2e.yml:generic-api-key:109` | Commit `519d518d280a12067ee0bea645e44ce5ec5a7a9e`, `.github/workflows/e2e.yml:109`, rule `generic-api-key`. Test deployment command supplies the shared predictable HMAC fixture. | **Predictable shared fixture;** live reuse unverified. |
 | `0f4f02f82e49f88d0fc165953dff692a99090e14:components/otel-collector-fabric/processor/fabricsamplerprocessor/processor_test.go:generic-api-key:20` | Commit `0f4f02f82e49f88d0fc165953dff692a99090e14`, `components/otel-collector-fabric/processor/fabricsamplerprocessor/processor_test.go:20`, rule `generic-api-key`. Go `testKeyHex` constant is the same predictable HMAC fixture. | **Predictable shared fixture;** live reuse unverified. |
-| `0f4f02f82e49f88d0fc165953dff692a99090e14:deploy/compose/.env.example:generic-api-key:12` | Commit `0f4f02f82e49f88d0fc165953dff692a99090e14`, `deploy/compose/.env.example:12`, rule `generic-api-key`. It is a commented `LANGFUSE_BASIC_AUTH` example. Source alone was ambiguous; the requesting user confirmed on 2026-09-30 that it was never used. | **Never-used example, user confirmed; not signed security acceptance.** |
+| `0f4f02f82e49f88d0fc165953dff692a99090e14:deploy/compose/.env.example:generic-api-key:12` | Commit `0f4f02f82e49f88d0fc165953dff692a99090e14`, `deploy/compose/.env.example:12`, rule `generic-api-key`. It is a commented `LANGFUSE_BASIC_AUTH` example. Source alone was ambiguous; the maintainer confirmed on 2026-09-30 that it was never used. | **Never-used example, maintainer confirmed; not signed security acceptance.** |
 | `4bf4df9665aaa107ff9c0fd0ac2ebadbf9acac5a:components/otel-collector-fabric/gate/evidence_binding_test.go:generic-api-key:12` | PR #164 CI run `36625823192` found a 48-character test-only static token in the dedicated-ingress gate test. The commit created the file; all references in it create a temporary test token file or compare an error against that fixture, not an external service or deployment credential. The source literal was replaced with a predictable runtime-generated fixture after the finding. | **Source-proven new unit-test fixture;** exact committed fingerprint only is baselined. Security-owner confirmation and sign-off remain pending. |
 
 The six HMAC entries are one repeated value, not six independent key values.
@@ -125,11 +125,11 @@ line number of the Python canary differs (an import line was added above it).
 Only these exact commit/path/rule/line fingerprints are baselined; the
 synthetic new-commit probe must still fail.
 
-## v0.8 squash merge and v0.8.1 fixture findings (2026-10-23)
+## v0.8 squash merge and decision-line fixture findings (2026-10-23)
 
 PR #197 was squash-merged as `36f7a8927387e1e4b90cb2cc6ba7a7e446cbb210`,
 which re-created three canaries already classified above at new line numbers,
-and the v0.8.1 decision-line work added fabricguard test fixtures. The
+and the later decision-line work added fabricguard test fixtures. The
 scheduled all-branch scan on `main` reported seven matches, all test values:
 
 | Commit / path / line | Source evidence and classification |

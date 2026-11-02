@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1: caller data on decision-line telemetry keys is mapped in
- * pseudonymous mode (spec 049 §2.9, §4.2; spec 051 §4.9), in parity with
+ * Caller data on decision-line telemetry keys is mapped in
+ * pseudonymous mode (spec 049 §2.9, §4.2), in parity with
  * Python `tests/test_decision_line_identity.py`. `identityMode: "clear"`
  * reproduces the v0.8 output.
  */

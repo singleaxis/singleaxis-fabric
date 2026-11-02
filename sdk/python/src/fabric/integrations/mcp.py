@@ -404,7 +404,7 @@ async def _traced_call(
     return result
 
 
-# The listings the proxy observes (spec 051 §4.8): method -> the result field it carries.
+# The listings the proxy observes: method -> the result field it carries.
 _OBSERVED_LISTS = {"list_tools": "tools", "list_resources": "resources", "list_prompts": "prompts"}
 
 

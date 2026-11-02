@@ -1,6 +1,6 @@
 ---
 title: Four-layer capture contract (context, structure, content, decisions and effects)
-status: Final rev 6.3 (clarifications), owner-approved 2026-10-18
+status: accepted
 qualification: NO_COVERAGE_CLAIM
 revision: 6.3
 last_updated: 2026-10-19
@@ -14,7 +14,8 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: Final rev 6.3 (clarifications only), owner-approved 2026-10-18.** Every owner
+**Status: accepted (revision 6.3, clarifications only), approved 2026-10-18;
+P0-A implemented, P1–P5 not built.** Every owner
 decision in section 9 was approved as recommended and is applied in this
 text, marked *Approved (owner, 2026-10-18)*. A later change to a decision
 changes only the sections that decision lists.
@@ -2795,7 +2796,7 @@ Each is applied in this spec as its recommended default.
 
 ---
 
-## Appendix A — Traceability: Astra review
+## Appendix A — Traceability: Review A
 
 | # | Finding | Resolution | Section |
 |---|---|---|---|
@@ -2893,7 +2894,7 @@ Each is applied in this spec as its recommended default.
 | A-D3 | Owner: privacy default; spool and host-disk encryption | Applied as recommended; encryption choice recorded in policy and manifest | 9 #3, 7.3 |
 | A-D4 | Owner: P3 scope sign-off | Applied as recommended | 9 #4 |
 
-## Appendix B — Traceability: Fable review
+## Appendix B — Traceability: Review B
 
 | # | Finding | Resolution | Section |
 |---|---|---|---|
@@ -2974,14 +2975,14 @@ Each is applied in this spec as its recommended default.
 
 ## Appendix C — Where the reviews disagreed
 
-| Topic | Astra | Fable | Decision and why |
+| Topic | Review A | Review B | Decision and why |
 |---|---|---|---|
 | Projection home | Activity v3 + separate projection | `fabric.step-projection/v1` | step-projection/v1: a verifier output must not force a breaking envelope change; v2 stays untouched (decision 10). |
 | Status model | 9 statuses | 5 statuses + reason enum | 9 statuses **and** a closed reason enum: `absent`, `unknown`, `conflict` and `not_applicable` carry meaning a reason cannot. |
 | Provider-held context | dependency resolution states | new status `provider_held` | reason `provider_held` + `C39` resolution: statuses stay closed. |
 | Reasoning | captured opaque object, plaintext separate | `redacted(provider_redacted)`, `truncated(provider_summarised)` | separate format/text/summary/object fields; a summary is not a truncation. |
 | Ordering | per source, epoch, sequence unit | one allocator for all records | per delivery path: a shared sequence across paths with different delivery guarantees creates false gaps. Rev 4: superseded — both inputs now share one spool, so one allocator per (source, epoch) (2.4). |
-| Step id | logical node, aliases | `step_id` = `exchange_id` / `call_id` | logical `step_id` (existing `fabric.step.id` meaning) + physical `attempt_id`; Fable's mapping holds when no retry grouping is reported. |
+| Step id | logical node, aliases | `step_id` = `exchange_id` / `call_id` | logical `step_id` (existing `fabric.step.id` meaning) + physical `attempt_id`; Review B's mapping holds when no retry grouping is reported. |
 | Retry/fallback inference | never from similarity | infer from identical digests after error | only `retries`, `tentative`, method `identical_request_after_error`; fallback and hedge never inferred. |
 | Rewrite event name | `context.history_rewritten` | `context.rewrite_suspected` | `history_rewritten`, matching the reason the code already emits. |
 | DB hook classification | H (observed) | wrapper = reported unless trace callback | observed: a Fabric-installed wrapper that copies values the caller already gets is a hook like the httpx tee; it is opt-in (041). |
@@ -2995,49 +2996,49 @@ Each is applied in this spec as its recommended default.
 
 | # | Review | Finding | Resolution | Section |
 |---|---|---|---|---|
-| R2A-B1 | Astra | Attempt identity merges retries (attempt defaulted to step_id); caller ids not namespaced | Resolved: attempt_id always Fabric-minted per physical execution; caller/imported ids become qualified aliases `<path>.<name>` = `<source_id>/<id>` | 2.3, `X17`, `X19`, `X38` |
-| R2A-B2 | Astra | Manifest sequencing unfinished; schema lacks a position; verifier would read consumed positions as gaps | Resolved: manifests never consume sequences; own `manifest_seq` counter, `after_source_sequence`, chain digest; policy/key fixed per epoch; 047/048 verifier unaffected | 2.4, `X39`, manifest schema |
-| R2A-B3 | Astra | Layer verdicts undefined for `redacted(provider_encrypted)`, mixed unsupported, precedence | Resolved: field classes + decision tables R1-R6 and RR1-RR7, explicit precedence; provider withholding is `captured_with_withholding` | 2.6, 6.2 |
-| R2A-B4 | Astra | Role table cannot drive the exporter: existing roles are names only, no media types | Resolved: every role (37 existing + 34 new) has layer, boundary, provenance, media types, default policy, cap, phase; exporter semantics specified; validator enforces completeness | 4.3, `content-roles-v1.json` |
-| R2A-B5 | Astra | Protection precedence contradictory: local needs nothing vs missing role = omit; split needs original digest vs redaction forbids it | Resolved: precedence rules with implicit `fabric.local-default`; composition table: original-body digest and reassembly only under `retain_original`, per-part protection otherwise | 2.7, 7.3, 7.5 |
-| R2A-R1 | Astra | A-V1 / A-P3 identity incomplete | Resolved with R2A-B1 | 2.3 |
-| R2A-R2 | Astra | A-O1 / A-O9 manifest sequencing and policy/key change applicability | Resolved: policy, key, identity mode, profile and limits fixed per epoch; change = new epoch | 2.4 rule 5 |
-| R2A-R3 | Astra | A-V3 / A-B2 role-table semantics missing | Resolved with R2A-B4 | 4.3 |
-| R2A-R4 | Astra | A-V6 / A-G1 coverage algorithm incomplete | Resolved with R2A-B3 | 6.2 |
-| R2A-R5 | Astra | A-O10 / A-P20 explicit withholding persistence across scope exit | Resolved: sticky `ExplicitScope.withheld` read at `adopt()`; sequence allocated, no bytes, `store_reason=explicit_withheld` | 1.3, P1-A |
-| R2A-R6 | Astra | A-P16 legacy commit attribution unrecoverable | Resolved: `legacy_unspecified` basis for legacy `true`; legacy `false` is a caller assertion | `D24`, 4.2 |
-| R2A-I1 | Astra | D2 claim too strong: `adopt()` does not consult withholding | Resolved: stated as current gap, fixed by sticky withholding | 1.3, 2.1 |
-| R2A-I2 | Astra | Legacy commit basis | Resolved | `D24` |
-| R2A-I3 | Astra | `file.path` has no storage slot | Resolved: new role `artifact.locator` | `N46`, 4.3 |
-| R2A-I4 | Astra | `prefix_break` not in method list; S13 inference contradicts 6.3 | Resolved: closed `inference_method` vocabulary includes `prefix_break`; tentative S13 is reported, class `uncertain`, optional field | 2.5, 6.3, `S13` |
-| R2A-I5 | Astra | Projection inputs lack manifest digests | Resolved: `inputs.manifests[] = {manifest_id, sha256}` | 4.4, projection schema |
-| R2A-I6 | Astra | Wrong path `storage.encrypted_store_required` | Resolved: `deployment.encrypted_store_required` | 2.7, 7.3, manifest schema |
-| R2A-D12 | Astra | Decision 12 promise false without bounds | Resolved: promise qualified by 64 MiB per side, 32 MiB per part/skeleton, JSON only | 7.4, 9 #12 |
-| R2A-C1 | Astra | Node mode = production needs explicit compatibility note | Resolved: 048 §1 supersession note | front matter, 7.3 |
-| R2F-B1 | Fable | `sdk.records` has no sequenced source | Resolved, option (a): `records` source with its own allocator, spool kind, heartbeats/final, loss records, manifest; `fabric.source.*` on decision spans; keys distinct from wire markers for 047/048 compatibility; P1 work item. Rev 4: the separate records source is replaced by the shared allocator (2.4). | 2.4, `X06`, P1 |
-| R2F-M2 | Fable | Capture points lack `supplies`; `observed_by` free text | Resolved: `observed_by` lists capture-point ids only; `supplies` derived and checked; added `fabric.self`, `install.config`, `reconstruct.infer`, `remote.ssh_wrapper`, `host.ebpf`, `host.auditd`, `delivery.receipts` | 2.8, 3, validator |
-| R2F-M3 | Fable | `fabric.user_id` missing from §4.2; validator changes untabulated; memory.key and interaction.target undecided | Resolved: changed-validator rows; memory.key and interaction.target pseudonymised (`mkey-`, `tgt-`) | 4.2, 2.9 |
-| R2F-M4 | Fable | `S31` not in manifest schema | Resolved: `chunk_boundaries_retained` added | `S31`, manifest schema |
-| R2F-M5 | Fable | Inference methods only on links; `field.method` free | Resolved: `inference_method` vocabulary; `field.method` and `link.method` use it | 2.5, schemas |
-| R2F-M6 | Fable | Non-chat model endpoints unmapped | Resolved: excluded from first-release claim; §3.7 row with P5 | 1.1, 3.7 |
-| R2F-M7 | Fable | Stale P0 item (047 D2 wording); `with d.side_effect` presented as existing | Resolved: item dropped; D20 and P2 say it is new | 8.2 P0, `D20`, P2 |
-| R2F-M8 | Fable | `source_id` not namespaced per delivery path | Resolved: projection source `<path>:<source_id>` with `path` enum. Rev 4: sources are named by emitted label; inputs replace paths (2.4). | 2.4, `X06`, projection schema |
-| R2F-M9 | Fable | Inferred input steps can never be complete | Resolved: on inferred input steps C08-C10 optional, C11 required; inferred steps classified normally | 6.2, `C08` |
-| R2F-M10 | Fable | `enforced_by_fabric` validator boolean | Resolved: const `false` | 4.2, `D11` |
-| R2F-S13 | Fable | How a reported S13 reaches a wire exchange | Resolved: through the enclosing explicit or `llm_call()` step | 2.3, `S13` |
-| R2F-O1 | Fable | Node-mode behaviour change needs supersession note and louder logging | Resolved: 048 §1 supersession; disabled state logged at every install and first exchange per epoch | 7.3 |
-| R2F-O2 | Fable | No per-exchange reason for absent content | Resolved: `fabric.wire.store_reason` | `X40`, 4.2 |
-| R2F-O3 | Fable | Malformed config must still raise | Resolved: stated explicitly | 7.3 |
-| R2F-O4 | Fable | Test 63 MiB skeleton against 64 MiB Node cap | Resolved: P0-A gate | 7.4, 8.2 |
-| R2F-O5 | Fable | Semantic-cache hits and backoff unmapped (borderline) | Resolved: §3.7 row (reported only) | 3.7 |
-| R3F-D1 | Fable | Manifest span attributes have no telemetry keys; fabricguard would strip them | Resolved: a key row per manifest-schema property (`manifest_property`), validator check | 2.8, 4.2 |
-| R3F-D2 | Fable | Role table rejects the built explicit line | Resolved: messages roles accept `provider_bound`; `tool.call.*` accept `caller` (call_recorder.py:41-45) | 4.3 |
-| R3F-D3 | Fable | `store_reason=no_store` has no coverage reason | Resolved: `no_store` → `not_configured`; validator check | 2.6, 4.2 |
-| R3F-D4 | Fable | P3 exit says `legacy_default` | Resolved: `legacy_unspecified` | 8.2 P3 |
-| R3F-D5 | Fable | 63 MiB skeleton test at two gates | Resolved: P0-A gate only | 7.4, 8.2 |
-| R3F-C1 | Fable | 048 §1 has no supersession pointer | Resolved: pointer in 048 §1 to 049 §7.3 | 048 §1 |
-| R3F-Qa | Fable | Wire `parent_step_id` mechanism | Resolved: existing OTel parent-span join via `records.span_id` alias | 2.3, `X18` |
-| R3F-Qb | Fable | `S03` on reported steps without an actor | Resolved: SDK stamps `agent` unless supplied | 2.3, `S03` |
+| R2A-B1 | Review A | Attempt identity merges retries (attempt defaulted to step_id); caller ids not namespaced | Resolved: attempt_id always Fabric-minted per physical execution; caller/imported ids become qualified aliases `<path>.<name>` = `<source_id>/<id>` | 2.3, `X17`, `X19`, `X38` |
+| R2A-B2 | Review A | Manifest sequencing unfinished; schema lacks a position; verifier would read consumed positions as gaps | Resolved: manifests never consume sequences; own `manifest_seq` counter, `after_source_sequence`, chain digest; policy/key fixed per epoch; 047/048 verifier unaffected | 2.4, `X39`, manifest schema |
+| R2A-B3 | Review A | Layer verdicts undefined for `redacted(provider_encrypted)`, mixed unsupported, precedence | Resolved: field classes + decision tables R1-R6 and RR1-RR7, explicit precedence; provider withholding is `captured_with_withholding` | 2.6, 6.2 |
+| R2A-B4 | Review A | Role table cannot drive the exporter: existing roles are names only, no media types | Resolved: every role (37 existing + 34 new) has layer, boundary, provenance, media types, default policy, cap, phase; exporter semantics specified; validator enforces completeness | 4.3, `content-roles-v1.json` |
+| R2A-B5 | Review A | Protection precedence contradictory: local needs nothing vs missing role = omit; split needs original digest vs redaction forbids it | Resolved: precedence rules with implicit `fabric.local-default`; composition table: original-body digest and reassembly only under `retain_original`, per-part protection otherwise | 2.7, 7.3, 7.5 |
+| R2A-R1 | Review A | A-V1 / A-P3 identity incomplete | Resolved with R2A-B1 | 2.3 |
+| R2A-R2 | Review A | A-O1 / A-O9 manifest sequencing and policy/key change applicability | Resolved: policy, key, identity mode, profile and limits fixed per epoch; change = new epoch | 2.4 rule 5 |
+| R2A-R3 | Review A | A-V3 / A-B2 role-table semantics missing | Resolved with R2A-B4 | 4.3 |
+| R2A-R4 | Review A | A-V6 / A-G1 coverage algorithm incomplete | Resolved with R2A-B3 | 6.2 |
+| R2A-R5 | Review A | A-O10 / A-P20 explicit withholding persistence across scope exit | Resolved: sticky `ExplicitScope.withheld` read at `adopt()`; sequence allocated, no bytes, `store_reason=explicit_withheld` | 1.3, P1-A |
+| R2A-R6 | Review A | A-P16 legacy commit attribution unrecoverable | Resolved: `legacy_unspecified` basis for legacy `true`; legacy `false` is a caller assertion | `D24`, 4.2 |
+| R2A-I1 | Review A | D2 claim too strong: `adopt()` does not consult withholding | Resolved: stated as current gap, fixed by sticky withholding | 1.3, 2.1 |
+| R2A-I2 | Review A | Legacy commit basis | Resolved | `D24` |
+| R2A-I3 | Review A | `file.path` has no storage slot | Resolved: new role `artifact.locator` | `N46`, 4.3 |
+| R2A-I4 | Review A | `prefix_break` not in method list; S13 inference contradicts 6.3 | Resolved: closed `inference_method` vocabulary includes `prefix_break`; tentative S13 is reported, class `uncertain`, optional field | 2.5, 6.3, `S13` |
+| R2A-I5 | Review A | Projection inputs lack manifest digests | Resolved: `inputs.manifests[] = {manifest_id, sha256}` | 4.4, projection schema |
+| R2A-I6 | Review A | Wrong path `storage.encrypted_store_required` | Resolved: `deployment.encrypted_store_required` | 2.7, 7.3, manifest schema |
+| R2A-D12 | Review A | Decision 12 promise false without bounds | Resolved: promise qualified by 64 MiB per side, 32 MiB per part/skeleton, JSON only | 7.4, 9 #12 |
+| R2A-C1 | Review A | Node mode = production needs explicit compatibility note | Resolved: 048 §1 supersession note | front matter, 7.3 |
+| R2F-B1 | Review B | `sdk.records` has no sequenced source | Resolved, option (a): `records` source with its own allocator, spool kind, heartbeats/final, loss records, manifest; `fabric.source.*` on decision spans; keys distinct from wire markers for 047/048 compatibility; P1 work item. Rev 4: the separate records source is replaced by the shared allocator (2.4). | 2.4, `X06`, P1 |
+| R2F-M2 | Review B | Capture points lack `supplies`; `observed_by` free text | Resolved: `observed_by` lists capture-point ids only; `supplies` derived and checked; added `fabric.self`, `install.config`, `reconstruct.infer`, `remote.ssh_wrapper`, `host.ebpf`, `host.auditd`, `delivery.receipts` | 2.8, 3, validator |
+| R2F-M3 | Review B | `fabric.user_id` missing from §4.2; validator changes untabulated; memory.key and interaction.target undecided | Resolved: changed-validator rows; memory.key and interaction.target pseudonymised (`mkey-`, `tgt-`) | 4.2, 2.9 |
+| R2F-M4 | Review B | `S31` not in manifest schema | Resolved: `chunk_boundaries_retained` added | `S31`, manifest schema |
+| R2F-M5 | Review B | Inference methods only on links; `field.method` free | Resolved: `inference_method` vocabulary; `field.method` and `link.method` use it | 2.5, schemas |
+| R2F-M6 | Review B | Non-chat model endpoints unmapped | Resolved: excluded from first-release claim; §3.7 row with P5 | 1.1, 3.7 |
+| R2F-M7 | Review B | Stale P0 item (047 D2 wording); `with d.side_effect` presented as existing | Resolved: item dropped; D20 and P2 say it is new | 8.2 P0, `D20`, P2 |
+| R2F-M8 | Review B | `source_id` not namespaced per delivery path | Resolved: projection source `<path>:<source_id>` with `path` enum. Rev 4: sources are named by emitted label; inputs replace paths (2.4). | 2.4, `X06`, projection schema |
+| R2F-M9 | Review B | Inferred input steps can never be complete | Resolved: on inferred input steps C08-C10 optional, C11 required; inferred steps classified normally | 6.2, `C08` |
+| R2F-M10 | Review B | `enforced_by_fabric` validator boolean | Resolved: const `false` | 4.2, `D11` |
+| R2F-S13 | Review B | How a reported S13 reaches a wire exchange | Resolved: through the enclosing explicit or `llm_call()` step | 2.3, `S13` |
+| R2F-O1 | Review B | Node-mode behaviour change needs supersession note and louder logging | Resolved: 048 §1 supersession; disabled state logged at every install and first exchange per epoch | 7.3 |
+| R2F-O2 | Review B | No per-exchange reason for absent content | Resolved: `fabric.wire.store_reason` | `X40`, 4.2 |
+| R2F-O3 | Review B | Malformed config must still raise | Resolved: stated explicitly | 7.3 |
+| R2F-O4 | Review B | Test 63 MiB skeleton against 64 MiB Node cap | Resolved: P0-A gate | 7.4, 8.2 |
+| R2F-O5 | Review B | Semantic-cache hits and backoff unmapped (borderline) | Resolved: §3.7 row (reported only) | 3.7 |
+| R3F-D1 | Review B | Manifest span attributes have no telemetry keys; fabricguard would strip them | Resolved: a key row per manifest-schema property (`manifest_property`), validator check | 2.8, 4.2 |
+| R3F-D2 | Review B | Role table rejects the built explicit line | Resolved: messages roles accept `provider_bound`; `tool.call.*` accept `caller` (call_recorder.py:41-45) | 4.3 |
+| R3F-D3 | Review B | `store_reason=no_store` has no coverage reason | Resolved: `no_store` → `not_configured`; validator check | 2.6, 4.2 |
+| R3F-D4 | Review B | P3 exit says `legacy_default` | Resolved: `legacy_unspecified` | 8.2 P3 |
+| R3F-D5 | Review B | 63 MiB skeleton test at two gates | Resolved: P0-A gate only | 7.4, 8.2 |
+| R3F-C1 | Review B | 048 §1 has no supersession pointer | Resolved: pointer in 048 §1 to 049 §7.3 | 048 §1 |
+| R3F-Qa | Review B | Wire `parent_step_id` mechanism | Resolved: existing OTel parent-span join via `records.span_id` alias | 2.3, `X18` |
+| R3F-Qb | Review B | `S03` on reported steps without an actor | Resolved: SDK stamps `agent` unless supplied | 2.3, `S03` |
 
 ## Appendix E — Rev 4: owner questions
 
@@ -3049,26 +3050,26 @@ Each is applied in this spec as its recommended default.
 | R4-4 | Two-input model: one allocator or two? | One allocator per (source, epoch) for both inputs: both now travel through the same spool and sender, so the rev-2 sampling objection no longer applies; host-tracer copies are unsequenced duplicates | 1.3, 2.4 |
 | R4-5 | Two-input model: where do the explicit line's guarantees go? | Kept and moved: exact boundary (records producers), governed redaction (before spool admission), encrypted spool (unified spool envelope), 16 MiB cap (`records_max_object_bytes`), per-run accounting (scope windows + chaining), receipts (qualified-run mode, section 2.13; superseded in rev 6), governed local store (writer backend); modules retired only with owner sign-off | 2.11 |
 | R4-6 | CrewAI and framework adapters | Removed from the default package and from the matrix wording; framework-specific capture only as an optional extension through the records input | 2.11, 5 rule 15, 8.3 |
-| R5-1 | Segment identity mutable; tokens checked against a moving position (Astra B2, Fable F1) | Immutable `seg-` ids; a token seals its segment; re-entry, fork, concurrent work and post-fan-out continuation each get a new segment; predecessor entries name sealed boundaries | 2.10, `X41`, `X43`, `X44` |
-| R5-2 | One terminal branch could close the whole run (Astra B1, Fable F1) | Termination requires every present segment and every token- or dispatch-named branch in the terminal's predecessor closure; rules G1–G10 (renumbered in rev 6) for token reuse, multiple roots, cycles, post-terminal continuation | 2.10, 6.2 |
-| R5-3 | `end_run` had no carrier (Fable F2) | `end_run(run_id, outcome, resume=token)` emits a zero-width terminal segment; refused without a token | 2.10 |
-| R5-4 | Fork unspecified (Fable F3) | Before-fork seal in the parent, after-fork `run_start` in the child naming the sealed segment | 2.10 |
-| R5-5 | Epochs collide across processes; 045 bound and 046 epoch-0 rule (Astra §2) | 63-bit CSPRNG epochs, admission-time re-draw, verifier `segment_conflict`; 045/046 qualify one sealed segment as epoch 0 of `<source>/<segment>`, bounds unchanged | 2.4 |
-| R5-6 | Journal seal and readback had no home (Astra B3, Fable F6) | Retained seal ledger in the unified spool, sealed per segment and epoch after fresh readback, digests on markers, receipts bind it; parity gates; 046 bounded to one segment, never aggregate | 2.11, 2.12, 8.2 P1-A |
+| R5-1 | Segment identity mutable; tokens checked against a moving position (Review A B2, Review B F1) | Immutable `seg-` ids; a token seals its segment; re-entry, fork, concurrent work and post-fan-out continuation each get a new segment; predecessor entries name sealed boundaries | 2.10, `X41`, `X43`, `X44` |
+| R5-2 | One terminal branch could close the whole run (Review A B1, Review B F1) | Termination requires every present segment and every token- or dispatch-named branch in the terminal's predecessor closure; rules G1–G10 (renumbered in rev 6) for token reuse, multiple roots, cycles, post-terminal continuation | 2.10, 6.2 |
+| R5-3 | `end_run` had no carrier (Review B F2) | `end_run(run_id, outcome, resume=token)` emits a zero-width terminal segment; refused without a token | 2.10 |
+| R5-4 | Fork unspecified (Review B F3) | Before-fork seal in the parent, after-fork `run_start` in the child naming the sealed segment | 2.10 |
+| R5-5 | Epochs collide across processes; 045 bound and 046 epoch-0 rule (Review A §2) | 63-bit CSPRNG epochs, admission-time re-draw, verifier `segment_conflict`; 045/046 qualify one sealed segment as epoch 0 of `<source>/<segment>`, bounds unchanged | 2.4 |
+| R5-6 | Journal seal and readback had no home (Review A B3, Review B F6) | Retained seal ledger in the unified spool, sealed per segment and epoch after fresh readback, digests on markers, receipts bind it; parity gates; 046 bounded to one segment, never aggregate | 2.11, 2.12, 8.2 P1-A |
 | R5-7 | Deadline ignored clock uncertainty and domain | UTC only; deadline fixed by the root `run_start` + root-only override; `clock_uncertain` → `unverified` | 2.10, 6.2 |
-| R5-8 | Old-verifier fail-safe claim false (Astra §5) | Removed: old readers unsupported, no guarantee; P1 gate reworded | 2.4, 8.2 P1 |
-| R5-9 | Step-level `open` accepted by the schema (Astra §5) | Separate `step_verdict`/`run_verdict` definitions; validator check; negative test | 6.2, schema, tests |
-| R5-10 | Global tracer mode justification false (Fable F4) | Sampled-out records are `span_dropped` gaps, as for wire | 2.4 |
-| R5-11 | Predecessor validator rejected clear labels; two digest forms (Fable F5) | Opaque source ids in entries; `sha256:<hex>` on every new surface, `*_digest` key names; built `_sha256` keys keep bare hex | 2.4 rule 8, 2.10, 4.2 |
+| R5-8 | Old-verifier fail-safe claim false (Review A §5) | Removed: old readers unsupported, no guarantee; P1 gate reworded | 2.4, 8.2 P1 |
+| R5-9 | Step-level `open` accepted by the schema (Review A §5) | Separate `step_verdict`/`run_verdict` definitions; validator check; negative test | 6.2, schema, tests |
+| R5-10 | Global tracer mode justification false (Review B F4) | Sampled-out records are `span_dropped` gaps, as for wire | 2.4 |
+| R5-11 | Predecessor validator rejected clear labels; two digest forms (Review B F5) | Opaque source ids in entries; `sha256:<hex>` on every new surface, `*_digest` key names; built `_sha256` keys keep bare hex | 2.4 rule 8, 2.10, 4.2 |
 | R5-12 | LR-1 too narrow | Extended: re-entry, concurrent branches, duplicate tokens, post-terminal resume, fork, `end_run`, skewed clocks, epoch collision, seal parity | 8.2 P1 |
-| R6-1 | 046 mapping onto segments wrongly resolved (Astra §4, Fable D3) | Deleted; qualified-run mode stays separate and unchanged; default strongest result is `terminated` / `complete_for_observed_scopes` | 2.4, 2.13 |
-| R6-2 | Seal ledger not reconstructible from delivered records (Astra §3) | Replaced by a portable seal over canonical delivered-record digests, recomputable from the store; frame digests, admission parity and epoch history stay in qualified-run mode | 2.12 |
-| R6-3 | Concurrent-branch rule made in-process fan-out `partial` (Fable D1) | Deleted: one open segment per run per process | 2.10 |
-| R6-4 | Fork child had no closure rule (Fable D2) | Option (a): parent mints and declares the child segment; child seals non-terminal; declared branches must be present and sealed | 2.10 |
-| R6-5 | Epoch registration vs post-fork passivity (Astra §1, Fable M1) | Register at `install()` only; forks draw without registration; verifier detects collisions | 2.4 |
-| R6-6 | Wholly lost token consumers undetectable (Astra B1) | Termination over observed or declared branches; optional non-blocking `expected_branches`; stated limit otherwise; limit text corrected | 2.10, 3.7 |
-| R6-7 | Seal emitted then amended (Fable M2); trace fallback rule inconsistent | One `segment_seal` written once positions settle; trace-fallback roots fail G1 consistently | 2.10, 2.12 |
-| R6-8 | Astra small fixes | `uncertainty_ns` required; G4 uses the two segments' uncertainties; rule order makes `post_terminal_activity` reachable; `conflicted` run state; `segment_seal` transport and fabricguard migration | 2.10, 2.12, 4.2, schemas |
+| R6-1 | 046 mapping onto segments wrongly resolved (Review A §4, Review B D3) | Deleted; qualified-run mode stays separate and unchanged; default strongest result is `terminated` / `complete_for_observed_scopes` | 2.4, 2.13 |
+| R6-2 | Seal ledger not reconstructible from delivered records (Review A §3) | Replaced by a portable seal over canonical delivered-record digests, recomputable from the store; frame digests, admission parity and epoch history stay in qualified-run mode | 2.12 |
+| R6-3 | Concurrent-branch rule made in-process fan-out `partial` (Review B D1) | Deleted: one open segment per run per process | 2.10 |
+| R6-4 | Fork child had no closure rule (Review B D2) | Option (a): parent mints and declares the child segment; child seals non-terminal; declared branches must be present and sealed | 2.10 |
+| R6-5 | Epoch registration vs post-fork passivity (Review A §1, Review B M1) | Register at `install()` only; forks draw without registration; verifier detects collisions | 2.4 |
+| R6-6 | Wholly lost token consumers undetectable (Review A B1) | Termination over observed or declared branches; optional non-blocking `expected_branches`; stated limit otherwise; limit text corrected | 2.10, 3.7 |
+| R6-7 | Seal emitted then amended (Review B M2); trace fallback rule inconsistent | One `segment_seal` written once positions settle; trace-fallback roots fail G1 consistently | 2.10, 2.12 |
+| R6-8 | Review A small fixes | `uncertainty_ns` required; G4 uses the two segments' uncertainties; rule order makes `post_terminal_activity` reachable; `conflicted` run state; `segment_seal` transport and fabricguard migration | 2.10, 2.12, 4.2, schemas |
 | R6-9 | Audit G2 PROTECT | Concrete agent-side stage before spool admission; withhold on failure with `protection_failed`; gate | 7.7 |
 | R6-10 | Audit G1 encryption at rest | Spool and Node directory envelopes; required in production | 7.8 |
 | R6-11 | Audit G5 source authentication | Every batch bound to an authenticated source; unauthenticated rejected in production | 7.9 |
@@ -3085,15 +3086,15 @@ Each is applied in this spec as its recommended default.
 | R6F-M6 | Writer liveness and X45 scope | Live writer = holder of the registration flock; X45 limited to registered epochs; fork children via declared branches | 2.4, 2.12, `X45` |
 | R6F-M7 | Run states for G2/G3/G4; `conflicted` missing in 6.2 | Added | 2.10, 6.2 |
 | R6F-M8 | Stale text (host sensors, G1–G12, `--receipts`) | Host sensors are out-of-process producers with their own source and spool; numbering and receipts rows corrected | 1.3, App. E |
-| R6A-1 | Rev-5 Astra §2 declared-consumer detection unresolved; §4 false-complete via local continuation | Decision 18: per-branch `br-` ids bound to the issuing seal and dispatch; one sealed consumer per id; local continuation and replays never satisfy a branch; `expected_branches` removed | 2.10, `X46` |
-| R6A-2 | Rev-5 Astra §3 seal reproducibility vs Node stamp and markers | Emitter-owned projection per record kind including capture metadata; receiver-owned keys excluded; unsequenced markers excluded; seal digest never an input | 2.12 |
+| R6A-1 | Rev-5 Review A §2 declared-consumer detection unresolved; §4 false-complete via local continuation | Decision 18: per-branch `br-` ids bound to the issuing seal and dispatch; one sealed consumer per id; local continuation and replays never satisfy a branch; `expected_branches` removed | 2.10, `X46` |
+| R6A-2 | Rev-5 Review A §3 seal reproducibility vs Node stamp and markers | Emitter-owned projection per record kind including capture metadata; receiver-owned keys excluded; unsequenced markers excluded; seal digest never an input | 2.12 |
 | R6A-3 | §7.7 PROTECT | Confirmed: no raw fallback; no change | 7.7 |
 | R6A-4 | §7.8 Node persistent queue unencrypted | Decision 19: queue envelope, required in production | 7.8 |
 | R6A-5 | §7.9 stamp in imported files | Decision 20: trusted readback only; imported files authentication-unverified; claim bounded | 1.1, 7.9 |
 | R6A-6 | Passivity | Confirmed: no app-path I/O; no change | 7.1 |
 | R6A-7 | Resumability promotion not observable | Token-issuing `segment_seal` carries `resumable=true`; verifier treats resumability as monotonic | 2.10, `X42` |
 | R6A-8 | Content-log authentication transport | Receiver-owned `source_authenticated` persisted by `fabriccontent` in the descriptor; closed parser still rejects it from agents; returned by content readback | 4.3, 7.9 |
-| R6A-9 | Rev-5 dispositions listed as resolved by Astra (mutable segments, `end_run`, fork, epochs, deadline, old verifier, step `open`, F4, F5) | No change | — |
+| R6A-9 | Rev-5 dispositions listed as resolved by Review A (mutable segments, `end_run`, fork, epochs, deadline, old verifier, step `open`, F4, F5) | No change | — |
 | R63-1 | Seven LABEL keys had no exact validator | Exact regex per key; public software ids emitted as is; operator labels (`policy_id`s, `workflow.node`) follow 048 J1 with prefix `lbl-` unless `FABRIC_WIRE_LABELS=clear`; `fabric.capture.point` pinned too | 4.2, keys registry |
 | R63-2 | `fabric.dispatch.kind` and `fabric.mcp.method` lists missing | Dispatch kinds from `S20`'s definition; MCP method names plus `other` | 4.2, `S20`, `N22` |
 | R63-3 | Pseudonym v2 type strings and input format unnamed | Table of 18 prefix→type strings; exact HMAC input format for vectors | 2.9 |

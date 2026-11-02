@@ -854,7 +854,7 @@ def _shipped_content_exporters() -> list[tuple[str, str, dict[str, Any]]]:
 
 
 def test_every_shipped_content_exporter_has_one_tenant_and_encrypted_s3() -> None:
-    """Codex r2 #1 and #3 for Compose: a content record names its own tenant, so each
+    """Review r2 #1 and #3 for Compose: a content record names its own tenant, so each
     shipped exporter allows exactly one (``FABRIC_TENANT_ID``) and never opts into
     ``allow_multiple_tenants``; every s3 exporter requests SSE (AES256 or aws:kms) by
     default."""
@@ -879,7 +879,7 @@ def test_every_shipped_content_exporter_has_one_tenant_and_encrypted_s3() -> Non
 
 
 def test_verify_prod_does_not_claim_content_delivery() -> None:
-    """Codex sol3: verify-prod checks only that unauthenticated content is
+    """Review: verify-prod checks only that unauthenticated content is
     rejected, so it must point at the content canary instead of implying that
     an authenticated upload reaches the store."""
     text = (COMPOSE_DIR / "verify-prod.sh").read_text(encoding="utf-8")

@@ -219,7 +219,7 @@ describe("execution retry metadata", () => {
       tenantId: "t",
       agentId: "a",
       profile: "p",
-      identityMode: "clear", // v0.8.1: caller ids are mapped when pseudonymous
+      identityMode: "clear", // Caller ids are mapped when pseudonymous
       workflowId: "refunds",
       executionId: "refund-task-123",
       executionAttemptId: "attempt-002",
@@ -302,7 +302,7 @@ describe("execution span + inheritance (ALS)", () => {
       tenantId: "t",
       agentId: "a",
       profile: "p",
-      identityMode: "clear", // v0.8.1: caller ids are mapped when pseudonymous
+      identityMode: "clear", // Caller ids are mapped when pseudonymous
       executionId: "cfg-exec",
       workflowId: "cfg-wf",
       executionAttempt: 3,
@@ -319,7 +319,7 @@ describe("execution span + inheritance (ALS)", () => {
       tenantId: "t",
       agentId: "a",
       profile: "p",
-      identityMode: "clear", // v0.8.1: caller ids are mapped when pseudonymous
+      identityMode: "clear", // Caller ids are mapped when pseudonymous
       executionId: "cfg-exec",
     });
     client.execution({ executionId: "active-exec" }, () => {

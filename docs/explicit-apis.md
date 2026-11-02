@@ -99,14 +99,14 @@ include `sess-` (session), `usr-` (user), `conv-`, `mkey-` (memory key),
 - `FABRIC_IDENTITY_MODE=clear` emits the ids unchanged. Use it only with
   ids that are not personal data. A Node in its default pseudonymous
   identity mode drops a `fabric.session_id` that is not a `sess-` value.
-- The configured `agent_id` is emitted as given; use an opaque value. From
-  v0.8.1 `request_id` is a caller id like the others (`lbl-`, omitted
+- The configured `agent_id` is emitted as given; use an opaque value.
+  `request_id` is a caller id like the others (`lbl-`, omitted
   without the key), and so are a caller's `decision_id`, `execution_id`,
   `workflow_id`, the parent decision id from a carrier, the execution and
   step attempt and retry ids and `fabric.step.id`. A decision or execution id
   the SDK minted (uuid4) is emitted as is. The agent name
   (`gen_ai.agent.name`) is `agt-`.
-- Other caller data on decision-line keys (v0.8.1): with the key,
+- Other caller data on decision-line keys: with the key,
   `gen_ai.memory.store.id` is `mst-`; idempotency keys
   (`fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key`) and
   `fabric.retrieval.source_document_ids` entries are `lbl-` (their types have
@@ -141,8 +141,8 @@ digest of a payload (query, memory content, side-effect request and result,
 tool arguments and result, interaction payload) is emitted only when the
 payload's content role retains the original: a role in the governed content
 capture below or, in Python without one, the memory and side-effect payloads
-written to a legacy `content_store`. `FABRIC_IDENTITY_MODE=clear` keeps the
-v0.8.0 digests. Two opt-ins exist:
+written to a legacy `content_store`. `FABRIC_IDENTITY_MODE=clear` keeps
+emitting these digests unconditionally, as releases before v0.8.0 did. Two opt-ins exist:
 
 - `Fabric(content_capture=ContentCaptureConfig(...))` writes the content
   that recorder methods receive to a tenant-scoped governed store and stamps

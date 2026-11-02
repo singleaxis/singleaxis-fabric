@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (Sol review, deferred P1 confidentiality items): side-effect identifiers and
+"""Spec 049 §2.9: side-effect identifiers and
 labels, tool names on spans and the interaction metadata digest are pseudonymised or
 omitted in the pseudonymous mode. ``identity_mode=clear`` reproduces v0.8.0."""
 

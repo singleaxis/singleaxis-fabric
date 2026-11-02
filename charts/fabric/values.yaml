@@ -11,7 +11,7 @@ tenant:
 
 global:
   fabric:
-    version: "0.8.0-rc.1"
+    version: "0.8.0"
 
 namespace:
   create: false

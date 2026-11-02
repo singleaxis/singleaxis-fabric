@@ -79,7 +79,7 @@ empty or multiple token entries immediately on startup and reload. A missing
 Secret prevents the pod from starting. The
 Secret's sole use by the declared source, its rotation and the source's route
 closure require deployment proof; this chart setting alone does not establish
-complete capture or a production GO.
+complete capture or production readiness.
 
 ## Ordinary workload authentication
 

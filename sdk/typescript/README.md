@@ -8,7 +8,7 @@ not block, alter or delay the agent.
 
 **No zero-code wire capture in TypeScript yet.** Unlike the Python SDK, this
 package does not tee model HTTP traffic; every record comes from an explicit
-call. TypeScript wire capture is planned (spec 049 TS-1) and not built. See
+call. TypeScript wire capture is planned and not built. See
 [limitations](../../docs/limitations-and-roadmap.md).
 
 Requires Node.js 20.6 or later.
@@ -29,8 +29,10 @@ provider and exporters you register are your responsibility.
 ## Install
 
 ```bash
-npm install @singleaxis/fabric @opentelemetry/api
+npm install @singleaxis/fabric@beta @opentelemetry/api
 ```
+
+The package is published to npm under the `beta` dist-tag.
 
 ## OpenTelemetry wiring
 

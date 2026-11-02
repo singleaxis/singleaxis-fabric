@@ -23,7 +23,7 @@ not described here is not built; see
 | [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
 | [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
 | [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter |
-| [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, phases P1–P5 |
+| [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, the roadmap |
 
 ## Reference
 
@@ -64,6 +64,5 @@ deployment-policy v1 (`contracts/deployment-policy/v1`),
 
 - [Building Fabric](building-fabric.md)
 - [Third-party licenses](licenses/README.md)
-- [Recorder cleanup audit](maintainers/recorder-cleanup-audit.md)
 - [Historical secret-scan triage](security-history-triage.md)
 - [Archive](archive/README.md): superseded documents, kept for history.

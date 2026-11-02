@@ -59,7 +59,7 @@ Fails closed at render time unless the recorder has:
   backend is refused), an `https://` store endpoint when one is set, the
   same mTLS on port 4319 and explicit `networkPolicy.contentEgress` peers.
   See [docs/deployment.md](../../docs/deployment.md#helm-shadow-production).
-- the spec 049 P0-A production profile (`otel-collector.fabric.profile:
+- the spec 049 production profile (`otel-collector.fabric.profile:
   production`, pinned). Every batch on the workload ingress, spans and
   content alike, is bound to `workloadAuthentication.tenantId` and
   `workloadAuthentication.sourceId`. `sourceId` is the agents' source id as
@@ -77,9 +77,9 @@ Fails closed at render time unless the recorder has:
   the persistent content queue with AES-256-GCM. `fabric-gate` refuses a
   production config without the binding or the sealed queue.
 
-Spec 049 P0-A supersedes spec 048 §1. Agents in node mode record content only
+Spec 049 supersedes spec 048 §1 here. Agents in node mode record content only
 with a capture policy (`FABRIC_CAPTURE_POLICY`) and `FABRIC_WIRE_ID_KEY`;
-without them they record metadata only. An install from before P0-A stops
+without them they record metadata only. An install from before v0.8 stops
 at render until `sourceId` (and, with content, the key Secret) are set. The
 agents are never affected.
 

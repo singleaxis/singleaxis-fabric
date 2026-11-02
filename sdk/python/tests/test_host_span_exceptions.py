@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (spec 049 §7.6, spec 051 §4.9): in the pseudonymous identity mode a host span
+"""Spec 049 §7.6: in the pseudonymous identity mode a host span
 records only the exception class: no message, no stack trace, no message in the status.
 The ``clear`` mode keeps the OpenTelemetry default."""
 

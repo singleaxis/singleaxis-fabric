@@ -171,7 +171,7 @@ func (c *Config) Validate() error {
 	if len(c.AllowedTenants) > 1 && !c.AllowMultipleTenants {
 		// The record names its tenant and agents share one ingress identity
 		// model: with several tenants any authenticated agent could write
-		// under another tenant's prefix (Codex r2 #1).
+		// under another tenant's prefix (review r2 #1).
 		return errors.New("allowed_tenants lists more than one tenant; run one Node per tenant, or set allow_multiple_tenants: true to trust every authenticated agent to name its tenant")
 	}
 	if c.MaxBodyBytes < 1 || c.MaxBodyBytes > nodeMaxBodyBytes {

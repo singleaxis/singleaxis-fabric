@@ -4,7 +4,7 @@
 
 Every ``fabric.wire.run()`` entry has its own ``fabric.run.scope_id``; the
 verifier pairs ``run_start`` / ``run_end`` by scope id, never by run id or
-parity. These tests replay the Codex findings "false run closure from scope
+parity. These tests replay the review findings "false run closure from scope
 collisions", "serial run closure" and "nested-run false completeness", plus
 a randomized never-false-complete check. Every report is validated against
 the run-reconstruction-v1 schema and the contract's semantic rules.

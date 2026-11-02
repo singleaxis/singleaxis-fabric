@@ -758,7 +758,7 @@ def test_delegate_proceeds_when_inject_fails(
     span_exporter: InMemorySpanExporter,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Spec 049 §7.1 (v0.8.1): if propagation injection raises, the delegation is still
+    """Spec 049 §7.1: if propagation injection raises, the delegation is still
     recorded and the block runs, with an empty carrier; the failure is counted, never
     raised into the application."""
     import fabric.decision as decision_module  # noqa: PLC0415

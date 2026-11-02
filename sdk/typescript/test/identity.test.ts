@@ -391,7 +391,7 @@ describe("decision() in pseudonymous mode without a key", () => {
     for (const key of ["fabric.session_id", "fabric.user_id", "gen_ai.conversation.id"]) {
       expect(decision).not.toHaveProperty(key);
     }
-    // v0.8.1: the caller's request id is a caller id too (`lbl-`), omitted without a key.
+    // The caller's request id is a caller id too (`lbl-`), omitted without a key.
     expect(decision).not.toHaveProperty("fabric.request_id");
     for (const llm of llmSpans(spans)) {
       expect(llm.attributes).not.toHaveProperty("gen_ai.conversation.id");

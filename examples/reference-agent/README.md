@@ -5,9 +5,10 @@ end-to-end happy path. Runs in-process with no external dependencies,
 so anyone can see what the recorder-v1 capture surface looks like
 without standing up a cluster.
 
-This is the primary deliverable example for validating a Fabric
-deployment: instrument an agent, export OTLP, watch a protected
-decision record arrive at Fabric Node.
+It shows the explicit, app-reported APIs: instrument an agent, export
+OTLP, watch a protected decision record arrive at Fabric Node. For
+zero-code capture of model calls, start with
+[`wire-capture/`](../wire-capture/).
 
 ## What it demonstrates
 

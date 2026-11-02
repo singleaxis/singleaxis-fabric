@@ -159,7 +159,7 @@ transformation or no service is configured. Zero-code autoload cannot name
 a transformation, so under autoload the masking modes withhold.
 
 Module references (`"package.module:function"`), callables and TypeScript
-`{ module, exportName }` redactors, used by earlier v0.8 builds, raise or
+`{ module, exportName }` redactors, used by earlier development builds, raise or
 throw at construction with a pointer to this section.
 
 ## Pseudonyms (keyed pseudonym v2)

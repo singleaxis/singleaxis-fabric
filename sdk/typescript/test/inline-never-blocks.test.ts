@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 (spec 049 §7.1 rule 1, Sol review item 5): an `inline` durability
+ * Spec 049 §7.1 rule 1: an `inline` durability
  * write never runs on the caller's stack. The record call queues it and
  * returns at once (the item is `pending`); the write runs on the next
  * event-loop turn, and `flush()` waits for it. A synchronous store still
  * occupies the event loop while its write runs, as `process` durability does.
  *
- * Round-2 review F2: the queued write keeps the process alive until it has run,
+ * The queued write keeps the process alive until it has run,
  * so a process that records and then exits naturally (no `flush()`) still
  * delivers the object and the manifest its span already references.
  */

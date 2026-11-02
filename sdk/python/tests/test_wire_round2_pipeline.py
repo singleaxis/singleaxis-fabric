@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Round-2 capture hardening (Codex re-review): exit, ownership, heartbeat kinds, model
+"""Round-2 capture hardening (re-review): exit, ownership, heartbeat kinds, model
 values, exporter URLs, gRPC TLS, exporter diagnostics, sampling and store permissions."""
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (spec 049 §2.9 rules 1 and 4, N12/C39/C40): provider and caller correlation ids
+"""Spec 049 §2.9 rules 1 and 4, N12/C39/C40: provider and caller correlation ids
 are pseudonymised in the pseudonymous mode. Provider ids (response, previous response,
 tool call) are the keyed v2 ``p-`` form, as the wire line emits them; caller request and
 data-source ids, which have no v2 type yet, are the keyed ``lbl-`` form. Without the key

@@ -448,7 +448,7 @@ class Decision(AbstractContextManager["Decision"]):
         # Canonical decision identity: host-supplied verbatim, else a
         # freshly minted uuid4. Independent of ``request_id``.
         self._decision_id = decision_id or str(uuid4())
-        # 049 §2.9 (round-2 review F4): a caller's decision id is caller data, its keyed
+        # 049 §2.9: a caller's decision id is caller data, its keyed
         # ``lbl-`` form when pseudonymous; a minted uuid4 stays as is.
         self._emitted_decision_id = self._identity.minted_or_opaque(
             self._decision_id, minted=not decision_id
@@ -697,7 +697,7 @@ class Decision(AbstractContextManager["Decision"]):
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
         self._span.set_attribute("gen_ai.operation.name", "invoke_agent")
-        # 049 §2.9 (round-2 review F4): the agent name is an agent identity, ``agt-``.
+        # 049 §2.9: the agent name is an agent identity, ``agt-``.
         if (agent_name := self._identity.id("agt", self._client.agent_name)) is not None:
             self._span.set_attribute("gen_ai.agent.name", agent_name)
         self._span.set_attribute("gen_ai.agent.id", self._client.agent_id)
@@ -710,7 +710,7 @@ class Decision(AbstractContextManager["Decision"]):
         if self._conversation_compacted:
             self._span.set_attribute("gen_ai.conversation.compacted", True)
         self._resolve_execution_metadata()
-        # 049 §2.9 (round-2 review F4): caller ids are their keyed ``lbl-`` form when
+        # 049 §2.9: caller ids are their keyed ``lbl-`` form when
         # pseudonymous (a minted execution id stays as is); the workflow name is an
         # operator label, and falls back to the mapped workflow id.
         workflow = self._opaque(self._resolved_workflow_id)
@@ -1096,12 +1096,12 @@ class Decision(AbstractContextManager["Decision"]):
         return self._client.content_capture is not None
 
     def _retains_original(self, role: ContentRole | str) -> bool:
-        """Whether ``role``'s privacy mode retains the original payload (spec 049 §7.5,
-        spec 051 D-14): only then may a ``*_hash`` digest of it leave the process. The
+        """Whether ``role``'s privacy mode retains the original payload (spec 049 §7.5):
+        only then may a ``*_hash`` digest of it leave the process. The
         governed roles of a configured content capture retain it; without one, the legacy
         content store retains the memory and side-effect payloads it is given; nothing
         else does (metadata-only: no digest, since a digest of a low-entropy payload
-        reveals it). The ``clear`` identity mode keeps the v0.8.0 digests."""
+        reveals it). The ``clear`` identity mode keeps the digests releases before 0.8.0 emitted."""
         if self._identity.clear:
             return True
         if self.governed_capture:
@@ -2083,7 +2083,7 @@ class Decision(AbstractContextManager["Decision"]):
             event_attrs: dict[str, str | int | float | bool | tuple[str, ...]] = {
                 "fabric.schema_version": SCHEMA_VERSION,
             }
-            # 049 §4.2 (round-2 review F4): skill name and version are operator labels.
+            # 049 §4.2: skill name and version are operator labels.
             if (skill_name := self._identity.label(name)) is not None:
                 event_attrs[ATTR_SKILL_NAME] = skill_name
             if (skill_version := self._identity.label(version)) is not None:

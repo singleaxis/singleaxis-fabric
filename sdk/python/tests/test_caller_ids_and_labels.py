@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 round-2 review F4 (spec 049 §2.9, §4.2): the caller's execution, workflow,
+"""Spec 049 §2.9, §4.2: the caller's execution, workflow,
 decision, attempt and step ids, the workflow, prompt and skill names and the agent name
 are mapped in the pseudonymous mode, like ``fabric.request_id``.
 

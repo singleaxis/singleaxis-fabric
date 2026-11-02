@@ -24,7 +24,7 @@ is available from SingleAxis.
 | **Implementation** | Fixed-scope engagement to deploy Fabric in your cluster, instrument your agents, wire your destination, train your team. |
 | **Enterprise** | Production SLA, CVE-response SLA, LTS branch with extended security support, named TAM, procurement docs (SBOM/BOM, DPA, sub-processor list). |
 
-Contact: **bryan@singleaxis.ai** · https://fabric.singleaxis.ai
+Contact: **fabric@singleaxis.ai** · https://fabric.singleaxis.ai
 
 ## Security and deployment review
 

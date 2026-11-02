@@ -212,7 +212,7 @@ expect_peer_ok() {
 
 expect_peer_ok "production renders with restricted peers" "${ingress_ok}" "${egress_ok}" "${content_ok}"
 
-# The exact Codex probe: {"namespaceSelector": {}} on each peer list.
+# The exact review probe: {"namespaceSelector": {}} on each peer list.
 open_ns='[{"namespaceSelector":{}}]'
 expect_peer_fail "empty namespaceSelector ingress peer is refused" "networkPolicy.ingressFrom[0] does not restrict" \
   "${open_ns}" "${egress_ok}" "${content_ok}"

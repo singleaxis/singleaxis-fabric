@@ -2,7 +2,7 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.ebpf-host-emitter",
   "display_name": "SingleAxis Fabric eBPF Host Emitter",
-  "release": {"version": "0.8.0-rc.1", "maturity": "beta", "distribution": "container"},
+  "release": {"version": "0.8.0", "maturity": "beta", "distribution": "container"},
   "implementation": {"kind": "ebpf_discovery", "deployment_modes": ["daemonset", "host_agent"]},
   "compatibility": {
     "activity_contract": null,

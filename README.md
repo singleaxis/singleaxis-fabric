@@ -61,14 +61,14 @@ CAPTURE  ->  PROTECT  ->  DELIVER
 
 | Gap | Status |
 |---|---|
-| TypeScript wire capture | Not built (spec 049 TS-1) |
+| TypeScript wire capture | Not built (planned) |
 | Calls through `requests`/`urllib3` (reported as losses), `boto3`, gRPC and other clients | Not captured |
-| Model endpoints other than the five above (images, audio, realtime, batch, files, ...) | Not captured (P5) |
+| Model endpoints other than the five above (images, audio, realtime, batch, files, ...) | Not captured |
 | `with Pool()` worker pools (SIGTERM) | Can lose calls a worker had not written; accounted, never `complete` |
 | Heavy CPU contention (16+ CPU-bound threads in one process) | GIL-bound capture sheds load; every loss is recorded and reported |
-| Host sensors on a production Node | Local profile only (planned for P4) |
+| Host sensors on a production Node | Local profile only (production ingress planned, not built) |
 | Several agent sources on one production Node | One source per production Node |
-| Four-layer record: run structure, context, decisions and effects | Phases P1–P5, not built |
+| Four-layer record: run structure, context, decisions and effects | Planned, not built |
 
 Details and the other known defects: [limitations and roadmap](docs/limitations-and-roadmap.md).
 
@@ -77,11 +77,12 @@ Details and the other known defects: [limitations and roadmap](docs/limitations-
 Requires Python 3.11+. The model is a fake, so nothing leaves your machine.
 
 ```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install "singleaxis-fabric[otlp]" httpx
+
+# to run the examples, clone the repository
 git clone https://github.com/singleaxis/singleaxis-fabric.git
 cd singleaxis-fabric
-python3 -m venv .venv && . .venv/bin/activate
-pip install "./sdk/python[otlp]" httpx      # PyPI: singleaxis-fabric, once v0.8.0 is published
-
 python examples/wire-capture/react_agent.py --out-dir /tmp/fabric-demo
 ```
 

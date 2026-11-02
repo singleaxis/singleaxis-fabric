@@ -3,7 +3,8 @@
 An offline demonstration of Fabric's governed recording path. The model is a
 scripted deterministic stand-in; local subprocess, HTTP, and file operations
 are real. The audit-format shim is emitted by the agent, not an independent
-kernel witness. This is not a production-completeness or enterprise GO test.
+kernel witness. It does not test production completeness and does not
+qualify Fabric for production use.
 
 ```text
 agent.py  (Fabric SDK, governed capture, spooled durability)

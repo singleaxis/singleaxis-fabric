@@ -16,12 +16,12 @@ const (
 	callerClaim    = "claim-4711-jane"
 )
 
-// v0.8.1 (spec 049 §2.9, §4.2; spec 051 §4.9): the decision-line keys that
+// Spec 049 §2.9, §4.2: the decision-line keys that
 // carried caller data in clear are admitted under a pseudonymous Node only in
 // the SDK's mapped form. Caller ids with no v2 type yet (idempotency keys,
 // document ids) use the generic operator label lbl-; operator labels (step
 // names, MCP tool names) are clear only under capture_labels or identity_mode
-// clear. identity_mode clear keeps their pre-v0.8.1 admission.
+// clear. identity_mode clear keeps their clear admission.
 func TestDecisionLineKeysRejectClearValuesUnderPseudonymousNode(t *testing.T) {
 	const lbl = "lbl-9f86d081884c7d659a2feaa0c55ad015"
 	const defHash = "0123456789ab"
@@ -68,7 +68,7 @@ func TestDecisionLineKeysRejectClearValuesUnderPseudonymousNode(t *testing.T) {
 	}
 }
 
-// Sol review (v0.8.1) item 1: provider correlation ids are admitted under a
+// Provider correlation ids are admitted under a
 // pseudonymous Node only as the keyed p- form (N12/C39/C40), and the
 // caller's request and data-source ids only as lbl-.
 func TestCorrelationIDsRejectClearValuesUnderPseudonymousNode(t *testing.T) {
@@ -105,7 +105,7 @@ func TestCorrelationIDsRejectClearValuesUnderPseudonymousNode(t *testing.T) {
 	}
 }
 
-// Sol review (v0.8.1) item 7: the SDK's mapped memory store id and tags are
+// The SDK's mapped memory store id and tags are
 // admitted in exactly their pseudonymous forms (they were dropped before);
 // any other value stays dropped, as it always was.
 func TestMappedStoreIDAndTagsAreAdmitted(t *testing.T) {
@@ -136,7 +136,7 @@ func TestMappedStoreIDAndTagsAreAdmitted(t *testing.T) {
 	}
 }
 
-// Sol review (v0.8.1), deferred P1 items: side-effect identifiers and labels
+// Side-effect identifiers and labels
 // and tool names follow the SDK's pseudonymous forms on a pseudonymous Node.
 func TestSideEffectAndToolNamesUnderPseudonymousNode(t *testing.T) {
 	const lbl = "lbl-9f86d081884c7d659a2feaa0c55ad015"
@@ -198,7 +198,7 @@ func TestToolSpanWithoutNameIsStillAToolCall(t *testing.T) {
 	}
 }
 
-// Round-2 review F4: the caller's execution, workflow, decision, attempt and
+// The caller's execution, workflow, decision, attempt and
 // step ids, the workflow, prompt and skill names and the agent name are
 // admitted under a pseudonymous Node only in the SDK's mapped forms. Execution
 // and decision ids may also be the uuid4 Fabric mints; names are clear under
@@ -275,7 +275,7 @@ func TestToolDescriptionIsNeverAdmitted(t *testing.T) {
 	}
 }
 
-// Round-2 review (minor): the category comes from the keys a span or event
+// The category comes from the keys a span or event
 // carried, not from the values the Node admitted. A third-party tool span with
 // only a clear gen_ai.tool.name loses the name under a pseudonymous Node, but
 // stays a tool call (it was renamed fabric.activity before).

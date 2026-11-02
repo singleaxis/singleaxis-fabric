@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (spec 049 §7.1 rules 2-3, §7.1 rule 6): a failing recorder never escapes a
+"""Spec 049 §7.1 rules 2-3, §7.1 rule 6: a failing recorder never escapes a
 reporting API, and on exit from a decision, delegate, LLM or tool block the application's
 own exception object propagates unchanged."""
 
