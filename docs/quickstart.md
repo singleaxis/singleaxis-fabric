@@ -13,15 +13,19 @@ Requirements: Python 3.11+, git; Docker with Compose for part 2.
 
 ## 1. Install
 
-The v0.8.0 Python package is published to PyPI as `singleaxis-fabric` at
-release. Until then, and to run the examples, install from a clone:
+Install the Python package from PyPI, then clone the repository to run the
+examples:
 
 ```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install "singleaxis-fabric[otlp]" httpx
+
 git clone https://github.com/singleaxis/singleaxis-fabric.git
 cd singleaxis-fabric
-python3 -m venv .venv && . .venv/bin/activate
-pip install "./sdk/python[otlp]" httpx
 ```
+
+To work on the SDK itself, install it from the clone instead:
+`pip install "./sdk/python[otlp]" httpx`.
 
 ## 2. Run the offline example
 

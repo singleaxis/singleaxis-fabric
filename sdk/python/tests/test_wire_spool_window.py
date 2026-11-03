@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""The in-memory window before the durable spool write (spec 048 §2 "Window", Codex r1 #2).
+"""The in-memory window before the durable spool write (spec 048 §2 "Window", review r1 #2).
 
 A finished call is handed to the capture worker in memory; the worker digests it and only
 then writes the fsync'd spool record. The write stays off the host's thread (passivity), so

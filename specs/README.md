@@ -38,6 +38,12 @@ Every spec declares a `Status` in its header:
 | `deprecated` | No longer recommended but still supported |
 | `superseded` | Replaced by a newer spec (points to successor) |
 
+Some specs also declare a `qualification` marker, shown after the status in
+the index. `NO_GO` means the spec's work has not been qualified for customer
+production use. `NO_COVERAGE_CLAIM` means the spec makes no claim that a
+verdict covers activity outside the instrumented clients and endpoints it
+lists.
+
 ## How to propose a change
 
 1. Open a pull request that adds a new spec under `specs/` with
@@ -68,19 +74,19 @@ Every spec declares a `Status` in its header:
 | [034](034-eval-interoperability.md) | External evaluation interoperability and qualification | draft |
 | [035](035-agent-execution-evidence-profile.md) | Agent Execution Evidence Profile for OpenTelemetry | draft |
 | [036](036-evidence-capture-implementation-plan.md) | Bounded agent evidence capture — implementation and conformance plan | draft |
-| [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | draft; NO-GO |
+| [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | draft; NO_GO |
 | [042](042-client-boundary-integration.md) | Opt-in byte-boundary integration for existing Python agents | draft; test-start only |
-| [043](043-custom-agent-call-recording.md) | Linked custom-agent calls, protected bytes and offline comparison | implementation in progress; NO-GO |
-| [044](044-production-evidence-closure.md) | Authenticated ingress, source metadata finalization and remaining proof gates | implementation in progress; NO-GO |
+| [043](043-custom-agent-call-recording.md) | Linked custom-agent calls, protected bytes and offline comparison | implementation in progress; NO_GO |
+| [044](044-production-evidence-closure.md) | Authenticated ingress, source metadata finalization and remaining proof gates | implementation in progress; NO_GO |
 | [045](045-independent-evidence-feeds.md) | Authenticated independent operation and byte feeds | draft; no complete-run claim |
-| [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implementation in progress; NO-GO |
-| [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | draft; NO_COVERAGE_CLAIM; partly superseded by 048 |
-| [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | draft rev 9; NO_COVERAGE_CLAIM |
-| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | final rev 6.4, owner-approved 2026-10-22; P0 and P0-A built (v0.8), P1–P5 not built; NO_COVERAGE_CLAIM |
+| [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | accepted; opt-in qualified-run mode implemented; NO_GO |
+| [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | implemented; NO_COVERAGE_CLAIM; partly superseded by 048 |
+| [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | implemented; NO_COVERAGE_CLAIM |
+| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | accepted (rev 6.4); P0-A implemented (v0.8), P1–P5 not built; NO_COVERAGE_CLAIM |
 
 Specs 036 and 040–046 are the design of record for the explicit evidence
 line (`CallRecorder`, byte-boundary adapters, qualified-run mode), which
-v0.8 still ships; their NO-GO qualification statements describe the state
+v0.8 still ships; their `NO_GO` qualification statements describe the state
 when each was written. Spec 049 §2.13 keeps qualified-run mode unchanged.
 
 ## Archive

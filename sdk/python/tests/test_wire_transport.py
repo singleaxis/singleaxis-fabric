@@ -547,7 +547,7 @@ def test_streamed_request_body_is_retained_as_sent(rig: Rig) -> None:
     rig.flush()
     (span,) = rig.spans()
     a = attrs(span)
-    assert a["fabric.wire.truncated"] is False  # the request stream was teed (Codex r1 #1)
+    assert a["fabric.wire.truncated"] is False  # the request stream was teed (review r1 #1)
     assert a["fabric.wire.store_status"] == "stored"
     assert rig.read_ref(a["fabric.content.request_ref"]) == b"".join(body)
     assert a["fabric.wire.request_sha256"] == hashlib.sha256(b"".join(body)).hexdigest()

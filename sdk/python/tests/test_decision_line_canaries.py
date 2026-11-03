@@ -1,17 +1,17 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 privacy canaries for the decision line (spec 049 §7.6, spec 051 §8.3).
+"""Privacy canaries for the decision line (spec 049 §7.6).
 
-A canary is planted in every field the v0.8.1 fixes cover: idempotency keys, document
-ids, MCP and tool-span tool names, the memory store id, the checkpoint step name, tags,
-exception text, provider and caller correlation ids (previous response, response, tool
-call, request, data source), side-effect ids and labels, interaction metadata, store
-error text and low-entropy payloads (whose digests would reveal them), and (round-2 review
-F4) the caller's execution, workflow, decision, parent-decision, attempt and step ids, the
-workflow, prompt and skill names and versions, the tool description and the agent name. In
-the pseudonymous identity mode, with and without ``FABRIC_WIRE_ID_KEY``, no canary and no
-digest of a canary payload may appear in telemetry (the in-memory spans and their OTLP
-projection), in the SDK's logs or in the governed content spool and store."""
+A canary is planted in every field the decision-line privacy rules cover: idempotency keys,
+document ids, MCP and tool-span tool names, the memory store id, the checkpoint step name,
+tags, exception text, provider and caller correlation ids (previous response, response, tool
+call, request, data source), side-effect ids and labels, interaction metadata, store error
+text and low-entropy payloads (whose digests would reveal them), and the caller's execution,
+workflow, decision, parent-decision, attempt and step ids, the workflow, prompt and skill
+names and versions, the tool description and the agent name. In the pseudonymous identity
+mode, with and without ``FABRIC_WIRE_ID_KEY``, no canary and no digest of a canary payload
+may appear in telemetry (the in-memory spans and their OTLP projection), in the SDK's logs
+or in the governed content spool and store."""
 
 from __future__ import annotations
 

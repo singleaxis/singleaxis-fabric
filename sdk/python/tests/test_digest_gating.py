@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 (spec 049 §7.5, spec 051 D-14): a ``*_hash`` digest of an original payload is
+"""Spec 049 §7.5: a ``*_hash`` digest of an original payload is
 emitted only when the payload's content role retains the original. A digest of a
 low-entropy payload reveals it, so metadata-only recording carries no digest. The
 ``clear`` identity mode reproduces the v0.8.0 output."""

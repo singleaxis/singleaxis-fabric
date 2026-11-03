@@ -139,7 +139,7 @@ func TestContentOverlayRerouteRejected(t *testing.T) {
 	}
 }
 
-// Codex r2 #1: a content record names its tenant, so a Node allowing several
+// Review r2 #1: a content record names its tenant, so a Node allowing several
 // tenants lets any authenticated agent write under another tenant's prefix.
 // The gate refuses more than one tenant unless the exporter opts in.
 func TestContentTenantsNeedOneTenantOrTheTrustFlag(t *testing.T) {

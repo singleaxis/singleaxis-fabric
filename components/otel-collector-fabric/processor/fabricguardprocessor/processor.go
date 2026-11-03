@@ -895,7 +895,7 @@ func (g *guard) scrubTraceScope(scopeSpan ptrace.ScopeSpans) {
 // categorise names a span or event after filtering. A decision-line key the
 // Node dropped for its value alone (a clear value under a pseudonymous Node)
 // still counts as carried, so a third-party tool span whose clear
-// gen_ai.tool.name is dropped stays a tool call (round-2 review). Only the key
+// gen_ai.tool.name is dropped stays a tool call. Only the key
 // counts: its value never reaches the category, a fixed enum. Capture markers
 // are not decision-line keys, so an invalid marker still cannot claim a
 // capture name.
@@ -930,7 +930,7 @@ func activityCategory(name string, attrs pcommon.Map) string {
 			return "fabric.tool_call"
 		}
 	}
-	// v0.8.1: a pseudonymous SDK without an id key omits the tool name; the
+	// A pseudonymous SDK without an id key omits the tool name; the
 	// GenAI operation still marks the span as a tool call.
 	if operation, ok := attrs.Get("gen_ai.operation.name"); ok && operation.Str() == "execute_tool" {
 		return "fabric.tool_call"

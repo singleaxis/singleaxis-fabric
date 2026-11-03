@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Compose production preflight: per-receiver TLS and secret read failures.
 
-Regressions from the Codex re-review (report3 #6 and #7). The harness
+Regressions from the re-review (report3 #6 and #7). The harness
 (stub docker/df/nc, a minimal collector config) is shared with
 ``test_compose_security_bounds.py`` in this directory.
 """
@@ -78,7 +78,7 @@ def _run(
 @pytest.mark.parametrize(
     ("grpc_tls", "http_tls", "bind", "code", "expected"),
     [
-        # Codex probe: gRPC TLS, HTTP plaintext, published on 0.0.0.0 -> was accepted.
+        # Review probe: gRPC TLS, HTTP plaintext, published on 0.0.0.0 -> was accepted.
         (True, False, "0.0.0.0", 1, "TLS is not enabled on: otlp.http:4318;"),
         (False, True, "0.0.0.0", 1, "TLS is not enabled on: otlp.grpc:4317;"),
         (
@@ -105,7 +105,7 @@ def test_every_published_receiver_needs_tls(
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads every file")
 def test_unreadable_token_is_reported_as_a_read_failure(tmp_path: Path) -> None:
-    """Codex report3 #7: an unreadable token was misreported as a trailing newline."""
+    """Review report3 #7: an unreadable token was misreported as a trailing newline."""
     token = H._token(tmp_path, 0o600)
     H._write_collector_config(tmp_path)
     env = H._preflight_environment(tmp_path, token)  # resets the mode to 0600
@@ -177,7 +177,7 @@ def _secret_config(tmp_path: Path) -> None:
     ["malformed", "plausible-paths", "world-readable-files", "plaintext-bind"],
 )
 def test_preflight_never_echoes_configured_values(tmp_path: Path, case: str) -> None:
-    """Codex r3: a credential pasted into any variable (or into a path) must not reach the
+    """Review r3: a credential pasted into any variable (or into a path) must not reach the
     preflight output, which lands in terminals and CI logs."""
     _secret_config(tmp_path)
     token = H._token(tmp_path, 0o600)
@@ -229,7 +229,7 @@ def test_preflight_never_echoes_configured_values(tmp_path: Path, case: str) -> 
 
 
 # --------------------------------------------------------------------------
-# Destination URL shape (Codex sol3 #2): the export endpoint is validated as a
+# Destination URL shape (review #2): the export endpoint is validated as a
 # whole URL -- https, a valid host and port, and no user info, query or
 # fragment -- with fixed diagnostics that never echo the value.
 # --------------------------------------------------------------------------

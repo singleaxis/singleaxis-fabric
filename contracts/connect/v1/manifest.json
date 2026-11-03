@@ -8,32 +8,32 @@
   "artifacts": [
     {
       "path": "manifests/python-sdk.json",
-      "sha256": "4af9e699063883105fb04453f6444ed64f6dad716de4df8fa447f762bd7896ef",
+      "sha256": "7e1e64e42eef6bf300b96d58323f5772e9af18a795536dd95c1b9b4b7bd33363",
       "expectation": "valid"
     },
     {
       "path": "manifests/python-byte-boundary.json",
-      "sha256": "2059c7d265de4300068776382d28f9ba181d47da4cc300981c1451f7e5c7497b",
+      "sha256": "7ad3728163a75f37b6701df66b3e9a56fc2043b677b4eb888aed45361c2db53a",
       "expectation": "valid"
     },
     {
       "path": "manifests/typescript-capture-sdk.json",
-      "sha256": "890434e5831b364c7761047e715989cfd8cfd44b74b6a042c3db8cc24433f7b0",
+      "sha256": "924e861fd450b3c6b9bf6a8cfc981473533f34fda5cefa4cd8a98360c98d9ee0",
       "expectation": "valid"
     },
     {
       "path": "manifests/collector-otlp-receiver.json",
-      "sha256": "2c5fa13ce3e8b17e5be643453420add8af0459a667b205271f583644fbbd83b8",
+      "sha256": "7c8df98050f74f2b7b88d6432cec1628ec811274b0cffb4fd7d77f27db214d33",
       "expectation": "valid"
     },
     {
       "path": "manifests/auditd-host-connector.json",
-      "sha256": "5899d7e58db56d53b96a35b7a31fe8c7ec96c04c71eb752002b597397384df76",
+      "sha256": "ecee49c81e0ca6b995a41a78d6f0d71f41821cd8236a1ab71a5a39b9c10bcaf0",
       "expectation": "valid"
     },
     {
       "path": "manifests/ebpf-host-emitter.json",
-      "sha256": "2674fa1f4af527ee23279961a68cd86245ae331146ec463c6429faf70b991ee1",
+      "sha256": "b0528116b040599ab4dd9b0fe31edc4ac3001df20d34a742c668b8feff504a0a",
       "expectation": "valid"
     },
     {

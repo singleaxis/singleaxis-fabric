@@ -328,7 +328,7 @@ def test_content_ref_store_failure_warns_but_does_not_raise(
         client.decision(session_id="s", request_id="r") as d,
     ):
         d.remember(kind="semantic", key="k", content="c")
-        client.flush_content(timeout_s=5)  # v0.8.1: the write runs on a background worker
+        client.flush_content(timeout_s=5)  # The write runs on a background worker
 
     event = next(e for e in _decision_span(span_exporter).events if e.name == "fabric.memory")
     # No deterministic ref_for on this store: the event carries no ref.

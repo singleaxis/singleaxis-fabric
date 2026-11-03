@@ -1,6 +1,6 @@
 ---
 title: LLM wire capture and run reconstruction
-status: draft
+status: implemented
 qualification: NO_COVERAGE_CLAIM
 revision: 8
 last_updated: 2026-10-13
@@ -42,7 +42,7 @@ pairs markers by scope; model names outside an allowlist are emitted as
 `m-<16 hex>`; the boot gate separates content and telemetry pipelines.
 Sections below are marked *(→ 048)* where 048 wins.
 
-**2026-10-13 — revision 8 (Sol re-check of `03484d5`; decisions in 048
+**2026-10-13 — revision 8 (external re-check of `03484d5`; decisions in 048
 rev 4).** Verified gaps: a `error`/`abandoned` exchange without response
 evidence still verified complete; a duplicate with a malformed digest was
 discarded before its claims counted; operator labels (source id,
@@ -65,7 +65,7 @@ unchanged. Revision 8 decides:
   tenant, source and run ids only in pseudonymous form (§6, §9).
 - Model names follow 048 §7 J2 (numeric suffixes).
 
-**2026-10-13 — revision 7 (Sol review of `faac3d2`; decisions in 048
+**2026-10-13 — revision 7 (external review of `faac3d2`; decisions in 048
 rev 3).** The verifier claimed a reused run id complete although a whole
 scope of it had died in the agent's memory, verified a `complete` exchange
 with no response evidence, let a conflicting duplicate escape the run it
@@ -89,7 +89,7 @@ reports `0644`. Revision 7 decides:
   replacing (never writing through) an existing file or link (§9).
 - Run ids (048 H3) and model names (048 H4) follow 048 §6 and §7.
 
-**2026-10-13 — revision 6 (Codex review of the 048 cut).** A streamed
+**2026-10-13 — revision 6 (external review of the 048 cut).** A streamed
 request body (not already `bytes`) was marked truncated and never captured;
 it is now teed like the response stream (§1, §4 rule 1). Truncation no
 longer slices a chunk on the host's thread: retention keeps whole chunks

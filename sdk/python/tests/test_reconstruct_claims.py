@@ -5,14 +5,14 @@
 - H5: completeness is claimed per ``fabric.wire.run()`` scope and per
   unscoped run. A scoped run is at best ``complete_for_observed_scopes``: a
   scope whose markers and calls all died in the agent's memory left no
-  record, so the verifier never claims it (Sol review 1 #1).
+  record, so the verifier never claims it.
 - A ``complete``/``closed_early`` exchange without response evidence proves
-  only its request (Sol review 1 #4).
+  only its request.
 - Every conflicting claim counts and invalidates every run and scope it
-  names; identical retries still deduplicate (Sol review 1 #5).
+  names; identical retries still deduplicate.
 - H3: ``--run`` takes the clear run id and matches its ``r-`` pseudonym.
-- CLI diagnostics are fixed text (Sol review 2 #6) and the report file is
-  private and atomically replaced (Sol review 2 #7).
+- CLI diagnostics are fixed text and the report file is
+  private and atomically replaced.
 
 Every report is validated against the schema and the contract's semantics.
 """
@@ -79,7 +79,7 @@ def cli(capture: Capture, *extra: str) -> tuple[int, dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------
-# H5: per-scope claims (Sol review 1 #1)
+# H5: per-scope claims
 # --------------------------------------------------------------------------
 
 
@@ -217,7 +217,7 @@ def test_exit_code_needs_every_scope_and_unscoped_run_complete(capture: Capture)
 
 
 # --------------------------------------------------------------------------
-# Response evidence (Sol review 1 #4)
+# Response evidence
 # --------------------------------------------------------------------------
 
 
@@ -268,7 +268,7 @@ def test_an_error_before_any_response_needs_no_response_evidence(capture: Captur
 
 
 # --------------------------------------------------------------------------
-# Conflicting claims (Sol review 1 #5)
+# Conflicting claims
 # --------------------------------------------------------------------------
 
 
@@ -412,7 +412,7 @@ def test_cli_bad_id_key_env_exits_two(
 
 
 # --------------------------------------------------------------------------
-# Fixed diagnostics (Sol review 2 #6)
+# Fixed diagnostics
 # --------------------------------------------------------------------------
 
 
@@ -471,7 +471,7 @@ def test_cli_internal_errors_name_only_the_exception_class(
 
 
 # --------------------------------------------------------------------------
-# Private, atomic report files (Sol review 2 #7)
+# Private, atomic report files
 # --------------------------------------------------------------------------
 
 

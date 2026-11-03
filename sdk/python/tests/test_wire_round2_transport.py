@@ -139,7 +139,7 @@ class _FailOnce(set[Any]):
 def test_setup_failure_under_explicit_wrapper_is_not_captured_twice(
     installed: Installed, fake_llm: FakeLLM, flavor: str, mode: str
 ) -> None:
-    """Codex nested_setup_probe: the explicit wrapper wraps an already patched transport."""
+    """Review nested_setup_probe: the explicit wrapper wraps an already patched transport."""
     module: Any = httpx if flavor == "httpx" else pytest.importorskip("httpx2")
     url = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
     tee = installed.handle._tee
@@ -176,7 +176,7 @@ class _EmptyThenByte(httpx.SyncByteStream):
 
 
 def test_empty_chunks_are_not_retained(tmp_path: Path) -> None:
-    """Codex empty_chunks_probe: 200,000 empty chunks under an 8-byte limit."""
+    """Review empty_chunks_probe: 200,000 empty chunks under an 8-byte limit."""
     rig = make_rig(tmp_path, store=None, max_body_bytes=8, max_inflight_bytes=8)
     try:
         handler = lambda r: httpx.Response(200, stream=_EmptyThenByte())  # noqa: E731
@@ -234,7 +234,7 @@ def test_chunk_references_are_bounded_by_the_body_limit(tmp_path: Path) -> None:
             chunk = b"b" * _stream._COALESCE_BYTES if index % 7 == 0 else b"s"
             exchange._retain(side, chunk)
         bound = 2 * limit // _stream._COALESCE_BYTES + 1
-        # Whole chunks only (Codex r1 #3): the first chunk that would cross the limit ends
+        # Whole chunks only (review r1 #3): the first chunk that would cross the limit ends
         # retention, so the stored prefix is within one chunk of it, never above it.
         assert side.truncated and limit - _stream._COALESCE_BYTES < side.retained <= limit
         assert len(side.chunks) <= bound

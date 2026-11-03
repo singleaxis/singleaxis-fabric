@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 (spec 049 §7.5, spec 051 D-14): a `*_hash` digest of an original
+ * Spec 049 §7.5: a `*_hash` digest of an original
  * payload is emitted only when the payload's content role retains the
  * original, in parity with Python `tests/test_digest_gating.py`. The clear
  * identity mode reproduces the v0.8.0 output.
@@ -128,7 +128,7 @@ describe("payload digests follow the role's privacy mode", () => {
     expect(Object.keys(found).sort()).toEqual([...ROLE_KEYS[role]!].sort());
   });
 
-  it("reproduces the v0.8.0 digests in clear mode", () => {
+  it("reproduces the pre-0.8.0 digests in clear mode", () => {
     const found = run("clear");
     expect(Object.keys(found).sort()).toEqual(HASH_KEYS);
     expect(found["fabric.interaction.payload_hash"]).toEqual([DIGEST, DIGEST]);

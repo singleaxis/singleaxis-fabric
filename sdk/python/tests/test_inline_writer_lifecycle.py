@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""v0.8.1 round-2 review F1/F3: the governed ``durability="inline"`` workers.
+"""Spec 049 §7.1: the governed ``durability="inline"`` workers.
 
 - F1: a forked child (gunicorn/uvicorn prefork, ``multiprocessing``) starts with fresh
   workers. Before the fix the child inherited the parent's dead pool threads, so its

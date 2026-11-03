@@ -313,7 +313,7 @@ class Execution(AbstractContextManager["Execution"]):
         self._span.set_attribute(ATTR_TENANT, self._client.tenant_id)
         self._span.set_attribute(ATTR_AGENT, self._client.agent_id)
         self._span.set_attribute(ATTR_PROFILE, self._client.profile)
-        # 049 §2.9 (round-2 review F4): caller ids are their keyed ``lbl-`` form when
+        # 049 §2.9: caller ids are their keyed ``lbl-`` form when
         # pseudonymous (omitted without a key); a minted execution id stays as is.
         identity = self._identity()
         execution = identity.minted_or_opaque(self._execution_id, minted=self._execution_id_minted)

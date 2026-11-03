@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 (Sol review, deferred P1 items), in parity with Python
+ * Spec 049 §2.9, in parity with Python
  * `tests/test_side_effect_and_tool_identity.py`: side-effect identifiers and
  * labels, tool names on spans and the interaction metadata digest are
  * pseudonymised or omitted in the pseudonymous mode; clear reproduces v0.8.0.

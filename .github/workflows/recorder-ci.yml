@@ -164,7 +164,7 @@ jobs:
           npm run build
           npm test
           npm run test:package
-          npm run package:qualified
+          npm run package:qualified -- --smoke
 
   fabric-node:
     name: Fabric Node processor

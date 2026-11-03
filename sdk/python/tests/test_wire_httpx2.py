@@ -270,7 +270,7 @@ def test_sync_async_and_streamed_calls_capture_exact_bytes(
 def test_streamed_request_bodies_are_captured_exactly(
     installed: Installed, fake_llm: FakeLLM, module_name: str
 ) -> None:
-    """Codex r1 #1: a generator request body (chunked on the wire) is stored byte-exact."""
+    """Review r1 #1: a generator request body (chunked on the wire) is stored byte-exact."""
     module: Any = httpx if module_name == "httpx" else httpx2
     chat = f"http://127.0.0.1:{fake_llm.port}/v1/chat/completions"
     parts = [b'{"model":"m",', b'"messages":[{"role":"user","content":"', b"x" * 9000, b'"}]}']

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 (spec 049 §7.1): a failing recorder never escapes a reporting API,
+ * Spec 049 §7.1: a failing recorder never escapes a reporting API,
  * and the application's own error object always propagates unchanged from a
  * decision, delegate, LLM, tool or execution callback. Parity with Python
  * `tests/test_recorder_fail_open.py`.

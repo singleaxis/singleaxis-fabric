@@ -250,7 +250,7 @@ def _stamp_step_metadata(
     that opt out stay byte-identical to the pre-taxonomy emission.
     """
     span.set_attribute(FABRIC_STEP_TYPE, step_type or default_step_type)
-    # 049 §2.9 (round-2 review F4): the caller's step and attempt ids are their keyed
+    # 049 §2.9: the caller's step and attempt ids are their keyed
     # ``lbl-`` form when pseudonymous, omitted without a key.
     for key, value in (
         (FABRIC_STEP_ID, step_id),
@@ -474,7 +474,7 @@ class LLMCall(AbstractContextManager["LLMCall"]):
             self._span.set_attribute(GEN_AI_CONVERSATION_ID, self._conversation_id)
         if self._conversation_compacted:
             self._span.set_attribute(GEN_AI_CONVERSATION_COMPACTED, True)
-        # 049 §4.2 (round-2 review F4): the prompt name and version are operator labels.
+        # 049 §4.2: the prompt name and version are operator labels.
         if (
             self._prompt_name is not None
             and (prompt_name := self._identity.label(self._prompt_name)) is not None
@@ -1055,7 +1055,7 @@ class ToolCall(AbstractContextManager["ToolCall"]):
         if self._tool_type is not None:
             self._span.set_attribute(GEN_AI_TOOL_TYPE, self._tool_type)
             self._span.set_attribute(FABRIC_TOOL_KIND, self._tool_type)
-        # Round-2 review F4: the description is free text with no identity value, kept
+        # The description is free text with no identity value, kept
         # only in the clear mode; the agent name is an agent identity (``agt-``).
         if self._description is not None and self._identity.clear:
             self._span.set_attribute(GEN_AI_TOOL_DESCRIPTION, self._description)

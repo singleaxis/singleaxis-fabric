@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * v0.8.1 (spec 049 §2.9 rules 1 and 4, N12/C39/C40), in parity with Python
+ * Spec 049 §2.9 rules 1 and 4, N12/C39/C40, in parity with Python
  * `tests/test_correlation_ids.py`: provider ids (response, previous response,
  * tool call) are the keyed v2 `p-` form in pseudonymous mode; the caller's
  * request id is the keyed `lbl-` form; without the key they are omitted;

@@ -179,7 +179,7 @@ func TestProcessTraces_UnknownNativeNamesBecomeFixedActivityCategory(t *testing.
 	td := makeTraces(spanFixture{name: "patient@example.com password=hunter2", attrs: map[string]any{"fabric.tenant_id": "acme"}})
 	event := firstSpan(td).Events().AppendEmpty()
 	event.SetName("ASR transcript for John Smith")
-	event.Attributes().PutStr("fabric.decision_id", "7c9e6679-7425-40de-944b-e07fc1f90ae7") // minted uuid4 (v0.8.1)
+	event.Attributes().PutStr("fabric.decision_id", "7c9e6679-7425-40de-944b-e07fc1f90ae7") // minted uuid4
 
 	out, _ := g.processTraces(context.Background(), td)
 	span := firstSpan(out)

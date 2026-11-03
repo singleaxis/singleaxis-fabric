@@ -106,7 +106,7 @@ def exception_type(exc: BaseException) -> str:
 
 
 def record_exception(span: Span, exc: BaseException, *, clear: bool) -> None:
-    """Record ``exc`` on a host span (spec 049 §7.6, spec 051 §4.9): the OpenTelemetry
+    """Record ``exc`` on a host span (spec 049 §7.6): the OpenTelemetry
     event (message and stack trace included) only in the ``clear`` identity mode; in the
     pseudonymous mode an ``exception`` event carrying ``exception.type`` alone, since the
     message and the stack can hold caller data."""

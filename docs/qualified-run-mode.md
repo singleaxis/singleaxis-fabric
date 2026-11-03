@@ -83,7 +83,9 @@ It drives a loopback model endpoint, a no-shell subprocess, a binary file
 artifact and a second model call, then verifies 4 operations and 15
 original objects and runs 24 negative tests (each omission or substitution
 must lose the complete verdict). The positive result is
-`verified_complete_for_declared_scope` with `production_status: NO_GO`.
+`verified_complete_for_declared_scope` with `production_status: NO_GO`, which
+marks a result that rests on test-fixture signatures, not production
+receipts.
 
 ## Limits
 
