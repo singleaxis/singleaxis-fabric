@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
+from itertools import pairwise
 from typing import Any
 
 # Spec 056 §4.3: H2's bounded window (053 §6.3 default), H3's bounds.
@@ -249,6 +250,18 @@ class _Hosts:
             (e for e in inp.get("host_events", []) if e["source"] in self.sources),
             key=lambda e: (e["time_ns"], e["event_id"]),
         )
+        # The only exit evidence today (no host sensor reports process exits): an effect
+        # whose record carries its exit code or signal freed its pid by ``exit_observed_ns``.
+        self.exits: dict[tuple[str | None, int], list[int]] = {}
+        for effect in inp.get("effects", []):
+            pid, seen = effect.get("pid"), effect.get("exit_observed_ns")
+            if pid is not None and seen is not None:
+                self.exits.setdefault((effect.get("host_id"), pid), []).append(seen)
+
+    def exited(self, host_id: str | None, pid: int, after: int, until: int) -> bool:
+        """Whether an exit of ``pid`` on ``host_id`` was observed in ``[after, until]``:
+        the pid named another process (or none) from then on."""
+        return any(after <= x <= until for x in self.exits.get((host_id, pid), ()))
 
     def host_of(self, event: Mapping[str, Any]) -> str | None:
         host = event.get("host_id", self.sources[event["source"]].get("host_id"))
@@ -290,7 +303,9 @@ def anchor_effect(
     (start ticks are boot-relative); it cannot be ambiguous. Later exec
     events of the same process (an ``exec`` in a shell) keep its pid and start time and are
     H3 lineage of the anchor, at depth 0. H2 applies only when a start time is missing on
-    either side, inside the bounded window, and stays ambiguous on pid reuse."""
+    either side, inside the bounded window. Several H2 matches are one process when they
+    form an exec chain (:func:`exec_chain`): the anchor is its first exec and the later
+    ones are lineage at depth 0. Otherwise (pid reuse) the anchor stays ambiguous."""
     pid, ppid = effect["pid"], effect.get("parent_pid")
     host_id = effect.get("host_id")
     exec_events = [
@@ -321,11 +336,29 @@ def anchor_effect(
         for e in pool
         if abs(e["time_ns"] - effect["start_ns"]) <= H2_WINDOW_NS + hosts.margin(e)
     ]
-    if len(near) == 1:
-        return "H2", near, "tentative"
+    if len(near) == 1 or exec_chain(hosts, host_id, near):
+        return "H2", near[:1], "tentative"
     if near:
         return "H2-ambiguous", near, "tentative"
     return "anchor_missing", [], None
+
+
+def exec_chain(
+    hosts: _Hosts, host_id: str | None, events: Sequence[Mapping[str, Any]]
+) -> bool:
+    """Whether H2's matches (same pid and parent pid, in time order) are one process that
+    exec'd again in place (``bash -c "cmd"``; ``dash`` for the last command of a list):
+    no exit of the pid observed between two consecutive execs, and start times in the
+    same tick wherever both carry one. Without exit evidence, succession is a chain."""
+    if len(events) <= 1:
+        return False
+    for first, later in pairwise(events):
+        one, two = first.get("process_start_ns"), later.get("process_start_ns")
+        if one is not None and two is not None and not same_tick(one, two):
+            return False
+        if hosts.exited(host_id, later["pid"], first["time_ns"], later["time_ns"]):
+            return False
+    return True
 
 
 def lineage(
@@ -339,7 +372,8 @@ def lineage(
     at most depth 16 and 4096 events; and the events a bound left out. A connect or file
     event joins a process of the chain only when its start time, if both carry one, is in
     that process's tick. A successful exec of a known pid that is neither that process
-    nor a child of the chain proves pid reuse: the pid leaves the chain."""
+    nor a child of the chain proves pid reuse: the pid leaves the chain. So does an
+    observed exit of the pid (``_Hosts.exited``): nothing of the pid after it is linked."""
     host_id = effect.get("host_id")
     start = effect.get("process_start_ns", anchor.get("process_start_ns"))
     procs: dict[int, dict[str, Any]] = {
@@ -360,6 +394,11 @@ def lineage(
         ):
             continue
         pid, ppid, own = event["pid"], event.get("ppid"), event.get("process_start_ns")
+        if pid in procs and hosts.exited(
+            host_id, pid, procs[pid]["time"], event["time_ns"]
+        ):
+            # The pid was freed: whatever holds it now is another process.
+            del procs[pid]
         if (
             event["event_class"] == "exec"
             and event.get("result", "success") == "success"

@@ -992,6 +992,8 @@ def test_056_every_rule_and_edge_case_has_its_fixture() -> None:
         "edge-clock-margin-boundary",
         "edge-background-thread",
         "edge-pid-reuse",
+        "edge-exec-in-place",
+        "edge-same-pid-other-parent",
         "edge-lineage-depth-17",
         "edge-agent-uncalled-host",
         "edge-a1-several-matches",
@@ -1025,6 +1027,14 @@ def test_056_rule_fixtures_pin_the_rule_that_decides() -> None:
     ]
     assert list(trace("edge-background-thread")["effects"].values()) == ["A1", "A4"]
     assert list(trace("edge-pid-reuse")["anchors"].values()) == ["H2-ambiguous"]
+    # Spec 056 §4.3 exec chains: an in-place re-exec is one process, anchored tentative on
+    # its first exec; the later exec is lineage at depth 0. Another parent pid is not.
+    assert list(trace("edge-exec-in-place")["anchors"].values()) == ["H2"]
+    in_place = trace("edge-exec-in-place")["host_events"]
+    assert list(in_place.values()) == ["H2", "H3", "H3"]
+    assert list(trace("edge-same-pid-other-parent")["host_events"].values()) == [
+        "H2", "unexplained", "unexplained"
+    ]  # fmt: skip
     depth = _rule("edge-lineage-depth-17")["expected"]
     assert depth["attribution"]["lineage_truncated"] == 1
     assert depth["attribution"]["links"]["process_lineage"]["resolved"] == 16

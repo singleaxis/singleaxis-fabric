@@ -1000,6 +1000,14 @@ class _RunReader:
             value = _int(last.get(key))
             if value is not None:
                 effect[name] = value
+        # Spec 056 §4.3 exec chains: the hook saw the child reaped, so its pid was free, by
+        # the end of the first record carrying its exit code or signal.
+        exited = next((r.span.end_ns for r in records
+                       if _int(r.span.attributes.get("fabric.process.exit_code")) is not None
+                       or _int(r.span.attributes.get("fabric.process.signal")) is not None),
+                      None)  # fmt: skip
+        if exited is not None:
+            effect["exit_observed_ns"] = exited
         self._stdout(effect, records)
         if self.owner.keep_runs:
             data = self._body(start, "terminal.argv")

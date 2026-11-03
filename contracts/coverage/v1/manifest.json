@@ -99,7 +99,7 @@
     {"path": "valid/evidence-clear-mode-id.json", "sha256": "6ba389e63bdade0c3b2110d801a80440d25e9647782b204a3ce1168f5ce2971d", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/vectors/resume-token-v2.json", "sha256": "5e7259c950a7a74b12d1ff2ee8ec45bc1feeff760fbbb02c892f92ab413ea052", "expectation": "vectors", "expected_error": null},
     {"path": "evidence/fabric.exec.observation-v1.schema.json", "sha256": "3762c6252011c9e42d9aec4630e9ec65c399bd855e1bd0eb483de0058aaa392b", "expectation": "schema", "expected_error": null},
-    {"path": "fixtures/action-record/interface/exec-subprocess-records.json", "sha256": "6e21e75d3144b783cf5dfc4eafc6726486a54d7247083a6df00185dfd803a489", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/interface/exec-subprocess-records.json", "sha256": "b6c30ae0e7578137f585524fc73a950b72c8a916525a4abe5cf6f339d6879b80", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/interface/host-local-log-records.json", "sha256": "61ea44fa833de036eb3e19ba364ef7b94b56fe503933c09f46f79861acf9f58d", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/interface/host-sensor-spans.json", "sha256": "1e2fce1e8e4d9817351aa7c17b512836a21eb1f254ac9d2397abe00e8016896b", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/invalid/a0-reported-link-claims-inferred.json", "sha256": "da93636ac2cffda002e782dd668d2a1d8d7949692fe9e117b3f1e7048bebcd58", "expectation": "invalid", "expected_error": "coverage.action.link"},
@@ -108,7 +108,7 @@
     {"path": "fixtures/action-record/invalid/a3-ambiguous-lists-one-candidate.json", "sha256": "5428d1b627c13c42ab0ddb5bcbf33d9a883dca938fc9dc3ec92bd97c4424191e", "expectation": "invalid", "expected_error": "coverage.action.link"},
     {"path": "fixtures/action-record/invalid/a4-unattributed-effect-not-listed.json", "sha256": "3d7e98cfe3c0b271a0f61f81cac951062d262d0016e8fd44049534397213ccc7", "expectation": "invalid", "expected_error": "coverage.action.chains"},
     {"path": "fixtures/action-record/invalid/h1-certain-without-start-time.json", "sha256": "af5d05545ac6061b1b6897082fa630cf76d1ad8f31f589aefafcc7a30c670707", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
-    {"path": "fixtures/action-record/invalid/h2-pid-reuse-picks-one-candidate.json", "sha256": "a22dc68bc9754de80599a28349ad2da7c216ec80ad16a5f8d5c8ba7e6cf90853", "expectation": "invalid", "expected_error": "coverage.action.expected"},
+    {"path": "fixtures/action-record/invalid/h2-pid-reuse-picks-one-candidate.json", "sha256": "38060def219650845c6d9468279bb4b95a330119d2436e5c5c6560ab50c8e06d", "expectation": "invalid", "expected_error": "coverage.action.expected"},
     {"path": "fixtures/action-record/invalid/h3-lineage-exceeds-anchor-confidence.json", "sha256": "3ac816c9e002f7383b8dc140ab33b1817f27aa6a1c7a9358a3e49635c8bcaec3", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
     {"path": "fixtures/action-record/invalid/h3-lineage-past-depth-16.json", "sha256": "6a4504ed0489e81d1092e245c194f81793dca3637479b3909f47ff693336ca2e", "expectation": "invalid", "expected_error": "coverage.action.expected"},
     {"path": "fixtures/action-record/invalid/h4-agent-event-certain-without-start-time.json", "sha256": "bd0797d5fb3bddd32c0d07c7b4d19218318430ed475fbf4b8409ef850974c268", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
@@ -129,7 +129,7 @@
     {"path": "fixtures/action-record/rules/edge-lineage-depth-17.json", "sha256": "5f8fe6c8b9db5d51b579ebe2ba294331ee1556edbb7cbe7a5c03c5a4dcff0c55", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-parallel-distinct-outputs.json", "sha256": "0c53c814f4dbedde6ebb39b89aaf2c9f53d387db16b33ac0d00f23c038e8d19c", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-parallel-metadata-only.json", "sha256": "9190cef8e854c6ae2b267300d7083b0bc3c6827c103596e4bb80c8460d87661a", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/edge-pid-reuse.json", "sha256": "8ac37f26226718121575f4bd47fcfd88c37f2b4a3a6aaf02027d9c578e866189", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-pid-reuse.json", "sha256": "d2fd259e027ccb0ae207a213d82dbf01ac3d075efade8b081d4851c38e724f91", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/h1-anchor-exact.json", "sha256": "60d31615623b8215a80b152b2d04a753f9935af7b0a9cfec931e9aa7ea1bc2f5", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/h2-anchor-no-start.json", "sha256": "391b30756cc4e81ca95bf1500b8bec6dade15b3fffdcce8ed6ec24e717051047", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/h3-lineage.json", "sha256": "532fa32e2b69234b469c64fc7b7e7780cbceda6225f04325af50733d470ad6f7", "expectation": "valid", "expected_error": null},
@@ -152,6 +152,8 @@
     {"path": "valid/evidence-exec-wait.json", "sha256": "b6766739d33b4ca045a5ebdba1716ce303c364634fbfc7dede3bd61e7e1a6548", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/invalid/a1-several-matches-claims-certain.json", "sha256": "bf1343fc4beb8ef55d6e7b9155142009462716a34c60a20d284c3f9fb9adcf78", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
     {"path": "fixtures/action-record/rules/edge-a1-several-matches.json", "sha256": "a07b8de0a3af8da838e9db69d613c063c0cf2321469f503c4d8bde97a0b000f0", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/edge-lineage-pid-reuse.json", "sha256": "bfa56c1b360a56f7a67d175f804aaa5c3bac2f116b8ce0233793e48926211d91", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/action-record/rules/edge-lineage-pid-reuse.json", "sha256": "bfa56c1b360a56f7a67d175f804aaa5c3bac2f116b8ce0233793e48926211d91", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-exec-in-place.json", "sha256": "9a061dae76175c65c5847956362f82dba2db05e038c723339bb02f3ac8822607", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-same-pid-other-parent.json", "sha256": "9ad28f6775197be4f630e9a7447dd104407b9c025d85afbea69eefb868528328", "expectation": "valid", "expected_error": null}
   ]
 }

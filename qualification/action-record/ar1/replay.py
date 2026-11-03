@@ -8,8 +8,10 @@ host sensor is replaced. Each ``exec.subprocess`` effect in the Node's export is
 to a process tree of the template by its full command line (read from the content
 store); the tree's anchor takes the effect's pid and parent pid, its other processes
 synthetic pids, and its events the effect's start time plus a fixed offset or the
-fixture host's own observation of the connection. The agent's ``connect`` events use the
-captured exchange start times and the fixture host's observed ping. The result is an
+fixture host's own observation of the connection. An event of the anchor process itself
+(dash's in-place exec of the last command of a list) is kept before the effect's
+observed exit, since a process cannot exec after it exited. The agent's ``connect``
+events use the captured exchange start times and the fixture host's observed ping. The result is an
 OTLP/JSON logs export in the eBPF emitter's local-profile shape, which hermetic mode
 posts to the Node's OTLP/HTTP port so it reaches the sink through ``fabricguard`` like a
 real sensor's records.
@@ -43,6 +45,7 @@ class Effect:
     parent_pid: int
     start_ns: int
     command: str
+    exit_ns: int | None = None  # end of the record carrying the exit code, when delivered
 
 
 @dataclass
@@ -76,7 +79,19 @@ def _command(argv: Mapping[str, Any]) -> str:
 
 def exec_effects(rows: Iterable[Mapping[str, Any]], store: Any) -> list[Effect]:
     """The effects of a sink export: each exec start record with its pid, parent pid,
-    start time and full command line (its ``terminal.argv`` object in ``store``)."""
+    start time and full command line (its ``terminal.argv`` object in ``store``), and the
+    end time of its record carrying an exit code or signal (the hook saw the exit)."""
+    rows = list(rows)
+    exits: dict[str, int] = {}
+    for row in rows:
+        attrs = row.get("attributes") or {}
+        if (
+            row.get("kind") == "span"
+            and str(attrs.get("fabric.capture.point")).startswith(EXEC_POINT)
+            and ("fabric.process.exit_code" in attrs or "fabric.process.signal" in attrs)
+        ):
+            uid, end = str(attrs.get("fabric.attempt.uid")), int(row["end_ns"])
+            exits[uid] = min(exits.get(uid, end), end)
     found: list[Effect] = []
     for row in rows:
         attrs = row.get("attributes") or {}
@@ -101,6 +116,7 @@ def exec_effects(rows: Iterable[Mapping[str, Any]], store: Any) -> list[Effect]:
                     int(attrs["fabric.process.parent_pid"]),
                     int(row["start_ns"]),
                     command,
+                    exits.get(str(attrs["fabric.attempt.uid"])),
                 )
             )
     return sorted(found, key=lambda e: e.start_ns)
@@ -221,6 +237,8 @@ def bind(
             at = effect.start_ns + int(item.get("offset_us", 0)) * 1000
             if "at" in item and queues.get(item["at"]):
                 at = queues[item["at"]].pop(0) + int(item.get("offset_us", 0)) * 1000
+            if pid == effect.pid and effect.exit_ns is not None:
+                at = min(at, effect.exit_ns - 1000)  # the anchor process runs until its exit
             exe = item.get("exe") or next(
                 i["exe"] for i in tree["events"] if i["proc"] == name and "exe" in i
             )

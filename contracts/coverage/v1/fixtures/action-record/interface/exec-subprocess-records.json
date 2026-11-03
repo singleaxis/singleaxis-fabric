@@ -164,6 +164,7 @@
     "parent_pid": 4100,
     "process_start_ns": 60120000000,
     "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+    "exit_observed_ns": 1791331201236000000,
     "stdout": "a.txt\nb.txt\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /data/a.txt\n"
   }
 }

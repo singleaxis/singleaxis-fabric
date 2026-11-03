@@ -13,7 +13,9 @@ Two deliberate differences from the §6.2 table, both pinned by the WP6-01 fixtu
 local-profile host records carry no process start time, so anchors are ``process_anchor
 · tentative`` (H2), not ``certain``; and in variant (d) the single-window steps change
 method from ``output_match · certain`` to ``sequence_bracket · tentative`` (A1 needs
-content), keeping their targets.
+content), keeping their targets. Every effect, live or hermetic, needs exactly one such
+anchor: a shell that execs its last command in place (dash, step 1) is one exec chain
+(spec 056 §4.3), never ``ambiguous``, so no step may report ``anchor_missing``.
 """
 
 from __future__ import annotations

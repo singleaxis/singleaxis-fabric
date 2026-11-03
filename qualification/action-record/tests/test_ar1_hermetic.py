@@ -57,7 +57,7 @@ def test_the_script_answers_only_the_expected_results() -> None:
 
 def test_the_replay_binds_each_tree_to_its_effect() -> None:
     effects = [
-        replay.Effect("u1", 501, 500, 1_000_000_000, "ls /d && sha256sum /d/a.txt"),
+        replay.Effect("u1", 501, 500, 1_000_000_000, "ls /d && sha256sum /d/a.txt", 1_002_000_000),
         replay.Effect("u2", 502, 500, 2_000_000_000, "sh -c curl -fsS ... | head -c 65536"),
         replay.Effect("u3", 503, 500, 3_000_000_000, "something else"),
     ]
@@ -77,6 +77,15 @@ def test_the_replay_binds_each_tree_to_its_effect() -> None:
         ("501", "500"),
         ("502", "500"),
     }
+    # Step 1 models dash: the last command of the list is exec'd in place, a second exec of
+    # the anchor process (same pid and parent pid), kept before the effect's observed exit.
+    pairs = zip(attrs, records, strict=True)
+    by_uid = {a["log.record.uid"]: (a, int(r["timeUnixNano"])) for a, r in pairs}
+    in_place = [by_uid[u] for u in bound.lineage["u1"] if by_uid[u][0]["process.pid"] == "501"]
+    assert [(a["process.parent_pid"], a["process.executable.name"]) for a, _ in in_place] == [
+        ("500", "sha256sum")
+    ]
+    assert in_place[0][1] < 1_002_000_000 and len(bound.lineage["u1"]) == 2
     connects = [a for a in attrs if a["audit.syscall"] == "connect"]
     assert len(connects) == 2 + 1 + 1  # two model calls, curl, the ping
     assert all("process.start_ns" not in a for a in attrs)  # the local profile has none

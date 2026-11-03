@@ -325,8 +325,10 @@ def effect_from_records(
 ) -> dict[str, Any]:
     """The normalized effect a reader derives from one exec.subprocess attempt's records:
     identity and position from the ``start`` record (the first by sequence), the process
-    keys from the first record carrying them, the decoded stdout from the ``end`` record's
-    ``terminal.stdout`` body. Rule fixtures use this form."""
+    keys from the first record carrying them, ``exit_observed_ns`` from the end time of the
+    first record carrying an exit code or signal (spec 056 §4.3 exec chains), the decoded
+    stdout from the ``end`` record's ``terminal.stdout`` body. Rule fixtures use this
+    form."""
     ordered = sorted(
         records, key=lambda r: r["span"]["attributes"]["fabric.source.sequence"]
     )
@@ -354,6 +356,17 @@ def effect_from_records(
         )
         if value is not None:
             out[name] = value
+    exited = next(
+        (
+            r["span"]["end_time_unix_nano"]
+            for r in ordered
+            if "fabric.process.exit_code" in r["span"]["attributes"]
+            or "fabric.process.signal" in r["span"]["attributes"]
+        ),
+        None,
+    )
+    if exited is not None:
+        out["exit_observed_ns"] = exited
     for record in ordered:
         for body in record.get("bodies", []):
             if body["descriptor"]["role"] == "terminal.stdout":
@@ -1174,18 +1187,64 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         )
     )
 
-    # Edge: pid reuse inside the window (no start times).
+    # Edge: pid reuse inside the window (no start times): the hook saw the child exit
+    # between the two execs, so they are not one exec chain.
     s = Scenario("edge-pid-reuse")
     s.host_source()
     s.exchange(0, 900, calls=[("call_R1", "run_shell")])
-    s.effect("exec sh -c 'true'", 1000, stdout=LS_OUTPUT, pid=4121)
+    s.effect(
+        "exec sh -c 'ls /data'",
+        1000,
+        stdout=LS_OUTPUT,
+        pid=4121,
+        exit_observed_ns=_ms(1030),
+    )
     s.host("exec-first", "exec", 1000.5, 4121, AGENT_PID)
     s.host("exec-reused", "exec", 1060, 4121, AGENT_PID)
     s.exchange(1500, 2400, results=[("call_R1", _result(LS_OUTPUT))])
     put(
         s.fixture(
             ["A1", "H2"],
-            "Two exec events with the effect's pid and parent pid inside the window and no start times: ambiguous with both, never certain; corroboration is partial(anchor_missing).",
+            "Two exec events with the effect's pid and parent pid inside the window, no start times, and the hook saw the child exit between them: pid reuse, not an exec chain, so ambiguous with both, never certain; corroboration is partial(anchor_missing).",
+        )
+    )
+
+    # Edge: a shell that execs its command in place (bash -c "cmd"; dash for the last
+    # command of a list): two execs of one process, no exit between them.
+    s = Scenario("edge-exec-in-place")
+    s.host_source()
+    s.exchange(0, 900, calls=[("call_X1", "run_shell")])
+    s.effect(
+        "exec bash -c 'sha256sum /data/a.txt'",
+        1000,
+        stdout=SHA_OUTPUT,
+        pid=4121,
+        exit_observed_ns=_ms(1012),
+    )
+    s.host("exec-bash", "exec", 1000.5, 4121, AGENT_PID)
+    s.host("exec-in-place", "exec", 1001.4, 4121, AGENT_PID)
+    s.host("open-data", "file", 1002, 4121, AGENT_PID)
+    s.exchange(1500, 2400, results=[("call_X1", _result(SHA_OUTPUT))])
+    put(
+        s.fixture(
+            ["A1", "H2", "H3"],
+            "bash -c execs its command in place: two exec events with the effect's pid and parent pid, no start times and no exit between them form one exec chain. The effect is corroborated_by the first exec (process_anchor, tentative); the later exec and the file open are part_of it at depth 0 (process_lineage, tentative). Never certain.",
+        )
+    )
+
+    # Edge: the same pid exec'd again under another parent pid inside the window.
+    s = Scenario("edge-same-pid-other-parent")
+    s.host_source()
+    s.exchange(0, 900, calls=[("call_P1", "run_shell")])
+    s.effect("exec sh -c 'ls /data'", 1000, stdout=LS_OUTPUT, pid=4121)
+    s.host("exec-sh", "exec", 1000.5, 4121, AGENT_PID)
+    s.host("exec-other-parent", "exec", 1040, 4121, 55)
+    s.host("connect-other-parent", "connect", 1041, 4121, 55, peer_id=UNCALLED_PEER)
+    s.exchange(1500, 2400, results=[("call_P1", _result(LS_OUTPUT))])
+    put(
+        s.fixture(
+            ["A1", "H2"],
+            "An exec with the effect's pid but another parent pid is another process, not an exec chain: the anchor is the only match (H2, tentative); the other exec proves pid reuse, so neither it nor its connect is lineage; both are unexplained.",
         )
     )
 

@@ -127,8 +127,9 @@ def test_every_rule_fixture_named_by_the_task_is_present() -> None:
     assert {"a0-reported-parent", "a1-output-match", "a2-single-window", "a3-several-windows",
             "a4-no-window", "edge-parallel-distinct-outputs", "edge-parallel-metadata-only",
             "edge-clock-margin-boundary", "edge-background-thread", "ar1-run",
-            "ar1-negative-d-metadata-only"} <= names  # fmt: skip
-    assert len(RULE_FIXTURES) == 24
+            "ar1-negative-d-metadata-only", "edge-exec-in-place", "edge-pid-reuse",
+            "edge-same-pid-other-parent"} <= names  # fmt: skip
+    assert len(RULE_FIXTURES) == 26
 
 
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)

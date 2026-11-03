@@ -255,6 +255,7 @@ def vars_of(effect: ProcessEffect) -> dict[str, Any]:
         "parent_pid",
         "process_start_ns",
         "host_id",
+        "exit_observed_ns",
     )
     return {n: getattr(effect, n) for n in names}
 
@@ -525,6 +526,7 @@ def _effect(pid: int = 4121, start: int | None = None, **kw: Any) -> ProcessEffe
         parent_pid=kw.pop("parent_pid", 4100),
         process_start_ns=start,
         host_id=kw.pop("host_id", HOST),
+        exit_observed_ns=kw.pop("exit_observed_ns", None),
     )
 
 
@@ -622,6 +624,16 @@ def test_random_joins_never_certain_without_a_start_tick_match() -> None:
                     sequence=10 + i,
                     start_ns=T0 + (1000 + i * 50) * MS,
                 )
+            )
+        if rng.random() < 0.5:  # half the runs carry an observed exit
+            first = effects[0]
+            effects[0] = _effect(
+                first.pid or 4121,
+                first.process_start_ns,
+                attempt_uid=first.attempt_uid,
+                sequence=first.sequence,
+                start_ns=first.start_ns,
+                exit_observed_ns=T0 + rng.randint(950, 1250) * MS,
             )
         for n in range(rng.randint(0, 12)):
             pid = rng.choice([4100, 4121, 4122, 4123])
@@ -924,3 +936,136 @@ def test_a_reparented_process_with_its_start_tick_stays_in_the_lineage() -> None
     connect = _exec(4, 4122, 1, at + 901 * MS, start + TICK_NS, event_class="connect")
     trace = _join([effect], [anchor, child, reexec, connect]).trace["host_events"]
     assert [trace[e.event_id] for e in (child, reexec, connect)] == ["H3"] * 3
+
+
+# ------------------------------------------------------------------ exec chains (spec 056 §4.3)
+def test_a_shell_that_execs_in_place_is_one_tentative_anchor() -> None:
+    """``bash -c "cmd"`` (or dash's last command of a list) execs in place: two exec events
+    with the effect's pid and parent pid, no start times and no exit between them are one
+    process. The effect is corroborated_by the first exec only (tentative, resolved); the
+    later exec and the process's file open are lineage at depth 0."""
+    effect = _effect(exit_observed_ns=T0 + 1012 * MS)
+    at = effect.start_ns
+    bash = _exec(1, 4121, 4100, at + MS // 2)
+    in_place = _exec(2, 4121, 4100, at + 1400 * 1000)
+    opened = _exec(3, 4121, 4100, at + 2 * MS, event_class="file")
+    join = _join([effect], [bash, in_place, opened])
+    assert join.trace["anchors"] == {effect.attempt_uid: "H2"}
+    (link,) = join.links[effect.attempt_uid]
+    assert (link["target"]["id"], link["confidence"], link["state"]) == (
+        bash.event_id, "tentative", "resolved"
+    )  # fmt: skip
+    trace = join.trace["host_events"]
+    assert [trace[e.event_id] for e in (bash, in_place, opened)] == ["H2", "H3", "H3"]
+    lineage = [link for e in join.sensor_events for link in e.get("links", ())]
+    assert {(x["method"], x["confidence"]) for x in lineage} == {("process_lineage", "tentative")}
+    assert join.corroboration.reasons() == []
+    # Three execs of one process (a shell, a re-exec, another re-exec) are one chain too.
+    third = _exec(4, 4121, 4100, at + 3 * MS)
+    assert _join([effect], [bash, in_place, third]).trace["anchors"][effect.attempt_uid] == "H2"
+    # No exit evidence (the hook's end record is lost): same pid and parent pid in
+    # succession is still one chain.
+    blind = _effect()
+    assert _join([blind], [bash, in_place]).trace["anchors"][blind.attempt_uid] == "H2"
+
+
+def test_an_observed_exit_between_two_execs_is_pid_reuse() -> None:
+    """The hook saw the child exit between the two execs: the pid was free, so the later
+    exec is another process. Both stay candidates (ambiguous, anchor_missing), never
+    certain and never one picked."""
+    effect = _effect(exit_observed_ns=T0 + 1030 * MS)
+    first = _exec(1, 4121, 4100, effect.start_ns + MS // 2)
+    reused = _exec(2, 4121, 4100, effect.start_ns + 60 * MS)
+    join = _join([effect], [first, reused])
+    assert join.trace["anchors"][effect.attempt_uid] == "H2-ambiguous"
+    links = join.links[effect.attempt_uid]
+    assert [x["target"]["id"] for x in links] == [first.event_id, reused.event_id]
+    assert {(x["confidence"], x["state"]) for x in links} == {("tentative", "ambiguous")}
+    assert all(x["candidates"] == [first.event_id, reused.event_id] for x in links)
+    assert join.corroboration.reasons() == ["anchor_missing"]
+    # The exit of an earlier effect that held the same pid counts as well.
+    earlier = _effect(
+        attempt_uid="00000000-0000-4000-8000-000000000002",
+        sequence=3,
+        start_ns=effect.start_ns - 40 * MS,
+        exit_observed_ns=effect.start_ns + 30 * MS,
+    )
+    later = _effect(attempt_uid="00000000-0000-4000-8000-000000000003")
+    join = _join([earlier, later], [first, reused])
+    assert join.trace["anchors"][later.attempt_uid] == "H2-ambiguous"
+    # An exit after both execs (the chain ran, then exited) is no evidence of reuse.
+    done = _effect(exit_observed_ns=effect.start_ns + 70 * MS)
+    assert _join([done], [first, reused]).trace["anchors"][done.attempt_uid] == "H2"
+    # An exit observed on another host says nothing about this one's pid.
+    elsewhere = _effect(
+        attempt_uid="00000000-0000-4000-8000-000000000004",
+        sequence=3,
+        host_id="hst-" + "f" * 32,
+        exit_observed_ns=effect.start_ns + 30 * MS,
+    )
+    join = _join([elsewhere, later], [first, reused])
+    assert join.trace["anchors"][later.attempt_uid] == "H2"
+
+
+def test_the_same_pid_under_another_parent_is_not_a_chain() -> None:
+    """An exec with the effect's pid but another parent pid is another process: it is not
+    an H2 candidate, so the anchor is the only match, and it proves pid reuse for H3."""
+    effect = _effect()
+    at = effect.start_ns
+    sh = _exec(1, 4121, 4100, at + MS // 2)
+    other = _exec(2, 4121, 55, at + 40 * MS)
+    connect = _exec(3, 4121, 55, at + 41 * MS, event_class="connect")
+    join = _join([effect], [sh, other, connect])
+    assert join.trace["anchors"][effect.attempt_uid] == "H2"
+    (link,) = join.links[effect.attempt_uid]
+    assert (link["target"]["id"], link["confidence"]) == (sh.event_id, "tentative")
+    trace = join.trace["host_events"]
+    assert [trace[e.event_id] for e in (other, connect)] == ["unexplained"] * 2
+    assert join.corroboration.reasons() == ["unexplained_host_event"]
+
+
+def test_exec_chain_start_ticks_and_pid_reuse_never_certain() -> None:
+    """Where the sensor records start times and the effect does not, two execs in other
+    ticks are two processes (ambiguous); in one tick they are one chain. With the
+    effect's start time, H1 decides and no chain is needed; a chain of start-less events
+    is never more than tentative."""
+    effect = _effect()
+    at, start = effect.start_ns, 1_000 * TICK_NS
+    one = _exec(1, 4121, 4100, at + MS, start)
+    two = _exec(2, 4121, 4100, at + 2 * MS, start + TICK_NS)
+    assert _join([effect], [one, two]).trace["anchors"][effect.attempt_uid] == "H2-ambiguous"
+    same = _exec(3, 4121, 4100, at + 2 * MS, start + 1)
+    join = _join([effect], [one, same])
+    assert join.trace["anchors"][effect.attempt_uid] == "H2"
+    assert {x["confidence"] for x in join.links[effect.attempt_uid]} == {"tentative"}
+    timed = _effect(start=start)
+    join = _join([timed], [one, same])
+    assert join.trace["anchors"][timed.attempt_uid] == "H1"
+    assert join.trace["host_events"][same.event_id] == "H3"
+    bare = [_exec(4, 4121, 4100, at + MS), _exec(5, 4121, 4100, at + 2 * MS)]
+    join = _join([timed], bare)
+    assert join.trace["anchors"][timed.attempt_uid] == "H2"
+    assert {x["confidence"] for x in join.links[timed.attempt_uid]} == {"tentative"}
+    reused = _effect(start=start, exit_observed_ns=at + MS + MS // 2)
+    join = _join([reused], bare)
+    assert join.trace["anchors"][reused.attempt_uid] == "H2-ambiguous"
+    assert all(x["confidence"] != "certain" for x in join.links[reused.attempt_uid])
+
+
+def test_an_observed_exit_ends_the_lineage_of_its_pid() -> None:
+    """After the hook saw the anchored child exit, an exec of its pid with the same parent
+    is another process: neither it nor its connect is lineage. Its children's own events
+    are unaffected."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start, exit_observed_ns=T0 + 1500 * MS)
+    at = effect.start_ns
+    anchor = _exec(1, 4121, 4100, at + MS, start)
+    child = _exec(2, 4122, 4121, at + 2 * MS, start + TICK_NS)
+    late_child_connect = _exec(3, 4122, 4121, at + 600 * MS, event_class="connect")
+    reused = _exec(4, 4121, 4100, at + 900 * MS)
+    connect = _exec(5, 4121, 4100, at + 901 * MS, event_class="connect")
+    trace = _join([effect], [anchor, child, late_child_connect, reused, connect]).trace
+    events = trace["host_events"]
+    assert events[anchor.event_id] == "H1"
+    assert [events[e.event_id] for e in (child, late_child_connect)] == ["H3", "H3"]
+    assert [events[e.event_id] for e in (reused, connect)] == ["unexplained"] * 2

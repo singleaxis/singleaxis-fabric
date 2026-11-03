@@ -55,7 +55,7 @@ emitter is built with `go generate ./... && go build` in
 
 | Variant | Run | Expected |
 |---|---|---|
-| base | the §6.2 script | `decisions` complete, `actions` complete, `effects` partial(`unattributed_effect`), `corroboration` partial(`unexplained_host_event`). Steps 1 to 4: `caused_by` their call, `output_match · certain` (step 2 may also be `sequence_bracket`). Every effect: `corroborated_by` its exec event, `process_anchor · tentative`. Children, `curl`'s connect and the sandboxed Python: `part_of` their effect, `process_lineage`. The agent's model connections: `part_of` the run (H4). Step 5 and the SDK probes are the unattributed effects. Step 6 is the only unexplained host event. |
+| base | the §6.2 script | `decisions` complete, `actions` complete, `effects` partial(`unattributed_effect`), `corroboration` partial(`unexplained_host_event`). Steps 1 to 4: `caused_by` their call, `output_match · certain` (step 2 may also be `sequence_bracket`). Every effect: `corroborated_by` its exec event, `process_anchor · tentative`. Children, step 1's in-place exec of `sha256sum`, `curl`'s connect and the sandboxed Python: `part_of` their effect, `process_lineage`. The agent's model connections: `part_of` the run (H4). Step 5 and the SDK probes are the unattributed effects. Step 6 is the only unexplained host event. |
 | a | base export without `--host-records` | `corroboration` not_observed(`not_configured`); other chains and links unchanged |
 | b | step 1's `completed` exec record removed from the agent's spool before delivery | `effects` partial(`sequence_gap`, `unattributed_effect`); `decisions` partial(`sequence_gap`), because the lost position is on the epoch the exchanges share and nothing proves it was not an exchange; `actions` complete; `corroboration` as in base |
 | c | hook off | `effects` not_observed(`channel_disabled`); manifest row `exec.subprocess` disabled(`hook_disabled`); T1 to T5 `effect_not_observed(channel_disabled)`; the host chain still runs: the agent's own connections are `part_of` the run by H4 (`--agent-pid`), and step 6 is unexplained |
@@ -72,7 +72,11 @@ a shell.
 - **Anchors are `tentative`, not `certain`.** Local-profile host records
   carry no process start time, so H1 cannot apply; H2 links each effect.
   The WP6-01 fixture `ar1-run-local-profile` pins the same result. M2
-  records add the start time.
+  records add the start time. Every step's effect, steps 4 and 5
+  included, has one `process_anchor · tentative` link and no step reports
+  `anchor_missing`. Step 1 on Ubuntu, where `dash` execs `sha256sum` in
+  place, is one exec chain (spec 056 §4.3): the anchor is the shell's
+  exec, and the in-place exec is lineage.
 - **Variant (b) also bounds `decisions`.** §6.2 names only the `effects`
   chain. With the shared allocator, the dropped record's position is on the
   exchanges' epoch, and the verifier cannot prove the missing position was
@@ -99,14 +103,13 @@ a shell.
 
 The replay proves the reader, the join and the report on records shaped as
 the eBPF emitter writes them. It does not prove the emitter: the join sees
-what the template says. The template forks every command of a list or
-pipeline, as macOS `/bin/sh` does. `dash`, the Ubuntu `/bin/sh`, instead
-execs the last command of `ls … && sha256sum …` in place. That gives two
-exec events with the same pid and parent pid, and H2 then reports the
-step 1 anchor as `ambiguous` (`anchor_missing`). This is expected to fail
-live mode until M2 records carry the process start time; see
-[docs/action-reconstruction.md](../../docs/action-reconstruction.md#what-is-not-covered-yet).
-The template also leaves out Fabric's own connections from the agent
+what the template says. The template models `dash`, the Ubuntu `/bin/sh`:
+it forks each command of a pipeline and every command of a list but the
+last, which it execs in place. Step 1 (`ls … && sha256sum …`) therefore
+has two exec events with the effect's pid and parent pid, and hermetic
+mode checks the exec-chain rule of spec 056 §4.3 on every run. The replay
+keeps the in-place exec before the effect's observed exit, as a real one
+is. The template also leaves out Fabric's own connections from the agent
 process to the Node; live mode declares the Node's loopback address with
 `--known-peer`.
 

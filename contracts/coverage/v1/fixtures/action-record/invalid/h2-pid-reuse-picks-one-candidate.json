@@ -5,7 +5,7 @@
     "A1",
     "H2"
   ],
-  "description": "Two exec events with the effect's pid and parent pid inside the window and no start times: ambiguous with both, never certain; corroboration is partial(anchor_missing).",
+  "description": "Two exec events with the effect's pid and parent pid inside the window, no start times, and the hook saw the child exit between them: pid reuse, not an exec chain, so ambiguous with both, never certain; corroboration is partial(anchor_missing).",
   "key": "fabric-test-id-key-not-a-secret",
   "input": {
     "run": {
@@ -76,13 +76,14 @@
       {
         "attempt_uid": "cffea5e6-6c6e-49a4-a583-1b8985641358",
         "event_id": "89366406-c23a-4a58-af45-e824f51b1cbe",
-        "label": "exec sh -c 'true'",
+        "label": "exec sh -c 'ls /data'",
         "sequence": 2,
         "start_ns": 1791331201000000000,
         "pid": 4121,
         "parent_pid": 4100,
         "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
-        "stdout": "a.txt\nb.txt\nc.txt\n"
+        "stdout": "a.txt\nb.txt\nc.txt\n",
+        "exit_observed_ns": 1791331201030000000
       }
     ],
     "host_events": [

@@ -15,14 +15,18 @@ effects through the process tree:
   ambiguous, and it is the only rule that makes an anchor ``certain``.
 - **H2 anchor, no start time.** The same match without a start time on one side, within
   100 ms plus both clock uncertainties of the effect's start: ``tentative``. Two or more
-  matches (pid reuse) give one ``ambiguous`` link per candidate; the effect then counts
-  as not anchored.
+  matches are one process when they form an **exec chain** (a shell that execs its
+  command in place: no exit of the pid observed between consecutive execs, start times in
+  one tick where both carry one); the anchor is the chain's first exec and the later
+  execs are H3 lineage at depth 0. Otherwise (pid reuse) they give one ``ambiguous`` link
+  per candidate, and the effect counts as not anchored. No host sensor reports process
+  exits today, so the exit evidence is the hook's own (``ProcessEffect.exit_observed_ns``).
 - **H3 lineage.** A host event whose parent-pid chain reaches an anchored child, on the
   same host and pid namespace, with non-decreasing times and start times, at most depth
   16 and 4096 events per anchor: the event is ``part_of`` the effect's attempt,
   ``process_lineage``, with the anchor's confidence. An exec that takes over a pid of the
   chain without being that process or its child proves pid reuse and ends that pid's
-  lineage.
+  lineage; so does an observed exit of the pid.
 - **H4 agent process.** A host event of the agent's own pid (the epoch registration,
   spec 050 §3.2, which an export does not carry: the operator declares it, else the
   parent pid every effect agrees on) inside the run window widened by both clock
@@ -64,6 +68,7 @@ import os
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, Final
 
@@ -158,6 +163,8 @@ S_HOST_ID = "fabric.execution.host_id"
 P_PID = "fabric.process.pid"
 P_PARENT_PID = "fabric.process.parent_pid"
 P_START_NS = "fabric.process.start_ns"
+P_EXIT_CODE = "fabric.process.exit_code"
+P_SIGNAL = "fabric.process.signal"
 
 _HOST_POINT_RE = re.compile(r"^(host\.(?:auditd|ebpf))@[0-9A-Za-z.+-]{1,32}$")
 _EXEC_POINT_RE = re.compile(r"^exec\.subprocess@[0-9A-Za-z.+-]{1,32}$")
@@ -296,7 +303,10 @@ class SensorPosition:
 class ProcessEffect:
     """The process facts of one ``exec.subprocess`` attempt (fixtures README §1):
     identity and position from the ``start`` record, the process keys from the first
-    record carrying each. An effect without a ``pid`` is never anchored."""
+    record carrying each. An effect without a ``pid`` is never anchored.
+    ``exit_observed_ns`` is the end time of the first record carrying the child's exit
+    code or signal: the hook saw the child reaped, so its pid was free, by then (spec 056
+    §4.3 exec chains). Unix ns, on the agent's clock."""
 
     attempt_uid: str
     event_id: str
@@ -306,6 +316,7 @@ class ProcessEffect:
     parent_pid: int | None = None
     process_start_ns: int | None = None
     host_id: str | None = None
+    exit_observed_ns: int | None = None
 
 
 @dataclass(slots=True)
@@ -750,7 +761,8 @@ def process_effects(
     of one ``fabric.run.id``), in sequence order. Identity, position and start time come
     from the attempt's first record by sequence (the ``start`` record); ``pid``,
     ``parent_pid``, ``process_start_ns`` and ``host_id`` from the first record carrying a
-    valid value. A record whose identity is not exact is skipped."""
+    valid value; ``exit_observed_ns`` from the end time of the first record carrying an
+    exit code or signal. A record whose identity is not exact is skipped."""
     attempts: dict[str, list[tuple[int, SpanRecord]]] = {}
     for span in spans:
         attrs = span.attributes
@@ -780,10 +792,20 @@ def process_effects(
                 parent_pid=_first_valid(P_PARENT_PID, lambda v: _int(v, 0), records),
                 process_start_ns=_first_valid(P_START_NS, lambda v: _int(v, 0), records),
                 host_id=_first_valid(S_HOST_ID, _hst, records),
+                exit_observed_ns=_exit_observed(records),
             )
         )
     effects.sort(key=lambda e: (e.sequence, e.attempt_uid))
     return effects
+
+
+def _exit_observed(records: Sequence[tuple[int, SpanRecord]]) -> int | None:
+    """The end time of the first record carrying the child's exit code or signal."""
+    for _, span in records:
+        attrs = span.attributes
+        if _int(attrs.get(P_EXIT_CODE), 0) is not None or _int(attrs.get(P_SIGNAL), 1) is not None:
+            return span.end_ns
+    return None
 
 
 def _first_valid(key: str, check: Any, records: Sequence[tuple[int, SpanRecord]]) -> Any:
@@ -929,6 +951,7 @@ class _Hosts:
         sources: Sequence[HostSource],
         evidence: HostEvidence,
         window: tuple[int, int] = (0, _INT63_MAX),
+        effects: Iterable[ProcessEffect] = (),
     ) -> None:
         self.agent = agent
         self.window = window
@@ -939,6 +962,18 @@ class _Hosts:
             (e for e in evidence.events if e.source in self.sources),
             key=lambda e: (e.time_ns, e.event_id),
         )
+        # The only exit evidence today (no host sensor reports process exits): an effect
+        # whose record carries its exit code or signal freed its pid by that record's end.
+        self.exits: dict[tuple[str | None, int], list[int]] = {}
+        for effect in effects:
+            if effect.pid is not None and effect.exit_observed_ns is not None:
+                key = (effect.host_id, effect.pid)
+                self.exits.setdefault(key, []).append(effect.exit_observed_ns)
+
+    def exited(self, host_id: str | None, pid: int, after: int, until: int) -> bool:
+        """Whether an exit of ``pid`` on ``host_id`` was observed in ``[after, until]``:
+        from then on the pid names another process, or none."""
+        return any(after <= seen <= until for seen in self.exits.get((host_id, pid), ()))
 
     def host_of(self, event: HostEvent) -> str | None:
         return event.host_id if event.host_id is not None else self.sources[event.source].host_id
@@ -979,7 +1014,9 @@ def _anchor(hosts: _Hosts, effect: ProcessEffect) -> tuple[str, list[HostEvent],
     tick); it cannot be ambiguous. H2 applies only to events without a start time when
     the effect has one (an event whose start time differs is another process: pid reuse
     is never certain), within the bounded window. The parent pid must be known on both
-    sides and equal."""
+    sides and equal. Several H2 matches that form an exec chain (:func:`_exec_chain`) are
+    one process: the anchor is the chain's first exec, the later ones are H3 lineage at
+    depth 0. Any other set of matches is ambiguous."""
     if effect.pid is None or effect.parent_pid is None:
         return "anchor_missing", [], None
     exec_events = [
@@ -1005,11 +1042,28 @@ def _anchor(hosts: _Hosts, effect: ProcessEffect) -> tuple[str, list[HostEvent],
             return "H1", exact[:1], "certain"
         pool = [e for e in exec_events if e.process_start_ns is None]
     near = [e for e in pool if abs(e.time_ns - effect.start_ns) <= H2_WINDOW_NS + hosts.margin(e)]
-    if len(near) == 1:
-        return "H2", near, "tentative"
+    if len(near) == 1 or _exec_chain(hosts, effect.host_id, near):
+        return "H2", near[:1], "tentative"
     if near:
         return "H2-ambiguous", near[:CANDIDATES_MAX], "tentative"
     return "anchor_missing", [], None
+
+
+def _exec_chain(hosts: _Hosts, host_id: str | None, events: Sequence[HostEvent]) -> bool:
+    """Whether H2's matches (same pid and parent pid, in time order) are one process that
+    exec'd again in place (``bash -c "cmd"``; ``dash`` for the last command of a list):
+    no exit of the pid observed between two consecutive execs, and start times in the
+    same tick wherever both carry one. Without exit evidence, succession is a chain; a
+    chain is never more than ``tentative``."""
+    if len(events) <= 1:
+        return False
+    for first, later in pairwise(events):
+        one, two = first.process_start_ns, later.process_start_ns
+        if one is not None and two is not None and not same_tick(one, two):
+            return False
+        if hosts.exited(host_id, later.pid, first.time_ns, later.time_ns):
+            return False
+    return True
 
 
 @dataclass(slots=True)
@@ -1033,7 +1087,8 @@ def _lineage(
 
     Pid reuse: a successful exec of a known pid that is neither that process nor a child
     of one in the chain proves the pid now names another process, so the pid leaves the
-    chain and nothing that process does is linked (§4.1: links are never guessed)."""
+    chain and nothing that process does is linked (§4.1: links are never guessed). An
+    observed exit of a pid in the chain (:meth:`_Hosts.exited`) ends it the same way."""
     if effect.pid is None:
         return [], []  # never reached: only an effect with a pid is anchored
     start = effect.process_start_ns
@@ -1050,6 +1105,7 @@ def _lineage(
         ):
             continue
         own = event.process_start_ns
+        _drop_exited(hosts, procs, effect.host_id, event)
         if event.event_class == "exec" and event.result == "success":
             known = procs.get(event.pid)
             parent = procs.get(event.ppid) if event.ppid is not None else None
@@ -1092,6 +1148,16 @@ def _lineage(
             continue
         linked.append(event)
     return linked, truncated
+
+
+def _drop_exited(
+    hosts: _Hosts, procs: dict[int, _Proc], host_id: str | None, event: HostEvent
+) -> None:
+    """Forget the chain's process of ``event``'s pid when an exit of that pid was observed
+    since the process was seen: whatever holds the pid now is another process."""
+    held = procs.get(event.pid)
+    if held is not None and hosts.exited(host_id, event.pid, held.time, event.time_ns):
+        del procs[event.pid]
 
 
 def _counts() -> dict[str, int]:
@@ -1246,7 +1312,7 @@ def join_host_events(
     effect's lineage), then lineage per anchor in effect order, then H4; whatever is left
     in the agent's scope inside the window is unexplained."""
     ordered = sorted(effects, key=lambda e: (e.sequence, e.attempt_uid))
-    hosts = _Hosts(agent, sources, evidence, window)
+    hosts = _Hosts(agent, sources, evidence, window, ordered)
     join = _Join(hosts)
     if hosts.sources:
         for effect in ordered:
@@ -1307,6 +1373,7 @@ def _effects_of(inp: Mapping[str, Any]) -> list[ProcessEffect]:
             parent_pid=e.get("parent_pid"),
             process_start_ns=e.get("process_start_ns"),
             host_id=e.get("host_id"),
+            exit_observed_ns=e.get("exit_observed_ns"),
         )
         for e in inp.get("effects", [])
     ]

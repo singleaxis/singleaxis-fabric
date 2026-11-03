@@ -1,6 +1,6 @@
 {
   "schema": "fabric.ar1-host-replay/v1",
-  "description": "What a local-profile eBPF emitter scoped to the AR-1 agent's cgroup reports for one AR-1 run, written as process trees. Hermetic mode binds it to the real run: an anchor process ('parent': 'agent') takes the pid and parent pid of the exec.subprocess effect whose full command line contains 'match'; every other process gets a synthetic pid; times are the effect's start time plus offset_us, or the fixture host's own observation of the connection. The record keys are those of components/host-emitter (emitter.go) as contracts/coverage/v1/fixtures/action-record/interface/host-local-log-records.json pins them: no process start time, so anchors are H2 (tentative). Modelled on a shell that forks each command of a list or pipeline (macOS /bin/sh); dash (the Ubuntu /bin/sh) execs the last command of a list in place, which on these records makes step 1's anchor ambiguous (see README). It does not model Fabric's own sender connections.",
+  "description": "What a local-profile eBPF emitter scoped to the AR-1 agent's cgroup reports for one AR-1 run, written as process trees. Hermetic mode binds it to the real run: an anchor process ('parent': 'agent') takes the pid and parent pid of the exec.subprocess effect whose full command line contains 'match'; every other process gets a synthetic pid; times are the effect's start time plus offset_us, or the fixture host's own observation of the connection. The record keys are those of components/host-emitter (emitter.go) as contracts/coverage/v1/fixtures/action-record/interface/host-local-log-records.json pins them: no process start time, so anchors are H2 (tentative). Modelled on dash, the Ubuntu /bin/sh: it forks each command of a pipeline and every command of a list but the last, which it execs in place, so step 1's sha256sum is a second exec of the anchor process (same pid and parent pid, no start time) and H2 reads the two as one exec chain (spec 056 §4.3). An event of the anchor process ('proc' of the anchor, no 'parent') is placed before the effect's observed exit (the end of its record with an exit code), as a real re-exec is. It does not model Fabric's own sender connections.",
   "audit_source": "ebpf",
   "cgroup_id": 91234,
   "agent": [
@@ -11,7 +11,7 @@
     {"step": "1", "match": " && ", "events": [
       {"proc": "sh", "exe": "sh", "parent": "agent", "syscall": "execve", "offset_us": 300},
       {"proc": "ls", "exe": "ls", "parent": "sh", "syscall": "execve", "offset_us": 1100},
-      {"proc": "sum", "exe": "sha256sum", "parent": "sh", "syscall": "execve", "offset_us": 2500}
+      {"proc": "sh", "exe": "sha256sum", "syscall": "execve", "offset_us": 2500}
     ]},
     {"step": "2", "match": "curl -fsS", "events": [
       {"proc": "sh", "exe": "sh", "parent": "agent", "syscall": "execve", "offset_us": 300},

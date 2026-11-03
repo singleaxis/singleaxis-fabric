@@ -144,6 +144,7 @@ recomputable.
 | `sequence` | the `start` record's `fabric.source.sequence` |
 | `start_ns` | the `start` record's span start time |
 | `pid`, `parent_pid`, `process_start_ns`, `host_id` | `fabric.process.pid`, `.parent_pid`, `.start_ns`, `fabric.execution.host_id` (first record carrying each) |
+| `exit_observed_ns` | the span end time of the first record carrying `fabric.process.exit_code` or `fabric.process.signal`: the hook saw the child reaped, so its pid was free, by then (absent when no record carries either, e.g. a timeout or a lost `end` record) |
 | `stdout` | the `end` record's `terminal.stdout` body, decoded as UTF-8 (absent when not captured) |
 
 ## 2. Local-profile host records (`interface/host-local-log-records.json`)
@@ -288,9 +289,18 @@ comes from `/proc/<pid>/stat` in ticks, a sensor's in nanoseconds.
 | Rule | Decision | Link |
 |---|---|---|
 | H1 | A successful exec event with the effect's pid and parent pid and a start time in the same tick as `process_start_ns` (both present) | effect `corroborated_by` → `event`, `process_anchor`, `certain`. A later exec of the same process (same pid, parent and start) is lineage at depth 0 |
-| H2 | No start time on one side; exactly one such exec event within 100 ms + both clock uncertainties of the effect's start | `process_anchor`, `tentative`. Two or more: `ambiguous` with all; the effect counts as not anchored (`anchor_missing`) |
+| H2 | No start time on one side; exactly one such exec event within 100 ms + both clock uncertainties of the effect's start, or several that form one exec chain (below) | `process_anchor`, `tentative`, on the match or the chain's first exec. Two or more that are not one chain: `ambiguous` with all; the effect counts as not anchored (`anchor_missing`) |
 | H3 | A host event whose parent-pid chain reaches an anchored child, same host and namespace, times not earlier than its parent's, start times non-decreasing, depth ≤ 16, ≤ 4096 events per anchor; connect and file events of a process in the chain | event `part_of` → `attempt` the effect, `process_lineage`, the anchor's confidence. An event past a bound is not linked, is counted in `attribution.lineage_truncated` and is unexplained |
 | H4 | A host event of the agent's own pid inside the run window | event `part_of` → `run`, `process_anchor`; `certain` only when the event carries the agent's start time and it matches, else `tentative`. A connect to a peer no exchange's endpoint resolves to is also unexplained |
+
+**Exec chain** (H2). A shell that execs its command in place (`bash -c
+"cmd"`; `dash` for the last command of a list) gives several successful
+exec events with the effect's pid and parent pid. In time order, they are
+one process when no exit of that pid is observed at or between two
+consecutive execs and, where both carry a start time, the two are in one
+tick. An exit is observed when an effect on the same host with that pid
+has an `exit_observed_ns` (no host sensor reports exits). The later execs
+are H3 lineage at depth 0. A chain is never `certain`.
 
 Anchors are decided first (an anchor event is never another effect's
 lineage), then lineage, then H4. Any other host event in the agent's scope
@@ -335,7 +345,9 @@ capture validator enforces it on reports).
 | `h2-anchor-no-start` | A1, H2 | Today's local records: tentative anchor |
 | `h3-lineage` | A1, H1, H3 | `sh -c curl`: the curl start and its connect are part of the effect |
 | `h4-agent-process` | H4 | Agent-process events: certain with the agent's start time, else tentative |
-| `edge-pid-reuse` | A1, H2 | Two candidates for one pid: ambiguous, never certain |
+| `edge-pid-reuse` | A1, H2 | Two candidates for one pid with an observed exit between them: ambiguous, never certain |
+| `edge-exec-in-place` | A1, H2, H3 | `bash -c` execs in place: one exec chain, a tentative anchor on the first exec; the second exec and the file open are lineage |
+| `edge-same-pid-other-parent` | A1, H2 | The effect's pid exec'd under another parent pid: not a chain; the other process and its connect are unexplained |
 | `edge-lineage-depth-17` | A1, H1, H3 | Depth 17 is truncated and reported |
 | `edge-a1-several-matches` | A1 | Two parallel calls fed back the same output: each effect links both, `output_match`, `tentative`, `ambiguous` |
 | `edge-lineage-pid-reuse` | A1, H1, H3 | An unrelated exec takes over the anchored pid: it, its connect and its child are not lineage, they are unexplained |
@@ -356,7 +368,7 @@ capture validator enforces it on reports).
 | `a3-ambiguous-lists-one-candidate` | `coverage.action.link` | An ambiguous link lists every candidate |
 | `a4-unattributed-effect-not-listed` | `coverage.action.chains` | `unattributed_effect` is a reason exactly when the list is not empty |
 | `h1-certain-without-start-time` | `coverage.action.confidence` | A certain anchor needs both start times |
-| `h2-pid-reuse-picks-one-candidate` | `coverage.action.expected` | Picking one of two pid-reuse candidates |
+| `h2-pid-reuse-picks-one-candidate` | `coverage.action.expected` | Picking one of two pid-reuse candidates (an exit lies between them, so they are not one chain) |
 | `h3-lineage-exceeds-anchor-confidence` | `coverage.action.confidence` | Lineage cannot be more certain than its anchor |
 | `h3-lineage-past-depth-16` | `coverage.action.expected` | Linking the depth-17 process |
 | `h4-agent-event-certain-without-start-time` | `coverage.action.confidence` | An agent-process event without the agent's start time is tentative |
@@ -391,7 +403,9 @@ capture validator enforces it on reports).
   is neither the same process (the same start tick; without both start
   times, the same parent) nor a child of the chain proves the pid now names
   another process. The pid leaves the
-  chain, so nothing of that process is linked. A connect or file event
+  chain, so nothing of that process is linked. So does an observed exit of
+  the pid (`exit_observed_ns` of an effect with that pid on the same host).
+  A connect or file event
   joins a process of the chain only when its start time, if both carry
   one, is in that process's tick.
 - **Window margins.** H1 events and the H4 / unexplained window use the run
