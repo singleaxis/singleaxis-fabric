@@ -14,7 +14,10 @@ reconstructed; ``2`` input, usage or internal error.
 person can read (spec 056 §4.6): each model call, the effects (subprocesses) it caused and
 the link that says so, the host events that corroborate them, and the chain verdicts;
 ``--json`` prints the same rows as JSON. It reads the same inputs and options as the
-report, adds no contract, and exits as the report does.
+report, adds no contract, and exits as the report does. ``--host-records FILE`` (both
+commands) adds a host sensor's records, read by ``_host.read_host_file``, and joins them to
+the effects through the process tree (spec 056 §4.3): the report gains the
+``corroboration`` chain and ``sensor_events``, the view its ``host`` rows.
 
 Diagnostics are fixed text (spec 047 §9 "Diagnostics"): stderr never carries
 an argument value, a path, a key or an underlying exception's message, only
@@ -40,8 +43,17 @@ from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
 from fabric._model_names import parse_model_allowlist
-from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
+from fabric._sequence import label_pseudonym, pseudonym_v2
+from fabric.reconstruct._attribute import ActionReader, ActionRun, HostJoiner, action_rows
 from fabric.reconstruct._graph import RunGraph
+from fabric.reconstruct._host import (
+    HOST_SOURCES,
+    HostEvidence,
+    HostSource,
+    host_joiner,
+    peer_id,
+    read_host_file,
+)
 from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES
 from fabric.reconstruct._inputs import ReconstructInputError
 from fabric.reconstruct._project import (
@@ -62,6 +74,14 @@ _PROG = "fabric.reconstruct"
 _TOOL_NAME_MAX = 256
 _MAX_WAIT_S = 3600.0
 _COVERAGE_PROFILE_RE = re.compile(r"^fabric\.profile\.[a-z0-9-]+/v[0-9]+$")
+# A host label as the agent's FABRIC_HOST_LABEL takes it (hooks/_config.py, 053 C41).
+_HOST_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+# --endpoint-peer ENDPOINT_ID=ADDRESS: a configured endpoint id and the address it resolves to.
+_ENDPOINT_PEER_RE = re.compile(
+    r"^(?P<endpoint>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})=(?P<address>[^\s=]{1,255})$"
+)
+# An endpoint id as capture spans carry it (wire/_attrs.py C35): kept as given.
+_EMITTED_ENDPOINT_RE = re.compile(r"^(?:[a-z][a-z0-9_]{0,31}\.default|lbl-[0-9a-f]{32})$")
 # A duration: an integer or decimal number with an optional unit (default seconds).
 _DURATION_RE = re.compile(r"^(?P<value>[0-9]{1,15}(?:\.[0-9]{1,9})?)(?P<unit>ns|us|ms|s|m|h)?$")
 _NS_PER_UNIT = {
@@ -267,6 +287,48 @@ def _evaluation_options(parser: argparse.ArgumentParser) -> None:
         help="a tool name that runs inside the agent process (repeatable): a call to it "
         "without an effect is reported as no_effect_channel, not none_in_window (spec 056 "
         "§4.2)",
+    )
+    _host_options(parser)
+
+
+def _host_options(parser: argparse.ArgumentParser) -> None:
+    """The host-sensor options of every command (spec 056 §4.3)."""
+    parser.add_argument(
+        "--host-records",
+        action="append",
+        dest="host_records",
+        default=[],
+        metavar="FILE",
+        help="host-sensor records to corroborate the effects with (repeatable): the "
+        "local-profile audit log records of the eBPF emitter or auditd receiver as OTLP/JSON "
+        "or sink JSONL log rows, or spec 053 sensor spans; needs --host-label and the id key",
+    )
+    parser.add_argument(
+        "--host-label",
+        dest="host_label",
+        metavar="LABEL",
+        help="the host the sensor runs on, as the agent's FABRIC_HOST_LABEL names it; only "
+        "effects that name the same host are joined (the sensor's pids are declared to be "
+        "in the agent's pid namespace)",
+    )
+    parser.add_argument(
+        "--host-source",
+        action="append",
+        dest="host_sources",
+        default=[],
+        choices=sorted(HOST_SOURCES),
+        help="declare a host sensor source (repeatable; default: each sensor kind that has a "
+        "record in --host-records); a declared source with no record is a source_gap",
+    )
+    parser.add_argument(
+        "--endpoint-peer",
+        action="append",
+        dest="endpoint_peers",
+        default=[],
+        metavar="ENDPOINT_ID=ADDRESS",
+        help="the address a model endpoint resolves to (repeatable; ENDPOINT_ID as configured "
+        "in FABRIC_WIRE_ENDPOINTS, or as emitted): the agent's connections to it are model "
+        "calls, not unexplained host events (rule H4)",
     )
 
 
@@ -537,6 +599,7 @@ def report_main(argv: Sequence[str]) -> int:
         clock_uncertainty = _duration_ns(args.clock_uncertainty, "--clock-uncertainty")
         max_clock = _duration_ns(args.max_clock_uncertainty, "--max-clock-uncertainty")
         coverage_profile = _coverage_profile(args.coverage_profile)
+        reader = _action_reader(args, clock_uncertainty, key)
         graphs: list[RunGraph] = []
         collector = ProjectionCollector() if args.projection else None
         document = reconstruct(
@@ -556,7 +619,7 @@ def report_main(argv: Sequence[str]) -> int:
             max_clock_uncertainty_ns=max_clock,
             graphs_out=graphs,
             projection_sink=collector,
-            actions=_action_reader(args, clock_uncertainty),
+            actions=reader,
         )
         projection = (
             build_projection(
@@ -605,16 +668,68 @@ def report_main(argv: Sequence[str]) -> int:
 
 
 def _action_reader(
-    args: argparse.Namespace, clock_uncertainty_ns: int, *, view: bool = False
+    args: argparse.Namespace, clock_uncertainty_ns: int, key: bytes | None, *, view: bool = False
 ) -> ActionReader:
     names = [str(name) for name in args.in_process_tools]
     if any(not name or len(name) > _TOOL_NAME_MAX for name in names):
         raise ReconstructInputError(f"--in-process-tool takes a name of 1-{_TOOL_NAME_MAX} chars")
     return ActionReader(
         in_process_tools=names,
+        host_joiner=_host_joiner(args, key),
         clock_uncertainty_ns=clock_uncertainty_ns,
         every_run=view,
         keep_runs=view,
+    )
+
+
+def _host_joiner(args: argparse.Namespace, key: bytes | None) -> HostJoiner | None:
+    """The host join of ``--host-records`` (spec 056 §4.3), or ``None`` without it.
+
+    The host id and peer ids are keyed ``hst-`` pseudonyms, so the id key is required. The
+    declared sources are ``--host-source``, else the sensor kinds the records hold; each is
+    on ``--host-label``'s host and reports pids in the agent's pid namespace (local
+    records name neither); whether it covered the run is derived from its records."""
+    paths = [str(path) for path in args.host_records]
+    if not paths:
+        if args.host_label is not None or args.host_sources or args.endpoint_peers:
+            raise ReconstructInputError(
+                "--host-label, --host-source and --endpoint-peer need --host-records"
+            )
+        return None
+    if key is None:
+        raise ReconstructInputError(
+            "--host-records needs the id key (the --id-key-env variable): host and peer ids "
+            "are keyed pseudonyms"
+        )
+    label = args.host_label
+    if label is None or not _HOST_LABEL_RE.fullmatch(label):
+        raise ReconstructInputError(
+            "--host-records needs --host-label: 1-128 letters, digits and ._:/-"
+        )
+    evidence = HostEvidence()
+    for index, path in enumerate(paths, start=1):
+        evidence.extend(read_host_file(path, id_key=key, label=f"--host-records #{index}"))
+    kinds = list(dict.fromkeys(args.host_sources)) or [
+        kind for kind in sorted(HOST_SOURCES) if evidence.has_records(kind)
+    ]
+    if not kinds:
+        raise ReconstructInputError(
+            "--host-records holds no host-sensor record; name the sensor with --host-source"
+        )
+    host_id = pseudonym_v2("hst", label, key)
+    peers: dict[str, list[str]] = {}
+    for value in args.endpoint_peers:
+        match = _ENDPOINT_PEER_RE.fullmatch(str(value))
+        found = peer_id(match["address"], key) if match is not None else None
+        if match is None or found is None:
+            raise ReconstructInputError("--endpoint-peer takes ENDPOINT_ID=ADDRESS")
+        # A configured endpoint id is emitted as its keyed lbl- label (wire/_attrs.py).
+        endpoint = match["endpoint"]
+        if not _EMITTED_ENDPOINT_RE.fullmatch(endpoint):
+            endpoint = label_pseudonym("lbl-", endpoint, key)
+        peers.setdefault(endpoint, []).append(found)
+    return host_joiner(
+        evidence, [HostSource(kind, host_id) for kind in kinds], endpoint_peers=peers
     )
 
 
@@ -623,14 +738,15 @@ def actions_main(argv: Sequence[str]) -> int:
     args = _actions_parser().parse_args(list(argv))
     try:
         clock_uncertainty = _duration_ns(args.clock_uncertainty, "--clock-uncertainty")
-        reader = _action_reader(args, clock_uncertainty, view=True)
+        key = _id_key(args, os.environ)
+        reader = _action_reader(args, clock_uncertainty, key, view=True)
         document = reconstruct(
             args.spans,
             store=_store(args),
             tenant_id=args.tenant,
             run_ids=args.runs,
             model_allowlist=_model_allowlist(args, os.environ),
-            id_key=_id_key(args, os.environ),
+            id_key=key,
             wait_for_objects_s=_wait_for_objects(args),
             profile=args.profile,
             trusted_source=args.trusted_source,
