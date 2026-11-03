@@ -29,7 +29,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
-import fabric
 from fabric import _loss, _sequence, tracing, wire
 from fabric._capture_types import RunScope
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter
@@ -40,7 +39,7 @@ from fabric.tracing import guarded_exporter
 
 from .test_wire_helpers import OPENAI_CHAT, attrs, chat_response
 
-SRC = Path(fabric.__file__).resolve().parents[1]
+SRC = Path(tracing.__file__).resolve().parents[1]
 MESSAGE = {"role": "assistant", "content": "hi"}
 
 
