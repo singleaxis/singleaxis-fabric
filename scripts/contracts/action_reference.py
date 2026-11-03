@@ -277,7 +277,7 @@ class _Hosts:
         is on the agent's clock, the event on the sensor's)."""
         first, last = self.window
         margin = self.margin(event)
-        return first - margin <= event["time_ns"] <= last + margin
+        return bool(first - margin <= event["time_ns"] <= last + margin)
 
 
 def anchor_effect(

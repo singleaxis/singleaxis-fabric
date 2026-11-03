@@ -16,7 +16,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, TypedDict
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -33,7 +33,12 @@ class DataPlaneContractError(ValueError):
         return f"{self.code}: {self.path}: {self.message}"
 
 
-CONTRACTS = {
+class _ContractConfig(TypedDict):
+    root: Path
+    identity: tuple[str, str]
+
+
+CONTRACTS: dict[str, _ContractConfig] = {
     "activity": {
         "root": Path("contracts/activity/v2"),
         "identity": ("singleaxis.fabric.activity", "2.0.0"),

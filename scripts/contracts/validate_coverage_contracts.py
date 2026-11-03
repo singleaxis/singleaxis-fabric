@@ -37,7 +37,7 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping, NoReturn, Sequence
 from urllib.parse import unquote
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -396,7 +396,7 @@ def render_blocks(reg: Mapping[str, Any]) -> dict[str, str]:
 
 
 # ------------------------------------------------------------------ checks
-def _fail(code: str, path: str, message: str) -> None:
+def _fail(code: str, path: str, message: str) -> NoReturn:
     raise CoverageContractError(code, path, message)
 
 
@@ -1081,7 +1081,7 @@ def _check_covers_schema(
         "integer": "int",
         "string": "string",
         "array": "array",
-    }.get(prop.get("type"))
+    }.get(str(prop.get("type")))
     if prop.get("format") == "date-time":
         expected = "datetime"
     if kind != expected:
@@ -1124,7 +1124,9 @@ def _enum_source_ok(
     source, values = check["source"], check["values"]
     field = next(f for f in reg["fields"]["fields"] if f["id"] == row["field"])
     if source.startswith("vocabulary:"):
-        return values == [r["value"] for r in reg["vocab"][source.split(":", 1)[1]]]
+        return bool(
+            values == [r["value"] for r in reg["vocab"][source.split(":", 1)[1]]]
+        )
     if source == "field_type":
         groups = re.findall(r"enum ([a-z0-9_]+(?:/[a-z0-9_]+)+)", field["type"])
         return values in [g.split("/") for g in groups]
@@ -1135,11 +1137,11 @@ def _enum_source_ok(
     if source == "validator":
         return all(f"`{v}`" in row["validator"] for v in values)
     if source.startswith("registry:"):
-        return values == list(reg["keys"][source.split(":", 1)[1]])
+        return bool(values == list(reg["keys"][source.split(":", 1)[1]]))
     if source.startswith("schema:"):
         node = _schema_node(manifest_schema, source.split(":", 1)[1])
         node = node.get("items", node)
-        return values == list(node["enum"])
+        return bool(values == list(node["enum"]))
     return False
 
 
@@ -1480,9 +1482,8 @@ def validate_projection(
         for index, link in enumerate(links):
             at = f"{where}.links[{index}]"
             parents += link["type"] == "parent"
-            if (
-                link["provenance"] == "inferred"
-                and not _confidence_ok(confidence, link["method"], link["confidence"])
+            if link["provenance"] == "inferred" and not _confidence_ok(
+                confidence, link["method"], link["confidence"]
             ):
                 _fail(
                     "coverage.projection.confidence",
@@ -1550,11 +1551,8 @@ def validate_projection(
                     at,
                     "a conflict keeps every assertion and chooses none",
                 )
-            if (
-                wrapper.get("provenance") == "inferred"
-                and not _confidence_ok(
-                    confidence, wrapper["method"], wrapper["confidence"]
-                )
+            if wrapper.get("provenance") == "inferred" and not _confidence_ok(
+                confidence, wrapper["method"], wrapper["confidence"]
             ):
                 _fail(
                     "coverage.projection.confidence",
@@ -1586,9 +1584,8 @@ def validate_projection(
                 where,
                 "governing manifest is not a named input",
             )
-        if (
-            step["provenance"] == "inferred"
-            and not _confidence_ok(confidence, step["method"], step["confidence"])
+        if step["provenance"] == "inferred" and not _confidence_ok(
+            confidence, step["method"], step["confidence"]
         ):
             _fail(
                 "coverage.projection.confidence",
@@ -1961,7 +1958,7 @@ def validate_evidence_document(
 
 def _evidence_raw(case: Mapping[str, Any]) -> bytes:
     if "raw" in case:
-        return case["raw"].encode("utf-8")
+        return str(case["raw"]).encode("utf-8")
     if "generate" in case:
         gen = case["generate"]
         return ref.canonical_bytes(
@@ -2249,9 +2246,9 @@ def validate_p1_vectors(
             )
         return True
     if kind == "fabric.model-call-golden/v1":
-        from contracts import model_fields_reference as fields  # noqa: PLC0415
+        from contracts import model_fields_reference as fields_ref  # noqa: PLC0415
 
-        got = fields.extract(
+        got = fields_ref.extract(
             document["api"],
             document["request"],
             document["response"],
@@ -2268,10 +2265,10 @@ def validate_p1_vectors(
             )
         return True
     if kind == "fabric.model-call-size-golden/v1":
-        from contracts import model_fields_reference as fields  # noqa: PLC0415
+        from contracts import model_fields_reference as fields_ref  # noqa: PLC0415
 
         if (
-            fields.size_outcome(document["recipe"], document["limits"])
+            fields_ref.size_outcome(document["recipe"], document["limits"])
             != document["expected"]
         ):
             _vector_fail(
@@ -2385,13 +2382,15 @@ def validate_vectors(
                     f"{case['name']}: parse differs",
                 )
         for index, case in enumerate(document["carriers"]):
-            parsed = parse_token_list(case["value"], carrier=case["carrier"])
-            expected = (
+            tokens = parse_token_list(case["value"], carrier=case["carrier"])
+            expected_tokens = (
                 None
                 if case["tokens"] is None
                 else [parse_resume_token(t) for t in case["tokens"]]
             )
-            if parsed != expected or (expected is not None and None in expected):
+            if tokens != expected_tokens or (
+                expected_tokens is not None and None in expected_tokens
+            ):
                 _fail(
                     "coverage.vectors.carrier",
                     f"$.carriers[{index}]",

@@ -317,7 +317,7 @@ def _combination_ok(d: Mapping[str, Any]) -> bool:
         )
     if status == "stored":
         if representation in {"exact", "partial"}:
-            return (
+            return bool(
                 transformations == []
                 and d.get("source_sha256") == d["stored_sha256"]
                 and d.get("source_byte_length") == d["stored_byte_length"]
@@ -373,7 +373,7 @@ def _protection_ok(d: Mapping[str, Any]) -> bool:
     if status in {"stored", "truncated"}:
         return protection == "retained" and retains
     if d["representation"] == "tokenized":
-        return mode == "tokenize" and protection == "tokenized"
+        return bool(mode == "tokenize" and protection == "tokenized")
     if protection != "redacted" or mode not in {
         "redact",
         "masked_only",

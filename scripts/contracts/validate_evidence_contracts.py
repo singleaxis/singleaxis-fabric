@@ -136,7 +136,7 @@ def _safe_content_ref(document: Mapping[str, Any]) -> bool:
         "retain_original": "original",
         "redact": "derivative",
         "tokenize": "derivative",
-    }.get(mode)
+    }.get(str(mode))
     workload = document.get("workload_id")
     if (
         plane is None
@@ -148,7 +148,7 @@ def _safe_content_ref(document: Mapping[str, Any]) -> bool:
     ):
         return False
     expected = f"fabric-local://{document['tenant_id']}/{workload}/{plane}/{document['object_id']}"
-    return ref == expected
+    return bool(ref == expected)
 
 
 def _timestamp(value: str) -> datetime:

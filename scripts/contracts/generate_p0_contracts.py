@@ -617,9 +617,12 @@ def generate_registry(w: Writer) -> None:
     for row in vocab["inference_method"]:
         # Spec 056 §4.3: a process join's confidence follows its start-time evidence.
         fixed = re.search(r"Confidence `(certain|tentative)`", row["meaning"])
-        row["confidence"] = (
-            "varies" if "Confidence varies" in row["meaning"] else fixed.group(1)
-        )
+        if "Confidence varies" in row["meaning"]:
+            row["confidence"] = "varies"
+        elif fixed is not None:
+            row["confidence"] = fixed.group(1)
+        else:
+            raise ValueError(f"inference method {row['value']!r} states no confidence")
     vocab["registry_revision"] = 10
     w.json(COVERAGE / coverage.REGISTRY["vocab"], vocab)
 
@@ -695,7 +698,7 @@ def coverage_manifests(reg: dict[str, Any]) -> dict[str, Any]:
             out["reason"] = reason
         return out
 
-    m0 = {
+    m0: dict[str, Any] = {
         "schema_version": "fabric.capture-manifest/v1",
         "manifest_id": uid("m0"),
         "event_id": uid("m0-event"),
@@ -1400,7 +1403,7 @@ def _projections(put: Callable[[str, Any], None], m0: dict[str, Any]) -> None:
         decisions: str = "captured_for_declared_fields",
         reasons: dict[str, list[str]] | None = None,
     ) -> dict[str, Any]:
-        out = {}
+        out: dict[str, dict[str, Any]] = {}
         for layer, verdict in (
             ("context", context),
             ("structure", structure),
@@ -1481,7 +1484,7 @@ def _projections(put: Callable[[str, Any], None], m0: dict[str, Any]) -> None:
         }
 
     ex = uid("exchange-1")
-    model_step = {
+    model_step: dict[str, Any] = {
         "attempt_id": ex,
         "step_id": ex,
         "step_kind": "model_call",
@@ -2263,7 +2266,10 @@ def generate_capture(w: Writer) -> None:
     # capture/v1 1.4.0 (spec 050 §3.9, WP-14): the wire enrichment of an exchange span;
     # every key has a telemetry-keys row placed on exchanges and a fabricguard admission.
     enriched = copy.deepcopy(shared)
-    label = lambda name: "lbl-" + hashlib.sha256(name.encode()).hexdigest()[:32]  # noqa: E731
+
+    def label(name: str) -> str:
+        return "lbl-" + hashlib.sha256(name.encode()).hexdigest()[:32]
+
     enriched["span"]["attributes"].update(
         {
             "fabric.capture.point": "wire.py.httpx@0.9.0",
@@ -3723,7 +3729,7 @@ def _prevalidate_vectors(
     """Spec 050 §3.14 (WP-21): one case per pre-acknowledgement refusal reason."""
     source = record["source"]["source_id"]
     registered = [t["type"] for t in reg["fields"]["evidence_types"]]
-    config = {
+    config: dict[str, Any] = {
         "allowed_tenants": [TENANT],
         "source_binding": {"tenant_id": TENANT, "source_id": source},
     }
@@ -3841,13 +3847,12 @@ def capture_descriptor_ok(attributes: Mapping[str, Any]) -> bool:
 
 
 w_cache: dict[str, Any] = {}
-w_cache: dict[str, Any] = {}
 
 
 def evidence_raw(case: Mapping[str, Any]) -> bytes:
     """The bytes a record-evidence vector case stands for."""
     if "raw" in case:
-        return case["raw"].encode("utf-8")
+        return str(case["raw"]).encode("utf-8")
     if "generate" in case:
         gen = case["generate"]
         document = dict(gen["base"], items=[gen["item"]] * gen["count"])
@@ -4089,7 +4094,7 @@ def model_call_cases() -> list[dict[str, Any]]:
             },
         },
     )
-    small_resp = {
+    small_resp: dict[str, Any] = {
         "id": "resp_B2",
         "model": "gpt-4.1-2025-04-14",
         "status": "completed",

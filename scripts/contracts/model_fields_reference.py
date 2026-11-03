@@ -316,7 +316,9 @@ def _chat(
         return
     if stream:
         events = _sse_events(resp)
-        finish, calls, reasoning = [], {}, False
+        finish: list[Any] = []
+        calls: dict[Any, Any] = {}
+        reasoning = False
         for n, event in enumerate(events):
             out["model.served"] = event.get("model", out["model.served"])
             for choice in event.get("choices", []):
@@ -539,18 +541,18 @@ def _anthropic(
         return
     if stream:
         blocks: dict[int, dict[str, Any]] = {}
-        message: dict[str, Any] = {}
+        final: dict[str, Any] = {}
         for event in _sse_events(resp):
             kind = event.get("type")
             if kind == "message_start":
-                message = dict(event.get("message", {}))
+                final = dict(event.get("message", {}))
             elif kind == "content_block_start":
                 blocks[event["index"]] = dict(event["content_block"])
             elif kind == "message_delta":
-                message.update(event.get("delta", {}))
+                final.update(event.get("delta", {}))
                 if "usage" in event:
-                    message["usage"] = {**message.get("usage", {}), **event["usage"]}
-        resp = dict(message, content=[blocks[i] for i in sorted(blocks)])
+                    final["usage"] = {**final.get("usage", {}), **event["usage"]}
+        resp = dict(final, content=[blocks[i] for i in sorted(blocks)])
         base = "response:final"
     else:
         base = "response:"
