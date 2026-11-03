@@ -34,6 +34,21 @@ and file metadata. Kernel discovery can find a workload or an uninstrumented
 dependency, but it cannot claim prompts, policy verdicts, tool meaning, or
 agent decision semantics.
 
+## Deprecated in Fabric v0.9
+
+The `guardrail_verdict` and `evaluation` values of the semantic-surface enum
+(`$defs.semanticSurface.properties.surface`) are deprecated in Fabric v0.9.
+Fabric records activity and does not evaluate it. Connect v1 is a published
+contract and contract schemas are immutable, so v1 keeps accepting both values.
+Fabric v1.0 drops them by publishing a new connect contract version (v2)
+without them, with migration guidance; it does not edit v1 in place. No
+shipped manifest in `manifests/` declares either value.
+
+The `policy_verdict`, `authorization_verdict` and `escalation` surfaces are not
+deprecated by this change. They describe the same kind of external verdict, so
+whether they follow the same path is an open owner decision; until it is made
+they keep their current status.
+
 ## `compatibility.activity_contract`
 
 This field names the version of the **activity v1 wire contract**

@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Agent matrix D3: an asyncio fan-out of 408 calls in about a second overflowed the
 256-entry capture queue (34% lost in file mode, as queue_full). At default settings the
-same burst is captured whole; a queue that does overflow stays an accounted loss."""
+same burst is captured whole; a queue that does overflow stays an accounted loss. The
+agent flushes before it exits, so the bounded exit drain is not what is measured."""
 
 from __future__ import annotations
 
@@ -34,6 +35,10 @@ GATHER_AGENT = (
         print("RESULT", await asyncio.gather(*(loop(client, i) for i in range(LOOPS))))
 
     asyncio.run(main())
+    # The exit drain is bounded (2 s) so capture never delays exit; a slow runner can
+    # still be draining the burst then. Flush first: this test is about the queue.
+    from fabric import wire
+    wire.flush(120)
     """
     )
     .replace("STEPS", str(STEPS))

@@ -18,7 +18,7 @@
           "fabric.guardrail.latency_ms": "<normalized>",
           "fabric.guardrail.phase": "input",
           "fabric.guardrail.policies": [
-            "stub-redactor:pii"
+            "stub-redactor:canary"
           ],
           "fabric.schema_version": "1.0"
         },

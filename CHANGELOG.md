@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-This section describes work merged after 0.9.0 and not yet released: most
+This section describes work merged after 0.9.1 and not yet released: most
 of the one-run record of spec 050 (phase P1) and milestone M1 of spec 056,
 agent action reconstruction on a local-profile Node. Wire capture keeps its
 0.9.0 behaviour for agents that use none of the new options. Fabric stays a
@@ -96,6 +96,58 @@ blocks, delays or changes them.
 - Production host ingress, process start times on host records, container
   and remote sandboxes, and the other execution channels (file, database,
   non-model HTTP, MCP, SSH) are not built.
+
+## [0.9.1] - 2026-11-04
+
+Fabric 0.9.1 fixes the package pages on PyPI and npm and deprecates the
+evaluation elements left in the v1 contracts. Capture, protection,
+delivery and verification behave as in 0.9.0.
+
+### Fixed
+
+- **Packages:** the PyPI and npm package pages link to the documentation on
+  GitHub; the relative links in the package READMEs did not resolve there.
+  The PyPI Documentation URL points at the documentation index.
+- **Tests:** the asyncio fan-out capture test flushes before its agent exits,
+  so a slow runner no longer turns the bounded exit drain into a failure.
+
+### Changed
+
+- **Contracts:** activity v1 example data uses neutral values. The
+  `interaction_tagged` golden carries `example:category` and `example:label`
+  instead of attack-taxonomy tags, `content_ref_stamped` names the policy
+  `stub-redactor:canary`, and the `hook` golden names `example-redactor`. The
+  capture v1 and content v2 masking fixtures name the transformation
+  `example-mask` instead of `acme-pii-mask`. The manifest digests are
+  re-pinned; the redaction interface is unchanged. New Python and TypeScript
+  SDK tests reproduce the re-valued `hook` and `interaction_tagged` goldens;
+  the activity v1 `support` declarations are documented as historical.
+
+### Deprecated
+
+- **Contracts:** the evaluation, judge and guardrail-verdict elements left in
+  the v1 contracts are deprecated in Fabric v0.9 and dropped at Fabric v1.0.
+  Fabric records activity and does not evaluate it. Contract schemas are
+  immutable, so v1 is not edited in place: every document that validates
+  today still validates, and no field, event or enum value is removed.
+  - `contracts/connect/v1` (published): the `guardrail_verdict` and
+    `evaluation` values of the semantic-surface enum. No shipped connector
+    manifest declares them. Fabric v1.0 removes them in a new connect
+    contract version (v2).
+  - `contracts/activity/v1` (unpublished, pinned historical contract; the
+    release policy ships activity v2 only): the `fabric.guardrail` (including
+    its PII `fabric.guardrail.entities` labels), `fabric.eval` and
+    `fabric.judge.queued` events; the decision-span attributes
+    `fabric.blocked`, `fabric.blocked.policies`, `fabric.eval_count`,
+    `fabric.eval_rubrics`, `fabric.judge_queued_count` and
+    `fabric.judge_rubrics`; and `fabric.escalation.rubric_id` and
+    `fabric.escalation.triggering_score` on the decision span and the
+    `fabric.escalation` event. Each carries JSON Schema `"deprecated": true`.
+    Fabric v1.0 drops them by retiring activity v1.
+  - The policy, tool-authorization and escalation verdict elements are not
+    deprecated by this change; their status is an open owner decision.
+  - Neither SDK emits any of these, so no runtime warning is added. See
+    [API stability](docs/api-stability.md#deprecated-contract-elements).
 
 ## [0.9.0] - 2026-11-03
 
@@ -2410,7 +2462,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0
 [0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2

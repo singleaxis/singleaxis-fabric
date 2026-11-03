@@ -9,7 +9,7 @@ not block, alter or delay the agent.
 **No zero-code wire capture in TypeScript yet.** Unlike the Python SDK, this
 package does not tee model HTTP traffic; every record comes from an explicit
 call. TypeScript wire capture is planned and not built. See
-[limitations](../../docs/limitations-and-roadmap.md).
+[limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
 
 Requires Node.js 20.6 or later.
 
@@ -213,7 +213,7 @@ authorization, encryption, residency, delivery, or completeness.
 Fabric never runs customer redaction code in your process. A masking role is sent to
 a **redaction service you run** beside the application (a sidecar), over a Unix socket
 or loopback HTTP only, using the public protocol in
-[`contracts/redaction/v1`](../../contracts/redaction/v1/README.md);
+[`contracts/redaction/v1`](https://github.com/singleaxis/singleaxis-fabric/blob/main/contracts/redaction/v1/README.md);
 `examples/redaction-service/` is a reference implementation:
 
 ```ts
@@ -299,8 +299,8 @@ On the receiving side, `extract(carrier)` recovers the `FabricContext` (or
 
 The package root exports capture/correlation types and an allowlisted
 `attributes` namespace, and nothing outside the recorder scope
-([AGENTS.md](../../AGENTS.md)). Installing the recorder cannot alter an
-agent's request path.
+([AGENTS.md](https://github.com/singleaxis/singleaxis-fabric/blob/main/AGENTS.md)).
+Installing the recorder cannot alter an agent's request path.
 
 See the
 [recorder-v1 spec](https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/027-recorder-v1.md)
@@ -323,4 +323,4 @@ The deployment-policy, privacy and byte path is shared. Python's wire capture,
 `CallRecorder`, byte-boundary adapters, source journal, encrypted durable byte
 spool, restartable metadata sender, governed local backend, metadata-only span
 export and qualified-run mode have no TypeScript equivalent. See
-[explicit APIs](../../docs/explicit-apis.md).
+[explicit APIs](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/explicit-apis.md).

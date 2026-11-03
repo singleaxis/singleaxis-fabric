@@ -183,7 +183,7 @@ func policy(attrs map[string]any, mode, protection string) map[string]any {
 func redacted(body []byte, mode, representation, transformation string) map[string]any {
 	attrs := policy(validAttrs(body), mode, map[string]string{"redacted": "redacted", "tokenized": "tokenized"}[representation])
 	attrs["status"], attrs["representation"], attrs["transformations"] = "redacted", representation, []any{transformation}
-	attrs["transformation_id"], attrs["transformation_version"] = "acme-pii-mask", "7"
+	attrs["transformation_id"], attrs["transformation_version"] = "example-mask", "7"
 	delete(attrs, "source_sha256")
 	delete(attrs, "source_byte_length")
 	return attrs

@@ -34,6 +34,39 @@ Deprecations must identify the replacement, begin warning before removal, and
 remain documented for at least one minor release unless a security issue makes
 that unsafe.
 
+## Deprecated contract elements
+
+Some contracts still describe evaluation, judge and guardrail-verdict elements
+from before the recorder scope. Fabric records activity and does not evaluate
+it, so these are deprecated in Fabric v0.9 and dropped at Fabric v1.0. Because
+versioned contract schemas are immutable, the drop never edits a v1 schema in
+place: the v1 schemas keep accepting these elements and mark each one with
+JSON Schema `"deprecated": true`.
+
+- `contracts/connect/v1` (published): the `guardrail_verdict` and `evaluation`
+  semantic-surface enum values. Fabric v1.0 removes them in a new connect
+  contract version (v2) with migration guidance.
+- `contracts/activity/v1` (unpublished, pinned historical contract; the
+  release policy ships activity v2 only): the `fabric.guardrail` event
+  (including its `fabric.guardrail.entities` PII labels), the `fabric.eval`
+  and `fabric.judge.queued` events, the decision-span attributes
+  `fabric.blocked`, `fabric.blocked.policies`, `fabric.eval_count`,
+  `fabric.eval_rubrics`, `fabric.judge_queued_count` and
+  `fabric.judge_rubrics`, and `fabric.escalation.rubric_id` and
+  `fabric.escalation.triggering_score`. These are not a published
+  compatibility commitment; Fabric v1.0 drops them by retiring activity v1,
+  which activity v2 already supersedes.
+
+There is no replacement in Fabric; evaluation results belong to the system
+that produces them. Neither SDK emits these elements and no shipped connector
+manifest declares them, so there is no runtime warning to act on.
+
+The policy, tool-authorization and escalation verdict elements (connect
+`policy_verdict`, `authorization_verdict` and `escalation`; activity
+`fabric.policy.evaluation`, `fabric.tool.authorization`, `fabric.escalation`
+and their span attributes) are not deprecated by this change. Whether they
+follow the same path is an open owner decision.
+
 ## Artifact boundary
 
 Release qualification uses explicit allowlists and rejects recorder packages

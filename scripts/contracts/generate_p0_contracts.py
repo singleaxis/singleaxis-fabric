@@ -2643,7 +2643,7 @@ def big_exchange(exchange: dict[str, Any]) -> dict[str, Any]:
         "representation": "redacted",
         "transformations": ["redact"],
         "protection_status": "redacted",
-        "transformation_id": "acme-pii-mask",
+        "transformation_id": "example-mask",
         "transformation_version": "7",
     }
     bodies: list[dict[str, Any]] = []

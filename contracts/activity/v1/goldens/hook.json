@@ -16,7 +16,7 @@
         "attributes": {
           "fabric.hook.input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "fabric.hook.modified": true,
-          "fabric.hook.name": "pii-redactor",
+          "fabric.hook.name": "example-redactor",
           "fabric.hook.output_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
           "fabric.hook.phase": "pre_model",
           "fabric.schema_version": "1.0"
