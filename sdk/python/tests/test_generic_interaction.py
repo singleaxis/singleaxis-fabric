@@ -4,7 +4,7 @@
 
 Everything here is GENERIC — surface-agnostic. The universal
 ``record_interaction`` primitive captures ANY interaction kind; the
-:class:`fabric.Baseline`, taxonomy tags, and :func:`fabric.verify_signature`
+:class:`fabric.Baseline`, open-vocabulary tags, and :func:`fabric.verify_signature`
 are cross-cutting capabilities that apply to any hashed thing / any
 artifact / any event; and the coverage loop self-reports what is being
 captured generically. Raw payload/metadata never land on the span.
@@ -30,11 +30,7 @@ from fabric import (
     Fabric,
     FabricConfig,
     SignatureCheck,
-    Taxonomy,
-    bundled_taxonomy_names,
-    load_bundled_taxonomies,
     signing,
-    validate_tag,
     verify_signature,
 )
 from fabric._id_validators import PIIShapedIdentifierWarning, warn_if_pii_shaped
@@ -359,7 +355,7 @@ def test_record_interaction_rejects_bad_baseline_type(span_exporter: InMemorySpa
 
 
 # --------------------------------------------------------------------------- #
-# 3. Generic taxonomy tagging (open vocabulary)
+# 3. Generic open-vocabulary tagging
 # --------------------------------------------------------------------------- #
 
 
@@ -367,9 +363,9 @@ def test_tags_captured_on_interaction(span_exporter: InMemorySpanExporter) -> No
     reset_coverage_registry()
     client = _client()
     with client.decision(session_id="s", request_id="r") as d:
-        d.record_interaction("llm.call", "anthropic", tags=["atlas:AML.T0051", "owasp-llm:LLM01"])
+        d.record_interaction("llm.call", "anthropic", tags=["myco:risk-high", "team:payments"])
     attrs = _event(_decision_span(span_exporter), "fabric.interaction")
-    assert attrs["fabric.tags"] == ("atlas:AML.T0051", "owasp-llm:LLM01")
+    assert attrs["fabric.tags"] == ("myco:risk-high", "team:payments")
 
 
 def test_arbitrary_tags_always_allowed(span_exporter: InMemorySpanExporter) -> None:
@@ -398,59 +394,6 @@ def test_tags_reject_non_string(span_exporter: InMemorySpanExporter) -> None:
         pytest.raises(TypeError, match="tags must be strings"),
     ):
         d.record_interaction("x", "y", tags=["ok", 123])  # type: ignore[list-item]
-
-
-def test_bundled_taxonomies_present() -> None:
-    names = bundled_taxonomy_names()
-    assert "mitre-atlas" in names
-    assert "owasp-llm" in names
-
-
-def test_taxonomy_validate_and_lookup() -> None:
-    atlas = Taxonomy.load("mitre-atlas")
-    assert atlas.namespace == "atlas"
-    assert atlas.validate("atlas:AML.T0051") is True
-    entry = atlas.lookup("atlas:AML.T0051")
-    assert entry is not None
-    assert entry.name == "LLM Prompt Injection"
-    # wrong namespace / unknown code do not validate (but are still legal tags).
-    assert atlas.validate("owasp-llm:LLM01") is False
-    assert atlas.validate("atlas:NOPE") is False
-    assert atlas.lookup("atlas:NOPE") is None
-
-
-def test_taxonomy_validate_rejects_malformed_tag() -> None:
-    atlas = Taxonomy.load("mitre-atlas")
-    assert atlas.validate("no-colon") is False
-    assert atlas.lookup("no-colon") is None
-
-
-def test_validate_tag_against_any_loaded_taxonomy() -> None:
-    taxes = load_bundled_taxonomies()
-    loaded = list(taxes.values())
-    assert validate_tag("atlas:AML.T0054", loaded) is True
-    assert validate_tag("owasp-llm:LLM06", loaded) is True
-    # arbitrary tag: not in any known framework — but still a legal tag.
-    assert validate_tag("myco:whatever", loaded) is False
-
-
-def test_taxonomy_drop_in_json_zero_code(tmp_path: Path) -> None:
-    """Adding a framework is dropping a JSON file — no code change."""
-    doc = {
-        "namespace": "nist-ai-rmf",
-        "title": "NIST AI RMF",
-        "entries": {"GOVERN-1.1": {"name": "Legal and regulatory requirements"}},
-    }
-    path = tmp_path / "nist.json"
-    path.write_text(json.dumps(doc), encoding="utf-8")
-    tax = Taxonomy.load(path)
-    assert tax.validate("nist-ai-rmf:GOVERN-1.1") is True
-    assert tax.lookup("nist-ai-rmf:GOVERN-1.1").name == "Legal and regulatory requirements"  # type: ignore[union-attr]
-
-
-def test_taxonomy_unknown_bundled_name_raises() -> None:
-    with pytest.raises(FileNotFoundError, match="no bundled taxonomy"):
-        Taxonomy.load("does-not-exist")
 
 
 # --------------------------------------------------------------------------- #
@@ -655,7 +598,7 @@ def test_coverage_deviation_with_tags_is_classified(span_exporter: InMemorySpanE
         d.record_interaction(
             "shell.exec",
             "/bin/sh",
-            tags=["atlas:AML.T0011"],
+            tags=["myco:risk-high"],
             baseline=BaselineCheck(bl, "shell.exec", "DEVIATED"),
         )
     reasons = {
@@ -673,9 +616,9 @@ def test_coverage_deviation_with_tags_is_classified(span_exporter: InMemorySpanE
 def test_cross_cutting_on_skill(span_exporter: InMemorySpanExporter) -> None:
     client = _client()
     with client.decision(session_id="s", request_id="r") as d:
-        d.record_skill("sk", "1.0", tags=["owasp-llm:LLM03"])
+        d.record_skill("sk", "1.0", tags=["team:payments"])
     attrs = _event(_decision_span(span_exporter), "fabric.skill")
-    assert attrs["fabric.tags"] == ("owasp-llm:LLM03",)
+    assert attrs["fabric.tags"] == ("team:payments",)
 
 
 def test_cross_cutting_on_hook(span_exporter: InMemorySpanExporter) -> None:
@@ -708,11 +651,11 @@ def test_cross_cutting_on_delegation(span_exporter: InMemorySpanExporter) -> Non
     client = _client()
     with (
         client.decision(session_id="s", request_id="r") as d,
-        d.delegate("sub", protocol="a2a", tags=["atlas:AML.T0048"]),
+        d.delegate("sub", protocol="a2a", tags=["myco:audited"]),
     ):
         pass
     attrs = _event(_decision_span(span_exporter), "fabric.delegation")
-    assert attrs["fabric.tags"] == ("atlas:AML.T0048",)
+    assert attrs["fabric.tags"] == ("myco:audited",)
 
 
 def test_cross_cutting_on_tool_call(span_exporter: InMemorySpanExporter) -> None:
@@ -722,7 +665,7 @@ def test_cross_cutting_on_tool_call(span_exporter: InMemorySpanExporter) -> None
         client.decision(session_id="s", request_id="r") as d,
         d.tool_call(
             "vector_search",
-            tags=["owasp-llm:LLM02"],
+            tags=["team:payments"],
             baseline=BaselineCheck(bl, "vector_search", "h" * 64),
         ),
     ):
@@ -733,7 +676,7 @@ def test_cross_cutting_on_tool_call(span_exporter: InMemorySpanExporter) -> None
         if (s.attributes or {}).get("gen_ai.operation.name") == "execute_tool"
     )
     attrs = dict(tool_span.attributes or {})
-    assert attrs["fabric.tags"] == ("owasp-llm:LLM02",)
+    assert attrs["fabric.tags"] == ("team:payments",)
     assert attrs["fabric.baseline.status"] == "match"
 
 
@@ -745,10 +688,10 @@ def test_cross_cutting_on_mcp_inventory(span_exporter: InMemorySpanExporter) -> 
             server="m",
             transport="stdio",
             tools=[{"name": "t", "description": "d", "inputSchema": {}}],
-            tags=["atlas:AML.T0024"],
+            tags=["myco:audited"],
         )
     attrs = _event(_decision_span(span_exporter), "fabric.mcp.inventory")
-    assert attrs["fabric.tags"] == ("atlas:AML.T0024",)
+    assert attrs["fabric.tags"] == ("myco:audited",)
 
 
 def test_cross_cutting_absent_is_byte_identical(span_exporter: InMemorySpanExporter) -> None:
