@@ -64,6 +64,8 @@ from typing import Any, Final
 
 from fabric._sequence import pseudonym_v2
 
+from ._attribute import HostJoin as AttributionHostJoin
+from ._attribute import HostJoiner
 from ._inputs import (
     A_ATTEMPT_UID,
     A_CAPTURE_INPUT,
@@ -1209,30 +1211,22 @@ def join_host_events(
 
 
 # ------------------------------------------------------------------ normalized input
-def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
-    """:func:`join_host_events` over the normalized ``input`` of a spec 056 rule fixture
-    (``fabric.action-rule-fixture/v1``; fixtures README §4). The fixture's
-    ``host_sources[].verified`` is the declaration; its events carry no statuses or
-    positions."""
+def _agent_of(inp: Mapping[str, Any], pid: int | None = None) -> AgentProcess:
     agent_in = inp["agent"]
-    agent = AgentProcess(
-        pid=agent_in["pid"],
+    known = agent_in.get("pid") if pid is None else pid
+    return AgentProcess(
+        # No agent pid (its effects disagree, or none carries one): -1 matches no host
+        # event, so H4 links nothing and every agent event stays unexplained.
+        pid=-1 if known is None else int(known),
         host_id=agent_in.get("host_id"),
         clock_uncertainty_ns=agent_in.get("clock_uncertainty_ns", 0),
         process_start_ns=agent_in.get("process_start_ns"),
         pid_ns=agent_in.get("pid_ns"),
     )
-    sources = [
-        HostSource(
-            source=s["source"],
-            host_id=s.get("host_id"),
-            pid_namespace=s.get("pid_namespace", "declared_same"),
-            clock_uncertainty_ns=s.get("clock_uncertainty_ns", 0),
-            verified=bool(s.get("verified", False)),
-        )
-        for s in inp.get("host_sources", [])
-    ]
-    effects = [
+
+
+def _effects_of(inp: Mapping[str, Any]) -> list[ProcessEffect]:
+    return [
         ProcessEffect(
             attempt_uid=e["attempt_uid"],
             event_id=e["event_id"],
@@ -1244,6 +1238,51 @@ def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
             host_id=e.get("host_id"),
         )
         for e in inp.get("effects", [])
+    ]
+
+
+def _called_peers(inp: Mapping[str, Any], peers: Mapping[str, Collection[str]]) -> set[str]:
+    return {
+        peer
+        for exchange in inp.get("exchanges", [])
+        for peer in peers.get(exchange.get("endpoint_id"), [])
+    }
+
+
+def _join_input(
+    inp: Mapping[str, Any],
+    evidence: HostEvidence,
+    sources: Sequence[HostSource],
+    *,
+    agent: AgentProcess,
+    peers: Mapping[str, Collection[str]],
+) -> HostJoin:
+    run = inp["run"]
+    return join_host_events(
+        _effects_of(inp),
+        evidence,
+        agent=agent,
+        sources=sources,
+        run_id=run["run_id"],
+        window=(run["window"][0], run["window"][1]),
+        called_peers=_called_peers(inp, peers),
+    )
+
+
+def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
+    """:func:`join_host_events` over the normalized ``input`` of a spec 056 rule fixture
+    (``fabric.action-rule-fixture/v1``; fixtures README §4). The fixture's
+    ``host_sources[].verified`` is the declaration; its events carry no statuses or
+    positions."""
+    sources = [
+        HostSource(
+            source=s["source"],
+            host_id=s.get("host_id"),
+            pid_namespace=s.get("pid_namespace", "declared_same"),
+            clock_uncertainty_ns=s.get("clock_uncertainty_ns", 0),
+            verified=bool(s.get("verified", False)),
+        )
+        for s in inp.get("host_sources", [])
     ]
     events = [
         HostEvent(
@@ -1263,22 +1302,58 @@ def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
         )
         for e in inp.get("host_events", [])
     ]
-    peers = inp.get("endpoint_peers", {})
-    called = {
-        peer
-        for exchange in inp.get("exchanges", [])
-        for peer in peers.get(exchange.get("endpoint_id"), [])
-    }
-    run = inp["run"]
-    return join_host_events(
-        effects,
+    return _join_input(
+        inp,
         HostEvidence.of(events),
-        agent=agent,
-        sources=sources,
-        run_id=run["run_id"],
-        window=(run["window"][0], run["window"][1]),
-        called_peers=called,
+        sources,
+        agent=_agent_of(inp),
+        peers=inp.get("endpoint_peers", {}),
     )
+
+
+# ------------------------------------------------------------------ attribution (WP6-04)
+def attribution_join(join: HostJoin) -> AttributionHostJoin:
+    """``join`` in the form :func:`fabric.reconstruct._attribute.attribute` composes into
+    the ``corroboration`` chain, the attribution summary and the projection links."""
+    return AttributionHostJoin(
+        links={uid: list(made) for uid, made in join.links.items()},
+        sensor_events=list(join.sensor_events),
+        counts=join.link_counts,
+        unexplained=join.unexplained_event_ids,
+        unexplained_count=join.unexplained_count,
+        anchor_missing=join.corroboration.anchor_missing,
+        source_gap=join.corroboration.source_gap,
+        lineage_truncated=join.lineage_truncated,
+        trace_anchors=join.trace.get("anchors", {}),
+        trace_host_events=join.trace.get("host_events", {}),
+    )
+
+
+def host_joiner(
+    evidence: HostEvidence,
+    sources: Sequence[HostSource],
+    *,
+    agent_pid: int | None = None,
+    endpoint_peers: Mapping[str, Collection[str]] | None = None,
+) -> HostJoiner:
+    """The ``ActionReader(host_joiner=...)`` callable for a real export: H1-H4 of each
+    annotated run's normalized input against ``evidence`` and the declared ``sources``.
+
+    ``agent_pid`` is the agent's pid from its epoch registration when the caller has it;
+    otherwise the pid every effect's ``parent_pid`` agrees on (the normalized input's
+    ``agent.pid``). ``endpoint_peers`` maps a model endpoint id to the :func:`peer_id`s it
+    resolves to, for H4's called-peer check. Without a declared source it returns
+    ``None`` for every run, so ``corroboration`` is ``not_observed(not_configured)``."""
+    declared = tuple(sources)
+    peers = dict(endpoint_peers or {})
+
+    def join(inp: Mapping[str, Any]) -> AttributionHostJoin | None:
+        if not declared:
+            return None
+        made = _join_input(inp, evidence, declared, agent=_agent_of(inp, agent_pid), peers=peers)
+        return attribution_join(made)
+
+    return join
 
 
 __all__ = [
@@ -1297,8 +1372,10 @@ __all__ = [
     "HostStatus",
     "ProcessEffect",
     "SensorPosition",
+    "attribution_join",
     "host_evidence_from_logs",
     "host_evidence_from_spans",
+    "host_joiner",
     "is_host_record",
     "join_host_events",
     "join_normalized",

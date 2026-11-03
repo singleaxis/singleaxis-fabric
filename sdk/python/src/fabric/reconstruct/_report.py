@@ -242,6 +242,7 @@ def attribution_json(
     effects_not_observed: Mapping[str, int],
     output_match: Mapping[str, str],
     unexplained: Sequence[str],
+    unexplained_count: int | None = None,
     lineage_truncated: int = 0,
 ) -> dict[str, Any]:
     """The run's ``attribution`` object (spec 056 §4.5): link counts by basis in
@@ -249,7 +250,8 @@ def attribution_json(
     :data:`LIST_MAX` unattributed effects (``{attempt_uid, event_id}``, sequence order) and
     unexplained host event ids (time order) with their full counts, the tool calls without
     an attributed effect by reason, the output-match state, and ``lineage_truncated`` only
-    when nonzero."""
+    when nonzero. ``unexplained_count`` is the full count when ``unexplained`` holds only
+    the first ids (``None``: ``len(unexplained)``)."""
 
     out: dict[str, Any] = {
         "links": {
@@ -270,7 +272,7 @@ def attribution_json(
         },
         "output_match": dict(output_match),
         "unexplained_host_events": {
-            "count": len(unexplained),
+            "count": len(unexplained) if unexplained_count is None else unexplained_count,
             "event_ids": list(unexplained[:LIST_MAX]),
         },
     }

@@ -123,16 +123,20 @@ class HostJoin:
     ``sensor_events`` (every host event a link names, time order, with the ``part_of``
     links whose subject it is: H3 to an attempt, H4 to the run). ``counts``: decisions per
     basis (``process_anchor``, ``process_lineage``) and state, as ``attribution.links``
-    counts them. ``unexplained``: every unexplained host event id in time order (the
-    report keeps the first 64 and the count). ``anchor_missing``: an effect with a pid has
-    no resolved anchor. ``source_gap``: a host source does not verify for the whole run
-    window. ``lineage_truncated``: events an H3 bound left unlinked. ``trace_*``: which
-    rule decided each anchor and host event (fixtures only, never reported)."""
+    counts them. ``unexplained``: unexplained host event ids in time order (the report
+    keeps the first 64); ``unexplained_count`` is their full count when ``unexplained``
+    holds only the first ones (``None``: ``len(unexplained)``). ``anchor_missing``: an
+    effect with a pid has no resolved anchor. ``source_gap``: a host source does not
+    verify for the whole run window. ``lineage_truncated``: events an H3 bound left
+    unlinked. ``trace_*``: which rule decided each anchor and host event (fixtures only,
+    never reported). ``_host.attribution_join`` builds one from a ``_host.HostJoin``, and
+    ``_host.host_joiner`` is the :data:`HostJoiner` for a real export."""
 
     links: Mapping[str, Sequence[Mapping[str, Any]]] = field(default_factory=dict)
     sensor_events: Sequence[Mapping[str, Any]] = ()
     counts: Mapping[str, Mapping[str, int]] = field(default_factory=dict)
     unexplained: Sequence[str] = ()
+    unexplained_count: int | None = None
     anchor_missing: bool = False
     source_gap: bool = False
     lineage_truncated: int = 0
@@ -443,6 +447,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
 
     sensor_events: list[dict[str, Any]] = []
     unexplained: Sequence[str] = ()
+    unexplained_count: int | None = None
     truncated = 0
     if host is not None:
         for uid, joined in host.links.items():
@@ -453,6 +458,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
                 merged[state] = merged.get(state, 0) + int(number)
         sensor_events = [dict(event) for event in host.sensor_events]
         unexplained = list(host.unexplained)
+        unexplained_count = host.unexplained_count
         truncated = host.lineage_truncated
         trace["anchors"].update(host.trace_anchors)
         trace["host_events"].update(host.trace_host_events)
@@ -504,6 +510,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         effects_not_observed=not_observed_counts,
         output_match=output_match,
         unexplained=unexplained,
+        unexplained_count=unexplained_count,
         lineage_truncated=truncated,
     )
     return Attribution(
