@@ -25,8 +25,9 @@ from requests.adapters import BaseAdapter  # type: ignore[import-untyped, unused
 import fabric._loss
 import fabric._sequence
 from fabric import tracing, wire
+from fabric._capture_types import RunScope
 from fabric._loss import LossEmitter
-from fabric._sequence import RunScope, SourceAllocator, id_key_from_env, run_pseudonym
+from fabric._sequence import SourceAllocator, id_key_from_env, run_pseudonym
 from fabric.wire import WireConfig
 from fabric.wire._config import config_from_env
 from fabric.wire._content import NodeContentClient

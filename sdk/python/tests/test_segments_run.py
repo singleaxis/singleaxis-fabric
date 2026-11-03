@@ -28,17 +28,14 @@ import pytest
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-import fabric
-import fabric._loss
-import fabric._sequence
-from fabric import _segments, wire
+from fabric import _loss, _segments, _sequence, wire
 from fabric._capture_types import COUNTERS, STRICT_ENV
 from fabric._segments import parse_token
 from fabric.reconstruct import reconstruct
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="POSIX spool and fork")
 
-SRC = Path(fabric.__file__).resolve().parents[1]
+SRC = Path(_segments.__file__).resolve().parents[1]
 KEY = "fabric-test-id-key-not-a-secret"
 CANARY = "CANARY-clear-run-4417"
 
@@ -84,9 +81,9 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for name in ("FABRIC_RUN_ID", "FABRIC_RUN_RESUME_TOKEN", "FABRIC_WIRE_ID_KEY"):
         monkeypatch.delenv(name, raising=False)
     COUNTERS.reset()
-    emitter = fabric._loss.LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    emitter = _loss.LossEmitter()
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     yield
     wire.uninstall()
     emitter.close(1.0)
@@ -229,9 +226,10 @@ def test_a_records_only_install_records_runs_that_verify(tmp_path: Path) -> None
         _record(handle)
         with wire.run("records-only"):
             _record(handle)
-    assert handle.close(30.0)
+    closed = handle.close(30.0)
+    assert closed
     report = _report(tmp_path / "a")
-    run_id = fabric._sequence.run_pseudonym("records-only", KEY.encode())
+    run_id = _sequence.run_pseudonym("records-only", KEY.encode())
     run = _integrity(report, run_id, 1)
     assert run["segments"][0]["terminal"] is True
     assert run["segments"][0]["predecessors"] == ["none"]
@@ -249,7 +247,7 @@ def test_install_from_env_joins_the_environment_run(
         _record(handle)
         token = wire.resume_token()
     assert token is not None and CANARY not in token
-    assert parse_token(token).correlation_id == fabric._sequence.run_pseudonym(  # type: ignore[union-attr]
+    assert parse_token(token).correlation_id == _sequence.run_pseudonym(  # type: ignore[union-attr]
         CANARY, KEY.encode()
     )
     assert handle.status()["runs"]["tokens_rejected"] == 1  # consumed once, and dropped
@@ -260,9 +258,9 @@ def test_strict_mode_keeps_the_value_error_and_default_mode_fails_open(
 ) -> None:
     handle = _install(tmp_path / "a", "host-a")
     with wire.run(42):  # type: ignore[arg-type]
-        assert fabric._sequence.current_run_scope() is None  # uncaptured
+        assert _sequence.current_run_scope() is None  # uncaptured
     with wire.run("not opaque / any string is mapped"):
-        scope = fabric._sequence.current_run_scope()
+        scope = _sequence.current_run_scope()
         assert scope is not None and scope.run_id.startswith("r-")
     assert COUNTERS.api_misuse == 1
     monkeypatch.setenv(STRICT_ENV, "1")
@@ -270,7 +268,8 @@ def test_strict_mode_keeps_the_value_error_and_default_mode_fails_open(
         pass
     with pytest.raises(ValueError), wire.run("bad id"):
         pass
-    assert handle.close(10.0)
+    closed = handle.close(10.0)
+    assert closed
 
 
 def test_end_run_from_an_orchestrator(tmp_path: Path) -> None:
@@ -286,7 +285,8 @@ def test_end_run_from_an_orchestrator(tmp_path: Path) -> None:
     assert one is not None and two is not None
     assert wire.end_run(None, "completed", resume=[one, two]) == "refused_conflicting_tokens"
     assert wire.end_run(None, "failed", resume=[one], stop_reason="error") == "ended"
-    assert handle.close(30.0)
+    closed = handle.close(30.0)
+    assert closed
     report = _report(tmp_path / "a")
     correlation = parse_token(one).correlation_id  # type: ignore[union-attr]
     run = _integrity(report, correlation, 2)  # type: ignore[arg-type]
@@ -308,8 +308,9 @@ def _reentry(tmp_path: Path) -> tuple[dict[str, Any], str, list[str]]:
     token_b = _process(tmp_path / "b", "host-b", "token", token_a)["token"]
     with wire.run("trip-1", resume=token_b, final=True):
         _record(handle)
-    assert handle.close(30.0)
-    run_id = fabric._sequence.run_pseudonym("trip-1", KEY.encode())
+    closed = handle.close(30.0)
+    assert closed
+    run_id = _sequence.run_pseudonym("trip-1", KEY.encode())
     tokens = [token_a, token_b]
     return _report(tmp_path / "a", tmp_path / "b"), run_id, tokens
 
@@ -369,7 +370,7 @@ def _fork(tmp_path: Path, *, child_lost: bool = False) -> tuple[dict[str, Any], 
     )  # fmt: skip
     assert done.returncode == 0, done.stderr[-3000:]
     assert json.loads(done.stdout.strip().splitlines()[-1]) == {"child": 0, "closed": True}
-    return _report(host), fabric._sequence.run_pseudonym("forked-run", KEY.encode())
+    return _report(host), _sequence.run_pseudonym("forked-run", KEY.encode())
 
 
 def test_lr1_fork_child_segment_is_declared_and_verifies(tmp_path: Path) -> None:
@@ -412,9 +413,10 @@ def _branches(tmp_path: Path, *, lose: bool = False, replay: bool = False) -> di
     first = _process(tmp_path / "b1", "host-b1", "token", tokens[0])["token"]
     second = _process(tmp_path / "b2", "host-b2", "token", tokens[0 if replay else 1])["token"]
     assert wire.end_run(None, "completed", resume=[first, second]) == "ended"
-    assert handle.close(30.0)
+    closed = handle.close(30.0)
+    assert closed
     hosts = [tmp_path / "a", tmp_path / "b1"] + ([] if lose else [tmp_path / "b2"])
-    run_id = fabric._sequence.run_pseudonym("batch-job", KEY.encode())
+    run_id = _sequence.run_pseudonym("batch-job", KEY.encode())
     return {"report": _report(*hosts), "run_id": run_id, "tokens": tokens}
 
 
@@ -454,7 +456,8 @@ def _lost_middle(tmp_path: Path) -> dict[str, Any]:
     with wire.run():  # an orchestrator that only issues tokens: a minted correlation id
         _record(handle)
         token_a = wire.resume_token()
-    assert handle.close(30.0)
+    closed = handle.close(30.0)
+    assert closed
     assert token_a is not None
     token_b = _process(tmp_path / "b", "host-b", "token", token_a)["token"]
     _process(tmp_path / "c", "host-c", "final", token_b)
@@ -499,7 +502,8 @@ def test_a_clear_run_id_never_reaches_telemetry_spool_tokens_or_baggage(
     with wire.run():
         _record(handle)
         tokens.append(wire.resume_token() or "")
-    assert handle.close(30.0)
+    closed = handle.close(30.0)
+    assert closed
     baggage = "fabric.resume=" + "%2C".join(tokens)
     files = b"".join(p.read_bytes() for p in host.rglob("*") if p.is_file())
     for blob in (spooled, files, baggage.encode(), json.dumps(_report(host)).encode()):
@@ -521,7 +525,8 @@ def test_a_failing_run_table_falls_back_to_the_protocol_hooks(
     with wire.run("fallback"):
         _record(handle)
     assert COUNTERS.internal_errors == 1
-    assert handle.close(30.0)
-    run_id = fabric._sequence.run_pseudonym("fallback", KEY.encode())
+    closed = handle.close(30.0)
+    assert closed
+    run_id = _sequence.run_pseudonym("fallback", KEY.encode())
     run = _integrity(_report(tmp_path / "a"), run_id, 1)  # one run_start per scope
     assert len(run["scopes"]) == 1

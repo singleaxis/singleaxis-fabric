@@ -30,9 +30,9 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.trace import SpanKind
 from opentelemetry.util.types import AttributeValue
 
-from ._capture_types import LegacyBeat, Marker, SealInfo, Settle, settle_noop
+from ._capture_types import LegacyBeat, Marker, RunScope, SealInfo, Settle, settle_noop
 from ._seal import loss_entry
-from ._sequence import RunScope, SourceAllocator
+from ._sequence import SourceAllocator
 from ._version import __version__
 from .tracing import FABRIC_SDK_NAME, has_protected_route
 
@@ -66,7 +66,6 @@ MAX_QUEUED_MARKERS, MAX_QUEUED_MARKER_BYTES = 16384, 16 * 1024 * 1024
 _MARKER_BYTES, _ITEM_BYTES = 768, 128  # estimate: a marker, plus per tuple item/attribute
 _LOG = logging.getLogger("fabric.capture")
 _EMITTERS: weakref.WeakSet[LossEmitter] = weakref.WeakSet()
-_Beat = LegacyBeat  # the pre-050 heartbeat tuple; still accepted, converted to a Marker
 _LossKey = tuple[str, int, str, str | None]  # (source, epoch, reason, segment_id) (R3)
 # A loss range: its key, then (first, last, count). A 3-tuple key (no segment) is accepted.
 _Range = tuple[tuple[Any, ...], tuple[int, int, int]]

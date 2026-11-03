@@ -157,14 +157,16 @@ def test_a_drop_before_close_is_not_consumed_by_an_intermediate_drain(
     assert handle.flush(5.0) is False  # this flush reports the drop ...
     assert handle.flush(5.0) is True  # ... and the next one has nothing new
     monkeypatch.setattr(_seal, "seal_digest", original)
-    assert handle.close(5.0) is False  # but the epoch's close still does (sticky)
+    closed = handle.close(5.0)
+    assert closed is False  # but the epoch's close still does (sticky)
 
 
 def test_a_close_without_drops_succeeds(tmp_path: Path) -> None:
     handle = wire.install(spool_dir=str(tmp_path / "spool"), span_exporter=InMemorySpanExporter(),
                           patch_httpx=False, patch_aiohttp=False, id_key=b"k" * 32)  # fmt: skip
     with wire.run("run-ok", resumable=True):  # left open: sealed by final()
-        assert handle.close(5.0) is True
+        closed = handle.close(5.0)
+        assert closed is True
 
 
 # --- 2: a dropped segment's state is never freed on the caller -------------------------------

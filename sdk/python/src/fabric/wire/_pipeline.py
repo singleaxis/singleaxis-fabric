@@ -75,7 +75,6 @@ if TYPE_CHECKING:
     from ._config import WireConfig
     from ._model import CapturedBody, CaptureJob, StoreStatus
     from ._sender import Sender
-    from ._stream import Budget
 
     Job = CaptureJob | RecordJob
 
@@ -137,6 +136,26 @@ def capture_parent(context: Context | None) -> Context:
         parent.trace_id, parent.span_id, parent.is_remote, parent.trace_flags, TraceState()
     )
     return trace.set_span_in_context(NonRecordingSpan(clean), Context())
+
+
+class Budget:
+    """In-flight retained-byte budget shared by every exchange of one tee (and charged by
+    the records path, :meth:`CapturePipeline.set_record_budget`). Defined here, not in
+    ``_stream.py`` (which imports this module and re-exports it)."""
+
+    def __init__(self, limit: int) -> None:
+        self._limit, self._lock, self.used = limit, threading.Lock(), 0
+
+    def try_reserve(self, size: int) -> bool:
+        with self._lock:
+            if self.used + size > self._limit:
+                return False
+            self.used += size
+            return True
+
+    def release(self, size: int) -> None:
+        with self._lock:
+            self.used = max(0, self.used - size)
 
 
 def media_type_of(value: str) -> str:

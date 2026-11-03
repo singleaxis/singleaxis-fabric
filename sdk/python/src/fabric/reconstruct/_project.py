@@ -117,7 +117,6 @@ _EXTENSION_RE = re.compile(r"^x-[a-z0-9-]+\.[a-z0-9_.]+$")
 _ALIAS_MAX = 160
 _VALUE_MAX = 256
 _POINTER_MAX = 1024
-_NS = 1_000_000_000
 _HTTP_OK, _HTTP_ERROR = 200, 400
 _EVIDENCE_MAX_BYTES = 1 << 20
 

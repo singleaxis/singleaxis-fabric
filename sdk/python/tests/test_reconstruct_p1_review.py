@@ -425,7 +425,8 @@ def test_e_real_sdk_record_body_is_verified(installed: tuple[Any, Any, Path], da
             bodies=[RecordBody("tool.call.result", b'{"answer":42}', "application/json",
                                "caller")],
         )  # fmt: skip
-    assert handle.close(5)
+    closed = handle.close(5)
+    assert closed
     baseline = only_run(reconstruct([spans], store=store))
     assert baseline["verdict"] == "complete_for_observed_scopes"
     rows = [json.loads(line) for line in spans.read_text().splitlines()]

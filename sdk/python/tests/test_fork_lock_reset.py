@@ -25,12 +25,11 @@ from pathlib import Path
 
 import pytest
 
-import fabric
 from fabric import _records, _seal, _sequence, call_recorder
 
 pytestmark = pytest.mark.skipif(not hasattr(os, "fork"), reason="POSIX fork")
 
-SRC = Path(fabric.__file__).resolve().parents[1]
+SRC = Path(_records.__file__).resolve().parents[1]
 
 SCRIPT = textwrap.dedent(
     """

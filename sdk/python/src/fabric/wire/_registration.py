@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 
 from .._capture_types import LegacyBeat, RegistrationStatus
 from .._sequence import MIRROR_OFFSET, SourceAllocator, _new_epoch, live_allocators
+from ._spool import EPOCHS_DIR
 
 try:
     import fcntl
@@ -48,7 +49,6 @@ except ImportError:  # pragma: no cover - the spool refuses non-POSIX hosts firs
 if TYPE_CHECKING:
     from ._spool import Spool
 
-EPOCHS_DIR = ".epochs"
 REG_SUFFIX, ORPHAN_SUFFIX, CORRUPT_SUFFIX = ".reg", ".orphan", ".corrupt"
 REG_SIZE = 4096
 REG_MAGIC = b"FWEPOCH1"
@@ -305,19 +305,19 @@ def _create(spool_dir: str, source_id: str, epoch: int) -> Registration:
         if epoch in taken:  # held, unheld without final, declared or corrupt: redraw
             _clear_stale(path)
             continue
+        data = encode(epoch, source_id, pid=os.getpid(), registered_at_unix_nano=time.time_ns())
         try:
-            fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+            return _new_file(path, directory, epoch, source_id, data)
         except FileExistsError:  # pragma: no cover - names are created under this lock
             continue
-        data = encode(epoch, source_id, pid=os.getpid(), registered_at_unix_nano=time.time_ns())
-        return _fill(fd, path, directory, epoch, source_id, data)
     return Registration("failed", epoch, source_id, "redraws_exhausted")
 
 
-def _fill(
-    fd: int, path: str, directory: str, epoch: int, source_id: str, data: bytes
-) -> Registration:
-    """Lock, write, fsync and map a just-created file; on any error remove it and raise."""
+def _new_file(path: str, directory: str, epoch: int, source_id: str, data: bytes) -> Registration:
+    """Create, lock, write, fsync and map the registration file (``FileExistsError`` when
+    the name is taken). On any later error the file is removed and closed, and it raises;
+    on success the registration holds the open descriptor (closed by its ``close()``)."""
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
     mapped = None
     try:
         if not _try_lock(fd):  # pragma: no cover - nobody else can know the new file

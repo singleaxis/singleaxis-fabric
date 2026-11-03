@@ -23,7 +23,7 @@ A channel module (``fabric.hooks._exec`` for ``exec.subprocess``) exposes one en
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 from .._capture_scope import explicit_owner
@@ -44,7 +44,6 @@ if TYPE_CHECKING:
     from .._records import Attempt, RecordsInput
     from ..wire import WireHandle
     from ._config import HooksConfig
-    from ._patches import PatchSet
 
 __all__ = [
     "CHANNEL_ENTRY", "HookChannel", "HookPoint", "HookProducer", "Switch", "UnsupportedChannel",
@@ -202,8 +201,3 @@ class HookProducer:
     def snapshot(self) -> dict[str, dict[str, int]]:
         """Per-channel producer counters (``status()``)."""
         return {point: dict(values) for point, values in self.counters.items()}
-
-
-if TYPE_CHECKING:
-    # The signature of a channel module's ``install_channel`` entry point.
-    ChannelEntry = Callable[[HookProducer, PatchSet], HookChannel]

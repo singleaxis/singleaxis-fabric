@@ -57,7 +57,6 @@ from .._capture_types import (
 from .._loss import MARKER_FIELDS, _Range, as_marker, loss_key, marker_fields
 from ._ledger import LEDGER, NEW_PREFIX, LossLedger
 from ._ledger import SIZE as LEDGER_BYTES
-from ._registration import EPOCHS_DIR
 
 MAGIC, SCHEMA = b"FWSPOOL1", "fabric.wire-spool-record/v1"
 # A batch file (D4): ``b"FWSPOOLB" | u32 count | count x (u64 length | FWSPOOL1 frame) |
@@ -69,6 +68,8 @@ RESERVE_BYTES = 1024 * 1024  # loss and marker records may exceed the bound by t
 # Cross-process admission (spec 048 §2 "Shared bound"): every process sharing the spool
 # admits under this flock'd file (never the drainer's ``.lock``), against the bytes on disk.
 ADMIT_LOCK = ".admit"
+# The epoch registrations' directory (050 §3.2; ``_registration.py`` owns its files).
+EPOCHS_DIR = ".epochs"
 ADMIT_TIMEOUT_S = 5.0  # a busy admission lock past this fails closed (the record is refused)
 QUARANTINE_SUFFIX = ".corrupt"  # quarantined records count against the bound until removed
 ACK_SUFFIX = ".ack"  # a drainer's delivery receipt for another process's record (empty file)

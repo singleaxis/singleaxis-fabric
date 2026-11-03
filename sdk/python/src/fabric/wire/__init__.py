@@ -33,10 +33,17 @@ import uuid
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from .._capture_types import COUNTERS, EndRunStatus, RunOutcome, ScopeStatus, StopReason, strict
+from .._capture_types import (
+    COUNTERS,
+    EndRunStatus,
+    RunOutcome,
+    RunScope,
+    ScopeStatus,
+    StopReason,
+    strict,
+)
 from .._sequence import (
     OPAQUE_ID_RE,
-    RunScope,
     SourceAllocator,
     current_run_scope,
     default_source_id,

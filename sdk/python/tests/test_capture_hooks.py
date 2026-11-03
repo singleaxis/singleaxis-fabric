@@ -19,10 +19,8 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-import fabric._loss
-import fabric._sequence
 from fabric import _capture_types as ct
-from fabric import _manifest, _records, _seal, _segments, wire
+from fabric import _loss, _manifest, _records, _seal, _segments, _sequence, wire
 from fabric._capture_types import (
     COUNTERS,
     Allocation,
@@ -31,10 +29,11 @@ from fabric._capture_types import (
     NullSealAccumulator,
     RecordJob,
     RecordsMisuseError,
+    RunScope,
     SealInfo,
 )
 from fabric._loss import LossEmitter
-from fabric._sequence import RunScope, SourceAllocator
+from fabric._sequence import SourceAllocator
 from fabric.reconstruct import _evidence as reconstruct_evidence
 from fabric.reconstruct import _fields_model, _graph, _project
 from fabric.wire import _attrs, _pipeline, _registration
@@ -48,8 +47,8 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv(ct.STRICT_ENV, raising=False)
     COUNTERS.reset()
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     yield
     wire.uninstall()
     emitter.close(1.0)
@@ -362,7 +361,8 @@ def test_the_p1_hooks_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
         pass
     # Fail open: nothing raises. on_final() failed, so the epoch's seals are unproven and
     # close() does not claim a complete record (P1 seal review).
-    assert handle.close(2.0) is False
+    closed = handle.close(2.0)
+    assert closed is False
 
 
 # --- stubs: typed, fail-open, today's behaviour ----------------------------------------------
@@ -379,7 +379,7 @@ def test_records_input_without_a_handle_emits_nothing(monkeypatch: pytest.Monkey
     assert records.v2("sess", "session-1") is None
     assert records.v2("nope", "x") is None
     assert COUNTERS.api_misuse == 3
-    issuer = fabric._sequence.GeneratedIds()
+    issuer = _sequence.GeneratedIds()
     attempt = _records.Attempt(records, issuer.mint(str(uuid.uuid4())), "tool_call", "sdk.records")
     assert attempt.emit("start", name_hint="t", attributes={}, start_ns=1, end_ns=1) is False
     monkeypatch.setenv(ct.STRICT_ENV, "1")

@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-import fabric._sequence as seq
+from fabric import _sequence as seq
 from fabric._capture_types import Allocation, NullSealAccumulator
 from fabric._sequence import SourceAllocator, default_source_id, get_allocator
 from fabric.wire import _registration as reg

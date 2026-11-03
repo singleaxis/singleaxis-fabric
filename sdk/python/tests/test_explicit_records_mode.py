@@ -32,15 +32,15 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-import fabric._loss
-import fabric._sequence
 from fabric import (
     ByteEvidenceConfig,
     ByteEvidenceRecorder,
     BytePrivacyPolicy,
     CallRecorder,
     LocalFilesystemContentStore,
+    _loss,
     _manifest,
+    _sequence,
     call_recorder,
     wire,
 )
@@ -411,7 +411,6 @@ def test_over_the_cap_and_not_exact_bytes_are_descriptor_only(
     events = recorder.snapshot()["events"]
     assert [(e["status"], e.get("status_reason")) for e in events] == [
         ("not_captured", "payload_too_large"), ("unsupported", "not_exact_bytes")]  # fmt: skip
-    del big
 
 
 def test_the_byte_writer_is_not_called(
@@ -488,8 +487,8 @@ def test_a_refused_submit_is_a_wire_loss_and_a_view_gap(
 @pytest.fixture
 def installed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))

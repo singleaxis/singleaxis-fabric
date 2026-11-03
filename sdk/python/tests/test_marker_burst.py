@@ -166,7 +166,8 @@ def test_a_burst_of_run_blocks_drops_no_marker_and_every_run_verifies(tmp_path: 
     assert handle.flush(60.0)
     stats = handle.stats()
     assert (stats.markers_dropped, stats.markers_held) == (0, 0)
-    assert handle.close(60.0)
+    closed = handle.close(60.0)
+    assert closed
     markers = _markers(_spans(host))
     kinds = Counter(m["kind"] for m in markers.values())
     assert {kind: kinds[kind] for kind in RUN_KINDS} == dict.fromkeys(RUN_KINDS, 2000)
@@ -202,7 +203,8 @@ def test_every_forced_drop_is_counted_and_reported_as_a_gap(
     assert not handle.flush(60.0)  # a marker was dropped since the last flush
     dropped = handle.stats().markers_dropped
     assert dropped >= 30
-    assert not handle.close(60.0)
+    closed = handle.close(60.0)
+    assert not closed
     delivered = _markers(_spans(host))
     assert set(delivered) <= set(attempted)
     assert len(attempted) == len(delivered) + dropped  # every marker delivered or counted

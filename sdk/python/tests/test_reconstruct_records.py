@@ -184,8 +184,9 @@ def test_records_interleaved_with_exchanges_verify(capture: Capture) -> None:
     assert run["run_state"] == "terminated"  # the segment graph (WP-31) states it
     # Each record here is its own attempt; its membership is its one position.
     assert [a["records"] for a in run["attempts"]] == [1, 1, 1]
-    assert main(["--spans", str(capture.write()), "--store-root", str(capture.root / "store"),
-                 "--tenant", "tenant-a", "--out", str(capture.root / "r.json")]) == 0  # fmt: skip
+    status = main(["--spans", str(capture.write()), "--store-root", str(capture.root / "store"),
+                   "--tenant", "tenant-a", "--out", str(capture.root / "r.json")])  # fmt: skip
+    assert status == 0
 
 
 def test_records_fill_sequences_without_seals(capture: Capture) -> None:

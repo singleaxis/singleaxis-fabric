@@ -416,7 +416,7 @@ def lineage(
                     else ppid == known["ppid"]
                 )
             ):
-                depth = known["depth"]  # the same process exec'd another image
+                pass  # the same process exec'd another image: its depth stands
             elif (
                 parent is not None
                 and event["time_ns"] >= parent["time"]

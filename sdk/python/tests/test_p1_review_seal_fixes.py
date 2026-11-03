@@ -19,9 +19,7 @@ from typing import Any
 import pytest
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 
-import fabric._loss
-import fabric._sequence
-from fabric import _seal, _segments, wire
+from fabric import _loss, _seal, _segments, _sequence, wire
 from fabric._capture_types import COUNTERS, STRICT_ENV, Marker
 from fabric._segments import format_entry, format_token
 from fabric._sequence import SourceAllocator
@@ -42,9 +40,9 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for name in ("FABRIC_RUN_ID", "FABRIC_RUN_RESUME_TOKEN", "FABRIC_WIRE_ID_KEY"):
         monkeypatch.delenv(name, raising=False)
     COUNTERS.reset()
-    emitter = fabric._loss.LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    emitter = _loss.LossEmitter()
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     yield
     wire.uninstall()
     emitter.close(1.0)
@@ -213,7 +211,8 @@ def test_close_queues_every_seal_before_the_final_marker(
     monkeypatch.setattr(loss, "_queue", spy)
     with wire.run("job-order", resumable=True):  # left open: final() seals it
         _record(handle)
-        assert handle.close(10.0)
+        closed = handle.close(10.0)
+        assert closed
     assert queued.index("segment_seal") < queued.index("final"), queued
 
 
@@ -263,7 +262,8 @@ def test_a_close_that_could_not_spool_final_keeps_the_registration(tmp_path: Pat
 
     sender.close = stalled_close  # type: ignore[method-assign]
     epoch, last = handle.allocator.last_sequence()
-    assert handle.close(1.0) is False
+    closed = handle.close(1.0)
+    assert closed is False
     assert path.exists()  # kept, unflagged
     data = path.read_bytes()
     fields = reg.decode(data)
@@ -284,7 +284,8 @@ def test_an_orderly_close_finalizes_and_removes_the_registration(tmp_path: Path)
     path = Path(str(registration.path))
     with wire.run("job-ok"):
         _record(handle)
-    assert handle.close(10.0)
+    closed = handle.close(10.0)
+    assert closed
     assert not path.exists()
     scanner = Spool(str(tmp_path / "spool"), 64 << 20)
     try:
@@ -320,7 +321,7 @@ def test_a_retired_run_still_continues_locally_and_counts_post_terminal_use(
     assert isinstance(table, _segments.SegmentTable)
     with wire.run("job-again"):  # outermost exit: a terminal seal, then retired
         _record(handle)
-    emitted = fabric._sequence.run_pseudonym("job-again", KEY)
+    emitted = _sequence.run_pseudonym("job-again", KEY)
     first = table.get(emitted)
     assert (
         isinstance(first, _segments._Run) and emitted not in table._runs

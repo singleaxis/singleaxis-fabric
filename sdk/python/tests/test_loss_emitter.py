@@ -20,8 +20,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import _loss
+from fabric._capture_types import RunScope
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter, get_loss_emitter
-from fabric._sequence import RunScope, SourceAllocator
+from fabric._sequence import SourceAllocator
 
 from .test_wire_helpers import capture_schemas, load_validator, loss_document
 

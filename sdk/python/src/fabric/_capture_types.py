@@ -38,8 +38,6 @@ if TYPE_CHECKING:
     from opentelemetry.context import Context
     from opentelemetry.util.types import AttributeValue
 
-    from ._sequence import RunScope
-
 # --- vocabularies (§3.4, §3.6; 049 §2.3) ------------------------------------------------
 
 Phase = Literal["start", "data", "update", "end"]
@@ -273,6 +271,18 @@ def resolve_status_inputs(
 # --- allocation (§3.3) --------------------------------------------------------------------
 
 
+@dataclass(eq=False, slots=True)
+class RunScope:
+    """One ``fabric.wire.run()`` block entry; ``closed`` is set under the allocator lock.
+    Defined here, with the allocation types that carry it, so this module imports nothing
+    from the allocator (``_sequence`` re-exports it)."""
+
+    run_id: str
+    scope_id: str
+    parent: RunScope | None
+    closed: bool = False
+
+
 class Allocation(NamedTuple):
     """One allocated position: ``segment_id`` is the open segment of the scope's run
     (``None`` outside any run, or until segments are built); ``manifest_seq`` the latest
@@ -283,6 +293,15 @@ class Allocation(NamedTuple):
     scope: RunScope | None
     segment_id: str | None = None
     manifest_seq: int | None = None
+
+
+class EpochRegistration(Protocol):
+    """What an allocator holds of its epoch's registration (050 §3.2): ``Registration`` in
+    ``wire/_registration.py``, which imports the allocator. Declared here as a structural
+    type so the allocator never imports the wire: the dependency runs one way only."""
+
+    @property
+    def epoch(self) -> int: ...
 
 
 class Settle(Protocol):

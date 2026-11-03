@@ -27,10 +27,8 @@ from typing import Any
 
 import pytest
 
-import fabric._loss
-import fabric._sequence
 from fabric import _capture_types as ct
-from fabric import wire
+from fabric import _loss, _sequence, wire
 from fabric._capture_types import (
     COUNTERS,
     DescriptorOnlyBody,
@@ -327,9 +325,9 @@ def test_g_real_production_install_without_a_key(
         InMemorySpanExporter,
     )
 
-    loss = fabric._loss.LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", loss)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    loss = _loss.LossEmitter()
+    monkeypatch.setattr(_loss, "_EMITTER", loss)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     monkeypatch.setenv("FABRIC_IDENTITY_MODE", "clear")
     monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
     exporter = InMemorySpanExporter()
@@ -424,9 +422,9 @@ def actual(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
 
     from .test_capture_integration import JsonlSpanExporter  # noqa: PLC0415
 
-    loss = fabric._loss.LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", loss)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    loss = _loss.LossEmitter()
+    monkeypatch.setattr(_loss, "_EMITTER", loss)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     monkeypatch.setenv("FABRIC_CLOCK_UNCERTAINTY_MS", "0")
     provider = TracerProvider()
     spans = tmp_path / "actual.jsonl"
@@ -561,7 +559,8 @@ def test_an_over_cap_body_in_direct_mode_is_a_recorded_not_captured_body(
     with wire.run("over-cap"):
         body = RecordBody("tool.call.result", big, "application/json", "caller")
         assert _emit(handle.records.begin("tool_call", "sdk.records"), bodies=[body])
-    assert handle.close(5)
+    closed = handle.close(5)
+    assert closed
     rows = [json.loads(line) for line in spans.read_text().splitlines()]
     [row] = [r for r in rows if r["attributes"].get("fabric.capture.input") == "records"]
     [object_id] = row["attributes"]["fabric.content.object_ids"]

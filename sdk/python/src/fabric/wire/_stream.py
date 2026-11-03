@@ -23,10 +23,11 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.context import Context
 
-from .._sequence import RunScope, encode_opaque_id, resolve_run_id
+from .._capture_types import RunScope
+from .._sequence import encode_opaque_id, resolve_run_id
 from ._attrs import POINT_HTTPX, WireEnrichment, WireJob, read_provider_request_id
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ResponseState, WireApi
-from ._pipeline import capture_parent
+from ._pipeline import Budget, capture_parent
 
 if TYPE_CHECKING:
     from .._capture_scope import ExplicitScope
@@ -80,24 +81,6 @@ def _after_fork_in_child() -> None:
 
 if hasattr(os, "register_at_fork"):
     os.register_at_fork(after_in_child=_after_fork_in_child)
-
-
-class Budget:
-    """In-flight retained-byte budget shared by every exchange of one tee."""
-
-    def __init__(self, limit: int) -> None:
-        self._limit, self._lock, self.used = limit, threading.Lock(), 0
-
-    def try_reserve(self, size: int) -> bool:
-        with self._lock:
-            if self.used + size > self._limit:
-                return False
-            self.used += size
-            return True
-
-    def release(self, size: int) -> None:
-        with self._lock:
-            self.used = max(0, self.used - size)
 
 
 class ExchangeOwner(Protocol):

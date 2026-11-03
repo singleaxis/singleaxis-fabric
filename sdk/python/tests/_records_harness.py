@@ -24,10 +24,9 @@ from fabric._capture_types import Allocation, NullRunTable
 from fabric._loss import LossEmitter
 from fabric._records import RecordsInput
 from fabric._sequence import SourceAllocator
-from fabric.wire._pipeline import CapturePipeline
+from fabric.wire._pipeline import Budget, CapturePipeline
 from fabric.wire._sender import Sender
 from fabric.wire._spool import Spool, unframe_all
-from fabric.wire._stream import Budget
 
 REPO = Path(__file__).resolve().parents[3]
 VECTORS = REPO / "contracts/coverage/v1/fixtures/vectors"

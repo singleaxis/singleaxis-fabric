@@ -114,6 +114,7 @@ def test_empty_runs_keep_the_reclaim_backlog_bounded_when_no_thread_can_start(
                 pass
         _assert_bounded(seals)
     finally:
-        assert handle.close(2) is False  # seals were dropped and left pending
+        closed = handle.close(2)
+        assert closed is False  # seals were dropped and left pending
         seals._reclaim.clear()
         seals._ready.clear()

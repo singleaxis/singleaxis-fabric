@@ -27,8 +27,8 @@ from ._attrs import WireEnrichment
 from ._forks import ForkLedger
 from ._match import EndpointIndex
 from ._model import CaptureJob
-from ._pipeline import CapturePipeline, protector_for
-from ._stream import DELEGATION_MARK, FLAVORS, Budget, Exchange, drain_reaper, private_copy
+from ._pipeline import Budget, CapturePipeline, protector_for
+from ._stream import DELEGATION_MARK, FLAVORS, Exchange, drain_reaper, private_copy
 
 if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
     from httpx import AsyncBaseTransport as _AsyncBase

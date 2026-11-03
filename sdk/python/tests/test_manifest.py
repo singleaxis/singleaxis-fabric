@@ -21,9 +21,7 @@ from typing import Any
 
 import pytest
 
-import fabric._loss
-import fabric._sequence
-from fabric import _manifest, wire
+from fabric import _loss, _manifest, _sequence, wire
 from fabric._capture_types import COUNTERS, Marker, RecordsMisuseError
 from fabric._loss import LossEmitter
 from fabric._manifest import (
@@ -103,7 +101,7 @@ def sha_text(text: str) -> str:
 
 
 def label(value: str, key: bytes | None) -> str:
-    return fabric._sequence.label_pseudonym("s-", value, key)
+    return _sequence.label_pseudonym("s-", value, key)
 
 
 FIXTURE_POINTS = (
@@ -342,8 +340,8 @@ def test_manifest_marker_is_a_valid_spool_marker() -> None:
 @pytest.fixture()
 def installed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[list[Marker]]:
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     markers: list[Marker] = []
     real = emitter.queue_marker
 

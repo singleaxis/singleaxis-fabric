@@ -328,14 +328,16 @@ def test_260_bodies_are_accepted_and_261_refused_before_the_write(tmp_path: Path
     rng = random.Random(260)
     spool = Spool(str(tmp_path / "spool"), 64 << 20)
     doc, bodies = _exchange(rng, 1, MAX_BODIES)
-    assert isinstance(spool.write(doc, bodies), str)
+    written = spool.write(doc, bodies)
+    assert isinstance(written, str)
     before, charged = _files(tmp_path / "spool"), spool.bytes
     doc, bodies = _exchange(rng, 2, MAX_BODIES + 1)
     with pytest.raises(OverBoundError):
         spool.write(doc, bodies)
     assert _files(tmp_path / "spool") == before and spool.bytes == charged  # nothing written
     record, record_bodies = _record(rng, 3, 8, only=3)
-    assert isinstance(spool.write(record, record_bodies), str)
+    written = spool.write(record, record_bodies)
+    assert isinstance(written, str)
     nine, nine_bodies = _record(rng, 4, 8)
     nine["bodies"].append(dict(nine["bodies"][0], offset=sum(map(len, nine_bodies))))
     with pytest.raises(OverBoundError):
@@ -569,7 +571,7 @@ def test_spooled_losses_name_one_segment_each(tmp_path: Path) -> None:
 
 
 def test_the_pending_table_is_bounded_per_range(monkeypatch: pytest.MonkeyPatch) -> None:
-    import fabric._loss as loss_module  # noqa: PLC0415
+    from fabric import _loss as loss_module  # noqa: PLC0415
 
     monkeypatch.setattr(loss_module, "_MAX_PENDING_RANGES", 3)
     emitter = LossEmitter()

@@ -353,7 +353,8 @@ def test_check_output_is_one_attempt_named_by_the_outer_api(rig: Rig) -> None:
     """check_output -> run -> Popen -> communicate -> wait, then poll and __exit__'s wait:
     one attempt, two records, both ``api: check_output``; the inner wrappers' records are
     suppressed, the output is not."""
-    assert subprocess.check_output([SH, "-c", "echo hi"], text=True) == "hi\n"
+    output = subprocess.check_output([SH, "-c", "echo hi"], text=True)
+    assert output == "hi\n"
     (records,) = rig.attempts().values()
     start, end = records
     assert start.item["api"] == end.item["api"] == "check_output"
@@ -879,7 +880,8 @@ def test_hooks_install_activates_disables_and_closes_the_channel(tmp_path: Path)
         assert handle.disable(POINT)
         assert subprocess.run(["true"]).returncode == 0
         assert handle.status()["counters"][POINT]["starts"] == 1
-        assert handle.close()
+        closed = handle.close()
+        assert closed
         assert not is_fabric_wrapper(subprocess.Popen.__init__)
         assert handle.status()["counters"][POINT]["patches_restored"] == 12
     finally:

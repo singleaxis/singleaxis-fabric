@@ -23,9 +23,7 @@ from typing import Any, cast
 
 import pytest
 
-import fabric._loss
-import fabric._sequence
-from fabric import _segments, wire
+from fabric import _loss, _segments, _sequence, wire
 from fabric._capture_types import COUNTERS, STRICT_ENV, Marker, RecordsMisuseError
 from fabric._seal import SegmentSeals, seal_digest
 from fabric._segments import (
@@ -61,9 +59,9 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv(STRICT_ENV, raising=False)
     monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
     COUNTERS.reset()
-    emitter = fabric._loss.LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    emitter = _loss.LossEmitter()
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     yield
     wire.uninstall()
     emitter.close(1.0)
@@ -221,8 +219,8 @@ def test_run_identity_vectors(case: dict[str, Any]) -> None:
 def test_rule_5_mints_a_csprng_emitted_id_without_caller_input() -> None:
     rule = IdentityRule(key=KEY, mode="pseudonymous", production=False)
     first, second = rule.mint_run(), rule.mint_run()
-    assert first != second and fabric._sequence.RUN_PSEUDONYM_RE.fullmatch(first)
-    assert rule.mine(first) and isinstance(first, fabric._sequence.EmittedId)
+    assert first != second and _sequence.RUN_PSEUDONYM_RE.fullmatch(first)
+    assert rule.mine(first) and isinstance(first, _sequence.EmittedId)
     assert rule.run(first) == first  # passes through, never mapped again
     assert rule.run(str(first)) != first  # a plain string is always mapped (decision 22)
 
@@ -269,10 +267,10 @@ def test_the_root_segment_and_its_terminal_seal_at_the_outermost_exit() -> None:
     segment = first[0].segment_id
     assert {a.segment_id for a in first} == {segment} and start.segment_id == segment
     assert start.predecessors == ("none",) and start.id_basis == "caller"
-    assert start.run_id == fabric._sequence.run_pseudonym(CLEAR, KEY)
+    assert start.run_id == _sequence.run_pseudonym(CLEAR, KEY)
     assert start.session_id and start.session_id.startswith("sess-")
     assert start.user_id and start.user_id.startswith("usr-")
-    assert start.links == (fabric._sequence.run_pseudonym("l-1", KEY),)
+    assert start.links == (_sequence.run_pseudonym("l-1", KEY),)
     assert start.resumable is False
     assert end.segment_id == segment and end.scope_status == "ok"
     seal = rig.seal_of(segment)
@@ -292,7 +290,7 @@ def test_resume_token_seals_resumable_and_the_next_allocation_continues() -> Non
         (after,) = rig.write()
     parsed = parse_token(token)
     assert parsed is not None and parsed.version == 3
-    assert parsed.correlation_id == fabric._sequence.run_pseudonym("trip", KEY)
+    assert parsed.correlation_id == _sequence.run_pseudonym("trip", KEY)
     assert parsed.segment_id == before.segment_id != after.segment_id
     seal = rig.seal_of(before.segment_id)
     assert seal.terminal is False and seal.resumable is True and not seal.branch_ids
@@ -484,7 +482,7 @@ def test_a_block_resumed_from_a_token_takes_its_correlation_id() -> None:
     with b.block("trip", resume=[token]):
         (resumed,) = b.write()
     (start,) = b.queue.kind("run_start")
-    assert start.run_id == fabric._sequence.run_pseudonym("trip", KEY)  # A's, verbatim
+    assert start.run_id == _sequence.run_pseudonym("trip", KEY)  # A's, verbatim
     assert start.id_basis == "token" and start.predecessors == (parse_token(token).entry,)  # type: ignore[union-attr]
     assert b.seal_of(resumed.segment_id).terminal is False  # opened from a token: resumable
 
@@ -503,7 +501,7 @@ def test_fan_in_with_differing_runs_needs_a_caller_run_id() -> None:
     assert conflict.id_basis == "token_conflict"
     assert conflict.run_id == min(parse_token(t).correlation_id for t in (left, right))  # type: ignore[union-attr,type-var]
     assert joined.id_basis == "caller_join"
-    assert joined.run_id == fabric._sequence.run_pseudonym("join-run", KEY)
+    assert joined.run_id == _sequence.run_pseudonym("join-run", KEY)
 
 
 def test_malformed_tokens_are_dropped_counted_and_never_raise(
@@ -551,12 +549,16 @@ def test_the_outermost_run_end_carries_the_last_outcome() -> None:
     rig.check_markers()
 
 
+def _raise(exc: BaseException) -> None:
+    raise exc
+
+
 def test_a_raising_block_reports_its_scope_status() -> None:
     rig = Rig()
     with pytest.raises(KeyError), rig.block("raises") as scope:
-        raise KeyError("x")
+        _raise(KeyError("x"))
     with pytest.raises(asyncio.CancelledError), rig.block("cancelled"):
-        raise asyncio.CancelledError
+        _raise(asyncio.CancelledError())
     error, cancelled = rig.queue.kind("run_end")
     assert error.scope_id == scope.scope_id and error.scope_status == "error"
     assert cancelled.scope_status == "cancelled"

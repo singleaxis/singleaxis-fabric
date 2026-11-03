@@ -269,7 +269,8 @@ def test_an_exception_in_final_fails_close(tmp_path: Path, monkeypatch: pytest.M
         raise RuntimeError("on_final failed")
 
     monkeypatch.setattr(table, "on_final", broken)
-    assert handle.close(2) is False
+    closed = handle.close(2)
+    assert closed is False
 
 
 # --- the final-phase drop accounting, isolated from a pending seal ---------------------------

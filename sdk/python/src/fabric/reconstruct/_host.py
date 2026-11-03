@@ -108,10 +108,8 @@ SENSOR_EVENTS_MAX: Final = 4096  # run-reconstruction ``sensor_events`` maxItems
 TICK_NS: Final = 10_000_000
 
 HOST_SOURCES: Final = frozenset({"host.ebpf", "host.auditd"})
-EVENT_CLASSES: Final = frozenset({"exec", "connect", "file"})
 PID_NAMESPACE_BASES: Final = frozenset({"declared_same", "recorded"})
 SENSOR_SPAN: Final = "fabric.sensor_event"
-EXEC_POINT: Final = "exec.subprocess"
 # The attribution bases of spec 056 §4.5 in report order (run-reconstruction schema).
 ATTRIBUTION_BASES: Final = (
     "reported", "output_match", "sequence_bracket", "process_anchor", "process_lineage", "none",

@@ -20,14 +20,15 @@ import uuid
 import weakref
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, cast
 
 from . import _seal
 from ._capture_types import (
     Allocation,
+    EpochRegistration,
     NullRunTable,
     NullSealAccumulator,
+    RunScope,
     RunTable,
     SealAccumulator,
     SealEntry,
@@ -35,8 +36,6 @@ from ._capture_types import (
 
 if TYPE_CHECKING:
     import mmap
-
-    from .wire._registration import Registration
 
 OPAQUE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 RUN_PSEUDONYM_RE = re.compile(r"^r-[0-9a-f]{32}$")
@@ -65,16 +64,6 @@ _LOCK = threading.Lock()  # guards _LIVE and _REGISTRY
 # the mmap'ed ``.epochs/<epoch>.reg`` file (``wire/_registration.py`` pins the layout).
 MIRROR_OFFSET = 256
 _MIRROR = struct.Struct("<Q")
-
-
-@dataclass(eq=False, slots=True)
-class RunScope:
-    """One ``fabric.wire.run()`` block entry; ``closed`` is set under the allocator lock."""
-
-    run_id: str
-    scope_id: str
-    parent: RunScope | None
-    closed: bool = False
 
 
 _SCOPE: contextvars.ContextVar[RunScope | None] = contextvars.ContextVar("fabric_run", default=None)
@@ -215,7 +204,7 @@ class SourceAllocator:
         self.segments: RunTable = NullRunTable()
         self.seals: SealAccumulator = NullSealAccumulator()
         # 050 §3.2: this epoch's registration and its mmap mirror (``None``: unregistered).
-        self.registration: Registration | None = None
+        self.registration: EpochRegistration | None = None
         self._mirror: mmap.mmap | None = None
         # The fork ledger (wire/_forks.py): set in a forked child that holds a slot.
         self._fork_note: Callable[[int, int], None] | None = None
@@ -233,7 +222,7 @@ class SourceAllocator:
             self.seals = seals if seals is not None else NullSealAccumulator()
 
     def bind_registration(
-        self, registration: Registration, mirror: mmap.mmap | None, *, drawn_from: int
+        self, registration: EpochRegistration, mirror: mmap.mmap | None, *, drawn_from: int
     ) -> bool:
         """Adopt ``registration`` for this allocator's epoch (050 §3.2 rule 2). The
         registration may hold a redrawn epoch: it replaces ``drawn_from`` only while nothing
@@ -249,7 +238,7 @@ class SourceAllocator:
                     _MIRROR.pack_into(mirror, MIRROR_OFFSET, self._next)
             return True
 
-    def unbind_registration(self, registration: Registration | None = None) -> None:
+    def unbind_registration(self, registration: EpochRegistration | None = None) -> None:
         """Stop mirroring (``registration``: only when it is still the bound one)."""
         with self._lock:
             if registration is None or self.registration is registration:

@@ -97,7 +97,8 @@ def _host_a(host: Path) -> str:
             token = wire.resume_token()
         assert isinstance(token, str)
         assert handle.flush(10.0)
-        assert handle.close(10.0)
+        closed = handle.close(10.0)
+        assert closed
     finally:
         writer.close()
         provider.shutdown()

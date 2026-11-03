@@ -34,9 +34,10 @@ import fabric._loss
 import fabric._sequence
 import fabric.tracing
 from fabric import wire
+from fabric._capture_types import RunScope
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter
 from fabric._model_names import expose_model, hashed_model
-from fabric._sequence import RunScope, SourceAllocator, run_pseudonym
+from fabric._sequence import SourceAllocator, run_pseudonym
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.tracing import guarded_exporter
 

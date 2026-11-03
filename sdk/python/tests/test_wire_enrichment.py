@@ -27,8 +27,8 @@ import httpx
 import pytest
 from aiohttp import web
 
-import fabric.wire as wire_pkg
 from fabric import _manifest
+from fabric import wire as wire_pkg
 from fabric._capture_scope import explicit_model_call
 from fabric._capture_types import Allocation
 from fabric._sequence import label_pseudonym, pseudonym_v2
