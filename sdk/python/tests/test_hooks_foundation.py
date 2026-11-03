@@ -29,10 +29,8 @@ from typing import Any, Final, cast
 
 import pytest
 
-import fabric._loss
-import fabric._sequence
 from fabric import _capture_types as ct
-from fabric import _manifest, hooks, wire
+from fabric import _loss, _manifest, _sequence, hooks, wire
 from fabric._capture_scope import ExplicitScope, explicit_model_call, explicit_owner
 from fabric._capture_types import COUNTERS, DescriptorOnlyBody, EvidenceDoc, Marker, RecordBody
 from fabric._loss import LossEmitter
@@ -132,8 +130,10 @@ PRISTINE_RUN = Target.__dict__["run"]
 def fake(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeModule]:
     module = FakeModule()
     monkeypatch.setitem(sys.modules, FAKE_MODULE, module)
-    monkeypatch.setattr(hooks, "CHANNELS", (hooks.ChannelSlot(POINT, "FABRIC_WIRE_EXEC",
-                                                               FAKE_MODULE),))  # fmt: skip
+    slot = hooks.ChannelSlot(
+        POINT, "FABRIC_WIRE_EXEC", FAKE_MODULE, lambda: sys.modules[FAKE_MODULE]
+    )
+    monkeypatch.setattr(hooks, "CHANNELS", (slot,))
     yield module
     if (handle := hooks.current_handle()) is not None:
         handle.close()
@@ -148,8 +148,8 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Marker]]:
     monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # conftest defaults to clear
     COUNTERS.reset()
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     markers: list[Marker] = []
     real = emitter.queue_marker
 
@@ -213,16 +213,22 @@ def test_importing_fabric_and_hooks_patches_nothing() -> None:
 
 
 def test_unknown_attribute_of_fabric_still_raises() -> None:
-    import fabric  # noqa: PLC0415
+    package = importlib.import_module("fabric")  # the package, with its lazy __getattr__
 
     with pytest.raises(AttributeError):
-        _ = fabric.not_a_module
+        _ = package.not_a_module
 
 
 def test_only_the_exec_channel_is_registered() -> None:
+    from fabric.hooks import _exec  # noqa: PLC0415
+
     assert [(s.point, s.env, s.module) for s in hooks.CHANNELS] == [
         ("exec.subprocess", "FABRIC_WIRE_EXEC", "fabric.hooks._exec")
     ]
+    load = hooks.CHANNELS[0].load
+    assert load is not None
+    loaded = load()  # a literal import of the slot's own module
+    assert loaded is _exec and loaded.__name__ == hooks.CHANNELS[0].module
     assert POINT in _manifest.RUNTIME_POINTS and _manifest.HOOK_POINTS == (POINT,)
     assert _manifest.DEFAULT_STATES[POINT] == ("disabled", "hook_disabled")
     assert wire._HOOK_ENV_NAMES == _config.HOOK_ENV_NAMES
@@ -248,8 +254,9 @@ def test_explicit_install_with_malformed_arguments_raises_value_error(
 
 
 def test_explicit_install_rejects_unknown_channels() -> None:
+    unknown: dict[str, Any] = {"file_audit": True}  # not a channel of this build
     with pytest.raises(TypeError):
-        hooks.install(file_audit=True)  # type: ignore[call-arg]
+        hooks.install(**unknown)
 
 
 @pytest.mark.parametrize(
@@ -351,7 +358,9 @@ def test_without_a_capture_handle_nothing_is_patched(
                                              "reason": "not_configured"}  # fmt: skip
     assert fake.installed == [] and Target.__dict__["run"] is PRISTINE_RUN
     assert hooks.current_handle() is None and "no capture handle" in caplog.text
-    assert handle.disable(POINT) is True and handle.close() is True
+    disabled = handle.disable(POINT)
+    closed = handle.close()
+    assert disabled is True and closed is True
 
 
 def test_a_disabled_capture_install_is_not_a_capture_handle(
@@ -406,7 +415,8 @@ def test_a_manifest_refusal_while_publishing_leaves_nothing_patched(
     assert Target.__dict__["run"] is PRISTINE_RUN and not is_fabric_wrapper(TARGET_MODULE.spawn)
     assert COUNTERS.internal_errors >= 1
     monkeypatch.setenv(ct.STRICT_ENV, "1")
-    assert handle.close() is True
+    closed = handle.close()
+    assert closed is True
     with pytest.raises(RuntimeError, match="manifest refused"):
         hooks.install(exec=True)  # strict: the error surfaces, still nothing patched
     assert Target.__dict__["run"] is PRISTINE_RUN
@@ -447,8 +457,10 @@ def test_close_restores_patches_publishes_shutdown_and_is_idempotent(
 ) -> None:
     _capture(tmp_path)
     handle = hooks.install(exec=True)
-    assert handle.close(timeout_s=0.5) is True
-    assert handle.close() is True
+    closed = handle.close(timeout_s=0.5)
+    assert closed is True
+    closed = handle.close()
+    assert closed is True
     assert Target.__dict__["run"] is PRISTINE_RUN and TARGET_MODULE.spawn is _spawn
     assert fake.installed[0].closed
     assert _exec_rows(markers)[-1] == ("disabled", "shutdown")
@@ -457,7 +469,8 @@ def test_close_restores_patches_publishes_shutdown_and_is_idempotent(
     assert handle.status()["counters"][POINT]["patches_restored"] == 2
     again = hooks.install(exec=True)  # a closed install can be replaced
     assert again is not handle and len(fake.installed) == 2
-    assert handle.close(timeout_s=float("nan")) is True  # never raises on a bad timeout
+    closed = handle.close(timeout_s=float("nan"))
+    assert closed is True  # never raises on a bad timeout
 
 
 def test_capture_uninstall_publishes_shutdown_and_hooks_stop_recording(
@@ -477,16 +490,36 @@ def test_capture_uninstall_publishes_shutdown_and_hooks_stop_recording(
     assert fake.installed[1].calls == 1 and fake.installed[0].calls == 1
 
 
+def _missing_channel() -> types.ModuleType:
+    raise ModuleNotFoundError("not in this build", name="fabric.hooks._no_such_channel")
+
+
+@pytest.mark.parametrize("load", [None, _missing_channel], ids=["no_loader", "not_in_build"])
 def test_a_missing_channel_module_is_unsupported_not_an_error(
-    monkeypatch: pytest.MonkeyPatch, markers: list[Marker], tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, markers: list[Marker], tmp_path: Path, load: Any
 ) -> None:
-    slot = hooks.ChannelSlot(POINT, "FABRIC_WIRE_EXEC", "fabric.hooks._no_such_channel")
+    slot = hooks.ChannelSlot(POINT, "FABRIC_WIRE_EXEC", "fabric.hooks._no_such_channel", load)
     monkeypatch.setattr(hooks, "CHANNELS", (slot,))
     _capture(tmp_path)
     handle = hooks.install(exec=True)
     assert handle.status()["capabilities"][POINT] == {"state": "unsupported",
                                                       "reason": "not_instrumented"}  # fmt: skip
     assert _exec_rows(markers)[-1] == ("unsupported", "not_instrumented")
+
+
+def test_a_channel_whose_dependency_is_missing_is_failed(
+    monkeypatch: pytest.MonkeyPatch, markers: list[Marker], tmp_path: Path
+) -> None:
+    def load() -> types.ModuleType:  # the channel module is present; one it imports is not
+        raise ModuleNotFoundError("dependency", name="tests_hooks_missing_dependency")
+
+    slot = hooks.ChannelSlot(POINT, "FABRIC_WIRE_EXEC", "fabric.hooks._exec", load)
+    monkeypatch.setattr(hooks, "CHANNELS", (slot,))
+    _capture(tmp_path)
+    handle = hooks.install(exec=True)
+    assert handle.status()["capabilities"][POINT] == {"state": "failed",
+                                                      "reason": "internal_error"}  # fmt: skip
+    assert _exec_rows(markers)[-1] == ("failed", "internal_error")
 
 
 @pytest.mark.parametrize("reason", ["unsupported_runtime", "unsupported_version"])
@@ -541,7 +574,8 @@ def test_status_disable_and_close_never_raise(fake: FakeModule, tmp_path: Path) 
     handle._capabilities = None  # type: ignore[assignment]
     assert handle.status() == {"state": "failed"}
     assert handle.disable(POINT) is False
-    assert handle.close() is False
+    closed = handle.close()
+    assert closed is False
     assert COUNTERS.internal_errors == 3
 
 

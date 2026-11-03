@@ -35,19 +35,20 @@ Rules (053 §4):
   is published in the capture manifest through ``capture_point_changed`` (050 §3.8).
 
 Channels are registered in :data:`CHANNELS`. Each names a module with one entry point,
-``install_channel(producer, patches) -> HookChannel`` (``_producer.py``). This build
+``install_channel(producer, patches) -> HookChannel`` (``_producer.py``), and a loader that
+imports that module with a literal import (never a name computed at run time). This build
 registers only ``exec.subprocess`` (module ``fabric.hooks._exec``).
 """
 
 from __future__ import annotations
 
 import contextlib
-import importlib
 import logging
 import os
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import ModuleType
 from typing import TYPE_CHECKING, Any, Literal
 
 from .._capture_types import COUNTERS, strict
@@ -84,20 +85,44 @@ _SHUTDOWN: Capability = ("disabled", "shutdown")
 _NO_HANDLE: Capability = ("installed_inactive", "not_configured")
 
 
+def _load_exec() -> ModuleType:
+    """The ``exec.subprocess`` channel module, imported only when the channel is on."""
+    import fabric.hooks._exec as module  # noqa: PLC0415 - imported only when switched on
+
+    return module
+
+
 @dataclass(frozen=True, slots=True)
 class ChannelSlot:
     """One registered hook channel: its capture point, the environment switch that enables
-    it (the :func:`install` option is :class:`HooksConfig`'s field), and the module whose
-    ``install_channel`` entry point patches it, imported only when the channel is on."""
+    it (the :func:`install` option is :class:`HooksConfig`'s field), the module whose
+    ``install_channel`` entry point patches it, and ``load``, which imports that module
+    (only when the channel is on). A channel without a loader, or whose module is not in
+    this build, reports ``unsupported`` (``not_instrumented``)."""
 
     point: str
     env: str
     module: str
+    load: Callable[[], ModuleType] | None = None
 
 
 CHANNELS: tuple[ChannelSlot, ...] = (
-    ChannelSlot("exec.subprocess", EXEC_ENV, "fabric.hooks._exec"),
+    ChannelSlot("exec.subprocess", EXEC_ENV, "fabric.hooks._exec", _load_exec),
 )
+
+
+def _channel_module(slot: ChannelSlot) -> ModuleType | None:
+    """``slot``'s channel module, or ``None`` when it is not in this build (no loader, or
+    its own module is missing). Any other import failure propagates (``failed``)."""
+    if slot.load is None:
+        return None
+    try:
+        return slot.load()
+    except ModuleNotFoundError as exc:
+        if exc.name != slot.module:
+            raise
+        return None
+
 
 _LOCK = threading.Lock()
 _HANDLE: HooksHandle | None = None
@@ -139,11 +164,8 @@ class HooksHandle:
         self._patches[slot.point] = patches
         capability: Capability
         try:
-            try:
-                module = importlib.import_module(slot.module)
-            except ModuleNotFoundError as exc:
-                if exc.name != slot.module:
-                    raise
+            module = _channel_module(slot)
+            if module is None:
                 capability = ("unsupported", "not_instrumented")  # not in this build
             else:
                 switch.on = True  # before patching: a wrapper is live as soon as it is set
