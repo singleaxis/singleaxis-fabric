@@ -211,6 +211,8 @@ def start_agent(
 def finish_agent(
     config: AgentConfig, process: subprocess.Popen[str], started: float, timeout_s: float = 180
 ) -> AgentRun:
+    if process.stdin is not None and process.stdin.closed:
+        process.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
     try:
         stdout, stderr = process.communicate(timeout=timeout_s)
     except subprocess.TimeoutExpired:
