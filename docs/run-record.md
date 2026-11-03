@@ -1,7 +1,7 @@
-# The P1 run record (branch only)
+# The P1 run record (unreleased)
 
-> **Status:** describes code built on the `feat/action-record` branch, **not
-> in any release**. v0.8.0 (`main`) does not have it. Design:
+> **Status:** describes code that is built but **not in any release**;
+> v0.8.0 and v0.9.0 do not have it. Design:
 > [spec 050](../specs/050-run-structure-and-records-p1.md), which builds
 > phase P1 of [spec 049](../specs/049-four-layer-capture-coverage.md).
 > Implementation: the modules listed [below](#where-the-code-lives).
@@ -32,7 +32,7 @@ processes and hosts:
 
 ## What is built and what is not
 
-| 050 work package | What it delivers | State on the branch |
+| 050 work package | What it delivers | State |
 |---|---|---|
 | WP-00, WP-01 | Contract deltas, vectors, shared types | Built |
 | WP-10 | Random epochs, registration, shared allocator | Built |

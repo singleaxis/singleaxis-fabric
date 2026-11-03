@@ -1,10 +1,11 @@
 ---
 title: Protected evidence storage, exact-artifact release, and shadow-pilot qualification
-status: draft
+status: superseded
+superseded_by: 049
 revision: 1
 last_updated: 2026-09-26
 owner: product-architecture
-depends_on: 027, 032, 033, 035, 036, 037, 038
+depends_on: 027, 032, 033, 035, 036, 038
 ---
 
 > **Archived:** replaced by [049](../049-four-layer-capture-coverage.md) §7.8 and its phase gates.
@@ -18,8 +19,8 @@ Recorder release tests and a customer shadow pilot are **separate gates**.
 Passing tests against fake stores, schema fixtures or source checkouts is
 not evidence that a production store retains bytes, that a shipped image
 behaves correctly, or that a customer deployment captures its intended
-boundary. This spec defines the evidence needed for
-`critical_enterprise_go` in [spec 037](037-bounded-enterprise-deployment-and-controls.md).
+boundary. This spec defines the evidence needed for a production
+decision.
 It does not authorize a production deployment or a compliance claim.
 
 Fabric OSS remains a customer-controlled passive recorder. The destination,
@@ -114,7 +115,7 @@ responses, tool authorization, latency-critical path or side effects.
 Customer controls define the environment boundary; Fabric records or
 honestly reports gaps.
 
-Before starting, freeze the spec-037 scope and a test plan that names:
+Before starting, freeze the declared deployment scope and a test plan that names:
 run IDs, scenario seeds, expected operations and content roles, concurrency
 and rate, injected faults, source truth systems, privacy canaries,
 capacity/outage objectives, retention schedule, pass thresholds, and

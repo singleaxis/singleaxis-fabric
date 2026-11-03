@@ -1,8 +1,8 @@
 # Fabric Node is the OSS passive recorder: CAPTURE -> PROTECT -> DELIVER.
-# It is not an inline control, evaluation, red-team, or governance runtime.
+# It records passively and never alters, blocks or delays the monitored system.
 
 tenant:
-  # Required by shadow-production; optional for local evaluation.
+  # Required by shadow-production; optional for a local trial.
   id: ""
   name: ""
 
@@ -11,7 +11,7 @@ tenant:
 
 global:
   fabric:
-    version: "0.8.0"
+    version: "0.9.0"
 
 namespace:
   create: false
@@ -29,7 +29,7 @@ otelCollector:
   enabled: true
 
 # Collector settings live under the dependency name. Bare defaults are for
-# local evaluation only: without a destination records go to debug stdout.
+# a local trial only: without a destination records go to debug stdout.
 # Install profiles/shadow-production.yaml for the fail-closed posture.
 otel-collector: {}
 

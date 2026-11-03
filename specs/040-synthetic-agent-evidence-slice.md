@@ -1,14 +1,20 @@
 ---
 title: Synthetic model-terminal-artifact evidence slice
-status: draft
+status: superseded
+superseded_by: 046, 049
 qualification: NO_GO
-revision: 1
-last_updated: 2026-09-26
+revision: 2
+last_updated: 2026-11-03
 owner: recorder-engineering
-depends_on: 035, 036, 037, 038, 039
+depends_on: 035, 036, 038, 039
 ---
 
 # 040 — First bounded agent-evidence slice
+
+> **Superseded by [046](046-qualified-call-run-verification.md) (qualified-run
+> mode) and [049](049-four-layer-capture-coverage.md).** This phase ledger
+> records the state of the synthetic slice on 2026-09-26 to 2026-09-30; it is
+> not the current roadmap.
 
 This specification is the phase ledger for a **synthetic, non-sensitive**
 model → terminal/tool → file artifact → model workflow. It authorizes only
@@ -41,8 +47,9 @@ adds a dedicated credential-bound ingress for G04, an offline signed-statement
 verifier foundation for G05, and security remediation for G07/G08. These
 additions do not close pre-fsync loss, generate durable receipts, authenticate
 fixture witnesses, or approve customer storage. The current control/coverage
-status and local versus live evidence are maintained in the
-[qualification ledger](../docs/archive/recorder-v1-qualification-status.md#current-closure-work--2026-09-30--no-go).
+status and local versus live evidence were kept in the recorder-v1
+qualification ledger (since removed; history in git). The current state is
+in [limitations and roadmap](../docs/limitations-and-roadmap.md).
 G01–G03 and excluded routes are unchanged; G04/G05 remain incomplete until
 their deployment and full-chain proofs are supplied.
 

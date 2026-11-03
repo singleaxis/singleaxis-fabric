@@ -298,13 +298,8 @@ On the receiving side, `extract(carrier)` recovers the `FabricContext` (or
 ## Stable recorder-v1 surface
 
 The package root exports capture/correlation types and an allowlisted
-`attributes` namespace. It does not export judges, evaluation queues,
-guardrails, prompt-time PII/NeMo controls, policy engines, tool authorization or
-escalation enforcement.
-
-Recorder-v1 artifacts do not contain the former runtime-control, evaluation,
-policy, authorization or escalation methods or attribute families. This is an
-intentional breaking boundary so installing the recorder cannot alter an
+`attributes` namespace, and nothing outside the recorder scope
+([AGENTS.md](../../AGENTS.md)). Installing the recorder cannot alter an
 agent's request path.
 
 See the

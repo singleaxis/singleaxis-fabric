@@ -1,26 +1,29 @@
 ---
 title: Execution & Step capture — outer correlation + lifecycle primitives
 status: implemented
-revision: 3
-last_updated: 2026-07-25
+revision: 4
+last_updated: 2026-11-03
 owner: project-lead
 ---
 
 # 020 — Execution & Step capture
 
-Current-boundary note (2026-10-02): the historical commercial-only
-reconstruction wording below concerns action replay and operational graph
-services. Current OSS libraries also provide authorized stored-byte resolution
-and offline evidence comparison. Those read-only capabilities do not execute
-agent actions or establish complete capture by themselves.
+Current-boundary note (2026-11-03): Fabric OSS ships offline run
+reconstruction (`python -m fabric.reconstruct`, specs
+[047](047-llm-wire-capture-and-reconstruction.md),
+[050](050-run-structure-and-records-p1.md) and
+[056](056-agent-action-reconstruction.md)), authorized stored-byte resolution
+and offline evidence comparison. These are read-only: they never execute
+agent actions and do not establish complete capture by themselves. Only
+Decision Graph analytics and replay orchestration stay outside this
+repository.
 
 > **Scope split.** This spec covers two capture primitives that the OSS
-> SDK *emits* and the commercial layer *interprets*. The OSS boundary is
-> strict: the SDK emits canonical `fabric.execution` / `fabric.step.*`
-> spans and attributes; it never schedules, orchestrates, materializes
-> lineage, or reconstructs runs. Those belong to the commercial
-> operational-intelligence layer (Decision Graph, replay orchestration),
-> which is downstream of and not part of this repository.
+> SDK *emits*. The SDK emits canonical `fabric.execution` / `fabric.step.*`
+> spans and attributes; it never schedules or orchestrates a run. Offline
+> reconstruction of a run from these spans and the stored record is an OSS
+> recorder capability (`fabric.reconstruct`). Decision Graph analytics and
+> replay orchestration are downstream and not part of this repository.
 
 ## Summary
 
@@ -48,22 +51,23 @@ execution behaves exactly as it did before, and the only child-span
 change is the always-on `fabric.step.type` (a deterministic constant per
 call kind) — the rest of the existing wire contract is byte-identical.
 
-## Non-goals (the OSS↔commercial boundary)
+## Non-goals (the OSS boundary)
 
 The OSS SDK **emits** the spans and attributes below. It explicitly does
-**not**, in OSS:
+**not**:
 
 - **schedule or drive** decisions — Execution is not a workflow engine.
   It opens a span and correlates whatever the host runs inside it.
 - **orchestrate retries / branches** — `fabric.execution.status` is a
   recorded outcome, not a control signal.
-- **materialize lineage or reconstruct** a run from the emitted spans —
-  joining executions → decisions → steps into a graph, replaying, and
-  signing audit bundles is the commercial Decision Graph and replay
-  orchestration layer (downstream, not part of this repository).
+- **replay or re-execute** a run, or provide Decision Graph analytics.
+  Offline, read-only reconstruction of executions → decisions → steps
+  from the record is provided by `fabric.reconstruct` (specs 047, 050,
+  056); replay orchestration and graph analytics are downstream and not
+  part of this repository.
 
-This keeps the emit/act boundary clean: OSS produces honest, canonical
-telemetry; the commercial layer turns it into operational intelligence.
+This keeps the emit/act boundary clean: the recorder produces honest,
+canonical telemetry and can reconstruct it offline; it never acts on it.
 
 ## Execution primitive (this PR)
 
@@ -231,9 +235,9 @@ with fabric.decision(session_id="s", request_id="r") as d:
         ...
 ```
 
-The commercial Decision Graph consumes execution → decision → step
-attributes to materialize the run hierarchy, correlate step retries, and
-build lineage. The OSS SDK only emits them.
+Offline reconstruction (`fabric.reconstruct`) and any downstream
+consumer use the execution → decision → step attributes to rebuild the run
+hierarchy and correlate step retries. The SDK itself only emits them.
 
 ## Conformance
 

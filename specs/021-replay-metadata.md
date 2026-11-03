@@ -1,27 +1,27 @@
 ---
 title: ReplayMetadata envelope — emit-only reconstruction metadata
 status: implemented
-revision: 2
-last_updated: 2026-07-25
+revision: 3
+last_updated: 2026-11-03
 owner: project-lead
 ---
 
 # 021 — ReplayMetadata envelope
 
-Current-boundary note (2026-10-02): the historical commercial-only
-reconstruction wording below concerns action replay and operational graph
-services. Current OSS libraries also provide authorized stored-byte resolution
-and offline evidence comparison. Those read-only capabilities do not execute
-agent actions or establish complete capture by themselves.
+Current-boundary note (2026-11-03): Fabric OSS ships offline, read-only run
+reconstruction (`python -m fabric.reconstruct`, specs
+[047](047-llm-wire-capture-and-reconstruction.md) and
+[056](056-agent-action-reconstruction.md)), authorized stored-byte resolution
+and offline evidence comparison. What stays outside this repository is
+replay: re-executing a decision or a run, and Decision Graph analytics.
 
 > **Scope split.** This spec covers a single emit-only capture
 > primitive: a versioned `fabric.replay` span event that bundles the
-> metadata a replay engine needs to reconstruct a decision. The OSS
-> boundary is strict — the SDK *emits* this envelope; it never
-> reconstructs, orchestrates, or replays a decision. Reconstruction and
-> replay orchestration belong to the commercial operational-intelligence
-> layer (Decision Graph, replay orchestration), which is downstream of and
-> not part of this repository.
+> metadata a replay engine needs to reconstruct a decision. The SDK
+> *emits* this envelope; it never replays or re-executes a decision.
+> Offline reconstruction of what happened is an OSS recorder capability
+> (`fabric.reconstruct`); replay orchestration and Decision Graph analytics
+> are downstream and not part of this repository.
 
 ## Summary
 
@@ -71,25 +71,25 @@ host's responsibility — so they are passed in.
 The arrays are omitted entirely when empty, matching the rest of the
 event contract (an absent key, never an empty array).
 
-## Non-goals (the OSS↔commercial boundary)
+## Non-goals (the OSS boundary)
 
 The OSS SDK **emits** the `fabric.replay` envelope. It explicitly does
-**not**, in OSS:
+**not**:
 
-- **reconstruct** a decision from the envelope — rebuilding the decision
-  state, re-running the agent, or re-deriving outputs is the commercial
-  replay layer (downstream, not part of this repository).
+- **replay or re-execute** a decision from the envelope — re-running the
+  agent or re-deriving outputs is downstream, not part of this repository.
+  Offline, read-only reconstruction of the recorded run is provided by
+  `fabric.reconstruct` (specs 047, 056).
 - **orchestrate or drive** a replay — suppressing side effects, mocking
-  tool results, and stepping a reconstruction forward are commercial
+  tool results, and stepping a re-execution forward are not recorder
   concerns. `replay_behavior == "suppress"` is a *recorded intent*, not
   an enforced control signal.
-- **materialize lineage** — joining the envelope with checkpoints, side
-  effects, and child spans into a replayable graph and signing audit
-  bundles is the commercial Decision Graph (downstream, not part of this
-  repository).
+- **provide Decision Graph analytics** — graph analytics over the
+  envelope, checkpoints, side effects and child spans are downstream, not
+  part of this repository.
 
-The envelope is metadata about how a decision *could* be reconstructed;
-the act of reconstruction stays behind the commercial boundary.
+The envelope is metadata about how a decision *could* be replayed; replay
+itself stays outside the recorder.
 
 ## Conformance
 

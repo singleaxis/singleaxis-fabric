@@ -7,8 +7,8 @@ Every decision captures the context the agent pulled in
 ``Retrieval`` node connected to the ``Decision`` node. The SDK's job
 is local: attach a ``fabric.retrieval`` event to the decision span
 with allowlisted attributes only, and maintain rolling aggregates
-(``fabric.retrieval_count``, ``fabric.retrieval_sources``) that the
-Telemetry Bridge folds into the ``DecisionSummary`` wire event.
+(``fabric.retrieval_count``, ``fabric.retrieval_sources``) that a
+downstream consumer can summarize without replaying every event.
 
 Raw content never appears on the span. The SDK SHA-256s the query
 before emission; ``result_hashes`` and ``source_document_ids`` are
@@ -30,7 +30,7 @@ class RetrievalSource(StrEnum):
     """Where the context came from.
 
     Mirrors the retrieval source enum used downstream for reconstruction
-    and the Telemetry Bridge's allowlist.
+    and the Node's allowlist.
     """
 
     RAG = "rag"
@@ -90,7 +90,7 @@ class RetrievalRecord(BaseModel):
         ids = tuple(source_document_ids or ())
         # If the caller supplied per-result hashes, require 1:1 parity
         # with result_count. Partial supply (e.g. 5 results, 2 hashes)
-        # corrupts the downstream Decision Graph projection silently —
+        # silently corrupts any downstream projection —
         # better to fail loudly at record construction. source_document_ids
         # is intentionally unconstrained: N results may share M < N
         # documents (e.g. multiple chunks from the same source).

@@ -1,9 +1,10 @@
 ---
 title: Custom-agent call recording and protected reconstruction
-status: implementation_in_progress
+status: implemented
 qualification: NO_GO
-revision: 1
-depends_on: 035, 036, 037, 038, 039, 040, 041, 042
+revision: 2
+last_updated: 2026-11-03
+depends_on: 035, 036, 038, 039, 040, 041, 042
 ---
 
 # 043 — One linked record for a custom agent
@@ -97,7 +98,8 @@ commands. Follow-on routes require individual specs and tests.
 This first implementation does not qualify source-to-tenant authentication,
 the pre-fsync crash window, complete destination receipts, customer IAM/KMS,
 retention/restore/key rotation, target cluster policies or customer-owner
-approval. Keep docs/recorder-v1-qualification-status.md at NO_GO and report
+approval. Keep the qualification state at NO_GO (now reported in
+[`docs/limitations-and-roadmap.md`](../docs/limitations-and-roadmap.md)) and report
 local tests separately from exact-artifact/target-environment proofs.
 
 ## Implementation ledger — 2026-09-30

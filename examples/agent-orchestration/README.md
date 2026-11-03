@@ -1,4 +1,9 @@
-# Agent orchestration demo — inspect a bounded synthetic run
+# Agent action reconstruction preview (spec 056)
+
+A preview of the view [spec 056](../../specs/056-agent-action-reconstruction.md)
+describes, built on explicit APIs and a heuristic join. It does not
+implement spec 056, and `build_journal.py` is a demo script, not the
+`python -m fabric.reconstruct` verifier.
 
 An offline demonstration of Fabric's governed recording path. The model is a
 scripted deterministic stand-in; local subprocess, HTTP, and file operations
@@ -19,8 +24,17 @@ sink.py   (demo destination: decoded span/log records -> records.jsonl;
    +-- governed store (out/store/)  <- content bytes never left this
    +-- audit stream   (run/audit/)  <- agent-emitted shim, not host proof
    v
-reconstruct.py  ->  run/journal.json  ->  run/viewer/index.html
+build_journal.py  ->  run/journal.json  ->  run/viewer/index.html
 ```
+
+## How the steps map to the spec 056 chains
+
+| Chain | What this demo records | What spec 056 specifies instead |
+|---|---|---|
+| Decisions | explicit `llm_call` spans reported by the agent | wire capture of the model exchanges (047/048) |
+| Actions | explicit `tool_call` spans reported by the agent | tool calls parsed from the captured model bodies |
+| Effects | app-reported tool spans | the opt-in subprocess hook (053 §5.1) |
+| Corroboration | an agent-emitted audit-format shim, joined to tool spans by time window (one candidate: `tentative`; several: `ambiguous`, all listed) | independent host sensors joined by process tree (056 §4.3) |
 
 ## The workload
 
@@ -61,7 +75,7 @@ Prereqs: Docker (for `fabric-otelcol:local` — rebuild with
 `docker build -t fabric-otelcol:local components/otel-collector-fabric`
 if the image predates your checkout), repo Python venv.
 
-`reconstruct.py` is a demo self-check — it exits non-zero unless all
+`build_journal.py` is a demo self-check — it exits non-zero unless all
 of these hold:
 
 - decision, both model calls, and every tool span reached the sink with
@@ -69,8 +83,9 @@ of these hold:
 - every manifest item resolved **available** — descriptor, byte length,
   and SHA-256 digest verified (21 items on a clean run);
 - agent-emitted audit-format exec/connect/openat records exist for the
-  commands/connections the agent made, correlated to spans as `inferred`
-  provenance; these are not independent system records;
+  commands/connections the agent made; each is joined to tool spans by time
+  window only, as a `tentative` link or as `ambiguous` with every candidate
+  listed. These are not independent system records;
 - the secret argv token never appears in exported telemetry — only its
   sha256 does;
 - the stamped `manifest_ref` equals the resolved manifest URI.
@@ -86,13 +101,14 @@ of these hold:
   be loaded on a shared or customer host for this demonstration. A separately
   approved isolated disposable host and scoped rule plan are required;
   see `deploy/auditd/README.md`.
-- Audit events are **inferred provenance** (time+pid joins), never
-  claimed causal edges — per spec 030.
+- Audit events are **inferred provenance** (time-window joins, `tentative`
+  or `ambiguous`), never claimed causal edges — per spec 030. Spec 056
+  replaces time-window matching with a process-tree join.
 
 ## What this is not
 
-Demo artifacts only: no evaluation, judging, governance UI, independent
-system audit or full-run verdict. The viewer is a read-only local renderer
+Demo artifacts only: no independent system audit and no full-run
+verdict. The viewer is a read-only local renderer
 for one synthetic run; policy, enforcement and fleet features stay out of
 scope per `AGENTS.md`.
 

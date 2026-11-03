@@ -1,6 +1,7 @@
 ---
 title: eBPF Host Emitter (fabric-host-emitter)
-status: implemented-not-enterprise-qualified
+status: implemented
+qualification: NO_GO
 revision: 2
 last_updated: 2026-09-26
 owner: project-lead

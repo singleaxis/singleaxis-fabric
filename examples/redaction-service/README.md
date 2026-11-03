@@ -12,8 +12,9 @@ own worker over a Unix socket or a loopback port. The full protocol is in
 This directory is a small, standard-library-only implementation of that contract.
 It applies regular-expression rules from a JSON file. It is an **example**:
 
-- it is not a PII detector. The sample rules are illustrative and will miss real
-  personal data;
+- it is not a detector. The sample rule masks one illustrative marker pattern
+  (`CANARY-...`) so you can see the interface work; it recognizes nothing
+  else;
 - it is not part of any Fabric release artifact (wheel, sdist, npm package or
   Node image). Copy it, replace the rules with your own detection, and run it as
   your own component.
@@ -72,8 +73,8 @@ curl --unix-socket /tmp/fabric-redaction.sock http://localhost/v1/transform \
   -H 'X-Fabric-Transformation: example-mask' \
   -H 'X-Fabric-Transformation-Version: 1' \
   -H 'X-Fabric-Role: model.request.messages' -H 'X-Fabric-Mode: redact' \
-  --data-binary 'write to jane@example.com'
-# -> write to [email]
+  --data-binary 'write to CANARY-7F3K'
+# -> write to [masked]
 ```
 
 Options:

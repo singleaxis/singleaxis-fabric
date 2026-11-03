@@ -1,6 +1,7 @@
 ---
 title: auditd Host Connector (auditreceiver)
-status: implemented-not-enterprise-qualified
+status: implemented
+qualification: NO_GO
 revision: 3
 last_updated: 2026-10-02
 owner: project-lead
@@ -104,7 +105,7 @@ Resource attributes: `host.name`, plus collector's configured resource.
 - **Syscall classes** are config-gated: `exec: true` (default),
   `connect: true` (default), `file_access: false` (default — high volume).
 - **Attribution is inferred provenance**: records carry pid/ppid/host/time;
-  they are NOT native span edges. Per `docs/integration-models.md`, joins to
+  they are NOT native span edges. Per [`docs/host-sensors.md`](../docs/host-sensors.md), joins to
   agent traces are investigative, not causal — the connector must not mint
   trace IDs.
 

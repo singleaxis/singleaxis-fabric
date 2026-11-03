@@ -15,7 +15,6 @@ point here.
   [reconstruct](reconstruct.md).
 - Encryption and source authentication:
   [privacy and security](privacy-and-security.md).
-- The previous version: [archive](archive/wire-capture-deployment.md).
 
 ## Redaction service
 

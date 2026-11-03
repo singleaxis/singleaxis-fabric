@@ -8,6 +8,143 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+This section describes work merged after 0.9.0 and not yet released: most
+of the one-run record of spec 050 (phase P1) and milestone M1 of spec 056,
+agent action reconstruction on a local-profile Node. Wire capture keeps its
+0.9.0 behaviour for agents that use none of the new options. Fabric stays a
+passive recorder: the new hook observes subprocesses and never approves,
+blocks, delays or changes them.
+
+### Added
+
+- **Run record (spec 050 P1, Python SDK and verifier).** One shared
+  allocator per process for wire exchanges and SDK records, the records
+  input (`WireHandle.records`), random registered epochs, immutable
+  segments with seals that the verifier recomputes from the store, `fr3/`
+  resume tokens (`fabric.wire.resume_token()`, `resume_tokens(n)`,
+  `end_run()`), new `fabric.wire.run()` arguments, a records-only install
+  (`fabric.wire.install(patch_httpx=False, patch_aiohttp=False)`), capture
+  manifests, and the `FABRIC_RUN_ID`, `FABRIC_RUN_RESUME_TOKEN`,
+  `FABRIC_RUN_OPEN_DEADLINE_S`, `FABRIC_CLOCK_UNCERTAINTY_MS` and
+  `FABRIC_RECORDS_MAX_OBJECT_BYTES` settings. `CallRecorder` and the
+  byte-boundary adapters can write through the records input. The Fabric
+  Node (fabricguard) admits the records class. `decision()` records
+  (WP-15), Node validation before acknowledgement (WP-21) and P1-A are not
+  built. See [the P1 run record](docs/run-record.md).
+- **Step projection.** `python -m fabric.reconstruct` reads records,
+  manifests and seals, orders segments into a run graph with run states,
+  and writes `fabric.step-projection/v1` with `--projection FILE`. New
+  options: `--coverage-profile`, `--evaluated-at`, `--clock-uncertainty`
+  and `--max-clock-uncertainty`.
+- **Subprocess hook (`exec.subprocess`, spec 053 §5.1).** Opt-in with
+  `FABRIC_WIRE_EXEC=1` or `fabric.hooks.install(exec=True)` after a
+  capturing `fabric.wire.install()`. It records each child started through
+  `subprocess.Popen` (and `run`, `check_output`, `call`) or asyncio's
+  `create_subprocess_exec`/`create_subprocess_shell`: arguments, working
+  directory, environment variable names (never values), output, exit
+  status, pid and parent pid, through the `terminal.*` content roles of the
+  capture policy. `FABRIC_HOST_LABEL` names the host for the host join. The
+  capture manifest records whether the channel was active or disabled.
+- **Agent action view (spec 056 M1).** `python -m fabric.reconstruct
+  actions` lists, per run, model calls and their tool calls, the effects
+  linked to them (`output_match`, `sequence_bracket`, ambiguous candidates,
+  unattributed effects) and host events, with a verdict for each of the
+  `decisions`, `actions`, `effects` and `corroboration` chains; `--json`
+  prints the same rows. The report command adds `chains`, `attribution`
+  and `sensor_events` to each run.
+- **Host-sensor linking (local profile).** `--host-records FILE` reads
+  eBPF-emitter or auditd-receiver records exported by a local-profile
+  Node and joins them to effects by pid and parent pid and through the
+  process tree, with `--host-label`, `--host-source`,
+  `--host-coverage-declared`, `--endpoint-peer`, `--known-peer`,
+  `--agent-pid` and `--in-process-tool`. Host events no rule explains are
+  listed. Local-profile host records carry no process start time, so these
+  links are `tentative`.
+- **Contracts (drafts, additive).** capture/v1 1.3.0 (P1), 1.4.0 (wire
+  enrichment) and 1.5.0 (spec 056 chains and attribution in the run
+  reconstruction); coverage/v1 1.1.0 (P1) and 1.2.0 (spec 056 link methods,
+  reason values and the `fabric.process.*` keys), with rule fixtures in
+  `contracts/coverage/v1/fixtures/action-record/`.
+- **AR-1 acceptance harness** (`qualification/action-record/`, workflow
+  `action-record.yml`). The hermetic mode runs a real agent, the hook, a
+  natively built Node and the verifier against recorded host-sensor
+  events, plus the negative variants. The live mode (a real eBPF or auditd
+  sensor on Linux) is written but has not run yet.
+
+### Changed
+
+- `python -m fabric.reconstruct` exits `1` for a run whose run state is
+  `open` (a resumable run that has not ended); `0` still requires a
+  complete run. Captures made before P1 carry no run state and are
+  unaffected.
+
+### Known limits
+
+- Fabric makes no action-reconstruction claim until AR-1 live mode passes
+  in CI. On the local profile, a shell that execs its last command in place
+  (`bash -c`, and `dash` for the last command of `sh -c "a && b"`) gives
+  an `ambiguous` anchor and `anchor_missing`; this conflicts with the M1
+  exit criterion of spec 056 and is an open spec question
+  ([agent action reconstruction](docs/action-reconstruction.md)).
+- Production host ingress, process start times on host records, container
+  and remote sandboxes, and the other execution channels (file, database,
+  non-model HTTP, MCP, SSH) are not built.
+
+## [0.9.0] - 2026-11-03
+
+Fabric 0.9.0 narrows the repository and packages to the recorder and its
+current direction. It removes the last evaluation and red-team leftovers,
+including one public Python API, rewrites the README and documentation
+around what Fabric records, and publishes the design specs for one run
+record across every input (050) and agent action reconstruction (056).
+Capture, protection, delivery and verification behave as in 0.8.0.
+
+### Removed
+
+- **Breaking (Python SDK):** the bundled MITRE ATLAS and OWASP LLM reference
+  taxonomies (`fabric/taxonomies/*.json`), the `fabric.taxonomy` helper and
+  its root exports (`Taxonomy`, `TaxonomyEntry`, `bundled_taxonomy_names`,
+  `load_bundled_taxonomies`, `validate_tag`) are removed. Open-vocabulary
+  `tags=` / `fabric.tags` capture is unchanged; validate tags against your
+  own vocabulary if you need to. This is a documented pre-1.0 break under
+  [API stability](docs/api-stability.md): the exports were never documented
+  in `docs/`, so no deprecation period applies.
+- Archived documentation (`docs/archive/`) is removed. Every page had a
+  current replacement under `docs/`; the history stays in git.
+- Archived specs 001 (product vision), 025 (product planes and packaging) and
+  037 (enterprise deployment and control applicability) are removed. They
+  described evaluation, judge, red-team, regulatory and platform scope outside
+  the OSS recorder. Their numbers are retired, and the history stays in git.
+
+### Changed
+
+- **Local Compose trial stack renamed from "evaluation" to "local trial".**
+  `docker-compose.s3-eval.yml` is now `docker-compose.s3-local.yml`; the make
+  targets are `up-s3-local` / `down-s3-local` / `reset-s3-local` (the
+  `-s3-eval` names remain as aliases); the overlay's services, volume and
+  variables are `s3-local`, `s3-local-init`, `s3-local-data` and
+  `FABRIC_S3_LOCAL_*` (rename `FABRIC_S3_EVAL_*` in your `.env`). The default
+  tenant id is `local-trial`, the Compose project is `fabric-node-local`, so
+  an existing local stack starts with fresh volumes. Production overlays are
+  unchanged.
+- The reference redaction service's sample rules
+  (`examples/redaction-service/rules.example.json`) are now one neutral,
+  illustrative marker rule (`CANARY-...` -> `[masked]`) instead of
+  email/SSN/card/phone patterns. The transformation id `example-mask`
+  version `1` is unchanged.
+- `examples/governed-content/evaluate.py` is renamed to `verify.py` (function
+  `verify_transcript()`); it reads and verifies a governed transcript.
+- Spec 034 is retitled "Transcript export and governed-content qualification"
+  (`specs/034-transcript-export-and-qualification.md`). The
+  `fabric.transcript-export/v1` format is unchanged.
+
+### Documentation
+
+- The README, `docs/README.md`, `docs/limitations-and-roadmap.md` and the
+  specs index name the current work: spec 056, agent action reconstruction.
+  The specs index now lists specs 050–056, and spec statuses match the
+  shipped code.
+
 ## [0.8.0] - 2026-11-02
 
 Fabric 0.8.0 is the first stable release of the passive recorder for AI
@@ -812,7 +949,7 @@ See also [docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md).
   MCP gains inventory capture — `InstrumentedMCPSession.snapshot_inventory()`
   and `record_mcp_inventory(...)` hash each tool *definition* so a
   tool changing underneath the agent (shadow/poison) is detectable. See
-  [`docs/capturing-interactions.md`](docs/archive/capturing-interactions.md) (archived).
+  `docs/capturing-interactions.md` (since removed).
   (spec 022)
 - **Generic interaction capture (Python SDK).** A universal
   `Decision.record_interaction(kind, target, …)` captures *any*
@@ -892,7 +1029,7 @@ See also [docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md).
   MCP instrumentation, no host-side I/O helpers, not published to npm,
   and gated by an advisory rather than required CI job. It is not a
   drop-in substitute for the Python SDK, and there is no Go SDK.
-  Outstanding mirror work: [`docs/typescript-parity-backlog.md`](docs/archive/typescript-parity-backlog.md) (archived).
+  Outstanding mirror work: `docs/typescript-parity-backlog.md` (since removed).
 - **Presidio sidecar is bundled, not missing.** `docs/deployment.md`
   said the umbrella did not yet bundle the Presidio subchart. It has
   been a declared dependency since the subchart landed; the accurate
@@ -2266,7 +2403,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0
 [0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
 [0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1

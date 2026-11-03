@@ -12,11 +12,32 @@ related: ["029", "032", "043", "047", "048", "052", "055"]
 # 054 — Specialised runtimes and media (P5)
 
 **Status: draft; not built.** Codes in parentheses such as (R7) or (R15)
-name the cross-spec revision decisions that a rule applies, and "decision
-n" means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+name the cross-spec revision decisions that a rule applies, and "decision n"
+means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
 
-*Revision note:* revision 2 (2026-10-22) is the current text; it binds P5 to
-the frozen P1 contract, 050 rev 2.
+Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the
+introduction of [050](050-run-structure-and-records-p1.md)). It binds P5 to
+the frozen P1 contract,
+050 rev 2. The changes:
+- realtime observations, media indexes and job evidence travel on 050's §3.4a
+  structured evidence carrier as registered evidence types (R7, §7.1). W-class
+  records and the proposed capture/v1 `realtime_observation`/`media_index`
+  spool variants are withdrawn;
+- realtime record granularity is decided: one record per bounded window plus a
+  stream index, positions are allocated per window and never per message (§5.2);
+- projection uses 050's bounded `event_ids` (64), the `collection` wrapper and
+  the evidence `continuation` index (§5.5). The stale `phase=start|item|outcome`
+  text is replaced;
+- reported media events are narrowed to closed metadata on `record.evidence`;
+  `media.events` stays protocol-only (R15, §5.6);
+- explicit streaming records are covered (§5.6);
+- WebRTC is excluded explicitly (§5.1.1);
+- C35 matching uses the persisted `fabric.wire.endpoint_id` (§4.1);
+- the R4 status inputs, R5 descriptor-only bodies, R8 identity rule and R9
+  fail-open and bounded-work rules are applied (§3, §5, §6);
+- the WPs are split, with an ownership table and explicit intra-wave
+  dependencies (R13, R14, §8);
+- the harness paths follow R16 (§9).
 
 ## 1. Scope and exit gates
 
@@ -31,10 +52,10 @@ training job, browser action or policy engine. There are no framework
 adapters. There is no URL dereference, provider-state fetch, background
 polling, forced screenshot, extra stream consumer or price calculation.
 
-Baseline: 049 rev 6.4, 050 rev 2, 051 rev 2, 052 rev 2, and 053 rev 1 with
-its revision 2, written at the same time. 049 decisions 1–25 remain
-authoritative. This spec changes no contract, implementation, 049 text or
-release claim; §7 and §11 are deltas for their owners.
+Baseline: 049 rev 6.4, 050 rev 2, 051 rev 2, 052 rev 2, 053 rev 1 (with its
+concurrent revision), and CONTEXT.md owner decisions 1–10. 049 decisions 1–25
+remain authoritative. This spec changes no contract, implementation, 049 text
+or release claim; §7 and §11 are deltas for their owners.
 
 | Surface / capture point | Field ids and roles |
 |---|---|
@@ -493,8 +514,8 @@ this spec. A future one needs its own spec and capture-point row.
 
 ### 5.2 Record granularity: per-window records plus a stream index (OD5-1)
 
-**Decision.** Positions are allocated **per window, never per message**. Fable
-showed that the worker cannot coalesce positions the app thread has already
+**Decision.** Positions are allocated **per window, never per message**. The
+spec review showed that the worker cannot coalesce positions the app thread has already
 allocated. Allocation therefore happens only when a window closes. A voice
 session at 50 messages per second spends about one position per second, not
 fifty.
@@ -1112,7 +1133,7 @@ automation command ledger and a chaos runner.
   WP5-10 starts (R16). The rows cover supported and bypass paths and a stopped
   or slow recorder mode.
 - `scripts/qualification` production Node and readback helpers and the
-  `qualification/synthetic-slice` deployment assets are reused.
+  `deploy/kind/production-e2e` deployment assets are reused.
 
 Required suites:
 - **HTTP route table:** all positive paths and methods and nearby negatives,
@@ -1222,7 +1243,7 @@ safely represented optional evidence.
 
 | # | Decision | Default | Status |
 |---|---|---|---|
-| OD5-1 | Realtime record granularity (Fable D-F; decided before WP5-06) | One `data` record per bounded window (1024 units, 1 MiB, 1 s, connection end) plus a `fabric.media.stream/v1` index on `end`; no per-message positions | RPOC |
+| OD5-1 | Realtime record granularity (decided before WP5-06) | One `data` record per bounded window (1024 units, 1 MiB, 1 s, connection end) plus a `fabric.media.stream/v1` index on `end`; no per-message positions | RPOC |
 | OD5-2 | Deferred worker-side bodies (I-1), an internal addition to 050's records input | Land in WP5-00b after the P1-A exit; spool, OTLP, seal and Node contracts unchanged. Fallback if rejected: index-only realtime with frames, offline-only events and transcripts (§3) | RPOC |
 | OD5-3 | Reported media events (R15) | Narrow: `MediaStreamHandle.event` takes closed metadata carried as `fabric.media.window/v1` items on `record.evidence` (`caller_reported` already admitted). `media.events` stays protocol-only; rev 1 `record_media_event(event=...)` is withdrawn; raw caller media only through `record_asset` | RPOC |
 | OD5-4 | N56 location | Evidence `track` items; the four rev 1 `fabric.media.*` telemetry keys are withdrawn | RPOC |
@@ -1237,7 +1258,7 @@ safely represented optional evidence.
 | OD5-13 | Decoder attack surface | Minimal bounded offline readers first; heavier decoders isolated, offline and disabled until qualified; no metadata from omitted media, guessed MIME or model name | RPOC |
 | OD5-14 | Realtime transcript policy | Separate frame, event and transcript roles; frames off; a derivative never weaker than its source; a provider transcript is independently protected transcript content | RPOC |
 | OD5-15 | Batch and fine-tuning detail | Protected optional extensions and observed file and item locators; no required core job step kind and no claim of provider-internal completeness | RPOC |
-| OD5-16 | Node source binding for reconnects, forks and new workers | Static dedicated ingress groups per source (053 §6.1, R11). Epoch and attempt changes create no credential bypass; no wildcard source admission. Fable recommended a custom credential-to-source authenticator; R11 keeps it a later option | RPOC |
+| OD5-16 | Node source binding for reconnects, forks and new workers | Static dedicated ingress groups per source (053 §6.1, R11). Epoch and attempt changes create no credential bypass; no wildcard source admission. A custom credential-to-source authenticator stays a later option (R11) | RPOC |
 
 **Risks.**
 
@@ -1271,21 +1292,21 @@ one if a concurrent edit has moved it. Do not edit 049 in this task.
 
 ## 12. Review disposition
 
-| Finding | Source | Resolution |
-|---|---|---|
-| P4/P5 structured evidence has no complete delivery contract (054:569) | Astra §2; Fable C5 | Fixed: three registered evidence types on 050 §3.4a with closed schemas, maps, protection, admission, seal and fixtures (§7.1); spool variants withdrawn (§7.3) |
-| W-class records (`capture.input=wire` on `rt.websocket` records) | Fable C5, D-A | **Rejected** W-class (R7): `rt.websocket` uses `records` with `fabric.capture.source=observed` (§5.1, OD5-6) |
-| Stale `phase=start\|item\|outcome` (054:370) | Fable C7 | Fixed: 050 phases and R4 inputs (§5.3) |
-| WP5-06 unbuildable: positions per message cannot be coalesced on the worker | Fable §4, D-F | Fixed: window-level allocation, decided before WP5-06 (§5.2, OD5-1) |
-| Realtime exceeds the 64 `event_ids` bound | Astra §3 | Fixed: 050 bounded `event_ids`, `collection`, `continuation` and stream index (§5.5) |
-| Explicit streaming records | Astra §3 | Fixed: windowed `media_stream` handle and a general rule for P5 attempts over 64 records (§5.5, §5.6) |
-| Reported `media.events` has no admitted role | Astra §3; R15 | Fixed by narrowing (§5.6, OD5-3); no role widening |
-| Explicit WebRTC exclusion | Astra §3 | Fixed (§5.1.1, §7.2, §11, OD5-8) |
-| C35 has no persisted selector | Astra §3; R15 | Fixed: C35 from `fabric.wire.endpoint_id` on exchanges and realtime records (§4.1, OD5-7) |
-| Realtime depends on pinned `websockets`/aiohttp symbols | Fable §6 | Fixed: pinned connect, send and receive boundaries per client WP (§5.1, WP5-06b/c) |
-| Architecture matrix realtime row | Astra §3 | 049 delta (§11) |
-| 054 owner choices | Astra §7; Fable §7 | All in §10 as RPOC, plus the new OD5-1…OD5-8 |
-| Node binding: custom authenticator | Fable D-B | **Not adopted** here: R11 fixes static ingress groups for P4/P5; the authenticator stays a later option (OD5-16) |
-| Harness absence claim | Fable §3; R16 | Fixed: agent-matrix and chaos merged before WP5-10 (§9) |
-| Ownership, intra-wave dependencies, oversized WPs | R13, R14 | Fixed: §8 splits WP5-00, 01, 04, 06, 07, 08 and lists the file order and intra-wave dependencies |
-| N51 phase | Astra §3; R15 | Owned by 050 WP-33 (P1); P5 only adds the HTTP observation sources |
+| Finding | Resolution |
+|---|---|
+| P4/P5 structured evidence has no complete delivery contract (054:569) | Fixed: three registered evidence types on 050 §3.4a with closed schemas, maps, protection, admission, seal and fixtures (§7.1); spool variants withdrawn (§7.3) |
+| W-class records (`capture.input=wire` on `rt.websocket` records) | **Rejected** W-class (R7): `rt.websocket` uses `records` with `fabric.capture.source=observed` (§5.1, OD5-6) |
+| Stale `phase=start\|item\|outcome` (054:370) | Fixed: 050 phases and R4 inputs (§5.3) |
+| WP5-06 unbuildable: positions per message cannot be coalesced on the worker | Fixed: window-level allocation, decided before WP5-06 (§5.2, OD5-1) |
+| Realtime exceeds the 64 `event_ids` bound | Fixed: 050 bounded `event_ids`, `collection`, `continuation` and stream index (§5.5) |
+| Explicit streaming records | Fixed: windowed `media_stream` handle and a general rule for P5 attempts over 64 records (§5.5, §5.6) |
+| Reported `media.events` has no admitted role | Fixed by narrowing (§5.6, OD5-3); no role widening (R15) |
+| Explicit WebRTC exclusion | Fixed (§5.1.1, §7.2, §11, OD5-8) |
+| C35 has no persisted selector | Fixed: C35 from `fabric.wire.endpoint_id` on exchanges and realtime records (§4.1, OD5-7) (R15) |
+| Realtime depends on pinned `websockets`/aiohttp symbols | Fixed: pinned connect, send and receive boundaries per client WP (§5.1, WP5-06b/c) |
+| Architecture matrix realtime row | 049 delta (§11) |
+| 054 owner choices | All in §10 as RPOC, plus the new OD5-1…OD5-8 |
+| Node binding: custom authenticator | **Not adopted** here: R11 fixes static ingress groups for P4/P5; the authenticator stays a later option (OD5-16) |
+| Harness absence claim | Fixed: agent-matrix and chaos merged before WP5-10 (§9) (R16) |
+| Ownership, intra-wave dependencies, oversized WPs | Fixed: §8 splits WP5-00, 01, 04, 06, 07, 08 and lists the file order and intra-wave dependencies (R13, R14) |
+| N51 phase | Owned by 050 WP-33 (P1); P5 only adds the HTTP observation sources (R15) |

@@ -25,5 +25,5 @@ persistence by an arbitrary destination.
 Queue: memory-only (not restart durable)
 {{- end }}
 
-No runtime policy, prompt-time PII sidecar, sampler, judge, or red-team service
-is configured or rendered by this chart.
+This chart renders a passive recorder: it never alters, blocks or delays the
+monitored AI system.

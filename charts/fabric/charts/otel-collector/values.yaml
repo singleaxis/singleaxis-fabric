@@ -157,9 +157,7 @@ affinity: {}
 topologySpreadConstraints: []
 
 # Fabric Node v1 has one protection mechanism: a deny-by-default export
-# allowlist. It is always wired into both traces and logs. Policy enforcement,
-# prompt-time PII processing, redaction sidecars, and sampling are not chart
-# surfaces in the recorder release.
+# allowlist. It is always wired into both traces and logs.
 fabric:
   # Node deployment profile (spec 049 §7.3): "local" (default) or
   # "production". The production profile rejects unauthenticated sources:
@@ -221,7 +219,7 @@ fabric:
 #   --set otel-collector.exporter.endpoint=http://your-collector:4318
 #       (your own collector chain)
 #
-# Fabric recorder v1 does not install a backend or a second Relay hop. For
+# Fabric recorder v1 does not install a backend or a second forwarding hop. For
 # fan-out, send to a customer-controlled Collector and configure its exporters.
 #
 # The endpoint must be scheme://host[:port][/path]: a DNS name, dotted IPv4

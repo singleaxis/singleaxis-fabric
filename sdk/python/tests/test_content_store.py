@@ -148,7 +148,7 @@ def test_s3_put_calls_put_object_and_returns_s3_ref(monkeypatch: pytest.MonkeyPa
     recorder: dict[str, Any] = {}
     monkeypatch.setitem(sys.modules, "boto3", _fake_boto3(recorder))
     store = S3ContentStore(bucket="audit-bucket", region_name="us-east-1")
-    content = "judge payload"
+    content = "tool payload"
     ref = store.put(content)
 
     digest = _sha256(content)

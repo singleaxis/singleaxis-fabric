@@ -17,7 +17,7 @@ What it uses:
 - `ContentResolver` to read the transcript back with descriptor +
   SHA-256 verification.
 
-What it does **not** use: Fabric Node, the OTLP Collector, Relay, any
+What it does **not** use: Fabric Node, the OTLP Collector, any
 SingleAxis Platform service, or any network call. Nothing leaves the
 `--root` directory.
 
@@ -27,7 +27,7 @@ SingleAxis Platform service, or any network call. Nothing leaves the
 model decision with a separate authorized-consumer script asserting the
 full transcript contract. This harness is intentionally smaller: one
 script, one interaction, one deterministic assertion — the starting
-point for a developer who wants to see the record/replay loop locally
+point for a developer who wants to see the record-and-verify loop locally
 before adopting the full governed flow.
 
 ## Privacy, retention, and access responsibilities

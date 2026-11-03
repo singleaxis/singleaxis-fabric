@@ -208,7 +208,7 @@ func loadYAML(t *testing.T, path string) map[string]any {
 
 const composeConfigDir = "../../../deploy/compose/collector-config/"
 
-// The compose configurations with the content path (the evaluation config,
+// The compose configurations with the content path (the local trial config,
 // and the production config merged with its opt-in content overlay), alone
 // and with the S3 content overlay, merged the way the collector merges
 // --config files, pass the gate and carry the content pipeline.

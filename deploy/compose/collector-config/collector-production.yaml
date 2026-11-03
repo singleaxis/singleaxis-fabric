@@ -29,7 +29,7 @@
 # the fabriccontent exporter) after this file, and fabric-gate validates the
 # merged result. Without it this profile carries telemetry only.
 #
-# For plaintext development without tokens or TLS, use the evaluation profile
+# For plaintext development without tokens or TLS, use the local trial profile
 # (collector.yaml + docker-compose.yml) on a trusted host instead -- do not
 # weaken this file for production use.
 

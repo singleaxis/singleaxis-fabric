@@ -448,7 +448,7 @@ process.stdout.write(JSON.stringify(records));
                 "-e",
                 script,
                 entry.as_uri(),
-                str(REPO_ROOT / "examples/enterprise/policy.local.json"),
+                str(REPO_ROOT / "examples/deployment-policy/policy.local.json"),
                 str(tmp_path),
                 endpoint,
             ],
@@ -486,7 +486,7 @@ def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) ->
         LocalCapabilityAuthority,
     )
 
-    value = _json("examples/enterprise/policy.local.json")
+    value = _json("examples/deployment-policy/policy.local.json")
     value["privacy"] = {"terminal.stdout": mode}
     policy = DeploymentPolicy.from_dict(value)
     authority = LocalCapabilityAuthority(b"synthetic-contract-test-key-00000")

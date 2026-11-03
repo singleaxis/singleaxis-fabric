@@ -480,7 +480,7 @@ def test_record_hook_event_and_count(span_exporter: InMemorySpanExporter) -> Non
     client = _client()
     with client.decision(session_id="s", request_id="r") as d:
         d.record_hook(
-            "pii-redactor",
+            "example-hook",
             "pre_model",
             modified=True,
             input_hash="a" * 64,
@@ -489,7 +489,7 @@ def test_record_hook_event_and_count(span_exporter: InMemorySpanExporter) -> Non
     span = _decision_span(span_exporter)
     assert dict(span.attributes or {})["fabric.hook_count"] == 1
     attrs = _event(span, "fabric.hook")
-    assert attrs["fabric.hook.name"] == "pii-redactor"
+    assert attrs["fabric.hook.name"] == "example-hook"
     assert attrs["fabric.hook.phase"] == "pre_model"
     assert attrs["fabric.hook.modified"] is True
     assert attrs["fabric.hook.input_hash"] == "a" * 64

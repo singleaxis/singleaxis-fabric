@@ -6,8 +6,8 @@
 > and [`components/host-emitter/`](../components/host-emitter/). A
 > production ingress ([spec 053](../specs/053-execution-channels-p4.md)
 > §6.2) is specified, not built. The join of host events to agent effects
-> ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is built on
-> the `feat/action-record` branch
+> ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is built, not
+> yet released
 > ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py))
 > and read with `python -m fabric.reconstruct actions --host-records`; see
 > [agent action reconstruction](action-reconstruction.md).
@@ -115,8 +115,8 @@ scope are deliberately unusable until you set them.
   identity that `fabric.reconstruct` reads; reconstruct ignores them in
   `--spans`. Joining host events to the agent's subprocess effects through
   pid and parent pid is specified in
-  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and built on
-  the `feat/action-record` branch
+  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and built, not
+  yet released
   ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)):
   pass the records with `--host-records`
   ([agent action reconstruction](action-reconstruction.md)). The

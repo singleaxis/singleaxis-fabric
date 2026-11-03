@@ -17,13 +17,13 @@ func validRecorder() Resource {
 	return Resource{
 		APIVersion: APIVersion,
 		Kind:       Kind,
-		Metadata:   Metadata{Name: "healthcare-shadow"},
+		Metadata:   Metadata{Name: "example-shadow"},
 		Spec: Spec{
-			Identity: Identity{RecorderID: "healthcare-shadow", SystemID: "system/ambient-ai", DeploymentID: "deployment/production-v1"},
+			Identity: Identity{RecorderID: "example-shadow", SystemID: "system/example-agent", DeploymentID: "deployment/production-v1"},
 			Input:    Input{Method: "otlp"}, Content: Content{Mode: "metadata"},
 			Protect:      Protect{PrivacyPolicyRef: "privacy/metadata-only-v1", ConfigDigest: testDigest},
 			Destination:  Reference{Ref: "destination/customer-monitoring"},
-			Installation: Reference{Ref: "installation/hospital-a"},
+			Installation: Reference{Ref: "installation/example-shadow"},
 		},
 	}
 }

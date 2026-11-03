@@ -1,8 +1,9 @@
 ---
 title: Passive asynchronous content recording and durable delivery
-status: draft
-revision: 3
-last_updated: 2026-09-24
+status: implemented
+superseded_in_part_by: 048
+revision: 4
+last_updated: 2026-11-03
 owner: product-architecture
 depends_on: 028, 029
 related: 033, 034
@@ -35,7 +36,7 @@ what can be lost, when, and how a consumer finds out.
 | Mode | Write path | Loss window | Use |
 |---|---|---|---|
 | `inline` | `store.put()` on the caller's thread before the event is stamped | None for the put itself; store latency is on the agent path (bounded only by store responsiveness) | **Development and tests only** — the legacy `content_store=` behavior |
-| `process` | Enqueue to bounded in-process queue; background worker writes | Process death loses every queued, unwritten object | Local eval, throughput-sensitive dev |
+| `process` | Enqueue to bounded in-process queue; background worker writes | Process death loses every queued, unwritten object | Local development, throughput-sensitive dev |
 | `spooled` | Atomic fsync'd spool entry on enqueue, then background worker uploads and deletes the entry | Only a crash *before* the spool fsync returns (single small write) | **Production default** for governed mode |
 
 `inline` exists for development, debugging, and compatibility — it is

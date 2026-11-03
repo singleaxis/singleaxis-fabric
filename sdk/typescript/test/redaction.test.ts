@@ -101,7 +101,7 @@ describe("endpoint configuration", () => {
     );
     vi.stubEnv("FABRIC_REDACTION_ENDPOINT", "http://203.0.113.9:80");
     const data = JSON.parse(
-      fs.readFileSync(path.join(ROOT, "examples/enterprise/policy.local.json"), "utf8"),
+      fs.readFileSync(path.join(ROOT, "examples/deployment-policy/policy.local.json"), "utf8"),
     ) as DeploymentPolicyData;
     expect(() => new ContentProtector(DeploymentPolicy.fromDict(data))).toThrow(
       "FABRIC_REDACTION_ENDPOINT must be",
@@ -298,7 +298,7 @@ describe("failures resolve to null and are counted", () => {
 
 function policyFor(mode: PrivacyMode): DeploymentPolicy {
   const data = JSON.parse(
-    fs.readFileSync(path.join(ROOT, "examples/enterprise/policy.local.json"), "utf8"),
+    fs.readFileSync(path.join(ROOT, "examples/deployment-policy/policy.local.json"), "utf8"),
   ) as DeploymentPolicyData;
   data.privacy = { "terminal.stdout": mode };
   return DeploymentPolicy.fromDict(data);

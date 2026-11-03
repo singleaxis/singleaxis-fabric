@@ -40,6 +40,9 @@ honest about who actually reviews.
 | `sdk/python`                        | @jrcks67                              |
 | `sdk/typescript`                    | @jrcks67                              |
 | `tools/fabricctl`                   | @jrcks67                              |
+| `components/host-emitter`           | @jrcks67                              |
+| `contracts/`                        | @jrcks67                              |
+| `examples/`                         | @jrcks67                              |
 | `specs/`                            | Project lead + assigned spec authors  |
 
 Components not in this repository are maintained by SingleAxis
@@ -54,8 +57,7 @@ _(none yet)_
 
 ## How to become a maintainer
 
-See the "Roles" section of [`GOVERNANCE.md`](GOVERNANCE.md) and the
-contributor ladder in [`CONTRIBUTING.md`](CONTRIBUTING.md). In short:
+See the "Roles" section of [`GOVERNANCE.md`](GOVERNANCE.md). In short:
 
 1. Contribute sustained, high-quality work to a component.
 2. Be nominated (or self-nominate) after ~5 non-trivial PRs in that

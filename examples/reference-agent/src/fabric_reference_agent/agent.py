@@ -18,9 +18,7 @@ your provider's SDK; nothing else in this file changes.
 
 The SDK is passive: it records supplied observations without authorizing or
 altering agent actions. Instrumentation and export still have overhead.
-Protection and delivery happen in the Fabric Node the spans are exported to —
-judges, guardrails, and policy
-engines are deliberately not part of this example.
+Protection and delivery happen in the Fabric Node the spans are exported to.
 """
 
 from __future__ import annotations

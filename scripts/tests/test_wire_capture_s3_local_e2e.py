@@ -12,8 +12,8 @@
             -> HTTPS fsync OTLP sink (host process)
         logs/content: memory_limiter -> fabriccontent (s3 backend,
             path-style endpoint, SSE AES256, If-None-Match writes,
-            persistent content queue) -> the S3-compatible evaluation store
-            (docker-compose.s3-eval.yml: SeaweedFS with an SSE-S3 key,
+            persistent content queue) -> the S3-compatible local trial store
+            (docker-compose.s3-local.yml: SeaweedFS with an SSE-S3 key,
             default bucket encryption, prefix-scoped writer and reader)
     ``python -m fabric.reconstruct --spans <sink> --store-uri s3://...
       --s3-endpoint-url <store> --s3-path-style`` (reader credentials only)
@@ -108,7 +108,7 @@ from _wire_capture_common import (
     write_tls,
 )
 
-TENANT = "s3-eval-e2e-tenant"
+TENANT = "s3-local-e2e-tenant"
 BUCKET = "fabric-content"
 PREFIX = "fabric/content/"
 REGION = "us-east-1"
@@ -116,7 +116,7 @@ OBJECT_ID = re.compile(
     r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 )
 
-MARK = f"S3EVALE2E{uuid.uuid4().hex[:12]}"
+MARK = f"S3LOCALE2E{uuid.uuid4().hex[:12]}"
 PROMPT = f"{MARK}_prompt What is the temperature in Paris in Fahrenheit?"
 CITY = f"{MARK}_city"
 TOOL_RESULT = f"{MARK}_toolresult"
@@ -126,7 +126,7 @@ INGRESS_TOKEN = f"{MARK}_ingress_token"
 WRONG_TOKEN = f"{MARK}_wrong_token"
 EGRESS_AUTH = f"Bearer {MARK}_egress_token"
 TRACE_STATE = f"{MARK}_tracestate"
-# Store identities (static, prefix-scoped; see docker-compose.s3-eval.yml).
+# Store identities (static, prefix-scoped; see docker-compose.s3-local.yml).
 ROOT_USER = "fabric-e2e-root"
 ROOT_PASSWORD = f"{MARK}_rootpw"
 NODE_ACCESS_KEY = "fabric-node-writer"
@@ -271,7 +271,7 @@ class Agent:
 class Stack:
     def __init__(self, root: Path) -> None:
         self.root = root
-        self.project = f"fabric-s3-eval-e2e-{uuid.uuid4().hex[:12]}"
+        self.project = f"fabric-s3-local-e2e-{uuid.uuid4().hex[:12]}"
         self.tls = root / "tls"
         self.ports = {
             name: free_port()
@@ -306,7 +306,7 @@ class Stack:
         self.content_config = root / "collector-content.yaml"
         content_config_with_tls(self.content_config)
         self.override = root / "compose.override.yml"
-        # Production Node + the content-s3 overlay, wired to the s3-eval
+        # Production Node + the content-s3 overlay, wired to the s3-local
         # overlay's environment (endpoint, path style, SSE, writer keys).
         self.override.write_text(
             "services:\n"
@@ -342,7 +342,7 @@ class Stack:
             "FABRIC_OTLP_CONTENT_PORT": str(self.ports["otlp_content"]),
             "FABRIC_HEALTH_PORT": str(self.ports["health"]),
             "FABRIC_METRICS_PORT": str(self.ports["metrics"]),
-            "FABRIC_S3_EVAL_PORT": str(self.ports["store"]),
+            "FABRIC_S3_LOCAL_PORT": str(self.ports["store"]),
             "FABRIC_INGRESS_TOKEN_FILE": str(token_file),
             "FABRIC_INGRESS_TLS_DIR": str(self.tls),
             "FABRIC_EXPORT_ENDPOINT": self.sink.endpoint,
@@ -350,14 +350,14 @@ class Stack:
             "FABRIC_TENANT_ID": TENANT,
             "FABRIC_SOURCE_ID": node_source(),
             "FABRIC_CONTENT_KEY_FILE": str(key_file),
-            "FABRIC_S3_EVAL_BUCKET": BUCKET,
-            "FABRIC_S3_EVAL_ROOT_ACCESS_KEY": ROOT_USER,
-            "FABRIC_S3_EVAL_ROOT_SECRET_KEY": ROOT_PASSWORD,
-            "FABRIC_S3_EVAL_NODE_ACCESS_KEY": NODE_ACCESS_KEY,
-            "FABRIC_S3_EVAL_NODE_SECRET_KEY": NODE_SECRET,
-            "FABRIC_S3_EVAL_READER_ACCESS_KEY": READER_ACCESS_KEY,
-            "FABRIC_S3_EVAL_READER_SECRET_KEY": READER_SECRET,
-            "FABRIC_S3_EVAL_SSE_KEK": SSE_KEK,
+            "FABRIC_S3_LOCAL_BUCKET": BUCKET,
+            "FABRIC_S3_LOCAL_ROOT_ACCESS_KEY": ROOT_USER,
+            "FABRIC_S3_LOCAL_ROOT_SECRET_KEY": ROOT_PASSWORD,
+            "FABRIC_S3_LOCAL_NODE_ACCESS_KEY": NODE_ACCESS_KEY,
+            "FABRIC_S3_LOCAL_NODE_SECRET_KEY": NODE_SECRET,
+            "FABRIC_S3_LOCAL_READER_ACCESS_KEY": READER_ACCESS_KEY,
+            "FABRIC_S3_LOCAL_READER_SECRET_KEY": READER_SECRET,
+            "FABRIC_S3_LOCAL_SSE_KEK": SSE_KEK,
         }
         self._autoload = autoload_path()
 
@@ -367,7 +367,7 @@ class Stack:
         self, *args: str, check: bool = True
     ) -> subprocess.CompletedProcess[str]:
         files = ("docker-compose.yml", "docker-compose.production.yml",
-                 "docker-compose.content.yml", "docker-compose.s3-eval.yml")  # fmt: skip
+                 "docker-compose.content.yml", "docker-compose.s3-local.yml")  # fmt: skip
         command = [
             "docker", "compose", "-p", self.project, "--project-directory", str(COMPOSE_DIR),
             "--env-file", str(self.root / "empty.env"),
@@ -487,7 +487,7 @@ class Stack:
         the S3 gateway performs.
         """
         result = subprocess.run(
-            ["docker", "exec", self.container("s3-eval"), "curl", "-fsS",
+            ["docker", "exec", self.container("s3-local"), "curl", "-fsS",
              "--max-time", "30",
              f"http://127.0.0.1:8888/buckets/{bucket}/{quote(key, safe='/')}"],
             capture_output=True, timeout=60, check=False,
@@ -513,7 +513,7 @@ class Stack:
 
     def wait_store_healthy(self, timeout_s: float = 90.0) -> None:
         """After a restart: the store's own healthcheck, then a listing that works."""
-        container = self.container("s3-eval")
+        container = self.container("s3-local")
 
         def ready() -> bool:
             state = subprocess.run(
@@ -747,7 +747,7 @@ def _assert_complete(report: dict[str, Any], runs: set[str]) -> dict[str, Any]:
 
 @pytest.fixture(scope="module")
 def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
-    stack = Stack(tmp_path_factory.mktemp("wire-s3-eval"))
+    stack = Stack(tmp_path_factory.mktemp("wire-s3-local"))
     try:
         if not os.environ.get("FABRIC_NODE_IMAGE"):
             build_image(stack.image)
@@ -780,7 +780,7 @@ def test_scoped_openai_run_lands_in_the_store_and_reconstructs(stack: Stack) -> 
     assert entrypoint == '["/fabric-gate"]'
 
     outer = RUN_REACT
-    agent = stack.run_agent("s3-eval-e2e-scoped", scopes=outer)
+    agent = stack.run_agent("s3-local-e2e-scoped", scopes=outer)
     spans = stack.wait_spans(agent.service, exchanges=3)
     exchanges = _exchanges(spans)
     assert [s["attributes"]["fabric.source.sequence"] for s in exchanges] == [0, 1, 2]
@@ -857,10 +857,10 @@ def test_store_enforces_conditional_writes_and_identity_scopes(stack: Stack) -> 
 
 
 def test_store_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> None:
-    store = stack.container("s3-eval")
+    store = stack.container("s3-local")
     stack.docker("stop", store)
     try:
-        agent = stack.run_agent("s3-eval-e2e-store-outage", scopes=RUN_OUTAGE)
+        agent = stack.run_agent("s3-local-e2e-store-outage", scopes=RUN_OUTAGE)
         spans = stack.wait_spans(agent.service, exchanges=3)
         # The Node accepted every body (the agent's spool drained) and holds
         # the writes in its persistent content queue while the store is down.
@@ -891,7 +891,7 @@ def test_store_outage_is_absorbed_by_the_node_content_queue(stack: Stack) -> Non
 
 
 def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -> None:
-    service = "s3-eval-e2e-node-outage"
+    service = "s3-local-e2e-node-outage"
     spool = stack.root / "spool" / service
     node = stack.container("fabric-node")
     stack.docker("stop", "-t", "60", node)
@@ -966,7 +966,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
         assert rejected.value.code in (401, 403), (path, rejected.value.code)
 
     started = time.monotonic()
-    bad = stack.run_agent("s3-eval-e2e-wrong-token", token=WRONG_TOKEN)
+    bad = stack.run_agent("s3-local-e2e-wrong-token", token=WRONG_TOKEN)
     assert time.monotonic() - started < 60
     headers = [
         h
@@ -979,7 +979,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
     }  # fmt: skip
     assert len(rejected_ids) == 3, [h["record_kind"] for h in headers]
     # Barrier: a correctly authenticated run sent afterwards arrives first.
-    barrier = stack.run_agent("s3-eval-e2e-barrier", scopes=RUN_BARRIER)
+    barrier = stack.run_agent("s3-local-e2e-barrier", scopes=RUN_BARRIER)
     stack.wait_objects(
         _refs(_exchanges(stack.wait_spans(barrier.service, exchanges=3)))
     )
@@ -992,7 +992,7 @@ def test_wrong_token_is_rejected_on_both_ports_and_agent_is_unaffected(
 
 
 def test_unscoped_run_killed_mid_run_is_not_complete(stack: Stack) -> None:
-    service = "s3-eval-e2e-killed"
+    service = "s3-local-e2e-killed"
     spool = stack.root / "spool" / service
     process = subprocess.Popen(  # noqa: S603
         stack.agent_command("--pause-after", "2"),
@@ -1079,7 +1079,7 @@ def test_content_exists_only_in_the_store_and_the_agent_spool(stack: Stack) -> N
         )
     # SSE at rest. No marker anywhere in the store's volume; on its own that
     # is weak (the store may compress what it keeps), so below.
-    assert volume_grep(f"{stack.project}_s3-eval-data", MARK) == "", (
+    assert volume_grep(f"{stack.project}_s3-local-data", MARK) == "", (
         "plaintext content on the store's disk: server-side encryption is off"
     )
     objects = stack.store_objects()
@@ -1113,7 +1113,7 @@ def test_content_exists_only_in_the_store_and_the_agent_spool(stack: Stack) -> N
     assert put["sse"] is None, put
     assert stack.stored_bytes(control_bucket, "control") == control_body
     # The wrong-token agent's undelivered records still hold its content.
-    undelivered = spool_records(stack.root / "spool" / "s3-eval-e2e-wrong-token")
+    undelivered = spool_records(stack.root / "spool" / "s3-local-e2e-wrong-token")
     # Spec 049 §7.8: sealed at rest; opened with the agent's key they hold the content.
     sealed = b"".join(path.read_bytes() for path in undelivered)
     for marker in CONTENT_MARKERS:

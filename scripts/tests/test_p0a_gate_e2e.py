@@ -8,12 +8,12 @@
     subprocess on a Unix socket) -> production Fabric Node (fabric-gate, collector-production.yaml +
     the content path, source binding, sealed content queue)
         -> customer store: the Node's sealed directory (file backend) and the
-           S3-compatible evaluation store (SeaweedFS, SSE, GetObject-only reader)
+           S3-compatible local trial store (SeaweedFS, SSE, GetObject-only reader)
     -> python -m fabric.reconstruct (the object resolver: by id, digest, descriptor,
        binding, source stamp; split sides reassembled) on trusted readback
 
 It proves, against the running stacks (the stacks of
-``test_wire_capture_node_e2e.py`` and ``test_wire_capture_s3_eval_e2e.py``):
+``test_wire_capture_node_e2e.py`` and ``test_wire_capture_s3_local_e2e.py``):
 
 - C0A-1, per role family (``model.exchange.request``/``response``, the extracted
   ``model.exchange.part`` objects of a split side, the review copy of
@@ -57,7 +57,7 @@ from typing import Any
 
 import pytest
 import test_wire_capture_node_e2e as node_e2e
-import test_wire_capture_s3_eval_e2e as s3_e2e
+import test_wire_capture_s3_local_e2e as s3_e2e
 from _redaction_service import reference_service
 from _wire_capture_common import (
     build_image,
@@ -498,7 +498,7 @@ def test_a_63_mib_skeleton_fits_the_node_request_cap(node: FileGate) -> None:
 
 
 class S3Gate:
-    """The S3-backend production Node of ``test_wire_capture_s3_eval_e2e``."""
+    """The S3-backend production Node of ``test_wire_capture_s3_local_e2e``."""
 
     def __init__(self, stack: s3_e2e.Stack) -> None:
         self.stack = stack

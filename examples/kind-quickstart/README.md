@@ -3,21 +3,22 @@
 End-to-end local install of the Fabric OSS recorder — the passive
 CAPTURE -> PROTECT -> DELIVER data plane. From zero to watching a
 recorded agent decision arrive at the Fabric Node collector in one
-command. There are no judges, guardrails, policy engines, or management
-services in this stack; the recorder never modifies the monitored agent.
+command. The stack is the recorder only, and it never modifies the
+monitored agent. The demo agent uses the explicit recorder APIs, not wire
+capture; for zero-code capture see [`wire-capture/`](../wire-capture/).
 
 ## Prereqs
 
 - `docker` (running)
 - `kind`, `kubectl`, `helm`
 - Python 3.12+
-- `ANTHROPIC_API_KEY` exported, **or** use `--mock` to skip the real LLM call
+- `ANTHROPIC_API_KEY` only for `--real`; by default the model is a stub
 
 ## Run
 
 ```bash
-./up.sh           # real model, ~3-5 minutes
-./up.sh --mock    # deterministic stub, ~2 minutes
+./up.sh           # deterministic stub, ~2 minutes
+./up.sh --real    # one real model call (needs ANTHROPIC_API_KEY), ~3-5 minutes
 ```
 
 You should see (abridged):
@@ -43,7 +44,7 @@ You should see (abridged):
 |---|---|
 | CAPTURE | The SDK opened a `fabric.decision` span carrying tenant/agent/session identity, a hashed retrieval event, a memory-write event, and `llm_call` / `tool_call` child spans with `gen_ai.*` attributes. |
 | PROTECT | The Fabric Node collector applied its default-deny field allowlist before export — only approved metadata can leave the node. |
-| DELIVER | The `shadow-dev` profile exports to the collector's debug output (visible in `kubectl logs`). No durable destination is configured — that is intentional for local evaluation. |
+| DELIVER | The `shadow-dev` profile exports to the collector's debug output (visible in `kubectl logs`). No durable destination is configured — that is intentional for a local trial. |
 
 The agent runs on your host and exports OTLP/HTTP to the collector via
 the port-forward `up.sh` opens on `localhost:4318`.

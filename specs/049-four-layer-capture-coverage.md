@@ -14,20 +14,44 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 
 # 049 — Four-layer capture contract
 
-**Status: accepted (revision 6.4, 2026-10-22).** Phases P0 and P0-A are
-built and released in v0.8.0. Phase P1 is mostly built on the
-`feat/action-record` branch, not released (spec 050). P1-A, P2–P5 and the
-TypeScript track are not built (section 8.2). This spec specifies; it does
-not change runtime code.
-
-Section 9 lists the owner decisions (numbered 1–25) that this text
-applies. A passage marked *Approved (owner, date) (decision n)* applies
-row n of that table, and "decision n" in other specs means the same row.
+**Status: accepted (revision 6.4), approved 2026-10-22.** Phases P0 and
+P0-A are built and released in v0.8.0. Phase P1 is mostly built after
+v0.9.0, not yet released (spec 050). P1-A, P2–P5 and the TypeScript track
+are not built (section 8.2). Every owner decision in section 9 was approved
+as recommended and is applied in this text, marked *Approved (owner,
+2026-10-18)* (decisions 1–20) or *Approved (owner, 2026-10-19..22)*
+(decisions 21–25); "decision n" in other specs means row n of that table.
 A later change to a decision changes only the sections that decision
 lists. Terms are defined in the [glossary](../docs/glossary.md).
 
-*Revision note:* revision 6.4 (2026-10-22) is the current text; appendices
-A–E list the findings earlier revisions resolved.
+Revision 3 resolves the rev-2 confirmation reviews (appendix D): records
+are sequenced on their own source, attempt identity is always minted,
+manifests have their own counting rule, layer verdicts are a decision
+table, the role table is complete, and protection composes with extraction.
+Revision 3.1 applies the rev-3 confirmation fixes (appendix D, rows
+R3F-*). Revision 4 aligns the contract with the owner-directed target
+architecture — two inputs (wire, records) on one spool, one sequencer per
+(source, epoch), one content writer, one verifier, no framework adapters —
+and closes the long-running-run gaps: chained segments, an `open` run
+verdict and a resume contract (appendix E). Revision 5 made segments
+immutable. Revision 6 converges by simplifying: qualified-run mode
+(045/046) stays a separate opt-in on its own journal, the default seal is
+a portable digest recomputable from the store, a process has one open
+segment per run, and PROTECT, encryption at rest and source
+authentication become concrete stages on the single path (appendix E,
+rows R6-*). Revision 6.1 makes source authentication visible to the
+verifier and applies the final-gate fixes (rows R6F-*). Revision 6.2
+adds per-branch identities, encrypts the Node content queue and bounds
+authentication to trusted readback (rows R6A-*). Revision 6.3 only
+clarifies ambiguities met while building P0, each with the most
+conservative reading (rows R63-*); it changes no design. Revision 6.4
+applies the owner decisions made while building P0 and P0-A (section 9,
+decisions 21–25: a customer-run redaction service, caller ids always
+mapped, host sensors and multi-source binding deferred to P4, content
+validated after the Node acknowledges it, the `with Pool()` limit),
+corrects the capture-queue default, re-verifies section 2.1 against the
+v0.8 code and marks P0 and P0-A built (rows R64-*).
+It specifies; it does not change runtime code.
 
 How to read it:
 
@@ -189,7 +213,7 @@ P0-A was built; rows marked *(v0.8)* record runtime work merged with it
 | SDK records are sequenced | **False.** `record_*`, `tool_call()` and `llm_call()` spans carry no `fabric.source.*`; only the wire pipeline and loss/heartbeat records set them. `SourceAllocator` refuses any component other than `wire`; the spool knows only `exchange`, `loss`, `marker`. | `wire/_pipeline.py:175`; `_loss.py:60,69`; `_sequence.py:165-167`; `wire/_spool.py:79` |
 | The verifier ignores unknown records | **True, by attributes.** `observe()` classifies a span as an exchange if it has `fabric.wire.exchange_id`, as a heartbeat if it has `fabric.heartbeat.last_sequence`, as a loss if it has `fabric.loss.reason`; anything else is ignored. Heartbeats and loss records do not consume sequences. | `reconstruct/_inputs.py:520-545`; 047 §6 |
 | The explicit line has its own journal and spool | **True.** `CallRecorder` sequences per (tenant, run) in its own journal (`SyntheticSourceSpool`, own epoch) and ships bytes through an AES-256-GCM `DurableByteSpool`. *(P0-A)* The wire spool now has the same kind of optional envelope (`FWSPENC1`, `spool_key`), required in the production profile (section 7.8). | `call_recorder.py`; `source_spool.py`; `byte_spool.py`; `wire/_spool.py:13-16,185-188`; `wire/_config.py:134-135` |
-| A framework adapter ships in the package | **No.** `adapters/crewai.py` was removed by the owner-approved cleanup (chore/recorder-cleanup); `adapters/` holds only the byte-boundary and synthetic-evidence producers (section 2.11). | `adapters/` |
+| A framework adapter ships in the package | **No.** `adapters/crewai.py` was removed by the recorder cleanup before v0.8.0 (commit f703f358); `adapters/` holds only the byte-boundary and synthetic-evidence producers (section 2.11). | `adapters/` |
 | Explicit withholding survives `adopt()` | **False.** `ExplicitScope` has only `model` and `ended`. | `_capture_scope.py:43-58`; `wire/_transport.py:200-220` |
 | User and session ids are protected | **True** *(P0-A)*. `decision()` emits `fabric.session_id` as `sess-` and `fabric.user_id` as `usr-` keyed pseudonyms (Python and TypeScript), memory keys as `mkey-`, interaction targets as `tgt-`, delegation targets as `agt-`; `identity_mode=clear` reproduces the earlier output. fabricguard admits both keys only in pseudonym form. | `decision.py:636,678-681,1223,1782,1991`; `sdk/typescript/src/decision.ts:669,745`; `processor/fabricguardprocessor/coverage_keys.go:34-35` |
 | An oversized model request keeps its text | **True within the 7.4 bounds** *(P0-A)*. Default `max_body_bytes` is 32 MiB, `max_retain_bytes` 64 MiB; large chunks are retained by reference; a JSON side above `max_body_bytes` is split into a skeleton and `model.exchange.part` objects (typed extraction, section 7.4). | `wire/_config.py:91-100`; `wire/_stream.py:42-43`; `wire/_protect.py:120-178` |
@@ -212,7 +236,7 @@ P0-A was built; rows marked *(v0.8)* record runtime work merged with it
 | Side effects default to committed | **True (unsafe).** `committed: bool = True`; the emitted boolean does not say whether it was defaulted. | `side_effect.py:92`; `decision.py:1426,1541` |
 | A side-effect context manager exists | **False.** Only `delegate()`/`adelegate()` are public context managers. | `decision.py:2013-2014,2055-2056` |
 | auditd netlink decoding | Parses each netlink header and rejects short or invalid lengths. | `receiver/auditreceiver/netlink_linux.go:317-347` |
-| Capability declarations exist | **Removed.** `fabric.capture-sdk-capabilities/v1` and `fabric.integration-coverage/v1` were removed by the owner-approved cleanup (chore/recorder-cleanup); until the capture manifest (P1, section 2.8) `WireHandle.status()` and loss records say what is not captured. | `wire/__init__.py:433`; `wire/_detect.py:18-21` |
+| Capability declarations exist | **Removed.** `fabric.capture-sdk-capabilities/v1` and `fabric.integration-coverage/v1` were removed by the recorder cleanup before v0.8.0 (commit f703f358); until the capture manifest (P1, section 2.8) `WireHandle.status()` and loss records say what is not captured. | `wire/__init__.py:433`; `wire/_detect.py:18-21` |
 | TypeScript wire capture | Not implemented. The TypeScript SDK has `decision.ts` identity parity and the byte-evidence recorder with the redaction-service client. | `sdk/typescript/src/` |
 | Wire endpoints | POST only; chat/completions, responses, completions, embeddings, messages; OpenAI, Anthropic, Azure OpenAI by default. | `wire/_match.py:12-21,46`; `wire/_config.py:47-53` |
 | aiohttp is captured | **True** *(v0.8)*: capture point `wire.py.aiohttp`, on with the wire input (`patch_aiohttp`, `FABRIC_WIRE_AIOHTTP=0` turns it off). | `wire/_aiohttp.py`; `wire/__init__.py:408-414`; `wire/_config.py:102-103` |
@@ -896,9 +920,9 @@ Privacy classes:
 ### 2.8 Capability manifest and capture points
 
 The earlier declarations `fabric.capture-sdk-capabilities/v1` and
-`fabric.integration-coverage/v1` were removed by the owner-approved cleanup
-(chore/recorder-cleanup). Neither said which capture points were **active**
-for a source epoch, which an evaluator needs to tell "nothing happened"
+`fabric.integration-coverage/v1` were removed by the recorder cleanup before v0.8.0
+(commit f703f358). Neither said which capture points were **active**
+for a source epoch, which a reviewer needs to tell "nothing happened"
 from "nothing was instrumented"; the capture manifest does.
 
 **New record: `fabric.capture-manifest/v1`**
@@ -1264,7 +1288,7 @@ Every guarantee of main's explicit evidence line is kept and moved:
 | Exact byte boundary (bytes exactly as handed to or returned by the caller's delegate; `boundary`, `representation: exact`) | `CallRecorder`, `ByteBoundaryAdapter`, `FinalHTTPAdapter`, `ByteEvidenceRecorder` | Unchanged producers on the records input; descriptors keep content-v2 `boundary` and `representation`; D2 still makes the explicit producer own a model call over the wire tee | P1 |
 | Governed redaction before persistence (`retain_original`, `redact`, `tokenize`, `metadata_only`, `omit`; masked-only never persisted in original form; failed transformation withholds) | `ByteEvidenceRecorder` privacy modes, `GovernedLocalContentStore` | Applied by the records producer before spool admission, driven by the capture policy and role table (sections 2.7, 7.5); `redact` and `masked_only` through the customer-run redaction service (section 7.7, decision 21); the spool and writer only ever see protected bytes | P0-A |
 | Encrypted spool at rest (AES-256-GCM, customer key, never saved) | `byte_spool.py` `DurableByteSpool` | Optional envelope encryption of the unified spool, the same construction; manifest `spool_encrypted`; required when the capture policy says so. `DurableByteSpool` stays until parity tests pass | P0-A (contract), P1 (code) |
-| 16 MiB explicit object cap | `byte_evidence.py:255`, `governed_store.py:72` (`coverage_manifest.py:77` removed by the owner-approved cleanup, chore/recorder-cleanup) | Manifest limit `records_max_object_bytes` (default and maximum 16 MiB) for exact-byte objects of the records producers; wire objects keep `max_body_bytes` (32 MiB) | P1 |
+| 16 MiB explicit object cap | `byte_evidence.py:255`, `governed_store.py:72` (`coverage_manifest.py:77` removed by the recorder cleanup before v0.8.0, commit f703f358) | Manifest limit `records_max_object_bytes` (default and maximum 16 MiB) for exact-byte objects of the records producers; wire objects keep `max_body_bytes` (32 MiB) | P1 |
 | Per-run accounting (every journal event of a run is either delivered or a visible gap) | per-(tenant, run) journal sequence (`source_spool.py`) | Segment membership (`fabric.run.segment_id`) and segment graph (2.10) on the shared allocator; loss records for queue-full positions | P1 |
 | Journal seal and fresh readback (admission-set comparison, exact record-set seal, fresh disk readback, unsealed-epoch accounting) | `SyntheticSourceSpool.seal_epoch`, `readback_sealed_epoch`, `unsealed_epoch_ranges` (`source_spool.py:740-830`) | **Unchanged in qualified-run mode** (section 2.13). Default capture has the simpler portable segment seal (section 2.12) | unchanged |
 | Receipts contract (spooled, accepted, durable stages; receipt-set expectations and verification) | `contracts/delivery/v1`, `receipt_sets.py`, `qualified_run.py` | **Unchanged in qualified-run mode** (section 2.13): `contracts/delivery/v1`, receipt sets, attestations, witness feeds and route closure stay with `qualified_run.py` on the explicit journal | unchanged |
@@ -2471,7 +2495,7 @@ by whole chunks and its text may be lost. The P0-A gate tests a 63 MiB
 skeleton plus descriptor against the Node's 64 MiB request cap. The
 explicit line's 16 MiB object cap (`byte_evidence.py:255`,
 `governed_store.py:72`; the `coverage_manifest.py:77` citation was removed
-by the owner-approved cleanup, chore/recorder-cleanup) is a separate limit
+by the recorder cleanup before v0.8.0, commit f703f358) is a separate limit
 and unchanged.
 
 ### 7.5 Protection and extraction compose
@@ -3325,7 +3349,7 @@ Each is applied in this spec as its recommended default.
 | R63-11 | `fabric.event_id` "existing validator" | A new uuid4 value validator is added in P0; `fabric.schema_version` const likewise added in P0 | keys registry |
 | R63-12 | Integer key ranges | Counts and offsets ≥0, versions ≥1, `db.rows_*` ≥−1, `process.exit_code` int32, `process.signal` ≥1, `process.pid` ≥1 | keys registry |
 | R63-13 | Schema versioning rule vs practice | Minor = edit in place + manifest minor bump + repin (content/v2, capture/v1 precedent) | 5 rule 8 |
-| R63-14 | Stale code citations | `capture_capabilities.py`, `coverage_manifest.py` and `adapters/crewai.py` marked as removed by the owner-approved cleanup (chore/recorder-cleanup); `control_protocol.py` and `enterprise.py` are not cited in the rev 6.2 text | 2.1, 2.8, 2.11, 7.4 |
+| R63-14 | Stale code citations | `capture_capabilities.py`, `coverage_manifest.py` and `adapters/crewai.py` marked as removed by the recorder cleanup before v0.8.0 (commit f703f358); `control_protocol.py` and `enterprise.py` are not cited in the rev 6.2 text | 2.1, 2.8, 2.11, 7.4 |
 | R64-1 | `missing_spool_key` (P0-A build finding) | A production agent without a spool encryption key disables content capture and continues metadata (7.8 → 7.3); the case gets its own closed value in `fabric.wire.store_reason`, manifest `content_capture_reason` and the coverage reason vocabulary (mapped to the same-name reason). Owner-delegated decision | 7.8, 2.6, 4.2 |
 | R64-2 | Section 7.7 named "a customer-supplied, versioned transformation" without saying where it runs | Decision 21: a customer-run redaction service (`contracts/redaction/v1`) over a Unix socket or loopback HTTP, on the recorder's worker, hard timeout, bounded in-flight calls, withhold on every failure; module references and callables refused; Fabric never runs customer code | 2.1, 2.11, 7.7, 9 |
 | R64-3 | Lines implying emitted ids are passed on verbatim (run id "used verbatim", resume contract "`r-` as emitted", activity map "`X08` reused", P1 work "verbatim `r-` run ids", LR-1 "the run id travels as `r-…`") | Decision 22: caller ids are always mapped, whatever their shape; only `EmittedId` values pass through; continuity comes from the same clear id; resume tokens stay Fabric-emitted; key rotation joins pseudonyms through predecessor entries as `run_aliases`. The registry definition of `X08` still says "used verbatim" and is listed for the registry work package | 2.9 rule 9, 2.10, 3.6, 8.2 P1, R4-3 |

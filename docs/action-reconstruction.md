@@ -1,7 +1,7 @@
 # Agent action reconstruction
 
-> **Status:** describes code built on the `feat/action-record` branch, not
-> released ([spec 056](../specs/056-agent-action-reconstruction.md)
+> **Status:** describes code that is built but not yet released
+> ([spec 056](../specs/056-agent-action-reconstruction.md)
 > milestone M1, local profile). Implementation:
 > [`fabric/hooks/`](../sdk/python/src/fabric/hooks/) (the `exec.subprocess`
 > hook), [`reconstruct/_attribute.py`](../sdk/python/src/fabric/reconstruct/_attribute.py)

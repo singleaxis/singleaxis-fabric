@@ -1,10 +1,11 @@
 ---
 title: Capture-boundary and source-loss qualification
-status: draft
+status: superseded
+superseded_by: 049
 revision: 1
 last_updated: 2026-09-26
 owner: product-architecture
-depends_on: 035, 036, 037
+depends_on: 035, 036
 related: 039
 ---
 
@@ -15,8 +16,8 @@ related: 039
 
 ## Decision
 
-Qualify **each reachable boundary** in the signed
-[deployment scope](037-bounded-enterprise-deployment-and-controls.md), not a
+Qualify **each reachable boundary** in the customer's declared deployment
+scope, not a
 list of tool names or an entire agent by assertion. Use AEEP's native OTel
 identity, content-v2 objects and run manifest. This spec is an acceptance
 contract for future implementation; current recorder v1 does not satisfy it.

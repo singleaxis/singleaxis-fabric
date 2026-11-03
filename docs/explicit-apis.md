@@ -160,6 +160,36 @@ emitting these digests unconditionally, as releases before v0.8.0 did. Two opt-i
   `install_default_provider`) puts content on spans and bypasses the
   metadata-only export. Do not use it across a trust boundary.
 
+### Governed content capture (explicit line)
+
+Governed content capture is for content the application reports through
+the decision API, not for model calls: **wire capture is the primary path**
+for model request and response bytes. With
+`Fabric(content_capture=ContentCaptureConfig(...))` each recorder method
+writes the content it receives as a content-v1 object to a tenant-scoped
+store and stamps a reference on the span; each decision gets a transcript
+manifest (specs [028](../specs/028-governed-content-capture.md)–[034](../specs/034-transcript-export-and-qualification.md)).
+An authorized reader resolves the references and verifies the bytes with
+`fabric.resolver.ContentResolver`, which can also export a whole transcript
+(`export_transcript`, format `fabric.transcript-export/v1`). It is off by
+default.
+
+| Module | Role |
+|---|---|
+| `fabric/_content_writer.py` | `ContentCaptureConfig` and the writer behind the recorder methods |
+| `fabric/content_store/` | Store backends (`local`, `s3`) |
+| `fabric/governed_store.py` | Governed local store with capability-scoped reads |
+| `fabric/resolver.py` | `ContentResolver`, authorized resolution and transcript export |
+| `fabric/governed_reconstruction.py` | Authorized readback from durable metadata and the store |
+
+The **legacy `content_store`** (memory and side-effect payloads written by
+`_legacy_store_writer.py`) is kept for compatibility; new code should use
+governed content capture or wire capture
+([032](../specs/032-passive-content-delivery.md)). The examples
+[`governed-content`](../examples/governed-content/README.md) and
+[`offline-transcript`](../examples/offline-transcript/README.md) use this
+line.
+
 ## Exact bytes: `ByteEvidenceRecorder`
 
 `ByteEvidenceRecorder` stores bytes the caller passes, per content role

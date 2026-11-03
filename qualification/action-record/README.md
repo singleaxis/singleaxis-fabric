@@ -1,6 +1,6 @@
 # AR-1: the agent action reconstruction acceptance scenario
 
-> **Status:** test harness for code built on the `feat/action-record` branch
+> **Status:** test harness for code that is built but not yet released
 > (spec 056 milestone M1, WP6-06). Hermetic mode passes on macOS; live mode
 > (Linux, eBPF or auditd) is written for CI and has not been run yet. See
 > [docs/action-reconstruction.md](../../docs/action-reconstruction.md) for the

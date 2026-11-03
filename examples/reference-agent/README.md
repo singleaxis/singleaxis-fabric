@@ -26,9 +26,9 @@ For one agent turn:
 6. Mark the turn with `fabric.checkpoint` events.
 
 The SDK is passive: it records supplied observations without authorizing or
-altering agent actions. Instrumentation and export still have overhead. Judges, guardrails, policy engines, and
-escalation are deliberately outside the recorder — protection and
-delivery happen in the Fabric Node the spans are exported to.
+altering agent actions. Instrumentation and export still have overhead.
+Protection and delivery happen in the Fabric Node the spans are exported
+to.
 
 ## Running
 
@@ -77,7 +77,7 @@ install_default_provider(
 
 See [`../kind-quickstart`](../kind-quickstart) for a full
 kind-cluster walkthrough and [`../../deploy/compose`](../../deploy/compose)
-for the Docker Compose evaluation harness.
+for the local Compose harness.
 
 ## What this example deliberately does not do
 

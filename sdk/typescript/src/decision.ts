@@ -626,7 +626,7 @@ export class Decision implements DecisionLike {
   // without a key; `clear` reproduces the pre-049 output).
   private readonly ids: IdentityPolicy;
   // Rolling counters + distinct-value sets folded onto the decision span,
-  // mirroring the Python SDK so the Telemetry Bridge can summarize a
+  // mirroring the Python SDK so a downstream consumer can summarize a
   // decision without replaying every event.
   private retrievalCount = 0;
   private readonly retrievalSources = new Set<string>();

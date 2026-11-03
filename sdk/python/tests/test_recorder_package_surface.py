@@ -24,8 +24,13 @@ FORBIDDEN_ROOT_SYMBOLS = {
     "QueueTransport",
     "SimpleLLMJudge",
     "StreamRedactor",
+    "Taxonomy",
+    "TaxonomyEntry",
     "ToolAuthorizer",
     "ToolAuthorization",
+    "bundled_taxonomy_names",
+    "load_bundled_taxonomies",
+    "validate_tag",
 }
 
 FORBIDDEN_DECISION_METHODS = {
@@ -99,6 +104,8 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/queue_transports",
     "/src/fabric/reference_receipts.py",
     "/src/fabric/stream.py",
+    "/src/fabric/taxonomies",
+    "/src/fabric/taxonomy.py",
     "/src/fabric/tool_auth.py",
 }
 

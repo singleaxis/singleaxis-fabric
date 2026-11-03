@@ -1,6 +1,6 @@
 # Content store overlay: S3 or an S3-compatible store (Ceph RGW, SeaweedFS, ...).
-# Merged with an extra --config after collector.yaml (evaluation,
-# docker-compose.s3-eval.yml) or after collector-production.yaml +
+# Merged with an extra --config after collector.yaml (local trial,
+# docker-compose.s3-local.yml) or after collector-production.yaml +
 # collector-content.yaml (production, docker-compose.content-s3.yml);
 # fabric-gate validates the merged result.
 #
@@ -28,7 +28,7 @@ exporters:
       use_path_style: ${env:FABRIC_CONTENT_S3_PATH_STYLE:-false}
       # aws:kms (with FABRIC_CONTENT_S3_KMS_KEY_ID, or the AWS-managed key)
       # or AES256 (SSE-S3; on an S3-compatible store, configure its SSE-S3
-      # key, e.g. WEED_S3_SSE_KEK in docker-compose.s3-eval.yml).
+      # key, e.g. WEED_S3_SSE_KEK in docker-compose.s3-local.yml).
       sse: ${env:FABRIC_CONTENT_S3_SSE:-aws:kms}
       kms_key_id: ${env:FABRIC_CONTENT_S3_KMS_KEY_ID:-}
     timeout: 60s

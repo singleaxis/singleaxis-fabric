@@ -76,8 +76,9 @@ failed. The seven lines are byte-identical; `.gitleaksignore` adds the same
 path/rule/line fingerprints for the squash commit only.
 
 The secret-scan job checks out with `fetch-depth: 0`, which fetches every
-remote branch, so unmerged branches are scanned too. The unmerged branch
-`feat/llm-wire-capture` contributes ten source-proven non-credential matches:
+remote branch, so unmerged branches are scanned too. An unmerged development
+branch of the wire-capture work contributes ten source-proven non-credential
+matches:
 
 | Commit / path / line | Source evidence and classification |
 | --- | --- |
@@ -101,13 +102,13 @@ eventual squash commit adds no new finding. As above, only exact
 commit/path/rule/line fingerprints are baselined, and the synthetic
 new-commit probe must still fail.
 
-## S3 evaluation overlay curl invocation (2026-10-16)
+## S3 local trial overlay curl invocation (2026-10-16)
 
 Commit `dcc028a…` on PR #185 introduced `deploy/compose/docker-compose.s3-eval.yml`
-whose init job called `curl --user "$$ROOT_KEY:$$ROOT_SECRET"`; `curl-auth-user`
+(since renamed `docker-compose.s3-local.yml`) whose init job called `curl --user "$$ROOT_KEY:$$ROOT_SECRET"`; `curl-auth-user`
 matched line 103. The matched value is two Compose-escaped shell variable
-references, not a credential (the evaluation-only defaults live in
-`x-s3-eval-identities` and are documented in `.env.example`). The following
+references, not a credential (the local-trial-only defaults live in
+`x-s3-eval-identities`, now `x-s3-local-identities`, and are documented in `.env.example`). The following
 commit passes the keys through a curl config file instead, so the current tree
 has no match; only that exact commit/path/rule/line fingerprint is baselined.
 

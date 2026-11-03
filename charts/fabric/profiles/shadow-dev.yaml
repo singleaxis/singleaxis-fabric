@@ -1,4 +1,4 @@
-# LOCAL EVALUATION ONLY. This profile is plaintext, unauthenticated, and uses
+# LOCAL TRIAL ONLY. This profile is plaintext, unauthenticated, and uses
 # pod stdout when no destination is supplied. Never use it across a trust
 # boundary or claim it provides durable audit retention.
 profile:

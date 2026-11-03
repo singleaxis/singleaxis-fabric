@@ -2,7 +2,7 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 1
+revision: 2
 last_updated: 2026-11-03
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
@@ -87,7 +87,7 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 |---|---|---|
 | Model exchanges with full bodies, run reconstruction | `fabric/wire/`, `fabric/reconstruct/` | Built (v0.8.0) |
 | Tool call ↔ tool result pairing by id | `reconstruct/_stitch.py` (`tool_call_id`, Responses `function_call` / `function_call_output`, Anthropic `tool_use` / `tool_result`) | Built (v0.8.0) |
-| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | Built on `feat/p1-integration` (050 waves 0–2 and the WP-50 end-to-end test); not on main; P1-A (050 wave 4) not built |
+| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | Built after v0.9.0, not yet released (050 waves 0–2 and the WP-50 end-to-end test); P1-A (050 wave 4) not built |
 | Subprocess hook (`exec.subprocess`) | 053 §5.1, `fabric/hooks/_exec.py` | Specified, not built |
 | Hooks foundation (`fabric.hooks.install`) | 053 §4, `fabric/hooks/` | Specified, not built |
 | Host sensors, local profile | `components/host-emitter`, `receiver/auditreceiver` | Built; records carry pid, parent pid, hashed executable and argv, peer address and port; no source, epoch or sequence |
@@ -96,6 +96,14 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 | Effect ↔ tool call link | — | Not specified (this spec, §4.2) |
 | Process-tree join | — | Not specified (this spec, §4.3) |
 | Remote sandboxes (E2B, Modal, Daytona and similar) | — | Not specified (this spec, §4.4) |
+
+The table is the state this spec started from. Milestone M1 (WP6-01 to
+WP6-07) is now built after v0.9.0, not yet released: the hooks foundation,
+the `exec.subprocess` hook, the effect ↔ tool call link (§4.2) and the
+process-tree join for local-profile host records (§4.3). AR-1 (§6.2) passes
+in hermetic mode; its live mode has not run yet.
+[Agent action reconstruction](../docs/action-reconstruction.md) describes
+what is built and the open H2 question for shells that exec in place.
 
 ## 4. Design
 
@@ -217,8 +225,12 @@ listed there too. These lists are the main compliance signal: the operating
 system saw the agent do something the agent's own record does not explain.
 
 **Pid reuse.** Where two host events match one anchor under H2, the state
-is `ambiguous` with both. H1 cannot be ambiguous: pid plus start time is
-unique per boot.
+is `ambiguous` with both, and the effect counts as `anchor_missing`. H1
+cannot be ambiguous: pid plus start time is unique per boot.
+
+**Start-time resolution.** `/proc/<pid>/stat` reports the start time in
+clock ticks (10 ms at the usual `USER_HZ` of 100), while the eBPF sensor
+reports nanoseconds. H1 compares both at tick resolution.
 
 ### 4.4 Sandboxes
 
@@ -293,8 +305,8 @@ Applied by WP6-01 only.
 | `contracts/coverage/v1/schema/step-projection-v1.schema.json` | Link and field `method` enums gain `sequence_bracket`, `output_match`, `process_anchor`, `process_lineage` |
 | `contracts/capture/v1/schema/run-reconstruction-v1.schema.json` | Optional `chains` object (`decisions`, `actions`, `effects`, `corroboration`, each a verdict with reasons) and optional `attribution` object (§4.5) |
 | `contracts/coverage/v1/registry/telemetry-keys-v1.json` | Rows for `fabric.process.parent_pid` and `fabric.process.start_ns`, placement `record`, capture point `exec.subprocess`. The 053 rows needed by `exec.subprocess` (053 §7) land here too if 053 WP4-01 has not run. |
-| `contracts/coverage/v1/registry/vocabularies-v1.json` | Reason values: `unattributed_effect`, `ambiguous_attribution`, `anchor_missing`, `unexplained_host_event`, `tool_result_missing`; `effect_not_observed` reasons `channel_disabled`, `no_effect_channel`, `none_in_window`; `not_captured` reason `remote_sandbox` |
-| `contracts/coverage/v1/fixtures/projection/` | Valid and invalid fixtures for every rule A0–A4 and H1–H4 (§6.1) |
+| `contracts/coverage/v1/registry/vocabularies-v1.json` | Reason values: `unattributed_effect`, `ambiguous_attribution`, `anchor_missing`, `unexplained_host_event`, `tool_result_missing`, `exchange_gap`, `source_gap`; `effect_not_observed` reasons `channel_disabled`, `no_effect_channel`, `none_in_window`; `not_captured` reason `remote_sandbox` |
+| `contracts/coverage/v1/fixtures/action-record/` | Valid and invalid fixtures for every rule A0–A4 and H1–H4 (§6.1), plus the interface goldens: the `exec.subprocess` effect record and the host-sensor record, with a README mapping each field |
 
 ## 6. Qualification
 
@@ -359,6 +371,13 @@ Chain verdicts: `decisions` complete, `actions` complete, `effects`
 `partial(unattributed_effect)`, `corroboration`
 `partial(unexplained_host_event)`.
 
+**M1 difference.** Today's local-profile host records carry no process
+start time, so in M1 the host links in steps 1, 2 and 4 are
+`process_anchor · tentative` (rule H2), not `certain`. They become
+`certain` in M2, when the production host records add
+`fabric.sensor.process_start_ns` (053 §6.2.3). The rule fixtures pin both
+cases (`ar1-run` and `ar1-run-local-profile`).
+
 **Negative variants**, each a separate CI case:
 - (a) host source removed → `corroboration: not_observed`; other chains
   unchanged;
@@ -366,8 +385,9 @@ Chain verdicts: `decisions` complete, `actions` complete, `effects`
   partial(sequence_gap)`;
 - (c) hook disabled → `effects: not_observed`, with the manifest reason;
   every tool call is `effect_not_observed(channel_disabled)`;
-- (d) metadata-only content mode → step 3 is `ambiguous`; no other link
-  changes;
+- (d) metadata-only content mode → step 3 is `ambiguous`; the other
+  effects keep their targets, but their method becomes `sequence_bracket`
+  and their confidence `tentative`, because A1 needs content;
 - (e) the agent run with capture off, then on → identical agent outputs and
   exit codes, and the 053 §4.4 latency budgets hold.
 
@@ -445,7 +465,7 @@ readable without the team's history:
 |---|---|---|
 | OD-1 | Move the 053 `exec.subprocess` channel and host production ingress ahead of 051/052 (§7.1) | Yes |
 | OD-2 | Let the capture worker read `/proc/<pid>/stat` for the child start time | Yes. It runs off the caller's path, is Linux-only and bounded, and fails silently. It is what makes H1 exact. |
-| OD-3 | First remote sandbox provider for WP6-09 | The provider the first customer uses |
+| OD-3 | First remote sandbox provider for WP6-09 | The provider with a documented process-start API and an OpenAI-compatible tool loop; chosen at M2 |
 | OD-4 | Container sandboxes: record the container id the runtime returns (`docker run` output, or the Kubernetes API) as a reported link | Decide in M2 |
 | OD-5 | A2 (single window) confidence: `tentative` or `certain` | `tentative`; only A0 and A1 are `certain` |
 | OD-6 | AR-1 host sensor in hosted CI | Try eBPF on the hosted runner first; if it cannot load, run the host part on a self-hosted runner and keep the rest in hosted CI |

@@ -18,18 +18,33 @@ implements 049 rev 6.4. It does not redesign 049. Where 049 is ambiguous or
 conflicts with the code or with 049's owner decisions 21–25 (049 §9), the
 conflict is listed in section 9 with exact replacement text.
 
-**Build state.** Waves 0–2 of section 5 are built on the
-`feat/action-record` branch, not released, except WP-15 (decision records)
-and WP-21 (Node pre-acknowledgement validation). WP-50 is built as an
-end-to-end test; the LR-1 harness and wave 4 (P1-A) are not built.
-[The P1 run record](../docs/run-record.md) describes what is built.
+**Build state.** Waves 0–2 of section 5 are built after v0.9.0, not yet
+released, except WP-15 (decision records) and WP-21 (Node
+pre-acknowledgement validation). WP-50 is built as an end-to-end test; the
+LR-1 harness and wave 4 (P1-A) are not built.
+[The P1 run record](../docs/run-record.md) describes what is built. Terms
+are defined in the [glossary](../docs/glossary.md).
 
-Codes in parentheses such as (R4) or (R13) name the cross-spec revision
-decisions that a rule applies; the [glossary](../docs/glossary.md) lists
-all sixteen. Other terms are defined there too.
-
-*Revision note:* revision 2 (2026-10-22) is the current text; the rules it
-changed carry their R-code.
+Revision 2 changes the items below. The codes in brackets (R1–R16) name
+these cross-spec revision decisions; specs 051–055 cite them by code.
+- run correlation ids carried in every token (R1);
+- persisted uuid4 marker ids (R2);
+- segment-attributed losses (R3);
+- three status inputs (R4);
+- descriptor-only bodies (R5);
+- the 260 bound (R6);
+- one structured-evidence carrier, §3.4a (R7);
+- one identity rule (R8);
+- fail-open APIs and bounded encoders (R9);
+- pre-ack validation as the default (R10);
+- static dedicated Node ingress groups, one bound source each (R11, used by
+  053 and 054);
+- a minimal Node-API native addon for TypeScript locks, with allocator and
+  queue in JavaScript (R12, used by 055);
+- split WPs with explicit dependencies (R13, R14);
+- C35, C40, N51, `fabric.capture.source` and bounded `event_ids` (R15);
+- harness paths (R16);
+- the registration-fd fork fix.
 
 References are `file:line` at main `36f7a89`. Python paths are relative to
 `sdk/python/src/fabric/`. Collector paths are relative to
@@ -864,6 +879,7 @@ applies. The basis is emitted as `fabric.run.id_basis` on every `run_start`
 | 3 | Valid tokens with different correlation ids, no clear `run_id` | the lowest correlation id (byte order) | `token_conflict` |
 | 4 | No valid token, clear `run_id` (argument or same-host `FABRIC_RUN_ID`) | the mapped clear id | `caller` |
 | 5 | No valid token and no run id (`run()` with no arguments, typically an orchestrator that only issues tokens) | a **minted** correlation id: `r-` + 32 hex from `secrets.token_hex(16)`, an `EmittedId` with no caller input | `minted` |
+
 - The run's correlation id is the run id of its root segment (rule 4 or 5). It
   is copied into every token the run issues, so A → B → C keeps one id even
   when B is wholly lost: C's tokens came from B, which carried A's id.
@@ -1822,7 +1838,7 @@ Rules for every WP:
 
 | Id | What | Must be merged to main before |
 |---|---|---|
-| H0 | The v0.8.1 hotfix branch `fix/decision-line-privacy` (rewrites `decision.py`, `integrations/mcp.py`, `_identity.py`, `decision.ts`, `identity.ts`; 051 marks its items "landed in v0.8.1 (hotfix)") | **WP-15** here; 051 WP2-1a; 055 WP-08a |
+| H0 | The decision-line privacy and passivity fixes (rewrite `decision.py`, `integrations/mcp.py`, `_identity.py`, `decision.ts`, `identity.ts`; 051 marks its items "landed in v0.8.0"). Satisfied: they shipped in v0.8.0 | **WP-15** here; 051 WP2-1a; 055 WP-08a |
 | R16 | `test/agent-matrix` and `test/chaos` (§6.3) | WP-43, WP-50 |
 
 ### Wave 0 (foundation: WP-00 and WP-01 in parallel; WP-21 independent)
@@ -1860,7 +1876,7 @@ merges. Until then they run against the WP-01 spool stub.
 |---|---|---|---|---|---|
 | **WP-12 Segments and run API** | `_segments.py`, `wire/__init__.py` | 10, 11a, 11b | §3.6: `RunTable`, run identity rules 1–5 and `id_basis`, `fr3/` tokens, segment open and seal triggers, continuation `run_start`, fork hooks, `run()` arguments, `resume_token(s)`, `end_run(run_id=None)`, `set_run_outcome`, environment intake, records-only install documentation | Unit: every seal-trigger row; every run-identity rule with the v2 token vectors. Concurrency: `gather` and `to_thread` share a segment. Fork: child segment and fresh scope ids; parent `declared_branches`. `end_run` refusals. Canaries: clear run id in env and arguments, and never in baggage-shaped outputs. | LR-1 single-host subset (re-entry, fork, branch tokens, lost middle with token-only hops) passes against WP-30 and WP-31 |
 | **WP-14 Wire enrichment** | `wire/_attrs.py`, `wire/_stream.py`, `wire/_aiohttp.py`, `wire/_transport.py` (event id minting, the provider-request-id header read) | 11a (hook) | §3.9, including C35 `endpoint_id` and C40 | Exchange spans carry the keys and pass the fabricguard tests (WP-20 vectors). First-chunk offset is present for streams and absent for empty responses. C40: no header read unless opted in; never the header block; omitted without a key. The 047 §4.10 budgets. | `test_wire_passivity.py` and `test_wire_aiohttp_passivity.py` green |
-| **WP-15 Decision records** | `decision.py`, `_calls.py`, `_records_mirror.py` | 11a; **H0** (hotfix `fix/decision-line-privacy` merged to main) | §3.11, all 13 event sites | Every `record_*` gives one sequenced record. A sampled-out host span still gives the record. No content key reaches the record. Host spans have no `fabric.source.*`. No `str()` or `repr()` of application objects. Passivity: `record_*` overhead ≤ 30 µs median. | Suites green |
+| **WP-15 Decision records** | `decision.py`, `_calls.py`, `_records_mirror.py` | 11a; **H0** (decision-line privacy fixes, in v0.8.0) | §3.11, all 13 event sites | Every `record_*` gives one sequenced record. A sampled-out host span still gives the record. No content key reaches the record. Host spans have no `fabric.source.*`. No `str()` or `repr()` of application objects. Passivity: `record_*` overhead ≤ 30 µs median. | Suites green |
 | **WP-16 Explicit producers** | `call_recorder.py`, `adapters/synthetic_evidence.py`, `adapters/byte_boundary.py`, `http_dispatch.py`, `byte_evidence.py` (config-conflict check only) | 11a | §3.10 three-way mode | Records mode: one record per journal event; ids per §3.10; bodies protected; the 16 MiB + 1 outcome as a descriptor-only body; `not_exact_bytes` as a descriptor-only body. Journal mode unchanged. Legacy mode warning. | `test_wire_explicit_coexistence.py` green in records mode |
 | **WP-31 Segment graph and run states** | `reconstruct/_graph.py` | 30 | G1–G10, the run-identity merge rules (`id_basis`), deadline and clocks, `run_aliases`, run states | One test per G rule using the 7 `projection-run-*` fixtures as expected outputs, plus synthetic graphs: cycle, two roots, replayed `br-`, post-terminal, skew, token-conflict fan-in, caller-join fan-in, lost middle. | All G-rule tests green |
 | **WP-32 Projection core** (**sequential after WP-31 and WP-33** within the wave) | `reconstruct/_project.py`, `reconstruct/_evidence.py` | 30, **31**, **33** | §3.13 document, steps, aliases, parents, field wrappers, bounded `event_ids`, evidence decoding, manifest-driven statuses, R1–R6 and RR1–RR7 | C1-3 schema validation of every produced projection. C1-5: one fixture per verdict row. The `projection-*` valid fixtures reproduced from synthetic inputs. `projection-many-records`. | T1 |
@@ -1891,7 +1907,7 @@ merges. Until then they run against the WP-01 spool stub.
 | 21 | — | Uses the generated evidence-type list from 00 when merged |
 | 12 | 10, 11a, 11b | — |
 | 14, 16 | 11a | — |
-| 15 | 11a, **H0** | H0: hotfix `fix/decision-line-privacy` merged to main first (pre-requisites above) |
+| 15 | 11a, **H0** | H0: the decision-line privacy fixes (pre-requisites above), shipped in v0.8.0 |
 | 31 | 30 | — |
 | 32 | 30, 31, 33 | **Intra-wave:** starts after WP-31 merges |
 | 50 | every WP of waves 0–2 | — |

@@ -74,6 +74,12 @@ STALE_POSITIVE_CLAIMS = (
     "757 tests",
     "Inline PII redaction",
     "Fail-closed guardrails",
+    # Removed reference-taxonomy API and its bundled attack-taxonomy data.
+    "load_bundled_taxonomies",
+    "bundled_taxonomy_names",
+    "fabric.taxonomy",
+    "mitre-atlas",
+    "owasp-llm",
 )
 
 
@@ -126,17 +132,10 @@ def test_extended_recorder_docs_do_not_restore_legacy_product_claims() -> None:
             )
 
 
-def test_downstream_design_docs_are_prominently_scoped() -> None:
-    superseded = (ROOT / "specs/archive/025-product-planes-and-packaging.md").read_text(
-        encoding="utf-8"
-    )
-    assert "Superseded. Do not implement recorder v1" in superseded[:700]
-
-
 def test_readme_describes_the_actual_recorder_cli() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert (
-        "Local recorder initialization, configuration validation, digest, help, and version"
-        in readme
-    )
+        "Writes and validates a reviewable recorder declaration (`contracts/recorder/v1`); "
+        "in v0.8 neither the SDK nor the Node reads it"
+    ) in readme
     assert "deployment receipts" not in readme

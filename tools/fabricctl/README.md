@@ -1,11 +1,13 @@
 # fabricctl
 
 `fabricctl` is the small operator CLI shipped with the customer-controlled
-Fabric OSS recorder. Its release surface matches one product boundary:
+Fabric OSS recorder (CAPTURE -> PROTECT -> DELIVER).
 
-```text
-CAPTURE -> PROTECT -> DELIVER
-```
+fabricctl writes and validates a reviewable recorder declaration
+(`contracts/recorder/v1`). In v0.8 neither the SDK nor the Node reads it:
+the agent is configured by `FABRIC_CAPTURE_POLICY` (deployment-policy/v1, see
+[deployment](../../docs/deployment.md)) and the Node by Helm values or
+Compose.
 
 The default binary exposes only four command paths:
 
@@ -16,19 +18,16 @@ fabricctl recorder digest
 fabricctl version
 ```
 
-It does not contain management pairing, installation or rollout workflows,
-assurance levels, runtime controls, judges, red-team campaigns, regulatory
-profiles, or governance features. Those implementations were removed when
-the recorder scope became authoritative; the release boundary tests prove
-the binary cannot link them
-into the release executable.
+It has no other commands. The release-boundary tests reject anything
+outside the recorder scope ([AGENTS.md](../../AGENTS.md)) from the release
+executable.
 
 ## Prepare recorder configuration
 
 Run the interactive, offline initializer from a terminal:
 
 ```sh
-fabricctl init --output-dir ./healthcare-shadow
+fabricctl init --output-dir ./example-shadow
 ```
 
 The wizard asks for non-secret identifiers and reviewed references only:
@@ -56,9 +55,9 @@ traffic, install Fabric, or change the monitored AI system.
 These commands are offline and machine-stable:
 
 ```sh
-fabricctl recorder validate ./healthcare-shadow/fabric-recorder.yaml
-fabricctl recorder digest ./healthcare-shadow/fabric-recorder.yaml
-fabricctl recorder validate ./healthcare-shadow/fabric-recorder.yaml --json
+fabricctl recorder validate ./example-shadow/fabric-recorder.yaml
+fabricctl recorder digest ./example-shadow/fabric-recorder.yaml
+fabricctl recorder validate ./example-shadow/fabric-recorder.yaml --json
 ```
 
 Strict parsing rejects unknown fields, duplicate or extra YAML documents,
@@ -83,7 +82,7 @@ make race
 same default target that is shipped:
 
 ```sh
-make build VERSION=0.8.0 COMMIT="$(git rev-parse HEAD)" DATE=2026-08-31T00:00:00Z
+make build VERSION=0.9.0 COMMIT="$(git rev-parse HEAD)" DATE=2026-08-31T00:00:00Z
 ./bin/fabricctl help
 ./bin/fabricctl version
 ```

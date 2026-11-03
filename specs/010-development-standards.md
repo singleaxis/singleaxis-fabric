@@ -105,7 +105,7 @@ Minimum coverage bars on new code:
 
 ### Integration and end-to-end tests
 
-- `deploy/compose/qualify.sh` — local evaluation stack testing protection,
+- `deploy/compose/qualify.sh` — local trial stack testing protection,
   durable queue and controlled-sink delivery. This path is plaintext and
   unauthenticated; it does not qualify authenticated production ingress.
 - `e2e.yml` kind job — Helm install on a real cluster, fsync sink,
@@ -226,8 +226,10 @@ Every source file carries:
 - Every component has a `README.md` (overview, dev setup, tests)
 - Every public API has doc comments
 - Every spec follows the structure in `specs/000-overview.md`
-- Stale-spec convention: superseded specs carry a `superseded` status
-  and a do-not-implement banner (see specs 001, 025)
+- Stale-spec convention: superseded specs carry a `superseded` status,
+  a `superseded_by` field and a do-not-implement banner. Specs that
+  describe capabilities outside the OSS scope are deleted, not archived;
+  their history lives in git
 - ADRs live as specs, not a separate directory
 - Documentation truthfulness is tested: claims about shipped
   capabilities must match code (`test_recorder_documentation_scope.py`)

@@ -83,8 +83,16 @@ Example policy fragment:
 
 **Customer transformations.** `redact`, `masked_only` and the review copy
 of `original_plus_masked` need your own transformation, performed by your
-[redaction service](#redaction-service). Fabric ships no PII detector.
+[redaction service](#redaction-service). Fabric ships no content detector.
 `tokenize`, `omit`, `metadata_only` and `retain_original` need no service.
+
+**Identifier shape warning.** When a caller id passed to the explicit APIs
+(`tenant_id`, `agent_id`, `user_id`, `session_id`, `request_id`) looks like
+an e-mail address or phone number, both SDKs emit a deduplicated warning
+(`warn_if_pii_shaped` in Python, `warnIfPiiShaped` in TypeScript); the
+warning names the field and shape, never the value, and
+`FABRIC_QUIET_PII_WARN=1` silences it. It inspects identifier fields only,
+is a misconfiguration diagnostic, and is not content detection.
 
 **Large requests.** A side up to `max_body_bytes` (default 32 MiB; at most
 63 MiB in node mode) is stored whole. A larger JSON side, up to 64 MiB, is
@@ -112,7 +120,8 @@ transformation id and version, role and mode as `X-Fabric-*` headers; a
 [`examples/redaction-service/`](../examples/redaction-service/README.md) is
 a small standard-library reference service (regular-expression rules from a
 JSON file) with a Dockerfile and Compose and Kubernetes sidecar snippets. It
-is an example, not a PII detector, and not part of any release artifact.
+is an example of the redaction interface, not a detector, and not part of any
+release artifact.
 
 ```bash
 export FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock   # or http://127.0.0.1:8181

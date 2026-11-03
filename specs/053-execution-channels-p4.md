@@ -11,17 +11,42 @@ related: ["030", "031", "041", "043", "047", "048", "054", "055"]
 
 # 053 — Execution channels (P4)
 
-**Status: draft; not built.** Spec 056 (its owner decision OD-1) moves
-the hooks foundation, the `exec.subprocess` channel and the host-sensor
-production ingress of this spec ahead of P2 and P3. The first two are
-being built for 056 milestone M1 on the `feat/action-record` branch; the
-host ingress is 056 milestone M2. Codes in parentheses such as
-(R8) or (R11) name the cross-spec revision decisions that a rule applies,
-and "decision n" means row n of 049 §9; the
+**Status: draft; built only in part, for spec 056.** Spec 056 (its owner
+decision OD-1) moves the hooks foundation, the `exec.subprocess` channel and
+the host-sensor production ingress of this spec ahead of P2 and P3. The
+first two are built for 056 milestone M1 after v0.9.0, not yet released; the
+host ingress is 056 milestone M2. The rest of this spec is not built. Codes
+in parentheses such as (R8) or (R11) name the cross-spec revision decisions
+that a rule applies, and "decision n" means row n of 049 §9; the
 [glossary](../docs/glossary.md) lists both.
 
-*Revision note:* revision 2 (2026-10-22) is the current text; it binds this
-spec to spec 050 revision 2, the frozen P1 contract.
+**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
+the introduction of [050](050-run-structure-and-records-p1.md)), and binds
+this spec to spec 050 revision 2,
+which is now the frozen P1 contract. The changes:
+- Every hook records through the records input with provenance `observed`.
+  The W-class record (`capture.input=wire` on a hook record) is withdrawn
+  (R7). Every structured P4 datum maps onto 050's evidence carrier through
+  six registered evidence types (§3.2), owned by contracts WP4-01, which
+  depends on 050 WP-00.
+- Multi-source Node binding uses static dedicated ingress groups, each a
+  proven `bearertokenauth` instance bound to one source, with a bounded
+  group count (§6.1, R11). A custom credential-to-source authenticator is
+  recorded as a later option.
+- Host-sensor production ingress has its own complete subsection (§6.2):
+  record schema, sources and epochs, gate rules and fabricguard admission.
+  The old WP4-07 is split into buildable work packages (R14).
+- Every shared file has one integration owner, and intra-wave
+  dependencies are listed (§8, R13).
+- One identity rule (R8) and the passivity rules (R9) replace revision 1's
+  stricter clear-mode wording (§4.2, §4.3).
+- The coding-agent row of the architecture matrix is amended to match what
+  the hooks can observe (R15; §10).
+- The vector-store dialect (Qdrant REST) and the SSH client (paramiko) are
+  frozen as recommended defaults (§9).
+- Items closed by 050 revision 2 are no longer open here: uuid4 marker ids
+  (R2), segment-attributed losses (R3), the three status inputs (R4),
+  descriptor-only bodies (R5) and pre-ack content validation (R10).
 
 ---
 
@@ -36,9 +61,8 @@ This spec implements 049 P4 under **CAPTURE -> PROTECT -> DELIVER**.
 
 Normative baseline: 049 rev 6.4, spec 050 rev 2 (P1, frozen), spec 051
 rev 2 (P2 reporting APIs) and spec 052 rev 2 (D23/D24 contract), plus the
-shared owner decisions dated 2026-10-19..22 (049 §9, decisions 21–25).
-`file:line` references are anchors in this worktree at authoring time;
-build WPs refresh them.
+shared owner decisions dated 2026-10-19..22. `file:line` references are
+anchors in this worktree at authoring time; build WPs refresh them.
 Contract changes below are build instructions. This document changes no
 other file.
 
@@ -1309,7 +1333,7 @@ reopening of approved decisions 1–25.
 | # | Decision | Default | Status |
 |---|---|---|---|
 | O4-1 | sqlite3 qualification surface | Caller-selected observing `Connection`/`Cursor` factories. Plain native connections stay declared uninstrumented. No proxy or C-type mutation. Full sqlite3 qualification waits for the §10 wording | RPOC (both reviews approve) |
-| O4-2 | Multi-source Node binding (R11) | Static dedicated ingress groups, one `bearertokenauth` per source, 64 by default and 256 at most, including separate auditd and eBPF groups. A custom credential-to-source authenticator is a later option with its own spec. This is configured-source DaemonSet support, not dynamic workload discovery | RPOC (Astra approves; Fable preferred the authenticator, R11 chose groups) |
+| O4-2 | Multi-source Node binding (R11) | Static dedicated ingress groups, one `bearertokenauth` per source, 64 by default and 256 at most, including separate auditd and eBPF groups. A custom credential-to-source authenticator is a later option with its own spec. This is configured-source DaemonSet support, not dynamic workload discovery | RPOC (the spec review was split; R11 chose groups) |
 | O4-3 | Host digests | Executable, argv and path digests are omitted by default; both the sensor policy and the group's fabricguard must permit them. Keyed host and source mapping always | RPOC |
 | O4-4 | Vector-store dialect (frozen) | **Qdrant REST** (`points/query`, `points/search`) through `qdrant-client` over httpx (`prefer_grpc=False`; gRPC unsupported), plus structure-only JSON-RPC 2.0. Qdrant server 1.x and `qdrant-client` 1.x; WP4-01 pins the exact minors current at freeze in `pins.json`. No other store is advertised from this fixture | RPOC |
 | O4-5 | SSH client (frozen) | **paramiko** 4.x through the explicit `fabric.hooks.ssh.observe` wrapper (`run` captures output; `exec_command` records the request only). WP4-01 pins the minor current at freeze; paramiko 3.x and asyncssh are unsupported | RPOC |

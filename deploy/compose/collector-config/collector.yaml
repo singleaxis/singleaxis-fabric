@@ -1,4 +1,4 @@
-# Fabric Node local evaluation configuration.
+# Fabric Node local harness configuration.
 # This profile is plaintext and unauthenticated; use the Helm
 # shadow-production profile across a customer trust boundary.
 #
