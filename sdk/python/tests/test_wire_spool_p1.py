@@ -299,6 +299,27 @@ def test_a_header_outside_the_contract_is_corrupt(case: str) -> None:
         unframe(b"".join(frame(full, bodies)))  # a valid digest, an invalid header
 
 
+def test_a_record_whose_bodies_a_direct_store_holds_is_not_corrupt(tmp_path: Path) -> None:
+    """A ``file://`` store with an OTLP endpoint: the pipeline stores a record's objects
+    and spools only its span (no bodies), which names them in ``fabric.content.object_ids``.
+    That record is valid; bodies that do not match the ids in order are still refused
+    (found by the spec 056 AR-1 harness: every exec.subprocess record was quarantined)."""
+    rng = random.Random(56)
+    spool = Spool(str(tmp_path / "spool"), 64 << 20)
+    doc, _ = _record(rng, 0, 3)
+    stored_only = record_doc("s-a", 7, "svc", doc["span"], [])
+    assert stored_only["bodies"] == []
+    assert len(doc["span"]["attributes"]["fabric.content.object_ids"]) == 3
+    name = spool.write(stored_only, [])
+    assert isinstance(name, str)
+    ((header, blob),) = unframe_all(spool.read(name))
+    assert header["bodies"] == [] and bytes(blob) == b""
+    mismatched, bodies = _record(rng, 1, 2)
+    mismatched["span"]["attributes"]["fabric.content.object_ids"].reverse()
+    with pytest.raises(CorruptRecordError):
+        unframe(b"".join(frame(_full(mismatched), bodies)))
+
+
 def _files(directory: Path) -> set[str]:
     return {p.name for p in directory.iterdir() if p.name.endswith(".rec") or "tmp" in p.name}
 

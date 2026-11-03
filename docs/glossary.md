@@ -487,8 +487,10 @@ All of this is specified in [056]. On the branch, the contracts and rule
 fixtures are merged
 ([`contracts/coverage/v1/fixtures/action-record/`](../contracts/coverage/v1/fixtures/action-record/README.md));
 the hooks, the subprocess hook, attribution, chain verdicts, the `actions`
-view and the host join are built on the branch (WP6-02 to WP6-05); the AR-1
-acceptance test (WP6-06) is not built yet (milestone M1).
+view, the host join and its `--host-records` option are built on the branch
+(WP6-02 to WP6-06). The AR-1 acceptance test is built and passes in hermetic
+mode; its live mode has not run yet (milestone M1). See
+[agent action reconstruction](action-reconstruction.md).
 
 **The four chains.** *Decisions*: what the model saw and returned (wire
 capture). *Actions*: which tools the model asked for and what result the
@@ -533,7 +535,10 @@ process to hosts no model call used). They are listed in the report's
 `attribution` object and are the main compliance signal. [056] §4.3, §4.5.
 
 **AR-1.** The end-to-end acceptance scenario of [056] §6.2. Fabric does not
-claim agent action reconstruction until AR-1 passes in CI.
+claim agent action reconstruction until AR-1 passes in CI. Built on the
+branch ([`qualification/action-record/`](../qualification/action-record/README.md)):
+hermetic mode (recorded host-sensor events) passes; live mode (a real eBPF
+or auditd sensor) has not run yet.
 
 ## Spec conventions
 

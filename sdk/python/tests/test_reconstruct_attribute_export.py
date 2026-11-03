@@ -445,3 +445,111 @@ def test_report_cli_carries_the_chains(capture: ExecCapture, tmp_path: Path) -> 
     assert run["chains"]["effects"]["reasons"] == ["unattributed_effect"]
     assert isinstance(datetime.fromisoformat(run["evaluated_at"].replace("Z", "+00:00")),
                       datetime)  # fmt: skip
+
+
+# --------------------------------------------------------------------------
+# --host-records (spec 056 §4.3 from the command line)
+# --------------------------------------------------------------------------
+
+HOST_KEY = "fabric-test-id-key-not-a-secret"  # the exec golden's host id: build-host-7
+
+
+def _host_log(time_ns: int, pid: int, ppid: int, syscall: str, uid: str,
+              peer: str | None = None) -> dict[str, Any]:  # fmt: skip
+    """A local-profile eBPF record as the emitter writes it (OTLP/JSON)."""
+    attrs: dict[str, Any] = {"event_class": "audit", "audit.source": "ebpf",
+                             "process.pid": pid, "process.parent_pid": ppid,
+                             "audit.syscall": syscall, "log.record.uid": uid}  # fmt: skip
+    if syscall == "execve":
+        attrs["audit.result"] = "success"
+    if peer is not None:
+        attrs["network.peer.address"], attrs["network.peer.port"] = peer, 443
+    return {"timeUnixNano": str(time_ns), "attributes": [
+        {"key": k, "value": {"intValue": str(v)} if isinstance(v, int) else {"stringValue": v}}
+        for k, v in attrs.items()]}  # fmt: skip
+
+
+def _host_cli(capture: ExecCapture, ids: Mapping[str, str], tmp_path: Path) -> list[str]:
+    """Host records for the scenario: the ls effect's exec and its child, the agent's
+    connections to its model (declared by --endpoint-peer) and to an uncalled host."""
+    from fabric._sequence import label_pseudonym  # noqa: PLC0415
+
+    endpoint = label_pseudonym("lbl-", "fixture-model", HOST_KEY.encode())
+    for row in capture.rows:
+        if "fabric.wire.exchange_id" in row["attributes"]:
+            row["attributes"]["fabric.wire.endpoint_id"] = endpoint
+    start = next(r["start_ns"] for r in capture.rows
+                 if r["attributes"].get("fabric.attempt.uid") == ids["ls"])  # fmt: skip
+    uid = "host-{:032x}".format
+    records = [
+        _host_log(start + 1_000, 4121, AGENT_PID, "execve", uid(1)),
+        _host_log(start + 2_000, 4122, 4121, "execve", uid(2)),
+        _host_log(start + 3_000, AGENT_PID, 1, "connect", uid(3), peer="10.0.0.1"),
+        _host_log(start + 4_000, AGENT_PID, 1, "connect", uid(4), peer="10.9.9.9"),
+    ]
+    path = tmp_path / "host.json"
+    path.write_text(json.dumps({"resourceLogs": [{"scopeLogs": [{"logRecords": records}]}]}))
+    return ["--host-records", str(path), "--host-label", "build-host-7",
+            "--endpoint-peer", "fixture-model=10.0.0.1"]  # fmt: skip
+
+
+def test_actions_view_with_host_records(
+    capture: ExecCapture, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", HOST_KEY)
+    ids = scenario(capture)
+    host = _host_cli(capture, ids, tmp_path)
+    assert main(["actions", *_cli(capture), "--json", *host]) == 1
+    (view,) = json.loads(capsys.readouterr().out)["runs"]
+    hosts = {row["event_id"]: row for row in view["rows"] if row["kind"] == "host"}
+    ls = next(row for row in view["rows"] if row.get("attempt_uid") == ids["ls"])
+    assert ls["corroborated_by"] == [{"event_id": "host-" + "0" * 31 + "1",
+                                      "link": "process_anchor · tentative"}]  # fmt: skip
+    child = hosts["host-" + "0" * 31 + "2"]["part_of"]
+    assert child == [{"target": ids["ls"], "namespace": "attempt",
+                      "link": "process_lineage · tentative"}]  # fmt: skip
+    model, uncalled = hosts["host-" + "0" * 31 + "3"], hosts["host-" + "0" * 31 + "4"]
+    assert model["part_of"][0]["namespace"] == "run" and "unexplained" not in model
+    assert uncalled.get("unexplained") is True
+    assert view["unexplained_host_events"] == {"count": 1, "event_ids": ["host-" + "0" * 31 + "4"]}
+    # p1, p2 and uname have pids but no exec event: not anchored.
+    assert view["chains"]["corroboration"] == {
+        "verdict": "partial", "reasons": ["anchor_missing", "unexplained_host_event"]}  # fmt: skip
+    out = tmp_path / "report.json"
+    assert main(["--spans", *_cli(capture), *host, "--out", str(out)]) == 1
+    run = json.loads(out.read_text())["runs"][0]
+    assert run["chains"]["corroboration"] == view["chains"]["corroboration"]
+    # Every linked event is listed; the uncalled connection is part_of the run (H4) too.
+    assert {e["event_id"] for e in run["sensor_events"]} == {
+        "host-" + "0" * 31 + n for n in "1234"}  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("argv", "env"),
+    [
+        (["--host-label", "build-host-7"], True),  # a host option without --host-records
+        (["--host-records", "HOST"], True),  # no --host-label
+        (["--host-records", "HOST", "--host-label", "bad label"], True),
+        (["--host-records", "HOST", "--host-label", "build-host-7"], False),  # no id key
+        (["--host-records", "HOST", "--host-label", "build-host-7",
+          "--endpoint-peer", "no-address"], True),
+        (["--host-records", "EMPTY", "--host-label", "build-host-7"], True),  # no record
+    ],
+)  # fmt: skip
+def test_host_record_options_are_refused_without_echoing(
+    capture: ExecCapture, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], env: bool,
+) -> None:  # fmt: skip
+    if env:
+        monkeypatch.setenv("FABRIC_WIRE_ID_KEY", HOST_KEY)
+    else:
+        monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
+    ids = scenario(capture)
+    host = _host_cli(capture, ids, tmp_path)[1]
+    empty = tmp_path / "empty.json"
+    empty.write_text('{"resourceLogs": []}')
+    argv = [{"HOST": host, "EMPTY": str(empty)}.get(a, a) for a in argv]
+    assert main(["actions", *_cli(capture), *argv]) == 2
+    err = capsys.readouterr().err
+    assert str(tmp_path) not in err and "bad label" not in err and HOST_KEY not in err

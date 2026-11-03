@@ -42,7 +42,7 @@ from fabric._records import (
 )
 from fabric._records_keys_generated import RECORD_KEY_CHECKS
 from fabric._seal import SegmentSeals, record_digest
-from fabric._sequence import V2_TYPES, EmittedId, pseudonym_v2
+from fabric._sequence import V2_TYPES, EmittedId, encode_opaque_id, pseudonym_v2
 from fabric._version import __version__
 from fabric.wire._policy import CapturePolicy, ContentGate
 from fabric.wire._protect import Protector
@@ -208,7 +208,9 @@ def test_every_record_carries_the_fabric_keys(handle: Handle) -> None:
     assert attrs["fabric.step.attempt_id"].startswith("g-")
     assert "Jane" not in str(span)
     assert "fabric.tool.name" not in attrs  # not a records key
-    assert "fabric.run.id" not in attrs  # outside a run
+    # Outside a run: the epoch's source-fallback run, as an unscoped exchange names it.
+    assert attrs["fabric.run.id"] == encode_opaque_id(f"source:{SOURCE}:{handle.allocator.epoch}")
+    assert "fabric.run.scope_id" not in attrs
     assert span["name"] == "fabric.tool_call"
     assert staged == []
     assert handle.input.stats.snapshot()["records_keys_dropped"] == 3
@@ -221,6 +223,7 @@ def test_a_record_reuses_host_span_ids(handle: Handle) -> None:
     [(span, _)] = _items(handle)
     assert (span["trace_id"], span["span_id"]) == (f"{0xABC:032x}", f"{0xDEF:016x}")
     assert (span["parent_span_id"], span["parent_is_remote"]) == (f"{0x123:016x}", True)
+    assert span["attributes"]["fabric.run.id"] == f"trace:{0xABC:032x}"  # the trace fallback
 
 
 # --- identity (R8) ----------------------------------------------------------------------------

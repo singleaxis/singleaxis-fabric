@@ -219,7 +219,7 @@ def test_run_records_match_the_exec_interface_golden(rig: Rig, tmp_path: Path) -
         keys = set(expected["attributes"]) - RUN_KEYS
         if not _exec._LINUX:
             keys.discard("fabric.process.start_ns")
-        assert set(record.attrs) == keys
+        assert set(record.attrs) - RUN_KEYS == keys
         for key in ("fabric.capture.input", "fabric.capture.source", "fabric.step.kind",
                     "fabric.actor.type", "fabric.step.lifecycle_state", "fabric.step.status",
                     "fabric.execution.host_id", "fabric.process.exit_code"):  # fmt: skip

@@ -114,6 +114,7 @@ A_RUN_ID = "fabric.run.id"
 A_SCOPE_ID = "fabric.run.scope_id"
 A_EXCHANGE_ID = "fabric.wire.exchange_id"
 A_API = "fabric.wire.api"
+A_ENDPOINT_ID = "fabric.wire.endpoint_id"
 A_REQUEST_REF = "fabric.content.request_ref"
 A_RESULT_REF = "fabric.content.result_ref"
 A_REQUEST_SHA256 = "fabric.wire.request_sha256"
@@ -656,6 +657,9 @@ class ExchangeObs:
     segment_id: str | None = None
     fingerprint: str | None = None
     span: SpanRecord | None = field(default=None, compare=False, repr=False)
+    # C35 ``fabric.wire.endpoint_id`` as emitted (an unscoped exchange keeps no span): the
+    # endpoint a spec 056 H4 called-peer check resolves.
+    endpoint_id: str | None = field(default=None, compare=False)
 
     @property
     def source(self) -> tuple[str, int]:
@@ -1164,6 +1168,7 @@ def _exchange(
         "segment_id": segment_id,
         "fingerprint": None if segment_id is None else record_fingerprint(span),
         "span": None if segment_id is None else span,
+        "endpoint_id": endpoint if isinstance(endpoint := attrs.get(A_ENDPOINT_ID), str) else None,
     }
     api = enum_value(attrs.get(A_API), APIS)
     state = enum_value(attrs.get(A_RESPONSE_STATE), RESPONSE_STATES)

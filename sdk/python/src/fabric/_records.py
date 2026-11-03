@@ -39,6 +39,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, cast
 
 from opentelemetry import context as otel_context
+from opentelemetry import trace
 
 from ._capture_types import COUNTERS as _COUNTERS
 from ._capture_types import (
@@ -697,6 +698,8 @@ class RecordsInput:
         late: Callable[[], Mapping[str, Any]] | None = None,
     ) -> bool:  # fmt: skip
         allocator, scope = tee.allocator, allocation.scope
+        run_id = scope.run_id if scope is not None else _fallback_run_id(
+            allocator.source_id, allocation.epoch, span_ids)  # fmt: skip
         fabric: dict[str, Any] = {
             "fabric.capture.input": CAPTURE_INPUT, "fabric.capture.source": attempt.provenance,
             "fabric.capture.point": attempt.point, "fabric.source_id": allocator.source_id,
@@ -704,8 +707,8 @@ class RecordsInput:
             "fabric.source.sequence": allocation.sequence, "fabric.event_id": event_id,
             "fabric.attempt.uid": str.__str__(attempt.uid), "fabric.step.kind": attempt.kind,
         }  # fmt: skip
+        fabric["fabric.run.id"] = run_id
         if scope is not None:
-            fabric["fabric.run.id"] = scope.run_id
             fabric["fabric.run.scope_id"] = scope.scope_id
         if allocation.segment_id is not None:
             fabric["fabric.run.segment_id"] = allocation.segment_id
@@ -726,8 +729,8 @@ class RecordsInput:
         job = RecordJob(
             source_id=allocator.source_id, source_epoch=allocation.epoch,
             source_sequence=allocation.sequence, segment_id=allocation.segment_id,
-            run_id=scope.run_id if scope is not None else None,
-            scope_id=scope.scope_id if scope is not None else None, event_id=event_id,
+            run_id=run_id, scope_id=scope.scope_id if scope is not None else None,
+            event_id=event_id,
             attempt_uid=str.__str__(attempt.uid), name=category(name_hint, attrs),
             start_ns=start_ns, end_ns=end_ns, otlp_status=otlp_status,
             attributes=MappingProxyType(attrs), bodies=bodies, evidence=evidence,
@@ -753,6 +756,22 @@ class RecordsInput:
             return True
         self.stats.add("not_submitted")  # queue_full / shutdown: a recorded loss
         return False
+
+
+def _fallback_run_id(source_id: str, epoch: int, span_ids: SpanIds | None) -> str:
+    """The run of a record outside every run scope: the one an unscoped exchange names
+    (047 fallback run id; spec 050 §2.10 "work outside the run"), ``trace:`` of the host
+    trace when there is one, else the epoch's ``source:`` fallback. Record object
+    descriptors require a run id, and a zero-code agent's subprocess effects are then in
+    the run of its model calls (spec 056 §4.2)."""
+    if span_ids is not None:
+        trace_id: int | None = span_ids.trace_id
+    else:
+        context = trace.get_current_span(otel_context.get_current()).get_span_context()
+        trace_id = context.trace_id if context.is_valid else None
+    if isinstance(trace_id, int) and 0 < trace_id < 1 << 128:
+        return f"trace:{trace_id:032x}"
+    return encode_opaque_id(f"source:{source_id}:{epoch}")
 
 
 def _late_rule_a(

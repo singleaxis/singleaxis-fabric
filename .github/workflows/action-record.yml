@@ -1,0 +1,149 @@
+name: Action record (AR-1)
+
+# Spec 056 §6.2 AR-1, the agent action reconstruction acceptance scenario
+# (milestone M1, local-profile Node). Not one of the release-required
+# workflows: Fabric makes no action reconstruction claim until this is green.
+#
+# - hermetic: the agent, the exec.subprocess hook, a natively built Node and
+#   the verifier run for real; the host chain is a recorded host-sensor event
+#   file bound to the run (qualification/action-record/ar1/replay.py).
+# - live: the same with the eBPF host emitter scoped to the agent's cgroup;
+#   when the eBPF programs cannot load on the hosted runner, the auditd
+#   receiver with uid-scoped rules (spec 056 §6.2, OD-6). Needs sudo.
+#
+# Passive by construction: the sensors are tracepoints and audit rules, the
+# hook only observes; nothing here evaluates, blocks or alters the agent.
+
+on:
+  push:
+    branches: [main, feat/action-record]
+    paths:
+      - "sdk/python/**"
+      - "components/otel-collector-fabric/**"
+      - "components/host-emitter/**"
+      - "contracts/**"
+      - "qualification/action-record/**"
+      - ".github/workflows/action-record.yml"
+  pull_request:
+    branches: [main, feat/action-record]
+    paths:
+      - "sdk/python/**"
+      - "components/otel-collector-fabric/**"
+      - "components/host-emitter/**"
+      - "contracts/**"
+      - "qualification/action-record/**"
+      - ".github/workflows/action-record.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: action-record-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  hermetic:
+    name: AR-1 hermetic (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: components/otel-collector-fabric/**/go.sum
+      - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
+        run: |
+          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
+      - name: Install the SDK and the harness dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e sdk/python pytest pytest-cov jsonschema PyYAML httpx \
+            "openai>=3.26.1" cryptography opentelemetry-exporter-otlp-proto-http \
+            ruff==0.13.0 mypy
+      - name: Lint and type-check the harness
+        working-directory: qualification/action-record
+        run: |
+          ruff check .
+          ruff format --check .
+          mypy --strict --config-file ../../sdk/python/pyproject.toml ar1 run_ar1.py tests
+      - name: Harness unit tests
+        run: python -m pytest qualification/action-record/tests -q -p no:cacheprovider -k "not test_ar1_hermetic"
+      - name: AR-1 hermetic
+        run: |
+          python qualification/action-record/run_ar1.py --mode hermetic --node required \
+            --out "${RUNNER_TEMP}/ar1-hermetic"
+      - name: Upload the AR-1 record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ar1-hermetic-${{ matrix.os }}
+          path: ${{ runner.temp }}/ar1-hermetic
+          if-no-files-found: ignore
+          retention-days: 14
+
+  live:
+    name: AR-1 live (Linux host sensor)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: |
+            components/otel-collector-fabric/**/go.sum
+            components/host-emitter/go.sum
+      - name: Install system packages (BPF toolchain, bubblewrap, auditd)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev bubblewrap auditd
+          # Ubuntu 24.04 confines unprivileged user namespaces; bubblewrap needs them
+          # for the step 4 child-process sandbox (the harness falls back to python -I).
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
+        run: |
+          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
+      - name: Build the eBPF host emitter
+        # A failed BPF build is not fatal: the harness then uses auditd (OD-6).
+        continue-on-error: true
+        working-directory: components/host-emitter
+        run: |
+          go generate ./...
+          CGO_ENABLED=0 go build -trimpath -o fabric-host-emitter .
+      - name: Install the SDK and the harness dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e sdk/python pytest pytest-cov jsonschema PyYAML httpx \
+            "openai>=3.26.1" cryptography opentelemetry-exporter-otlp-proto-http
+      - name: Let the auditd scope user read the checkout
+        # Only the auditd fallback runs the agent as another user (fabricar1).
+        run: |
+          chmod o+x "${HOME}" "${HOME}/work" "$(dirname "${GITHUB_WORKSPACE}")"
+          chmod -R o+rX "${GITHUB_WORKSPACE}"
+          mkdir -p "${RUNNER_TEMP}/ar1-live" && chmod o+x "${RUNNER_TEMP}"
+      - name: AR-1 live
+        run: |
+          python qualification/action-record/run_ar1.py --mode live \
+            --out "${RUNNER_TEMP}/ar1-live"
+      - name: Upload the AR-1 record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ar1-live
+          path: ${{ runner.temp }}/ar1-live
+          if-no-files-found: ignore
+          retention-days: 14
