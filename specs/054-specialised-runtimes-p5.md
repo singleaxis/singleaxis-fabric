@@ -11,7 +11,9 @@ related: ["029", "032", "043", "047", "048", "052", "055"]
 
 # 054 — Specialised runtimes and media (P5)
 
-Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)). It binds P5 to the frozen P1 contract,
+Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the
+introduction of [050](050-run-structure-and-records-p1.md)). It binds P5 to
+the frozen P1 contract,
 050 rev 2. The changes:
 - realtime observations, media indexes and job evidence travel on 050's §3.4a
   structured evidence carrier as registered evidence types (R7, §7.1). W-class

@@ -23,7 +23,9 @@ independent host-sensor evidence that corroborates them.
 
 The current capture contract is spec
 [049](049-four-layer-capture-coverage.md) (four-layer coverage, rev 6.4; P0 and
-P0-A are built in v0.8; P1 waves 0–2 are built on the unreleased `feat/p1-integration` branch). Its phases P1–P5 and the TypeScript wire track are
+P0-A are built in v0.8; P1 waves 0–2 are built on the unreleased
+`feat/p1-integration` branch). Its phases P1–P5 and the TypeScript wire
+track are
 specified by the phase build specs
 [050](050-run-structure-and-records-p1.md) (P1),
 [051](051-context-and-lifecycle-p2.md) (P2),

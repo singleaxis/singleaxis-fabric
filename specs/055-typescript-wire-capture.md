@@ -11,7 +11,9 @@ qualification: NO_COVERAGE_CLAIM
 
 # 055 — TypeScript wire capture
 
-Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)) (each pending owner confirmation, §10).
+Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the
+introduction of [050](050-run-structure-and-records-p1.md)) (each pending
+owner confirmation, §10).
 It binds TypeScript to 050's P1 run, records, seal and delivery
 contract, freezes the native addon ABI, moves every Python edit to its
 Python owner, and splits the oversized runtime work package. §12 maps
