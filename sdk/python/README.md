@@ -86,9 +86,9 @@ Verify offline:
 python -m fabric.reconstruct --spans <span files> --store-root <store> --tenant <tenant>
 ```
 
-See the [quickstart](../../docs/quickstart.md),
-[deployment](../../docs/deployment.md) and
-[reconstruct](../../docs/reconstruct.md).
+See the [quickstart](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/quickstart.md),
+[deployment](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/deployment.md) and
+[reconstruct](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reconstruct.md).
 
 ## Explicit APIs
 
@@ -133,17 +133,17 @@ redaction service you run beside the application
 `contracts/redaction/v1`); you name the transformation by id and version.
 Fabric runs no customer code, and a failure withholds the content.
 
-Full reference: [explicit APIs](../../docs/explicit-apis.md),
-[privacy and security](../../docs/privacy-and-security.md),
-[qualified-run mode](../../docs/qualified-run-mode.md).
+Full reference: [explicit APIs](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/explicit-apis.md),
+[privacy and security](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/privacy-and-security.md),
+[qualified-run mode](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/qualified-run-mode.md).
 
 ## Not in this package
 
 Framework adapters and auto-instrumentation extras were removed in v0.8;
 wire capture replaces them. The package contains no evaluation, scoring or
 control code, and nothing in it can block or change an agent's request. See
-[limitations](../../docs/limitations-and-roadmap.md) and the
-[changelog](../../CHANGELOG.md).
+[limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md) and the
+[changelog](https://github.com/singleaxis/singleaxis-fabric/blob/main/CHANGELOG.md).
 
 ## Development
 

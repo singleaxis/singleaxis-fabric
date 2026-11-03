@@ -101,7 +101,10 @@ def test_removal_is_not_promised_for_the_current_contract_version() -> None:
     # Fabric v1.0 product release, never an in-place edit of contract v1.
     for directory in (ACTIVITY_V1, CONNECT_V1):
         assert _json(directory / "manifest.json")["version"] == "1.0.0"
-        for path in [directory / "README.md", *sorted((directory / "schema").glob("*.json"))]:
+        for path in [
+            directory / "README.md",
+            *sorted((directory / "schema").glob("*.json")),
+        ]:
             assert "contract v1.0" not in path.read_text(encoding="utf-8"), path.name
 
 

@@ -90,7 +90,7 @@ dev = [
 [project.urls]
 Homepage      = "https://github.com/singleaxis/singleaxis-fabric"
 Repository    = "https://github.com/singleaxis/singleaxis-fabric"
-Documentation = "https://github.com/singleaxis/singleaxis-fabric/blob/main/specs/027-recorder-v1.md"
+Documentation = "https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/README.md"
 Issues        = "https://github.com/singleaxis/singleaxis-fabric/issues"
 
 [tool.hatch.version]
