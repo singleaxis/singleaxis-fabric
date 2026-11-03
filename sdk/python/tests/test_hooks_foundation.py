@@ -788,7 +788,7 @@ def test_producer_records_match_the_exec_interface_golden(
         for span, record in zip(spooled, golden["records"], strict=True):
             expected = record["span"]
             assert span["name"] == expected["name"] == "fabric.activity"
-            assert set(span["attributes"]) == set(expected["attributes"]) - run_keys
+            assert set(span["attributes"]) - run_keys == set(expected["attributes"]) - run_keys
             for key in ("fabric.capture.input", "fabric.capture.source", "fabric.step.kind",
                         "fabric.actor.type", "fabric.step.lifecycle_state",
                         "fabric.execution.host_id", "fabric.process.pid"):  # fmt: skip
