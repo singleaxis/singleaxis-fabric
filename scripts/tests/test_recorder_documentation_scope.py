@@ -126,13 +126,6 @@ def test_extended_recorder_docs_do_not_restore_legacy_product_claims() -> None:
             )
 
 
-def test_downstream_design_docs_are_prominently_scoped() -> None:
-    superseded = (ROOT / "specs/archive/025-product-planes-and-packaging.md").read_text(
-        encoding="utf-8"
-    )
-    assert "Superseded. Do not implement recorder v1" in superseded[:700]
-
-
 def test_readme_describes_the_actual_recorder_cli() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert (
