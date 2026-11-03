@@ -47,7 +47,8 @@ def _assert_error(document: dict[str, Any], code: str) -> None:
 def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
     # + WP-30 run-reconstruction attempts (valid, invalid); + WP-14 enriched exchange (1.4.0)
-    assert len(validated) == 109
+    # + spec 056 (1.5.0): two exec.subprocess spool records, one chain report, four refusals
+    assert len(validated) == 116
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -632,8 +633,8 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_4_0() -> None:
-    assert _json("manifest.json")["version"] == "1.4.0"
+def test_capture_family_is_version_1_5_0() -> None:
+    assert _json("manifest.json")["version"] == "1.5.0"
 
 
 # ------------------------------------------------------------------ capture/v1 1.4.0 (spec 050 §3.9)
@@ -849,3 +850,76 @@ def test_content_descriptor_rules_are_shared_with_the_prevalidate_vector() -> No
         media_type="text/plain",
     )
     assert not content_descriptor_ok(attrs)
+
+
+# ------------------------------------------------------------------ capture/v1 1.5.0 (spec 056 §4.5)
+def test_chains_bound_the_run_verdict() -> None:
+    """A partial chain makes the run partial even with no gap; unverified chains make it
+    at best unverified; a complete run carries only complete or not_observed chains."""
+    report = _json("fixtures/valid/run-reconstruction-action-chains.json")
+    validate_document(report, _schemas())
+    run = report["runs"][0]
+    assert run["verdict"] == "partial" and not run["gaps"]
+    calm = copy.deepcopy(report)
+    calm_run = calm["runs"][0]
+    calm_run["chains"]["effects"] = {
+        "verdict": "not_observed",
+        "reasons": ["channel_disabled"],
+    }
+    calm_run["chains"]["corroboration"] = {
+        "verdict": "unverified",
+        "reasons": ["source_unauthenticated"],
+    }
+    calm_run["attribution"]["unattributed_effects"] = {"count": 0, "effects": []}
+    calm_run["attribution"]["unexplained_host_events"] = {"count": 0, "event_ids": []}
+    _assert_error(calm, "capture.reconstruction.verdict")  # still says partial
+    calm_run["verdict"] = "unverified"
+    validate_document(calm, _schemas())
+    calm_run["chains"]["corroboration"] = {"verdict": "not_observed"}
+    _assert_error(calm, "capture.reconstruction.verdict")
+    calm_run["verdict"] = "complete_for_observed_scopes"
+    validate_document(calm, _schemas())
+
+
+def test_chain_reasons_and_attribution_lists_agree() -> None:
+    report = _json("fixtures/valid/run-reconstruction-action-chains.json")
+    run = report["runs"][0]
+    run["chains"]["actions"] = {"verdict": "complete", "reasons": ["exchange_gap"]}
+    _assert_error(report, "capture.reconstruction.chains")
+    report = _json("fixtures/valid/run-reconstruction-action-chains.json")
+    report["runs"][0]["attribution"]["unexplained_host_events"]["event_ids"] = []
+    _assert_error(report, "capture.reconstruction.chains")
+    report = _json("fixtures/valid/run-reconstruction-action-chains.json")
+    events = report["runs"][0]["sensor_events"]
+    events.append(copy.deepcopy(events[0]))
+    _assert_error(report, "capture.reconstruction.chains")
+    report = _json("fixtures/valid/run-reconstruction-action-chains.json")
+    report["runs"][0]["chains"]["effects"]["reasons"] = ["not_a_reason"]
+    _assert_error(report, "capture.schema")
+
+
+def test_chain_reason_enum_is_gap_types_then_coverage_reasons() -> None:
+    schema = _json("schema/run-reconstruction-v1.schema.json")
+    gaps = schema["$defs"]["gapType"]["enum"]
+    vocab = json.loads(
+        (REPO_ROOT / "contracts/coverage/v1/registry/vocabularies-v1.json").read_text(
+            "utf-8"
+        )
+    )
+    reasons = [r["value"] for r in vocab["reason"] if r["value"] not in gaps]
+    assert schema["$defs"]["chainReason"]["enum"] == gaps + reasons
+    link = schema["$defs"]["actionLink"]["properties"]
+    assert link["method"]["enum"] == ["process_anchor", "process_lineage"]
+    assert link["type"]["enum"] == ["part_of"]
+
+
+def test_exec_subprocess_spool_records_are_observed_terminal_records() -> None:
+    for phase, lifecycle in (("start", "running"), ("end", "completed")):
+        record = _json(f"fixtures/valid/spool-record-exec-subprocess-{phase}.json")
+        validate_document(record, _schemas())
+        attrs = record["span"]["attributes"]
+        assert attrs["fabric.capture.source"] == "observed"
+        assert attrs["fabric.step.kind"] == "terminal"
+        assert attrs["fabric.step.lifecycle_state"] == lifecycle
+        assert {b["descriptor"]["provenance"] for b in record["bodies"]} == {"protocol"}
+        assert {b["descriptor"]["boundary"] for b in record["bodies"]} == {"terminal"}

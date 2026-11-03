@@ -416,6 +416,25 @@
           "type": "array",
           "maxItems": 1000000,
           "items": {"$ref": "#/$defs/attempt"}
+        },
+        "chains": {
+          "description": "Spec 056 §4.5: one verdict per evidence chain. decisions is the exchange-only verdict and is never not_observed; actions, effects and corroboration are not_observed when the run has no tool calls, no enabled effect channel or no host source. The run verdict is never complete while a chain is partial or unverified.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decisions", "actions", "effects", "corroboration"],
+          "properties": {
+            "decisions": {"allOf": [{"$ref": "#/$defs/chainVerdict"}, {"properties": {"verdict": {"not": {"const": "not_observed"}}}}]},
+            "actions": {"$ref": "#/$defs/chainVerdict"},
+            "effects": {"$ref": "#/$defs/chainVerdict"},
+            "corroboration": {"$ref": "#/$defs/chainVerdict"}
+          }
+        },
+        "attribution": {"$ref": "#/$defs/attribution"},
+        "sensor_events": {
+          "description": "Spec 053 §6.3, spec 056 §4.3: the host-sensor events a link of this run names (as a target or a candidate of an agent step's corroborated_by link, or as the subject of a part_of link), with the links whose subject they are (H3 process_lineage to an anchored effect, H4 process_anchor to the run). Never a peer address, path or argv: ids, pids and times only.",
+          "type": "array",
+          "maxItems": 4096,
+          "items": {"$ref": "#/$defs/sensorEvent"}
         }
       }
     },
@@ -442,6 +461,134 @@
             }
           }
         }
+      }
+    },
+    "chainReason": {
+      "description": "Spec 056 §4.5: a chain's partial, unverified or not_observed reason: a gap type of this report, or a coverage reason (contracts/coverage/v1 vocabularies reason, which holds the 056 chain reasons). The validator pins this enum to both.",
+      "enum": ["sequence_gap", "loss", "tail_unverified", "missing_object", "digest_mismatch", "truncated", "unparsed_exchange", "prefix_break", "unmatched_tool_call", "unresolved_previous_response", "source_unauthenticated", "segment_missing", "segment_conflict", "post_terminal_activity", "run_unterminated", "run_open", "seal_mismatch", "unsealed_segment", "unsealed_epoch", "manifest_gap", "clock_uncertain", "not_instrumented", "hook_disabled", "not_configured", "unsupported_api", "unsupported_runtime", "unsupported_version", "parse_failed", "body_cap", "part_cap", "inflight_budget", "queue_full", "disk_full", "shutdown", "internal_error", "span_dropped", "store_failed", "destination_rejected", "transport_incomplete", "stream_closed_early", "privacy_policy", "protection_failed", "missing_capture_policy", "missing_id_key", "missing_spool_key", "provider_redacted", "provider_encrypted", "provider_summarised", "provider_not_returned", "provider_held", "caller_omitted", "deferred_to_explicit", "explicit_withheld", "not_exposed", "source_lost", "uninstrumented_client", "sampling", "retention_expired", "deleted", "unattributed_effect", "ambiguous_attribution", "tool_result_missing", "exchange_gap", "source_gap", "anchor_missing", "unexplained_host_event", "channel_disabled", "no_effect_channel", "none_in_window", "remote_sandbox"]
+    },
+    "chainVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict"],
+      "properties": {
+        "verdict": {"enum": ["complete", "partial", "unverified", "not_observed"]},
+        "reasons": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/chainReason"}}
+      }
+    },
+    "hostEventId": {
+      "description": "Spec 056 §4.3: a host event's id. fabric.event_id (uuid4) on a spec 053 §6.2.3 host record; on a local-profile audit-class log record, log.record.uid (host- + 32 hex, eBPF emitter), rec- + fabric.record_id (auditd logfile), else hev- + the first 32 hex of the SHA-256 of the record's canonical JSON (contracts/coverage/v1/fixtures/action-record/README.md).",
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|host-[0-9a-f]{32}|rec-[0-9a-f]{64}|hev-[0-9a-f]{32})$"
+    },
+    "actionLink": {
+      "description": "A spec 056 link whose subject is a host event: the step-projection link shape (contracts/coverage/v1 step-projection-v1 $defs/link) narrowed to the 056 rules.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "target", "provenance", "method", "confidence", "state"],
+      "properties": {
+        "type": {"enum": ["part_of"]},
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["namespace", "id"],
+          "properties": {
+            "namespace": {"enum": ["attempt", "run"]},
+            "id": {"type": "string", "minLength": 1, "maxLength": 256}
+          }
+        },
+        "provenance": {"const": "inferred"},
+        "method": {"enum": ["process_anchor", "process_lineage"]},
+        "confidence": {"enum": ["certain", "tentative"]},
+        "state": {"enum": ["resolved", "ambiguous"]},
+        "candidates": {"type": "array", "minItems": 2, "maxItems": 64, "items": {"type": "string", "maxLength": 256}}
+      }
+    },
+    "sensorEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["event_id", "source", "event_class", "pid", "time_ns"],
+      "properties": {
+        "event_id": {"$ref": "#/$defs/hostEventId"},
+        "source": {"enum": ["host.ebpf", "host.auditd"]},
+        "event_class": {"enum": ["exec", "connect", "file"]},
+        "pid": {"type": "integer", "minimum": 1},
+        "ppid": {"type": "integer", "minimum": 0},
+        "time_ns": {"type": "integer", "minimum": 0},
+        "process_start_ns": {"type": "integer", "minimum": 0},
+        "links": {"type": "array", "maxItems": 64, "items": {"$ref": "#/$defs/actionLink"}}
+      }
+    },
+    "attribution": {
+      "description": "Spec 056 §4.5: the attribution summary. links counts each effect's or host event's decision by basis (reported is A0, none is A4; process_anchor counts H1, H2, H4 and effects with a pid that no event anchors as unresolved). unattributed_effects and unexplained_host_events list at most the first 64 in sequence or time order with the full count. effects_not_observed counts the tool calls with no attributed effect by reason. lineage_truncated counts host events an H3 depth or count bound left unlinked.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["links", "unattributed_effects", "effects_not_observed", "output_match", "unexplained_host_events"],
+      "properties": {
+        "links": {
+          "type": "object",
+          "propertyNames": {"enum": ["reported", "output_match", "sequence_bracket", "process_anchor", "process_lineage", "none"]},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resolved", "ambiguous", "unresolved"],
+            "properties": {
+              "resolved": {"type": "integer", "minimum": 0},
+              "ambiguous": {"type": "integer", "minimum": 0},
+              "unresolved": {"type": "integer", "minimum": 0}
+            }
+          }
+        },
+        "unattributed_effects": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "effects"],
+          "properties": {
+            "count": {"type": "integer", "minimum": 0},
+            "effects": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["attempt_uid", "event_id"],
+                "properties": {"attempt_uid": {"$ref": "#/$defs/scopeId"}, "event_id": {"$ref": "#/$defs/scopeId"}}
+              }
+            }
+          }
+        },
+        "effects_not_observed": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["channel_disabled", "no_effect_channel", "none_in_window"],
+          "properties": {
+            "channel_disabled": {"type": "integer", "minimum": 0},
+            "no_effect_channel": {"type": "integer", "minimum": 0},
+            "none_in_window": {"type": "integer", "minimum": 0}
+          }
+        },
+        "output_match": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state"],
+          "properties": {
+            "state": {"enum": ["applied", "not_applicable"]},
+            "reason": {"enum": ["privacy_policy", "not_exposed"]}
+          },
+          "if": {"properties": {"state": {"const": "not_applicable"}}},
+          "then": {"required": ["reason"]},
+          "else": {"not": {"required": ["reason"]}}
+        },
+        "unexplained_host_events": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "event_ids"],
+          "properties": {
+            "count": {"type": "integer", "minimum": 0},
+            "event_ids": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/hostEventId"}}
+          }
+        },
+        "lineage_truncated": {"type": "integer", "minimum": 0}
       }
     }
   }

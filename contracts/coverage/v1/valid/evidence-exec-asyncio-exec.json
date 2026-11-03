@@ -1,0 +1,21 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "exec.subprocess",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.exec.observation/v1",
+    "items": [
+      {
+        "api": "asyncio_exec",
+        "pid_known": true,
+        "argv_form": "argv",
+        "stdio": {
+          "stdin": "fd",
+          "stdout": "file_object",
+          "stderr": "not_exposed"
+        }
+      }
+    ]
+  }
+}

@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contracts import p1_reference as ref  # noqa: E402
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.4.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.5.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -262,6 +262,7 @@ def _check_range(document: Mapping[str, Any]) -> None:
 
 
 _ROLE_TABLE = Path("contracts/coverage/v1/registry/content-roles-v1.json")
+_VOCABULARIES = Path("contracts/coverage/v1/registry/vocabularies-v1.json")
 _CAP_BYTES = {"64 KiB": 65536, "256 KiB": 262144, "1 MiB": 1 << 20, "4 MiB": 4 << 20}
 # Spec 049 §7.4: max_body_bytes is the deployment's value, never above 63 MiB
 # in node mode; the contract bound is that ceiling.
@@ -750,6 +751,10 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
         if expected == _COMPLETE and run.get("scopes"):
             # A scoped run claims only the scopes the record holds (decision H5).
             expected = _COMPLETE_OBSERVED
+        # Spec 056 §4.5: a partial or unverified chain bounds the run verdict.
+        chained = _chains_verdict(run)
+        if chained is not None and _RANK[chained] > _RANK[expected]:
+            expected = chained
         if run["verdict"] != expected:
             raise CaptureContractError(
                 "capture.reconstruction.verdict",
@@ -808,7 +813,92 @@ def _validate_reconstruction(document: Mapping[str, Any]) -> None:
                 )
         _validate_scope(run, sources, path)
         _check_run_state(run, path)
+        _check_chains(run, path)
     _validate_scope_verdicts(document, sources)
+
+
+_CHAINS = ("decisions", "actions", "effects", "corroboration")
+
+
+def _chains_verdict(run: Mapping[str, Any]) -> str | None:
+    """The worst chain verdict as a run verdict (spec 056 §4.5), or None without chains."""
+    chains = run.get("chains")
+    if chains is None:
+        return None
+    verdicts = {chains[name]["verdict"] for name in _CHAINS}
+    if "partial" in verdicts:
+        return "partial"
+    return "unverified" if "unverified" in verdicts else _COMPLETE
+
+
+def _chain_fail(path: str, message: str) -> CaptureContractError:
+    return CaptureContractError("capture.reconstruction.chains", path, message)
+
+
+def _check_chains(run: Mapping[str, Any], path: str) -> None:
+    """Spec 056 §4.5: chain verdicts carry reasons exactly when they are not complete, and
+    agree with the attribution summary's lists; host events are listed once."""
+    chains = run.get("chains")
+    if chains is not None:
+        for name in _CHAINS:
+            chain = chains[name]
+            reasons = bool(chain.get("reasons"))
+            if (chain["verdict"] == "complete" and reasons) or (
+                chain["verdict"] in {"partial", "unverified"} and not reasons
+            ):
+                raise _chain_fail(
+                    f"{path}.chains.{name}",
+                    "a complete chain has no reasons; a partial or unverified one names them",
+                )
+    attribution = run.get("attribution")
+    if attribution is not None:
+        listed = (
+            ("unattributed_effects", "effects", "effects", "unattributed_effect"),
+            (
+                "unexplained_host_events",
+                "event_ids",
+                "corroboration",
+                "unexplained_host_event",
+            ),
+        )
+        for key, items, chain_name, reason in listed:
+            block = attribution[key]
+            if block["count"] < len(block[items]) or (
+                block["count"] > 0 and len(block[items]) < min(block["count"], 64)
+            ):
+                raise _chain_fail(
+                    f"{path}.attribution.{key}",
+                    "the list holds the first min(count, 64) entries",
+                )
+            chain = (chains or {}).get(chain_name)
+            if (
+                chain is not None
+                and chain["verdict"] != "not_observed"
+                and ((block["count"] > 0) != (reason in chain.get("reasons", [])))
+            ):
+                raise _chain_fail(
+                    f"{path}.chains.{chain_name}",
+                    f"{reason} is a reason exactly when {key} is not empty",
+                )
+    ids = [event["event_id"] for event in run.get("sensor_events", [])]
+    if len(ids) != len(set(ids)):
+        raise _chain_fail(f"{path}.sensor_events", "a host event is listed once")
+
+
+def _check_chain_reasons(
+    schemas: Mapping[str, Mapping[str, Any]], repo_root: Path
+) -> None:
+    """The chainReason enum is the report's gap types, then the coverage reasons."""
+    defs = schemas[SCHEMAS["fabric.run-reconstruction/v1"]]["$defs"]
+    gaps = list(defs["gapType"]["enum"])
+    vocab = json.loads((repo_root / _VOCABULARIES).read_text(encoding="utf-8"))
+    expected = gaps + [r["value"] for r in vocab["reason"] if r["value"] not in gaps]
+    if list(defs["chainReason"]["enum"]) != expected:
+        raise CaptureContractError(
+            "capture.reconstruction.chains",
+            "schema/run-reconstruction-v1.schema.json",
+            "chainReason is the gap types followed by the coverage reasons",
+        )
 
 
 _DEADLINE_STATES = frozenset({"open", "unterminated", "deadline_uncertain"})
@@ -1355,6 +1445,7 @@ def validate_capture_contracts(repo_root: Path) -> list[str]:
             "capture.manifest.schemas", str(root), f"missing {missing}"
         )
     _check_marker_definitions(schemas)
+    _check_chain_reasons(schemas, repo_root)
     validated: list[str] = []
     for record in records:
         path = root / record["path"]

@@ -45,6 +45,7 @@ from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from contracts import action_record  # noqa: E402
 from contracts import p1_reference as ref  # noqa: E402
 from contracts import validate_coverage_contracts as coverage  # noqa: E402
 
@@ -3347,6 +3348,27 @@ def _records_span_vectors(
         "generated run-id fallback embeds the s- source",
         dict(base, **{"fabric.run.id": f"source:{SOURCE}:{EPOCH}"}),
     )
+    # Spec 056 §4.3: the process-anchored join keys of an exec.subprocess record, and the
+    # same two keys refused on any other capture point (the first conditional rows).
+    process = {
+        "fabric.process.pid": 4121,
+        "fabric.process.parent_pid": 4100,
+        "fabric.process.start_ns": 60120000000,
+        "fabric.execution.host_id": "hst-" + "5e" * 16,
+    }
+    case(
+        "exec.subprocess record keeps its process keys",
+        dict(
+            base,
+            **{
+                "fabric.capture.point": "exec.subprocess@0.9.0",
+                "fabric.capture.source": "observed",
+                "fabric.step.kind": "terminal",
+                **process,
+            },
+        ),
+    )
+    case("process join keys only on exec.subprocess", dict(base, **process))
     return {
         "schema_version": "fabric.records-span-vectors/v1",
         "rule": (
@@ -5083,7 +5105,10 @@ INVALID = {
         "invalid/split-without-extract-parts.json": "evidence.schema",
     },
 }
-VERSIONS = {COVERAGE: "1.1.0", CAPTURE: "1.4.0", CONTENT: "2.3.0"}
+# Spec 056 (WP6-01): the exec evidence, interface, rule and report-chain refusals.
+INVALID[COVERAGE].update(action_record.INVALID_COVERAGE)
+INVALID[CAPTURE].update(action_record.INVALID_CAPTURE)
+VERSIONS = {COVERAGE: "1.2.0", CAPTURE: "1.5.0", CONTENT: "2.3.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
@@ -5683,6 +5708,7 @@ def generate(root: Path, *, check: bool) -> list[str]:
     generate_capture_p1(w)
     generate_p1_vectors(w)
     generate_goldens(w)
+    action_record.generate(w)
     generate_content(w)
     generate_pins(w)
     generate_go(w)

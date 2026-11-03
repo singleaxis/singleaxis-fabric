@@ -2495,7 +2495,11 @@ def validate_fixture(
     root: Path,
     schemas: Mapping[str, Mapping[str, Any]],
 ) -> None:
+    from contracts import action_record  # noqa: PLC0415 - it imports this module
+
     kind = document.get("schema_version")
+    if action_record.validate_document(document, reg, root, fail=_fail):
+        return
     if kind == "fabric.step-projection/v1":
         validate_projection(document, reg, schemas["projection"])
     elif kind == "fabric.capture-manifest/v1":
@@ -2503,11 +2507,27 @@ def validate_fixture(
     elif kind == ref.EVIDENCE_SCHEMA:
         validate_evidence_document(document, reg, root, schemas)
     elif kind == "fabric.record-evidence-fixture/v1":
-        # An evidence document with the identity mode its source manifest declares.
-        if set(document) != {"schema_version", "identity_mode", "document"} or (
+        # An evidence document with the identity mode its source manifest declares and,
+        # optionally, the capture point of the record that carries it (053 §3.2: the
+        # verifier admits a type only on its registered points).
+        keys = set(document) - {"capture_point"}
+        if keys != {"schema_version", "identity_mode", "document"} or (
             document["identity_mode"] not in {"pseudonymous", "clear"}
         ):
             _fail("coverage.schema", "$", "closed evidence fixture wrapper")
+        point = document.get("capture_point")
+        evidence_type = document["document"].get("evidence_type")
+        types = _evidence_types(reg)
+        if (
+            point is not None
+            and evidence_type in types
+            and point not in types[evidence_type]["capture_points"]
+        ):
+            _fail(
+                "coverage.evidence.point",
+                "$.capture_point",
+                f"{evidence_type} is not registered for {point}",
+            )
         validate_evidence_document(
             document["document"],
             reg,

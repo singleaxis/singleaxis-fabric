@@ -1,0 +1,96 @@
+{
+  "schema_version": "fabric.action-interface-golden/v1",
+  "kind": "host.sensor_span",
+  "spec": "053 §6.2.3 (M2; no sensor emits it yet)",
+  "description": "Host records in the spec 053 §6.2.3 production shape: one fabric.sensor_event span per event, start = end, no bodies, fabric.sensor.* keys plus the identity keys every record carries. Not yet registered (053 WP4-01); the key checks here are transcribed from 053 §6.2.3. normalized is the host event a reader derives.",
+  "spans": [
+    {
+      "name": "fabric.sensor_event",
+      "kind": "internal",
+      "trace_id": "29263fef7aee1ff529987da12a4436c5",
+      "span_id": "46198b8d0f7f7d15",
+      "start_time_unix_nano": 1791331201210600000,
+      "end_time_unix_nano": 1791331201210600000,
+      "status": "unset",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-95b12cc6d8e6ba6a1bc4fa9dfb292cb5",
+        "fabric.source.epoch": 6917529027641081857,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "50617786-3a7f-47d9-a6e6-f18215d51fd3",
+        "fabric.attempt.uid": "c6d01ee6-9371-4412-a086-6c284f1f59f0",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.9.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.pid_ns": "4026531836",
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.execution.host_id": "hst-96164cc6e2bd169f1beee83173bb7293"
+      }
+    },
+    {
+      "name": "fabric.sensor_event",
+      "kind": "internal",
+      "trace_id": "36c3818a75892fb4d1ee43cd0ac8ebc4",
+      "span_id": "1b4d50637c00e4f1",
+      "start_time_unix_nano": 1791331201214000000,
+      "end_time_unix_nano": 1791331201214000000,
+      "status": "unset",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-95b12cc6d8e6ba6a1bc4fa9dfb292cb5",
+        "fabric.source.epoch": 6917529027641081857,
+        "fabric.source.sequence": 8,
+        "fabric.event_id": "8a04cd80-c443-4356-a944-ff73fb0308bc",
+        "fabric.attempt.uid": "f8399b61-ec59-4582-aa1a-c23fb1f266b8",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.9.0",
+        "fabric.sensor.event_class": "connect",
+        "fabric.sensor.syscall": "connect",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4122,
+        "fabric.sensor.ppid": 4121,
+        "fabric.sensor.peer_family": "ipv4",
+        "fabric.network.host_id": "hst-757236b3429f3994c09d77b1127c1453",
+        "fabric.sensor.peer_port": 443,
+        "fabric.sensor.pid_ns": "4026531836",
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.execution.host_id": "hst-96164cc6e2bd169f1beee83173bb7293"
+      }
+    }
+  ],
+  "normalized": [
+    {
+      "event_id": "50617786-3a7f-47d9-a6e6-f18215d51fd3",
+      "source": "host.ebpf",
+      "event_class": "exec",
+      "time_ns": 1791331201210600000,
+      "pid": 4121,
+      "ppid": 4100,
+      "process_start_ns": 60123217448,
+      "pid_ns": "4026531836",
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "result": "success"
+    },
+    {
+      "event_id": "8a04cd80-c443-4356-a944-ff73fb0308bc",
+      "source": "host.ebpf",
+      "event_class": "connect",
+      "time_ns": 1791331201214000000,
+      "pid": 4122,
+      "ppid": 4121,
+      "pid_ns": "4026531836",
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "peer_id": "hst-757236b3429f3994c09d77b1127c1453",
+      "result": "success"
+    }
+  ]
+}

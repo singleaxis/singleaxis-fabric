@@ -1,0 +1,117 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "a4-unattributed-effect-not-listed",
+  "rules": [
+    "A4"
+  ],
+  "description": "An effect before any tool call has no candidate: no link, listed in unattributed_effects; effects is partial(unattributed_effect).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 4100,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [],
+    "exchanges": [
+      {
+        "exchange_id": "85d8ad53-d1da-4cb2-ae72-fd0ab017aa91",
+        "sequence": 3,
+        "start_ns": 1791331200200000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": []
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "fc92fcb2-7371-4149-ac62-ebed70060598",
+        "event_id": "1f00c71f-4f6d-4f5a-a769-efb2b1113475",
+        "label": "exec uname -a (before any tool call)",
+        "sequence": 1,
+        "start_ns": 1791331200100000000,
+        "stdout": "Linux build-host-7 6.8.0 x86_64 GNU/Linux\n"
+      }
+    ],
+    "host_events": []
+  },
+  "expected": {
+    "projection_links": [],
+    "sensor_events": [],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "not_observed"
+      },
+      "effects": {
+        "verdict": "partial",
+        "reasons": [
+          "unattributed_effect"
+        ]
+      },
+      "corroboration": {
+        "verdict": "not_observed",
+        "reasons": [
+          "not_configured"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "none": {
+          "resolved": 0,
+          "ambiguous": 0,
+          "unresolved": 1
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "not_applicable",
+        "reason": "not_exposed"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      }
+    },
+    "trace": {
+      "effects": {
+        "fc92fcb2-7371-4149-ac62-ebed70060598": "A4"
+      },
+      "anchors": {},
+      "host_events": {},
+      "tool_calls": {}
+    }
+  }
+}

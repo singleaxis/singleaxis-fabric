@@ -26,6 +26,6 @@
     {"path": "valid/persisted-descriptor-review-copy.json", "sha256": "820ae3e2833526b34cda2ece39a107cc729f66e26bd49074741a0d2b9a1d7a36", "expectation": "valid", "expected_error": null},
     {"path": "invalid/privacy-withheld-redact-request.json", "sha256": "713ad61c6be6049463b5da1f8ea0c31c4939bdb78f7d26e224e88d21e02d8381", "expectation": "invalid", "expected_error": "evidence.content.protection"},
     {"path": "valid/persisted-descriptor-part-privacy-withheld.json", "sha256": "6c5c53903fa0098688911f8f1742bd2b622a2af1815f5dbba2aece5fd676b1d8", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/node-prevalidate-v1.json", "sha256": "592599a8c522954801f4f0154d5d4e51f15bf2b79fb9a8ca0f66c10e60657c67", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/node-prevalidate-v1.json", "sha256": "51c2d1d204f915651ea68f67bb955be78f9db17c3847ac179e93e7e14de3c592", "expectation": "valid", "expected_error": null}
   ]
 }

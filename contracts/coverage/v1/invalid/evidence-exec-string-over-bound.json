@@ -1,0 +1,16 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "exec.subprocess",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.exec.observation/v1",
+    "items": [
+      {
+        "api": "run",
+        "pid_known": true,
+        "text_encoding": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      }
+    ]
+  }
+}

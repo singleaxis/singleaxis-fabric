@@ -21,7 +21,8 @@
     }
   },
   "registered_evidence_types": [
-    "fabric.test.items/v1"
+    "fabric.test.items/v1",
+    "fabric.exec.observation/v1"
   ],
   "cases": [
     {
