@@ -11,7 +11,9 @@ related: ["030", "031", "041", "043", "047", "048", "054", "055"]
 
 # 053 — Execution channels (P4)
 
-**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)), and binds this spec to spec 050 revision 2,
+**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
+the introduction of [050](050-run-structure-and-records-p1.md)), and binds
+this spec to spec 050 revision 2,
 which is now the frozen P1 contract. The changes:
 - Every hook records through the records input with provenance `observed`.
   The W-class record (`capture.input=wire` on a hook record) is withdrawn

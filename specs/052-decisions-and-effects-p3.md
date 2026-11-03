@@ -23,7 +23,9 @@ timing, never-raise rules, budgets and verifier modules of spec 051; this
 spec only states what P3 adds. Section and assumption numbers `051 §x` /
 `A<n>` refer to spec 051.
 
-**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)): assumptions refreshed against spec 050 and
+**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
+the introduction of [050](050-run-structure-and-records-p1.md)): assumptions
+refreshed against spec 050 and
 051 revision 2; one integration owner for `decision.py` and
 `records/__init__.py` (R13, new WP3-I); passivity per R9 (no conversion of
 application objects, every API fails open); the explicit clear-mode rule
