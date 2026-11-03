@@ -427,12 +427,16 @@ class Attempt:
         result_status: ResultStatus | None = None, otlp_status: OtlpStatus = "unset",
         bodies: Sequence[AnyBody] = (), evidence: EvidenceDoc | None = None,
         event_id: str | None = None, span_ids: SpanIds | None = None,
+        late: Callable[[], Mapping[str, AttributeValue]] | None = None,
     ) -> bool:  # fmt: skip
         """Emit one sequenced record of this attempt; ``False`` when nothing was emitted
         (the input is not active, or the record was lost at the queue: a counted loss).
         ``lifecycle``, ``result_status`` and ``otlp_status`` are three independent inputs
         resolved by :func:`fabric._capture_types.resolve_status_inputs` (R4); an input
-        outside the phase table is dropped (``api_misuse``) and the record still emitted."""
+        outside the phase table is dropped (``api_misuse``) and the record still emitted.
+        ``late`` returns attributes the capture worker reads, never the caller (spec 056
+        OD-2: ``fabric.process.start_ns``); they pass rule A on the worker, never replace a
+        key already set, and are absent when the callable fails."""
         records = self.records
         if not records.active:
             return False
@@ -455,10 +459,13 @@ class Attempt:
         if span_ids is not None and not isinstance(span_ids, SpanIds):
             misuse("span_ids must be SpanIds")
             span_ids = None
+        if late is not None and not callable(late):
+            misuse("late must be callable")
+            late = None
         minted = _event_id(event_id)  # minted before allocation (§3.4 keys table)
         return records.submit(
             self, minted, status.lifecycle, status.result_status, status.otlp_status,
-            name_hint, attributes, start, end, kept_bodies, evidence, span_ids,
+            name_hint, attributes, start, end, kept_bodies, evidence, span_ids, late,
         )  # fmt: skip
 
 
@@ -649,6 +656,7 @@ class RecordsInput:
         result_status: ResultStatus | None, otlp_status: OtlpStatus, name_hint: str,
         attributes: Mapping[str, Any], start_ns: int, end_ns: int,
         bodies: tuple[AnyBody, ...], evidence: EvidenceDoc | None, span_ids: SpanIds | None,
+        late: Callable[[], Mapping[str, Any]] | None = None,
     ) -> bool:  # fmt: skip
         """Steps 1-5 of §3.4: project, allocate, build the job, charge, submit."""
         tee = self._tee
@@ -668,7 +676,7 @@ class RecordsInput:
             return self._after_allocation(
                 tee, allocation, attempt, event_id, lifecycle, result_status, otlp_status,
                 name_hint, kept, len(dropped) + owned, start_ns, end_ns, bodies, evidence,
-                span_ids,
+                span_ids, late,
             )  # fmt: skip
         except BaseException as exc:
             failed = isinstance(exc, Exception)
@@ -686,6 +694,7 @@ class RecordsInput:
         otlp_status: OtlpStatus, name_hint: str, kept: dict[str, Any], dropped: int,
         start_ns: int, end_ns: int, bodies: tuple[AnyBody, ...],
         evidence: EvidenceDoc | None, span_ids: SpanIds | None,
+        late: Callable[[], Mapping[str, Any]] | None = None,
     ) -> bool:  # fmt: skip
         allocator, scope = tee.allocator, allocation.scope
         fabric: dict[str, Any] = {
@@ -725,6 +734,7 @@ class RecordsInput:
             span_ids=span_ids,
             parent_context=otel_context.get_current() if span_ids is None else None,
             provenance=attempt.provenance,
+            late=None if late is None else _late_rule_a(late, self._checks, attempt.point),
         )  # fmt: skip
         pipeline = tee.pipeline
         if not pipeline.charge_record(job):
@@ -743,6 +753,22 @@ class RecordsInput:
             return True
         self.stats.add("not_submitted")  # queue_full / shutdown: a recorded loss
         return False
+
+
+def _late_rule_a(
+    late: Callable[[], Mapping[str, Any]], checks: Mapping[str, Predicate], point: str
+) -> Callable[[], Mapping[str, Any]]:
+    """``late`` with rule A applied to what it returns, on the capture worker: only
+    records-class keys whose value passes their check, never a Fabric-owned key."""
+
+    def checked() -> Mapping[str, Any]:
+        values = late()
+        if not isinstance(values, Mapping):
+            return {}
+        caller = {k: v for k, v in values.items() if k not in FABRIC_OWNED_KEYS}
+        return project_attributes(caller, checks, point=point)[0]
+
+    return checked
 
 
 def records_input(handle: WireHandle | None) -> RecordsInput | None:
