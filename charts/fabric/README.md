@@ -10,8 +10,7 @@ CAPTURE -> PROTECT -> DELIVER
 This chart intentionally installs one runtime: the Fabric OpenTelemetry
 Collector. It receives OTLP activity, applies the deny-by-default export
 allowlist, buffers records locally, and sends them to a destination selected by
-the customer. It does not install judges, red-team runners, guardrails,
-prompt-time PII controls, governance services, or a SingleAxis-only backend.
+the customer. It requires no SingleAxis-only backend.
 
 Fabric Node is asynchronous to the monitored AI system. A Collector or
 destination outage must not become a production request-path dependency.
@@ -20,7 +19,7 @@ destination outage must not become a production request-path dependency.
 
 ### `shadow-dev`
 
-For local evaluation and CI only. Receiver traffic is plaintext and
+For a local trial and CI only. Receiver traffic is plaintext and
 unauthenticated. Without an endpoint, records are printed to Collector stdout,
 which is neither durable nor an audit trail.
 
@@ -229,5 +228,5 @@ helm template fabric-node charts/fabric \
   --values charts/fabric/profiles/shadow-dev.yaml
 ```
 
-The Compose evaluation harness at `deploy/compose` exercises the same
+The Compose local harness at `deploy/compose` exercises the same
 Collector-only path with a controlled test sink and durable local volumes.

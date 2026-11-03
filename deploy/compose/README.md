@@ -1,4 +1,4 @@
-# Fabric Node evaluation harness
+# Fabric Node local harness
 
 This is a small, explicitly non-production setup for trying the Fabric OSS
 recorder:
@@ -15,8 +15,8 @@ store and its one-shot setup job):
 - `test-sink`: a controlled OTLP/HTTP destination that stores requests on a
   durable Docker volume and returns success only after fsync.
 
-It contains nothing but the recorder: no evaluation, management services or
-observability UI.
+It contains nothing but the recorder and its controlled test sink: no
+management services or observability UI.
 
 ## LLM wire capture content (spec 048)
 
@@ -31,8 +31,8 @@ routes content into a telemetry pipeline or to the OTLP destination.
 
 | Where content goes | How |
 |---|---|
-| `fabric-content` volume (`/var/lib/fabric-node/content`) | evaluation default (`make up`); read it with `fabric.reconstruct --store-root` |
-| local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-eval` (evaluation only, `docker-compose.s3-eval.yml`) |
+| `fabric-content` volume (`/var/lib/fabric-node/content`) | local-harness default (`make up`); read it with `fabric.reconstruct --store-root` |
+| local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-eval` (local trial only, `docker-compose.s3-eval.yml`) |
 | S3 / S3-compatible store, server-side encrypted | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content.yml` + `docker-compose.content-s3.yml`, merging `collector-config/collector-content.yaml` + `collector-content-s3.yaml`) |
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
 
@@ -40,7 +40,7 @@ The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
 production overlay is telemetry only (no port 4319). It still needs
 `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID` for the source binding.
 
-`make up-s3-eval` starts an S3-compatible evaluation store (SeaweedFS,
+`make up-s3-eval` starts an S3-compatible local trial store (SeaweedFS,
 Apache-2.0, pinned by digest; an SSE-S3 key from `FABRIC_S3_EVAL_SSE_KEK`;
 S3 published on `127.0.0.1:9000` only) with three static identities: an
 admin used only by the one-shot `s3-eval-init` job, a writer for the Node
@@ -56,7 +56,7 @@ End to end, from a fresh stack to a verdict:
 ```bash
 cd deploy/compose
 make up-s3-eval                       # prints the commands below with your ports
-# ... run the agent with capture on (docs/wire-capture-deployment.md §1) ...
+# ... run the agent with capture on (docs/deployment.md) ...
 make export-spans OUT=/tmp/fabric-spans   # the sink's span requests, traces-*.otlp
 pip install "singleaxis-fabric[s3]"   # reader only: boto3; agents never need it
 AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
@@ -75,7 +75,7 @@ spans, so an object can still be in flight just after a run:
 `--wait-for-objects 30` re-reads absent objects for up to 30 seconds before
 reporting them missing.
 
-All store credentials and the SSE key have evaluation-only defaults (see
+All store credentials and the SSE key have local-trial-only defaults (see
 `.env.example`).
 
 This overlay used MinIO until October 2026. MinIO no longer publishes
@@ -96,9 +96,9 @@ make status
 make smoke
 ```
 
-Evaluation ports are always published on `127.0.0.1`, including the sink's
+Local harness ports are always published on `127.0.0.1`, including the sink's
 telemetry-search endpoint. `FABRIC_BIND_ADDR` applies only to the separate VM
-overlay; it cannot expose the unauthenticated evaluation harness.
+overlay; it cannot expose the unauthenticated local harness.
 
 Send OTLP/HTTP to `http://localhost:4318`. The controlled sink exposes:
 
@@ -286,7 +286,7 @@ This VM overlay is a technical example, not the Helm `shadow-production`
 contract or a production approval. It does not implement Helm's workload
 identity/review metadata or require an image digest and storage-encryption
 attestation. Those controls and independent live qualification remain the
-operator's responsibility. The local build is useful for evaluation, not a
+operator's responsibility. The local build is useful for a local trial, not a
 verified release identity. Static Compose checks are not Docker execution.
 
 - Ingress requires a bearer token (file-backed Compose secret); receiver TLS
@@ -313,9 +313,9 @@ verified release identity. Static Compose checks are not Docker execution.
   destination. `make verify-prod` checks ingress health/authentication and
   available queue metrics; it does not read back destination records or prove
   privacy protection, durable destination persistence, or exactly-once delivery.
-  `make qualify` separately exercises the local evaluation sink using fresh
+  `make qualify` separately exercises the local harness sink using fresh
   request markers; it does not qualify the production destination.
-- For plaintext development, keep using the evaluation profile (`make up`) on
+- For plaintext development, keep using the local harness profile (`make up`) on
   a trusted host instead of weakening the production overlay.
 
 ### Boot persistence
@@ -355,7 +355,7 @@ pressure. A healthy Node cannot detect spans lost before they reach it.
 
 ## Honest limitations
 
-This harness is plaintext and unauthenticated. It is for local evaluation
+This harness is plaintext and unauthenticated. It is for a local trial
 only. Use the client-VM overlay above or the Helm `shadow-production` profile
 across a trust boundary.
 
@@ -369,14 +369,14 @@ The queue is at least once, not exactly once. Duplicate delivery remains
 possible after ambiguous acknowledgements, and the queue is not an
 authoritative evidence store.
 
-## Remove evaluation data
+## Remove local harness data
 
 ```bash
 make down        # keeps queue and sink volumes
-make reset       # deletes this Compose project's evaluation volumes
+make reset       # deletes this Compose project's local harness volumes
 ```
 
-The S3 evaluation overlay has its own pair, which also covers the store
+The S3 local trial overlay has its own pair, which also covers the store
 volume (`s3-eval-data`) that the base project does not declare:
 
 ```bash

@@ -11,11 +11,11 @@ CAPTURE -> PROTECT -> DELIVER
 
 ### `compose/` — Docker Compose paths (no Kubernetes)
 
-- **Evaluation harness** (`compose/docker-compose.yml`): `fabric-node` plus a
+- **Local harness** (`compose/docker-compose.yml`): `fabric-node` plus a
   controlled fsync test sink. `make up` / `make qualify` prove protected
   capture, durable local queueing, and at-least-once delivery through a
   destination outage and a recorder restart. Plaintext and unauthenticated —
-  local evaluation only.
+  local trial only.
 - **Client-VM technical overlay** (`compose/docker-compose.production.yml`,
   config `compose/collector-config/collector-production.yaml`): the same recorder
   image deployed on a single Linux VM with bearer-token-authenticated OTLP
@@ -43,4 +43,6 @@ module set in this tree today.
 
 [`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md) (product
 boundary) and [`../specs/049-four-layer-capture-coverage.md`](../specs/049-four-layer-capture-coverage.md)
-(current capture contract).
+(current capture contract). [`../specs/056-agent-action-reconstruction.md`](../specs/056-agent-action-reconstruction.md)
+is the current direction: reconstructing what an agent did in a run, including
+the host-sensor evidence above.
