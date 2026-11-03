@@ -129,10 +129,10 @@ def unix_service(short_dir: Path) -> Iterator[str]:
 def test_unix_socket_masks_and_keeps_connection(unix_service: str) -> None:
     assert os.stat(unix_service).st_mode & 0o777 == 0o600
     conn = _UnixConnection(unix_service)
-    body = b"mail jane@example.com, ssn 123-45-6789, raw \xff\xfe bytes"
+    body = b"mail CANARY-AB12, raw \xff\xfe bytes"
     status, content_type, out = _post(conn, body)
     assert status == 200 and content_type == "application/octet-stream"
-    assert out == b"mail [email], ssn [ssn], raw \xff\xfe bytes"
+    assert out == b"mail [masked], raw \xff\xfe bytes"
     # keep-alive: the same connection serves a second request (masked_only, empty body)
     status, _, out = _post(conn, b"", {**HEADERS, "X-Fabric-Mode": "masked_only"})
     assert (status, out) == (200, b"")
@@ -188,7 +188,7 @@ def test_oversize_body(unix_service: str) -> None:
 
 
 def test_error_bodies_never_echo_content(unix_service: str) -> None:
-    secret = b"jane@example.com"
+    secret = b"CANARY-SECRET1"
     headers = {**HEADERS, "X-Fabric-Transformation-Version": "9"}
     _, _, body = _post(_UnixConnection(unix_service), secret, headers)
     assert secret not in body
@@ -205,8 +205,8 @@ def test_token_required_and_checked(short_dir: Path) -> None:
         wrong = {**HEADERS, "Authorization": "Bearer nope"}
         _error(_post(_UnixConnection(path), b"x", wrong), 401, "unauthorized")
         good = {**HEADERS, "Authorization": "Bearer s3cr3t-token"}
-        status, _, out = _post(_UnixConnection(path), b"a@b.co", good)
-        assert (status, out) == (200, b"[email]")
+        status, _, out = _post(_UnixConnection(path), b"CANARY-X1", good)
+        assert (status, out) == (200, b"[masked]")
     finally:
         _stop(process)
 
@@ -229,9 +229,9 @@ def test_loopback_http() -> None:
     process = _start("--listen", f"http://127.0.0.1:{port}")
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        status, _, out = _post(conn, b"call +1 415-555-0100 or 4111 1111 1111 1111")
+        status, _, out = _post(conn, b"call CANARY-A1 or CANARY-B2 now")
         assert status == 200
-        assert out == b"call [phone] or [card]"
+        assert out == b"call [masked] or [masked] now"
         conn.close()
     finally:
         _stop(process)
