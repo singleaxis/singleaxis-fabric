@@ -128,7 +128,7 @@ def test_every_rule_fixture_named_by_the_task_is_present() -> None:
             "a4-no-window", "edge-parallel-distinct-outputs", "edge-parallel-metadata-only",
             "edge-clock-margin-boundary", "edge-background-thread", "ar1-run",
             "ar1-negative-d-metadata-only"} <= names  # fmt: skip
-    assert len(RULE_FIXTURES) == 22
+    assert len(RULE_FIXTURES) == 24
 
 
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)

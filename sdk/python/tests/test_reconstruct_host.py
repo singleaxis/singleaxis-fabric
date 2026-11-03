@@ -37,6 +37,7 @@ from fabric.reconstruct._host import (
     ProcessEffect,
     host_evidence_from_logs,
     host_evidence_from_spans,
+    host_joiner,
     is_host_record,
     join_host_events,
     join_normalized,
@@ -420,8 +421,8 @@ def _status(name: str, time_ns: int) -> dict[str, Any]:
 def test_local_loss_statuses(name: str, offset: int, verified: bool) -> None:
     export = _export(_log(T0 + 5 * MS, _exec_attrs(4121, 4100)), _status(name, T0 + offset))
     evidence = host_evidence_from_logs(export, id_key=KEY)
-    source = HostSource("host.ebpf", HOST)
-    assert source_verified(evidence, source, WINDOW) is verified
+    # Local records carry no positions or heartbeats: undeclared, coverage is never proven.
+    assert source_verified(evidence, HostSource("host.ebpf", HOST), WINDOW) is False
     # A declaration of verified never overrides evidence of loss; False always wins.
     declared = HostSource("host.ebpf", HOST, verified=True)
     assert source_verified(evidence, declared, WINDOW) is verified
@@ -678,10 +679,15 @@ def test_lineage_is_bounded_per_anchor() -> None:
 def test_unexplained_list_scope_and_cap() -> None:
     """Unexplained events are counted exactly and listed up to 64 in time order; an event
     outside the declared cgroup scope or the run window is never listed."""
+    scoped_margin = 2 * MS
     strays = [_exec(n, 9000 + n, 1, T0 + n * MS, cgroup_id="7") for n in range(1, 71)]
     foreign = _exec(500, 9999, 1, T0 + 2 * MS, cgroup_id="8")
-    late = _exec(501, 9998, 1, WINDOW[1] + 1, cgroup_id="7")
-    scoped = HostSource("host.ebpf", HOST, cgroup_ids=frozenset({"7"}), verified=True)
+    margin = AGENT.clock_uncertainty_ns + scoped_margin
+    late = _exec(501, 9998, 1, WINDOW[1] + margin + 1, cgroup_id="7")
+    scoped = HostSource(
+        "host.ebpf", HOST, clock_uncertainty_ns=scoped_margin, cgroup_ids=frozenset({"7"}),
+        verified=True,
+    )  # fmt: skip
     join = _join([], [*strays, foreign, late], sources=[scoped])
     assert join.unexplained_count == 70
     assert list(join.unexplained_event_ids) == [e.event_id for e in strays[:LIST_MAX]]
@@ -790,3 +796,131 @@ def test_read_host_file_reads_053_spans(tmp_path: Path) -> None:
         evidence = read_host_file(path, id_key=KEY)
         assert [_plain(e) for e in evidence.events] == golden["normalized"]
         assert evidence.unreadable == 0
+
+
+# ------------------------------------------------------------------ review fixes (WP6-04/05)
+def test_lineage_drops_a_reused_pid() -> None:
+    """An exec that takes over the anchored pid with another parent and a later start time
+    proves pid reuse: neither it, its connect nor its child is lineage of the effect."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    at = effect.start_ns
+    anchor = _exec(1, 4121, 4100, at + MS, start + 1)
+    child = _exec(2, 4122, 4121, at + 2 * MS, start + TICK_NS)
+    reused_start = start + 400 * TICK_NS
+    reused = _exec(3, 4121, 55, at + 4000 * MS, reused_start)
+    connect = _exec(4, 4121, 55, at + 4001 * MS, reused_start, event_class="connect")
+    grandchild = _exec(5, 4200, 4121, at + 4002 * MS, reused_start + TICK_NS)
+    join = _join([effect], [anchor, child, reused, connect, grandchild])
+    trace = join.trace["host_events"]
+    assert trace[anchor.event_id] == "H1" and trace[child.event_id] == "H3"
+    assert [trace[e.event_id] for e in (reused, connect, grandchild)] == ["unexplained"] * 3
+    assert join.link_counts["process_lineage"]["resolved"] == 1
+
+
+def test_lineage_connect_needs_its_process_start_tick() -> None:
+    """A connect of a known pid whose own start time is another tick is another process."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    anchor = _exec(1, 4121, 4100, effect.start_ns + MS, start)
+    same = _exec(2, 4121, 4100, effect.start_ns + 2 * MS, start + 1, event_class="connect")
+    other = _exec(3, 4121, 4100, effect.start_ns + 3 * MS, start + 50 * TICK_NS,
+                  event_class="connect")  # fmt: skip
+    trace = _join([effect], [anchor, same, other]).trace["host_events"]
+    assert trace[same.event_id] == "H3" and trace[other.event_id] == "unexplained"
+
+
+def test_h1_needs_an_event_inside_the_run_window() -> None:
+    """Start ticks are boot-relative: an exec event of another boot with the same pid,
+    parent and tick, far outside the run, is never a certain anchor."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    old_boot = _exec(1, 4121, 4100, WINDOW[0] - 3_600_000 * MS, start)
+    join = _join([effect], [old_boot])
+    assert join.trace["anchors"][effect.attempt_uid] == "anchor_missing"
+    assert join.corroboration.anchor_missing
+
+
+def test_window_has_the_clock_margin() -> None:
+    """An agent event just past the run window, inside both clocks' uncertainty, is still
+    H4 (not dropped as outside the run); one past the margin is outside."""
+    margin = AGENT.clock_uncertainty_ns + EBPF.clock_uncertainty_ns
+    inside = _exec(1, 4100, 1, WINDOW[1] + margin, event_class="connect", peer_id="hst-" + "a" * 32)
+    outside = _exec(2, 4100, 1, WINDOW[1] + margin + 1, event_class="connect")
+    join = _join([], [inside, outside])
+    assert join.trace["host_events"][inside.event_id] == "H4-uncalled"
+    assert join.trace["host_events"][outside.event_id] == "outside_run"
+    assert join.unexplained_event_ids == (inside.event_id,)
+
+
+def test_socket_and_bind_are_never_uncalled() -> None:
+    """socket() and bind() are connect-class but contact no host; a connect without a
+    known peer is still listed (a gap is never assumed away)."""
+    socket = _exec(1, 4100, 1, T0 + MS, event_class="connect", syscall="socket")
+    bind = _exec(2, 4100, 1, T0 + 2 * MS, event_class="connect", syscall="bind")
+    connect = _exec(3, 4100, 1, T0 + 3 * MS, event_class="connect", syscall="connect")
+    join = _join([], [socket, bind, connect])
+    assert [join.trace["host_events"][e.event_id] for e in (socket, bind, connect)] == [
+        "H4", "H4", "H4-uncalled",
+    ]  # fmt: skip
+    record = normalize_local_record(
+        T0, {**_exec_attrs(4100, 1), "audit.syscall": "socket"}, id_key=KEY
+    )
+    assert isinstance(record, HostEvent) and record.syscall == "socket"
+
+
+def test_local_coverage_needs_a_declaration_and_a_dropped_record_is_loss() -> None:
+    """One local record proves nothing about the rest of the window: the source is
+    verified only when declared. A malformed record of the source is a loss even then."""
+    good = _log(T0 + 5 * MS, _exec_attrs(4121, 4100))
+    evidence = host_evidence_from_logs(_export(good), id_key=KEY)
+    declared = HostSource("host.ebpf", HOST, verified=True)
+    assert source_verified(evidence, HostSource("host.ebpf", HOST), WINDOW) is False
+    assert source_verified(evidence, declared, WINDOW) is True
+    bad = _log(T0 + 6 * MS, {**_exec_attrs(4122, 4100), "process.pid": "not-a-pid"})
+    dropped = host_evidence_from_logs(_export(good, bad), id_key=KEY)
+    assert dropped.unreadable == 1 and dropped.unreadable_sources == {"host.ebpf"}
+    assert source_verified(dropped, declared, WINDOW) is False
+    assert source_verified(dropped, HostSource("host.auditd", HOST, verified=True), WINDOW)
+
+
+def test_host_joiner_takes_a_declared_agent_pid_host_and_known_peers() -> None:
+    """Without effects nothing names the agent's pid or host: the operator's declaration
+    gives H4 both. A declared known peer (the Node) is explained, any other is not."""
+    node = peer_id("10.0.4.9", KEY)
+    other = peer_id("203.0.113.9", KEY)
+    assert node is not None and other is not None
+    events = [
+        _exec(1, 4100, 1, T0 + MS, event_class="connect", peer_id=node),
+        _exec(2, 4100, 1, T0 + 2 * MS, event_class="connect", peer_id=other),
+    ]
+    inp: dict[str, Any] = {
+        "run": {"run_id": RUN, "window": list(WINDOW)},
+        "agent": {"source_id": "s-" + "0" * 32, "source_epoch": 1, "clock_uncertainty_ns": MS},
+        "exchanges": [],
+        "effects": [],
+    }
+    bare = host_joiner(HostEvidence.of(events), [EBPF])(inp)
+    assert bare is not None and bare.unexplained_count == 2  # pid -1: nothing is H4
+    declared = host_joiner(
+        HostEvidence.of(events), [EBPF], agent_pid=4100, agent_host_id=HOST, known_peers=[node]
+    )(inp)
+    assert declared is not None
+    assert declared.trace_host_events == {
+        events[0].event_id: "H4", events[1].event_id: "H4-uncalled",
+    }  # fmt: skip
+    assert list(declared.unexplained) == [events[1].event_id]
+
+
+def test_a_reparented_process_with_its_start_tick_stays_in_the_lineage() -> None:
+    """Pid plus start tick name one process per boot: a child whose parent exited (now
+    reparented to 1) that execs another image is the same process, not pid reuse."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    at = effect.start_ns
+    anchor = _exec(1, 4121, 4100, at + MS, start)
+    child = _exec(2, 4122, 4121, at + 2 * MS, start + TICK_NS)
+    reexec = _exec(3, 4122, 1, at + 900 * MS, start + TICK_NS)
+    connect = _exec(4, 4122, 1, at + 901 * MS, start + TICK_NS, event_class="connect")
+    trace = _join([effect], [anchor, child, reexec, connect]).trace["host_events"]
+    assert [trace[e.event_id] for e in (child, reexec, connect)] == ["H3"] * 3

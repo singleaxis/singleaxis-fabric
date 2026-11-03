@@ -490,7 +490,7 @@ def _host_cli(capture: ExecCapture, ids: Mapping[str, str], tmp_path: Path) -> l
     path = tmp_path / "host.json"
     path.write_text(json.dumps({"resourceLogs": [{"scopeLogs": [{"logRecords": records}]}]}))
     return ["--host-records", str(path), "--host-label", "build-host-7",
-            "--endpoint-peer", "fixture-model=10.0.0.1"]  # fmt: skip
+            "--endpoint-peer", "fixture-model=10.0.0.1", "--host-coverage-declared"]  # fmt: skip
 
 
 def test_actions_view_with_host_records(
@@ -535,6 +535,12 @@ def test_actions_view_with_host_records(
         (["--host-records", "HOST", "--host-label", "build-host-7",
           "--endpoint-peer", "no-address"], True),
         (["--host-records", "EMPTY", "--host-label", "build-host-7"], True),  # no record
+        (["--agent-pid", "4100"], True),  # without --host-records
+        (["--known-peer", "10.0.0.9"], True),
+        (["--host-coverage-declared"], True),
+        (["--host-records", "HOST", "--host-label", "build-host-7", "--agent-pid", "0"], True),
+        (["--host-records", "HOST", "--host-label", "build-host-7",
+          "--known-peer", "a=b"], True),
     ],
 )  # fmt: skip
 def test_host_record_options_are_refused_without_echoing(
@@ -553,3 +559,83 @@ def test_host_record_options_are_refused_without_echoing(
     assert main(["actions", *_cli(capture), *argv]) == 2
     err = capsys.readouterr().err
     assert str(tmp_path) not in err and "bad label" not in err and HOST_KEY not in err
+
+
+def test_local_host_coverage_is_a_source_gap_unless_declared(
+    capture: ExecCapture, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """Local-profile host records carry no positions or heartbeats: one record proves
+    nothing about the rest of the window, so the source is a source_gap until declared."""
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", HOST_KEY)
+    ids = scenario(capture)
+    host = [a for a in _host_cli(capture, ids, tmp_path) if a != "--host-coverage-declared"]
+    assert main(["actions", *_cli(capture), "--json", *host]) == 1
+    (view,) = json.loads(capsys.readouterr().out)["runs"]
+    assert view["chains"]["corroboration"]["reasons"][0] == "source_gap"
+
+
+def test_known_peers_and_a_declared_agent_pid(
+    capture: ExecCapture, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """--known-peer explains the agent's connection to Fabric's own Node; --agent-pid names
+    the agent process for H4 (the export does not carry the epoch registration)."""
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", HOST_KEY)
+    ids = scenario(capture)
+    host = [*_host_cli(capture, ids, tmp_path), "--known-peer", "10.9.9.9",
+            "--agent-pid", str(AGENT_PID)]  # fmt: skip
+    main(["actions", *_cli(capture), "--json", *host])
+    (view,) = json.loads(capsys.readouterr().out)["runs"]
+    assert view["unexplained_host_events"] == {"count": 0, "event_ids": []}
+    node = next(row for row in view["rows"] if row.get("event_id") == "host-" + "0" * 31 + "4")
+    assert node["part_of"][0]["namespace"] == "run" and "unexplained" not in node
+
+
+def test_the_actions_view_exits_as_the_report_does_for_pre_056_runs(
+    capture: ExecCapture, tmp_path: Path, capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """A run without an effect channel is left to the report: the view shows its chains
+    but neither bounds its verdict nor changes the exit code."""
+    capture.manifest()
+    segment = capture.new_segment()
+    capture.run_start(RUN, segment_id=segment)
+    capture.exchange(chat_request([SYSTEM, USER]), chat_response(
+        calls(call("call_open", "run_shell")), "chatcmpl-0", "tool_calls"))  # fmt: skip
+    capture.run_end(RUN)
+    capture.segment_seal(RUN, segment_id=segment)
+    capture.heartbeat()
+    out = tmp_path / "report.json"
+    report_code = main(["--spans", *_cli(capture), "--out", str(out)])
+    run = json.loads(out.read_text())["runs"][0]
+    assert "chains" not in run
+    view_code = main(["actions", *_cli(capture), "--json"])
+    (view,) = json.loads(capsys.readouterr().out)["runs"]
+    assert report_code == 0 and view_code == report_code and view["verdict"] == run["verdict"]
+    assert view["chains"]["actions"]["verdict"] == "partial"  # shown, not applied
+
+
+def test_a_withheld_output_turns_off_a1_for_that_effect_only(
+    capture: ExecCapture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """056 §4.2 A1 note: A1 is withheld only where a side was withheld. One stdout body
+    withheld by policy leaves the run's content mode and every other effect's A1 alone."""
+    from fabric.reconstruct import _attribute  # noqa: PLC0415
+
+    ids = scenario(capture)
+    original = _attribute._RunReader._body
+
+    def body(self: Any, record: Any, role: str) -> bytes | None:
+        if role == "terminal.stdout" and record.attempt_uid == ids["p1"]:
+            self.withheld_privacy = True  # as a not_stored(privacy_policy) descriptor
+            return None
+        return original(self, record, role)
+
+    monkeypatch.setattr(_attribute._RunReader, "_body", body)
+    report, projection = project(capture)
+    run = only_run(report)
+    assert run["attribution"]["output_match"] == {"state": "applied"}
+    for step in ("ls", "p2"):
+        (link,) = links_of(projection, ids[step])
+        assert (link["method"], link["confidence"]) == ("output_match", "certain")
+    assert {link["state"] for link in links_of(projection, ids["p1"])} == {"ambiguous"}

@@ -229,12 +229,13 @@ process start times).
 | `run.run_id`, `run.segment_id` | The run and its segment | `fabric.run.id`, `fabric.run.segment_id` |
 | `run.window` | `[start, end]` of the run: the bound for H4, for unexplained events and for a window no later exchange closes | the run's markers (`run_start`, `run_end`) |
 | `agent.source_id`, `agent.source_epoch` | The agent's epoch | `fabric.source_id`, `fabric.source.epoch` |
-| `agent.pid` | The agent's own pid (H4) | the epoch registration (050 §3.2) |
+| `agent.pid` | The agent's own pid (H4) | the epoch registration (050 §3.2). An export does not carry the registration: `fabric.reconstruct` takes the operator's `--agent-pid`, else the parent pid every effect agrees on, so a run without effects needs `--agent-pid` for H4 |
 | `agent.process_start_ns` | The agent's process start time, when known (H4 `certain`) | the epoch registration, when it records one |
 | `agent.pid_ns` | The agent's pid namespace, when known | the epoch registration, when it records one |
 | `agent.host_id` | The agent's host | `fabric.execution.host_id` |
 | `agent.clock_uncertainty_ns` | The epoch's declared clock uncertainty: the window margin of A rules | the capture manifest / `install.config` (050 §1.3) |
 | `content_mode` | `retain_original` or `metadata_only` | the capture policy in the manifest |
+| `output_withheld` | Optional, `true` when PROTECT withheld some effect's output by policy. Only those effects lose A1 (they carry no `stdout`); the flag makes `output_match` read `not_applicable(privacy_policy)` when A1 applied to no effect | the `terminal.stdout` descriptors (`not_stored`, `privacy_policy`) |
 | `exchange_verdict`, `exchange_reasons` | The existing run verdict over exchanges and its gap types: the `decisions` chain | the verifier's run verdict (050 §3.12) |
 | `exchange_gaps` | Exchanges the action chain needs that are missing or unparsed | gaps of type `sequence_gap` / `unparsed_exchange` on exchanges |
 | `effect_channels` | Per effect capture point: `active` or `disabled` | the manifest's capture-point rows |
@@ -270,7 +271,7 @@ epoch's clock uncertainty on both sides.
 | Rule | Decision | Link(s) on the effect step |
 |---|---|---|
 | A0 | The effect names a reported parent (an explicit `tool_call()` scope or `parent_attempt`) | `caused_by` → `attempt` the parent, provenance `reported`, `certain`, no method. When the parent names its tool call, that call counts as having its effect |
-| A1 | The effect's stdout with trailing ASCII whitespace removed, at least 16 UTF-8 bytes, is a substring of exactly one candidate's result text; with digests only on either side, equal SHA-256. A1 applies only when the output **and every candidate's result** are available, and never in `metadata_only` | `caused_by` → `call`, `output_match`, `certain`. Two or more matches: one link per match, each `ambiguous` and listing them all |
+| A1 | The effect's stdout with trailing ASCII whitespace removed, at least 16 UTF-8 bytes, is a substring of exactly one candidate's result text; with digests only on either side, equal SHA-256. A1 applies only when the output **and every candidate's result** are available, and never in `metadata_only` | `caused_by` → `call`, `output_match`, `certain`. Two or more matches: one link per match, each `ambiguous`, `tentative` (an ambiguous link is never certain) and listing them all |
 | A2 | Exactly one candidate | `sequence_bracket`, `tentative`, `resolved` |
 | A3 | Two or more candidates, A1 not deciding | one link per candidate, `sequence_bracket`, `tentative`, `ambiguous`, each listing every candidate |
 | A4 | No candidate | none; listed in `attribution.unattributed_effects` |
@@ -336,18 +337,21 @@ capture validator enforces it on reports).
 | `h4-agent-process` | H4 | Agent-process events: certain with the agent's start time, else tentative |
 | `edge-pid-reuse` | A1, H2 | Two candidates for one pid: ambiguous, never certain |
 | `edge-lineage-depth-17` | A1, H1, H3 | Depth 17 is truncated and reported |
+| `edge-a1-several-matches` | A1 | Two parallel calls fed back the same output: each effect links both, `output_match`, `tentative`, `ambiguous` |
+| `edge-lineage-pid-reuse` | A1, H1, H3 | An unrelated exec takes over the anchored pid: it, its connect and its child are not lineage, they are unexplained |
 | `edge-agent-uncalled-host` | H4 | The agent connects to a host no exchange called: listed as unexplained |
 | `ar1-run` | A1, A4, H1, H3, H4 | AR-1 (§6.2) with spec 053 host records: the §6.2 step table and chain verdicts |
 | `ar1-run-local-profile` | A1, A4, H2, H3, H4 | AR-1 with today's local-profile records: every anchor tentative |
 | `ar1-negative-a-no-host-source` | A1, A4 | Negative (a): corroboration not observed, other chains unchanged |
-| `ar1-negative-b-effect-dropped` | A1, A4, H1, H3, H4 | Negative (b): effects `partial(sequence_gap)` |
+| `ar1-negative-b-effect-dropped` | A1, A4, H1, H3, H4 | Negative (b): effects `partial(sequence_gap)`; decisions `partial(sequence_gap)` too (see section 8) |
 | `ar1-negative-c-hook-disabled` | H4 | Negative (c): effects not observed, every tool call `channel_disabled` |
 | `ar1-negative-d-metadata-only` | A2, A3, A4, H1, H3, H4 | Negative (d): step 3 ambiguous; the single-window steps fall back to A2 |
 
 | Refused fixture | Error code | The mistake |
 |---|---|---|
 | `a0-reported-link-claims-inferred` | `coverage.action.link` | A reported link relabelled inferred, without a method |
-| `a1-output-match-tentative` | `coverage.action.confidence` | `output_match` is always certain |
+| `a1-output-match-tentative` | `coverage.action.confidence` | A resolved `output_match` is certain (only an ambiguous one is tentative) |
+| `a1-several-matches-claims-certain` | `coverage.action.confidence` | An ambiguous `output_match` claims `certain` |
 | `a2-single-window-claims-certain` | `coverage.action.confidence` | `sequence_bracket` is always tentative (OD-5) |
 | `a3-ambiguous-lists-one-candidate` | `coverage.action.link` | An ambiguous link lists every candidate |
 | `a4-unattributed-effect-not-listed` | `coverage.action.chains` | `unattributed_effect` is a reason exactly when the list is not empty |
@@ -378,6 +382,28 @@ capture validator enforces it on reports).
 - **Uncalled peers need an endpoint map.** Wire records name an endpoint
   label, not an address; without `endpoint_peers` every agent-process
   connection is unexplained.
+- **AR-1 negative (b) bounds `decisions` too.** The dropped effect record
+  held a position of the shared allocator (050 §3.3), on the epoch the
+  exchanges use. The verifier cannot prove the lost position was not an
+  exchange, so the exchange verdict, and with it `decisions`, is
+  `partial(sequence_gap)`. Spec 056 §6.2 names only the `effects` chain.
+- **Pid reuse ends a lineage.** A successful exec of a pid in the chain that
+  is neither the same process (the same start tick; without both start
+  times, the same parent) nor a child of the chain proves the pid now names
+  another process. The pid leaves the
+  chain, so nothing of that process is linked. A connect or file event
+  joins a process of the chain only when its start time, if both carry
+  one, is in that process's tick.
+- **Window margins.** H1 events and the H4 / unexplained window use the run
+  window widened by the agent's and the sensor's clock uncertainty (the
+  window is on the agent's clock, the events on the sensor's). An H1 event
+  outside it is not an anchor: start ticks are boot-relative, so this is
+  the only bound against a record of another boot (no record carries a
+  boot id yet).
+- **`socket` and `bind`** are connect-class but contact no host, so an
+  agent-process event whose `syscall` (an optional normalized field) is one
+  of them is never an uncalled-peer event. A `connect` whose peer is
+  unknown stays uncalled.
 - **AR-1 negative (d)** changes the method of the single-window steps (A1
   cannot apply without content, so they become A2); their targets do not
   change.

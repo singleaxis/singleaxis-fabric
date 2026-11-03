@@ -80,6 +80,9 @@ _HOST_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _ENDPOINT_PEER_RE = re.compile(
     r"^(?P<endpoint>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})=(?P<address>[^\s=]{1,255})$"
 )
+# --known-peer ADDRESS: an address the agent process contacts for Fabric or infrastructure.
+_KNOWN_PEER_RE = re.compile(r"^[^\s=]{1,255}$")
+_PID_MAX = 1 << 22  # Linux pid_max upper bound
 # An endpoint id as capture spans carry it (wire/_attrs.py C35): kept as given.
 _EMITTED_ENDPOINT_RE = re.compile(r"^(?:[a-z][a-z0-9_]{0,31}\.default|lbl-[0-9a-f]{32})$")
 # A duration: an integer or decimal number with an optional unit (default seconds).
@@ -329,6 +332,36 @@ def _host_options(parser: argparse.ArgumentParser) -> None:
         help="the address a model endpoint resolves to (repeatable; ENDPOINT_ID as configured "
         "in FABRIC_WIRE_ENDPOINTS, or as emitted): the agent's connections to it are model "
         "calls, not unexplained host events (rule H4)",
+    )
+    parser.add_argument(
+        "--known-peer",
+        action="append",
+        dest="known_peers",
+        default=[],
+        metavar="ADDRESS",
+        help="an address the agent process contacts for Fabric's own delivery or for its "
+        "infrastructure, such as the Node's OTLP endpoint, a content store or a DNS resolver "
+        "(repeatable): the agent's connections to it are linked by rule H4 and not listed as "
+        "unexplained host events",
+    )
+    parser.add_argument(
+        "--agent-pid",
+        dest="agent_pid",
+        type=int,
+        metavar="PID",
+        help="the agent's pid as its epoch registration records it (spec 050 §3.2; an export "
+        "does not carry it): rule H4 links the agent process's own host events by it. Without "
+        "it, H4 uses the pid every effect's parent pid agrees on, so a run without effects "
+        "links nothing by H4",
+    )
+    parser.add_argument(
+        "--host-coverage-declared",
+        dest="host_coverage_declared",
+        action="store_true",
+        help="declare that every --host-source covered the whole run window (local-profile "
+        "host records carry no positions or heartbeats, so the reader cannot prove it; "
+        "without this a local source is a source_gap). Any loss the records show still makes "
+        "the source a source_gap",
     )
 
 
@@ -688,12 +721,22 @@ def _host_joiner(args: argparse.Namespace, key: bytes | None) -> HostJoiner | No
     The host id and peer ids are keyed ``hst-`` pseudonyms, so the id key is required. The
     declared sources are ``--host-source``, else the sensor kinds the records hold; each is
     on ``--host-label``'s host and reports pids in the agent's pid namespace (local
-    records name neither); whether it covered the run is derived from its records."""
+    records name neither); whether it covered the run is derived from its records (spec
+    053 positions) or declared with ``--host-coverage-declared``. ``--agent-pid`` and the
+    host label give rule H4 the agent process when no effect names it."""
     paths = [str(path) for path in args.host_records]
     if not paths:
-        if args.host_label is not None or args.host_sources or args.endpoint_peers:
+        if (
+            args.host_label is not None
+            or args.host_sources
+            or args.endpoint_peers
+            or args.known_peers
+            or args.agent_pid is not None
+            or args.host_coverage_declared
+        ):
             raise ReconstructInputError(
-                "--host-label, --host-source and --endpoint-peer need --host-records"
+                "--host-label, --host-source, --endpoint-peer, --known-peer, --agent-pid and "
+                "--host-coverage-declared need --host-records"
             )
         return None
     if key is None:
@@ -728,8 +771,22 @@ def _host_joiner(args: argparse.Namespace, key: bytes | None) -> HostJoiner | No
         if not _EMITTED_ENDPOINT_RE.fullmatch(endpoint):
             endpoint = label_pseudonym("lbl-", endpoint, key)
         peers.setdefault(endpoint, []).append(found)
+    known: list[str] = []
+    for value in args.known_peers:
+        found = peer_id(str(value), key) if _KNOWN_PEER_RE.fullmatch(str(value)) else None
+        if found is None:
+            raise ReconstructInputError("--known-peer takes an ADDRESS")
+        known.append(found)
+    if args.agent_pid is not None and not 1 <= args.agent_pid < _PID_MAX:
+        raise ReconstructInputError(f"--agent-pid takes a pid of 1-{_PID_MAX - 1}")
+    verified = True if args.host_coverage_declared else None
     return host_joiner(
-        evidence, [HostSource(kind, host_id) for kind in kinds], endpoint_peers=peers
+        evidence,
+        [HostSource(kind, host_id, verified=verified) for kind in kinds],
+        agent_pid=args.agent_pid,
+        agent_host_id=host_id,
+        endpoint_peers=peers,
+        known_peers=known,
     )
 
 

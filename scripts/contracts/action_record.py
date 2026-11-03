@@ -1228,6 +1228,83 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         )
     )
 
+    # Edge: two parallel calls whose results both contain each effect's output.
+    s = Scenario("edge-a1-several-matches")
+    same = "48K\t/data\ntotal 48K in 3 files\n"
+    s.exchange(0, 900, calls=[("call_S1", "run_shell"), ("call_S2", "run_shell")])
+    s.effect("exec sh -c 'du -sh /data'", 1000, stdout=same)
+    s.effect("exec sh -c 'du -sh /data/.'", 1003, stdout=same)
+    s.exchange(
+        1500, 2400, results=[("call_S1", _result(same)), ("call_S2", _result(same))]
+    )
+    put(
+        s.fixture(
+            ["A1"],
+            "Two parallel calls fed back the same output: each effect's output matches both results, so A1 links both calls, each output_match, tentative and ambiguous; an ambiguous link is never certain.",
+        )
+    )
+
+    # Edge: the anchored pid is reused by an unrelated process during the run.
+    s = Scenario("edge-lineage-pid-reuse")
+    s.input["agent"]["pid_ns"] = PID_NS
+    s.host_source(pid_namespace="recorded")
+    s.exchange(0, 900, calls=[("call_U1", "fetch_url")])
+    s.effect(
+        "exec sh -c 'curl -s https://fixture.test/'",
+        1000,
+        stdout='{"status": "ok", "items": 3}',
+        pid=4121,
+        process_start_ns=EXEC_CHILD_START_NS,
+    )
+    s.host(
+        "exec-sh",
+        "exec",
+        1000.3,
+        4121,
+        AGENT_PID,
+        process_start_ns=EXEC_CHILD_START_NS + 3_217_448,
+        pid_ns=PID_NS,
+    )
+    s.host(
+        "exec-curl",
+        "exec",
+        1002,
+        4122,
+        4121,
+        process_start_ns=EXEC_CHILD_START_NS + 4_900_000,
+        pid_ns=PID_NS,
+    )
+    s.exchange(1500, 2400, results=[("call_U1", '{"status": "ok", "items": 3}')])
+    reused = EXEC_CHILD_START_NS + 4000 * MS
+    s.host(
+        "exec-reused", "exec", 5000, 4121, 55, process_start_ns=reused, pid_ns=PID_NS
+    )
+    s.host(
+        "connect-reused",
+        "connect",
+        5002,
+        4121,
+        55,
+        process_start_ns=reused,
+        pid_ns=PID_NS,
+        peer_id=UNCALLED_PEER,
+    )
+    s.host(
+        "exec-reused-child",
+        "exec",
+        5004,
+        4200,
+        4121,
+        process_start_ns=reused + 4 * MS,
+        pid_ns=PID_NS,
+    )
+    put(
+        s.fixture(
+            ["A1", "H1", "H3"],
+            "The anchored sh exits and an unrelated process (another parent, a later start time) is exec'd with its pid: that exec proves pid reuse, so neither it, its connect nor its child is lineage of the effect; all three are unexplained.",
+        )
+    )
+
     # Edge: the agent process connects to a host no exchange called.
     s = Scenario("edge-agent-uncalled-host")
     s.host_source()
@@ -1394,9 +1471,14 @@ def ar1_fixtures() -> dict[str, dict[str, Any]]:
     neg = _ar1("ar1-negative-b-effect-dropped", spans=True)
     gap = neg.input["effects"][1]["sequence"] + 1
     neg.input["effect_sequence_gaps"] = [[gap, gap]]
+    # The shared allocator (050 §3.3) gives the dropped record a position on the epoch
+    # the exchanges share; the verifier cannot prove the lost position was not an
+    # exchange, so the exchange verdict is partial(sequence_gap) too.
+    neg.input["exchange_verdict"] = "partial"
+    neg.input["exchange_reasons"] = ["sequence_gap"]
     out[neg.name] = neg.fixture(
         ["A1", "A4", "H1", "H3", "H4"],
-        "AR-1 negative (b): one effect record (the end record of step 2) dropped from the spool; effects partial(sequence_gap) as well.",
+        "AR-1 negative (b): one effect record (the end record of step 2) dropped from the spool; effects partial(sequence_gap). The lost position is on the epoch the exchanges share, and nothing proves it was not an exchange, so decisions is partial(sequence_gap) as well.",
     )
     neg = _ar1("ar1-negative-c-hook-disabled", spans=True)
     neg.input["effect_channels"] = {EXEC_POINT: "disabled"}
@@ -1465,6 +1547,17 @@ def invalid_rule_fixtures(
         "a1-output-match-tentative",
         "coverage.action.confidence",
         lambda d: _links_of(d, first_effect(d))[0].update(confidence="tentative"),
+    )
+
+    def a1_several(doc: dict[str, Any]) -> None:
+        for link in _links_of(doc, first_effect(doc)):
+            link["confidence"] = "certain"
+
+    variant(
+        "edge-a1-several-matches",
+        "a1-several-matches-claims-certain",
+        "coverage.action.confidence",
+        a1_several,
     )
     variant(
         "a2-single-window",
@@ -1890,7 +1983,9 @@ _LINK_TARGETS = {
     "corroborated_by": {"event"},
     "part_of": {"attempt", "run"},
 }
-_FIXED = {"sequence_bracket": "tentative", "output_match": "certain"}
+_FIXED = {"sequence_bracket": "tentative"}
+# output_match is certain exactly when one candidate matched (A1); several matches are
+# ambiguous, and an ambiguous link is never certain (spec 056 §4.1, §4.2 A1 note).
 _RULE_KEYS = {
     "schema_version",
     "name",
@@ -1995,6 +2090,15 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
                     "coverage.action.confidence",
                     where,
                     f"{method} is always {_FIXED[method]}",
+                )
+            if method == "output_match" and (link["confidence"] == "certain") != (
+                link["state"] == "resolved"
+            ):
+                _fail(
+                    "coverage.action.confidence",
+                    where,
+                    "output_match is certain when it resolves one candidate and tentative "
+                    "when several match (ambiguous)",
                 )
             if method == "process_anchor":
                 event = events.get(link["target"]["id"])

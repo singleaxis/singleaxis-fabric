@@ -9,7 +9,8 @@ effects through the process tree:
 
 - **H1 anchor, exact.** A successful ``exec`` event with the effect's pid and parent pid
   whose process start time falls in the same ``/proc`` tick as the effect's
-  ``fabric.process.start_ns``: the effect is ``corroborated_by`` the event,
+  ``fabric.process.start_ns``, inside the run window (start ticks are boot-relative and
+  no record carries a boot id): the effect is ``corroborated_by`` the event,
   ``process_anchor``, ``certain``. Pid plus start time is unique per boot, so H1 is never
   ambiguous, and it is the only rule that makes an anchor ``certain``.
 - **H2 anchor, no start time.** The same match without a start time on one side, within
@@ -19,15 +20,19 @@ effects through the process tree:
 - **H3 lineage.** A host event whose parent-pid chain reaches an anchored child, on the
   same host and pid namespace, with non-decreasing times and start times, at most depth
   16 and 4096 events per anchor: the event is ``part_of`` the effect's attempt,
-  ``process_lineage``, with the anchor's confidence.
+  ``process_lineage``, with the anchor's confidence. An exec that takes over a pid of the
+  chain without being that process or its child proves pid reuse and ends that pid's
+  lineage.
 - **H4 agent process.** A host event of the agent's own pid (the epoch registration,
-  spec 050 §3.2) inside the run window: ``part_of`` the run, ``process_anchor``;
-  ``certain`` only when the event's start time matches the agent's.
+  spec 050 §3.2, which an export does not carry: the operator declares it, else the
+  parent pid every effect agrees on) inside the run window widened by both clock
+  margins: ``part_of`` the run, ``process_anchor``; ``certain`` only when the event's
+  start time matches the agent's.
 
 Anything else the sensor saw in the agent's scope during the run is **unexplained**, as
-is an agent-process connection to a peer no model exchange called. Those lists are the
-compliance signal of spec 056 §4.3: the operating system saw something the agent's own
-record does not explain.
+is an agent-process connection to a peer no model exchange called (or the operator
+declared as known). Those lists record a gap between the agent's own record and what the
+operating system saw (spec 056 §4.3); this reader draws no conclusion from them.
 
 Two record shapes are read:
 
@@ -113,6 +118,8 @@ SYSCALL_CLASS: Final[Mapping[str, str]] = {
     "connect": "connect", "accept": "connect", "bind": "connect", "socket": "connect",
     "openat": "file", "open": "file",
 }  # fmt: skip
+# Connect-class syscalls that contact no peer: never an uncalled-peer event (H4).
+PEERLESS_SYSCALLS: Final = frozenset({"socket", "bind"})
 # Local status records (``audit.event`` without ``audit.syscall``) that do NOT mean events
 # were lost. Every other status name, known or not, is a loss: a gap is never assumed
 # away. ``dedupe_collapsed`` folds identical repeats and states their count;
@@ -194,8 +201,10 @@ class HostSource:
     - ``clock_uncertainty_ns``: the sensor clock's declared uncertainty.
     - ``verified``: ``False`` forces a ``source_gap``; ``True`` says the operator verified
       the source's coverage of the run window outside this reader; ``None`` (default)
-      derives it from the collection (:func:`source_verified`). Evidence of loss in the
-      collection makes the source unverified whatever is declared.
+      derives it from the collection (:func:`source_verified`): only spec 053 source
+      positions can prove coverage, so a local-profile source is unverified unless
+      declared. Evidence of loss in the collection makes the source unverified whatever
+      is declared.
     - ``cgroup_ids``: the agent's cgroup scope as the sensor reports it; an event of
       another cgroup is out of scope and never listed as unexplained. ``None``: the sensor
       itself is scoped to the agent (every event is in scope).
@@ -226,7 +235,8 @@ class HostEvent:
     or ``unknown``; only a successful ``exec`` started a process. ``peer_id`` is the
     ``hst-`` v2 pseudonym of a connection's peer. ``process_start_ns``, ``pid_ns`` and
     ``host_id`` are present only on spec 053 records. ``in_scope`` overrides the source's
-    cgroup scope (``None``: decided by :attr:`HostSource.cgroup_ids`)."""
+    cgroup scope (``None``: decided by :attr:`HostSource.cgroup_ids`). ``syscall`` is the
+    sensor's syscall name when known (``socket`` and ``bind`` contact no peer)."""
 
     event_id: str
     source: str
@@ -241,6 +251,7 @@ class HostEvent:
     host_id: str | None = None
     cgroup_id: str | None = None
     in_scope: bool | None = None
+    syscall: str | None = None
 
     def report_entry(self) -> dict[str, Any]:
         """The run report's ``sensor_events[]`` entry, without links: ids, pids and times
@@ -305,8 +316,10 @@ class HostEvidence:
     positions seen (well-formed or not); ``malformed`` the positions whose record was
     unusable; ``marker_losses`` the ``(source_id, epoch, time_ns)`` of every loss marker
     and upstream-loss heartbeat (only those of a host source count); ``unreadable`` counts
-    host records dropped as malformed; ``conflicts`` the event ids claimed by two differing
-    records. None of it ever enters an agent run's sequence accounting."""
+    host records dropped as malformed and ``unreadable_sources`` the sources they belong to
+    (every host source when a record names none it can be read as); ``conflicts`` the
+    event ids claimed by two differing records. None of it ever enters an agent run's
+    sequence accounting."""
 
     events: list[HostEvent] = field(default_factory=list)
     statuses: list[HostStatus] = field(default_factory=list)
@@ -314,6 +327,7 @@ class HostEvidence:
     malformed: list[SensorPosition] = field(default_factory=list)
     marker_losses: list[tuple[str, int, int]] = field(default_factory=list)
     unreadable: int = 0
+    unreadable_sources: set[str] = field(default_factory=set)
     conflicts: set[str] = field(default_factory=set)
 
     @classmethod
@@ -342,7 +356,14 @@ class HostEvidence:
         self.malformed.extend(other.malformed)
         self.marker_losses.extend(other.marker_losses)
         self.unreadable += other.unreadable
+        self.unreadable_sources |= other.unreadable_sources
         self.conflicts |= other.conflicts
+
+    def drop(self, source: str | None) -> None:
+        """Count one host record dropped as malformed: a loss of its source, or of every
+        host source when the record names none (a gap is never assumed away)."""
+        self.unreadable += 1
+        self.unreadable_sources |= {source} if source in HOST_SOURCES else set(HOST_SOURCES)
 
     def has_records(self, source: str) -> bool:
         return any(e.source == source for e in self.events) or any(
@@ -486,6 +507,7 @@ def normalize_local_record(
         result=_result(attrs.get(L_RESULT)),
         peer_id=peer_id(address, id_key) if isinstance(address, str) and address else None,
         cgroup_id=cgroup,
+        syscall=syscall,
     )
 
 
@@ -500,7 +522,7 @@ def _add_local(
     elif isinstance(found, HostStatus):
         evidence.statuses.append(found)
     else:
-        evidence.unreadable += 1
+        evidence.drop("host.ebpf" if attrs.get(L_SOURCE) == "ebpf" else "host.auditd")
 
 
 def host_evidence_from_logs(
@@ -614,6 +636,7 @@ def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
         time_ns=span.start_ns,
         pid=pid,
         result=str(result),
+        syscall=syscall,
         **optional,
     )
 
@@ -641,7 +664,9 @@ def host_evidence_from_spans(spans: Iterable[SpanRecord]) -> HostEvidence:
         if position is not None:
             evidence.positions.append(position)
         if event is None:
-            evidence.unreadable += 1
+            point = attrs.get(S_POINT)
+            named = _HOST_POINT_RE.fullmatch(point) if isinstance(point, str) else None
+            evidence.drop(named.group(1) if named is not None else None)
             if position is not None:
                 evidence.malformed.append(position)
             continue
@@ -775,11 +800,14 @@ def source_verified(evidence: HostEvidence, source: HostSource, window: tuple[in
 
     Unverified when the declaration says so; when a loss status or loss marker of the
     source is timestamped at or after the window start (a loss summary is emitted after
-    the events it covers, so a later one may cover the window); when its spec 053
-    positions within one epoch are not contiguous or one of them was malformed; when two
-    differing records claim one event id; and, unless the operator declared it verified,
-    when the collection holds no record of it at all. Local records carry no positions or
-    heartbeats, so their coverage of the window can only be declared, never proven here.
+    the events it covers, so a later one may cover the window); when a record of the
+    source was dropped as malformed (:attr:`HostEvidence.unreadable_sources`); when its
+    spec 053 positions within one epoch are not contiguous or one of them was malformed;
+    when two differing records claim one event id; and, unless the operator declared it
+    verified, when the collection holds no spec 053 position of it. Local records carry
+    no positions or heartbeats, so their coverage of the window can only be declared
+    (``verified=True``), never proven here: one record anywhere proves nothing about the
+    rest of the window.
     """
     kind, start = source.source, window[0]
     epochs: dict[tuple[str, int], set[int]] = {}
@@ -789,13 +817,14 @@ def source_verified(evidence: HostEvidence, source: HostSource, window: tuple[in
     ids = {source_id for source_id, _ in epochs}
     failed = (
         source.verified is False
+        or kind in evidence.unreadable_sources
         or any(s.loss and s.source == kind and s.time_ns >= start for s in evidence.statuses)
         or any(p.source == kind for p in evidence.malformed)
         or any(e.source == kind and e.event_id in evidence.conflicts for e in evidence.events)
         or any(len(seqs) != max(seqs) - min(seqs) + 1 for seqs in epochs.values())
         or any(sid in ids and time_ns >= start for sid, _, time_ns in evidence.marker_losses)
     )
-    return not failed and (source.verified is True or evidence.has_records(kind))
+    return not failed and (source.verified is True or bool(epochs))
 
 
 # ------------------------------------------------------------------ the join result
@@ -895,9 +924,14 @@ class _Hosts:
     order, joinability and clock margins."""
 
     def __init__(
-        self, agent: AgentProcess, sources: Sequence[HostSource], evidence: HostEvidence
+        self,
+        agent: AgentProcess,
+        sources: Sequence[HostSource],
+        evidence: HostEvidence,
+        window: tuple[int, int] = (0, _INT63_MAX),
     ) -> None:
         self.agent = agent
+        self.window = window
         self.sources = {s.source: s for s in sources}
         if len(self.sources) != len(sources):
             raise ValueError("each host source kind may be declared once")
@@ -922,6 +956,13 @@ class _Hosts:
     def margin(self, event: HostEvent) -> int:
         return self.agent.clock_uncertainty_ns + self.sources[event.source].clock_uncertainty_ns
 
+    def during(self, event: HostEvent) -> bool:
+        """Whether the event lies in the run window, widened by both clocks' declared
+        uncertainty: the run window is on the agent's clock, the event on the sensor's."""
+        first, last = self.window
+        margin = self.margin(event)
+        return first - margin <= event.time_ns <= last + margin
+
     def in_scope(self, event: HostEvent) -> bool:
         if event.in_scope is not None:
             return event.in_scope
@@ -933,10 +974,12 @@ def _anchor(hosts: _Hosts, effect: ProcessEffect) -> tuple[str, list[HostEvent],
     """H1/H2 for one effect with a pid: the rule, the matching exec events (one anchor, or
     every candidate of an ambiguous one) and the anchor confidence.
 
-    H1 needs both start times, equal at the tick, and cannot be ambiguous. H2 applies only
-    to events without a start time when the effect has one (an event whose start time
-    differs is another process: pid reuse is never certain), within the bounded window.
-    The parent pid must be known on both sides and equal."""
+    H1 needs both start times, equal at the tick, and an event inside the run window
+    (start ticks are boot-relative, so a record of another boot could carry the same
+    tick); it cannot be ambiguous. H2 applies only to events without a start time when
+    the effect has one (an event whose start time differs is another process: pid reuse
+    is never certain), within the bounded window. The parent pid must be known on both
+    sides and equal."""
     if effect.pid is None or effect.parent_pid is None:
         return "anchor_missing", [], None
     exec_events = [
@@ -954,7 +997,9 @@ def _anchor(hosts: _Hosts, effect: ProcessEffect) -> tuple[str, list[HostEvent],
         exact = [
             e
             for e in exec_events
-            if e.process_start_ns is not None and same_tick(e.process_start_ns, start)
+            if e.process_start_ns is not None
+            and same_tick(e.process_start_ns, start)
+            and hosts.during(e)
         ]
         if exact:
             return "H1", exact[:1], "certain"
@@ -983,7 +1028,12 @@ def _lineage(
     non-decreasing start times) within depth 16 and 4096 events; and the events a bound
     left out. A later successful exec of a known process (same pid, parent and start
     tick: ``sh`` exec'ing ``curl``) stays at its depth; connect and file events of a
-    process in the chain are linked at its depth."""
+    process in the chain are linked at its depth when their start time, if both sides
+    carry one, is in its tick.
+
+    Pid reuse: a successful exec of a known pid that is neither that process nor a child
+    of one in the chain proves the pid now names another process, so the pid leaves the
+    chain and nothing that process does is linked (§4.1: links are never guessed)."""
     if effect.pid is None:
         return [], []  # never reached: only an effect with a pid is anchored
     start = effect.process_start_ns
@@ -1005,9 +1055,14 @@ def _lineage(
             parent = procs.get(event.ppid) if event.ppid is not None else None
             if (
                 known is not None
-                and event.ppid == known.ppid
                 and event.time_ns >= known.time
-                and (own is None or known.start is None or same_tick(own, known.start))
+                and (
+                    # pid and start tick name one process per boot (a reparented one
+                    # too); without both start times, the parent must not have changed
+                    same_tick(own, known.start)
+                    if own is not None and known.start is not None
+                    else event.ppid == known.ppid
+                )
             ):
                 pass  # the same process exec'd another image: same depth
             elif (
@@ -1017,14 +1072,20 @@ def _lineage(
             ):
                 depth = parent.depth + 1
                 if depth > LINEAGE_MAX_DEPTH:
+                    procs.pop(event.pid, None)  # the pid names the truncated process now
                     truncated.append(event)
                     continue
                 procs[event.pid] = _Proc(depth, event.time_ns, own, event.ppid)
             else:
+                procs.pop(event.pid, None)  # pid reuse: another process holds the pid now
                 continue
         elif event.event_class == "exec":
             continue  # a failed exec started no process: not lineage, maybe unexplained
-        elif event.pid not in procs or event.time_ns < procs[event.pid].time:
+        elif (
+            (proc := procs.get(event.pid)) is None
+            or event.time_ns < proc.time
+            or (own is not None and proc.start is not None and not same_tick(own, proc.start))
+        ):
             continue
         if len(linked) >= LINEAGE_MAX_EVENTS:
             truncated.append(event)
@@ -1122,17 +1183,15 @@ class _Join:
                 self.count("process_lineage", "resolved")
                 self.trace["host_events"][event.event_id] = "H3"
 
-    def rest(
-        self, agent: AgentProcess, run_id: str, window: tuple[int, int], called: Collection[str]
-    ) -> None:
-        """H4 for the agent's own events inside the window, then the unexplained list:
-        an in-scope event no rule linked, and an agent connection to an uncalled peer."""
+    def rest(self, agent: AgentProcess, run_id: str, called: Collection[str]) -> None:
+        """H4 for the agent's own events inside the run window (widened by the clock
+        margins), then the unexplained list: an in-scope event no rule linked, and an
+        agent connection to a peer no exchange called."""
         truncated = {e.event_id for e in self.truncated}
-        first, last = window
         for event in self.hosts.events:
             if event.event_id in self.claimed:
                 continue
-            if not first <= event.time_ns <= last:
+            if not self.hosts.during(event):
                 self.trace["host_events"][event.event_id] = "outside_run"
                 continue
             if event.pid == agent.pid and self.hosts.joinable(event, agent.host_id):
@@ -1149,7 +1208,13 @@ class _Join:
                     )
                 )
                 self.count("process_anchor", "resolved")
-                uncalled = event.event_class == "connect" and event.peer_id not in called
+                # socket() and bind() are connect-class but contact no host; a connect
+                # whose peer is unknown (no id key) stays uncalled: never assumed away.
+                uncalled = (
+                    event.event_class == "connect"
+                    and event.syscall not in PEERLESS_SYSCALLS
+                    and event.peer_id not in called
+                )
                 self.trace["host_events"][event.event_id] = "H4-uncalled" if uncalled else "H4"
                 if uncalled:
                     self.unexplained.append(event)
@@ -1181,14 +1246,14 @@ def join_host_events(
     effect's lineage), then lineage per anchor in effect order, then H4; whatever is left
     in the agent's scope inside the window is unexplained."""
     ordered = sorted(effects, key=lambda e: (e.sequence, e.attempt_uid))
-    hosts = _Hosts(agent, sources, evidence)
+    hosts = _Hosts(agent, sources, evidence, window)
     join = _Join(hosts)
     if hosts.sources:
         for effect in ordered:
             if effect.pid is not None:
                 join.anchor(effect)
     join.lineage()
-    join.rest(agent, run_id, window, called_peers)
+    join.rest(agent, run_id, called_peers)
     sensor_events = sorted(join.listed.values(), key=lambda e: (e["time_ns"], e["event_id"]))
     corroboration = CorroborationInputs(
         configured=bool(hosts.sources),
@@ -1211,14 +1276,20 @@ def join_host_events(
 
 
 # ------------------------------------------------------------------ normalized input
-def _agent_of(inp: Mapping[str, Any], pid: int | None = None) -> AgentProcess:
+def _agent_of(
+    inp: Mapping[str, Any], pid: int | None = None, host_id: str | None = None
+) -> AgentProcess:
+    """The agent process of a normalized input. A declared ``pid`` (the operator's, from
+    the epoch registration) wins over the input's; ``host_id`` is the declared host, used
+    when no effect names one (a run without effects)."""
     agent_in = inp["agent"]
     known = agent_in.get("pid") if pid is None else pid
     return AgentProcess(
-        # No agent pid (its effects disagree, or none carries one): -1 matches no host
-        # event, so H4 links nothing and every agent event stays unexplained.
+        # No agent pid (its effects disagree, or none carries one, and none is declared):
+        # -1 matches no host event, so H4 links nothing and every agent event stays
+        # unexplained.
         pid=-1 if known is None else int(known),
-        host_id=agent_in.get("host_id"),
+        host_id=agent_in.get("host_id") or host_id,
         clock_uncertainty_ns=agent_in.get("clock_uncertainty_ns", 0),
         process_start_ns=agent_in.get("process_start_ns"),
         pid_ns=agent_in.get("pid_ns"),
@@ -1241,12 +1312,14 @@ def _effects_of(inp: Mapping[str, Any]) -> list[ProcessEffect]:
     ]
 
 
-def _called_peers(inp: Mapping[str, Any], peers: Mapping[str, Collection[str]]) -> set[str]:
+def _called_peers(
+    inp: Mapping[str, Any], peers: Mapping[str, Collection[str]], known: Collection[str] = ()
+) -> set[str]:
     return {
         peer
         for exchange in inp.get("exchanges", [])
         for peer in peers.get(exchange.get("endpoint_id"), [])
-    }
+    } | set(known)
 
 
 def _join_input(
@@ -1256,6 +1329,7 @@ def _join_input(
     *,
     agent: AgentProcess,
     peers: Mapping[str, Collection[str]],
+    known_peers: Collection[str] = (),
 ) -> HostJoin:
     run = inp["run"]
     return join_host_events(
@@ -1265,7 +1339,7 @@ def _join_input(
         sources=sources,
         run_id=run["run_id"],
         window=(run["window"][0], run["window"][1]),
-        called_peers=_called_peers(inp, peers),
+        called_peers=_called_peers(inp, peers, known_peers),
     )
 
 
@@ -1299,6 +1373,7 @@ def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
             pid_ns=e.get("pid_ns"),
             host_id=e.get("host_id"),
             in_scope=e.get("in_scope", True),
+            syscall=e.get("syscall"),
         )
         for e in inp.get("host_events", [])
     ]
@@ -1334,23 +1409,33 @@ def host_joiner(
     sources: Sequence[HostSource],
     *,
     agent_pid: int | None = None,
+    agent_host_id: str | None = None,
     endpoint_peers: Mapping[str, Collection[str]] | None = None,
+    known_peers: Collection[str] = (),
 ) -> HostJoiner:
     """The ``ActionReader(host_joiner=...)`` callable for a real export: H1-H4 of each
     annotated run's normalized input against ``evidence`` and the declared ``sources``.
 
-    ``agent_pid`` is the agent's pid from its epoch registration when the caller has it;
-    otherwise the pid every effect's ``parent_pid`` agrees on (the normalized input's
-    ``agent.pid``). ``endpoint_peers`` maps a model endpoint id to the :func:`peer_id`s it
-    resolves to, for H4's called-peer check. Without a declared source it returns
-    ``None`` for every run, so ``corroboration`` is ``not_observed(not_configured)``."""
+    ``agent_pid`` is the agent's pid from its epoch registration (spec 050 §3.2) when the
+    operator declares it: an export does not carry the registration, so otherwise H4 uses
+    the pid every effect's ``parent_pid`` agrees on (the normalized input's
+    ``agent.pid``), and a run without effects links nothing by H4. ``agent_host_id`` is
+    the agent's host when no effect names one. ``endpoint_peers`` maps a model endpoint id
+    to the :func:`peer_id`s it resolves to, for H4's called-peer check; ``known_peers``
+    are peer ids the operator declares the agent process contacts for Fabric's own
+    delivery or its infrastructure (the Node, a content store, a resolver), so a
+    connection to one is linked by H4 and not listed as unexplained. Without a declared
+    source it returns ``None`` for every run, so ``corroboration`` is
+    ``not_observed(not_configured)``."""
     declared = tuple(sources)
     peers = dict(endpoint_peers or {})
+    known = frozenset(known_peers)
 
     def join(inp: Mapping[str, Any]) -> AttributionHostJoin | None:
         if not declared:
             return None
-        made = _join_input(inp, evidence, declared, agent=_agent_of(inp, agent_pid), peers=peers)
+        agent = _agent_of(inp, agent_pid, agent_host_id)
+        made = _join_input(inp, evidence, declared, agent=agent, peers=peers, known_peers=known)
         return attribution_join(made)
 
     return join

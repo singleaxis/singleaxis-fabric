@@ -214,7 +214,10 @@ def attribute_effect(
         pool = [call["id"] for call in matched]
         return (
             "A1-ambiguous",
-            [_caused_by(i, "output_match", "certain", "ambiguous", pool) for i in pool],
+            [
+                _caused_by(i, "output_match", "tentative", "ambiguous", pool)
+                for i in pool
+            ],
             True,
         )
     if len(found) == 1:
@@ -240,6 +243,7 @@ class _Hosts:
 
     def __init__(self, inp: Mapping[str, Any]) -> None:
         self.agent = inp["agent"]
+        self.window = inp["run"]["window"]
         self.sources = {s["source"]: s for s in inp.get("host_sources", [])}
         self.events = sorted(
             (e for e in inp.get("host_events", []) if e["source"] in self.sources),
@@ -268,6 +272,13 @@ class _Hosts:
             source.get("clock_uncertainty_ns", 0)
         )
 
+    def during(self, event: Mapping[str, Any]) -> bool:
+        """Inside the run window widened by both clocks' declared uncertainty (the window
+        is on the agent's clock, the event on the sensor's)."""
+        first, last = self.window
+        margin = self.margin(event)
+        return first - margin <= event["time_ns"] <= last + margin
+
 
 def anchor_effect(
     hosts: _Hosts, effect: Mapping[str, Any]
@@ -275,7 +286,8 @@ def anchor_effect(
     """H1/H2 for one effect with a known pid: the rule, the matching exec events (one
     anchor, or every candidate of an ambiguous one) and the anchor confidence.
 
-    H1 needs both start times and equality at the tick; it cannot be ambiguous. Later exec
+    H1 needs both start times, equality at the tick and an event inside the run window
+    (start ticks are boot-relative); it cannot be ambiguous. Later exec
     events of the same process (an ``exec`` in a shell) keep its pid and start time and are
     H3 lineage of the anchor, at depth 0. H2 applies only when a start time is missing on
     either side, inside the bounded window, and stays ambiguous on pid reuse."""
@@ -297,6 +309,7 @@ def anchor_effect(
             for e in exec_events
             if e.get("process_start_ns") is not None
             and same_tick(e["process_start_ns"], start)
+            and hosts.during(e)
         ]
         if exact:
             return "H1", exact[:1], "certain"
@@ -323,7 +336,10 @@ def lineage(
 ) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
     """H3 for one anchored effect: the host events whose parent-pid chain reaches the
     anchored child (same host and pid namespace, non-decreasing times and start times),
-    at most depth 16 and 4096 events; and the events a bound left out."""
+    at most depth 16 and 4096 events; and the events a bound left out. A connect or file
+    event joins a process of the chain only when its start time, if both carry one, is in
+    that process's tick. A successful exec of a known pid that is neither that process
+    nor a child of the chain proves pid reuse: the pid leaves the chain."""
     host_id = effect.get("host_id")
     start = effect.get("process_start_ns", anchor.get("process_start_ns"))
     procs: dict[int, dict[str, Any]] = {
@@ -352,12 +368,13 @@ def lineage(
             parent = procs.get(ppid) if isinstance(ppid, int) else None
             if (
                 known is not None
-                and ppid == known["ppid"]
                 and event["time_ns"] >= known["time"]
                 and (
-                    own is None
-                    or known["start"] is None
-                    or same_tick(own, known["start"])
+                    # pid and start tick name one process per boot (a reparented one
+                    # too); without both start times, the parent must not have changed
+                    same_tick(own, known["start"])
+                    if own is not None and known["start"] is not None
+                    else ppid == known["ppid"]
                 )
             ):
                 depth = known["depth"]  # the same process exec'd another image
@@ -368,6 +385,7 @@ def lineage(
             ):
                 depth = parent["depth"] + 1
                 if depth > LINEAGE_MAX_DEPTH:
+                    procs.pop(pid, None)  # the pid names the truncated process now
                     truncated.append(event)
                     continue
                 procs[pid] = {
@@ -377,10 +395,19 @@ def lineage(
                     "ppid": ppid,
                 }
             else:
+                procs.pop(pid, None)  # pid reuse: another process holds the pid now
                 continue
         elif event["event_class"] == "exec":
             continue  # a failed exec started no process: not lineage, maybe unexplained
-        elif pid not in procs or event["time_ns"] < procs[pid]["time"]:
+        elif (
+            pid not in procs
+            or event["time_ns"] < procs[pid]["time"]
+            or (
+                own is not None
+                and procs[pid]["start"] is not None
+                and not same_tick(own, procs[pid]["start"])
+            )
+        ):
             continue
         if len(linked) >= LINEAGE_MAX_EVENTS:
             truncated.append(event)
@@ -543,7 +570,6 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             trace["host_events"][event["event_id"]] = "H3"
 
     agent = inp["agent"]
-    first, last = inp["run"]["window"]
     called = {
         peer
         for exchange in inp["exchanges"]
@@ -551,7 +577,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     }
     unexplained: list[Mapping[str, Any]] = []
     for event in hosts.events:
-        inside = first <= event["time_ns"] <= last
+        inside = hosts.during(event)
         if event["event_id"] in claimed or not inside:
             if not inside and event["event_id"] not in claimed:
                 trace["host_events"][event["event_id"]] = "outside_run"
@@ -570,8 +596,12 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
                 }
             )
             counts.setdefault("process_anchor", _counts())["resolved"] += 1
+            # socket() and bind() are connect-class but contact no host; a connect
+            # whose peer is unknown stays uncalled (never assumed away).
             uncalled = (
-                event["event_class"] == "connect" and event.get("peer_id") not in called
+                event["event_class"] == "connect"
+                and event.get("syscall") not in ("socket", "bind")
+                and event.get("peer_id") not in called
             )
             trace["host_events"][event["event_id"]] = (
                 "H4-uncalled" if uncalled else "H4"
@@ -639,7 +669,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             "state": "not_applicable",
             "reason": (
                 "privacy_policy"
-                if inp["content_mode"] == "metadata_only"
+                if inp["content_mode"] == "metadata_only" or inp.get("output_withheld")
                 else "not_exposed"
             ),
         }

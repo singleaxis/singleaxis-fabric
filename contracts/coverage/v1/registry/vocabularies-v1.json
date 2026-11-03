@@ -830,8 +830,8 @@
     },
     {
       "value": "output_match",
-      "meaning": "The effect's captured output (trailing whitespace removed, at least 16 bytes) is a contiguous substring of exactly one candidate tool call's result as fed back, or equal to it by SHA-256 (spec 056 §4.2 rule A1; `caused_by`). Confidence `certain`.",
-      "confidence": "certain"
+      "meaning": "The effect's captured output (trailing whitespace removed, at least 16 bytes) is a contiguous substring of exactly one candidate tool call's result as fed back, or equal to it by SHA-256 (spec 056 §4.2 rule A1; `caused_by`). Confidence varies: `certain` when exactly one candidate matches; two or more matches give one `ambiguous` link per match, each `tentative`.",
+      "confidence": "varies"
     },
     {
       "value": "process_anchor",

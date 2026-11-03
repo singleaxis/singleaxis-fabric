@@ -24,7 +24,8 @@ candidate of both sides.
   is a substring of exactly one candidate's fed-back result; with digests only, equal
   SHA-256 -> ``output_match``, ``certain``. A1 needs the output **and every candidate's
   result**; in metadata-only mode, or when either side was withheld, it does not apply
-  and never falls back to a weaker match. Two or more matches stay ``ambiguous``;
+  and never falls back to a weaker match. Two or more matches stay ``ambiguous``: one
+  ``output_match`` link per match, each ``tentative``;
 - A2 single window: exactly one candidate -> ``sequence_bracket``, ``tentative``;
 - A3 several windows: one ``ambiguous`` link per candidate, each listing them all;
 - A4 no window: no link; E is listed in ``attribution.unattributed_effects``.
@@ -340,7 +341,8 @@ def attribute_effect(
         return Decision("A1", [link], evaluated=True)
     if matched:
         pool = [call.id for call in matched]
-        links = [_caused_by(i, "output_match", "certain", "ambiguous", pool) for i in pool]
+        # Ambiguous is never certain (§4.1): each match is a tentative candidate.
+        links = [_caused_by(i, "output_match", "tentative", "ambiguous", pool) for i in pool]
         return Decision("A1-ambiguous", links, evaluated=True)
     if len(found) == 1:
         link = _caused_by(found[0].id, "sequence_bracket", "tentative", "resolved")
@@ -498,7 +500,9 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         else {
             "state": "not_applicable",
             "reason": (
-                "privacy_policy" if inp.get("content_mode") == "metadata_only" else "not_exposed"
+                "privacy_policy"
+                if inp.get("content_mode") == "metadata_only" or inp.get("output_withheld")
+                else "not_exposed"
             ),
         }
     )
@@ -680,10 +684,12 @@ class ActionReader:
     report entry and bounds the run verdict by the chains.
 
     A run is annotated when it has an effect record, a manifest row of an effect capture
-    point, or a host joiner is configured; ``every_run`` annotates every run (the
-    ``actions`` view). Pre-056 runs are reported exactly as before. ``links`` collects the
-    links the step projection adds to effect steps; ``runs`` keeps each annotated run when
-    ``keep_runs``. Output and result text never outlive the run's attribution."""
+    point, or a host joiner is configured. ``every_run`` (the ``actions`` view) also
+    attributes every other run for display, but leaves its report entry, and so its
+    verdict and the exit code, as the report command leaves it: pre-056 runs are reported
+    exactly as before by both. ``links`` collects the links the step projection adds to
+    effect steps; ``runs`` keeps each attributed run when ``keep_runs``. Output and result
+    text never outlive the run's attribution."""
 
     def __init__(
         self,
@@ -712,11 +718,16 @@ class ActionReader:
     ) -> None:
         """Annotate one run's report entry (``run`` is the verifier's ``_Run``)."""
         reader = _RunReader(self, report, run, bodies)
-        if not (self.every_run or reader.channels or self.host_joiner is not None):
+        annotated = bool(reader.channels) or self.host_joiner is not None
+        if not (self.every_run or annotated):
             return
         inp = reader.build(gaps, checks)
         host = self.host_joiner(inp) if self.host_joiner is not None else None
         result = attribute(inp, host=host)
+        if self.keep_runs:
+            self.runs.append(ActionRun(report["run_id"], _lean(inp), result))
+        if not annotated:
+            return  # shown by the view; the report entry stays the pre-056 one
         report["chains"] = result.chains
         report["attribution"] = result.attribution
         if host is not None:
@@ -725,8 +736,6 @@ class ActionReader:
         for uid, links in result.projection_links.items():
             if links:
                 self.links[uid] = links
-        if self.keep_runs:
-            self.runs.append(ActionRun(report["run_id"], _lean(inp), result))
 
 
 def _lean(inp: Mapping[str, Any]) -> dict[str, Any]:
@@ -828,6 +837,10 @@ class _RunReader:
         }
         if decisions.get("reasons"):
             inp["exchange_reasons"] = decisions["reasons"]
+        if self.withheld_privacy:
+            # Only the effects whose output PROTECT withheld lose A1 (they carry no
+            # stdout); the flag names the reason when A1 applied to no effect at all.
+            inp["output_withheld"] = True
         exchange_gaps = sorted({
             g.gap_type for g in gaps
             if g.gap_type in _EXCHANGE_GAPS
@@ -854,9 +867,11 @@ class _RunReader:
         return inp
 
     def _content_mode(self) -> str:
+        """The run's content mode as its manifests declare it. A body PROTECT withheld by
+        policy does not make the whole run metadata-only: A1 is withheld per side."""
         if any(m.document.get("content_capture") == "metadata_only" for m in self._manifests()):
             return "metadata_only"
-        return "metadata_only" if self.withheld_privacy else "retain_original"
+        return "retain_original"
 
     def _record_gaps(self, gaps: Sequence[Gap]) -> list[str]:
         """Gap types that make an effect record unverifiable: its own object's, or its

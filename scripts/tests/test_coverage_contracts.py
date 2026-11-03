@@ -944,7 +944,9 @@ def test_056_inference_methods_and_reasons_are_registered() -> None:
     assert (
         methods["sequence_bracket"] == "tentative"
     )  # OD-5: only A0 and A1 are certain
-    assert methods["output_match"] == "certain"
+    # A1 is certain only when one candidate matches; several matches are ambiguous and
+    # tentative (an ambiguous link is never certain), so its confidence varies.
+    assert methods["output_match"] == "varies"
     assert methods["process_anchor"] == methods["process_lineage"] == "varies"
     assert methods["pid_time_join"] == "tentative"  # 053 §6.3's join is unchanged
     reasons = {r["value"] for r in reg["vocab"]["reason"]}
@@ -992,6 +994,8 @@ def test_056_every_rule_and_edge_case_has_its_fixture() -> None:
         "edge-pid-reuse",
         "edge-lineage-depth-17",
         "edge-agent-uncalled-host",
+        "edge-a1-several-matches",
+        "edge-lineage-pid-reuse",
         "ar1-run",
     ):
         assert edge in valid, edge  # fmt: skip
@@ -1076,8 +1080,11 @@ def test_056_negative_variants() -> None:
     a = _rule("ar1-negative-a-no-host-source")["expected"]["chains"]
     assert a["corroboration"]["verdict"] == "not_observed"
     assert a["effects"] == _rule("ar1-run")["expected"]["chains"]["effects"]
-    b = _rule("ar1-negative-b-effect-dropped")["expected"]["chains"]["effects"]
-    assert "sequence_gap" in b["reasons"]
+    b = _rule("ar1-negative-b-effect-dropped")["expected"]["chains"]
+    assert b["effects"]["reasons"][0] == "sequence_gap"
+    # The lost position is on the epoch the exchanges share (050 §3.3): nothing proves it
+    # was not an exchange, so decisions is partial(sequence_gap) as the verifier reports.
+    assert b["decisions"] == {"verdict": "partial", "reasons": ["sequence_gap"]}
     c = _rule("ar1-negative-c-hook-disabled")["expected"]
     assert c["chains"]["effects"]["verdict"] == "not_observed"
     assert c["attribution"]["effects_not_observed"]["channel_disabled"] == 5
@@ -1176,3 +1183,61 @@ def test_056_interface_golden_refuses_an_unadmitted_host_key(tmp_path: Path) -> 
 
     _rewrite(root, relative, add_key)
     _assert_code(root, "coverage.action.interface")
+
+
+def test_056_several_a1_matches_are_tentative_and_ambiguous() -> None:
+    """An ambiguous link is never certain (§4.1): A1 with two matches links both, each
+    output_match, tentative, ambiguous."""
+    doc = _rule("edge-a1-several-matches")["expected"]
+    assert list(doc["trace"]["effects"].values()) == ["A1-ambiguous", "A1-ambiguous"]
+    for entry in doc["projection_links"]:
+        assert {(link["method"], link["confidence"], link["state"])
+                for link in entry["links"]} == {("output_match", "tentative", "ambiguous")}  # fmt: skip
+        assert len(entry["links"]) == 2
+    assert doc["chains"]["effects"] == {
+        "verdict": "partial",
+        "reasons": ["ambiguous_attribution"],
+    }
+
+
+def test_056_a_reused_pid_leaves_the_lineage() -> None:
+    """An unrelated exec of the anchored pid (another parent, a later start) proves pid
+    reuse: it, its connect and its child are unexplained, never lineage."""
+    doc = _rule("edge-lineage-pid-reuse")
+    trace = doc["expected"]["trace"]["host_events"]
+    by_label = {e["label"]: e["event_id"] for e in doc["input"]["host_events"]}
+    assert trace[by_label["exec-sh"]] == "H1" and trace[by_label["exec-curl"]] == "H3"
+    for label in ("exec-reused", "connect-reused", "exec-reused-child"):
+        assert trace[by_label[label]] == "unexplained", label
+    # The reference without the reuse rule would link all three: pin the difference.
+    inp = copy.deepcopy(doc["input"])
+    for event in inp["host_events"]:
+        if event["label"] == "exec-reused":
+            event["ppid"] = 4100  # the same parent and ...
+            event["process_start_ns"] = inp["effects"][0][
+                "process_start_ns"
+            ]  # same tick
+    again = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert again[by_label["exec-reused"]] == "H3"  # then it is the same process
+
+
+def test_056_window_margin_and_peerless_syscalls() -> None:
+    """H4 and the unexplained list use the run window widened by both clock margins;
+    socket() and bind() never count as connections to an uncalled peer."""
+    doc = _rule("edge-agent-uncalled-host")
+    inp = copy.deepcopy(doc["input"])
+    margin = (
+        inp["agent"]["clock_uncertainty_ns"]
+        + inp["host_sources"][0]["clock_uncertainty_ns"]
+    )
+    uncalled = next(e for e in inp["host_events"] if e["label"] == "connect-uncalled")
+    uncalled["time_ns"] = inp["run"]["window"][1] + margin
+    trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert trace[uncalled["event_id"]] == "H4-uncalled"
+    uncalled["time_ns"] += 1
+    trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert trace[uncalled["event_id"]] == "outside_run"
+    uncalled["time_ns"] -= 1
+    uncalled["syscall"] = "bind"
+    trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert trace[uncalled["event_id"]] == "H4"

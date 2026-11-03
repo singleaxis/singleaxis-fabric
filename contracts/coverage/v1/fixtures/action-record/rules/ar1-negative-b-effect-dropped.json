@@ -8,7 +8,7 @@
     "H3",
     "H4"
   ],
-  "description": "AR-1 negative (b): one effect record (the end record of step 2) dropped from the spool; effects partial(sequence_gap) as well.",
+  "description": "AR-1 negative (b): one effect record (the end record of step 2) dropped from the spool; effects partial(sequence_gap). The lost position is on the epoch the exchanges share, and nothing proves it was not an exchange, so decisions is partial(sequence_gap) as well.",
   "key": "fabric-test-id-key-not-a-secret",
   "input": {
     "run": {
@@ -28,7 +28,7 @@
       "pid_ns": "4026531836"
     },
     "content_mode": "retain_original",
-    "exchange_verdict": "complete",
+    "exchange_verdict": "partial",
     "effect_channels": {
       "exec.subprocess": "active"
     },
@@ -363,6 +363,9 @@
         6,
         6
       ]
+    ],
+    "exchange_reasons": [
+      "sequence_gap"
     ]
   },
   "expected": {
@@ -684,7 +687,10 @@
     ],
     "chains": {
       "decisions": {
-        "verdict": "complete"
+        "verdict": "partial",
+        "reasons": [
+          "sequence_gap"
+        ]
       },
       "actions": {
         "verdict": "complete"

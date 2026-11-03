@@ -7,7 +7,7 @@
     {"path": "registry/content-roles-v1.json", "sha256": "1e850f653ea208b032336c60566d28cc91c41ee2493f87bfa699ed0cbef7b572", "expectation": "registry", "expected_error": null},
     {"path": "registry/field-registry-v1.json", "sha256": "197d66dabd245d639ef9abcd60fad1eacad4c2a35118c8957c78e9af2621cf41", "expectation": "registry", "expected_error": null},
     {"path": "registry/telemetry-keys-v1.json", "sha256": "b4b7f77186143c7d263a60b89d67b5c48d6119f67ece6c5fbd7e93de0b4ba8c3", "expectation": "registry", "expected_error": null},
-    {"path": "registry/vocabularies-v1.json", "sha256": "d99285c53a39748a87f598b2579d5d38a0aa2644df5767ce463544204bfa3541", "expectation": "registry", "expected_error": null},
+    {"path": "registry/vocabularies-v1.json", "sha256": "e8612c3b0da0442de7e47b92905b455c3470090a286966b52c52fa85d212e9d6", "expectation": "registry", "expected_error": null},
     {"path": "schema/capture-manifest-v1.schema.json", "sha256": "0f94edaf477d71abf524fa895627da41bb459b6b083be525b669f2803b1e6fc3", "expectation": "schema", "expected_error": null},
     {"path": "schema/step-projection-v1.schema.json", "sha256": "1a27ccd9fd561d13e0b15762ca5750eb755d7ee415c32b8bc26a2338ac7ecef7", "expectation": "schema", "expected_error": null},
     {"path": "valid/manifest-local-epoch-start.json", "sha256": "d0b636ec599da6127f15274a9001489dcb4e3bee806f1857405506722d3b6344", "expectation": "valid", "expected_error": null},
@@ -118,7 +118,7 @@
     {"path": "fixtures/action-record/rules/a3-several-windows.json", "sha256": "2a7020ad614261e6cf31c0f19c8dda4c1951a5a3373ba511d6f92f6bcde122e6", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/a4-no-window.json", "sha256": "866ab5db5d52b1a2b413d6693286f4ffc733241c127f7edb0a588e32e5167c2c", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-negative-a-no-host-source.json", "sha256": "e57d32d735887b3bac69cc05031f5d6661fd7ad260f3a2f4e76caa3dafd2f24b", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/ar1-negative-b-effect-dropped.json", "sha256": "0047757bc41f782c31e47d285ed5278563be1ce6aeb3cb22320da755d77f5492", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/ar1-negative-b-effect-dropped.json", "sha256": "6543237946f577e41601e4d8464df93ebf382f879d33ab9e73882a926c9fe15f", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-negative-c-hook-disabled.json", "sha256": "9c2580e3f1babfdb0f7ec9768c33e286c4abd6394d2ab9731107b1fd8fdd33a2", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-negative-d-metadata-only.json", "sha256": "dddc6bc9a609830924ddfaf6a4a8540af015e332225cad25ada7eb5c086387b1", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-run-local-profile.json", "sha256": "a173f1e84d9800f69b8a9891a4f6b68d7fe116ecdd5cebdb136dd6d12c244c7e", "expectation": "valid", "expected_error": null},
@@ -149,6 +149,9 @@
     {"path": "valid/evidence-exec-poll.json", "sha256": "1ef4ed8b84d93bd6ee11fb695b7eaaa27e702b30c0e1f1d03a2eb615e9e49e70", "expectation": "valid", "expected_error": null},
     {"path": "valid/evidence-exec-popen.json", "sha256": "f239c67cf75c07ae0424377a55aa5424a166288ec6cd78f0f1cdbdb3716b034e", "expectation": "valid", "expected_error": null},
     {"path": "valid/evidence-exec-run.json", "sha256": "83b4d44dc8ccebe88b14f8fa77bf1f60d633dd58e841fd7f663c667c08d0e5ff", "expectation": "valid", "expected_error": null},
-    {"path": "valid/evidence-exec-wait.json", "sha256": "b6766739d33b4ca045a5ebdba1716ce303c364634fbfc7dede3bd61e7e1a6548", "expectation": "valid", "expected_error": null}
+    {"path": "valid/evidence-exec-wait.json", "sha256": "b6766739d33b4ca045a5ebdba1716ce303c364634fbfc7dede3bd61e7e1a6548", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/invalid/a1-several-matches-claims-certain.json", "sha256": "bf1343fc4beb8ef55d6e7b9155142009462716a34c60a20d284c3f9fb9adcf78", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
+    {"path": "fixtures/action-record/rules/edge-a1-several-matches.json", "sha256": "a07b8de0a3af8da838e9db69d613c063c0cf2321469f503c4d8bde97a0b000f0", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-lineage-pid-reuse.json", "sha256": "bfa56c1b360a56f7a67d175f804aaa5c3bac2f116b8ce0233793e48926211d91", "expectation": "valid", "expected_error": null}
   ]
 }
