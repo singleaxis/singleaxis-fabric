@@ -553,7 +553,6 @@ def _actions(inp: Mapping[str, Any], calls: Sequence[ToolCall]) -> dict[str, Any
 _A_POINT = "fabric.capture.point"
 _A_LIFECYCLE = "fabric.step.lifecycle_state"
 _A_PARENT = "fabric.step.parent_id"
-_A_ENDPOINT = "fabric.wire.endpoint_id"
 _PROCESS_KEYS: Final = (
     ("pid", "fabric.process.pid"),
     ("parent_pid", "fabric.process.parent_pid"),
@@ -889,7 +888,7 @@ class _RunReader:
             }
             if exchange.segment_id is not None:
                 item["segment_id"] = exchange.segment_id
-            endpoint = exchange.span.attributes.get(_A_ENDPOINT) if exchange.span else None
+            endpoint = exchange.endpoint_id
             if isinstance(endpoint, str):
                 item["endpoint_id"] = endpoint
             if isinstance(entry.get("model"), str):
