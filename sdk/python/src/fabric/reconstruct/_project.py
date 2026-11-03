@@ -1541,6 +1541,10 @@ class _RunSteps:
         step["lifecycle_state"], step["result_status"] = lifecycle, result
         if first.segment_id is not None:
             step["segment_id"] = first.segment_id
+        actions = getattr(self.verifier, "actions", None)
+        action_links = actions.links.get(attempt_uid) if actions is not None else None
+        if action_links:  # spec 056 §4.2, §4.3: caused_by a tool call, corroborated_by a host
+            step["links"] = [dict(link) for link in action_links][:_MAX_LINKS]
         fields = _Fields()
         self._record_fields(fields, step, records, ctx)
         flags = ["timed", *self._segment_flag(step)]
