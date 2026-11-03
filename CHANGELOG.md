@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-04
+
+Fabric 0.9.1 fixes the package pages on PyPI and npm and deprecates the
+evaluation elements left in the v1 contracts. Capture, protection,
+delivery and verification behave as in 0.9.0.
+
+### Fixed
+
+- **Packages:** the PyPI and npm package pages link to the documentation on
+  GitHub; the relative links in the package READMEs did not resolve there.
+  The PyPI Documentation URL points at the documentation index.
+- **Tests:** the asyncio fan-out capture test flushes before its agent exits,
+  so a slow runner no longer turns the bounded exit drain into a failure.
+
 ### Changed
 
 - **Contracts:** activity v1 example data uses neutral values. The
@@ -2359,7 +2373,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0
 [0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
