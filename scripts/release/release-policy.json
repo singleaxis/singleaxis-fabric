@@ -87,13 +87,15 @@
       "fabric/presidio.py",
       "fabric/reference_receipts.py",
       "fabric/stream.py",
+      "fabric/taxonomy.py",
       "fabric/tool_auth.py"
     ],
     "forbidden_wheel_prefixes": [
       "fabric/guardrail_adapters/",
       "fabric/judge_adapters/",
       "fabric/policy_adapters/",
-      "fabric/queue_transports/"
+      "fabric/queue_transports/",
+      "fabric/taxonomies/"
     ],
     "required_console_scripts": {},
     "required_sdist_paths": [
@@ -181,13 +183,15 @@
       "src/fabric/presidio.py",
       "src/fabric/reference_receipts.py",
       "src/fabric/stream.py",
+      "src/fabric/taxonomy.py",
       "src/fabric/tool_auth.py"
     ],
     "forbidden_sdist_prefixes": [
       "src/fabric/guardrail_adapters/",
       "src/fabric/judge_adapters/",
       "src/fabric/policy_adapters/",
-      "src/fabric/queue_transports/"
+      "src/fabric/queue_transports/",
+      "src/fabric/taxonomies/"
     ]
   },
   "contracts": {
