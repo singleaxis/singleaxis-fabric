@@ -28,6 +28,6 @@
   "policy_id": "acme-capture",
   "policy_version": 3,
   "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
-  "transformation_id": "acme-pii-mask",
+  "transformation_id": "example-mask",
   "transformation_version": "7"
 }

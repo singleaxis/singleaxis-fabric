@@ -29,7 +29,7 @@
     "captured_at": "2026-10-07T00:00:01.120000+00:00",
     "privacy_mode": "original_plus_masked",
     "protection_status": "redacted",
-    "transformation_id": "acme-pii-mask",
+    "transformation_id": "example-mask",
     "transformation_version": "7",
     "policy_id": "acme-capture",
     "policy_version": 3,

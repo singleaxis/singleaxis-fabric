@@ -1,10 +1,12 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Lock the v0.9 deprecation of evaluation-era elements in the v1 contracts.
+"""Lock the Fabric v0.9 deprecation of evaluation-era elements in the v1 contracts.
 
-The elements stay accepted until contract v1.0 (removing them would break the
-published v1 contract), but each must carry JSON Schema ``deprecated: true``
-and the deprecation note. Example data must use neutral values.
+Contract schemas are immutable, so the v1 schemas keep accepting these
+elements; Fabric v1.0 drops them by retiring activity v1 and by publishing a
+new connect contract version. Each element must carry JSON Schema
+``deprecated: true`` and the deprecation note. Example data must use neutral
+values.
 """
 
 from __future__ import annotations
@@ -19,9 +21,16 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ACTIVITY_V1 = REPO_ROOT / "contracts" / "activity" / "v1"
 CONNECT_V1 = REPO_ROOT / "contracts" / "connect" / "v1"
+CAPTURE_V1 = REPO_ROOT / "contracts" / "capture" / "v1"
+CONTENT_V2 = REPO_ROOT / "contracts" / "content" / "v2"
 NOTE = (
-    "Deprecated in v0.9; will be removed in contract v1.0. "
+    "Deprecated in Fabric v0.9; dropped at Fabric v1.0 by retiring activity contract v1 "
+    "(superseded by v2), not by editing v1. "
     "Fabric records activity and does not evaluate it."
+)
+CONNECT_NOTE = (
+    "Fabric v1.0 drops them by publishing a new connect contract version (v2) without them; "
+    "connect v1 is not edited in place and keeps accepting them."
 )
 
 DEPRECATED_SPAN_ATTRIBUTES = (
@@ -41,7 +50,13 @@ DEPRECATED_EVENT_ATTRIBUTES = (
     ("fabric.escalation", "fabric.escalation.triggering_score"),
 )
 DEPRECATED_SURFACES = ("guardrail_verdict", "evaluation")
-FORBIDDEN_EXAMPLE_VALUES = ("atlas:", "owasp", "stub-redactor:pii", "pii-redactor")
+FORBIDDEN_EXAMPLE_VALUES = (
+    "atlas:",
+    "owasp",
+    "stub-redactor:pii",
+    "pii-redactor",
+    "pii-mask",
+)
 
 
 def _json(path: Path) -> Any:
@@ -76,9 +91,18 @@ def test_connect_v1_deprecated_surfaces_stay_accepted() -> None:
     schema = _json(CONNECT_V1 / "schema" / "connector-capability-v1.schema.json")
     surface = schema["$defs"]["semanticSurface"]["properties"]["surface"]
     for value in DEPRECATED_SURFACES:
-        assert value in surface["enum"], f"{value} must stay accepted until v1.0"
+        assert value in surface["enum"], f"{value} must stay accepted by connect v1"
         assert value in surface["description"]
-    assert "will be removed in contract v1.0" in surface["description"]
+    assert CONNECT_NOTE in surface["description"]
+
+
+def test_removal_is_not_promised_for_the_current_contract_version() -> None:
+    # Both v1 contracts already are version 1.0.0; the removal target is the
+    # Fabric v1.0 product release, never an in-place edit of contract v1.
+    for directory in (ACTIVITY_V1, CONNECT_V1):
+        assert _json(directory / "manifest.json")["version"] == "1.0.0"
+        for path in [directory / "README.md", *sorted((directory / "schema").glob("*.json"))]:
+            assert "contract v1.0" not in path.read_text(encoding="utf-8"), path.name
 
 
 def test_shipped_connector_manifests_do_not_declare_deprecated_surfaces() -> None:
@@ -89,10 +113,20 @@ def test_shipped_connector_manifests_do_not_declare_deprecated_surfaces() -> Non
         assert surfaces.isdisjoint(DEPRECATED_SURFACES), path.name
 
 
-@pytest.mark.parametrize(
-    "path", sorted((ACTIVITY_V1 / "goldens").glob("*.json")), ids=lambda p: p.name
+EXAMPLE_DATA = sorted(
+    [
+        *(ACTIVITY_V1 / "goldens").glob("*.json"),
+        *(CAPTURE_V1 / "fixtures").rglob("*.json"),
+        *(CONTENT_V2 / "valid").glob("*.json"),
+        *(CONTENT_V2 / "invalid").glob("*.json"),
+    ]
 )
-def test_activity_v1_goldens_use_neutral_example_values(path: Path) -> None:
+
+
+@pytest.mark.parametrize(
+    "path", EXAMPLE_DATA, ids=lambda p: str(p.relative_to(REPO_ROOT / "contracts"))
+)
+def test_contract_example_data_uses_neutral_values(path: Path) -> None:
     text = path.read_text(encoding="utf-8").lower()
     for value in FORBIDDEN_EXAMPLE_VALUES:
         assert value not in text, f"{path.name} carries example value {value!r}"
