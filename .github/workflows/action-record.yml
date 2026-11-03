@@ -79,7 +79,11 @@ jobs:
           ruff format --check .
           mypy --strict --config-file ../../sdk/python/pyproject.toml ar1 run_ar1.py tests
       - name: Harness unit tests
-        run: python -m pytest qualification/action-record/tests -q -p no:cacheprovider -k "not test_ar1_hermetic"
+        # The end-to-end test (test_ar1_hermetic) is the next step's run_ar1.py; deselect
+        # it by node id (a -k on its name also matches the module and deselects everything).
+        run: >-
+          python -m pytest qualification/action-record/tests -q -p no:cacheprovider
+          --deselect qualification/action-record/tests/test_ar1_hermetic.py::test_ar1_hermetic
       - name: AR-1 hermetic
         run: |
           python qualification/action-record/run_ar1.py --mode hermetic --node required \
@@ -143,6 +147,14 @@ jobs:
         run: |
           python qualification/action-record/run_ar1.py --mode live \
             --out "${RUNNER_TEMP}/ar1-live"
+      - name: Make the AR-1 record readable for upload
+        # The eBPF emitter runs as root and leaves its spool root-owned (0700).
+        if: always()
+        run: |
+          if [ -d "${RUNNER_TEMP}/ar1-live" ]; then
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/ar1-live"
+            chmod -R a+rX "${RUNNER_TEMP}/ar1-live"
+          fi
       - name: Upload the AR-1 record
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
