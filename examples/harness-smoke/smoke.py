@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""End-to-end smoke test against the local Fabric Node evaluation harness.
+"""End-to-end smoke test against the local Fabric Node Compose harness.
 
 Exercises the path a real product would use:
 
@@ -11,7 +11,7 @@ Exercises the path a real product would use:
        count grows. This does not correlate the exact trace or verify its fields.
 
 Run ``make up`` in ``deploy/compose/`` first. The harness is plaintext
-and unauthenticated — local evaluation only. The sink is a controlled
+and unauthenticated — local trials only. The sink is a controlled
 test destination that fsyncs each request to a Docker volume and
 exposes ``/health`` and ``/count`` on ``FABRIC_SINK_ENDPOINT``
 (default ``http://localhost:8080``).

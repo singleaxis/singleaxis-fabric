@@ -1,40 +1,44 @@
 ---
-title: External evaluation interoperability and qualification
-status: draft
-revision: 2
-last_updated: 2026-09-23
+title: Transcript export and governed-content qualification
+status: implemented
+revision: 3
+last_updated: 2026-11-03
 owner: product-architecture
 depends_on: 028, 029, 032, 033
 related: 027
 ---
 
-# 034 — External evaluation interoperability and qualification
+# 034 — Transcript export and governed-content qualification
 
-Defines how an outside evaluator consumes governed content — the transcript
+Defines how an authorized reader (a reviewer, an auditor, or a
+customer-owned tool) reads and verifies governed content: the transcript
 export format, the runnable examples, and the qualification gates that keep
-this honest. Fabric ships *interoperability*, not an evaluation service:
-the boundary from `AGENTS.md` and spec 027 is unchanged.
+this honest. The export is an authorized read and verify path, not a
+service: the boundary from `AGENTS.md` and spec 027 is unchanged.
+
+Revision 3 retitles this spec and restates its positioning; the export
+format and gates are unchanged.
 
 ## Positioning
 
 ```text
-CAPTURE -> PROTECT -> DELIVER          (Fabric OSS — unchanged)
-governed content -> customer storage   (this feature — still customer-side)
-transcript export -> your evaluator    (interop contract — not a service)
+CAPTURE -> PROTECT -> DELIVER                  (Fabric OSS — unchanged)
+governed content -> customer storage           (still customer-side)
+transcript export -> authorized reader/auditor (read and verify contract — not a service)
 ```
 
 - A recording plane is necessary for reliable production review when
-  equivalent recording doesn't already exist — it is not sufficient for
-  evaluation, and Fabric itself remains optional (a customer's existing
-  system may supply any of this).
-- Development and offline evaluation need no Fabric: a harness can record
-  and read its own local transcripts directly, without a Node, queue, or
-  production posture. Offline datasets still carry their own privacy,
-  access, and retention duties — local does not mean uncontrolled.
-- Metadata-only export supports structural review; governed content enables
-  content-level judgment *only where the content is authorized to be read*.
-  Verifiability and content visibility coexist via governed references —
-  they were never mutually exclusive; they were never the same channel.
+  equivalent recording doesn't already exist, and Fabric itself remains
+  optional (a customer's existing system may supply any of this).
+- Development needs no Fabric: a harness can record and read its own local
+  transcripts directly, without a Node, queue, or production posture.
+  Offline datasets still carry their own privacy, access, and retention
+  duties — local does not mean uncontrolled.
+- Metadata-only export supports structural review; governed content
+  supports content-level review *only where the content is authorized to be
+  read*. Verifiability and content visibility coexist via governed
+  references — they were never mutually exclusive; they were never the same
+  channel.
 
 ## Goals
 
@@ -121,10 +125,7 @@ Rules:
 | Collector integration | `deploy/compose` governed overlay / test | Same flow through the real Fabric Node: refs + manifest_ref cross, raw values absent from OTLP, collector logs, and the queue |
 
 The deterministic consumer is deliberately small (stdlib JSON + the
-resolver): it demonstrates *access and integrity*, not grading. The docs
-state plainly that content enables richer evaluation but establishes no
-correctness — rubrics, expected outcomes, and evaluator design remain the
-customer's.
+resolver): it demonstrates *access and integrity*.
 
 ## 3. Collector integration
 
@@ -161,13 +162,13 @@ customer's.
 | 7 | Outage/crash/restart/queue-full/disk-full/shutdown → documented statuses; crash tests distinguish in-memory loss vs durable ack | writer + spool test suite |
 | 8 | Ref-before-object → pending; failure/deletion → explicit; dup writes + corrupted pre-existing tested | resolver + local-store tests |
 | 9 | Unauthorized/cross-tenant/malicious refs fail; corrupted bytes fail; retention/deletion demonstrable | resolver negative tests |
-| 10 | External consumer evaluates export without proprietary service; offline harness without Fabric | example consumer tests |
+| 10 | External consumer reads and verifies the export without a proprietary service; offline harness without Fabric | example consumer tests |
 | 11 | Artifacts pass boundary + governed-content qualification; production S3 tested separately from mocks; env-dependent gates listed | packaging + integration results table |
 | 12 | Docs state overhead, durability limits, adapters, security duties; no overclaim | docs review + scope test |
 
 ## 6. Honest-capability documentation
 
-`docs/governed-content.md` must state: per-call serialization + hashing CPU
+[`docs/explicit-apis.md`](../docs/explicit-apis.md) must state: per-call serialization + hashing CPU
 cost and the enqueue bound; the `process`-mode loss window and the spool
 guarantee boundary; which adapters are wired (coverage matrix); that
 storage encryption/retention/IAM are customer settings; that content
@@ -179,5 +180,6 @@ customer-side object-lock/WORM the SDK does not provide.
 
 - Drafts → lazy consensus → implementation on `feat/governed-content`.
 - Feature lands disabled by default; a release marks it only after the
-  matrix above is green and `docs/recorder-v1-qualification-status.md` is
-  updated to reflect governed-content gates.
+  matrix above is green and
+  [`docs/limitations-and-roadmap.md`](../docs/limitations-and-roadmap.md)
+  reflects the governed-content gates.

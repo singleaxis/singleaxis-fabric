@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking (Python SDK):** the bundled MITRE ATLAS and OWASP LLM reference
+  taxonomies (`fabric/taxonomies/*.json`), the `fabric.taxonomy` helper and
+  its root exports (`Taxonomy`, `TaxonomyEntry`, `bundled_taxonomy_names`,
+  `load_bundled_taxonomies`, `validate_tag`) are removed. Open-vocabulary
+  `tags=` / `fabric.tags` capture is unchanged; validate tags against your
+  own vocabulary if you need to.
+- Archived documentation (`docs/archive/`) is removed. Every page had a
+  current replacement under `docs/`; the history stays in git.
+- Archived specs 001 (product vision), 025 (product planes and packaging) and
+  037 (enterprise deployment and control applicability) are removed. They
+  described evaluation, judge, red-team, regulatory and platform scope outside
+  the OSS recorder. Their numbers are retired, and the history stays in git.
+
+### Changed
+
+- The reference redaction service's sample rules
+  (`examples/redaction-service/rules.example.json`) are now one neutral,
+  illustrative marker rule (`CANARY-...` -> `[masked]`) instead of
+  email/SSN/card/phone patterns. The transformation id `example-mask`
+  version `1` is unchanged.
+- `examples/governed-content/evaluate.py` is renamed to `verify.py` (function
+  `verify_transcript()`); it reads and verifies a governed transcript.
+- Spec 034 is retitled "Transcript export and governed-content qualification"
+  (`specs/034-transcript-export-and-qualification.md`). The
+  `fabric.transcript-export/v1` format is unchanged.
+
+### Documentation
+
+- The README, `docs/README.md`, `docs/limitations-and-roadmap.md` and the
+  specs index name the current work: spec 056, agent action reconstruction.
+  The specs index now lists specs 050–056, and spec statuses match the
+  shipped code.
+
 ## [0.8.0] - 2026-11-02
 
 Fabric 0.8.0 is the first stable release of the passive recorder for AI
@@ -812,7 +847,7 @@ See also [docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md).
   MCP gains inventory capture — `InstrumentedMCPSession.snapshot_inventory()`
   and `record_mcp_inventory(...)` hash each tool *definition* so a
   tool changing underneath the agent (shadow/poison) is detectable. See
-  [`docs/capturing-interactions.md`](docs/archive/capturing-interactions.md) (archived).
+  `docs/capturing-interactions.md` (since removed).
   (spec 022)
 - **Generic interaction capture (Python SDK).** A universal
   `Decision.record_interaction(kind, target, …)` captures *any*
@@ -892,7 +927,7 @@ See also [docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md).
   MCP instrumentation, no host-side I/O helpers, not published to npm,
   and gated by an advisory rather than required CI job. It is not a
   drop-in substitute for the Python SDK, and there is no Go SDK.
-  Outstanding mirror work: [`docs/typescript-parity-backlog.md`](docs/archive/typescript-parity-backlog.md) (archived).
+  Outstanding mirror work: `docs/typescript-parity-backlog.md` (since removed).
 - **Presidio sidecar is bundled, not missing.** `docs/deployment.md`
   said the umbrella did not yet bundle the Presidio subchart. It has
   been a declared dependency since the subchart landed; the accurate

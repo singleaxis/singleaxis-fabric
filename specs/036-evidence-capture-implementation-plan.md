@@ -1,13 +1,21 @@
 ---
 title: Bounded agent evidence capture — implementation and conformance plan
-status: draft
-revision: 1
-last_updated: 2026-09-26
+status: superseded
+superseded_by: 049
+revision: 2
+last_updated: 2026-11-03
 owner: product-architecture
 depends_on: 027, 028, 029, 030, 031, 032, 033, 035
 ---
 
 # 036 — Bounded agent evidence capture: build plan
+
+> **Superseded by [049](049-four-layer-capture-coverage.md).** Do not use this
+> build plan as the current roadmap: the capture phases are now 049 P0–P5
+> (specs 050–055) and the current work is
+> [056](056-agent-action-reconstruction.md). This spec stays because specs
+> 040–046 depend on its definitions. Its "as of this revision" state
+> describes 2026-09-26.
 
 ## Decision and current state
 
@@ -25,18 +33,17 @@ audit/eBPF prototypes. It does **not** have general terminal/PTY transcripts,
 remote SSH-side evidence, DB result capture, HTTP/browser body capture, binary
 artifact storage, run-level coverage reconciliation, or durable host-sensor
 source queues. In particular, a host process/connection record is not an
-agent transcript. The precise gap inventory is in
-[agent activity coverage](../docs/archive/agent-activity-coverage.md); the governed
-content qualification state is in
-[recorder-v1 qualification](../docs/archive/recorder-v1-qualification-status.md).
+agent transcript. The current gap inventory is in
+[limitations and roadmap](../docs/limitations-and-roadmap.md) and the
+coverage statuses of [spec 049](049-four-layer-capture-coverage.md).
 
 This spec does not replace recorder v1 or expand it to evaluation, findings,
-policy decisions, enforcement, or SingleAxis-managed storage. Dev/offline
-evals may record transcripts locally without Fabric. In production, Fabric
-can supply a protected record to a customer-selected destination; downstream
-content-aware evaluation needs authorized access to the customer's content
+policy decisions, enforcement, or SingleAxis-managed storage. Development
+harnesses may record transcripts locally without Fabric. In production,
+Fabric can supply a protected record to a customer-selected destination;
+content-level review needs authorized access to the customer's content
 objects **inside the permitted boundary**. Metadata-only OTLP is not enough
-to grade an agent's actual prompts, results, or context.
+to review an agent's actual prompts, results, or context.
 
 ## 1. Scope of a reconstruction claim
 
@@ -341,9 +348,9 @@ customer-boundary review exist.
 ## Implementation ledger (2026-09-26)
 
 This dated ledger is historical, not the current source-support matrix. See
-[SDK support](../docs/archive/sdk-support-matrix.md) and
-[qualification status](../docs/archive/recorder-v1-qualification-status.md) for later
-Python durable byte-spool and audit logfile checkpoint additions.
+[explicit APIs](../docs/explicit-apis.md),
+[limitations and roadmap](../docs/limitations-and-roadmap.md) and
+[spec 049](049-four-layer-capture-coverage.md) for the current state.
 
 Work package 1 has a locally tested draft baseline. Closed schemas, exact-byte
 pinned fixtures, and a semantic validator live in `contracts/evidence/v1/`,

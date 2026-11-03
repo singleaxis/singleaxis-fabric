@@ -91,8 +91,8 @@ of these hold:
 
 ## What this is not
 
-Demo artifacts only: no evaluation, judging, governance UI, independent
-system audit or full-run verdict. The viewer is a read-only local renderer
+Demo artifacts only: no independent system audit and no full-run
+verdict. The viewer is a read-only local renderer
 for one synthetic run; policy, enforcement and fleet features stay out of
 scope per `AGENTS.md`.
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Authorized transcript consumer — read, verify, and assert.
 
-A downstream reviewer or evaluation harness resolves a decision's
+A downstream reviewer or auditor resolves a decision's
 manifest through the configured governed store, exports the transcript
 with per-object integrity verification, and runs a deterministic
 assertion over the materialized content. This script never talks to a
@@ -12,7 +12,7 @@ storage only, and it does not replay tools or side effects.
 Run::
 
     python capture.py --root ./store          # prints decision_id=...
-    python evaluate.py --root ./store --decision-id <id>
+    python verify.py --root ./store --decision-id <id>
 
 Assertions (deterministic, content-level — possible only because the
 exact bytes are available and byte-verified):
@@ -41,7 +41,7 @@ from typing import Any
 from fabric import ContentResolver, LocalFilesystemContentStore
 
 
-def evaluate(root: str, tenant: str, decision_id: str) -> list[str]:
+def verify_transcript(root: str, tenant: str, decision_id: str) -> list[str]:
     store = LocalFilesystemContentStore(root, tenant_id=tenant)
     resolver = ContentResolver(stores=[store])
     manifest = resolver.manifest_for_decision(decision_id)
@@ -136,7 +136,7 @@ def main() -> int:
     parser.add_argument("--tenant", default="example-tenant")
     parser.add_argument("--decision-id", required=True)
     args = parser.parse_args()
-    problems = evaluate(args.root, args.tenant, args.decision_id)
+    problems = verify_transcript(args.root, args.tenant, args.decision_id)
     if problems:
         for problem in problems:
             print(f"FAIL {problem}")

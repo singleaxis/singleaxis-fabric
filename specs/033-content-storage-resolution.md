@@ -1,8 +1,8 @@
 ---
 title: Customer content storage and authorized resolution
-status: draft
-revision: 2
-last_updated: 2026-09-23
+status: implemented
+revision: 3
+last_updated: 2026-11-03
 owner: product-architecture
 depends_on: 028, 029, 032
 related: 034
@@ -133,7 +133,7 @@ telemetry tenant is a silent cross-tenant leak.
 
 ## 3. Resolver — `fabric.resolver`
 
-Authorized read path used by reviewers, auditors, and evaluators.
+Authorized read path used by reviewers and auditors.
 
 ```python
 resolver = ContentResolver(stores=[

@@ -7,24 +7,40 @@ codebase must either implement something here or come with a spec change.
 ## How specs are numbered
 
 Specs are numbered with a three-digit zero-padded prefix. New specs take
-the next unused number. Numbers are never reused. A superseded, withdrawn or
-replaced spec keeps its number and moves to [`archive/`](archive/), where
-it stays readable for history.
+the next unused number. Numbers are never reused. A superseded or replaced
+spec that still describes in-scope recorder work keeps its number and either
+stays in the index with status `superseded` or moves to
+[`archive/`](archive/). A spec that describes capabilities outside the OSS
+scope (see [`../AGENTS.md`](../AGENTS.md)) is deleted, not archived; its
+history lives in git and its number is retired.
 
 Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 050.
+next unused public number is 057.
 
-For the v0.8 release, the current capture contract is spec
-[049](049-four-layer-capture-coverage.md) (four-layer coverage; P0-A is
-built, P1–P5 are not), building on [047](047-llm-wire-capture-and-reconstruction.md)
+**Current work:** spec [056](056-agent-action-reconstruction.md) —
+reconstructing everything an agent did in a run: the model decisions, the
+tool calls they asked for, the commands and effects those caused, and
+independent host-sensor evidence that corroborates them.
+
+The current capture contract is spec
+[049](049-four-layer-capture-coverage.md) (four-layer coverage, rev 6.4; P0 and
+P0-A are built in v0.8). Its phases P1–P5 and the TypeScript wire track are
+specified by the phase build specs
+[050](050-run-structure-and-records-p1.md) (P1),
+[051](051-context-and-lifecycle-p2.md) (P2),
+[052](052-decisions-and-effects-p3.md) (P3),
+[053](053-execution-channels-p4.md) (P4),
+[054](054-specialised-runtimes-p5.md) (P5) and
+[055](055-typescript-wire-capture.md) (TS-1). 049 builds on [047](047-llm-wire-capture-and-reconstruction.md)
 (wire capture and reconstruction) and
 [048](048-node-content-delivery-and-agent-spool.md) (Node content delivery
 and the agent spool). Where they disagree, 049 wins over 048 and 048 over
 047. Spec [027](027-recorder-v1.md) remains the product boundary of the
 OSS recorder (CAPTURE -> PROTECT -> DELIVER). Specs describing capabilities outside
-that scope (guardrails, judges, policy engines, the telemetry bridge, the
-deployment-bundle lifecycle, platform architecture) were removed when the
-recorder scope became authoritative; their history lives in git.
+that scope (guardrails, judges, evaluation, red-teaming, policy engines, the
+telemetry bridge, the deployment-bundle lifecycle, platform architecture,
+regulatory control mappings) were removed when the recorder scope became
+authoritative; their history lives in git.
 
 ## Status values
 
@@ -36,6 +52,7 @@ Every spec declares a `Status` in its header:
 | `accepted` | Decided; implementation may begin |
 | `implemented` | Behaviour in the code matches the spec |
 | `deprecated` | No longer recommended but still supported |
+| `implementation_in_progress` | Partly implemented; the spec lists the slices still open |
 | `superseded` | Replaced by a newer spec (points to successor) |
 
 Some specs also declare a `qualification` marker, shown after the status in
@@ -43,6 +60,9 @@ the index. `NO_GO` means the spec's work has not been qualified for customer
 production use. `NO_COVERAGE_CLAIM` means the spec makes no claim that a
 verdict covers activity outside the instrumented clients and endpoints it
 lists.
+
+A `superseded_in_part_by` field names a later spec that replaces part of an
+otherwise current spec.
 
 ## How to propose a change
 
@@ -65,24 +85,31 @@ lists.
 | [022](022-surface-logging.md) | Agent surface logging — MCP inventory, skills, delegation, hooks, file access | implemented |
 | [023](023-generic-interaction-capture.md) | Generic interaction capture — universal primitive, baseline, tags, signatures | implemented |
 | [027](027-recorder-v1.md) | Recorder-first OSS release | accepted |
-| [028](028-governed-content-capture.md) | Governed content capture and configuration | draft |
-| [029](029-content-objects-transcript-contract.md) | Content object and transcript manifest contracts | draft |
-| [030](030-auditd-host-connector.md) | auditd host connector | implemented, not enterprise-qualified |
-| [031](031-ebpf-host-emitter.md) | eBPF host emitter | implemented, not enterprise-qualified |
-| [032](032-passive-content-delivery.md) | Passive asynchronous content recording and durable delivery | draft |
-| [033](033-content-storage-resolution.md) | Customer content storage and authorized resolution | draft |
-| [034](034-eval-interoperability.md) | External evaluation interoperability and qualification | draft |
+| [028](028-governed-content-capture.md) | Governed content capture and configuration | implemented |
+| [029](029-content-objects-transcript-contract.md) | Content object and transcript manifest contracts | implemented |
+| [030](030-auditd-host-connector.md) | auditd host connector | implemented; NO_GO |
+| [031](031-ebpf-host-emitter.md) | eBPF host emitter | implemented; NO_GO |
+| [032](032-passive-content-delivery.md) | Passive asynchronous content recording and durable delivery | implemented; partly superseded by 048 |
+| [033](033-content-storage-resolution.md) | Customer content storage and authorized resolution | implemented |
+| [034](034-transcript-export-and-qualification.md) | Transcript export and governed-content qualification | implemented |
 | [035](035-agent-execution-evidence-profile.md) | Agent Execution Evidence Profile for OpenTelemetry | draft |
-| [036](036-evidence-capture-implementation-plan.md) | Bounded agent evidence capture — implementation and conformance plan | draft |
-| [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | draft; NO_GO |
-| [042](042-client-boundary-integration.md) | Opt-in byte-boundary integration for existing Python agents | draft; test-start only |
-| [043](043-custom-agent-call-recording.md) | Linked custom-agent calls, protected bytes and offline comparison | implementation in progress; NO_GO |
+| [036](036-evidence-capture-implementation-plan.md) | Bounded agent evidence capture — implementation and conformance plan | superseded by 049 |
+| [040](040-synthetic-agent-evidence-slice.md) | First bounded synthetic model-terminal-artifact evidence slice | superseded by 046 and 049; NO_GO |
+| [042](042-client-boundary-integration.md) | Opt-in byte-boundary integration for existing Python agents | implemented; NO_GO |
+| [043](043-custom-agent-call-recording.md) | Linked custom-agent calls, protected bytes and offline comparison | implemented; NO_GO |
 | [044](044-production-evidence-closure.md) | Authenticated ingress, source metadata finalization and remaining proof gates | implementation in progress; NO_GO |
-| [045](045-independent-evidence-feeds.md) | Authenticated independent operation and byte feeds | draft; no complete-run claim |
-| [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | accepted; opt-in qualified-run mode implemented; NO_GO |
+| [045](045-independent-evidence-feeds.md) | Authenticated independent operation and byte feeds | draft; NO_GO; no complete-run claim |
+| [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implemented (opt-in qualified-run mode); NO_GO |
 | [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | implemented; NO_COVERAGE_CLAIM; partly superseded by 048 |
 | [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | implemented; NO_COVERAGE_CLAIM |
-| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | accepted (rev 6.3); P0-A implemented, P1–P5 not built; NO_COVERAGE_CLAIM |
+| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | accepted (rev 6.4); P0-A implemented (v0.8), P1–P5 not built; NO_COVERAGE_CLAIM |
+| [050](050-run-structure-and-records-p1.md) | Run structure, records input and model-call projection (049 P1 and P1-A) | draft; NO_COVERAGE_CLAIM |
+| [051](051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (049 P2) | draft; NO_COVERAGE_CLAIM |
+| [052](052-decisions-and-effects-p3.md) | Decisions and effects records, record-only (049 P3) | draft; NO_COVERAGE_CLAIM |
+| [053](053-execution-channels-p4.md) | Execution channels — opt-in observed hooks and production host sources (049 P4) | draft; NO_COVERAGE_CLAIM |
+| [054](054-specialised-runtimes-p5.md) | Specialised runtimes and media — provider endpoints, realtime and automation (049 P5) | draft; NO_COVERAGE_CLAIM |
+| [055](055-typescript-wire-capture.md) | TypeScript model-call wire capture for Node.js agents (TS-1) | draft; NO_COVERAGE_CLAIM |
+| [056](056-agent-action-reconstruction.md) | **Agent action reconstruction** — linking model decisions, tool calls, effects and host evidence (current work) | draft; NO_COVERAGE_CLAIM |
 
 Specs 036 and 040–046 are the design of record for the explicit evidence
 line (`CallRecorder`, byte-boundary adapters, qualified-run mode), which
@@ -96,9 +123,14 @@ reused.
 
 | # | Title | Why archived |
 |---|-------|--------------|
-| [001](archive/001-product-vision.md) | Product vision & positioning | superseded by 027 |
-| [025](archive/025-product-planes-and-packaging.md) | Product planes, packaging, and deployment model | superseded by 027 |
-| [037](archive/037-bounded-enterprise-deployment-and-controls.md) | Bounded enterprise evidence deployment and control applicability | draft enterprise go/no-go plan; replaced by the 049 production profile (enterprise modules removed) |
 | [038](archive/038-capture-boundary-and-loss-qualification.md) | Capture-boundary and source-loss qualification | draft qualification contract; replaced by 049 coverage statuses and phase gates |
 | [039](archive/039-storage-release-and-shadow-pilot.md) | Protected storage, exact-artifact release, and shadow-pilot qualification | draft storage and shadow-pilot qualification; replaced by 049 §7.8 and its gates |
 | [041](archive/041-follow-on-evidence-adapter-scopes.md) | Separately scoped SSH, DB, browser/cloud, sandbox and other adapters | draft follow-on adapter scopes; replaced by 049 P4/P5 |
+
+### Retired numbers
+
+Specs 001 (product vision), 025 (product planes and packaging) and 037
+(enterprise deployment and control applicability) described capabilities
+outside the OSS scope and were deleted. Spec 027 supersedes 001 and 025; the
+spec 049 production profile replaces 037. Their history lives in git, and
+their numbers are not reused.

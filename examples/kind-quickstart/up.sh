@@ -4,8 +4,7 @@
 # What this does:
 #   1. Creates a single-node kind cluster (fabric-quickstart)
 #   2. Installs the Fabric Node umbrella chart with the shadow-dev profile
-#      (passive recorder only: CAPTURE -> PROTECT -> DELIVER — no judges,
-#      guardrails, policy engines, or management services)
+#      (passive recorder only: CAPTURE -> PROTECT -> DELIVER)
 #   3. Port-forwards the collector's OTLP/HTTP receiver to localhost:4318
 #   4. Runs a minimal instrumented demo agent that exports spans to it
 #   5. Tails the collector logs so you SEE the spans arrive
@@ -56,7 +55,7 @@ else
   kind create cluster --name "$CLUSTER" --wait 60s
 fi
 
-# 2. Fabric Node chart (shadow-dev profile — plaintext, local evaluation only)
+# 2. Fabric Node chart (shadow-dev profile — plaintext, local trials only)
 step "Installing Fabric Node chart (shadow-dev profile)"
 helm upgrade --install fabric "${REPO_ROOT}/charts/fabric" \
   --namespace "$NS" \

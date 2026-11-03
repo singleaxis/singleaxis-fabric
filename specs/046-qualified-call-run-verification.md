@@ -1,8 +1,9 @@
 ---
 title: Qualified offline call-run verification and exact receipt sets
-status: accepted
+status: implemented
 qualification: NO_GO
-revision: 1
+revision: 2
+last_updated: 2026-11-03
 depends_on: 035, 038, 039, 043, 044, 045
 ---
 

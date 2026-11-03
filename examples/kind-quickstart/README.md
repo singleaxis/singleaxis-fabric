@@ -3,8 +3,8 @@
 End-to-end local install of the Fabric OSS recorder — the passive
 CAPTURE -> PROTECT -> DELIVER data plane. From zero to watching a
 recorded agent decision arrive at the Fabric Node collector in one
-command. There are no judges, guardrails, policy engines, or management
-services in this stack; the recorder never modifies the monitored agent.
+command. The stack is the recorder only, and it never modifies the
+monitored agent.
 
 ## Prereqs
 
@@ -43,7 +43,7 @@ You should see (abridged):
 |---|---|
 | CAPTURE | The SDK opened a `fabric.decision` span carrying tenant/agent/session identity, a hashed retrieval event, a memory-write event, and `llm_call` / `tool_call` child spans with `gen_ai.*` attributes. |
 | PROTECT | The Fabric Node collector applied its default-deny field allowlist before export — only approved metadata can leave the node. |
-| DELIVER | The `shadow-dev` profile exports to the collector's debug output (visible in `kubectl logs`). No durable destination is configured — that is intentional for local evaluation. |
+| DELIVER | The `shadow-dev` profile exports to the collector's debug output (visible in `kubectl logs`). No durable destination is configured — that is intentional for a local trial. |
 
 The agent runs on your host and exports OTLP/HTTP to the collector via
 the port-forward `up.sh` opens on `localhost:4318`.

@@ -164,6 +164,12 @@ model, and the production profile through a real Node. No customer production de
 Read [limitations](docs/limitations-and-roadmap.md) before relying on a
 verdict.
 
+Current work: [spec 056](specs/056-agent-action-reconstruction.md),
+reconstructing everything an agent did in a run — the model decisions, the
+tool calls they asked for, the commands and effects those caused, and
+independent host-sensor evidence — as one linked record. It is a draft and
+is not built in v0.8.
+
 Specifications: [specs/](specs/README.md). Security reports:
 [SECURITY.md](SECURITY.md). Apache-2.0; contributions require DCO sign-off
 ([CONTRIBUTING.md](CONTRIBUTING.md)).

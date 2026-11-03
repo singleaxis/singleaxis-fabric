@@ -1,8 +1,9 @@
 ---
 title: Bounded client boundary integration
-status: draft
+status: implemented
 qualification: NO_GO
-revision: 1
+revision: 2
+last_updated: 2026-11-03
 owner: recorder-engineering
 depends_on: 035, 036, 040
 ---
@@ -50,4 +51,5 @@ receipt keep the complete-run verdict unavailable. No raw bytes enter OTLP.
 The reference agent may use this adapter to begin integration testing, but
 client deployment still requires a versioned capability manifest, bounded
 route inventory, target storage qualification, exact-artifact pilot, and
-independent owner review under specs 037–039.
+independent owner review under specs 038–039 and the spec 049 production
+profile.

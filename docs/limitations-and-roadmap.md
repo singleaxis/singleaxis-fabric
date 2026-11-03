@@ -106,17 +106,36 @@ Spec 049 describes the record in four layers: context, structure, content,
 and decisions and effects. v0.8 delivers phase **P0-A** (the content path
 and privacy gate) on top of the 047/048 wire line. The rest is not built.
 
-| Phase | What it adds | Status |
-|---|---|---|
-| P0 | Coverage contract freeze (`contracts/coverage/v1`) | Contracts published; no run-level coverage report yet |
-| P0-A | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8** |
-| P1 | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | Not built |
-| P1-A | Mixed explicit + wire capture qualification, passivity harness | Not built |
-| P2 | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
-| P3 | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
-| P4 | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built |
-| P5 | Realtime/websocket, provider batch and files, media, UI automation | Not built |
-| TS-1 | TypeScript wire capture on `undici` (Node.js 24+) | Not built |
+| Phase | Build spec | What it adds | Status |
+|---|---|---|---|
+| P0 | [049](../specs/049-four-layer-capture-coverage.md) | Coverage contract freeze (`contracts/coverage/v1`) | Contracts published; no run-level coverage report yet |
+| P0-A | [049](../specs/049-four-layer-capture-coverage.md) | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8** |
+| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | Not built |
+| P1-A | [050](../specs/050-run-structure-and-records-p1.md) | Mixed explicit + wire capture qualification, passivity harness | Not built |
+| P2 | [051](../specs/051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
+| P3 | [052](../specs/052-decisions-and-effects-p3.md) | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
+| P4 | [053](../specs/053-execution-channels-p4.md) | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built |
+| P5 | [054](../specs/054-specialised-runtimes-p5.md) | Realtime/websocket, provider batch and files, media, UI automation | Not built |
+| TS-1 | [055](../specs/055-typescript-wire-capture.md) | TypeScript wire capture on `undici` (Node.js 24+) | Not built |
+
+### Current focus: agent action reconstruction (spec 056)
+
+[Spec 056](../specs/056-agent-action-reconstruction.md) (draft) is the current
+work. It answers, for one run: what did the agent actually do, which model
+decision caused each action, and what independent evidence confirms it. It
+links four chains that Fabric records separately today:
+
+- **Decisions:** what the model saw and returned (wire capture, 047/048, on
+  the P1 run record, 050).
+- **Actions:** the tool calls the model asked for and the results the agent
+  fed back (parsed from the captured model bodies).
+- **Effects:** the commands the agent's process ran, their output and exit
+  status (the opt-in subprocess hook, 053).
+- **Corroboration:** what the operating system independently reports (eBPF
+  emitter and auditd receiver, 030/031/053).
+
+Each chain's completeness is reported separately, and anything the agent did
+that no tool call explains is listed. None of this is built in v0.8.
 
 Out of scope for Fabric OSS at every phase: evaluation, judging, scoring,
 guardrails, escalation, blocking or modifying agent actions, policy engines

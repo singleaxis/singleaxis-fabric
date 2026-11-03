@@ -17,7 +17,7 @@ What it uses:
 - `ContentResolver` to read the transcript back with descriptor +
   SHA-256 verification.
 
-What it does **not** use: Fabric Node, the OTLP Collector, Relay, any
+What it does **not** use: Fabric Node, the OTLP Collector, any
 SingleAxis Platform service, or any network call. Nothing leaves the
 `--root` directory.
 

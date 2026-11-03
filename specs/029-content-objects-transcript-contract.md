@@ -1,8 +1,8 @@
 ---
 title: Content object and transcript manifest contracts
-status: draft
-revision: 2
-last_updated: 2026-09-23
+status: implemented
+revision: 3
+last_updated: 2026-11-03
 owner: product-architecture
 depends_on: 028
 related: 032, 033, 034

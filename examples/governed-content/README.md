@@ -23,14 +23,14 @@ python capture.py --root ./store
 #   manifest_uri=file://.../manifests/<id>.json
 #   store_root=./store
 
-python evaluate.py --root ./store --decision-id <uuid>
+python verify.py --root ./store --decision-id <uuid>
 #   PASS — transcript verified; deterministic content assertions hold
 ```
 
 ## What this demonstrates — and what it does not
 
 - The consumer runs where the content is authorized to be read (the
-  local store). Content evaluators need an authorized content-access
+  local store). Content reviewers need an authorized content-access
   path; changing collector settings alone never recovers content that
   was never captured.
 - Integrity is byte-level: every materialized object passed digest +
@@ -52,5 +52,5 @@ python evaluate.py --root ./store --decision-id <uuid>
 - `capture.py` — records the flow with `durability="inline"` (objects
   land synchronously; `process` uses bounded in-memory delivery, while
   `spooled` adds an explicit durable handoff after its acknowledgement).
-- `evaluate.py` — the authorized consumer: manifest resolution,
+- `verify.py` — the authorized reader: manifest resolution,
   verified transcript export, deterministic assertions.

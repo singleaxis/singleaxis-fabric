@@ -52,9 +52,8 @@ invalid bucket, prefix or endpoint, on `kmsKeyId` without `aws:kms`, and with
 missing SSE or the file backend. `tests/test-content-delivery.sh` is the
 render contract.
 
-It does not expose runtime policy, prompt-time PII processing, Presidio,
-sampling, judges, red teaming, or governance. Those concerns are not part of
-the Fabric Node v1 deployment path.
+The chart deploys the recorder only: it captures, protects and delivers, and
+exposes no runtime policy, sampling or governance settings.
 
 Use the umbrella chart's `shadow-dev` or `shadow-production` profile rather
 than installing this dependency directly. The production profile enforces the
