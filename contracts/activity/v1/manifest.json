@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "schema": {
     "path": "schema/fabric-decision-v1.schema.json",
-    "sha256": "967b73a03ec96478781f16aab51bd9d403c4930d64e8551aac95571632993b8b"
+    "sha256": "4b2c0a856bbbeb153b2551a4969b79ce2749215896b65fe401a91df56c446aca"
   },
   "scenarios": [
     {
@@ -21,7 +21,7 @@
     {
       "name": "content_ref_stamped",
       "fixture": "goldens/content_ref_stamped.json",
-      "sha256": "dc1c2a1dafc1a3794a37a9c875a715f600b0ec135b4836580900fe5fd2f392a2",
+      "sha256": "1656cfeb79b76b5e8855ce4f33928c3be8d33cbe16404aa6ff6133af198ab713",
       "support": ["python-legacy", "typescript-legacy"]
     },
     {
@@ -45,7 +45,7 @@
     {
       "name": "hook",
       "fixture": "goldens/hook.json",
-      "sha256": "b9efdf4215047904654ba085445a2c7b34aac55c75aae1f42cf0f4e1ddcbfc64",
+      "sha256": "1734fae1dbe37d96c9fcd534bb179a3e1dcd6f5f79b47a006a25c5ddd58229b7",
       "support": ["python", "typescript"]
     },
     {
@@ -63,7 +63,7 @@
     {
       "name": "interaction_tagged",
       "fixture": "goldens/interaction_tagged.json",
-      "sha256": "182fe6850691e00ab1c2f2feba6f0b076dd4263f998c5a28d6d7f398cff4985c",
+      "sha256": "1931e3999932fe33a37a3590e5b28f87cd7924ca70310c957a6b6c6dcd40653e",
       "support": ["python", "typescript"]
     },
     {

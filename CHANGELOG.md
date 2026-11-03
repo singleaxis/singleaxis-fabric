@@ -8,6 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Contracts:** activity v1 example data uses neutral values. The
+  `interaction_tagged` golden carries `example:category` and `example:label`
+  instead of attack-taxonomy tags, `content_ref_stamped` names the policy
+  `stub-redactor:canary`, and the `hook` golden names `example-redactor`. The
+  capture v1 and content v2 masking fixtures name the transformation
+  `example-mask` instead of `acme-pii-mask`. The manifest digests are
+  re-pinned; the redaction interface is unchanged. New Python and TypeScript
+  SDK tests reproduce the re-valued `hook` and `interaction_tagged` goldens;
+  the activity v1 `support` declarations are documented as historical.
+
+### Deprecated
+
+- **Contracts:** the evaluation, judge and guardrail-verdict elements left in
+  the v1 contracts are deprecated in Fabric v0.9 and dropped at Fabric v1.0.
+  Fabric records activity and does not evaluate it. Contract schemas are
+  immutable, so v1 is not edited in place: every document that validates
+  today still validates, and no field, event or enum value is removed.
+  - `contracts/connect/v1` (published): the `guardrail_verdict` and
+    `evaluation` values of the semantic-surface enum. No shipped connector
+    manifest declares them. Fabric v1.0 removes them in a new connect
+    contract version (v2).
+  - `contracts/activity/v1` (unpublished, pinned historical contract; the
+    release policy ships activity v2 only): the `fabric.guardrail` (including
+    its PII `fabric.guardrail.entities` labels), `fabric.eval` and
+    `fabric.judge.queued` events; the decision-span attributes
+    `fabric.blocked`, `fabric.blocked.policies`, `fabric.eval_count`,
+    `fabric.eval_rubrics`, `fabric.judge_queued_count` and
+    `fabric.judge_rubrics`; and `fabric.escalation.rubric_id` and
+    `fabric.escalation.triggering_score` on the decision span and the
+    `fabric.escalation` event. Each carries JSON Schema `"deprecated": true`.
+    Fabric v1.0 drops them by retiring activity v1.
+  - The policy, tool-authorization and escalation verdict elements are not
+    deprecated by this change; their status is an open owner decision.
+  - Neither SDK emits any of these, so no runtime warning is added. See
+    [API stability](docs/api-stability.md#deprecated-contract-elements).
+
 ## [0.9.0] - 2026-11-03
 
 Fabric 0.9.0 narrows the repository and packages to the recorder and its

@@ -197,6 +197,7 @@
       "required": ["surface", "source"],
       "properties": {
         "surface": {
+          "description": "Semantic surface the connector observes. The values guardrail_verdict and evaluation are deprecated in Fabric v0.9. Fabric v1.0 drops them by publishing a new connect contract version (v2) without them; connect v1 is not edited in place and keeps accepting them. Fabric records activity and does not evaluate it.",
           "enum": [
             "decision_boundary", "llm_operation", "tool_operation", "retrieval", "memory",
             "side_effect", "policy_verdict", "guardrail_verdict", "authorization_verdict",
