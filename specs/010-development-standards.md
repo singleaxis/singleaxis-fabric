@@ -105,7 +105,7 @@ Minimum coverage bars on new code:
 
 ### Integration and end-to-end tests
 
-- `deploy/compose/qualify.sh` — local evaluation stack testing protection,
+- `deploy/compose/qualify.sh` — local trial stack testing protection,
   durable queue and controlled-sink delivery. This path is plaintext and
   unauthenticated; it does not qualify authenticated production ingress.
 - `e2e.yml` kind job — Helm install on a real cluster, fsync sink,
