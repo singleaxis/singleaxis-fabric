@@ -16,7 +16,7 @@ name: Action record (AR-1)
 
 on:
   push:
-    branches: [main, feat/action-record]
+    branches: [main]
     paths:
       - "sdk/python/**"
       - "components/otel-collector-fabric/**"
@@ -25,7 +25,7 @@ on:
       - "qualification/action-record/**"
       - ".github/workflows/action-record.yml"
   pull_request:
-    branches: [main, feat/action-record]
+    branches: [main]
     paths:
       - "sdk/python/**"
       - "components/otel-collector-fabric/**"
