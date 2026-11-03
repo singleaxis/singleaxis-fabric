@@ -13,5 +13,4 @@ path, so keep the path stable.
 Copy it as a starting point for your own policy and see
 [deployment](../../docs/deployment.md) and
 [privacy and security](../../docs/privacy-and-security.md) for the
-`production` profile requirements. The directory name is historical; it
-contains no enterprise-only feature.
+`production` profile requirements.

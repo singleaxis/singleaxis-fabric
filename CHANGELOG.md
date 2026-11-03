@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   its root exports (`Taxonomy`, `TaxonomyEntry`, `bundled_taxonomy_names`,
   `load_bundled_taxonomies`, `validate_tag`) are removed. Open-vocabulary
   `tags=` / `fabric.tags` capture is unchanged; validate tags against your
-  own vocabulary if you need to.
+  own vocabulary if you need to. This is a documented pre-1.0 break under
+  [API stability](docs/api-stability.md): the exports were never documented
+  in `docs/`, so no deprecation period applies.
 - Archived documentation (`docs/archive/`) is removed. Every page had a
   current replacement under `docs/`; the history stays in git.
 - Archived specs 001 (product vision), 025 (product planes and packaging) and
@@ -25,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Local Compose trial stack renamed from "evaluation" to "local trial".**
+  `docker-compose.s3-eval.yml` is now `docker-compose.s3-local.yml`; the make
+  targets are `up-s3-local` / `down-s3-local` / `reset-s3-local` (the
+  `-s3-eval` names remain as aliases); the overlay's services, volume and
+  variables are `s3-local`, `s3-local-init`, `s3-local-data` and
+  `FABRIC_S3_LOCAL_*` (rename `FABRIC_S3_EVAL_*` in your `.env`). The default
+  tenant id is `local-trial`, the Compose project is `fabric-node-local`, so
+  an existing local stack starts with fresh volumes. Production overlays are
+  unchanged.
 - The reference redaction service's sample rules
   (`examples/redaction-service/rules.example.json`) are now one neutral,
   illustrative marker rule (`CANARY-...` -> `[masked]`) instead of

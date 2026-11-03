@@ -2,7 +2,7 @@
 title: Overview & Conventions
 status: accepted
 revision: 1
-last_updated: 2026-04-18
+last_updated: 2026-11-03
 owner: project-lead
 ---
 
@@ -34,7 +34,7 @@ Every spec is a Markdown file with YAML front-matter:
 ```yaml
 ---
 title: Short human title
-status: draft | accepted | implemented | deprecated | superseded
+status: draft | accepted | implemented | implementation_in_progress | deprecated | superseded
 revision: 1          # increments with each material change
 last_updated: YYYY-MM-DD
 owner: <maintainer handle or team>
@@ -72,8 +72,8 @@ section.
   should answer their questions without hand-waving.
 - **Show the boundaries.** Draw diagrams with
   [Mermaid](https://mermaid.js.org/) or ASCII. Name every interface.
-- **Cite upstream standards.** If the design conforms to OTel semantic
-  conventions, NIST AI RMF, ISO 42001, EU AI Act, cite it inline.
+- **Cite upstream technical standards.** If the design conforms to
+  OpenTelemetry, W3C Trace Context or JSON Schema, cite it inline.
 
 ## Diagrams
 
@@ -98,16 +98,16 @@ Shared vocabulary used across specs:
 | Term | Definition |
 |------|------------|
 | **Fabric** | This project in its entirety — the OSS recorder (`CAPTURE -> PROTECT -> DELIVER`) |
-| **Fabric Node** | The OpenTelemetry Collector distribution that receives, protects, and delivers telemetry — the only runtime in this repository |
+| **Fabric Node** | The OpenTelemetry Collector distribution that receives, protects and delivers records; the other runtimes are the SDK wire capture and the optional host emitter |
 | **Tenant** | An organization running Fabric in their own infrastructure |
 | **Fabric Node boundary** | The customer-controlled edge inside which protection happens before export |
 | **Destination** | The customer-selected OTLP backend (or SingleAxis Platform) that receives protected records |
 | **SingleAxis Platform** | The separate commercial system that monitors, evaluates, and governs delivered records — out of scope for this repository |
-| **Decision** | A single agent turn that produces an observable output (`fabric.decision` span) |
-| **Recorder release** | The published artifact set: Fabric Node image, SDKs, fabricctl, Helm chart, public contracts |
+| **Decision** | A single agent turn that produces an observable output (`fabric.decision` span). Not the same as the "Decisions" chain of spec 056, which is a captured model request and response |
+| **Recorder release** | The published artifact set: Fabric Node image, SDKs, fabricctl, Helm chart, optional host emitter image, public contracts |
 | **Activity Envelope** | The public contract vocabulary for downstream normalization; recorder v1 does not materialize envelopes itself |
 
 > Terms from the pre-recorder architecture — Control Plane, Audit/Telemetry
 > Bridge, SASF, Decision Graph, Rubric, Regulatory Profile — describe
-> SingleAxis Platform or removed components. They appear in historical specs
-> only and are not part of recorder-v1.
+> SingleAxis Platform or removed components. They appear only in git
+> history and are not part of recorder-v1.

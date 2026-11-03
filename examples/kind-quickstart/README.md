@@ -4,20 +4,21 @@ End-to-end local install of the Fabric OSS recorder — the passive
 CAPTURE -> PROTECT -> DELIVER data plane. From zero to watching a
 recorded agent decision arrive at the Fabric Node collector in one
 command. The stack is the recorder only, and it never modifies the
-monitored agent.
+monitored agent. The demo agent uses the explicit recorder APIs, not wire
+capture; for zero-code capture see [`wire-capture/`](../wire-capture/).
 
 ## Prereqs
 
 - `docker` (running)
 - `kind`, `kubectl`, `helm`
 - Python 3.12+
-- `ANTHROPIC_API_KEY` exported, **or** use `--mock` to skip the real LLM call
+- `ANTHROPIC_API_KEY` only for `--real`; by default the model is a stub
 
 ## Run
 
 ```bash
-./up.sh           # real model, ~3-5 minutes
-./up.sh --mock    # deterministic stub, ~2 minutes
+./up.sh           # deterministic stub, ~2 minutes
+./up.sh --real    # one real model call (needs ANTHROPIC_API_KEY), ~3-5 minutes
 ```
 
 You should see (abridged):

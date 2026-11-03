@@ -43,13 +43,13 @@ Ports, all on `127.0.0.1`: `4317` OTLP/gRPC, `4318` OTLP/HTTP, `4319`
 content, `13133` health, `8080` test sink. The sink stores every span
 request and acknowledges only after fsync; `make export-spans OUT=<dir>`
 copies them for `fabric.reconstruct`. The Node writes content to the
-`fabric-content` volume (unencrypted), with tenant `evaluation` by default
+`fabric-content` volume (unencrypted), with tenant `local-trial` by default
 (a fixed local-trial tenant id).
 This setup is plaintext and unauthenticated: never expose it beyond the
 host.
 
 Other targets: `make smoke` (send one fixture trace), `make qualify`
-(destination outage and Node restart recovery), `make up-s3-eval` (a local
+(destination outage and Node restart recovery), `make up-s3-local` (a local
 SeaweedFS S3 store with SSE, Node-only writer keys and a read-only reader),
 `make down` / `make reset`.
 

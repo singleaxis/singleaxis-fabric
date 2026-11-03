@@ -970,12 +970,12 @@ s3://bucket/prefix`, plus new `--s3-endpoint-url URL`, `--s3-region REGION`
 and `--s3-path-style` (passed to `S3ContentStore(endpoint_url=…,
 region_name=…, addressing_style="path")`). Credentials come from the default
 boto3 chain. The e2e qualifies the path agent → Node → an S3-compatible
-evaluation store (`deploy/compose/docker-compose.s3-eval.yml`: SeaweedFS
+local trial store (`deploy/compose/docker-compose.s3-local.yml`: SeaweedFS
 with an SSE-S3 key and default bucket encryption; MinIO until its community
 images stopped being published) → reconstruct. It verifies `If-None-Match:
 *` (412 on an existing key), SSE-S3 as the store reports it and as stored
 below its S3 gateway, and the writer/reader scopes; `aws:kms` needs real S3
-and is not covered by the evaluation store.
+and is not covered by the local trial store.
 
 `--run RUN_ID` takes the id given to `fabric.wire.run()` in the clear (or
 its `r-` pseudonym, or a fallback id) and selects the run whose recorded id

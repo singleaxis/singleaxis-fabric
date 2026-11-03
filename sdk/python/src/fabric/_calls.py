@@ -170,7 +170,7 @@ class ToolErrorCategory(StrEnum):
 # fields are opt-in: a stable logical ``fabric.step.id`` (same across
 # retries of the same operation) and step-level attempt/retry metadata
 # distinct from the enclosing execution's attempt/retry. Emit-only —
-# the OSS SDK stamps; the commercial layer interprets.
+# the OSS SDK stamps; downstream consumers interpret.
 FABRIC_STEP_TYPE = "fabric.step.type"
 FABRIC_STEP_ID = "fabric.step.id"
 FABRIC_STEP_ATTEMPT_ID = "fabric.step.attempt_id"

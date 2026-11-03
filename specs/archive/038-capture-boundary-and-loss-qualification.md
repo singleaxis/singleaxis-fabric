@@ -1,6 +1,7 @@
 ---
 title: Capture-boundary and source-loss qualification
-status: draft
+status: superseded
+superseded_by: 049
 revision: 1
 last_updated: 2026-09-26
 owner: product-architecture

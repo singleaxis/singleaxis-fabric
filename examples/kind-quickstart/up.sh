@@ -6,22 +6,23 @@
 #   2. Installs the Fabric Node umbrella chart with the shadow-dev profile
 #      (passive recorder only: CAPTURE -> PROTECT -> DELIVER)
 #   3. Port-forwards the collector's OTLP/HTTP receiver to localhost:4318
-#   4. Runs a minimal instrumented demo agent that exports spans to it
+#   4. Runs a minimal demo agent on the explicit recorder APIs (not wire
+#      capture) that exports spans to it; the model is a stub by default
 #   5. Tails the collector logs so you SEE the spans arrive
 #
 # Prerequisites:
 #   - kind, kubectl, helm, docker (running), python3
-#   - ANTHROPIC_API_KEY in your env (or use --mock)
+#   - ANTHROPIC_API_KEY in your env only with --real
 #
 # Usage:
-#   ./up.sh           # real model (needs ANTHROPIC_API_KEY)
-#   ./up.sh --mock    # stub model, no key needed
+#   ./up.sh           # stub model, no key needed (--mock is accepted too)
+#   ./up.sh --real    # real model call (needs ANTHROPIC_API_KEY)
 #   ./down.sh         # tear down the cluster
 #
 set -euo pipefail
 
-MOCK=0
-[[ "${1:-}" == "--mock" ]] && MOCK=1
+MOCK=1
+[[ "${1:-}" == "--real" ]] && MOCK=0
 
 CLUSTER=fabric-quickstart
 NS=fabric-system
@@ -42,7 +43,7 @@ for bin in kind kubectl helm docker python3; do
 done
 docker info >/dev/null 2>&1 || { echo "docker not running"; exit 1; }
 if [[ $MOCK -eq 0 && -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  echo "ANTHROPIC_API_KEY not set; re-run with --mock for a no-key demo."
+  echo "ANTHROPIC_API_KEY not set; --real needs it (run without --real for the stub)."
   exit 1
 fi
 note "tools: ok"
@@ -87,9 +88,9 @@ if [[ $MOCK -eq 0 ]]; then
 fi
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://localhost:4318}"
 if [[ $MOCK -eq 1 ]]; then
-  FABRIC_DEMO_MOCK=1 ./.venv/bin/python agent.py
-else
   ./.venv/bin/python agent.py
+else
+  FABRIC_DEMO_REAL=1 ./.venv/bin/python agent.py
 fi
 
 echo

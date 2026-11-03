@@ -116,9 +116,9 @@ Issues that undermine any of these will be treated as critical:
    recorder's worker, never on the application's thread; exporter
    backpressure and shutdown must be kept off the application critical
    path and measured in the target deployment.
-   Release artifacts contain no
-   enforcement, judge, guardrail, policy, red-team, or management
-   capability — enforced by artifact-content tests, not just defaults.
+   Release artifacts contain only recorder capabilities
+   ([AGENTS.md](AGENTS.md)), enforced by artifact-content tests, not just
+   defaults.
 5. **Tamper-evident supply chain** — the release workflow configures
    cosign signatures for images and charts, and build provenance for images
    and CLI archives. Verify each published artifact and its provenance; a

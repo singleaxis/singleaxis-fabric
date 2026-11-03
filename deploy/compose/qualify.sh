@@ -20,7 +20,7 @@ if [ -z "${otlp_address}" ] || [ -z "${sink_address}" ]; then
 fi
 
 # If the script exits while the sink is stopped (failure, Ctrl-C, kill), put
-# it back so the evaluation stack is not left degraded.
+# it back so the local trial stack is not left degraded.
 sink_stopped=0
 restore_sink() {
   if [ "${sink_stopped}" -eq 1 ]; then

@@ -18,7 +18,7 @@ The ``fabric.execution`` span carries all seven correlation fields:
 ``fabric.execution.retry.previous_attempt_id``. The attempt fields
 describe a single logical task's retry lineage (same ``execution_id``,
 one attempt id/number per retry). This SDK only *emits* them — it never
-schedules, executes, or replays a retry (that is the commercial layer).
+schedules, executes, or replays a retry (that is outside the recorder).
 
 Inheritance contract
 --------------------

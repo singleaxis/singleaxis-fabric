@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """A reference customer redaction service (contracts/redaction/v1), stdlib only.
 
-An example, not a PII detector and not part of any Fabric release artifact. It
+An example of the redaction interface, not a detector, and not part of any Fabric
+release artifact. It
 listens on a Unix domain socket or a loopback HTTP port and answers
 ``POST /v1/transform`` by applying the regular-expression rules configured for the
 requested ``(transformation id, version)`` to the body, decoded as UTF-8 with

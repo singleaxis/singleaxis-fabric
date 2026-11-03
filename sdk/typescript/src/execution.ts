@@ -5,8 +5,8 @@
  * The `execution` primitive — an optional outer correlation + lifecycle span.
  *
  * An {@link Execution} is an OPTIONAL outer correlation + lifecycle span. It
- * does not drive, schedule, or reconstruct anything — that is the commercial
- * layer's job. All the OSS SDK does is emit a canonical `fabric.execution`
+ * does not drive, schedule, or reconstruct anything; that is outside the
+ * recorder. All the OSS SDK does is emit a canonical `fabric.execution`
  * span and publish the execution-correlation metadata that any
  * {@link Decision} opened inside it inherits, so a run of related decisions
  * correlates without the host threading ids by hand. Mirrors the Python SDK's

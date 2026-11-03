@@ -106,7 +106,7 @@ echo "    sink records: $N"
 docker logs "$COL_ID" > "$RUN_OUT/collector.log" 2>&1 || true
 
 echo "==> reconstruct"
-FABRIC_DEMO_OUT="$RUN_OUT" "$PY" reconstruct.py
+FABRIC_DEMO_OUT="$RUN_OUT" "$PY" build_journal.py
 
 echo ""
 echo "==> done"

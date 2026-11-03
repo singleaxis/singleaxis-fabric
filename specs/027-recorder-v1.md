@@ -2,7 +2,7 @@
 title: Recorder-first OSS release
 status: accepted
 revision: 1
-last_updated: 2026-08-31
+last_updated: 2026-11-03
 owner: product-architecture
 supersedes: 025, 001
 ---
@@ -29,9 +29,11 @@ stage. Neither is a separate deployed layer.
 
 | Artifact | Responsibility |
 |---|---|
-| Fabric SDKs | Optional in-process instrumentation and framework adapters |
+| Fabric SDKs | Zero-code wire capture and optional explicit APIs |
 | Fabric Node | OTLP ingestion, metadata categorization, export protection, buffering and delivery |
-| `fabricctl` | Local recorder configuration creation, validation, digest, help and version reporting |
+| `fabricctl` | Local recorder declaration creation, validation, digest, help and version reporting |
+| Helm chart `fabric` | Installs the Fabric Node with the shipped shadow profiles |
+| Host emitter image (optional) | eBPF host sensor that reports process, network and file metadata as corroboration |
 
 Fabric Node is the existing Fabric OpenTelemetry Collector distribution. The
 separate Relay implementation was removed from this repository along with the
@@ -145,7 +147,8 @@ A recorder-v1 release must prove:
    delivery contract validates explicit event/batch identities when used;
 7. production configuration fails closed when TLS, authentication, storage or
    destination policy is incomplete;
-8. only the Fabric Node, SDKs, CLI and public recorder contracts are published;
+8. only the Fabric Node, SDKs, CLI, Helm chart, optional host emitter image and
+   public recorder contracts are published;
 9. release artifacts have checksums, provenance and independently visible
    versions.
 

@@ -17,12 +17,12 @@ not built.
 | Model hosts you have not listed | Only `api.openai.com`, `api.anthropic.com` and `*.openai.azure.com` are matched by default. | Nothing, until you add the host with `FABRIC_WIRE_ENDPOINTS`. |
 | HTTP headers, environment values, credentials | Privacy rule: never captured. | Nothing. |
 | Hidden reasoning, local variables, provider-held state | Never crosses an observable boundary; Fabric never fetches provider-side state. | Only what appears in the request and response bytes. |
-| Tool execution, subprocesses, databases, files, MCP servers, browsers | No capture point in v0.8 except what the application reports through the explicit APIs, and the optional [host sensors](host-sensors.md) (metadata only). | Only what the application reports, or host metadata. |
+| Tool execution, subprocesses, databases, files, MCP servers, browsers | No capture point in v0.8 except what the application reports through the explicit APIs, and the optional [host sensors](host-sensors.md) (metadata only). MCP calls are recorded only when the application wraps its session with `fabric.integrations.mcp` (app-reported). | Only what the application reports, or host metadata. |
 
 LiteLLM and DSPy send through `aiohttp` by default; that path is captured
 (capture point `wire.py.aiohttp`, on whenever wire capture is installed;
-`FABRIC_WIRE_AIOHTTP=0` turns it off). In the agent-matrix test DSPy's
-default path was then captured, locally and through a Node.
+`FABRIC_WIRE_AIOHTTP=0` turns it off). In the manual agent-matrix run (see
+below) DSPy's default path was then captured, locally and through a Node.
 
 **A `complete` verdict is scoped to instrumented clients.** In a test that
 sent one call each through the OpenAI SDK (httpx), `aiohttp`, `requests` and
@@ -34,9 +34,10 @@ calls that went through httpx, httpx2 or aiohttp to a matched endpoint".
 
 ## Known defects
 
-The real-framework test matrix (18 single-process framework rows, local and
-Node cases, and loss probes) was rerun after the multiprocessing, aiohttp
-and capture-queue fixes listed below; the disk-full, throughput and
+An 18-row framework matrix (single-process framework rows, local and Node
+cases, and loss probes) was run manually on a developer machine before
+v0.8.0; the harness is not in this repository and is not part of CI. It was
+rerun after the multiprocessing, aiohttp and capture-queue fixes listed below; the disk-full, throughput and
 reconstruct fixes were tested by their own suites and benchmark. Wherever calls were lost through an instrumented client,
 reconstruct reported `partial`, `unverified` or no run; it never reported
 `complete`.
@@ -104,13 +105,14 @@ read [privacy and security](privacy-and-security.md).
 
 Spec 049 describes the record in four layers: context, structure, content,
 and decisions and effects. v0.8 delivers phase **P0-A** (the content path
-and privacy gate) on top of the 047/048 wire line. The rest is not built.
+and privacy gate) on top of the 047/048 wire line. P1 waves 0–2 are built on the unreleased `feat/p1-integration`
+branch. The rest is not built.
 
 | Phase | Build spec | What it adds | Status |
 |---|---|---|---|
 | P0 | [049](../specs/049-four-layer-capture-coverage.md) | Coverage contract freeze (`contracts/coverage/v1`) | Contracts published; no run-level coverage report yet |
 | P0-A | [049](../specs/049-four-layer-capture-coverage.md) | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8** |
-| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | Not built |
+| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | Waves 0–2 (shared allocator, records input via `WireHandle.records`, segments, seals, manifests, step projection) are built on the unreleased `feat/p1-integration` branch |
 | P1-A | [050](../specs/050-run-structure-and-records-p1.md) | Mixed explicit + wire capture qualification, passivity harness | Not built |
 | P2 | [051](../specs/051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
 | P3 | [052](../specs/052-decisions-and-effects-p3.md) | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
@@ -135,7 +137,12 @@ links four chains that Fabric records separately today:
   emitter and auditd receiver, 030/031/053).
 
 Each chain's completeness is reported separately, and anything the agent did
-that no tool call explains is listed. None of this is built in v0.8.
+that no tool call explains is listed.
+
+Built today: Decisions (wire capture) and tool call ↔ result pairing
+(Actions, `reconstruct/_stitch.py`). Not built: linking effects to tool
+calls, the subprocess hook, the process-tree host join and per-chain
+verdicts.
 
 Out of scope for Fabric OSS at every phase: evaluation, judging, scoring,
 guardrails, escalation, blocking or modifying agent actions, policy engines

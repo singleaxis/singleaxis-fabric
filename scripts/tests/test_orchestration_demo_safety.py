@@ -120,7 +120,7 @@ def test_demo_scripts_parse() -> None:
 def test_reconstruction_stays_in_checkout_and_labels_synthetic_provenance() -> None:
     import runpy
 
-    module = runpy.run_path(str(DEMO / "reconstruct.py"))
+    module = runpy.run_path(str(DEMO / "build_journal.py"))
     assert module["REPO"] == ROOT
     assert (module["REPO"] / "sdk/python/src/fabric").is_dir()
     events = module["_audit_join"](
@@ -137,7 +137,7 @@ def test_reconstruction_stays_in_checkout_and_labels_synthetic_provenance() -> N
     assert events[0]["provenance"] == "synthetic-agent-shim"
     assert (
         "not independent kernel or auditd evidence"
-        in (DEMO / "reconstruct.py").read_text()
+        in (DEMO / "build_journal.py").read_text()
     )
 
 
@@ -165,3 +165,35 @@ def test_vendored_btf_header_digest_does_not_invent_source_provenance() -> None:
     assert provenance["sha256"] == hashlib.sha256(header).hexdigest()
     assert provenance["bytes"] == len(header)
     assert provenance["source_btf_sha256"] is None
+
+
+def test_host_join_reports_ambiguity_instead_of_picking_a_candidate() -> None:
+    import runpy
+
+    module = runpy.run_path(str(DEMO / "build_journal.py"))
+
+    def tool(span_id: str, start: float, end: float) -> dict:
+        return {
+            "span_id": span_id,
+            "start_s": start,
+            "end_s": end,
+            "attributes": {"fabric.step.type": "tool_call"},
+            "content": [{"text": "grep deploy.log"}],
+        }
+
+    nodes = [tool("a", 10.0, 10.5), tool("b", 10.2, 10.8), tool("c", 20.0, 20.1)]
+    events = [
+        {"time_s": 10.4, "comm": "grep", "peer": None, "peer_port": None, "path": None},
+        {"time_s": 20.05, "comm": "ls", "peer": None, "peer_port": None, "path": None},
+        {"time_s": 40.0, "comm": "sh", "peer": None, "peer_port": None, "path": None},
+    ]
+    module["_attach_host"](events, nodes)
+
+    ambiguous, single, unlinked = events
+    assert ambiguous["link"] == "ambiguous"
+    assert ambiguous["candidate_spans"] == ["a", "b"]
+    assert "linked_span" not in ambiguous
+    assert single["linked_span"] == "c"
+    assert single["link_method"] == "time_window"
+    assert single["link_confidence"] == "tentative"
+    assert "link" not in unlinked and "linked_span" not in unlinked

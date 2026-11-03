@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Reconstruct the agent run into a renderable journal.
+"""Build a renderable journal of the demo run (not ``fabric.reconstruct``).
 
 Merges three evidence layers into ``out/journal.json``:
 
@@ -10,9 +10,11 @@ Merges three evidence layers into ``out/journal.json``:
    resolver; text is attached to the span named in each descriptor's
    ``bindings.span_id`` (decision-level items attach to the decision).
 3. **Host events** — ``event_class=audit`` log records the collector
-   emitted from the audit log. Joined to spans by time window +
-   executable name, and labelled ``inferred`` — provenance near the
-   span, never a claimed causal edge (spec 030 attribution honesty).
+   emitted from the audit log. Joined to tool spans by time window only:
+   one candidate is a ``tentative`` ``inferred`` link, several candidates
+   are reported as ``ambiguous`` with all of them listed. Never a claimed
+   causal edge (spec 030 attribution honesty), and not the spec 056
+   process-tree join.
 
 The journal is the artifact a UI renders: ``viewer/index.html`` loads
 ``out/journal.js`` (a ``window.JOURNAL = …`` wrapper for file:// use).
@@ -129,9 +131,15 @@ def _audit_join(logs: list[dict]) -> list[dict]:
 
 
 def _attach_host(events: list[dict], nodes: list[dict]) -> None:
-    """Time-window join: an audit event observed *near* a tool span is
-    linked as inferred provenance — never claimed causal. Scored by
-    comm/peer appearing in captured args, then tightest window."""
+    """Time-window join, reported as a heuristic and never as a best guess.
+
+    An audit event inside a tool span's window (+/- 1 s) is a candidate for
+    that span. With exactly one candidate the event is linked with
+    ``link_method=time_window`` and ``link_confidence=tentative``; with more
+    than one it is ``ambiguous`` and every candidate is listed, with no pick.
+    Spec 056 section 4.3 replaces this join with a process-tree join; this demo
+    does not implement it.
+    """
     tool_nodes = [
         n
         for n in nodes
@@ -139,30 +147,20 @@ def _attach_host(events: list[dict], nodes: list[dict]) -> None:
     ]
     for ev in events:
         cands = [
-            n
+            n["span_id"]
             for n in tool_nodes
             if n["start_s"] - 1.0 <= ev["time_s"] <= n["end_s"] + 1.0
         ]
         if not cands:
             continue
-
-        def score(node: dict) -> float:
-            args = " ".join(str(e.get("text", "")) for e in node["content"])
-            s = 0.0
-            if (ev["comm"] or "") and ev["comm"] in args:
-                s += 100
-            if ev["peer"] and str(ev["peer"]) in args and str(ev["peer_port"]) in args:
-                s += 100
-            if ev["path"] and ev["path"] in args:
-                s += 100
-            if node["start_s"] <= ev["time_s"] <= node["end_s"]:
-                s += 50
-            mid = (node["start_s"] + node["end_s"]) / 2
-            return s - abs(mid - ev["time_s"])
-
-        best = max(cands, key=score)
-        ev["linked_span"] = best["span_id"]
-        ev["link"] = "inferred"
+        ev["link_method"] = "time_window"
+        ev["link_confidence"] = "tentative"
+        if len(cands) == 1:
+            ev["linked_span"] = cands[0]
+            ev["link"] = "inferred"
+        else:
+            ev["candidate_spans"] = cands
+            ev["link"] = "ambiguous"
 
 
 def main() -> int:
@@ -214,6 +212,11 @@ def main() -> int:
     for node in nodes:
         node["host"] = [
             e["id"] for e in host_events if e.get("linked_span") == node["span_id"]
+        ]
+        node["host_ambiguous"] = [
+            e["id"]
+            for e in host_events
+            if node["span_id"] in e.get("candidate_spans", ())
         ]
 
     # ---------------- UAT assertions ----------------

@@ -35,7 +35,7 @@ GOLDEN_TOKEN = b"fabric.token.v1:a603512146debdb7ec03d124e146fbd4ae088f64c32642b
 
 
 def policy_data() -> dict[str, Any]:
-    return json.loads((ROOT / "examples/enterprise/policy.local.json").read_text())  # type: ignore[no-any-return]
+    return json.loads((ROOT / "examples/deployment-policy/policy.local.json").read_text())  # type: ignore[no-any-return]
 
 
 def policy_for(mode: str) -> DeploymentPolicy:

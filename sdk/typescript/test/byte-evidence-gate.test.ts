@@ -30,7 +30,7 @@ afterEach(() => {
 
 function policy(profile: "local" | "production"): DeploymentPolicy {
   const data = JSON.parse(
-    fs.readFileSync(path.join(ROOT, "examples/enterprise/policy.local.json"), "utf8"),
+    fs.readFileSync(path.join(ROOT, "examples/deployment-policy/policy.local.json"), "utf8"),
   ) as DeploymentPolicyData;
   data.privacy = { "terminal.stdout": "retain_original" };
   data.deployment = {

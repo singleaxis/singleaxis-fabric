@@ -178,8 +178,5 @@ customer-side object-lock/WORM the SDK does not provide.
 
 ## 7. Rollout
 
-- Drafts → lazy consensus → implementation on `feat/governed-content`.
-- Feature lands disabled by default; a release marks it only after the
-  matrix above is green and
-  [`docs/limitations-and-roadmap.md`](../docs/limitations-and-roadmap.md)
-  reflects the governed-content gates.
+Implemented in v0.8.0 and disabled by default; the gates above are
+enforced by the listed tests.

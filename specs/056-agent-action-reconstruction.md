@@ -87,7 +87,7 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 |---|---|---|
 | Model exchanges with full bodies, run reconstruction | `fabric/wire/`, `fabric/reconstruct/` | Built (v0.8.0) |
 | Tool call ↔ tool result pairing by id | `reconstruct/_stitch.py` (`tool_call_id`, Responses `function_call` / `function_call_output`, Anthropic `tool_use` / `tool_result`) | Built (v0.8.0) |
-| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | Built on `feat/p1-integration` (050 waves 0–2 and the WP-50 end-to-end test); not on main; P1-A (050 wave 4) not built |
+| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | In the tree after v0.8.0, unreleased (050 waves 0–2 and the WP-50 end-to-end test); P1-A (050 wave 4) not built |
 | Subprocess hook (`exec.subprocess`) | 053 §5.1, `fabric/hooks/_exec.py` | Specified, not built |
 | Hooks foundation (`fabric.hooks.install`) | 053 §4, `fabric/hooks/` | Specified, not built |
 | Host sensors, local profile | `components/host-emitter`, `receiver/auditreceiver` | Built; records carry pid, parent pid, hashed executable and argv, peer address and port; no source, epoch or sequence |
@@ -457,7 +457,7 @@ readable without the team's history:
 |---|---|---|
 | OD-1 | Move the 053 `exec.subprocess` channel and host production ingress ahead of 051/052 (§7.1) | Yes |
 | OD-2 | Let the capture worker read `/proc/<pid>/stat` for the child start time | Yes. It runs off the caller's path, is Linux-only and bounded, and fails silently. It is what makes H1 exact. |
-| OD-3 | First remote sandbox provider for WP6-09 | The provider the first customer uses |
+| OD-3 | First remote sandbox provider for WP6-09 | The provider with a documented process-start API and an OpenAI-compatible tool loop; chosen at M2 |
 | OD-4 | Container sandboxes: record the container id the runtime returns (`docker run` output, or the Kubernetes API) as a reported link | Decide in M2 |
 | OD-5 | A2 (single window) confidence: `tentative` or `certain` | `tentative`; only A0 and A1 are `certain` |
 | OD-6 | AR-1 host sensor in hosted CI | Try eBPF on the hosted runner first; if it cannot load, run the host part on a self-hosted runner and keep the rest in hosted CI |

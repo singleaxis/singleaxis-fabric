@@ -13,15 +13,15 @@ import (
 
 func recorderInitAnswers(confirmation string) string {
 	return strings.Join([]string{
-		"healthcare-shadow",
-		"system/ambient-clinical-assistant",
+		"example-shadow",
+		"system/example-agent",
 		"deployment/production-v1",
 		"otlp",
 		"metadata",
 		"privacy/metadata-only-v1",
 		"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"destination/customer-monitoring",
-		"installation/hospital-a",
+		"installation/example-shadow",
 		confirmation,
 	}, "\n") + "\n"
 }
@@ -73,7 +73,7 @@ func TestRecorderValidateAndDigestMachineOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.SchemaVersion != "fabricctl.recorder-command/v1" || envelope.Status != "pass" || envelope.Name != "healthcare-shadow" || !strings.HasPrefix(envelope.Digest, "sha256:") {
+	if envelope.SchemaVersion != "fabricctl.recorder-command/v1" || envelope.Status != "pass" || envelope.Name != "example-shadow" || !strings.HasPrefix(envelope.Digest, "sha256:") {
 		t.Fatalf("validate envelope = %#v", envelope)
 	}
 	code, digest, stderr := runFabricctl(t, "recorder", "digest", path)

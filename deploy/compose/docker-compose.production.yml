@@ -6,7 +6,7 @@
 #
 # Direct `docker compose ... up` bypasses preflight-prod.sh and is unsafe for
 # initial startup. Merge semantics:
-#   * test-sink is moved behind a disabled profile -- it is an evaluation
+#   * test-sink is moved behind a disabled profile -- it is a local-trial
 #     oracle and is never part of a production deployment.
 #   * fabric-node's depends_on / volumes / ports are replaced wholesale with
 #     the production declarations below.
@@ -29,17 +29,17 @@ secrets:
     file: ${FABRIC_INGRESS_TOKEN_FILE:?set FABRIC_INGRESS_TOKEN_FILE in .env to the ingress token file}
 
 volumes: !override
-  # Durable exporter queue; the eval-only sink-data volume is dropped.
+  # Durable exporter queue; the local-trial-only sink-data volume is dropped.
   fabric-queue:
 
 services:
-  # Eval-only controlled sink. Pinning it behind a profile means the merged
+  # Local-trial-only controlled sink. Pinning it behind a profile means the merged
   # project keeps the definition for `make up` but `up-prod` never starts it.
   test-sink:
     profiles: ["test-sink"]
 
   fabric-node:
-    # Same build as the evaluation harness. To run the signed release image
+    # Same build as the local harness. To run the signed release image
     # instead of a local build, set in .env:
     #   FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol@sha256:<approved-64-hex>
     #   FABRIC_NODE_PULL_POLICY=always
