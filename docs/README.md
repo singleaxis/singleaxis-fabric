@@ -40,16 +40,16 @@ it. That needs four chains of evidence:
 |---|---|---|---|
 | Decisions | What did the model see and return? | Wire capture of model calls | Built (v0.8.0) |
 | Actions | Which tools did the model ask for, with which arguments, and what result did the agent feed back? | Parsed offline from the captured model bodies | Pairing by id built (v0.8.0); per-chain verdict built on the branch (056 WP6-04) |
-| Effects | What did the agent's process actually run? | Opt-in subprocess hook | Hook and attribution to tool calls built on the branch (056 WP6-03, WP6-04); AR-1 acceptance not yet run |
-| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors built for the local profile; the join to effects built on the branch as a Python API (056 WP6-05), not yet a CLI option; AR-1 acceptance not yet run |
+| Effects | What did the agent's process actually run? | Opt-in subprocess hook | Hook and attribution to tool calls built on the branch (056 WP6-03, WP6-04); AR-1 passes in hermetic mode, not yet run in CI |
+| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors built for the local profile; the join to effects built on the branch (056 WP6-05), read with `python -m fabric.reconstruct actions --host-records` ([agent action reconstruction](action-reconstruction.md)); AR-1 live mode (a real sensor) not yet run |
 
 ### Where things stand
 
 | | What it contains |
 |---|---|
 | **Released: v0.8.0, on `main`** | Python wire capture (httpx, httpx2, aiohttp); the PROTECT stage, production profile gate, encryption at rest and source authentication (049 phases P0 and P0-A); the agent spool and sender; the Fabric Node; `fabric.reconstruct` with integrity verdicts; the explicit APIs in Python and TypeScript; qualified-run mode; host sensors in the local profile; Helm chart and Compose files. |
-| **Built on this branch (`feat/action-record`), not released** | Most of 049 phase P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)): one allocator for both inputs, the records input, random epochs with registration, segments, seals, resume tokens, capture manifests, the segment graph and the step projection. See [the P1 run record](run-record.md). Also most of spec 056 milestone M1: the contracts and rule fixtures (WP6-01), the hooks foundation and `exec.subprocess` hook (WP6-02, WP6-03), effect-to-tool-call attribution, chain verdicts and the `actions` view (WP6-04), and the process-tree join of host events (WP6-05). |
-| **In progress on this branch** | The rest of spec 056 milestone M1: the AR-1 acceptance test against a local-profile Node (WP6-06), and the command-line option that feeds host-sensor records to `python -m fabric.reconstruct actions`. |
+| **Built on this branch (`feat/action-record`), not released** | Most of 049 phase P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)): one allocator for both inputs, the records input, random epochs with registration, segments, seals, resume tokens, capture manifests, the segment graph and the step projection. See [the P1 run record](run-record.md). Also most of spec 056 milestone M1: the contracts and rule fixtures (WP6-01), the hooks foundation and `exec.subprocess` hook (WP6-02, WP6-03), effect-to-tool-call attribution, chain verdicts and the `actions` view (WP6-04), the process-tree join of host events and the `--host-records` option (WP6-05, WP6-06), and the AR-1 harness (WP6-06). See [agent action reconstruction](action-reconstruction.md). |
+| **In progress on this branch** | Spec 056 milestone M1 acceptance: [AR-1](../qualification/action-record/README.md) passes in hermetic mode (real agent, hook, Node and verifier; recorded host-sensor events), and its live mode with a real eBPF or auditd sensor (CI, Linux) has not run yet. |
 | **Specified only** | 050 P1-A and the `decision()` move onto the records input; specs [051](../specs/051-context-and-lifecycle-p2.md) (P2), [052](../specs/052-decisions-and-effects-p3.md) (P3), [053](../specs/053-execution-channels-p4.md) (P4, except the part 056 moves forward), [054](../specs/054-specialised-runtimes-p5.md) (P5), [055](../specs/055-typescript-wire-capture.md) (TypeScript wire capture); spec 056 milestone M2. |
 
 [specs/README.md](../specs/README.md) gives the status of every spec, and
@@ -70,6 +70,7 @@ do.
 | [`contracts/`](../contracts/) | Versioned JSON schemas, registries and fixtures; [`coverage/v1/registry/`](../contracts/coverage/v1/registry/) is the source of truth for field ids, capture points, content roles and vocabularies | Published or draft (see [Public contracts](#public-contracts)) |
 | [`scripts/contracts/`](../scripts/contracts/) | Contract validators and reference implementations (`p1_reference.py`, `action_reference.py`) | Built |
 | [`scripts/tests/`](../scripts/tests/) | Repository tests: contracts, release boundary, Compose and Node end-to-end | Built |
+| [`qualification/action-record/`](../qualification/action-record/README.md) | AR-1, the spec 056 acceptance scenario (hermetic and live) | On the branch; hermetic mode passes |
 | [`charts/fabric/`](../charts/fabric/), [`deploy/`](../deploy/README.md) | Helm chart for the Node; Compose files, auditd rules, a host-emitter DaemonSet | Built (v0.8.0) |
 | [`tools/fabricctl/`](../tools/fabricctl/README.md) | Local recorder configuration CLI | Built (v0.8.0) |
 | [`examples/`](../examples/README.md) | Runnable examples; start with `wire-capture/` | Built |
@@ -107,6 +108,7 @@ For a first reading:
 | [Operations](operations/README.md) | Spool, queues, health, metrics, troubleshooting, upgrades; [recovery runbook](operations/dr.md) | v0.8.0 |
 | [Reconstruct and verdicts](reconstruct.md) | The offline verifier, gaps and verdicts | v0.8.0 |
 | [The P1 run record](run-record.md) | Shared allocator, records input, segments, seals, manifests, step projection | This branch only |
+| [Agent action reconstruction](action-reconstruction.md) | The subprocess hook, a host sensor, effects linked to tool calls and host events, `python -m fabric.reconstruct actions`, what is not covered yet | This branch only |
 | [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) | v0.8.0 |
 | [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification | v0.8.0 |
 | [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter | v0.8.0 |

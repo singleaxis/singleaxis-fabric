@@ -92,8 +92,8 @@ a shell.
 The replay proves the reader, the join and the report on records shaped as
 the eBPF emitter writes them. It does not prove the emitter: the join sees
 what the template says. The template forks every command of a list or
-pipeline, as macOS `/bin/sh` does. Linux `dash` (and `bash` 5.1+) instead
-exec the last command of `ls … && sha256sum …` in place. That gives two
+pipeline, as macOS `/bin/sh` does. `dash`, the Ubuntu `/bin/sh`, instead
+execs the last command of `ls … && sha256sum …` in place. That gives two
 exec events with the same pid and parent pid, and H2 then reports the
 step 1 anchor as `ambiguous` (`anchor_missing`). This is expected to fail
 live mode until M2 records carry the process start time; see

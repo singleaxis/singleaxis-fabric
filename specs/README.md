@@ -89,7 +89,7 @@ beyond the instrumented clients and endpoints it lists.
 | [053](053-execution-channels-p4.md) | Build spec for P4: opt-in hooks (subprocess, file, database, HTTP, MCP, SSH) and production host-sensor ingress; NO_COVERAGE_CLAIM | draft | Hooks foundation and subprocess hook built on this branch for 056 (WP6-02, WP6-03); the rest not built |
 | [054](054-specialised-runtimes-p5.md) | Build spec for P5: images, audio, realtime, batch, files, media and UI automation endpoints; NO_COVERAGE_CLAIM | draft | Not built |
 | [055](055-typescript-wire-capture.md) | Build spec for TypeScript wire capture on Node.js (undici, `node:http`); NO_COVERAGE_CLAIM | draft | Not built |
-| [056](056-agent-action-reconstruction.md) | Linking model decisions, tool calls, subprocess effects and host evidence for one run; NO_COVERAGE_CLAIM | draft | Milestone M1 in progress on this branch: WP6-01 to WP6-05 and WP6-07 merged; AR-1 harness (WP6-06) not built |
+| [056](056-agent-action-reconstruction.md) | Linking model decisions, tool calls, subprocess effects and host evidence for one run; NO_COVERAGE_CLAIM | draft | Milestone M1 in progress on this branch: WP6-01 to WP6-07 built; the AR-1 harness (WP6-06, [`qualification/action-record/`](../qualification/action-record/README.md)) passes in hermetic mode, live mode not yet run |
 
 Paths in the "Built code" column without a top-level directory are
 relative to `sdk/python/src/fabric/`.
