@@ -30,10 +30,7 @@ from opentelemetry.sdk.trace.sampling import ALWAYS_OFF
 from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags, TraceState
 
 import fabric
-import fabric._loss
-import fabric._sequence
-import fabric.tracing
-from fabric import wire
+from fabric import _loss, _sequence, tracing, wire
 from fabric._capture_types import RunScope
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter
 from fabric._model_names import expose_model, hashed_model
@@ -50,8 +47,8 @@ MESSAGE = {"role": "assistant", "content": "hi"}
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[LossEmitter]:
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     for key in [k for k in os.environ if k.startswith(("OTEL_", "FABRIC_"))]:
         monkeypatch.delenv(key)
     yield emitter
@@ -146,9 +143,9 @@ def test_interpreter_exit_is_bounded_when_the_exporter_blocks_forever(
 
 
 def test_private_provider_registers_no_otel_exit_handler() -> None:
-    provider = fabric.tracing.build_private_provider(exporter=InMemorySpanExporter())
+    provider = tracing.build_private_provider(exporter=InMemorySpanExporter())
     assert provider._atexit_handler is None  # OTel's own would export inline, unbounded
-    assert fabric.tracing.is_private_provider(provider)
+    assert tracing.is_private_provider(provider)
     provider.shutdown()
 
 
@@ -394,7 +391,7 @@ def test_install_rejects_secret_bearing_exporter_urls(
 ) -> None:
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError) as raised:
-        fabric.tracing.build_private_provider()
+        tracing.build_private_provider()
     assert "sk-url-secret" not in str(raised.value) and raised.value.__cause__ is None
     with caplog.at_level(logging.WARNING):
         assert wire.install_from_env({}) is None  # the host is unaffected
@@ -405,7 +402,7 @@ def test_install_rejects_secret_bearing_exporter_urls(
 def test_effective_endpoint_only_is_checked(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://node:4318?host-only=1")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://node:4318/v1/traces")
-    provider = fabric.tracing.build_private_provider()
+    provider = tracing.build_private_provider()
     provider.shutdown()
 
 
@@ -514,13 +511,13 @@ def test_grpc_tls_material_is_resolved_per_variable(
 ) -> None:
     for suffix, file in env.items():
         monkeypatch.setenv(f"OTEL_EXPORTER_OTLP_{suffix}", str(fake_grpc["dir"] / file))
-    fabric.tracing.build_private_provider().shutdown()
+    tracing.build_private_provider().shutdown()
     assert fake_grpc["credentials"] == expected
     assert fake_grpc["exporter"] == {"credentials": "creds", **TLS_NO_ENV_PROXY}
 
 
 def test_grpc_without_tls_files_keeps_exporter_defaults(fake_grpc: dict[str, Any]) -> None:
-    fabric.tracing.build_private_provider().shutdown()
+    tracing.build_private_provider().shutdown()
     assert "credentials" not in fake_grpc and fake_grpc["exporter"] == TLS_NO_ENV_PROXY
 
 
@@ -529,10 +526,10 @@ def test_grpc_half_a_client_pair_or_a_missing_file_is_rejected(
 ) -> None:
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_CLIENT_KEY", str(fake_grpc["dir"] / "key"))
     with pytest.raises(ValueError, match="together"):
-        fabric.tracing.build_private_provider()
+        tracing.build_private_provider()
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE", str(fake_grpc["dir"] / "nope"))
     with pytest.raises(ValueError, match="not readable"):
-        fabric.tracing.build_private_provider()
+        tracing.build_private_provider()
 
 
 # -- E10: sampled-away records and the host provider in global mode ------------------------

@@ -22,9 +22,7 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from requests import Response  # type: ignore[import-untyped, unused-ignore]
 from requests.adapters import BaseAdapter  # type: ignore[import-untyped, unused-ignore]
 
-import fabric._loss
-import fabric._sequence
-from fabric import tracing, wire
+from fabric import _loss, _sequence, tracing, wire
 from fabric._capture_types import RunScope
 from fabric._loss import LossEmitter
 from fabric._sequence import SourceAllocator, id_key_from_env, run_pseudonym
@@ -58,8 +56,8 @@ def node() -> Iterator[FakeNode]:
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
     yield
     wire.uninstall()
@@ -358,7 +356,7 @@ def test_run_pseudonym_forms() -> None:
     keyed = "r-" + hmac.new(KEY, CLEAR.encode(), hashlib.sha256).hexdigest()[:32]
     assert run_pseudonym(CLEAR, KEY) == keyed
     assert run_pseudonym(CLEAR) == "r-" + hashlib.sha256(CLEAR.encode()).hexdigest()[:32]
-    assert fabric._sequence.RUN_PSEUDONYM_RE.fullmatch(keyed)
+    assert _sequence.RUN_PSEUDONYM_RE.fullmatch(keyed)
     assert run_pseudonym(CLEAR, KEY) != run_pseudonym(CLEAR)
 
 
@@ -405,8 +403,8 @@ def test_clear_run_id_never_leaves_the_process(
 
 def test_fallback_run_ids_are_unchanged(tmp_path: Path) -> None:
     allocator = SourceAllocator("wire-fallback", "wire")
-    assert fabric._sequence.resolve_run_id(allocator, trace_id=5) == f"trace:{5:032x}"
-    assert fabric._sequence.resolve_run_id(allocator).startswith("source:wire-fallback:")
+    assert _sequence.resolve_run_id(allocator, trace_id=5) == f"trace:{5:032x}"
+    assert _sequence.resolve_run_id(allocator).startswith("source:wire-fallback:")
 
 
 def test_model_names_hash_free_text_after_a_default_prefix() -> None:
