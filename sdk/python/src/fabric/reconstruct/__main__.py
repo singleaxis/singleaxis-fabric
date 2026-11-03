@@ -10,6 +10,12 @@ pre-P1 capture) or ``terminated``; ``1`` anything is ``partial`` or
 the verdict, but an open run is not complete) or in another state, or no run was
 reconstructed; ``2`` input, usage or internal error.
 
+``python -m fabric.reconstruct actions EXPORT...`` prints one run per block as a timeline a
+person can read (spec 056 §4.6): each model call, the effects (subprocesses) it caused and
+the link that says so, the host events that corroborate them, and the chain verdicts;
+``--json`` prints the same rows as JSON. It reads the same inputs and options as the
+report, adds no contract, and exits as the report does.
+
 Diagnostics are fixed text (spec 047 §9 "Diagnostics"): stderr never carries
 an argument value, a path, a key or an underlying exception's message, only
 option names, input positions and exception class names. The report file is
@@ -34,6 +40,7 @@ from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
 from fabric._model_names import parse_model_allowlist
+from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
 from fabric.reconstruct._graph import RunGraph
 from fabric.reconstruct._ids import ID_KEY_ENV, MIN_ID_KEY_BYTES
 from fabric.reconstruct._inputs import ReconstructInputError
@@ -52,6 +59,7 @@ _DEFAULT_S3_PREFIX = "fabric/content/"
 MODEL_ALLOWLIST_ENV = "FABRIC_WIRE_MODEL_ALLOWLIST"
 _ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _PROG = "fabric.reconstruct"
+_TOOL_NAME_MAX = 256
 _MAX_WAIT_S = 3600.0
 _COVERAGE_PROFILE_RE = re.compile(r"^fabric\.profile\.[a-z0-9-]+/v[0-9]+$")
 # A duration: an integer or decimal number with an optional unit (default seconds).
@@ -79,12 +87,19 @@ class _Parser(argparse.ArgumentParser):
         raise SystemExit(EXIT_USAGE)
 
 
+_SPANS_HELP = (
+    "sink JSONL, OTLP/JSON, or a raw OTLP protobuf trace export request (*.otlp, as "
+    "`make export-spans` copies them); a directory stands for its *.otlp files"
+)
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="python -m fabric.reconstruct",
         description=(
             "Reconstruct runs from captured model exchanges and state an integrity "
-            "verdict per run scope and per run. Offline and read-only."
+            "verdict per run scope and per run. Offline and read-only. "
+            "`python -m fabric.reconstruct actions --help` describes the action view."
         ),
     )
     parser.add_argument(
@@ -92,10 +107,55 @@ def _parser() -> argparse.ArgumentParser:
         action="append",
         required=True,
         metavar="PATH",
-        help="span file (repeatable): sink JSONL, OTLP/JSON, or a raw OTLP protobuf trace "
-        "export request (*.otlp, as `make export-spans` copies them); a directory stands for "
-        "its *.otlp files",
+        help=f"span file (repeatable): {_SPANS_HELP}",
     )
+    _input_options(parser)
+    parser.add_argument(
+        "--out",
+        metavar="FILE",
+        help="write the report here (atomically, mode 0600) instead of stdout",
+    )
+    parser.add_argument(
+        "--projection",
+        metavar="FILE",
+        help="also write the fabric.step-projection/v1 document of the report here "
+        "(atomically, mode 0600; spec 050 §3.13)",
+    )
+    parser.add_argument(
+        "--coverage-profile",
+        dest="coverage_profile",
+        default=DEFAULT_COVERAGE_PROFILE,
+        metavar="ID",
+        help=f"the coverage profile the projection is judged against (default "
+        f"{DEFAULT_COVERAGE_PROFILE})",
+    )
+    _evaluation_options(parser)
+    return parser
+
+
+def _actions_parser() -> argparse.ArgumentParser:
+    parser = _Parser(
+        prog="python -m fabric.reconstruct actions",
+        description=(
+            "Print each run as a timeline: model calls, the effects (subprocesses) each "
+            "tool call caused and how that link was established, the host events that "
+            "corroborate them, and the decisions, actions, effects and corroboration chain "
+            "verdicts (spec 056 §4.6). Offline and read-only; exits as the report does."
+        ),
+    )
+    parser.add_argument(
+        "spans", nargs="+", metavar="EXPORT", help=f"span file or directory: {_SPANS_HELP}"
+    )
+    _input_options(parser)
+    _evaluation_options(parser)
+    parser.add_argument(
+        "--json", action="store_true", help="print the rows as one JSON document instead"
+    )
+    return parser
+
+
+def _input_options(parser: argparse.ArgumentParser) -> None:
+    """The content store, identity, run selection and trust options of every command."""
     stores = parser.add_mutually_exclusive_group()
     stores.add_argument(
         "--store-root",
@@ -172,25 +232,10 @@ def _parser() -> argparse.ArgumentParser:
         "be authenticated (default: production when any span carries the Node's stamp, "
         "else local)",
     )
-    parser.add_argument(
-        "--out",
-        metavar="FILE",
-        help="write the report here (atomically, mode 0600) instead of stdout",
-    )
-    parser.add_argument(
-        "--projection",
-        metavar="FILE",
-        help="also write the fabric.step-projection/v1 document of the report here "
-        "(atomically, mode 0600; spec 050 §3.13)",
-    )
-    parser.add_argument(
-        "--coverage-profile",
-        dest="coverage_profile",
-        default=DEFAULT_COVERAGE_PROFILE,
-        metavar="ID",
-        help=f"the coverage profile the projection is judged against (default "
-        f"{DEFAULT_COVERAGE_PROFILE})",
-    )
+
+
+def _evaluation_options(parser: argparse.ArgumentParser) -> None:
+    """The time, clock and attribution options of every command."""
     parser.add_argument(
         "--evaluated-at",
         dest="evaluated_at",
@@ -213,7 +258,16 @@ def _parser() -> argparse.ArgumentParser:
         help="the largest total clock uncertainty accepted before ordering is "
         "clock_uncertain (default 300s)",
     )
-    return parser
+    parser.add_argument(
+        "--in-process-tool",
+        action="append",
+        dest="in_process_tools",
+        default=[],
+        metavar="NAME",
+        help="a tool name that runs inside the agent process (repeatable): a call to it "
+        "without an effect is reported as no_effect_channel, not none_in_window (spec 056 "
+        "§4.2)",
+    )
 
 
 def _endpoint_url(value: str) -> str:
@@ -465,7 +519,16 @@ def _write_projection(path: str, projection: Mapping[str, Any] | None) -> bool:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
+    """The report (default) or, with ``actions`` first, the action view."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["actions"]:
+        return actions_main(arguments[1:])
+    return report_main(arguments)
+
+
+def report_main(argv: Sequence[str]) -> int:
+    """``python -m fabric.reconstruct --spans ...``: the run-reconstruction report."""
+    args = _parser().parse_args(list(argv))
     try:
         allowlist = _model_allowlist(args, os.environ)
         key = _id_key(args, os.environ)
@@ -493,6 +556,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_clock_uncertainty_ns=max_clock,
             graphs_out=graphs,
             projection_sink=collector,
+            actions=_action_reader(args, clock_uncertainty),
         )
         projection = (
             build_projection(
@@ -538,6 +602,158 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not document["runs"]:
         _fail("no runs reconstructed")
     return _exit_code(document)
+
+
+def _action_reader(
+    args: argparse.Namespace, clock_uncertainty_ns: int, *, view: bool = False
+) -> ActionReader:
+    names = [str(name) for name in args.in_process_tools]
+    if any(not name or len(name) > _TOOL_NAME_MAX for name in names):
+        raise ReconstructInputError(f"--in-process-tool takes a name of 1-{_TOOL_NAME_MAX} chars")
+    return ActionReader(
+        in_process_tools=names,
+        clock_uncertainty_ns=clock_uncertainty_ns,
+        every_run=view,
+        keep_runs=view,
+    )
+
+
+def actions_main(argv: Sequence[str]) -> int:
+    """``python -m fabric.reconstruct actions``: the action view of every reported run."""
+    args = _actions_parser().parse_args(list(argv))
+    try:
+        clock_uncertainty = _duration_ns(args.clock_uncertainty, "--clock-uncertainty")
+        reader = _action_reader(args, clock_uncertainty, view=True)
+        document = reconstruct(
+            args.spans,
+            store=_store(args),
+            tenant_id=args.tenant,
+            run_ids=args.runs,
+            model_allowlist=_model_allowlist(args, os.environ),
+            id_key=_id_key(args, os.environ),
+            wait_for_objects_s=_wait_for_objects(args),
+            profile=args.profile,
+            trusted_source=args.trusted_source,
+            evaluated_at=_evaluated_at(args.evaluated_at),
+            clock_uncertainty_ns=clock_uncertainty,
+            max_clock_uncertainty_ns=_duration_ns(
+                args.max_clock_uncertainty, "--max-clock-uncertainty"
+            ),
+            actions=reader,
+        )
+    except ReconstructInputError as exc:
+        _fail(str(exc))
+        return EXIT_USAGE
+    except ImportError:
+        _fail(_S3_DEPENDENCY_HINT if args.store_uri is not None else "internal error (ImportError)")
+        return EXIT_USAGE
+    except Exception as exc:  # fixed text: a message can carry paths or secrets
+        _fail(f"internal error ({type(exc).__name__})")
+        return EXIT_USAGE
+    views = [_view(run, document) for run in reader.runs]
+    if args.json:
+        for chunk in _report_chunks({"schema": "fabric.reconstruct.actions/v0", "runs": views}):
+            sys.stdout.write(chunk)
+    else:
+        sys.stdout.write("\n".join(format_actions(view) for view in views))
+    if not document["runs"]:
+        _fail("no runs reconstructed")
+    return _exit_code(document)
+
+
+def _view(run: ActionRun, document: Mapping[str, Any]) -> dict[str, Any]:
+    view = action_rows(run)
+    verdicts = {entry["run_id"]: entry["verdict"] for entry in document["runs"]}
+    view["verdict"] = verdicts.get(run.run_id)
+    return view
+
+
+def _chain_text(chain: Mapping[str, Any]) -> str:
+    reasons = chain.get("reasons")
+    return f"{chain['verdict']}({','.join(reasons)})" if reasons else str(chain["verdict"])
+
+
+def _effect_text(row: Mapping[str, Any]) -> str:
+    what = f"exec {row['label']}" if "label" in row else f"exec pid {row.get('pid', '?')}"
+    if "exit_code" in row:
+        what += f" exit {row['exit_code']}"
+    elif "signal" in row:
+        what += f" signal {row['signal']}"
+    return what
+
+
+def _caused_text(row: Mapping[str, Any]) -> str:
+    links = row.get("caused_by") or []
+    if not links:
+        return "(no open tool call)" if row.get("rule") == "A4" else ""
+    targets = "|".join(
+        link["target"] if link["namespace"] == "call" else f"attempt {link['target'][:8]}…"
+        for link in links
+    )
+    return f"← {targets}  {links[0]['link']}"
+
+
+def _host_text(row: Mapping[str, Any]) -> tuple[str, str]:
+    what = f"{row['event_class']} pid {row['pid']}"
+    links = [*row.get("anchors", ()), *row.get("part_of", ())]
+    refs = row.get("refs") or []
+    if refs:
+        tail = "← " + ",".join(f"#{n}" for n in refs) + f"  {links[0]['link']}"
+    elif links:
+        tail = f"← run  {links[0]['link']}"
+    else:
+        tail = ""
+    if row.get("unexplained"):
+        tail = (tail + "  " if tail else "") + "unexplained"
+    return what, tail
+
+
+def format_actions(view: Mapping[str, Any]) -> str:
+    """One run's action view as text (spec 056 §4.6): a header with the chain verdicts,
+    one numbered row per model call, effect and linked host event, then the effects no
+    tool call explains, the tool calls without an effect and the unexplained host events."""
+    chains = view["chains"]
+    lines = [
+        f"run {view['run_id']}  "
+        + "  ".join(f"{name}: {_chain_text(chains[name])}" for name in chains)
+        + (f"  verdict: {view['verdict']}" if view.get("verdict") else "")
+    ]
+    for row in view["rows"]:
+        number = f"{row['n']:>3}"
+        if row["kind"] == "model_call":
+            text = f"{number}  model_call   {row.get('model', '-')}"
+            if row.get("results"):
+                text += "  ← result " + ", ".join(row["results"])
+            if row.get("tool_calls"):
+                text += "  → tool_call " + ", ".join(
+                    f"{c['call']} {c['name']}" if c.get("name") else c["call"]
+                    for c in row["tool_calls"]
+                )
+            lines.append(text)
+        elif row["kind"] == "effect":
+            effect = f"{number}    effect     {_effect_text(row):<36} {_caused_text(row)}"
+            lines.append(effect.rstrip())
+        else:
+            what, tail = _host_text(row)
+            lines.append(f"{number}      host     {what:<34} {tail}".rstrip())
+    unattributed = view["unattributed_effects"]
+    if unattributed:
+        details = "; ".join(
+            f"exec {e.get('label', e['attempt_uid'])}, seq {e['sequence']}: no open tool call"
+            for e in unattributed[:8]
+        )
+        lines.append(f"  unattributed effects: {len(unattributed)}   ({details})")
+    without = view["tool_calls_without_effect"]
+    if without:
+        details = ", ".join(f"{c['call']} {c['reason']}" for c in without[:16])
+        lines.append(f"  tool calls without an effect: {len(without)}   ({details})")
+    unexplained = view["unexplained_host_events"]
+    if unexplained["count"]:
+        lines.append(f"  unexplained host events: {unexplained['count']}")
+    match = view["output_match"]
+    reason = f" ({match['reason']})" if "reason" in match else ""
+    lines.append(f"  output match: {match['state']}{reason}")
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":

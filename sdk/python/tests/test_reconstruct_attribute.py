@@ -28,13 +28,13 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from fabric.reconstruct._attribute import (
+    ActionRun,
     HostJoin,
     action_rows,
     argv_label,
     attribute,
     tool_result_texts,
 )
-from fabric.reconstruct._attribute import ActionRun
 from fabric.reconstruct._inputs import pseudonym
 from fabric.reconstruct._report import (
     Gap,
@@ -100,7 +100,9 @@ def fixture_host(fixture: Mapping[str, Any]) -> HostJoin | None:
             if basis in ("process_anchor", "process_lineage")
         },
         unexplained=expected["attribution"]["unexplained_host_events"]["event_ids"],
-        anchor_missing=any(rule not in ("H1", "H2") for rule in expected["trace"]["anchors"].values()),
+        anchor_missing=any(
+            rule not in ("H1", "H2") for rule in expected["trace"]["anchors"].values()
+        ),
         source_gap=any(not source.get("verified", False) for source in inp["host_sources"]),
         lineage_truncated=expected["attribution"].get("lineage_truncated", 0),
         trace_anchors=expected["trace"]["anchors"],
@@ -233,7 +235,7 @@ def _variant(inp: Mapping[str, Any], rng: random.Random) -> dict[str, Any]:  # n
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)
 def test_seeded_variants_agree_with_the_reference_rules(path: Path) -> None:
     fixture = load(path)
-    rng = random.Random(path.stem)  # deterministic per fixture
+    rng = random.Random(path.stem)  # noqa: S311 - deterministic test variants, not secrets
     for _ in range(60):
         inp = _variant(fixture["input"], rng)
         assert attribute(inp, call_id).expected() == REFERENCE.reconstruct(inp, call_id)
@@ -316,7 +318,10 @@ def test_tool_calls_without_an_effect_are_counted_by_reason() -> None:
     inp["effect_channels"] = {"exec.subprocess": "disabled"}
     disabled = attribute(inp)
     assert disabled.attribution["effects_not_observed"]["channel_disabled"] == 1
-    assert disabled.chains["effects"] == {"verdict": "not_observed", "reasons": ["channel_disabled"]}
+    assert disabled.chains["effects"] == {
+        "verdict": "not_observed",
+        "reasons": ["channel_disabled"],
+    }
     inp["effect_channels"] = {}
     assert attribute(inp).chains["effects"]["reasons"] == ["not_instrumented"]
 
@@ -374,11 +379,13 @@ def test_decisions_chain_restates_the_exchange_verdict() -> None:
     gaps = [Gap("sequence_gap", "partial"), Gap("run_open", "info"),
             Gap("unparsed_exchange", "unverified")]  # fmt: skip
     assert decisions_chain(gaps, passed) == {  # type: ignore[arg-type]
-        "verdict": "partial", "reasons": ["sequence_gap", "unparsed_exchange"]
+        "verdict": "partial",
+        "reasons": ["sequence_gap", "unparsed_exchange"],
     }
     skipped = {**passed, "bytes": "skipped"}
     assert decisions_chain([], skipped) == {  # type: ignore[arg-type]
-        "verdict": "unverified", "reasons": ["not_configured"]
+        "verdict": "unverified",
+        "reasons": ["not_configured"],
     }
     assert chain([]) == {"verdict": "complete"}
     assert chain(["a", "b", "a"]) == {"verdict": "partial", "reasons": ["a", "b"]}
@@ -415,10 +422,16 @@ def test_tool_result_texts_per_wire_api() -> None:
         {"role": "tool", "tool_call_id": "c3", "content": {"unexpected": True}},
     ]}  # fmt: skip
     assert tool_result_texts("openai.chat_completions", chat) == [
-        ("c1", "plain"), ("c2", "a\nb"), ("c3", None)
+        ("c1", "plain"),
+        ("c2", "a\nb"),
+        ("c3", None),
     ]
-    responses = {"input": [{"type": "function_call", "call_id": "c1"},
-                           {"type": "function_call_output", "call_id": "c1", "output": "out"}]}
+    responses = {
+        "input": [
+            {"type": "function_call", "call_id": "c1"},
+            {"type": "function_call_output", "call_id": "c1", "output": "out"},
+        ]
+    }
     assert tool_result_texts("openai.responses", responses) == [("c1", "out")]
     anthropic = {"messages": [{"role": "user", "content": [
         {"type": "tool_result", "tool_use_id": "t1", "content": [{"type": "text", "text": "r"}]},

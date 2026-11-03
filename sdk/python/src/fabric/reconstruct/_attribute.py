@@ -1063,15 +1063,20 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
     a rendering of the report and the projection links; it adds no contract."""
     inp, result = run.input, run.result
     labels = {call.id: f"T{index}" for index, call in enumerate(result.calls, start=1)}
+    by_raw = {call.raw_id: labels[call.id] for call in result.calls}
     names = {call.id: call.name for call in result.calls}
+    fed_here: dict[str, list[str]] = defaultdict(list)  # results first fed by an exchange
+    for call in result.calls:
+        if call.fed is not None:
+            fed_here[call.fed["exchange_id"]].append(labels[call.id])
     events: list[tuple[int, int, int, dict[str, Any]]] = []
     for exchange in inp["exchanges"]:
         row: dict[str, Any] = {"kind": "model_call", "exchange_id": exchange["exchange_id"],
                                "sequence": exchange["sequence"]}  # fmt: skip
         if "model" in exchange:
             row["model"] = exchange["model"]
-        fed = [labels[r["id"]] for r in exchange.get("tool_results", ()) if r["id"] in labels]
-        calls = [{"call": labels.get(c["id"], c["id"]), "name": c.get("name")}
+        fed = fed_here.get(exchange["exchange_id"], [])
+        calls = [{"call": by_raw.get(c["id"], c["id"]), "name": c.get("name")}
                  for c in exchange.get("tool_calls", ())]  # fmt: skip
         if fed:
             row["results"] = fed
@@ -1108,9 +1113,9 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         part_of = [{"target": link["target"]["id"], "namespace": link["target"]["namespace"],
                     "link": _link_text(link)} for link in event.get("links", ())]  # fmt: skip
         anchors = [
-            uid for uid, links in result.projection_links.items() for link in links
-            if link["type"] == "corroborated_by"
-            and event["event_id"] in (link["target"]["id"], *link.get("candidates", ()))
+            {"attempt_uid": uid, "link": _link_text(link)}
+            for uid, links in result.projection_links.items() for link in links
+            if link["type"] == "corroborated_by" and link["target"]["id"] == event["event_id"]
         ]  # fmt: skip
         if part_of:
             row["part_of"] = part_of
@@ -1129,7 +1134,8 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         rows.append(row)
     for row in rows:
         if row["kind"] == "host":
-            refs = [numbers[uid] for uid in row.get("anchors", ()) if uid in numbers]
+            refs = [numbers[a["attempt_uid"]] for a in row.get("anchors", ())
+                    if a["attempt_uid"] in numbers]  # fmt: skip
             refs += [numbers[p["target"]] for p in row.get("part_of", ())
                      if p["namespace"] == "attempt" and p["target"] in numbers]  # fmt: skip
             if refs:
