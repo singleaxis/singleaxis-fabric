@@ -524,6 +524,11 @@ time match (`certain`); H2 the same without a start time (`tentative`); H3
 descendants of an anchored process (`process_lineage`); H4 events of the
 agent process itself. [056] §4.3.
 
+**Exec chain.** Two or more exec events with one pid and parent pid and no
+observed exit of that pid between them: one process that exec'd again in
+place, as a shell does for its last command. H2 anchors the effect on the
+first exec (`tentative`); the later ones are its lineage. [056] §4.3.
+
 **`pid_time_join`.** The older rule of [053] §6.3: join a host event to a
 record by pid and a time window, always `tentative`. Spec 056 replaces it
 with H1–H4 where the process tree is known.

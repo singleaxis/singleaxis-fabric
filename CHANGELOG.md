@@ -59,7 +59,9 @@ blocks, delays or changes them.
   `--host-coverage-declared`, `--endpoint-peer`, `--known-peer`,
   `--agent-pid` and `--in-process-tool`. Host events no rule explains are
   listed. Local-profile host records carry no process start time, so these
-  links are `tentative`.
+  links are `tentative`. A shell that execs its command in place (`bash -c`,
+  `dash` for the last command of a list) is read as one process (an exec
+  chain, spec 056 §4.3), unless the hook saw that pid exit in between.
 - **Contracts (drafts, additive).** capture/v1 1.3.0 (P1), 1.4.0 (wire
   enrichment) and 1.5.0 (spec 056 chains and attribution in the run
   reconstruction); coverage/v1 1.1.0 (P1) and 1.2.0 (spec 056 link methods,
@@ -86,10 +88,10 @@ blocks, delays or changes them.
 ### Known limits
 
 - Fabric makes no action-reconstruction claim until AR-1 live mode passes
-  in CI. On the local profile, a shell that execs its last command in place
-  (`bash -c`, and `dash` for the last command of `sh -c "a && b"`) gives
-  an `ambiguous` anchor and `anchor_missing`; this conflicts with the M1
-  exit criterion of spec 056 and is an open spec question
+  in CI.
+- No host sensor reports process exits, so a pid reused under the same
+  parent pid within the H2 window by a process the hook did not start is
+  read as one exec chain (`tentative`) on the local profile
   ([agent action reconstruction](docs/action-reconstruction.md)).
 - Production host ingress, process start times on host records, container
   and remote sandboxes, and the other execution channels (file, database,

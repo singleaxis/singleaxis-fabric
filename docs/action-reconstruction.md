@@ -48,9 +48,15 @@ The verifier links them with the rules of spec 056:
   sensor records have no start time, so today's anchors are `tentative`.
   Events whose parent-pid chain reaches an anchored process are `part_of`
   that effect (`process_lineage`, H3). This is how the `curl` that a shell
-  script starts, and its connection, become visible. A pid that a later,
-  unrelated exec takes over leaves the chain. Events of the agent process
-  itself are `part_of` the run (H4).
+  script starts, and its connection, become visible. A shell that execs its
+  command in place (`bash -c "cmd"`, or `dash` for the last command of
+  `sh -c "a && b"`) gives two exec events with one pid and parent pid.
+  Without start times, H2 reads them as one process (an exec chain): the
+  first exec is the anchor and the second is lineage, both `tentative`. If
+  the hook saw that pid exit between the two execs, they are two processes
+  and the anchor stays `ambiguous`. A pid that a later, unrelated exec
+  takes over leaves the chain. Events of the agent process itself are
+  `part_of` the run (H4).
 - **Unexplained host events.** A host event in the agent's scope that no
   rule links is listed, and so is an agent connection to a host that no
   model call reached. The list is a gap between the record and what the
@@ -175,6 +181,7 @@ run source:s-b42b…:1160…  decisions: complete  actions: complete  effects: p
   7    effect     exec ls /srv/ar1/data && sha256sum /srv/ar1/da… exit 0 ← T1  output_match · certain
   8      host     exec pid 24464                     ← #7  process_anchor · tentative
   9      host     exec pid 3900001                   ← #7  process_lineage · tentative
+ 10      host     exec pid 24464                     ← #7  process_lineage · tentative
  11  model_call   m-b53a8eb814d42c21  ← result T1  → tool_call T2 fetch_url
  13    effect     exec sh -c curl -fsS --max-time 10 -H "Authorization… exit 0 ← T2  output_match · certain
  14      host     exec pid 24467                     ← #13  process_anchor · tentative
@@ -232,16 +239,11 @@ the agent connecting to a host no model call reached.
   process start times (spec 053 §6.1, §6.2) are milestone M2. Until then,
   host corroboration works against a local-profile Node only and every
   anchor is `tentative`.
-- **Shells that exec in place.** Without process start times (local
-  profile), a shell that execs a command in place produces two exec events
-  with the same pid and parent pid. `bash` does this for `sh -c "cmd"`, and
-  `dash` (the Debian and Ubuntu `/bin/sh`) for the last command of
-  `sh -c "a && b"`. H2 cannot tell that apart from pid reuse, so
-  the anchor is `ambiguous` and the run reports `anchor_missing`. Start
-  times (M2) resolve it. This conflicts with the M1 exit criterion of
-  spec 056 (AR-1 green in CI on the local profile): on an Ubuntu runner,
-  AR-1 live mode cannot pass until M2 or until the spec relaxes H2 for
-  this case. It is an open spec question, not a test to loosen.
+- **Process exits from the host sensor.** No host sensor reports process
+  exits, so the only evidence that a pid was freed is the hook's own exit
+  record. A pid reused by a process the hook did not start, with the same
+  parent pid inside the 100 ms window, reads as one exec chain
+  (`tentative`). Start times (M2) remove this case.
 - **Other channels.** File, database, non-model HTTP, MCP and SSH hooks
   (spec 053) are not built, and neither is a TypeScript subprocess hook.
   Tools that run inside the agent process leave no effect. Declare them
