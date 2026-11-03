@@ -1,5 +1,10 @@
 # Reconstruct and verdicts
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/). The
+> options this branch adds (`--projection` and the run-state options) are in
+> [the P1 run record](run-record.md#using-it).
+
 `python -m fabric.reconstruct` is Fabric's offline verifier for wire
 capture. It reads the capture spans and the content store, checks that the
 record is complete and unaltered, rebuilds each run from the stored bytes,
@@ -146,5 +151,7 @@ explicit APIs (`decision()`, `CallRecorder`, byte-boundary adapters) are not
 read by it; the explicit line has its own offline checks, and portable,
 receipt-backed proof is [qualified-run mode](qualified-run-mode.md), which
 alone can state `verified_complete_for_declared_scope`. The four-layer
-coverage report of spec 049 (per-layer verdicts, step projection) is not
-built.
+coverage report of spec 049 (per-layer verdicts, step projection) is not in
+v0.8.0; on the `feat/action-record` branch the verifier also reads
+records-input records and writes the step projection for model calls
+([the P1 run record](run-record.md)).

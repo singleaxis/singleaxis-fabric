@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Explicit APIs](../explicit-apis.md). Kept for history only.
+> [Explicit APIs](../explicit-apis.md). Kept for history only; it may not match the current code.
 
 # Protected durable byte spool (Python)
 

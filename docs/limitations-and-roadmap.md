@@ -1,5 +1,9 @@
 # Limitations and roadmap
 
+> **Status:** describes the limits of the released v0.8.0 code and the state
+> of the planned work. Each roadmap row says whether it is built in v0.8.0,
+> built only on the `feat/action-record` branch, or not built.
+
 This page lists what Fabric v0.8 does not do, the known defects found by
 testing, and the work planned in
 [spec 049](../specs/049-four-layer-capture-coverage.md) §8. If a capability
@@ -100,23 +104,29 @@ deployment has been qualified. Before production, run the tests in
 [deployment](deployment.md) against your own Node, store and agents, and
 read [privacy and security](privacy-and-security.md).
 
-## Roadmap (spec 049 §8)
+## Roadmap (spec 049 §8, spec 056)
 
 Spec 049 describes the record in four layers: context, structure, content,
-and decisions and effects. v0.8 delivers phase **P0-A** (the content path
-and privacy gate) on top of the 047/048 wire line. The rest is not built.
+and decisions and effects. v0.8.0 delivers phases **P0** and **P0-A** (the
+contracts, the content path and the privacy gate) on top of the 047/048
+wire line. Most of P1 is built on the `feat/action-record` branch; the rest
+is not built. [Spec 056](../specs/056-agent-action-reconstruction.md)
+moves the subprocess hook and host-sensor ingress of P4 ahead of P2 and
+P3.
 
 | Phase | What it adds | Status |
 |---|---|---|
-| P0 | Coverage contract freeze (`contracts/coverage/v1`) | Contracts published; no run-level coverage report yet |
-| P0-A | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8** |
-| P1 | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | Not built |
+| P0 | Coverage contract freeze (`contracts/coverage/v1`) | **Built in v0.8.0** (contracts); the run-level coverage report is P1 |
+| P0-A | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8.0** |
+| P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, capture manifests, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | **Mostly built on the `feat/action-record` branch, not released**; `decision()` records and Node pre-acknowledgement validation not built. See [the P1 run record](run-record.md) |
 | P1-A | Mixed explicit + wire capture qualification, passivity harness | Not built |
 | P2 | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
 | P3 | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
-| P4 | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built |
+| P4 | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built; the subprocess hook is being built for spec 056 |
 | P5 | Realtime/websocket, provider batch and files, media, UI automation | Not built |
 | TS-1 | TypeScript wire capture on `undici` (Node.js 24+) | Not built |
+| Spec 056 M1 | Agent action reconstruction on the local profile: subprocess effects linked to the tool calls that caused them, host events joined through the process tree, per-chain verdicts | In progress on the `feat/action-record` branch (contracts merged) |
+| Spec 056 M2 | The same against a production Node, container and remote sandboxes | Not built |
 
 Out of scope for Fabric OSS at every phase: evaluation, judging, scoring,
 guardrails, escalation, blocking or modifying agent actions, policy engines

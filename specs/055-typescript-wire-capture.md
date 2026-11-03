@@ -11,12 +11,16 @@ qualification: NO_COVERAGE_CLAIM
 
 # 055 — TypeScript wire capture
 
-Revision 2 applies the Astra and Fable reviews of specs 050–055 and the
-main-session decisions R1–R16 (each pending owner confirmation, §10).
-It binds TypeScript to 050's P1 run, records, seal and delivery
-contract, freezes the native addon ABI, moves every Python edit to its
-Python owner, and splits the oversized runtime work package. §12 maps
-every review finding to its resolution.
+**Status: draft; not built.** TypeScript has no wire capture in v0.8.0 or
+on the `feat/action-record` branch. Codes in parentheses such as (R8) or
+(R12) name the cross-spec revision decisions that a rule applies, and
+"decision n" means row n of 049 §9; the [glossary](../docs/glossary.md)
+lists both. The open decisions of §10 are recommendations pending owner
+confirmation.
+
+*Revision note:* revision 2 (2026-10-22) is the current text; it binds
+TypeScript to 050's run, records, seal and delivery contract, and §12 lists
+the findings it resolved.
 
 ## 1. Scope and release gates
 

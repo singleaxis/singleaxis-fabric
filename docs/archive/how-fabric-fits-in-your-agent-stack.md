@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Architecture](../architecture.md). Kept for history only.
+> [Architecture](../architecture.md). Kept for history only; it may not match the current code.
 
 # How Fabric fits in an existing AI stack
 

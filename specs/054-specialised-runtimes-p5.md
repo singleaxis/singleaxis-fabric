@@ -11,28 +11,12 @@ related: ["029", "032", "043", "047", "048", "052", "055"]
 
 # 054 — Specialised runtimes and media (P5)
 
-Revision 2 applies the Astra and Fable reviews of the v0.9 spec set and the
-main-session revision decisions R1–R16. It binds P5 to the frozen P1 contract,
-050 rev 2. The changes:
-- realtime observations, media indexes and job evidence travel on 050's §3.4a
-  structured evidence carrier as registered evidence types (R7, §7.1). W-class
-  records and the proposed capture/v1 `realtime_observation`/`media_index`
-  spool variants are withdrawn;
-- realtime record granularity is decided: one record per bounded window plus a
-  stream index, positions are allocated per window and never per message (§5.2);
-- projection uses 050's bounded `event_ids` (64), the `collection` wrapper and
-  the evidence `continuation` index (§5.5). The stale `phase=start|item|outcome`
-  text is replaced;
-- reported media events are narrowed to closed metadata on `record.evidence`;
-  `media.events` stays protocol-only (R15, §5.6);
-- explicit streaming records are covered (§5.6);
-- WebRTC is excluded explicitly (§5.1.1);
-- C35 matching uses the persisted `fabric.wire.endpoint_id` (§4.1);
-- the R4 status inputs, R5 descriptor-only bodies, R8 identity rule and R9
-  fail-open and bounded-work rules are applied (§3, §5, §6);
-- the WPs are split, with an ownership table and explicit intra-wave
-  dependencies (R13, R14, §8);
-- the harness paths follow R16 (§9).
+**Status: draft; not built.** Codes in parentheses such as (R7) or (R15)
+name the cross-spec revision decisions that a rule applies, and "decision
+n" means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+
+*Revision note:* revision 2 (2026-10-22) is the current text; it binds P5 to
+the frozen P1 contract, 050 rev 2.
 
 ## 1. Scope and exit gates
 
@@ -47,10 +31,10 @@ training job, browser action or policy engine. There are no framework
 adapters. There is no URL dereference, provider-state fetch, background
 polling, forced screenshot, extra stream consumer or price calculation.
 
-Baseline: 049 rev 6.4, 050 rev 2, 051 rev 2, 052 rev 2, 053 rev 1 (with its
-concurrent revision), and CONTEXT.md owner decisions 1–10. 049 decisions 1–25
-remain authoritative. This spec changes no contract, implementation, 049 text
-or release claim; §7 and §11 are deltas for their owners.
+Baseline: 049 rev 6.4, 050 rev 2, 051 rev 2, 052 rev 2, and 053 rev 1 with
+its revision 2, written at the same time. 049 decisions 1–25 remain
+authoritative. This spec changes no contract, implementation, 049 text or
+release claim; §7 and §11 are deltas for their owners.
 
 | Surface / capture point | Field ids and roles |
 |---|---|

@@ -15,25 +15,21 @@ implements: 049 rev 6.4 §8.2 P1 and P1-A (sections 1.3, 2.3-2.6, 2.8, 2.10-2.13
 This is the build spec for spec 049 phases **P1** (emitters and model-call
 projection) and **P1-A** (mixed capture and passivity qualification). It
 implements 049 rev 6.4. It does not redesign 049. Where 049 is ambiguous or
-conflicts with the code or with owner decisions 21–25, the conflict is listed
-in section 9 with exact replacement text.
+conflicts with the code or with 049's owner decisions 21–25 (049 §9), the
+conflict is listed in section 9 with exact replacement text.
 
-Revision 2 applies the Astra and Fable reviews of the v0.9 spec set and the
-main-session revision decisions R1–R16. The changes:
-- run correlation ids carried in every token (R1);
-- persisted uuid4 marker ids (R2);
-- segment-attributed losses (R3);
-- three status inputs (R4);
-- descriptor-only bodies (R5);
-- the 260 bound (R6);
-- one structured-evidence carrier, §3.4a (R7);
-- one identity rule (R8);
-- fail-open APIs and bounded encoders (R9);
-- pre-ack validation as the default (R10);
-- split WPs with explicit dependencies (R13, R14);
-- C35, C40, N51, `fabric.capture.source` and bounded `event_ids` (R15);
-- harness paths (R16);
-- the registration-fd fork fix.
+**Build state.** Waves 0–2 of section 5 are built on the
+`feat/action-record` branch, not released, except WP-15 (decision records)
+and WP-21 (Node pre-acknowledgement validation). WP-50 is built as an
+end-to-end test; the LR-1 harness and wave 4 (P1-A) are not built.
+[The P1 run record](../docs/run-record.md) describes what is built.
+
+Codes in parentheses such as (R4) or (R13) name the cross-spec revision
+decisions that a rule applies; the [glossary](../docs/glossary.md) lists
+all sixteen. Other terms are defined there too.
+
+*Revision note:* revision 2 (2026-10-22) is the current text; the rules it
+changed carry their R-code.
 
 References are `file:line` at main `36f7a89`. Python paths are relative to
 `sdk/python/src/fabric/`. Collector paths are relative to

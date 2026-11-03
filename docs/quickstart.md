@@ -1,5 +1,9 @@
 # Quickstart
 
+> **Status:** describes built code, released in v0.8.0. It runs
+> [`examples/wire-capture/`](../examples/wire-capture/) and the local Node
+> in [`deploy/compose/`](../deploy/compose/).
+
 Two short exercises, both offline with a fake model (no API key, nothing
 leaves your machine):
 

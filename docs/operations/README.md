@@ -1,5 +1,11 @@
 # Operations
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`fabric/wire/_spool.py`](../../sdk/python/src/fabric/wire/_spool.py),
+> [`fabric/wire/_sender.py`](../../sdk/python/src/fabric/wire/_sender.py)
+> and the Fabric Node in
+> [`components/otel-collector-fabric/`](../../components/otel-collector-fabric/).
+
 Running wire capture and the Fabric Node day to day: the agent spool, the
 Node queues, health and metrics, troubleshooting, and upgrades. For backup
 and restore of Node volumes see the [recovery runbook](dr.md).

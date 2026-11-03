@@ -1,5 +1,12 @@
 # Qualified-run mode
 
+> **Status:** describes built code, released in v0.8.0 (opt-in).
+> Implementation:
+> [`fabric/qualified_run.py`](../sdk/python/src/fabric/qualified_run.py),
+> [`fabric/receipt_sets.py`](../sdk/python/src/fabric/receipt_sets.py),
+> [`fabric/independent_feed.py`](../sdk/python/src/fabric/independent_feed.py)
+> and [`fabric/source_spool.py`](../sdk/python/src/fabric/source_spool.py).
+
 Qualified-run mode is an **opt-in**, Python-only, offline verification path
 for runs recorded with the explicit `CallRecorder` line
 ([spec 049](../specs/049-four-layer-capture-coverage.md) §2.13, specs

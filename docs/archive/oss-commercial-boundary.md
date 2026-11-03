@@ -1,14 +1,10 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Architecture](../architecture.md). Kept for history only.
+> [Architecture](../architecture.md). Kept for history only; it may not match the current code.
 
 # OSS and commercial boundary
 
-The split follows the customer's trust boundary and can be explained in one
-sentence:
-
-> Keep capture, export protection, delivery interoperability, and local
-> verification open; commercialize fleet operations, calibrated evaluation,
-> investigations, enterprise workflows, and regulatory content.
+The split follows the customer's trust boundary: capture, export
+protection, delivery interoperability and local verification are open.
 
 ## Product separation
 
@@ -35,20 +31,11 @@ record a customer-owned backend can consume.
 These parts remain open because customers must be able to audit what observes
 their systems and what crosses their boundary.
 
-## Commercial capabilities
+## Outside Fabric OSS
 
-- fleet inventory and coverage management;
-- continuous monitoring and alerting at enterprise scale;
-- calibrated judges, evaluation workers, and campaign orchestration;
-- Decision Graph materialization and cross-run analytics;
-- incidents, investigations, evidence workflows, and replay orchestration;
-- approvals, policy authoring, rollout, and reviewer workflows;
-- regulatory mappings, proprietary rubrics, and industry content;
-- enterprise connectors, deployment overlays, support, and managed operations.
-
-Commercial services may be deployed by SingleAxis or privately for the
-customer. Commercial logic does not become a hidden dependency of local
-recording.
+Monitoring, evaluation, governance and the other uses that consume the
+record are outside Fabric OSS; [AGENTS.md](../../AGENTS.md) states the
+boundary. They never become a hidden dependency of local recording.
 
 ## Optional enforcement
 

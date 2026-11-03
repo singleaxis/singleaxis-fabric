@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Privacy and security](../privacy-and-security.md). Kept for history only.
+> [Privacy and security](../privacy-and-security.md). Kept for history only; it may not match the current code.
 
 # Recorder v1 auditor checklist
 

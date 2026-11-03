@@ -1,5 +1,12 @@
 # Deployment
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`deploy/compose/`](../deploy/compose/),
+> [`charts/fabric/`](../charts/fabric/),
+> [`fabric-gate`](../components/otel-collector-fabric/gate/) and the agent
+> settings in
+> [`fabric/wire/_config.py`](../sdk/python/src/fabric/wire/_config.py).
+
 A Fabric deployment has three parts you run and one you choose:
 
 ```text

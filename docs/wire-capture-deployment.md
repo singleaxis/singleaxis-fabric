@@ -1,5 +1,11 @@
 # Deploying LLM wire capture (moved)
 
+> **Status:** a redirect page. Its redaction-service section describes built
+> code, released in v0.8.0:
+> [`fabric/redaction.py`](../sdk/python/src/fabric/redaction.py) and the
+> reference service in
+> [`examples/redaction-service/`](../examples/redaction-service/).
+
 This page moved. Configuration files and scripts in `deploy/compose` still
 point here.
 

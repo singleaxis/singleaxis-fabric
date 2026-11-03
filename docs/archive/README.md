@@ -1,5 +1,8 @@
 # Archived documentation
 
+> **Status:** archived pages. They describe earlier releases or plans and
+> may not match the current code; they are not a description of built code.
+
 These pages described earlier releases or planning states. They are kept
 for history and are not part of the v0.8 documentation; they may describe
 removed or changed behaviour. Use the [current documentation](../README.md).

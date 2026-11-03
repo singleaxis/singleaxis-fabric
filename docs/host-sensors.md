@@ -1,5 +1,14 @@
 # Host sensors
 
+> **Status:** describes built code, released in v0.8.0, for the local
+> profile only. Implementation:
+> [`auditreceiver/`](../components/otel-collector-fabric/receiver/auditreceiver/)
+> and [`components/host-emitter/`](../components/host-emitter/). A
+> production ingress ([spec 053](../specs/053-execution-channels-p4.md)
+> §6.2) and the join of host events to agent effects ([spec
+> 056](../specs/056-agent-action-reconstruction.md) §4.3) are specified, not
+> built.
+
 Fabric ships two optional Linux host sensors. They record **metadata** about
 process starts, network connections and (opt-in) file opens on the machine
 where an agent runs. They never record payloads, never block or delay a
@@ -95,11 +104,16 @@ scope are deliberately unusable until you set them.
   sent by the emitter are refused. In v0.8 host sensors are a
   local-profile feature: run them against a separate, local-profile Node.
   A production ingress for host sensors (its own source binding, source id
-  and epoch) is planned but not built; its design is not yet settled.
+  and epoch) is specified in
+  [spec 053](../specs/053-execution-channels-p4.md) §6.2 and not built.
 - **Not in the Helm chart or Compose.** There are no chart values or Compose
   overlays for either sensor.
 - **No run identity.** Host records carry no `fabric.run.*` or source-epoch
-  identity that `fabric.reconstruct` reads; reconstruct ignores them. The
+  identity that `fabric.reconstruct` reads; reconstruct ignores them.
+  Joining host events to the agent's subprocess effects through pid and
+  parent pid is specified in
+  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and being
+  built. The
   auditd logfile mode carries `audit.source_id` and `audit.source_generation`;
   netlink mode and the emitter carry no source identity.
 - **Not enterprise-qualified.** The live kernel, Linux BPF build, outage and

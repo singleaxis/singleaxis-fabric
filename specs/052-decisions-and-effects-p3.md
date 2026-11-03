@@ -23,13 +23,14 @@ timing, never-raise rules, budgets and verifier modules of spec 051; this
 spec only states what P3 adds. Section and assumption numbers `051 §x` /
 `A<n>` refer to spec 051.
 
-**Revision 2** applies the v0.9 spec reviews (Astra, Fable) through the
-main-session decisions R1–R16: assumptions refreshed against spec 050 and
-051 revision 2; one integration owner for `decision.py` and
-`records/__init__.py` (R13, new WP3-I); passivity per R9 (no conversion of
-application objects, every API fails open); the explicit clear-mode rule
-(R8); open decisions follow the reviewers' answers, pending owner
+**Status: draft; not built.** Codes in parentheses such as (R8) or (R13)
+name the cross-spec revision decisions that a rule applies, and "decision
+n" means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+The open decisions in section 8 are recommendations pending owner
 confirmation.
+
+*Revision note:* revision 2 (2026-10-22) is the current text; it binds this
+spec to specs 050 and 051 revision 2.
 
 ---
 
