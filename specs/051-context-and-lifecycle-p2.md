@@ -23,16 +23,16 @@ registry names (`contracts/coverage/v1/registry/*.json`). "Decision line"
 means today's `fabric.decision` span API (`decision.py`, `_calls.py`).
 "Records input" means 049 §1.3 input `records`, built by P1 (spec 050).
 
-**Revision 2** applies the v0.9 spec reviews (Astra, Fable) through the
-main-session decisions R1–R16 (`.tmp/specs/REVISION.md`): §3 refreshed
-against spec 050 and its R1/R4/R5 revision; D30 only through P1's
-run-level hook (R4); one integration owner for `decision.py` and
-`records/__init__.py` (R13); passivity tightened (R9: no automatic
-`str(exc)`, work-bounded encoders, every API fails open); one clear-mode
-rule (R8); items already fixed by the v0.8.1 hotfix (branch
+**Status: draft; not built.** Codes in parentheses such as (R8) or (R13)
+name the cross-spec revision decisions that a rule applies, and "decision
+n" means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+Items already fixed by the decision-line privacy hotfix (branch
 `fix/decision-line-privacy`) are marked **landed in v0.8.1 (hotfix)** and
-are not redone here; that branch must merge to main first (pre-requisite
-H0, §3).
+are not redone here. That hotfix was merged to main and released as part
+of v0.8.0, so pre-requisite H0 (§3) is met.
+
+*Revision note:* revision 2 (2026-10-22) is the current text; it binds this
+spec to spec 050 revision 2.
 
 ---
 

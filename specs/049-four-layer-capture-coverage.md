@@ -7,50 +7,27 @@ last_updated: 2026-10-22
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
 related: 030, 031, 036, 038, 040, 041, 042, 044, 045, 046
-supersedes: 049 revision 5; the content-role widening previously deferred to "spec 050"
+supersedes: earlier revisions of 049
 supersedes_in_part: 048 §1 (node-mode activation now also needs a capture policy and an id key for content capture, section 7.3)
 contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), contracts/capture/v1 (manifest and records markers)
 ---
 
 # 049 — Four-layer capture contract
 
-**Status: accepted (revision 6.4), approved 2026-10-22; P0-A implemented
-(v0.8), P1–P5 not built.** Every owner
-decision in section 9 was approved as recommended and is applied in this
-text, marked *Approved (owner, 2026-10-18)* (decisions 1–20) or *Approved
-(owner, 2026-10-19..22)* (decisions 21–25). A later change to a decision
-changes only the sections that decision lists. **P0 and P0-A are built**
-and merged in v0.8 (main `36f7a89`); P1–P5 and the TS track are not
-(section 8.2).
+**Status: accepted (revision 6.4, 2026-10-22).** Phases P0 and P0-A are
+built and released in v0.8.0. Phase P1 is mostly built on the
+`feat/action-record` branch, not released (spec 050). P1-A, P2–P5 and the
+TypeScript track are not built (section 8.2). This spec specifies; it does
+not change runtime code.
 
-Revision 3 resolves the rev-2 confirmation reviews (appendix D): records
-are sequenced on their own source, attempt identity is always minted,
-manifests have their own counting rule, layer verdicts are a decision
-table, the role table is complete, and protection composes with extraction.
-Revision 3.1 applies the rev-3 confirmation fixes (appendix D, rows
-R3F-*). Revision 4 aligns the contract with the owner-directed target
-architecture — two inputs (wire, records) on one spool, one sequencer per
-(source, epoch), one content writer, one verifier, no framework adapters —
-and closes the long-running-run gaps: chained segments, an `open` run
-verdict and a resume contract (appendix E). Revision 5 made segments
-immutable. Revision 6 converges by simplifying: qualified-run mode
-(045/046) stays a separate opt-in on its own journal, the default seal is
-a portable digest recomputable from the store, a process has one open
-segment per run, and PROTECT, encryption at rest and source
-authentication become concrete stages on the single path (appendix E,
-rows R6-*). Revision 6.1 makes source authentication visible to the
-verifier and applies the final-gate fixes (rows R6F-*). Revision 6.2
-adds per-branch identities, encrypts the Node content queue and bounds
-authentication to trusted readback (rows R6A-*). Revision 6.3 only
-clarifies ambiguities met while building P0, each with the most
-conservative reading (rows R63-*); it changes no design. Revision 6.4
-applies the owner decisions made while building P0 and P0-A (section 9,
-decisions 21–25: a customer-run redaction service, caller ids always
-mapped, host sensors and multi-source binding deferred to P4, content
-validated after the Node acknowledges it, the `with Pool()` limit),
-corrects the capture-queue default, re-verifies section 2.1 against the
-v0.8 code and marks P0 and P0-A built (rows R64-*).
-It specifies; it does not change runtime code.
+Section 9 lists the owner decisions (numbered 1–25) that this text
+applies. A passage marked *Approved (owner, date) (decision n)* applies
+row n of that table, and "decision n" in other specs means the same row.
+A later change to a decision changes only the sections that decision
+lists. Terms are defined in the [glossary](../docs/glossary.md).
+
+*Revision note:* revision 6.4 (2026-10-22) is the current text; appendices
+A–E list the findings earlier revisions resolved.
 
 How to read it:
 
