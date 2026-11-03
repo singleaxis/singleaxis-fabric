@@ -146,13 +146,18 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
 })  # fmt: skip
 
 # The registry points this Python runtime has, in manifest order: not the TypeScript tee,
-# the P4/P5 hooks, out-of-process sensors or the qualified-run-only sources.
+# the P4/P5 hooks this build does not register, out-of-process sensors or the
+# qualified-run-only sources. ``exec.subprocess`` is the one P4 hook channel this build
+# registers (spec 056 §7.2, ``fabric.hooks``); its state changes through
+# capture_point_changed when hooks install, disable or close it.
 RUNTIME_POINTS: tuple[str, ...] = (
     "fabric.self", "install.config", "wire.py.httpx", "wire.py.aiohttp",
     "explicit.call_recorder", "explicit.byte_boundary", "explicit.final_http",
     "explicit.subprocess_artifact", "sdk.records", "run.scope", "mcp.wrapper",
-    "reconstruct.parse", "reconstruct.infer",
+    "exec.subprocess", "reconstruct.parse", "reconstruct.infer",
 )  # fmt: skip
+# The hook channels among them (opt-in, off until ``fabric.hooks.install``).
+HOOK_POINTS: tuple[str, ...] = ("exec.subprocess",)
 
 # Initial states of the points whose state is not derived from the install (the wire tees
 # and the records input are). Explicit producers report on the records input only once a
@@ -166,6 +171,7 @@ DEFAULT_STATES: Mapping[str, StateEntry] = MappingProxyType({
     "explicit.subprocess_artifact": ("installed_inactive", "not_instrumented"),
     "run.scope": ("active", None),
     "mcp.wrapper": ("installed_inactive", "not_instrumented"),
+    "exec.subprocess": ("disabled", "hook_disabled"),  # opt-in (053 §1)
     "reconstruct.parse": ("active", None),
     "reconstruct.infer": ("active", None),
 })  # fmt: skip
@@ -910,7 +916,8 @@ if hasattr(os, "register_at_fork"):
 
 __all__ = [
     "CLOCK_UNCERTAINTY_DEFAULT_MS", "CLOCK_UNCERTAINTY_ENV", "COVERAGE_PROFILE",
-    "DEFAULT_STATES", "OPEN_RUN_DEADLINE_DEFAULT_S", "OPEN_RUN_DEADLINE_ENV", "POINTS",
+    "DEFAULT_STATES", "HOOK_POINTS", "OPEN_RUN_DEADLINE_DEFAULT_S", "OPEN_RUN_DEADLINE_ENV",
+    "POINTS",
     "POINT_REASONS", "POINT_STATES", "RECORDS_MAX_OBJECT_DEFAULT", "RECORDS_MAX_OBJECT_ENV",
     "RUNTIME_POINTS", "SCHEMA_VERSION", "SEQUENCE_UNIT", "SPAN_KEYS", "SPAN_MANIFEST",
     "BuildFacts", "ManifestRef", "PointSpec", "PointState", "build_manifest",

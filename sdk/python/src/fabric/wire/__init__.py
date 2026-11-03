@@ -511,14 +511,15 @@ def _p1_patch(handle: WireHandle) -> None:
 
 
 def _p1_uninstalled(handle: WireHandle) -> None:
-    """050 §3.8 (WP-13 hand-off): ``uninstall()`` is a state change of every wire tee that
-    was active, chained before the epoch's ``final``."""
+    """050 §3.8 (WP-13 hand-off): ``uninstall()`` is a state change of every wire tee and
+    hook channel (053 §4) that was active, chained before the epoch's ``final``."""
     from .. import _manifest  # noqa: PLC0415
 
     with contextlib.suppress(Exception):
         document = _manifest.current_document(handle.allocator) or {}
+        points = (*_WIRE_POINTS, *_manifest.HOOK_POINTS)
         for row in document.get("capture_points", ()):
-            if row.get("id") in _WIRE_POINTS and row.get("state") == "active":
+            if row.get("id") in points and row.get("state") == "active":
                 _manifest.capture_point_changed(handle, row["id"], "disabled", "shutdown")
 
 
@@ -757,10 +758,28 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
         from .._segments import intake_environment  # noqa: PLC0415
 
         intake_environment(handle, env)  # same-host FABRIC_RUN_ID / FABRIC_RUN_RESUME_TOKEN
+        _hooks_from_env(env)
         return handle
     except Exception as exc:
         _LOG.warning("fabric.wire: capture not installed (%s)", type(exc).__name__)
         return None
+
+
+def _hooks_from_env(env: Mapping[str, str]) -> None:
+    """053 §4: the hook switches (``FABRIC_WIRE_EXEC=1``) on the handle just installed.
+    ``fabric.hooks`` is imported only when one is set; it never raises."""
+    if any((env.get(name) or "").strip() for name in _HOOK_ENV_NAMES):
+        with contextlib.suppress(Exception):
+            from .. import hooks  # noqa: PLC0415
+
+            hooks.install_from_env(env)
+
+
+# fabric.hooks._config.HOOK_ENV_NAMES (pinned by tests/test_hooks_foundation.py).
+_HOOK_ENV_NAMES = (
+    "FABRIC_WIRE_EXEC", "FABRIC_WIRE_EXEC_AUDIT", "FABRIC_WIRE_FILE_AUDIT",
+    "FABRIC_WIRE_DB_DRIVERS", "FABRIC_WIRE_HTTP_HOSTS", "FABRIC_WIRE_MCP",
+)  # fmt: skip
 
 
 def current_handle() -> WireHandle | None:
