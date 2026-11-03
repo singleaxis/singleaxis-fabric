@@ -123,7 +123,7 @@ func TestMappedStoreIDAndTagsAreAdmitted(t *testing.T) {
 			{"gen_ai.memory.store.id", "patients-vector-store", false},
 			{"gen_ai.memory.store.id", lbl, false},
 			{"fabric.tags", []any{lbl, lbl}, true},
-			{"fabric.tags", []any{lbl, "owasp:LLM01"}, false},
+			{"fabric.tags", []any{lbl, "myco:risk-high"}, false},
 			{"fabric.memory.tags", []any{lbl}, true},
 			{"fabric.memory.tags", []any{"jane-doe"}, false},
 			{"fabric.memory.tags", lbl, false},
