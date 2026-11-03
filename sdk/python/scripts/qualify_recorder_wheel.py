@@ -34,6 +34,7 @@ FORBIDDEN_MEMBERS = {
     "fabric/policy.py",
     "fabric/presidio.py",
     "fabric/stream.py",
+    "fabric/taxonomy.py",
     "fabric/tool_auth.py",
     "fabric/auto_instrument.py",
     "fabric/coverage_manifest.py",
@@ -57,6 +58,7 @@ FORBIDDEN_PREFIXES = (
     "fabric/judge_adapters/",
     "fabric/policy_adapters/",
     "fabric/queue_transports/",
+    "fabric/taxonomies/",
 )
 FORBIDDEN_EXTRAS = {
     "agent-framework",
@@ -123,6 +125,8 @@ FORBIDDEN_ROOT_SYMBOLS = {
     "ScoreParseError",
     "SimpleLLMJudge",
     "StreamRedactor",
+    "Taxonomy",
+    "TaxonomyEntry",
     "ToolAuthorization",
     "ToolAuthorizer",
     "ToolAuthorizerError",
@@ -130,6 +134,9 @@ FORBIDDEN_ROOT_SYMBOLS = {
     "ToolCallSnapshot",
     "UDSNemoClient",
     "UDSPresidioClient",
+    "bundled_taxonomy_names",
+    "load_bundled_taxonomies",
+    "validate_tag",
 }
 # Spec 047 wire capture: the env-gated autoload ships only as
 # fabric/_autoload/sitecustomize.py. Anything Python would execute merely

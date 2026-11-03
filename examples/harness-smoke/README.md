@@ -1,13 +1,13 @@
 # harness-smoke
 
-Minimal Fabric SDK program that exercises the local evaluation harness
+Minimal Fabric SDK program that exercises the local Compose harness
 end to end — one recorded decision exported over OTLP — so you can
 verify the stack is live before pointing a real product at it.
 
 The harness in [`deploy/compose`](../../deploy/compose) contains only
 Fabric Node plus a controlled fsync test sink: CAPTURE -> PROTECT ->
-DELIVER. There is no observability UI and there are no guardrail,
-judge, or policy services — the recorder is passive.
+DELIVER. The recorder is passive: it records and delivers, and never
+changes what the instrumented program does.
 
 ## Run
 

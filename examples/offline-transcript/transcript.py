@@ -3,7 +3,7 @@
 """Record and read a local governed transcript — no services required.
 
 Runs entirely on this machine: the Fabric SDK plus a local
-customer-controlled store. No Fabric Node, OTLP Collector, Relay, or
+customer-controlled store. No Fabric Node, OTLP Collector, or
 SingleAxis Platform is involved — nothing leaves ``--root``.
 
 The script records one small interaction (a model request/response plus

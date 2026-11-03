@@ -23,7 +23,7 @@ Two profiles exist, and they are not interchangeable:
 
 | | `local` | `production` |
 |---|---|---|
-| Purpose | Development, evaluation, offline runs | Anything crossing a trust boundary |
+| Purpose | Development, local trials, offline runs | Anything crossing a trust boundary |
 | Agent | `file://` store (direct) or node mode | node mode |
 | Content needs | nothing (implicit `fabric.local-default` policy) | capture policy + id key + spool key |
 | Node | plaintext loopback, no authentication (Compose `make up`, Helm `shadow-dev`) | single-token bearer ingress bound to one tenant and source, TLS, encrypted queue (Compose `make up-prod`, Helm `shadow-production`) |
@@ -43,7 +43,8 @@ Ports, all on `127.0.0.1`: `4317` OTLP/gRPC, `4318` OTLP/HTTP, `4319`
 content, `13133` health, `8080` test sink. The sink stores every span
 request and acknowledges only after fsync; `make export-spans OUT=<dir>`
 copies them for `fabric.reconstruct`. The Node writes content to the
-`fabric-content` volume (unencrypted), with tenant `evaluation` by default.
+`fabric-content` volume (unencrypted), with tenant `evaluation` by default
+(a fixed local-trial tenant id).
 This setup is plaintext and unauthenticated: never expose it beyond the
 host.
 

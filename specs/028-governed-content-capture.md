@@ -1,8 +1,8 @@
 ---
 title: Governed content capture and configuration
-status: draft
-revision: 2
-last_updated: 2026-09-23
+status: implemented
+revision: 3
+last_updated: 2026-11-03
 owner: product-architecture
 depends_on: 027
 related: 029, 032, 033, 034
@@ -31,7 +31,7 @@ CAPTURE -> PROTECT -> DELIVER
   allowlist is unchanged in kind.
 - Nothing here is an evaluation service, judge, policy engine, or runtime
   control. Resolution and export (spec 033/034) are read-side libraries a
-  customer or evaluator runs where content is authorized to be read.
+  customer or downstream consumer runs where content is authorized to be read.
 
 ## Goals
 
@@ -181,8 +181,8 @@ governed evidence storage and are documented as such.
 
 ## Coverage matrix
 
-Published in `docs/governed-content.md` and enforced by a doc test that walks
-the matrix rows:
+The matrix below is the design of record. The shipped capture surface is
+documented in [`docs/explicit-apis.md`](../docs/explicit-apis.md):
 
 | Surface | Python manual API | TS manual API | Auto-instrumentation | Adapters |
 |---|---|---|---|---|
@@ -220,9 +220,8 @@ raw `gen_ai.*` attributes, which the governed path does not consume in v1).
 
 ## Rollout
 
-- Specs 028–034 land as `draft`; acceptance per `GOVERNANCE.md` lazy
-  consensus. Implementation lands behind the new config on a feature branch;
-  no release marks the feature stable until qualification gates in spec 034
-  pass.
+- Specs 028–034 landed as `draft`; governed content capture ships in the
+  v0.8 SDKs behind `ContentCaptureConfig` and is now `implemented`. The
+  qualification gates in spec 034 remain the bar for any production claim.
 - Existing users: zero behavior change without `ContentCaptureConfig`.
   `content_store=` keeps working as `inline` + legacy roles (§6.2).

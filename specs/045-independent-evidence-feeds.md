@@ -2,8 +2,9 @@
 title: Authenticated independent operation and byte feeds
 status: draft
 qualification: NO_GO
-revision: 1
-depends_on: 035, 037, 038, 039, 043, 044
+revision: 2
+last_updated: 2026-11-03
+depends_on: 035, 038, 039, 043, 044
 ---
 
 # 045 — Independent evidence-feed contract

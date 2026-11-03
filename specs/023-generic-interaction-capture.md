@@ -1,8 +1,8 @@
 ---
 title: Generic Interaction Capture
 status: implemented
-revision: 2
-last_updated: 2026-07-25
+revision: 3
+last_updated: 2026-11-03
 owner: project-lead
 ---
 
@@ -16,7 +16,7 @@ discover interactions that bypass instrumentation or prove complete coverage.
 
 ## Design principle: generic, not particular
 
-The mistake to avoid: MCP-specific baseline, OWASP-only tagging, skill-only
+The mistake to avoid: MCP-specific baseline, framework-specific tagging, skill-only
 signatures. Everything here is **cross-cutting and surface-agnostic**:
 
 - One universal capture primitive (`record_interaction`) logs *any* interaction
@@ -25,7 +25,7 @@ signatures. Everything here is **cross-cutting and surface-agnostic**:
   file…) are **specializations** of the same shape.
 - Baseline, tagging, and signature verification are **generic capabilities**
   usable on *any* interaction, supplied as data/parameters — never hardcoded to
-  one surface or one taxonomy.
+  one surface or one tag vocabulary.
 
 Invariant (unchanged from spec 022): **metadata + hashes on the span,
 never raw data.** All additions are **additive** — the 31 + 5 conformance
@@ -42,7 +42,7 @@ d.record_interaction(
     direction=None,        # "inbound" | "outbound" | "internal" | None
     payload_hash=None,     # hash of the payload (raw payload NEVER on span)
     metadata=None,         # dict of allowlisted scalar metadata (hashed if sensitive)
-    tags=None,             # see §3 — generic taxonomy tags
+    tags=None,             # see §3 — open-vocabulary tags
     baseline=None,         # see §2 — generic baseline check name
     signature=None,        # see §4 — generic signature verification input
 )
@@ -74,21 +74,22 @@ status = bl.check(name, observed_hash)    # "match" | "deviation" | "unknown"
   *deviation from an approved set*. Both are useful; baseline is the one the
   security best-practice literature asks for.
 
-## 3. Generic taxonomy tagging (any framework, extensible)
+## 3. Open-vocabulary tagging (any framework, extensible)
 
 Tags are **data, not hardcoded logic**. Any event can carry namespaced tags;
-reference taxonomies ship as loadable data, never special-cased.
+the recorder captures them as supplied and never interprets them.
 
 ```python
-tags = ["atlas:AML.T0051", "owasp-llm:LLM01", "myco:risk-high"]   # arbitrary
+tags = ["myco:risk-high", "team:payments"]   # arbitrary
 ```
 
 - Captured as `fabric.tags` (tuple[str]). Format `namespace:code`.
-- Ship reference taxonomy *data* files (`taxonomies/mitre-atlas.json`,
-  `taxonomies/owasp-llm.json`) + a generic `fabric.taxonomy` helper that
-  validates/looks-up a tag against any loaded taxonomy — but **arbitrary tags
-  are always allowed** (open vocabulary). Adding a new framework = drop in a
-  JSON file, zero code change.
+- **Arbitrary tags are always allowed** (open vocabulary). The vocabulary is
+  owned by the caller; adding a new framework needs no code change.
+
+Revision 3 removed the bundled reference taxonomy data files and the
+`fabric.taxonomy` lookup helper; open-vocabulary `tags=` / `fabric.tags`
+capture is unchanged.
 
 ## 4. Generic signature verification (any artifact)
 

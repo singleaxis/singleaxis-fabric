@@ -62,13 +62,6 @@ from .signing import (
     SignatureResult,
     verify_signature,
 )
-from .taxonomy import (
-    Taxonomy,
-    TaxonomyEntry,
-    bundled_taxonomy_names,
-    load_bundled_taxonomies,
-    validate_tag,
-)
 from .tracing import get_tracer, install_default_provider
 
 __all__ = [
@@ -127,20 +120,15 @@ __all__ = [
     "SideEffectType",
     "SignatureCheck",
     "SignatureResult",
-    "Taxonomy",
-    "TaxonomyEntry",
     "ToolCall",
     "ToolErrorCategory",
     "__version__",
     "bind_capture_context",
-    "bundled_taxonomy_names",
     "extract",
     "get_tracer",
     "inject",
     "inject_decision",
     "install_default_provider",
-    "load_bundled_taxonomies",
     "traced_call_tool",
-    "validate_tag",
     "verify_signature",
 ]

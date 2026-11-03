@@ -35,12 +35,24 @@ not described here is not built; see
 - SDKs: [Python](../sdk/python/README.md), [TypeScript](../sdk/typescript/README.md);
   [Fabric Node](../components/otel-collector-fabric/README.md);
   [Compose](../deploy/compose/README.md).
-- Specifications: [specs/](../specs/README.md). The current capture
-  contract is [049](../specs/049-four-layer-capture-coverage.md), with
-  [047](../specs/047-llm-wire-capture-and-reconstruction.md) (wire capture
-  and reconstruction) and
-  [048](../specs/048-node-content-delivery-and-agent-spool.md) (Node
-  content delivery and the agent spool).
+- Specifications: [specs/](../specs/README.md).
+  - Current work: [056](../specs/056-agent-action-reconstruction.md),
+    agent action reconstruction — linking model decisions, the tool calls
+    they asked for, the commands and effects those caused, and host-sensor
+    corroboration into one record of what an agent did in a run.
+  - The capture contract is
+    [049](../specs/049-four-layer-capture-coverage.md), with
+    [047](../specs/047-llm-wire-capture-and-reconstruction.md) (wire capture
+    and reconstruction) and
+    [048](../specs/048-node-content-delivery-and-agent-spool.md) (Node
+    content delivery and the agent spool).
+  - Phase build specs for 049: [050](../specs/050-run-structure-and-records-p1.md)
+    (P1), [051](../specs/051-context-and-lifecycle-p2.md) (P2),
+    [052](../specs/052-decisions-and-effects-p3.md) (P3),
+    [053](../specs/053-execution-channels-p4.md) (P4),
+    [054](../specs/054-specialised-runtimes-p5.md) (P5) and
+    [055](../specs/055-typescript-wire-capture.md) (TS-1, TypeScript wire
+    capture). All are drafts; none is built in v0.8.
 
 ## Public contracts
 
@@ -65,4 +77,3 @@ deployment-policy v1 (`contracts/deployment-policy/v1`),
 - [Building Fabric](building-fabric.md)
 - [Third-party licenses](licenses/README.md)
 - [Historical secret-scan triage](security-history-triage.md)
-- [Archive](archive/README.md): superseded documents, kept for history.

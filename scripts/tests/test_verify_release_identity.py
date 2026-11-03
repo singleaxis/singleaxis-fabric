@@ -22,12 +22,7 @@ EXPECTED_RUNTIME_MODULES = VERIFIER.EXPECTED_RUNTIME_MODULES
 verify = VERIFIER.verify
 
 FABRIC_CHARTS = {
-    "fabric-relay": "0.1.0",
-    "nemo-sidecar": "0.3.0",
     "otel-collector": "0.4.0",
-    "presidio-sidecar": "0.2.0",
-    "redteam-runner": "0.2.0",
-    "update-agent": "0.2.0",
 }
 
 
@@ -44,8 +39,6 @@ def _materialize(root: Path, case_name: str) -> None:
     chart_versions = {
         **FABRIC_CHARTS,
         "otel-collector": case["otel_chart_version"],
-        "nemo-sidecar": case["nemo_chart_version"],
-        "langfuse": "0.2.0",
     }
     dependencies = "\n".join(
         f'  - name: {name}\n    version: {version}\n    repository: ""'
@@ -74,12 +67,7 @@ def _materialize(root: Path, case_name: str) -> None:
         'generated: "2026-08-25T00:00:00Z"\n',
     )
     for name, chart_version in chart_versions.items():
-        if name == "langfuse":
-            app_version = "2.93.0"
-        elif name == "fabric-relay":
-            app_version = case["relay_version"]
-        else:
-            app_version = case["runtime_version"]
+        app_version = case["runtime_version"]
         _write(
             root,
             f"charts/fabric/charts/{name}/Chart.yaml",
@@ -99,11 +87,6 @@ def _materialize(root: Path, case_name: str) -> None:
         root,
         "components/otel-collector-fabric/ocb-config.yaml",
         f"dist:\n  version: {case['collector_version']}\n",
-    )
-    _write(
-        root,
-        "components/fabric-relay/ocb-config.yaml",
-        f"dist:\n  version: {case['relay_version']}\n",
     )
     _write(
         root,

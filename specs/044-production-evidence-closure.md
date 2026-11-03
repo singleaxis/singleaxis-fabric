@@ -2,8 +2,9 @@
 title: Bounded production evidence closure
 status: implementation_in_progress
 qualification: NO_GO
-revision: 1
-depends_on: 035, 036, 037, 038, 039, 043
+revision: 2
+last_updated: 2026-11-03
+depends_on: 035, 036, 038, 039, 043
 ---
 
 # 044 — Closing the production evidence gaps
@@ -14,7 +15,8 @@ Continue the bounded Python custom-agent recorder and existing isolated Linux
 qualification. Fabric remains passive CAPTURE -> PROTECT -> DELIVER. Recording
 failure must not change an agent operation. The production decision still
 requires the named deployment, approved scope, actual storage controls and
-independent reviewer required by specs 037–039. Local keys or synthetic fixtures
+independent reviewer required by specs 038–039 and the spec 049 production
+profile (sections 7.3 and 7.9). Local keys or synthetic fixtures
 cannot provide customer approval or make an in-memory handoff crash safe.
 
 ### Phase A: security findings
@@ -288,7 +290,8 @@ reports no unclassified findings and the independent probe still detects a
 new canary; the exact image build, patch metadata, vulnerability scan and live
 tests must pass on CI before qualifying the artifact.
 
-Implementation and test results are recorded in
-`docs/recorder-v1-qualification-status.md`. Each phase must state which code and
+Implementation and test results were recorded in the recorder-v1
+qualification ledger (since removed; history in git); the current state is
+in [`docs/limitations-and-roadmap.md`](../docs/limitations-and-roadmap.md). Each phase must state which code and
 test environment were exercised. Do not replace failed security or deployment
 gates with local simulation results.

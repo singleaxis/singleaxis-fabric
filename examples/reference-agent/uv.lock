@@ -272,40 +272,37 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-framework-core", marker = "extra == 'agent-framework'", specifier = ">=0.1,<2.0" },
-    { name = "boto3", marker = "extra == 'aws'", specifier = ">=1.34" },
-    { name = "cedarpy", marker = "extra == 'cedar'", specifier = ">=0.4" },
-    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.80,<2.0" },
-    { name = "cryptography", marker = "extra == 'dev'", specifier = ">=42" },
-    { name = "cryptography", marker = "extra == 'signing'", specifier = ">=42" },
-    { name = "deepeval", marker = "extra == 'deepeval'", specifier = ">=0.21" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'lakera'", specifier = ">=0.27" },
-    { name = "httpx", marker = "extra == 'opa'", specifier = ">=0.27" },
-    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.23" },
-    { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=0.2,<2.0" },
-    { name = "litellm", marker = "extra == 'crewai'", specifier = ">=1.83.7" },
+    { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
+    { name = "cryptography", marker = "extra == 'otlp'", specifier = ">=49" },
+    { name = "cryptography", marker = "extra == 'signing'", specifier = ">=49" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11.2" },
-    { name = "nats-py", marker = "extra == 'nats'", specifier = ">=2.6" },
     { name = "opentelemetry-api", specifier = ">=1.41" },
-    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'dev'", specifier = ">=1.41" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'otlp'", specifier = ">=1.41" },
-    { name = "opentelemetry-instrumentation-anthropic", marker = "extra == 'anthropic'", specifier = ">=0.30b0" },
-    { name = "opentelemetry-instrumentation-bedrock", marker = "extra == 'bedrock'", specifier = ">=0.30b0" },
-    { name = "opentelemetry-instrumentation-cohere", marker = "extra == 'cohere'", specifier = ">=0.30b0" },
-    { name = "opentelemetry-instrumentation-langchain", marker = "extra == 'otel-langchain'", specifier = ">=0.30b0" },
-    { name = "opentelemetry-instrumentation-openai-v2", marker = "extra == 'openai'", specifier = ">=0.30b0" },
     { name = "opentelemetry-sdk", specifier = ">=1.41" },
     { name = "pydantic", specifier = ">=2.8,<3.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "ragas", marker = "extra == 'ragas'", specifier = ">=0.1" },
-    { name = "redis", marker = "extra == 'redis'", specifier = ">=5.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.9" },
-    { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.23" },
+    { name = "pyjwt", marker = "extra == 'mcp'", specifier = ">=2.15.0" },
+    { name = "urllib3", marker = "extra == 'otlp'", specifier = ">=2.8.0" },
 ]
-provides-extras = ["agent-framework", "anthropic", "aws", "bedrock", "cedar", "cohere", "crewai", "deepeval", "dev", "lakera", "langgraph", "mcp", "nats", "opa", "openai", "otel-langchain", "otlp", "ragas", "redis", "signing"]
+provides-extras = ["mcp", "otlp", "s3", "signing"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "aiohttp", specifier = ">=3.9" },
+    { name = "anthropic", specifier = ">=1.12.1" },
+    { name = "cryptography", specifier = ">=49" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "jsonschema", specifier = ">=4.23" },
+    { name = "mypy", specifier = ">=1.11.2" },
+    { name = "openai", specifier = ">=3.26.1" },
+    { name = "opentelemetry-exporter-otlp-proto-http", specifier = ">=1.41" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7.0" },
+    { name = "ruff", specifier = ">=0.6.9" },
+    { name = "types-jsonschema", specifier = ">=4.23" },
+    { name = "types-pyyaml", specifier = ">=6.0.12" },
+    { name = "urllib3", specifier = ">=2.8.0" },
+]
 
 [[package]]
 name = "typing-extensions"

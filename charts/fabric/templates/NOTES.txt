@@ -26,7 +26,7 @@ Content:       disabled (wire capture bodies are not accepted)
 
 WARNING: NO DELIVERY DESTINATION IS CONFIGURED.
 Records go to Collector stdout only. Stdout is not durable, queryable evidence
-and is not an audit trail. This posture is for local evaluation only.
+and is not an audit trail. This posture is for a local trial only.
 {{- else }}
 
 Destination:   {{ $endpoint }}
@@ -43,8 +43,8 @@ Check health:
   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "fabric.collectorFullname" . }} 13133:13133
   curl http://localhost:13133/
 
-This release does not install runtime guardrails, prompt-time PII controls,
-judges, red-team runners, governance, or management services.
+This release installs only the Fabric Collector: a passive recorder that
+captures, protects and delivers records without altering the monitored system.
 
 Spec 049 P0-A (supersedes spec 048 §1): agents in node mode record content
 only with a capture policy (FABRIC_CAPTURE_POLICY) and FABRIC_WIRE_ID_KEY;

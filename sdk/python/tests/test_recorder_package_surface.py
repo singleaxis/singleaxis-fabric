@@ -24,8 +24,13 @@ FORBIDDEN_ROOT_SYMBOLS = {
     "QueueTransport",
     "SimpleLLMJudge",
     "StreamRedactor",
+    "Taxonomy",
+    "TaxonomyEntry",
     "ToolAuthorizer",
     "ToolAuthorization",
+    "bundled_taxonomy_names",
+    "load_bundled_taxonomies",
+    "validate_tag",
 }
 
 FORBIDDEN_DECISION_METHODS = {

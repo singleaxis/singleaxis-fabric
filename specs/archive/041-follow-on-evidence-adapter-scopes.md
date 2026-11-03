@@ -4,7 +4,7 @@ status: draft
 qualification: NO_COVERAGE_CLAIM
 revision: 1
 last_updated: 2026-09-26
-depends_on: 035, 036, 037, 038, 039, 040
+depends_on: 035, 036, 038, 039, 040
 ---
 
 > **Archived:** replaced by phases P4/P5 of [049](../049-four-layer-capture-coverage.md).

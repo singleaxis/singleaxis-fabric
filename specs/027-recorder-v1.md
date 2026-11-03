@@ -88,7 +88,7 @@ adapter to add such evidence without changing the capture wire path.
 
 ### `shadow-dev`
 
-For local evaluation only. It may use non-durable debug output and relaxed
+For a local trial only. It may use non-durable debug output and relaxed
 network settings. The CLI and chart must label it as unsuitable for production.
 
 ### `shadow-production`

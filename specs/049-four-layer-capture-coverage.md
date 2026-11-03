@@ -863,7 +863,7 @@ Privacy classes:
 The earlier declarations `fabric.capture-sdk-capabilities/v1` and
 `fabric.integration-coverage/v1` were removed by the owner-approved cleanup
 (chore/recorder-cleanup). Neither said which capture points were **active**
-for a source epoch, which an evaluator needs to tell "nothing happened"
+for a source epoch, which a reviewer needs to tell "nothing happened"
 from "nothing was instrumented"; the capture manifest does.
 
 **New record: `fabric.capture-manifest/v1`**

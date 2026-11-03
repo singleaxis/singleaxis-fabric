@@ -14,7 +14,7 @@ released or installed independently.
 Two postures ship under `fabric/profiles/`:
 
 - [`shadow-dev`](./fabric/profiles/shadow-dev.yaml) — plaintext, no auth,
-  for local evaluation on trusted clusters.
+  for a local trial on trusted clusters.
 - [`shadow-production`](./fabric/profiles/shadow-production.yaml) —
   fail-closed: pinned image required, receiver TLS/mTLS enforced, strict
   NetworkPolicy peers, persistent fsync queue, unbounded retry.
@@ -26,10 +26,7 @@ release scope.
 ## Status
 
 No customer production deployment has been qualified; see
-[limitations](../docs/limitations-and-roadmap.md). Components that
-previously shipped as sibling subcharts (guardrail sidecars, the third-party
-observability UI, the GitOps pull agent, the relay) are out of recorder
-scope and were removed; their history is in git.
+[limitations](../docs/limitations-and-roadmap.md).
 
 ## Release signing
 

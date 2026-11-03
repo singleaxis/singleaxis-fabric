@@ -11,7 +11,7 @@ content-shaped ever enters telemetry.
 Run::
 
     python capture.py --root ./store
-    # prints decision_id=<uuid> — pass it to evaluate.py
+    # prints decision_id=<uuid> — pass it to verify.py
 
 A development harness can record and read its own local transcripts
 directly; offline datasets still carry privacy/access/retention
