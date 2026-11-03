@@ -17,6 +17,71 @@ accepted.
    direction is off.
 3. **Check existing PRs and issues** for overlap.
 
+## Find your way around
+
+- [`docs/README.md`](docs/README.md#map) is a one-page map of the
+  repository: what is built in the release, what is built only on a
+  branch, what is only specified, and where each part's code lives.
+- [`docs/glossary.md`](docs/glossary.md) defines the terms, rule labels and
+  decision codes the specs use.
+- [`specs/README.md`](specs/README.md) lists every spec with its status and
+  the code it describes.
+
+## Set up and run the tests
+
+The commands below match the CI jobs in
+[`.github/workflows/recorder-ci.yml`](.github/workflows/recorder-ci.yml).
+Tests marked as needing Docker, kind or a Linux kernel feature are skipped
+or fail without them; CI runs them.
+
+**Python SDK** (`sdk/python`, Python 3.11+; [uv](https://docs.astral.sh/uv/)
+recommended):
+
+```bash
+cd sdk/python
+uv sync --all-extras                      # creates .venv
+uv run --no-sync pytest                   # unit and integration tests
+uv run --no-sync ruff check src tests scripts
+uv run --no-sync ruff format --check src tests scripts
+uv run --no-sync mypy src tests           # strict mode, from pyproject.toml
+```
+
+On macOS, run `export TMPDIR=$(cd "$TMPDIR" && pwd -P)` first, so the
+temporary directory path contains no symlink.
+
+**Repository tests and contract validators** (from the repository root,
+with `pytest`, `jsonschema` and `PyYAML` installed, for example in the SDK's
+`.venv`):
+
+```bash
+python -m pytest scripts/tests -q
+python scripts/contracts/validate_coverage_contracts.py
+python scripts/contracts/validate_capture_contracts.py
+python scripts/contracts/validate_data_plane_contracts.py
+```
+
+`scripts/tests/test_recorder_release_boundary.py` is the artifact-content
+test that keeps out-of-scope capabilities out of every release artifact;
+it must always pass.
+
+**Go** (Go 1.26+). Each component is its own module; run in each directory
+that has a `go.mod`:
+
+```bash
+make -C components/otel-collector-fabric test lint   # every Node module
+(cd components/host-emitter && go vet ./... && go test ./...)
+(cd tools/fabricctl && go test ./...)
+```
+
+**TypeScript SDK** (`sdk/typescript`, Node.js 20+):
+
+```bash
+npm ci --prefix sdk/typescript
+npm --prefix sdk/typescript run lint
+npm --prefix sdk/typescript run typecheck
+npm --prefix sdk/typescript test
+```
+
 ## Developer Certificate of Origin (DCO)
 
 Fabric accepts contributions under the [Developer Certificate of Origin

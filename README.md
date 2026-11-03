@@ -37,6 +37,10 @@ SingleAxis service, and does not evaluate or control what the agent does.
 CAPTURE  ->  PROTECT  ->  DELIVER
 ```
 
+This page describes the v0.8.0 release (`main`). Work that is built on the
+`feat/action-record` branch but not released, and work that is only
+specified, is listed in the [documentation map](docs/README.md#map).
+
 ## Capabilities in v0.8
 
 **Available**
@@ -68,7 +72,8 @@ CAPTURE  ->  PROTECT  ->  DELIVER
 | Heavy CPU contention (16+ CPU-bound threads in one process) | GIL-bound capture sheds load; every loss is recorded and reported |
 | Host sensors on a production Node | Local profile only (production ingress planned, not built) |
 | Several agent sources on one production Node | One source per production Node |
-| Four-layer record: run structure, context, decisions and effects | Planned, not built |
+| Four-layer record: run structure, context, decisions and effects | Run structure mostly built on the `feat/action-record` branch (not released); the rest planned ([docs map](docs/README.md#where-things-stand)) |
+| Agent action reconstruction: subprocess effects and host evidence linked to tool calls | Specified ([spec 056](specs/056-agent-action-reconstruction.md)), being built |
 
 Details and the other known defects: [limitations and roadmap](docs/limitations-and-roadmap.md).
 
@@ -154,6 +159,15 @@ See [verify a release](docs/verify-release.md).
 Fabric OSS only records. Evaluating, scoring or controlling agents is
 outside its scope ([AGENTS.md](AGENTS.md)), and release artifact tests keep
 such code out of every package and image.
+
+## Reading the code
+
+Start with the [documentation map](docs/README.md#map): what is built, what
+is specified, where each part lives and a reading order. The
+[glossary](docs/glossary.md) defines the terms the specs use, and the
+[spec index](specs/README.md) gives each spec's status and the code it
+describes. [CONTRIBUTING.md](CONTRIBUTING.md#set-up-and-run-the-tests)
+explains how to set up and run the tests.
 
 ## Project status
 
