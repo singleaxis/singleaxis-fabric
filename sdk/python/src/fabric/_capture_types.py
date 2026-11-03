@@ -732,7 +732,9 @@ class SpanIds:
 class RecordJob:
     """One records-input job (§3.4 step 3), immutable, bodies held by reference. Field names
     of the source triple match :class:`~fabric.wire._model.CaptureJob`, so the pipeline's
-    loss path serves both. ``attributes`` already passed rule A."""
+    loss path serves both. ``attributes`` already passed rule A. ``late`` (spec 056 OD-2)
+    is called once by the capture worker, never the caller, before the span is built: the
+    attributes it returns already passed rule A and never replace a key already set."""
 
     source_id: str
     source_epoch: int
@@ -752,6 +754,7 @@ class RecordJob:
     span_ids: SpanIds | None = None
     parent_context: Context | None = None
     provenance: Provenance = "reported"
+    late: Callable[[], Mapping[str, AttributeValue]] | None = None
 
     def __post_init__(self) -> None:
         if len(self.bodies) + (self.evidence is not None) > MAX_RECORD_BODIES:

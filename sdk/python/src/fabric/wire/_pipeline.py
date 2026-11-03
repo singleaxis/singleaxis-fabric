@@ -624,6 +624,10 @@ class CapturePipeline:
                 continue  # never named by the record: it could not be verified
             kept.append(obj)
         attrs: dict[str, AttributeValue] = dict(job.attributes)
+        if job.late is not None:  # worker-side attributes (056 OD-2); absent on any error
+            with contextlib.suppress(Exception):
+                for key, value in job.late().items():
+                    attrs.setdefault(key, value)
         if kept:
             attrs["fabric.content.object_ids"] = [obj.object_id for obj in kept]
         self._record_content[id(job)] = [obj.descriptor.get("stored_sha256") for obj in kept]
