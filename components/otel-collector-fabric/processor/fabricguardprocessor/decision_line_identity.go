@@ -71,8 +71,7 @@ var decisionLineLabelKeys = toSet(
 	"fabric.skill.version",
 )
 
-// decisionLineAgentKeys are agent identities: the keyed v2 agt- + 32 hex
-//.
+// decisionLineAgentKeys are agent identities: the keyed v2 agt- + 32 hex form.
 var decisionLineAgentKeys = toSet(
 	"gen_ai.agent.name",
 )

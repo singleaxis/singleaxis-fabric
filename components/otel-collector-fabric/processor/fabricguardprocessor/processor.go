@@ -980,6 +980,13 @@ func activityCategory(name string, attrs pcommon.Map) string {
 // metadata shapes and per-string size limits. Maps and byte arrays are removed:
 // they are common escape hatches for arbitrary content and secrets.
 func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{}, context string) {
+	g.filterAttributesOf(attrs, allowed, context, false)
+}
+
+// filterAttributesOf is filterAttributes; record is true for a records-class
+// span that rule A (applyRecordProfile) has already closed (see
+// validFilteredValue).
+func (g *guard) filterAttributesOf(attrs pcommon.Map, allowed map[string]struct{}, context string, record bool) {
 	before := g.stats.snapshot()
 	kept := 0
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
@@ -1001,7 +1008,7 @@ func (g *guard) filterAttributes(attrs pcommon.Map, allowed map[string]struct{},
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
-		if !g.validCaptureValue(key, value) {
+		if !g.validFilteredValue(key, value, record) {
 			g.stats.notAllowedRemoved.Add(1)
 			return true
 		}
@@ -1263,7 +1270,7 @@ func (g *guard) applyCaptureProfile(span ptrace.Span) {
 		g.applyCaptureLabels(span.Attributes())
 		g.exposeCaptureModel(span.Attributes())
 	}
-	g.filterAttributes(span.Attributes(), TraceAllowedFields, "capture-span")
+	g.filterAttributesOf(span.Attributes(), TraceAllowedFields, "capture-span", class == onRecord)
 	if removed := span.Events().Len() + span.Links().Len(); removed > 0 {
 		span.Events().RemoveIf(func(ptrace.SpanEvent) bool { return true })
 		span.Links().RemoveIf(func(ptrace.SpanLink) bool { return true })
@@ -1292,6 +1299,23 @@ func (g *guard) removeAll(attrs pcommon.Map) {
 		attrs.Clear()
 		g.stats.notAllowedRemoved.Add(uint64(n))
 	}
+}
+
+// validFilteredValue is validCaptureValue, except for a key that rule A
+// (applyRecordProfile) already closed on a records-class span with the
+// generated record validators, the records contract of spec 050 §3.14. Such a
+// key keeps the generated coverage checks (operator labels stay lbl- unless
+// labels are clear), but the hand-written decision-line identity rules, which
+// close the explicit decision line, do not apply a second time: a records step
+// or attempt id is a Fabric-minted a- id, not an lbl- label.
+func (g *guard) validFilteredValue(key string, value pcommon.Value, record bool) bool {
+	if _, ruleA := recordKeyValidators[key]; record && ruleA {
+		if valid, ok := g.validCoverageValue(key, value); ok {
+			return valid
+		}
+		return true
+	}
+	return g.validCaptureValue(key, value)
 }
 
 // validCaptureValue closes the values of the fifteen spec 047 keys wherever
