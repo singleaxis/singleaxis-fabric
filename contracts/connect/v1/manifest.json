@@ -8,22 +8,22 @@
   "artifacts": [
     {
       "path": "manifests/python-sdk.json",
-      "sha256": "7e1e64e42eef6bf300b96d58323f5772e9af18a795536dd95c1b9b4b7bd33363",
+      "sha256": "edfd1c8d20d7c55dcb21a86053d461fd978724e22de181f602e5ec3b22331d70",
       "expectation": "valid"
     },
     {
       "path": "manifests/python-byte-boundary.json",
-      "sha256": "7ad3728163a75f37b6701df66b3e9a56fc2043b677b4eb888aed45361c2db53a",
+      "sha256": "60d09812ac16597b23cc60998a141c725580756feea0aaaf4f4e991d0d5585c4",
       "expectation": "valid"
     },
     {
       "path": "manifests/typescript-capture-sdk.json",
-      "sha256": "924e861fd450b3c6b9bf6a8cfc981473533f34fda5cefa4cd8a98360c98d9ee0",
+      "sha256": "ff96c85bedab4f9c6285efcdaef6567b852ff1c948191a058f2eacb3e2845b81",
       "expectation": "valid"
     },
     {
       "path": "manifests/collector-otlp-receiver.json",
-      "sha256": "7c8df98050f74f2b7b88d6432cec1628ec811274b0cffb4fd7d77f27db214d33",
+      "sha256": "e56619325f71378224ed6139d7e380c33f83ea0efb594e2472fc804da835dfc2",
       "expectation": "valid"
     },
     {
@@ -33,7 +33,7 @@
     },
     {
       "path": "manifests/ebpf-host-emitter.json",
-      "sha256": "b0528116b040599ab4dd9b0fe31edc4ac3001df20d34a742c668b8feff504a0a",
+      "sha256": "dbbc3ec08c9a03edbcd4abee634b09179238eec419f53e6e34c0c72e7aaafecf",
       "expectation": "valid"
     },
     {

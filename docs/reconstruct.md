@@ -31,11 +31,11 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 | `--profile local\|production` | Default: `production` when any span carries the Node's stamp, else `local`. Production requires every record to be authenticated. |
 | `--model-allowlist TEXT` | Model names reported as is (default `$FABRIC_WIRE_MODEL_ALLOWLIST`); others appear as `m-` digests. |
 | `--out FILE` | Write the report atomically with mode `0600` instead of stdout. |
-| `--projection FILE` | Not in v0.8.0; on the unreleased `feat/p1-integration` branch (see [step projection](#step-projection-unreleased)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
-| `--coverage-profile ID` | Not in v0.8.0; `feat/p1-integration` branch only. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
-| `--evaluated-at RFC3339` | Not in v0.8.0; `feat/p1-integration` branch only. The time run states and open-run deadlines are computed at (default: now). |
-| `--clock-uncertainty DURATION` | Not in v0.8.0; `feat/p1-integration` branch only. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
-| `--max-clock-uncertainty DURATION` | Not in v0.8.0; `feat/p1-integration` branch only. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
+| `--projection FILE` | Not released; on the unreleased `feat/p1-integration` branch (see [step projection](#step-projection-unreleased)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
+| `--coverage-profile ID` | Not released; `feat/p1-integration` branch only. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
+| `--evaluated-at RFC3339` | Not released; `feat/p1-integration` branch only. The time run states and open-run deadlines are computed at (default: now). |
+| `--clock-uncertainty DURATION` | Not released; `feat/p1-integration` branch only. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
+| `--max-clock-uncertainty DURATION` | Not released; `feat/p1-integration` branch only. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
 
 Diagnostics never echo an argument value, path, key or exception message.
 

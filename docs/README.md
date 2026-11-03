@@ -54,7 +54,7 @@ in git.
     [053](../specs/053-execution-channels-p4.md) (P4),
     [054](../specs/054-specialised-runtimes-p5.md) (P5) and
     [055](../specs/055-typescript-wire-capture.md) (TS-1, TypeScript wire
-    capture). All are drafts; none is in v0.8.0. Waves 0–2 of 050 (P1) are built on the unreleased `feat/p1-integration` branch.
+    capture). All are drafts; none is in a release. Waves 0–2 of 050 (P1) are built on the unreleased `feat/p1-integration` branch.
 
 ## Public contracts
 

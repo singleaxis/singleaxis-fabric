@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-03
+
+Fabric 0.9.0 narrows the repository and packages to the recorder and its
+current direction. It removes the last evaluation and red-team leftovers,
+including one public Python API, rewrites the README and documentation
+around what Fabric records, and publishes the design specs for one run
+record across every input (050) and agent action reconstruction (056).
+Capture, protection, delivery and verification behave as in 0.8.0.
+
 ### Removed
 
 - **Breaking (Python SDK):** the bundled MITRE ATLAS and OWASP LLM reference
@@ -2312,7 +2321,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0
 [0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
 [0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1
