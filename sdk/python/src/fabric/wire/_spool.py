@@ -356,8 +356,10 @@ def _span_ok(doc: Mapping[str, Any], blob_length: int, kind: str) -> bool:
     """The span and bodies of an exchange or record entry. A record (050 §3.5) takes the
     exchange checks, but carries ``fabric.capture.input == "records"``, a uuid4
     ``fabric.event_id`` and ``fabric.attempt.uid``, never ``fabric.wire.exchange_id``,
-    and at most 8 bodies, which are its ``fabric.content.object_ids`` in order. A
-    descriptor-only body (R5) has length 0 and no stored length or digest."""
+    and at most 8 bodies, which are its ``fabric.content.object_ids`` in order, or none
+    at all when a direct store already holds them (a ``file://`` store with an OTLP
+    endpoint: the pipeline stores the objects and spools only the span, as it does for an
+    exchange). A descriptor-only body (R5) has length 0 and no stored length or digest."""
     span, source = doc["span"], doc["source"]
     attrs, bodies = span["attributes"], doc.get("bodies", [])
     record = kind == "record"
@@ -393,7 +395,7 @@ def _span_ok(doc: Mapping[str, Any], blob_length: int, kind: str) -> bool:
         and "fabric.wire.exchange_id" not in attrs
         and "fabric.source.authenticated" not in attrs
         and all(map(_attribute_value, attrs.values()))
-        and ids == list(attrs.get("fabric.content.object_ids", [])))  # fmt: skip
+        and (not ids or ids == list(attrs.get("fabric.content.object_ids", []))))  # fmt: skip
 
 
 def valid_header(doc: Mapping[str, Any], blob_length: int) -> bool:
