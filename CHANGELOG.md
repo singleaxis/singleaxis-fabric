@@ -77,6 +77,11 @@ blocks, delays or changes them.
   `open` (a resumable run that has not ended); `0` still requires a
   complete run. Captures made before P1 carry no run state and are
   unaffected.
+- The run verdict also follows the new chain verdicts (spec 056 §4.5): it
+  is never `complete` while an observed chain is `partial`. A run whose
+  captured response asks for a tool call that no later request answers is
+  now `partial` (`actions: partial(tool_result_missing)`) where it was
+  complete before. No API declares a call outstanding yet.
 
 ### Known limits
 
