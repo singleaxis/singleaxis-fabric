@@ -37,6 +37,26 @@ SingleAxis service, and does not evaluate or control what the agent does.
 CAPTURE  ->  PROTECT  ->  DELIVER
 ```
 
+## What we are building now
+
+v0.8 records an agent's model calls. The work in progress makes Fabric
+reconstruct **everything an agent did in a run** as one linked record, so
+that a reviewer can answer: what did the agent do, which model decision
+caused each action, and what independent evidence confirms it.
+
+| Chain | Question it answers | Status |
+|---|---|---|
+| Decisions | What did the model see and return? | Built in v0.8 (wire capture) |
+| Actions | Which tools did the model ask for, with which arguments, and what result did the agent feed back? | Built in v0.8 (parsed from the captured model calls) |
+| Effects | What did the agent's process actually run, and what did it return? | Specified, being built ([053](specs/053-execution-channels-p4.md) §5.1) |
+| Corroboration | What does the operating system independently record: process starts, connections, commands a script started? | Host sensors built (local profile only); linking them to the agent's actions is being built |
+
+The linking design is [spec 056](specs/056-agent-action-reconstruction.md).
+It builds on the run record of [spec 050](specs/050-run-structure-and-records-p1.md),
+which is implemented on the unreleased `feat/p1-integration` branch, and on
+the execution channels of [spec 053](specs/053-execution-channels-p4.md).
+None of this is in a release yet.
+
 ## Capabilities in v0.8
 
 **Available**
@@ -163,12 +183,6 @@ PydanticAI, smolagents, AutoGen, AG2, CrewAI, DSPy and others) against a fake
 model, and the production profile through a real Node. No customer production deployment has been qualified.
 Read [limitations](docs/limitations-and-roadmap.md) before relying on a
 verdict.
-
-Current work: [spec 056](specs/056-agent-action-reconstruction.md),
-reconstructing everything an agent did in a run — the model decisions, the
-tool calls they asked for, the commands and effects those caused, and
-independent host-sensor evidence — as one linked record. It is a draft and
-is not built in v0.8.
 
 Specifications: [specs/](specs/README.md). Security reports:
 [SECURITY.md](SECURITY.md). Apache-2.0; contributions require DCO sign-off

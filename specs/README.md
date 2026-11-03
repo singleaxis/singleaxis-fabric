@@ -103,7 +103,7 @@ otherwise current spec.
 | [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | implemented; NO_COVERAGE_CLAIM; partly superseded by 048 |
 | [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | implemented; NO_COVERAGE_CLAIM |
 | [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | accepted (rev 6.4); P0-A implemented (v0.8), P1–P5 not built; NO_COVERAGE_CLAIM |
-| [050](050-run-structure-and-records-p1.md) | Run structure, records input and model-call projection (049 P1 and P1-A) | draft; NO_COVERAGE_CLAIM |
+| [050](050-run-structure-and-records-p1.md) | Run structure, records input and model-call projection (049 P1 and P1-A) | draft; P1 implemented on the unreleased `feat/p1-integration` branch, P1-A not built; NO_COVERAGE_CLAIM |
 | [051](051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (049 P2) | draft; NO_COVERAGE_CLAIM |
 | [052](052-decisions-and-effects-p3.md) | Decisions and effects records, record-only (049 P3) | draft; NO_COVERAGE_CLAIM |
 | [053](053-execution-channels-p4.md) | Execution channels — opt-in observed hooks and production host sources (049 P4) | draft; NO_COVERAGE_CLAIM |
