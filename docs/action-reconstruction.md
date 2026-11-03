@@ -37,28 +37,41 @@ The verifier links them with the rules of spec 056:
   call's result. `sequence_bracket · tentative` (A2) applies when exactly
   one tool call was open when the command started. When two or more were
   open and the output does not decide, the effect is linked to every one of
-  them with state `ambiguous` (A3). An effect with no open tool call is
-  listed under *unattributed effects* (A4). No rule picks the most likely
-  candidate.
+  them with state `ambiguous` (A3); when the output appears in several
+  results, it is linked to each of those, `output_match · tentative` and
+  `ambiguous`. An ambiguous link is never `certain`. An effect with no open
+  tool call is listed under *unattributed effects* (A4). No rule picks the
+  most likely candidate.
 - **Host event → effect** (§4.3). A host `exec` event with the effect's pid
   and parent pid corroborates it (`process_anchor`): `certain` with matching
   process start times (H1), `tentative` without them (H2). Local-profile
   sensor records have no start time, so today's anchors are `tentative`.
   Events whose parent-pid chain reaches an anchored process are `part_of`
   that effect (`process_lineage`, H3). This is how the `curl` that a shell
-  script starts, and its connection, become visible. Events of the agent
-  process itself are `part_of` the run (H4).
+  script starts, and its connection, become visible. A pid that a later,
+  unrelated exec takes over leaves the chain. Events of the agent process
+  itself are `part_of` the run (H4).
 - **Unexplained host events.** A host event in the agent's scope that no
   rule links is listed, and so is an agent connection to a host that no
-  model call reached. That list is the compliance signal: the operating
-  system saw the agent do something its own record does not explain.
+  model call reached. The list is a gap between the record and what the
+  operating system saw; Fabric records it and draws no conclusion from it.
 
-Environment values are never read. Arguments and output follow the
-`terminal.argv`, `terminal.stdout` and `terminal.stderr` content roles of
-the capture policy, which can redact, tokenise or withhold them like any
-other content (see [privacy and security](privacy-and-security.md)).
-Withholding output turns off A1, and the report says so
-(`output_match: not_applicable`).
+Environment values are never read. Arguments, the execution context and
+output follow the `terminal.argv`, `terminal.context` (executable, working
+directory and the names of an explicitly passed `env`), `terminal.stdout`
+and `terminal.stderr` content roles of the capture policy, which can
+redact, tokenise or withhold them like any other content (see
+[privacy and security](privacy-and-security.md)). Withholding output turns
+off A1 for that effect, and when no effect is left to match the report says
+so (`output_match: not_applicable`).
+
+The quickstart below sets no capture policy, so the implicit local policy
+applies: every content role, `terminal.argv` included, is kept as
+captured. A credential an agent writes literally on a command line (a
+bearer token in a `curl -H` argument, `mysql -p…`) is then stored in clear,
+and the `actions` view prints the first 48 characters of each command.
+Before using the hook on real workloads, set a capture policy that redacts
+`terminal.argv` or makes it `metadata_only`.
 
 ## Turn on the subprocess hook
 
@@ -118,6 +131,7 @@ export FABRIC_WIRE_ID_KEY="$(cat id-key)"
 python -m fabric.reconstruct actions spans.jsonl \
   --store-root store --tenant demo \
   --host-records node-export.jsonl --host-label build-host-7 \
+  --host-coverage-declared --known-peer 10.0.4.9 \
   --endpoint-peer my-model=10.0.4.7
 ```
 
@@ -131,6 +145,18 @@ python -m fabric.reconstruct actions spans.jsonl \
   from the agent to its own model is reported as unexplained.
 - `--host-source host.ebpf|host.auditd`: declare a sensor explicitly. A
   declared sensor with no records is a `source_gap`.
+- `--host-coverage-declared`: declare that each sensor covered the whole
+  run. Local-profile records carry no positions or heartbeats, so the
+  verifier cannot prove coverage and, without this flag, reports a
+  `source_gap`. A loss the records show (a loss summary, a record dropped
+  as malformed) is a `source_gap` either way.
+- `--agent-pid PID`: the agent's own pid. The export does not carry it, so
+  without this H4 uses the parent pid every effect agrees on, and a run
+  with no effects (the hook off) links nothing by H4.
+- `--known-peer ADDRESS` (repeatable): an address the agent process
+  contacts for Fabric's own delivery or its infrastructure (the Node's OTLP
+  endpoint, the content store, a DNS resolver). Its connections are linked
+  by H4 and not listed as unexplained.
 - `--in-process-tool NAME`: a tool that runs inside the agent process. A
   call to it without an effect is reported as `no_effect_channel` instead
   of `none_in_window`.
@@ -212,14 +238,23 @@ the agent connecting to a host no model call reached.
   `dash` (the Debian and Ubuntu `/bin/sh`) for the last command of
   `sh -c "a && b"`. H2 cannot tell that apart from pid reuse, so
   the anchor is `ambiguous` and the run reports `anchor_missing`. Start
-  times (M2) resolve it.
+  times (M2) resolve it. This conflicts with the M1 exit criterion of
+  spec 056 (AR-1 green in CI on the local profile): on an Ubuntu runner,
+  AR-1 live mode cannot pass until M2 or until the spec relaxes H2 for
+  this case. It is an open spec question, not a test to loosen.
 - **Other channels.** File, database, non-model HTTP, MCP and SSH hooks
   (spec 053) are not built, and neither is a TypeScript subprocess hook.
   Tools that run inside the agent process leave no effect. Declare them
   with `--in-process-tool`.
-- **Reported links from the hook.** A0 (an effect recorded inside an
-  explicit tool-call scope) applies to explicit producers. The hook defers
-  to an explicit scope of its own kind and records no parent tool call.
+- **Reported links from the hook.** Inside an explicit records-mode tool
+  call (`CallRecorder`, kind `tool`), the hook names that call's attempt
+  as the effect's parent, and A0 links the effect `caused_by` that attempt
+  (`reported · certain`). Nothing yet records which model tool call the
+  explicit call executes, so that model tool call still reads
+  `effect_not_observed(none_in_window)`. A `decision.tool_call()` span
+  scope is not on the records input and is not reported. The explicit
+  subprocess adapter (`BoundedTerminalAdapter`) opens a `terminal` scope,
+  so the hook defers to it and the child is recorded once.
 
 See also: [spec 056](../specs/056-agent-action-reconstruction.md),
 [host sensors](host-sensors.md),

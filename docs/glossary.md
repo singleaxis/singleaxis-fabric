@@ -532,7 +532,8 @@ with H1–H4 where the process tree is known.
 **Unattributed effects, unexplained host events.** Effects no tool call
 explains, and host events no rule links (including connections by the agent
 process to hosts no model call used). They are listed in the report's
-`attribution` object and are the main compliance signal. [056] §4.3, §4.5.
+`attribution` object: a gap between the record and what the operating system
+saw, recorded without a judgement. [056] §4.3, §4.5.
 
 **AR-1.** The end-to-end acceptance scenario of [056] §6.2. Fabric does not
 claim agent action reconstruction until AR-1 passes in CI. Built on the

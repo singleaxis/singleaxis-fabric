@@ -186,17 +186,19 @@ def bind(
     peers: Mapping[str, tuple[str, int]],
     visits: Mapping[str, Sequence[int]],
     agent_ppid: int,
+    agent_pid: int | None = None,
     template: Mapping[str, Any] | None = None,
 ) -> Bound:
     """Bind the template to one run. ``peers`` maps ``model`` and ``fixture_host`` to
     their (address, port); ``visits`` maps ``fixture_http`` and ``fixture_ping`` to the
     fixture host's observed accept times, in order; ``agent_ppid`` is the agent's parent
-    (the harness)."""
+    (the harness); ``agent_pid`` the agent's own pid (else the parent pid every effect
+    agrees on: a run without effects, the hook off, needs it for the agent's events)."""
     template = template or json.loads(TEMPLATE.read_text())
     writer = _Writer(template)
     bound = Bound(export={})
     agents = {e.parent_pid for e in effects}
-    agent = agents.pop() if len(agents) == 1 else None
+    agent = agent_pid if agent_pid is not None else agents.pop() if len(agents) == 1 else None
     queues = {kind: list(times) for kind, times in visits.items()}
     for effect in effects:
         tree = next((t for t in template["effects"] if t["match"] in effect.command), None)

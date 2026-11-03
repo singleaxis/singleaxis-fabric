@@ -241,6 +241,7 @@ class Agent:
             "background": self.background,
             "ping": self.ping,
             "sandbox": self.sandbox,
+            "pid": os.getpid(),  # the agent's own pid: H4's subject (--agent-pid)
         }
 
 

@@ -82,6 +82,7 @@ class Run:
     truth: HostTruth | None = None
     model_host: str = "127.0.0.1"
     spool_scanned: list[Path] = field(default_factory=list)
+    agent_pid: int | None = None  # as the agent reports it (the epoch registration's pid)
 
     @property
     def store(self) -> Path:
@@ -249,15 +250,21 @@ class Harness:
             epochs = sorted(_agent_epochs(rows))
             run.run_id = f"source:{epochs[0][0]}:{epochs[0][1]}" if len(epochs) == 1 else None
             agent_pids = {e.parent_pid for e in effects}
-            if self.o.mode == "hermetic" and effects:
+            reported = agent.summary.get("pid")
+            run.agent_pid = reported if isinstance(reported, int) else None
+            if run.agent_pid is None and len(agent_pids) == 1:
+                run.agent_pid = agent_pids.pop()
+            if self.o.mode == "hermetic" and (effects or run.agent_pid is not None):
+                # Also without effects (the hook off): the agent's own events still reach
+                # the sensor, and H4 must link them by the declared agent pid.
                 run.truth, run.host_file = self._replay(
-                    directory, sink, node, rows, effects, host, model
+                    directory, sink, node, rows, effects, host, model, run.agent_pid
                 )
             elif live:
                 time.sleep(3.0)  # the sensor's last batch
                 _wait(_settled(sink), 30, f"{name}: the host records")
                 run.host_file = sink.records
-                run.truth = HostTruth(agent_pids.pop() if len(agent_pids) == 1 else None)
+                run.truth = HostTruth(run.agent_pid)
             run.rows = sink.rows()
             (directory / "fixture-visits.json").write_text(
                 json.dumps(
@@ -337,6 +344,7 @@ class Harness:
         effects: Sequence[replay.Effect],
         host: FixtureHost,
         model: FixtureModel,
+        agent_pid: int | None,
     ) -> tuple[HostTruth, Path]:
         visits: dict[str, list[int]] = {}
         for visit in host.visits:
@@ -349,11 +357,12 @@ class Harness:
             peers={"model": (model.host, model.port), "fixture_host": (host.host, host.port)},
             visits=visits,
             agent_ppid=os.getpid(),
+            agent_pid=agent_pid,
         )
         replayed = directory / "host-replay.otlp.json"
         replayed.write_text(json.dumps(bound.export, indent=1))
         truth = HostTruth(
-            agent_pid=next(iter({e.parent_pid for e in effects})),
+            agent_pid=agent_pid,
             anchors=bound.anchors,
             lineage=bound.lineage,
             model_connects=bound.agent_events.get("model", ()),
@@ -397,7 +406,16 @@ class Harness:
                 scenario.HOST_LABEL,
                 "--endpoint-peer",
                 f"ar1-model={run.model_host}",
+                # The sensor runs from before the agent starts until after it exits (the
+                # replay covers the whole run by construction): declared, since local
+                # records carry no positions that could prove it.
+                "--host-coverage-declared",
             ]
+            if run.agent_pid is not None:
+                hosted += ["--agent-pid", str(run.agent_pid)]
+            # The agent's own telemetry goes to the Node (or the sink) on loopback: Fabric's
+            # delivery, not an action of the agent. Same address as the model here.
+            hosted += ["--known-peer", "127.0.0.1"]
         out = run.directory / f"actions{tag}.json"
         report, projection = (
             run.directory / f"report{tag}.json",
@@ -598,11 +616,22 @@ class Harness:
             checks.check("b: one run", False, document)
             return
         view = expect.only_view(document)
-        reasons = view["chains"]["effects"].get("reasons", [])
-        checks.check(
-            "effects partial(sequence_gap)",
-            view["chains"]["effects"]["verdict"] == "partial" and reasons[:1] == ["sequence_gap"],
-            view["chains"],
+        # Every chain, not only effects: the dropped record held a position of the shared
+        # allocator on the epoch the exchanges use, and nothing proves it was not an
+        # exchange, so decisions is partial(sequence_gap) too (fixture
+        # ar1-negative-b-effect-dropped). Actions and corroboration are as in base.
+        expect.chains(
+            checks,
+            view,
+            {
+                "decisions": {"verdict": "partial", "reasons": ["sequence_gap"]},
+                "actions": {"verdict": "complete"},
+                "effects": {
+                    "verdict": "partial",
+                    "reasons": ["sequence_gap", "unattributed_effect"],
+                },
+                "corroboration": {"verdict": "partial", "reasons": ["unexplained_host_event"]},
+            },
         )
 
     def _drop_effect_record(self, run: Run) -> list[str]:
@@ -675,6 +704,36 @@ class Harness:
         )
         for name in ("decisions", "actions"):
             checks.equal(f"{name} complete", view["chains"][name], {"verdict": "complete"})
+        # The host chain runs without effects too: the agent's own events are linked by
+        # H4 through the declared agent pid, and step 6 is still unexplained. Live, the
+        # children the hook no longer records are unexplained as well.
+        checks.equal(
+            "corroboration partial(unexplained_host_event)",
+            view["chains"]["corroboration"],
+            {"verdict": "partial", "reasons": ["unexplained_host_event"]},
+        )
+        to_run = sorted(
+            e
+            for e, h in expect.host_rows(view).items()
+            if any(p["namespace"] == "run" for p in h.get("part_of", ()))
+        )
+        unexplained = view["unexplained_host_events"]
+        if run.truth is not None and run.truth.exact:
+            checks.equal(
+                "H4 without effects: the agent's connections are part_of the run",
+                to_run,
+                sorted([*run.truth.model_connects, *run.truth.uncalled_connects]),
+            )
+            checks.equal(
+                "step 6: the only unexplained host event",
+                unexplained,
+                {
+                    "count": len(run.truth.uncalled_connects),
+                    "event_ids": sorted(run.truth.uncalled_connects),
+                },
+            )
+        else:
+            checks.check("H4 without effects: agent events part_of the run", to_run, view)
 
     def variant_d(self) -> None:
         checks = self._new("d")
