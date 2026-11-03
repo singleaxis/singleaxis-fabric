@@ -77,7 +77,9 @@ def _outcome(call: Callable[[], Any]) -> tuple[str, Any]:
     except subprocess.CalledProcessError as exc:
         return "raised", (type(exc), exc.returncode, exc.cmd, exc.output, exc.stderr)
     except subprocess.TimeoutExpired as exc:
-        return "raised", (type(exc), exc.cmd, exc.timeout)
+        # Before 3.14, run() without pipes reports the *remaining* time of its final
+        # wait, which differs between any two calls; compare it at 0.1 s resolution.
+        return "raised", (type(exc), exc.cmd, round(exc.timeout, 1))
     except OSError as exc:
         return "raised", (type(exc), exc.errno, exc.filename)
 
