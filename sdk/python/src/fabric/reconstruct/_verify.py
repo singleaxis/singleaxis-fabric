@@ -30,6 +30,7 @@ from fabric import _seal
 from fabric._model_names import HASHED_MODEL_RE, expose_model, parse_model_allowlist
 from fabric._sequence import encode_opaque_id
 from fabric._version import __version__
+from fabric.reconstruct._attribute import ActionReader
 from fabric.reconstruct._graph import RunGraph, SegmentNode, build_run_graphs
 from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
@@ -385,6 +386,7 @@ def reconstruct(
     max_clock_uncertainty_ns: int = DEFAULT_MAX_CLOCK_UNCERTAINTY_NS,
     graphs_out: list[RunGraph] | None = None,
     projection_sink: ProjectionSink | None = None,
+    actions: ActionReader | None = None,
 ) -> dict[str, Any]:
     """Reconstruct runs from span files and an optional customer store.
 
@@ -418,6 +420,8 @@ def reconstruct(
     uncertainty and ``max_clock_uncertainty_ns`` bounds it (the segment graph's inputs).
     ``graphs_out``, when given, receives the per-run segment graphs (the projection's input);
     ``projection_sink`` collects what the step projection needs (WP-32).
+    ``actions`` attributes effects to tool calls and adds the spec 056 ``chains`` and
+    ``attribution`` to runs with an effect channel (default: an :class:`ActionReader`).
     Raises :class:`ReconstructInputError` for unusable input or options.
     """
 
@@ -436,6 +440,7 @@ def reconstruct(
         clock_uncertainty_ns=clock_uncertainty_ns,
         max_clock_uncertainty_ns=max_clock_uncertainty_ns,
         projection_sink=projection_sink,
+        actions=actions,
     )
     if graphs_out is not None:
         graphs_out.extend(graphs)
@@ -458,6 +463,7 @@ def reconstruct_with_graphs(
     clock_uncertainty_ns: int = 0,
     max_clock_uncertainty_ns: int = DEFAULT_MAX_CLOCK_UNCERTAINTY_NS,
     projection_sink: ProjectionSink | None = None,
+    actions: ActionReader | None = None,
 ) -> tuple[dict[str, Any], list[RunGraph]]:
     """:func:`reconstruct`, plus the per-run segment graphs the step projection reads."""
 
@@ -480,6 +486,7 @@ def reconstruct_with_graphs(
     span_files: list[dict[str, Any]] = []
     verifier = _Verifier(reader, allowlist, id_key, store=store if reader is not None else None)
     verifier.projection_sink = projection_sink
+    verifier.actions = actions or ActionReader(clock_uncertainty_ns=clock_uncertainty_ns)
     if projection_sink is not None:
         projection_sink.attach(verifier)
     for index, path in enumerate(paths, start=1):
@@ -719,6 +726,7 @@ class _Verifier:
         # record (object id, source, sequence); kept without its bytes.
         self._record_objects: dict[tuple[str, SourceKey, int], ObjectResult] = {}
         self.projection_sink: ProjectionSink | None = None  # WP-32: the step projection
+        self.actions: ActionReader | None = None  # spec 056: effect attribution, chains
 
     def _scope(self, scope_id: str, run_id: str) -> _Scope:
         self.run_scopes[run_id].add(scope_id)
@@ -1688,6 +1696,8 @@ class _Run:
             }
         )
         out.update(self._structure())
+        if self.verifier.actions is not None:  # spec 056 §4.5, while the bodies are here
+            self.verifier.actions.annotate(out, self, bodies, gaps, checks)
         return out, scope_reports
 
     # -- run structure (spec 050 §3.12) ---------------------------------------
