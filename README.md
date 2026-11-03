@@ -192,7 +192,7 @@ The full list, with measurements: [limitations](docs/limitations-and-roadmap.md)
 |---|---|---|
 | v0.8 | Model-call capture, protection, delivery and verification | [047](specs/047-llm-wire-capture-and-reconstruction.md), [048](specs/048-node-content-delivery-and-agent-spool.md), [049](specs/049-four-layer-capture-coverage.md) |
 | v0.9 | Recorder-only scope: out-of-scope leftovers removed; documentation and design specs for the agent record | [056](specs/056-agent-action-reconstruction.md) |
-| v0.10 (next; built, unreleased) | One run record across every input, and agent action reconstruction: effects linked to the tool calls that caused them, corroborated by host sensors | [050](specs/050-run-structure-and-records-p1.md), [053](specs/053-execution-channels-p4.md), [056](specs/056-agent-action-reconstruction.md) |
+| v0.10 (next) | One run record across every input, and agent action reconstruction: effects linked to the tool calls that caused them, corroborated by host sensors. Built, not yet released: most of the run record (050 P1) and reconstruction of subprocess effects on a local-profile Node (056 M1) | [050](specs/050-run-structure-and-records-p1.md), [053](specs/053-execution-channels-p4.md), [056](specs/056-agent-action-reconstruction.md) |
 | Later | Run context and lifecycle, decision and effect records, more execution channels, TypeScript wire capture | [051](specs/051-context-and-lifecycle-p2.md), [052](specs/052-decisions-and-effects-p3.md), [054](specs/054-specialised-runtimes-p5.md), [055](specs/055-typescript-wire-capture.md) |
 
 ## Scope
