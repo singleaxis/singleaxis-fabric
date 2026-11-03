@@ -2,22 +2,18 @@
   "mismatched": {
     "runtime_version": "0.1.0",
     "collector_version": "0.2.0",
-    "relay_version": "0.1.0",
     "python_fallback": "0.0.0.dev0",
     "typescript_version": "0.2.0",
     "otel_chart_version": "0.3.0",
-    "nemo_chart_version": "0.2.0",
     "workflow": "legacy",
     "chart_lock": "valid"
   },
   "corrected": {
     "runtime_version": "0.7.0",
     "collector_version": "0.7.0",
-    "relay_version": "0.7.0",
     "python_fallback": "0.7.0",
     "typescript_version": "0.7.0",
     "otel_chart_version": "0.4.0",
-    "nemo_chart_version": "0.3.0",
     "workflow": "verified",
     "chart_lock": "valid"
   }
