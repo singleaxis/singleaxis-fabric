@@ -29,8 +29,8 @@
           "fabric.signature.scheme": "hmac-sha256",
           "fabric.signature.verified": true,
           "fabric.tags": [
-            "atlas:AML.T0051",
-            "owasp-llm:LLM01",
+            "example:category",
+            "example:label",
             "myco:risk-high"
           ]
         },

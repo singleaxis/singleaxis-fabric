@@ -8,6 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Contracts:** activity v1 example data uses neutral values. The
+  `interaction_tagged` golden carries `example:category` and `example:label`
+  instead of attack-taxonomy tags, `content_ref_stamped` names the policy
+  `stub-redactor:canary`, and the `hook` golden names `example-redactor`. The
+  manifest digests are re-pinned; the redaction interface is unchanged.
+
+### Deprecated
+
+- **Contracts:** the evaluation, judge and guardrail-verdict elements left in
+  the v1 contracts are marked deprecated and will be removed in contract
+  v1.0. Fabric records activity and does not evaluate it. Every document that
+  validates today still validates; no field, event or enum value is removed.
+  - `contracts/activity/v1`: the `fabric.guardrail` (including its PII
+    `fabric.guardrail.entities` labels), `fabric.eval` and
+    `fabric.judge.queued` events; the decision-span attributes
+    `fabric.blocked`, `fabric.blocked.policies`, `fabric.eval_count`,
+    `fabric.eval_rubrics`, `fabric.judge_queued_count` and
+    `fabric.judge_rubrics`; and `fabric.escalation.rubric_id` and
+    `fabric.escalation.triggering_score` on the decision span and the
+    `fabric.escalation` event. Each carries JSON Schema `"deprecated": true`.
+  - `contracts/connect/v1`: the `guardrail_verdict` and `evaluation` values of
+    the semantic-surface enum. No shipped connector manifest declares them.
+  - Neither SDK emits any of these, so no runtime warning is added. See
+    [API stability](docs/api-stability.md#deprecated-contract-elements).
+
 ## [0.9.0] - 2026-11-03
 
 Fabric 0.9.0 narrows the repository and packages to the recorder and its

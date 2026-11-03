@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "schema": {
     "path": "schema/connector-capability-v1.schema.json",
-    "sha256": "c0423d1802d5b383f8f87ded90552e452ef8e9cd7c09139760b32a83be769455"
+    "sha256": "05f91084093d3df24aa1b394f3b17e2f4e578ee4ff00e96645e79e13efafefce"
   },
   "artifacts": [
     {

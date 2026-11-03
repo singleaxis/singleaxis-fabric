@@ -34,6 +34,29 @@ publishes activity `v2` only).
 Changing a fixture, schema, support declaration, or digest is a public contract change and
 must be reviewed as such. Consumers must verify digests before trusting these artifacts.
 
+## Deprecated in v0.9
+
+The following schema elements are deprecated in v0.9 and will be removed in
+contract v1.0. Fabric records activity and does not evaluate it. Each carries
+JSON Schema `"deprecated": true` and a description; validation is unchanged,
+so every document that is valid today stays valid until v1.0.
+
+| Element | Kind |
+| --- | --- |
+| `fabric.guardrail` (with `fabric.guardrail.entities` PII labels) | span event |
+| `fabric.eval` | span event |
+| `fabric.judge.queued` | span event |
+| `fabric.blocked`, `fabric.blocked.policies` | decision-span attributes |
+| `fabric.eval_count`, `fabric.eval_rubrics` | decision-span attributes |
+| `fabric.judge_queued_count`, `fabric.judge_rubrics` | decision-span attributes |
+| `fabric.escalation.rubric_id`, `fabric.escalation.triggering_score` | decision span and `fabric.escalation` event |
+
+There is no replacement inside Fabric: evaluation results belong to the system
+that produces them. Neither current SDK emits these elements. The goldens use
+neutral example values (`example:category`, `example:label`,
+`stub-redactor:canary`, `example-redactor`) rather than attack-taxonomy tags or
+PII-flavoured labels.
+
 ## Compatibility status
 
 Version 1 remains pinned and unchanged for existing SDK conformance. New recorder data-plane

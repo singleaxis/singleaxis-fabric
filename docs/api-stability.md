@@ -29,6 +29,27 @@ Deprecations must identify the replacement, begin warning before removal, and
 remain documented for at least one minor release unless a security issue makes
 that unsafe.
 
+## Deprecated contract elements
+
+The v1 contracts still describe a few evaluation, judge and guardrail-verdict
+elements from before the recorder scope. Fabric records activity and does not
+evaluate it, so these are deprecated in v0.9 and will be removed in contract
+v1.0. Until then the schemas accept them unchanged and mark each one with JSON
+Schema `"deprecated": true`.
+
+- `contracts/activity/v1`: the `fabric.guardrail` event (including its
+  `fabric.guardrail.entities` PII labels), the `fabric.eval` and
+  `fabric.judge.queued` events, the decision-span attributes `fabric.blocked`,
+  `fabric.blocked.policies`, `fabric.eval_count`, `fabric.eval_rubrics`,
+  `fabric.judge_queued_count` and `fabric.judge_rubrics`, and
+  `fabric.escalation.rubric_id` and `fabric.escalation.triggering_score`.
+- `contracts/connect/v1`: the `guardrail_verdict` and `evaluation`
+  semantic-surface enum values.
+
+There is no replacement in Fabric; evaluation results belong to the system
+that produces them. Neither SDK emits these elements and no shipped connector
+manifest declares them, so there is no runtime warning to act on.
+
 ## Artifact boundary
 
 Release qualification uses explicit allowlists and rejects recorder packages
