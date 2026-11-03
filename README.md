@@ -73,7 +73,7 @@ specified, is listed in the [documentation map](docs/README.md#map).
 | Host sensors on a production Node | Local profile only (production ingress planned, not built) |
 | Several agent sources on one production Node | One source per production Node |
 | Four-layer record: run structure, context, decisions and effects | Run structure mostly built on the `feat/action-record` branch (not released); the rest planned ([docs map](docs/README.md#where-things-stand)) |
-| Agent action reconstruction: subprocess effects and host evidence linked to tool calls | Specified ([spec 056](specs/056-agent-action-reconstruction.md)), being built |
+| Agent action reconstruction: subprocess effects and host evidence linked to tool calls | Mostly built on the `feat/action-record` branch, not released; acceptance test (AR-1) not yet run ([spec 056](specs/056-agent-action-reconstruction.md)) |
 
 Details and the other known defects: [limitations and roadmap](docs/limitations-and-roadmap.md).
 

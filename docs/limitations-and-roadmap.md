@@ -122,10 +122,10 @@ P3.
 | P1-A | Mixed explicit + wire capture qualification, passivity harness | Not built |
 | P2 | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
 | P3 | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
-| P4 | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built; the subprocess hook is being built for spec 056 |
+| P4 | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built, except the hooks foundation and the subprocess hook, built on the `feat/action-record` branch for spec 056 |
 | P5 | Realtime/websocket, provider batch and files, media, UI automation | Not built |
 | TS-1 | TypeScript wire capture on `undici` (Node.js 24+) | Not built |
-| Spec 056 M1 | Agent action reconstruction on the local profile: subprocess effects linked to the tool calls that caused them, host events joined through the process tree, per-chain verdicts | In progress on the `feat/action-record` branch (contracts merged) |
+| Spec 056 M1 | Agent action reconstruction on the local profile: subprocess effects linked to the tool calls that caused them, host events joined through the process tree, per-chain verdicts | In progress on the `feat/action-record` branch: contracts, hooks, subprocess hook, attribution, chain verdicts and host join merged; AR-1 acceptance not yet run |
 | Spec 056 M2 | The same against a production Node, container and remote sandboxes | Not built |
 
 Out of scope for Fabric OSS at every phase: evaluation, judging, scoring,

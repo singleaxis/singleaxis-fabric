@@ -5,9 +5,11 @@
 > [`auditreceiver/`](../components/otel-collector-fabric/receiver/auditreceiver/)
 > and [`components/host-emitter/`](../components/host-emitter/). A
 > production ingress ([spec 053](../specs/053-execution-channels-p4.md)
-> §6.2) and the join of host events to agent effects ([spec
-> 056](../specs/056-agent-action-reconstruction.md) §4.3) are specified, not
-> built.
+> §6.2) is specified, not built. The join of host events to agent effects
+> ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is built on
+> the `feat/action-record` branch as a Python API
+> ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)),
+> not yet as a command-line option.
 
 Fabric ships two optional Linux host sensors. They record **metadata** about
 process starts, network connections and (opt-in) file opens on the machine
@@ -112,8 +114,9 @@ scope are deliberately unusable until you set them.
   identity that `fabric.reconstruct` reads; reconstruct ignores them.
   Joining host events to the agent's subprocess effects through pid and
   parent pid is specified in
-  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and being
-  built. The
+  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and built on
+  the `feat/action-record` branch
+  ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)). The
   auditd logfile mode carries `audit.source_id` and `audit.source_generation`;
   netlink mode and the emitter carry no source identity.
 - **Not enterprise-qualified.** The live kernel, Linux BPF build, outage and

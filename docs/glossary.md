@@ -160,8 +160,10 @@ independent feed. 049 §2.2.
 **Hook.** An opt-in observer of an operation the application already
 performs, such as starting a subprocess (`exec.subprocess`) or running a
 database statement (`db.dbapi`). Hooks emit on the records input with
-provenance `observed`. Specified in [053]; not built. Spec 056 M1 builds
-the hooks foundation and the subprocess hook first.
+provenance `observed`. Specified in [053]. Only the hooks foundation and
+the subprocess hook are built, on the branch, for spec 056 M1
+([`fabric/hooks/`](../sdk/python/src/fabric/hooks/)); the other channels are
+not built.
 
 **Run, run scope.** A run is one logical agent task. `fabric.wire.run()`
 brackets a *scope* of it in one process. Without scopes, each process epoch
@@ -401,8 +403,8 @@ on the branch in the step projection. 049 §6.2.
 
 **Chain verdict.** Spec 056 reports four chains separately: `decisions`,
 `actions`, `effects`, `corroboration`, each `complete`, `partial` (with
-reasons), `unverified` or `not_observed`. Specified; the contract is on the
-branch, the code is being built. [056] §4.5.
+reasons), `unverified` or `not_observed`. Built on the branch
+(`reconstruct/_attribute.py`, WP6-04). [056] §4.5.
 
 **Qualified-run mode.** An opt-in, Python-only verification path for the
 explicit `CallRecorder` line, on its own journal, with independent witness
@@ -484,7 +486,9 @@ production. Built. 049 §7.8.
 All of this is specified in [056]. On the branch, the contracts and rule
 fixtures are merged
 ([`contracts/coverage/v1/fixtures/action-record/`](../contracts/coverage/v1/fixtures/action-record/README.md));
-the code is being built (milestone M1).
+the hooks, the subprocess hook, attribution, chain verdicts, the `actions`
+view and the host join are built on the branch (WP6-02 to WP6-05); the AR-1
+acceptance test (WP6-06) is not built yet (milestone M1).
 
 **The four chains.** *Decisions*: what the model saw and returned (wire
 capture). *Actions*: which tools the model asked for and what result the

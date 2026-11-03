@@ -86,10 +86,10 @@ beyond the instrumented clients and endpoints it lists.
 | [050](050-run-structure-and-records-p1.md) | Build spec for P1: shared allocator, records input, segments, seals, manifests, step projection; and P1-A; NO_COVERAGE_CLAIM | draft | Partly, this branch: waves 0–2 except WP-15 and WP-21, plus an end-to-end test; P1-A not built. See [the P1 run record](../docs/run-record.md) |
 | [051](051-context-and-lifecycle-p2.md) | Build spec for P2: reporting run context and lifecycle (trigger, inputs, outcome, delegation, checkpoints); NO_COVERAGE_CLAIM | draft | Not built |
 | [052](052-decisions-and-effects-p3.md) | Build spec for P3: recording external control decisions, commit state and receipts, record-only; NO_COVERAGE_CLAIM | draft | Not built |
-| [053](053-execution-channels-p4.md) | Build spec for P4: opt-in hooks (subprocess, file, database, HTTP, MCP, SSH) and production host-sensor ingress; NO_COVERAGE_CLAIM | draft | Not built; 056 moves its subprocess hook and host ingress forward |
+| [053](053-execution-channels-p4.md) | Build spec for P4: opt-in hooks (subprocess, file, database, HTTP, MCP, SSH) and production host-sensor ingress; NO_COVERAGE_CLAIM | draft | Hooks foundation and subprocess hook built on this branch for 056 (WP6-02, WP6-03); the rest not built |
 | [054](054-specialised-runtimes-p5.md) | Build spec for P5: images, audio, realtime, batch, files, media and UI automation endpoints; NO_COVERAGE_CLAIM | draft | Not built |
 | [055](055-typescript-wire-capture.md) | Build spec for TypeScript wire capture on Node.js (undici, `node:http`); NO_COVERAGE_CLAIM | draft | Not built |
-| [056](056-agent-action-reconstruction.md) | Linking model decisions, tool calls, subprocess effects and host evidence for one run; NO_COVERAGE_CLAIM | draft | Milestone M1 in progress on this branch: contracts and rule fixtures (WP6-01) merged |
+| [056](056-agent-action-reconstruction.md) | Linking model decisions, tool calls, subprocess effects and host evidence for one run; NO_COVERAGE_CLAIM | draft | Milestone M1 in progress on this branch: WP6-01 to WP6-05 and WP6-07 merged; AR-1 harness (WP6-06) not built |
 
 Paths in the "Built code" column without a top-level directory are
 relative to `sdk/python/src/fabric/`.
