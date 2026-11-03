@@ -52,6 +52,20 @@ Spec 050 (P1) adds, in version 1.1.0:
 | `fixtures/projection/*.json` | model-call field extraction per dialect (chat, responses, Anthropic messages, embeddings; document and stream) and the 40 MiB / 70 MiB size outcomes |
 | `valid/projection-records-explicit-d2.json`, `valid/projection-many-records.json` | D2 `deferred_to_explicit` fields; an attempt with 300 records (64 `event_ids`, `collection: partial`) |
 
+Spec 056 (agent action reconstruction, milestone M1) adds, in version 1.2.0:
+
+| Path | Pins |
+|---|---|
+| `registry/vocabularies-v1.json` | inference methods `sequence_bracket` (tentative), `output_match` (certain), `process_anchor` and `process_lineage` (confidence `varies`: certain only with matching process start times); the action-chain, `effect_not_observed` and `remote_sandbox` reasons |
+| `registry/telemetry-keys-v1.json` | `fabric.process.parent_pid` and `fabric.process.start_ns` (placement `record`, capture point `exec.subprocess` only: the first conditional rows); placement `record` for `fabric.process.pid`, `.exit_code`, `.signal` and the C41 execution keys |
+| `registry/field-registry-v1.json`, `evidence/fabric.exec.observation-v1.schema.json` | the spec 053 §3.2 evidence type of `exec.subprocess` records |
+| `valid/evidence-exec-*.json`, `invalid/evidence-exec-*.json` | one valid document per `api` value; an extra key, an unknown enum value, a string over its bound, a path in a LABEL and a capture point the type is not registered for |
+| `fixtures/action-record/` | the shared interface goldens (an `exec.subprocess` attempt's records, today's local-profile host records, the spec 053 §6.2.3 host span) and the rule fixtures A0-A4, H1-H4, the §6.1 edge cases and AR-1; [its README](fixtures/action-record/README.md) documents every field |
+
+The rules the fixtures pin are executable in
+`scripts/contracts/action_reference.py`; `scripts/contracts/action_record.py`
+builds the fixtures and checks them.
+
 The vectors are produced and re-checked by the reference implementations in
 `scripts/contracts/p1_reference.py` and `scripts/contracts/model_fields_reference.py`.
 Telemetry-key rows may carry `placement` (the capture record classes a key may
