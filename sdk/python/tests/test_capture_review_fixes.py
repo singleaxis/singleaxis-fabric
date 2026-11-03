@@ -124,9 +124,18 @@ def test_many_trace_basis_runs_in_one_service_are_all_complete(tmp_path: Path) -
     document = _verify(spans, store)
     runs = [run for run in document["runs"] if run["run_id"].startswith("trace:")]
     assert len(runs) == 4
-    assert {run["verdict"] for run in runs} == {"complete_for_declared_scope"}, [
-        run["gaps"] for run in runs
-    ]
+    # Each run's exchanges are complete; its one gap is the info-level tool call the fake
+    # model emits and no later request feeds back.
+    assert {run["chains"]["decisions"]["verdict"] for run in runs} == {"complete"}
+    assert [{(g["effect"], g["reason"]) for g in run["gaps"]} for run in runs] == [
+        {("info", "emitted_not_consumed")}
+    ] * 4
+    # Spec 056 §4.5: that call has no result and was not declared outstanding, so the
+    # actions chain is partial and bounds the run verdict.
+    assert [run["chains"]["actions"] for run in runs] == [
+        {"verdict": "partial", "reasons": ["tool_result_missing"]}
+    ] * 4
+    assert {run["verdict"] for run in runs} == {"partial"}
 
 
 # ------------------------------------------------------------ head sampling

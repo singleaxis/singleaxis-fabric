@@ -832,6 +832,7 @@ class _RunReader:
             g.gap_type for g in gaps
             if g.gap_type in _EXCHANGE_GAPS
             and (g.exchange_id is not None or g.gap_type == "unmatched_tool_call")
+            and g.reason != "emitted_not_consumed"  # a call without its result: tool_result_missing
         })  # fmt: skip
         if exchange_gaps:
             inp["exchange_gaps"] = exchange_gaps
