@@ -9,11 +9,9 @@ content is never placed on the span — the SDK SHA-256s the content
 locally and emits the digest along with caller-supplied opaque
 identifiers (``key``, ``tags``).
 
-Downstream, the Telemetry Bridge folds these events into the wire
-protocol and the Decision Graph materializes a ``Retrieval`` node
-with ``source=memory`` tied to the owning ``Decision`` — the same
-shape a read would produce, so the provenance chain is symmetric on
-both sides.
+A downstream consumer can treat a write like a read (a retrieval with
+``source=memory`` tied to the owning ``Decision``), so the provenance
+chain is symmetric on both sides.
 """
 
 from __future__ import annotations
@@ -30,9 +28,8 @@ from ._hashes import sha256_hex
 class MemoryKind(StrEnum):
     """What kind of memory the agent wrote.
 
-    The SDK does not enforce storage semantics — these are labels the
-    Decision Graph uses when projecting the write into a Retrieval
-    node and when analysts slice provenance.
+    The SDK does not enforce storage semantics — these are labels
+    downstream consumers can use to slice provenance.
     """
 
     EPISODIC = "episodic"
@@ -97,8 +94,8 @@ class MemoryRecord(BaseModel):
         """Build a write-direction record from raw content. The content is hashed locally.
 
         When ``invalidates`` is set it names a prior memory key that
-        this write supersedes — a lineage edge for the downstream
-        Decision Graph. It is an opaque caller-supplied identifier,
+        this write supersedes — a lineage edge for downstream
+        consumers. It is an opaque caller-supplied identifier,
         not content, so it is carried verbatim.
         """
         return cls(
@@ -149,9 +146,9 @@ class MemoryRecord(BaseModel):
         ``tenant_scope`` is set, marks a tenant-wide erasure). There is
         no content to hash, so ``content_hash`` is left ``None``.
 
-        The OSS SDK only *emits* this marker; it deletes nothing. The
-        commercial Decision Graph is responsible for acting on the
-        marker and purging the referenced memory.
+        The OSS SDK only *emits* this marker; it deletes nothing. Acting
+        on the marker and purging the referenced memory is up to the
+        application or a downstream consumer.
         """
         return cls(
             kind=MemoryKind(kind) if isinstance(kind, str) else kind,

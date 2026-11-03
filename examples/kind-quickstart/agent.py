@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Minimal Fabric-instrumented agent used by ./up.sh
 
-Exercises the recorder-v1 capture surface in a single decision:
+Exercises the explicit recorder APIs (not wire capture) in a single decision:
 identity -> retrieval -> llm_call -> tool_call -> memory write. Spans
 are exported over OTLP/HTTP to the Fabric Node collector that up.sh
 port-forwards to localhost:4318. The shadow-dev profile renders them on
@@ -13,7 +13,8 @@ Instrumentation and export have overhead. Raw prompt
 and response text stay off the span — only hashed references and
 allowlisted metadata are emitted.
 
-Set FABRIC_DEMO_MOCK=1 to run without ANTHROPIC_API_KEY.
+The model is a deterministic stub by default. Set FABRIC_DEMO_REAL=1 (and
+ANTHROPIC_API_KEY) to make one real model call instead.
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ def real_model_call(prompt: str) -> tuple[str, int, int]:
 
 
 def main() -> None:
-    mock = os.environ.get("FABRIC_DEMO_MOCK") == "1"
+    mock = os.environ.get("FABRIC_DEMO_REAL") != "1"
     do_call = fake_model_call if mock else real_model_call
 
     provider = install_default_provider(
@@ -70,7 +71,7 @@ def main() -> None:
     fabric = Fabric(FabricConfig(tenant_id="acme-demo", agent_id="refund-bot"))
     print(f"fabric {fabric}, mode={'mock' if mock else 'real'}")
 
-    user_msg = "I want a refund for $4,200, my email is alice@example.com"
+    user_msg = "I want a refund of $4,200 for order 1042"
 
     with fabric.decision(
         session_id="sess-demo",

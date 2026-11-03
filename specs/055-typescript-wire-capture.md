@@ -11,8 +11,7 @@ qualification: NO_COVERAGE_CLAIM
 
 # 055 — TypeScript wire capture
 
-Revision 2 applies two independent reviews (Review A and Review B) of specs 050–055 and the
-revision decisions R1–R16 (each pending owner confirmation, §10).
+Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)) (each pending owner confirmation, §10).
 It binds TypeScript to 050's P1 run, records, seal and delivery
 contract, freezes the native addon ABI, moves every Python edit to its
 Python owner, and splits the oversized runtime work package. §12 maps
@@ -535,7 +534,7 @@ commits `native/fabric_wire_abi.h` with these exact names and values.
   child inherits the `.lock`, `.admit` or registration `flock`. A `flock`
   belongs to the open file description, so an inherited descriptor would
   keep a dead parent's registration locked and hide it from orphan
-  detection, as Review B found for 050 §3.2. POSIX record locks are never
+  detection, as the spec review found for 050 §3.2. POSIX record locks are never
   inherited. The child loads the addon afresh and registers its own epoch.
 - *Raw `fork()` without exec* by third-party native code: a
   `pthread_atfork` child handler sets `FORKED` and closes every table
@@ -1159,7 +1158,7 @@ External dependencies (owned elsewhere):
 | E5 | 050 WP-30–WP-33 | P1 reader, seal recompute, graph and projection; reader recognition of registered TS points (request R-TS-1 below) | WP-07 and WP-09 exits |
 | E6 | 050 WP-12, WP-14, WP-50 | Python run API and run-identity rules (12), Python C35/C40 emission for parity (14), the LR-1 harness `qualification/run-structure/` (50), for mixed-language LR-1 | WP-02c parity tests; WP-09 |
 | E7 | R16 | `test/agent-matrix` and `test/chaos` merged to main | WP-09 |
-| E8 | H0 (050 §5 "Pre-requisites") | The v0.8.1 hotfix branch `fix/decision-line-privacy` merged to main (it rewrites `decision.ts` and `identity.ts`) | WP-08a start |
+| E8 | H0 (050 §5 "Pre-requisites") | The decision-line privacy fixes that rewrite `decision.ts` and `identity.ts`; satisfied, shipped in v0.8.0 | WP-08a start |
 
 Request R-TS-1 to the 050 reader owner: the reader resolves capture
 points from the registry and needs no TS-specific branch. If a code
@@ -1176,7 +1175,7 @@ change is needed for `wire.ts.*` points, it lands in 050's reader WPs.
 | WP-05 protection/content writer: `wire/{worker,protect,parts,writer}.ts`; scoped changes `deployment-policy.ts`, `redaction.ts` if needed | WP-01; WP-02b ring interface | Reuse existing service client; split/review orchestration, 260-object check before admission, protected output DTO. All modes unit/property; 40/70 MiB and redaction timeout e2e; crash-before-protect/privacy canaries; worker CPU stall passivity | C0A-1..3 and C1-4; forbidden raw content/digests absent before spool; worker output bounded |
 | WP-06 durable spool: `wire/{spool,ledger,spool-codec}.ts` | WP-01; WP-02a for locks; E3 for exit; parallel with WP-05 | Python frames/AES envelope, shared bound/barrier/receipts/ledger with segment-attributed losses. Round-trip/property disk accounting; fault-at-every-fsync/rename unit tests; real multiprocess/kill/full-volume e2e; no-I/O hook assertion and encrypted privacy scans | Python reads TS frames and TS reads Python frames; every sampled state within shared bound + reserve; restart delivers all admitted records |
 | WP-07 sender and readback: `wire/{sender,node-content,delivery}.ts`; TS tests that run the Python reader as a subprocess | WP-01; WP-05/06 for integrated exit; E4, E5 | Private OTLP clients, one content record per request, exact allowlist, no redirect/ambient proxy, §7.1 outcome classes and permanent-rejection retirement. Mock status matrix (every code in §7.1); bound Node/store e2e and Python projection parity; corrupt/missing objects, spoofed sources, service logs/canaries | TS-1D delivery/readback, C0A-1/2/4, C1-3/5; a rejected record retires and projects `not_captured(store_failed)` |
-| WP-08a records bridge (integration owner of `decision.ts`, `calls.ts`, `byte-evidence.ts`): those files and `wire/records-input.ts` | WP-02b/02c, WP-05, WP-07 integrated; **E8** (hotfix `fix/decision-line-privacy` merged to main) | Route existing records through the same runtime via the 050 records-input port; D2 sticky withholding; R9 bounds on any new serialization. Interleaving, sampled host, exception identity and privacy tests | Both inputs interleave one spool; TS-0 remains green; seam signatures frozen and handed off |
+| WP-08a records bridge (integration owner of `decision.ts`, `calls.ts`, `byte-evidence.ts`): those files and `wire/records-input.ts` | WP-02b/02c, WP-05, WP-07 integrated; **E8** (decision-line privacy fixes, in v0.8.0) | Route existing records through the same runtime via the 050 records-input port; D2 sticky withholding; R9 bounds on any new serialization. Interleaving, sampled host, exception identity and privacy tests | Both inputs interleave one spool; TS-0 remains green; seam signatures frozen and handed off |
 | WP-08b packaging and preload (integration owner of `src/index.ts`, `package.json`, `tsup.config.ts`): those files, `wire/{index,register}.ts`, package-artifact tests, wire deployment docs | WP-02a, WP-02b, WP-07; parallel with WP-08a | One CJS wire core with ESM/CJS entry points; conditional exports; prebuilds in the tarball; autoload/no-provider/no-native, duplicate preload, worker preload reach, artifact-content/privacy tests from the packed tarball | Installing/importing root alone installs no hook; no forbidden OSS artifacts; no install script |
 | WP-09 qualification: `qualification/agent-matrix/typescript/**`, `qualification/chaos/typescript/**`, TS benchmark scripts, release workflow TS steps | E6, E7; harness may start from WP-01 fixtures; **final runs after WP-02a..08b** | Reproducible matrix/chaos/performance reports and lockfiles from installed npm artifacts; cases in §9.3 | Full TS-1U/H/D plus applicable 049 conformance gates; no claim exceeds a passing tuple |
 
@@ -1389,8 +1388,8 @@ Decision 24 (post-ack validation) is superseded by R10 once confirmed.
 Do not reopen them to simplify this implementation.
 
 Every row is **Recommended — pending owner confirmation**; build agents
-follow the recommendation unless the owner changes it. "Reviewers" notes
-where Review A and Review B already concur.
+follow the recommendation unless the owner changes it. "Reviewers concur"
+notes where the spec reviews agreed.
 
 | Decision / risk | Recommended default and consequence |
 |---|---|
@@ -1400,8 +1399,8 @@ where Review A and Review B already concur.
 | TS-OD-4 New Node scheduling budgets | Approve §9.2 p99/max delay and utilization defaults with pinned JS calibration; keep 50/2/5 µs gates. Reviewers concur |
 | TS-OD-5 Core HTTP default after qualification | Keep independently opt-in via `nodeHttp`/`FABRIC_WIRE_NODE_HTTP=1`; enable by default only after TS-1H and a declared activation change. Reviewers concur |
 | TS-OD-6 Unversioned diagnostic publishers in one process | Require a pinned qualified transport dependency inventory; unknown publishers make that deployment unsupported for full capture. No dependency scanning, environment dumping or network probes. Reviewers concur |
-| TS-OD-7 Clear identity mode (R8) | Clear stays an explicit, manifest-recorded opt-in that emits caller ids as given in TS as in Python; pseudonymous default maps every caller id. Qualify pseudonymous first. Open: Review B also recommends restricting clear mode to the local profile; R8 does not, so this spec does not |
-| TS-OD-8 Run identity: 050's rule table versus REVISION R1's wording (R1) | **Resolved: 050's rule is adopted** (050 §3.6 rule table and OD-7; 051 A10/§4.10 and 052 B6 follow it): the correlation id is the mapped clear id when the caller gives one, otherwise minted; in clear mode, the clear id. In clear mode the `baggage` token therefore carries the clear id; clear mode is an explicit opt-in, and 050's OD-7 docs say so (050 K7a). TS implements 050 §3.6 exactly (§4.3), because TS must reproduce Python's vectors. Background: R1 says the root always mints a random correlation id "never derived from caller input"; 050 makes the correlation id the root's run id, so a root with a clear run id carries the *mapped* clear id in its tokens (and, in clear mode, the clear id itself) across service boundaries. 050's rule keeps one id per caller-rooted run with no verifier aliasing, which is why it was adopted over R1's literal wording |
+| TS-OD-7 Clear identity mode (R8) | Clear stays an explicit, manifest-recorded opt-in that emits caller ids as given in TS as in Python; pseudonymous default maps every caller id. Qualify pseudonymous first. Open: restricting clear mode to the local profile was also recommended; R8 does not, so this spec does not |
+| TS-OD-8 Run identity: 050's rule table versus R1's wording (R1) | **Resolved: 050's rule is adopted** (050 §3.6 rule table and OD-7; 051 A10/§4.10 and 052 B6 follow it): the correlation id is the mapped clear id when the caller gives one, otherwise minted; in clear mode, the clear id. In clear mode the `baggage` token therefore carries the clear id; clear mode is an explicit opt-in, and 050's OD-7 docs say so (050 K7a). TS implements 050 §3.6 exactly (§4.3), because TS must reproduce Python's vectors. Background: R1 says the root always mints a random correlation id "never derived from caller input"; 050 makes the correlation id the root's run id, so a root with a clear run id carries the *mapped* clear id in its tokens (and, in clear mode, the clear id itself) across service boundaries. 050's rule keeps one id per caller-rooted run with no verifier aliasing, which is why it was adopted over R1's literal wording |
 | TS-OD-9 Fail open versus configuration errors (R9) | Follow 050 §3.4: every recorder call fails open (`FABRIC_RECORDS_STRICT=1` throws); malformed configuration still throws fixed text at explicit `install()`, and the preload catches it. Missing prerequisites (keys, policy, native addon) are disabled states, never throws |
 | TS-OD-10 Cross-spec integration owner (R13) | 055 WP-08a owns TS `decision.ts`/`calls.ts`/`byte-evidence.ts`; 051 WP2-11 and 052 WP3-6 depend on it and follow its seam. Needs matching edits to 051/052 |
 | TS-OD-11 Unattached worker isolates | Declare them with a new `node_worker_unattached` uncaptured class (§8); `other_runtime` until the enum lands. No per-worker independent allocator under the process epoch |
@@ -1436,31 +1435,31 @@ historical default in the shared revision workflow.
 
 ## 12. Revision 2 review disposition
 
-| Finding (reviewer) | Resolution |
+| Finding | Resolution |
 |---|---|
-| TS run/delivery semantics diverge: required run id, combined token API, waits for durable seals, no outcome on `endRun`, “any content failure keeps pending” (Review A §2) | §4.3 binding table and language-differences table; §7.1 outcome classes with permanent-rejection retirement |
-| Native POSIX locking: approve minimal addon; freeze allocator/queue/FD ownership and worker-cleanup ABI; allocator and queue in JS (Review A §6, Review B §6, D-D) | §4.4 frozen ABI; §4.5 JS runtime with `SharedArrayBuffer` and `Atomics` |
-| WP-02 too large; ABI design cannot be left to the implementing agent (Review A §4, Review B §4) | WP-02 split into WP-02a/02b/02c; ABI frozen in §4.4 and committed as a header by WP-01; WP-08 also split |
-| WP-06/WP-07 own Python `wire/_spool.py` and `reconstruct/**` (Review A §4, Review B §4) | Removed; dependencies E1–E6 and request R-TS-1 in §9.1 |
-| WP-08 edits the same TS files as 051 WP2-11 and 052 WP3-6 (Review A §4) | Integration owners and handoff table in §9.1; TS-OD-10 |
-| 260-object bound fix belongs in the shared foundation (Review A §4, Review B §3) | §5 and §8 reference 050 WP-00/WP-11b; TS only checks the bound |
-| TS content sender batches records; one bad record would 400 the batch (Review B C10) | One content record per request, §4.2 and §7.1 |
-| Post-ack validation listed as fixed while 050 builds pre-ack (Review B C10) | §7.1 and §10 bind to R10 / 050 WP-21 |
-| Caller-id rule differs across specs; 055 rejected clear mode (Review A §5, Review B D-E) | R8 applied in §4.3 and §5; TS-OD-7 |
-| Marker event ids uuid5 versus uuid4 (Review B C1) | R2 in §4.3 and §7.2 |
-| Losses not segment-attributed (Review A §2) | R3 in §4.3, §6.3, §7.2 |
-| Lifecycle/outcome inputs (Review A §2, Review B C2) | R4 in §4.3 |
-| Descriptor-only failure bodies (Review A §2) | R5 in §4.3 |
-| `fabric.capture.source` registry row; C35 persisted selector; C40 (Review B C6, C9; Review A §3) | §1.1, §7.1, §8 shared rows owned by 050 |
-| Resume tokens carry a clear source label under clear labels (Review B §5) | §4.3 identity paragraph |
-| Agent-matrix and chaos harnesses unmerged (Review B §3) | §2 and §9.3 reference the merged trees (R16, E7) |
-| Python qualification depends on non-gating TS WPs (Review A §4) | §1 and §9.1: Python exit gates never depend on a 055 WP. The 051/052 dependency lists are theirs to fix |
+| TS run/delivery semantics diverge: required run id, combined token API, waits for durable seals, no outcome on `endRun`, “any content failure keeps pending” | §4.3 binding table and language-differences table; §7.1 outcome classes with permanent-rejection retirement |
+| Native POSIX locking: approve minimal addon; freeze allocator/queue/FD ownership and worker-cleanup ABI; allocator and queue in JS | §4.4 frozen ABI; §4.5 JS runtime with `SharedArrayBuffer` and `Atomics` |
+| WP-02 too large; ABI design cannot be left to the implementing agent | WP-02 split into WP-02a/02b/02c; ABI frozen in §4.4 and committed as a header by WP-01; WP-08 also split |
+| WP-06/WP-07 own Python `wire/_spool.py` and `reconstruct/**` | Removed; dependencies E1–E6 and request R-TS-1 in §9.1 |
+| WP-08 edits the same TS files as 051 WP2-11 and 052 WP3-6 | Integration owners and handoff table in §9.1; TS-OD-10 |
+| 260-object bound fix belongs in the shared foundation | §5 and §8 reference 050 WP-00/WP-11b; TS only checks the bound |
+| TS content sender batches records; one bad record would 400 the batch | One content record per request, §4.2 and §7.1 |
+| Post-ack validation listed as fixed while 050 builds pre-ack | §7.1 and §10 bind to R10 / 050 WP-21 |
+| Caller-id rule differs across specs; 055 rejected clear mode | R8 applied in §4.3 and §5; TS-OD-7 |
+| Marker event ids uuid5 versus uuid4 | R2 in §4.3 and §7.2 |
+| Losses not segment-attributed | R3 in §4.3, §6.3, §7.2 |
+| Lifecycle/outcome inputs | R4 in §4.3 |
+| Descriptor-only failure bodies | R5 in §4.3 |
+| `fabric.capture.source` registry row; C35 persisted selector; C40 | §1.1, §7.1, §8 shared rows owned by 050 |
+| Resume tokens carry a clear source label under clear labels | §4.3 identity paragraph |
+| Agent-matrix and chaos harnesses unmerged | §2 and §9.3 reference the merged trees (R16, E7) |
+| Python qualification depends on non-gating TS WPs | §1 and §9.1: Python exit gates never depend on a 055 WP. The 051/052 dependency lists are theirs to fix |
 | MD046 code-block style | All code blocks fenced, as in the other specs |
 
 Rejected or not adopted:
-- Review B D-E's restriction of clear mode to the local profile is not
+- The proposed restriction of clear mode to the local profile is not
   adopted. R8 does not include it; it stays an open owner question in
   TS-OD-7.
 - Rev 1's native owned-byte queue, external `ArrayBuffer`s and native
-  metadata arenas are withdrawn rather than frozen, because R12 and both
-  reviewers put allocator and queue in JavaScript.
+  metadata arenas are withdrawn rather than frozen, because R12 and the
+  spec review put allocator and queue in JavaScript.

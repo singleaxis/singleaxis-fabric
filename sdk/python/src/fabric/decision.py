@@ -299,7 +299,7 @@ ATTR_SIDE_EFFECT_SYSTEMS = "fabric.side_effect_systems"
 ATTR_CHECKPOINT_COUNT = "fabric.checkpoint_count"
 
 # Versioned ReplayMetadata envelope (spec 021). A single ``fabric.replay``
-# span event bundles the metadata a (commercial) replay engine needs to
+# span event bundles the metadata a downstream consumer needs to
 # reconstruct a decision. ``metadata_version`` is the envelope's own
 # version, independent of ``SCHEMA_VERSION``, so the envelope can evolve
 # without bumping the wire schema. Emit-only: the SDK assembles + emits
@@ -496,16 +496,16 @@ class Decision(AbstractContextManager["Decision"]):
         self._suppressed_effect_ids: list[str] = []
         self._checkpoints: list[CheckpointEvent] = []
         # Agent-surface-logging rolling counters (spec 022). Monotonic
-        # totals stamped on the decision span so the Telemetry Bridge can
-        # fold them into the DecisionSummary without replaying events.
+        # totals stamped on the decision span so a downstream consumer can
+        # fold them into a decision summary without replaying events.
         self._skill_count = 0
         self._hook_count = 0
         self._file_access_count = 0
         self._delegation_count = 0
         # Generic interaction capture (spec 023). The rolling count + the
         # set of distinct generic ``kind``s seen via ``record_interaction``
-        # are stamped on the decision span so the Telemetry Bridge folds
-        # them into the DecisionSummary without replaying events.
+        # are stamped on the decision span so a downstream consumer can fold
+        # them into a decision summary without replaying events.
         self._interaction_count = 0
         self._interaction_kinds: set[str] = set()
         # Current sub-agent-delegation nesting depth: incremented on each
@@ -1152,8 +1152,8 @@ class Decision(AbstractContextManager["Decision"]):
         document ids — as a ``fabric.retrieval`` span event. It also
         updates rolling ``fabric.retrieval_count`` and
         ``fabric.retrieval_sources`` attributes on the decision span
-        so the Telemetry Bridge can fold them into the
-        ``DecisionSummary`` wire event without replaying every event.
+        so a downstream consumer can fold them into a
+        decision summary without replaying every event.
 
         Raw query text is hashed locally and is never placed on the
         span. ``results`` supplies the ordered result content for governed
@@ -1269,14 +1269,14 @@ class Decision(AbstractContextManager["Decision"]):
         — kind, SHA-256 of the content, caller-supplied key/tags/TTL
         — as a ``fabric.memory`` span event. Rolling
         ``fabric.memory_write_count`` and ``fabric.memory_kinds``
-        attributes are kept on the decision span so the Telemetry
-        Bridge can fold them into the ``DecisionSummary`` wire event
+        attributes are kept on the decision span so a downstream
+        consumer can fold them into a decision summary
         without replaying every event.
 
         When ``invalidates`` is set, it names a prior memory key this
         write supersedes; the event then carries
         ``fabric.memory.invalidates=<prior_key>`` as a lineage edge for
-        the downstream Decision Graph. The attribute is emitted only
+        downstream consumers. The attribute is emitted only
         when ``invalidates`` is provided, so writes that do not use it
         produce byte-identical events.
 
@@ -1380,8 +1380,8 @@ class Decision(AbstractContextManager["Decision"]):
 
         Rolling ``fabric.memory_read_count`` is updated on the
         decision span (separate from ``fabric.memory_write_count``)
-        so the Telemetry Bridge can fold reads and writes into the
-        ``DecisionSummary`` wire event independently.
+        so a downstream consumer can fold reads and writes into a
+        decision summary independently.
 
         Raw content is hashed locally and is never placed on the
         span. When a :class:`~fabric.content_store.ContentStore` is
@@ -1470,9 +1470,9 @@ class Decision(AbstractContextManager["Decision"]):
         event also carries ``fabric.memory.tenant_scope=True``, marking
         a tenant-wide erasure (erase everything for a whole tenant).
 
-        The OSS SDK only *emits* this marker; it deletes nothing. The
-        commercial Decision Graph is responsible for acting on the
-        marker and purging the referenced memory — this keeps the
+        The OSS SDK only *emits* this marker; it deletes nothing. Acting
+        on the marker and purging the referenced memory is up to the
+        application or a downstream consumer — this keeps the
         emit/act boundary clean. The rolling
         ``fabric.memory_erase_count`` attribute is updated on the
         decision span, symmetric with the read/write counters.
@@ -1720,9 +1720,8 @@ class Decision(AbstractContextManager["Decision"]):
     ) -> CheckpointEvent:
         """Mark a save point on the decision timeline.
 
-        The SDK emits a ``fabric.checkpoint`` span event. The replay
-        engine (commercial) consumes the events to rewind cleanly when
-        a downstream step fails.
+        The SDK emits a ``fabric.checkpoint`` span event. A downstream
+        consumer, outside the recorder, may read the events.
 
         Multiple checkpoints per decision are allowed and ordered by
         creation time.
@@ -1769,7 +1768,7 @@ class Decision(AbstractContextManager["Decision"]):
     ) -> None:
         """Emit a versioned ReplayMetadata envelope as a span event.
 
-        Bundles the metadata a (commercial) replay engine needs to
+        Bundles the metadata a downstream consumer needs to
         reconstruct this decision into a single ``fabric.replay`` span
         event. The envelope carries its own ``metadata_version`` —
         independent of ``SCHEMA_VERSION`` — so it can evolve without a
@@ -1797,7 +1796,7 @@ class Decision(AbstractContextManager["Decision"]):
 
         Emit-only boundary: the SDK assembles and emits
         this envelope; it never reconstructs, orchestrates, or replays a
-        decision — that is the commercial layer.
+        decision; that is outside the recorder.
 
         Args:
             state_hash: optional host-supplied state fingerprint.
@@ -2003,8 +2002,8 @@ class Decision(AbstractContextManager["Decision"]):
         Two low-rate triggers, each fired at most once per process: a
         never-before-seen generic ``kind``, and a ``kind`` observed with a
         baseline ``deviation`` but no classifying tags (an unclassified
-        anomaly). This is a SIGNAL, not analysis — clustering / scoring /
-        auto-baselining is Commercial.
+        anomaly). This is a SIGNAL, not analysis; clustering, scoring and
+        auto-baselining are downstream analysis, outside the recorder.
         """
         if _coverage_should_emit(f"kind:{kind}"):
             self._add_coverage_event(kind, COVERAGE_REASON_NEW_KIND)

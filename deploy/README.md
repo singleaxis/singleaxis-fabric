@@ -29,15 +29,16 @@ CAPTURE -> PROTECT -> DELIVER
   `compose/README.md` ("Client VM deployment") and
   [`../docs/operations/dr.md`](../docs/operations/dr.md) for queue sizing,
   backup, and alerting.
+- **Production-profile CI fixtures** (`kind/production-e2e/`): kind values
+  and sink manifests for the production-profile E2E workflow.
 - **Host sensors** (`auditd/`, `kubernetes/host-emitter-daemonset.yaml`):
   development and qualification material for the auditd receiver and the
   eBPF host emitter; see [`../docs/host-sensors.md`](../docs/host-sensors.md).
 
-## What does not exist here yet
+## Kubernetes
 
 Kubernetes deployment uses the Helm chart under `charts/fabric` (see the
-`shadow-production` values profile). There is no Terraform/Crossplane
-module set in this tree today.
+`shadow-production` values profile).
 
 ## Authoritative specs
 

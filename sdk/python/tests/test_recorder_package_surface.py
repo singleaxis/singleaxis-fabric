@@ -104,6 +104,8 @@ EXCLUDED_LEGACY_ARTIFACT_PATHS = {
     "/src/fabric/queue_transports",
     "/src/fabric/reference_receipts.py",
     "/src/fabric/stream.py",
+    "/src/fabric/taxonomies",
+    "/src/fabric/taxonomy.py",
     "/src/fabric/tool_auth.py",
 }
 

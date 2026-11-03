@@ -133,7 +133,7 @@ authenticated, single-source Node). See [deployment](deployment.md).
 | Fabric Node image `ghcr.io/singleaxis/fabric-otelcol` | `otelcol-fabric` with `fabric-gate`; components: `otlp` and `audit` receivers; `fabricguard`, `batch`, `memory_limiter` processors; `fabriccontent`, `otlphttp`, `debug` exporters; `health_check`, `file_storage`, patched `bearertokenauth`, `noredirect`, `fabricenvelope` extensions |
 | Host emitter image `ghcr.io/singleaxis/fabric-host-emitter` | eBPF host sensor |
 | Helm chart `fabric` | the Node, profiles `shadow-dev` and `shadow-production` |
-| `fabricctl` | `init`, `recorder validate`, `recorder digest`, `version`, `help` for a local recorder configuration file |
+| `fabricctl` | `init`, `recorder validate`, `recorder digest`, `version`, `help` for a reviewable recorder declaration (`contracts/recorder/v1`). In v0.8 neither the SDK nor the Node reads it: the agent is configured by `FABRIC_CAPTURE_POLICY` (deployment-policy/v1, see [deployment](deployment.md)) and the Node by Helm values or Compose |
 | Public contracts | activity v2, connect v1, content v1, delivery v1, privacy v1, recorder v1 (published archive); capture v1, content v2, coverage v1, deployment-policy v1, evidence v1 and redaction v1 are in the repository as drafts |
 
 Compose files for the Node are in `deploy/compose` (not a separate

@@ -23,17 +23,13 @@ deliver the record.
 Framework adapters and provider auto-instrumentation are not part of the
 package.
 
-## Not part of recorder v1
+## Outside the package
 
-- judges, evaluation queues or evaluation runners;
-- red-team execution;
-- prompt-time PII redaction, NeMo or guardrail enforcement;
-- policy engines, tool authorization or escalation enforcement;
-- deployment management, assurance tiers or regulatory profiles;
-- a monitoring backend, Decision Graph or governance workflow.
-
-Those systems may consume the delivered activity record elsewhere. They are
-not enabled by installing this package.
+Everything outside CAPTURE -> PROTECT -> DELIVER is out of scope; see
+[AGENTS.md](../../AGENTS.md) and
+[architecture](../../docs/architecture.md#what-fabric-is-not). Other systems
+may consume the delivered record; installing this package enables none of
+them.
 
 ## Artifact boundary
 

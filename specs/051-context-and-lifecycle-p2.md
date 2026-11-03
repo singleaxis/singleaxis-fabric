@@ -23,16 +23,14 @@ registry names (`contracts/coverage/v1/registry/*.json`). "Decision line"
 means today's `fabric.decision` span API (`decision.py`, `_calls.py`).
 "Records input" means 049 §1.3 input `records`, built by P1 (spec 050).
 
-**Revision 2** applies the v0.9 spec reviews (Review A, Review B) through the
-revision decisions R1–R16: §3 refreshed
+**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)): §3 refreshed
 against spec 050 and its R1/R4/R5 revision; D30 only through P1's
 run-level hook (R4); one integration owner for `decision.py` and
 `records/__init__.py` (R13); passivity tightened (R9: no automatic
 `str(exc)`, work-bounded encoders, every API fails open); one clear-mode
-rule (R8); items already fixed by the v0.8.1 hotfix (branch
-`fix/decision-line-privacy`) are marked **landed in v0.8.1 (hotfix)** and
-are not redone here; that branch must merge to main first (pre-requisite
-H0, §3).
+rule (R8); items already fixed by the decision-line privacy and passivity
+fixes that shipped in v0.8.0 are marked **landed in v0.8.0** and are not
+redone here (pre-requisite H0, §3).
 
 ---
 
@@ -141,22 +139,22 @@ Paths relative to `sdk/python/src/fabric/` unless stated.
 | Area | Today | Evidence | Missing for P2 |
 |---|---|---|---|
 | Record emission | Every `record_*` adds a span **event** to the `fabric.decision` span and sometimes a GenAI child span; nothing is sequenced | `decision.py:1036-1145` (retrieval), `1147-1252` (remember), `1414-1559` (side effect), `1562-1605` (checkpoint) | P1 records input (assumed, section 3) |
-| Concurrency guard | Every mutating API takes a non-blocking lock and **raises** `ConcurrentDecisionUseError` on overlap | `decision.py:519-541` | **Landed in v0.8.1 (hotfix)**: an overlapping call is recorded, counted (`concurrent_use_count`), `FABRIC_RECORDS_STRICT=1` keeps the error for tests |
+| Concurrency guard | Every mutating API takes a non-blocking lock and **raises** `ConcurrentDecisionUseError` on overlap | `decision.py:519-541` | **Landed in v0.8.0**: an overlapping call is recorded, counted (`concurrent_use_count`), `FABRIC_RECORDS_STRICT=1` keeps the error for tests |
 | Argument errors | Invalid enums/lengths raise `ValueError` at the call site | `decision.py:1456-1459`, `side_effect.py`, `retrieval.py:83-99`, `checkpoint.py:42` | P2: fail open everywhere, strict mode only (R9, O2-1) |
 | Side effect | Hash-only event; `committed: bool = True`; no state, no timing, no context manager, no target | `side_effect.py:92`; `decision.py:1414-1559`; only `delegate()` is a CM (`decision.py:2014,2056`) | D18 target, D19, D20, CM |
 | Checkpoint | `step_name` (clear label on T), optional caller `checkpoint_id: UUID`, `state_hash` | `checkpoint.py:16-53`; `decision.py:1562-1605` | S27 action, S28 state, id mapping |
 | Delegation | `delegate()`/`adelegate()` CMs, `agt-` target, protocol, depth; no state, no payload | `decision.py:1937-2080` | S24, S25, `delegates` link |
 | Retrieval | Query hashed; caller doc ids emitted **clear** as a list; results stored as an arbitrary JSON list | `decision.py:1104-1121`; `retrieval.py:54-109` | N26 filters, N28 schema, N29 |
 | Memory | `direction` write/read/erase; `store_id` emitted **clear** as `gen_ai.memory.store.id` | `memory.py:54-160`; `decision.py:1242,1332,1407` | N30 normalisation |
-| Tool / LLM calls | Child spans; host `fabric.step.*` ids; `record_exception=True` puts exception **message and stack** on the host span | `_calls.py:171-260,403,987,580,1041` | exception text: **landed in v0.8.1 (hotfix)**; P2: S12 content, S13, S16, links |
-| MCP | `record_mcp_inventory` puts tool **names** on T (`fabric.mcp.tools`); `snapshot_inventory()` issues its own `list_*` calls; post-call recording in `traced_call_tool` can raise after the tool call returned | `integrations/mcp.py:165-250,253-312,354-399` | fail-open around `call_tool`, `list_*` observation, `snapshot_inventory()` deprecated no-op: **landed in v0.8.1 (hotfix)**; P2: content roles, C26/C27/C29, N22/N24/N25, `fabric.mcp.tools` |
+| Tool / LLM calls | Child spans; host `fabric.step.*` ids; `record_exception=True` puts exception **message and stack** on the host span | `_calls.py:171-260,403,987,580,1041` | exception text: **landed in v0.8.0**; P2: S12 content, S13, S16, links |
+| MCP | `record_mcp_inventory` puts tool **names** on T (`fabric.mcp.tools`); `snapshot_inventory()` issues its own `list_*` calls; post-call recording in `traced_call_tool` can raise after the tool call returned | `integrations/mcp.py:165-250,253-312,354-399` | fail-open around `call_tool`, `list_*` observation, `snapshot_inventory()` deprecated no-op: **landed in v0.8.0**; P2: content roles, C26/C27/C29, N22/N24/N25, `fabric.mcp.tools` |
 | Interaction | `record_interaction` (generic) with `tgt-` target and payload role | `decision.py:1684-1806` | N58 `message` step |
 | Run scope | `fabric.wire.run(run_id)` yields `None`; `run_start`/`run_end` beats carry run id and scope id only | `wire/__init__.py:593-620`; `_loss.py:206-220`; `_sequence.py:42-50` | D30 on scope `run_end` |
 | Control vocabulary | n/a for P2 | — | spec 052 |
 | Content roles | Every P2 role is in the role table and the Node exporter | `_roles.py:369-480`; `exporter/fabriccontentexporter/roles_generated.go` | SDK `ContentRole` enum (`_content.py:29-46`) knows only 15 decision-line roles |
 | fabricguard | Every P2 key admitted with a validator; run-marker keys placed on `run_end` | `processor/fabricguardprocessor/coverage_keys.go:27-278,344-369` | records-class placement (P1), new keys of section 5 |
-| Legacy keys | Admitted **without** value validators: `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key`, `fabric.retrieval.source_document_ids`, `fabric.checkpoint.step_name`, `fabric.mcp.tools`, `fabric.side_effect.target_system`/`operation` | `allowlist.go:55-111` | idempotency keys, document ids, step names, memory store ids, tags: **landed in v0.8.1 (hotfix)** (`lbl-`/`mst-`, fabricguard `decision_line_identity.go`); the rest: section 4.9 |
-| Digests of originals | `*_hash` of request/result/query/content emitted on every record regardless of the role's privacy mode | `decision.py:1107,1222,1318,1546` | **landed in v0.8.1 (hotfix)**; P2 applies the same gating to every new body (4.2) |
+| Legacy keys | Admitted **without** value validators: `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key`, `fabric.retrieval.source_document_ids`, `fabric.checkpoint.step_name`, `fabric.mcp.tools`, `fabric.side_effect.target_system`/`operation` | `allowlist.go:55-111` | idempotency keys, document ids, step names, memory store ids, tags: **landed in v0.8.0** (`lbl-`/`mst-`, fabricguard `decision_line_identity.go`); the rest: section 4.9 |
+| Digests of originals | `*_hash` of request/result/query/content emitted on every record regardless of the role's privacy mode | `decision.py:1107,1222,1318,1546` | **landed in v0.8.0**; P2 applies the same gating to every new body (4.2) |
 | TypeScript | `decision.ts` mirrors the Python decision line (callback-style `delegate`), identity v2 and `EmittedId` | `sdk/typescript/src/decision.ts:1140-1924`; `identity.ts:30-304` | TS-2 parity (4.12) |
 
 ---
@@ -169,13 +167,12 @@ as this revision; the rows marked **R1/R4/R5** are written against those
 revision decisions and must match 050's final text before WP2-1a
 starts.
 
-**Pre-requisite H0: the v0.8.1 hotfix.** Every item this spec marks
-**landed in v0.8.1 (hotfix)** lives on branch `fix/decision-line-privacy`,
-which is not yet on main. It rewrites `decision.py`, `integrations/mcp.py`,
-`_identity.py`, `decision.ts` and `identity.ts`. It must be merged to main
-before 050 WP-15, this spec's WP2-1a and 055 WP-08a start (050 §5
-"Pre-requisites"); WP2-1b, WP2-7 and WP2-8 build on it. If it has not
-merged, those items are not landed and this spec does not redo them.
+**Pre-requisite H0: the decision-line privacy and passivity fixes.** Every
+item this spec marks **landed in v0.8.0** comes from those fixes, which
+rewrote `decision.py`, `integrations/mcp.py`, `_identity.py`, `decision.ts`
+and `identity.ts` and shipped in v0.8.0 (CHANGELOG 0.8.0, "Decision-line
+passivity"). H0 is therefore satisfied for 050 WP-15, this spec's WP2-1a and
+055 WP-08a (050 §5 "Pre-requisites"); WP2-1b, WP2-7 and WP2-8 build on it.
 
 | # | Interface P2 uses | 050 |
 |---|---|---|
@@ -193,7 +190,7 @@ merged, those items are not landed and this spec does not redo them.
 | A12 | fabricguard records class with placement generated from the registry `check.span: record`; the SDK's rule-A projection drops any key not admitted on records | §3.4 rule A, §3.14 |
 | A13 | CM APIs reuse a host span's ids through `span_ids`, so nested records and wire exchanges resolve X18 (`global` tracer mode: unresolved, 050 K3) | §3.4 "Span ids" |
 | A14 | Projection framework: steps by attempt uid, registry-driven wrappers, manifest-driven `unsupported(unsupported_version)` for fields a build does not supply, decision tables as data; `run`-kind **steps** come only from run markers | §3.13 |
-| A15 | Without an installed capture handle, records APIs keep the unsequenced decision-span path; the **records-only install** is `fabric.wire.install(patch_httpx=False, patch_aiohttp=False)` (`WireConfig` overrides, `wire/_config.py:101-103`) (records input, spool and sender without the model tee; documented in P2, Review B §3) | §3.1, OD-2 |
+| A15 | Without an installed capture handle, records APIs keep the unsequenced decision-span path; the **records-only install** is `fabric.wire.install(patch_httpx=False, patch_aiohttp=False)` (`WireConfig` overrides, `wire/_config.py:101-103`) (records input, spool and sender without the model tee; documented in P2) | §3.1, OD-2 |
 | A16 | Decision-line content moves to the unified spool in P2 (owned here, WP2-1b) | OD-5 |
 | A17 | P1-A shared passivity harness | §3.15 |
 | A18 | TypeScript has no allocator, spool or manifest until spec 055 | §1.3 |
@@ -332,10 +329,9 @@ application, new or legacy:
   `record_interaction`, `set_attribute`, `llm_call`, `CheckpointEvent`,
   `RetrievalRecord`, `SideEffectRecord` construction through the
   `Decision` methods): WP2-1b converts each call site;
-- `ConcurrentDecisionUseError` is already fail-open (**landed in v0.8.1
-  (hotfix)**);
+- `ConcurrentDecisionUseError` is already fail-open (**landed in v0.8.0**);
 - `FABRIC_RECORDS_STRICT=1` (tests only) restores raising `ValueError`
-  with fixed text, as the v0.8.1 concurrency fix does;
+  with fixed text, as the v0.8.0 concurrency fix does;
 - P1 interfaces that raise on misuse (`set_run_outcome` on an unknown
   enum, `v2` on an unknown prefix, `RecordBody` on mutable memory) are
   only ever called with values the facade has already normalised.
@@ -376,7 +372,7 @@ them (049 §7.10). Without a capture handle the governed sink path is
 unchanged. `Decision.content_manifest` returns `None` on the records path.
 
 **Digest gating.** Gating the decision line's `*_hash` keys by the
-payload role's privacy mode is **landed in v0.8.1 (hotfix)**. P2 applies
+payload role's privacy mode is **landed in v0.8.0**. P2 applies
 the same rule to every digest it adds: a digest of an original payload is
 emitted only when the role resolves to `retain_original` or
 `original_plus_masked` for the epoch (the implicit `fabric.local-default`
@@ -632,7 +628,7 @@ with d.side_effect(effect_type, *, target_system, operation, target=None,
   type → descriptor-only `parse_failed`. C25/C27/C28 from the session.
   N25: an exception from `call_tool` → `protocol` (S08 `error`);
   `result.isError` → `tool` (S08 `ok`).
-- **Landed in v0.8.1 (hotfix)** and not redone: recording never raises
+- **Landed in v0.8.0** and not redone: recording never raises
   around `call_tool` (the result object is returned unchanged, an
   exception is re-raised as the same object, extra arguments are passed
   through); `list_tools()`/`list_resources()`/`list_prompts()` called by
@@ -648,18 +644,18 @@ with d.side_effect(effect_type, *, target_system, operation, target=None,
 P2 exit E3 covers the decision line, not only new keys. In the explicit
 `clear` identity mode every row keeps today's output (R8, section 4.10),
 except exception text, which stays off telemetry in every mode (O2-2).
-Rows landed by the v0.8.1 hotfix (branch `fix/decision-line-privacy`) are
+Rows landed by the decision-line privacy fixes in v0.8.0 are
 not redone; P2 keeps them under its canary suite (WP2-8).
 
 | Key (emitter) | Today (v0.8.0) | Pseudonymous | Status / WP |
 |---|---|---|---|
-| `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key` | clear | `lbl-` (keyed generic label), omitted without a key | landed in v0.8.1 (hotfix) |
-| `fabric.retrieval.source_document_ids` | clear list | list of `lbl-` | landed in v0.8.1 (hotfix); P2 removes the list from T once doc ids are in `retrieval.results` (WP2-6, O2-3) |
-| `fabric.checkpoint.step_name` | clear label | `lbl-` (operator label, clear with `FABRIC_WIRE_LABELS=clear`) | landed in v0.8.1 (hotfix) |
-| `gen_ai.memory.store.id`, `fabric.memory.tags` | clear | `mst-`; tags `lbl-` | landed in v0.8.1 (hotfix) |
-| `fabric.tags` (spec 023 cross-cutting) | list of free text | each tag `lbl-` | landed in v0.8.1 (hotfix) |
-| exception event on host spans (`record_exception`) | `exception.message`, `exception.stacktrace` | class only, in every mode | landed in v0.8.1 (hotfix); WP2-1b removes any clear-mode remainder |
-| `*_hash` of original payloads | always | gated by the role's mode | landed in v0.8.1 (hotfix) |
+| `fabric.side_effect.idempotency_key`, `fabric.tool.idempotency_key` | clear | `lbl-` (keyed generic label), omitted without a key | landed in v0.8.0 |
+| `fabric.retrieval.source_document_ids` | clear list | list of `lbl-` | landed in v0.8.0; P2 removes the list from T once doc ids are in `retrieval.results` (WP2-6, O2-3) |
+| `fabric.checkpoint.step_name` | clear label | `lbl-` (operator label, clear with `FABRIC_WIRE_LABELS=clear`) | landed in v0.8.0 |
+| `gen_ai.memory.store.id`, `fabric.memory.tags` | clear | `mst-`; tags `lbl-` | landed in v0.8.0 |
+| `fabric.tags` (spec 023 cross-cutting) | list of free text | each tag `lbl-` | landed in v0.8.0 |
+| exception event on host spans (`record_exception`) | `exception.message`, `exception.stacktrace` | class only, in every mode | landed in v0.8.0; WP2-1b removes any clear-mode remainder |
+| `*_hash` of original payloads | always | gated by the role's mode | landed in v0.8.0 |
 | `fabric.side_effect.side_effect_id` | caller value or uuid4, clear | minted uuid4 as is; caller value → `eff-` | P2, WP2-4 |
 | `fabric.side_effect.parent_tool_call_id` | clear | `p-` (v2 `provider`), so D22 joins N12 | P2, WP2-4 |
 | `fabric.side_effect.target_system`, `.operation` | free text ≤ 128/256 | as is when it matches the label pattern of section 5.2, else `lbl-` | P2, WP2-4 |
@@ -667,7 +663,7 @@ not redone; P2 keeps them under its canary suite (WP2-8).
 | `fabric.mcp.tools` | list of names | not emitted (C24 content holds them) | P2, WP2-7 |
 
 Validator changes for the P2 rows are contract deltas (section 5.2); the
-hotfix rows' validators ship with v0.8.1 (fabricguard
+v0.8.0 rows' validators already ship (fabricguard
 `decision_line_identity.go`).
 
 ### 4.10 Privacy and identity summary for every new datum
@@ -738,7 +734,7 @@ routes through the records input.
    recorder faults are `internal_error`, invalid arguments are counted,
    never exceptions; only `FABRIC_RECORDS_STRICT=1` raises (tests).
 4. **No concurrency exceptions.** The legacy guard is fail-open since
-   v0.8.1 (hotfix). New APIs do not take `Decision._exclusive` at all;
+   v0.8.0. New APIs do not take `Decision._exclusive` at all;
    rolling counters they touch use a blocking internal lock held for O(1)
    work. They are safe from several threads and tasks on one `Decision`.
 5. **Budgets** (047 §4.10 calibration, machine-relative; the gate fails if
@@ -880,7 +876,7 @@ Placement rows (records class) for every existing P2 key: `fabric.batch.item_ind
 
 ### 5.2 `telemetry-keys-v1.json` — changed validators (listed first, `change: changed`)
 
-The v0.8.1 hotfix already ships validators for `fabric.side_effect.idempotency_key`,
+v0.8.0 already ships validators for `fabric.side_effect.idempotency_key`,
 `fabric.tool.idempotency_key`, `fabric.retrieval.source_document_ids`,
 `fabric.checkpoint.step_name`, `fabric.memory.tags`, `fabric.tags` and
 `gen_ai.memory.store.id` (fabricguard `decision_line_identity.go`); WP2-0
@@ -902,8 +898,8 @@ and in the pseudonym-v2 vector file: `ckp` → `checkpoint`, `eff` →
 `effect`, `out` → `outcome`; spec 052 adds `ctl` → `control`, `axn` →
 `action`, `prf` → `proof`. All six are admitted in WP2-0 so spec 052
 needs no second vector release. (Revision 1's `idk` for idempotency keys
-is dropped: v0.8.1 already emits them as keyed `lbl-` labels, and a
-second form would break joins with v0.8.1 data.)
+is dropped: v0.8.0 already emits them as keyed `lbl-` labels, and a
+second form would break joins with v0.8.0 data.)
 
 ### 5.4 Schemas and registries
 
@@ -936,22 +932,22 @@ exit gate depends on a TS WP.
 | Wave | WPs | Rule |
 |---|---|---|
 | A | WP2-0 | sequential, first |
-| B | WP2-1a → WP2-1b | sequential; WP2-1a starts only after H0 (hotfix `fix/decision-line-privacy`) is merged to main (§3); WP2-9a, WP2-10 and WP2-11 may start after WP2-0, in parallel with wave B |
+| B | WP2-1a → WP2-1b | sequential; WP2-1a builds on H0 (the decision-line privacy fixes, in v0.8.0, §3); WP2-9a, WP2-10 and WP2-11 may start after WP2-0, in parallel with wave B |
 | C | WP2-2, WP2-3, WP2-4, WP2-5, WP2-6, WP2-8 in parallel; **WP2-7 after WP2-5**; **WP2-9b after WP2-9a** | intra-wave dependencies are the two in bold |
 | D | WP2-12 | after WP2-0 … WP2-10 (not WP2-11) |
 
 | WP | Owner area (may touch) | Depends on | Deliverables | Tests | Exit check |
 |---|---|---|---|---|---|
-| **WP2-0** Contracts | `contracts/coverage/v1/**`, `contracts/capture/v1/fixtures/run-ids/*pseudonym-v2*`, `scripts/contracts/**`, `scripts/tests/test_coverage_contracts.py`, generated block of `coverage_keys.go` | 050 WP-00 | Section 5 rows for P2 **and** spec 052 keys/prefixes; the hotfix validators copied into the registry; new schema; golden spans per API (`contracts/coverage/v1/fixtures/records/p2/*.json`) used by WP2-9/2-10/2-11 | validator + generator tests; vectors for the 6 prefixes | `validate_coverage_contracts.py` passes; 049 generated blocks regenerate (handed to the 049 rev agent) |
-| **WP2-1a** Records core | `fabric/_records_api.py`, `fabric/records/_vocab.py`, `fabric/records/_handles.py`, `fabric/records/_walker.py`, `_sequence.py` `V2_TYPES` rows | WP2-0; 050 A1–A8 (incl. R4/R5 revision); **H0** (hotfix `fix/decision-line-privacy` merged to main, §3) | `emit` (4.2), handles and update records, link/timing/`update_of` encoding, bounded walker, descriptor-only bodies, strict mode, bindings, digest helper | unit; property (link round trip; walker stops within its limits before output for deep, wide, cyclic and huge inputs; id mapping = vectors); fault injection (emitter raises, queue full) | every core call returns a handle under injected faults; budget rows 1–2 |
+| **WP2-0** Contracts | `contracts/coverage/v1/**`, `contracts/capture/v1/fixtures/run-ids/*pseudonym-v2*`, `scripts/contracts/**`, `scripts/tests/test_coverage_contracts.py`, generated block of `coverage_keys.go` | 050 WP-00 | Section 5 rows for P2 **and** spec 052 keys/prefixes; the v0.8.0 decision-line validators copied into the registry; new schema; golden spans per API (`contracts/coverage/v1/fixtures/records/p2/*.json`) used by WP2-9/2-10/2-11 | validator + generator tests; vectors for the 6 prefixes | `validate_coverage_contracts.py` passes; 049 generated blocks regenerate (handed to the 049 rev agent) |
+| **WP2-1a** Records core | `fabric/_records_api.py`, `fabric/records/_vocab.py`, `fabric/records/_handles.py`, `fabric/records/_walker.py`, `_sequence.py` `V2_TYPES` rows | WP2-0; 050 A1–A8 (incl. R4/R5 revision); **H0** (decision-line privacy fixes, in v0.8.0, §3) | `emit` (4.2), handles and update records, link/timing/`update_of` encoding, bounded walker, descriptor-only bodies, strict mode, bindings, digest helper | unit; property (link round trip; walker stops within its limits before output for deep, wide, cyclic and huge inputs; id mapping = vectors); fault injection (emitter raises, queue full) | every core call returns a handle under injected faults; budget rows 1–2 |
 | **WP2-1b** Integration owner | `decision.py`, `fabric/records/__init__.py`, `_calls.py` (signatures, hook call sites), `client.py` `decision()` params, `wire/__init__.py` `install()` params (C12/C15), `_records_mirror.py` (050) step-kind table | WP2-1a | every P2 public signature (Python) delegating to stubs in `_rec_*.py`; mixin bases; conversation/turn bindings; legacy argument validation fail-open (4.2); decision content on the unified spool (A16); exception text off telemetry in every mode | full existing suite green with stubs; strict-mode tests; legacy fail-open matrix | no behaviour change except 4.2 fail-open and A16; signatures frozen for wave C |
 | **WP2-2** Run annotations and D30 facade | `_rec_run.py`, `_manifest.py` (C12/C15 properties only) | WP2-1b; A9 | 4.3 (facade over P1's hook, no marker changes) | unit; outermost-`run_end` golden; nested scopes; invalid outcome → `unknown`; unset → absent | D30 on P1's outermost `run_end`; manifest carries C12/C15 |
 | **WP2-3** Step lifecycle | `_rec_steps.py`, `checkpoint.py` | WP2-1b | 4.4 incl. the `checkpoint_id` row of 4.9 | unit per API; state-not-inferred tests; dispatch with branch tokens (A11); hand-off join by `dsp-`; async `delegate` | C2-5 for S24/C09/S20/D28 |
 | **WP2-4** Side-effect lifecycle (P2) | `_rec_effects.py`, `side_effect.py` | WP2-1b | 4.5, side-effect rows of 4.9 | CM sync/async; exception identity; D19 never `failed` from an exception; timing basis | C2-5 for D19; D20 measured/reported |
 | **WP2-5** Call extensions | `_rec_calls.py` | WP2-1b | 4.6: attempt kind, selection, links sugar, prompt template, passive `step.error` builder, boundary `tool`, the `mcp_call` S01 override used by WP2-7 | step.error: no application code runs (exception with a raising/slow `__str__`/`__repr__` and a hostile `__cause__`; `linecache` patched to fail); S16 after end | S12 body shape golden; budget row 6 |
 | **WP2-6** Retrieval and memory | `_rec_retrieval.py`, `retrieval.py`, `memory.py` | WP2-1b, WP2-0 schema | 4.7; document-id row of 4.9 | schema conformance; doc ids absent from T; op mapping | N28 body validates against the schema |
-| **WP2-7** MCP wrapper | `integrations/mcp.py` | WP2-1b, **WP2-5** | 4.8 (remaining items only; the v0.8.1 fixes stay) | fake MCP session: initialize, list_* observation, call_tool; result built from `mcp.types` fields only; unknown result type → `parse_failed`; same result and exception objects | C24–C29, N22/N24/N25 golden |
-| **WP2-8** Canary and fault suites | `sdk/python/tests/privacy/test_records_canaries.py`, `sdk/python/tests/passivity/test_records_faults.py` | WP2-1b (suites grow as wave C lands) | section 8.3 and 8.4 harnesses; regression guard for the v0.8.1 rows of 4.9 | canaries and fault matrix over every API | E3 and E4 green across all P2 APIs (exit after WP2-2…2-7) |
+| **WP2-7** MCP wrapper | `integrations/mcp.py` | WP2-1b, **WP2-5** | 4.8 (remaining items only; the v0.8.0 fixes stay) | fake MCP session: initialize, list_* observation, call_tool; result built from `mcp.types` fields only; unknown result type → `parse_failed`; same result and exception objects | C24–C29, N22/N24/N25 golden |
+| **WP2-8** Canary and fault suites | `sdk/python/tests/privacy/test_records_canaries.py`, `sdk/python/tests/passivity/test_records_faults.py` | WP2-1b (suites grow as wave C lands) | section 8.3 and 8.4 harnesses; regression guard for the v0.8.0 rows of 4.9 | canaries and fault matrix over every API | E3 and E4 green across all P2 APIs (exit after WP2-2…2-7) |
 | **WP2-9a** Verifier core | `reconstruct/_links.py`, `reconstruct/_run_fields.py`, `reconstruct/_records_classify.py`; registration hook in 050's `_project.py` | WP2-0 fixtures; A14 | 4.13 rules 1, 5–8 (classification, state fields, update folding, links and ref joins, run fields, D30) | fixture-driven; "no false complete" fixtures per rule | WP2-0 goldens project with the expected run fields and links |
 | **WP2-9b** Verifier field mapping | `reconstruct/_records_steps.py`, `reconstruct/_infer_retrieval.py` | **WP2-9a** | 4.13 rules 2–4, 9–11 | registry-driven mapping test; N29 inference fixtures; schema validation | projection of every WP2-0 golden validates and matches expected wrappers |
 | **WP2-10** fabricguard | `components/otel-collector-fabric/processor/fabricguardprocessor/**` (non-generated parts) | WP2-0, A12 | changed validators of 5.2; P3 key placements | `coverage_keys_test.go` key by key; rejection of clear ids under a pseudonymous Node | C0-4 extended to the new keys |
@@ -1059,24 +1055,24 @@ stay `captured`, and D30 comes from C's outermost `run_end`.
 
 ## 9. Risks and open owner decisions
 
-Every default below follows the reviewers' recommended answers (Review A §7,
-Review B §7) and the revision decisions R1–R16. Each is **Recommended —
+Every default below follows the spec review's recommended answers and the
+revision decisions R1–R16. Each is **Recommended —
 pending owner confirmation**; build agents follow it unless the owner
 changes it.
 
 | # | Decision | Default (Recommended — pending owner confirmation) |
 |---|---|---|
-| O2-1 | Fail-open scope | Every recorder API fails open now, new and legacy: concurrency (landed in v0.8.1 hotfix) and legacy argument validation (WP2-1b); strict raising only under `FABRIC_RECORDS_STRICT=1` (R9) |
-| O2-2 | Exception text on telemetry | Off telemetry in **every** identity mode; text only as caller-preformatted `step.error` content (landed in v0.8.1 hotfix; WP2-1b removes any clear-mode remainder) |
+| O2-1 | Fail-open scope | Every recorder API fails open now, new and legacy: concurrency (landed in v0.8.0) and legacy argument validation (WP2-1b); strict raising only under `FABRIC_RECORDS_STRICT=1` (R9) |
+| O2-2 | Exception text on telemetry | Off telemetry in **every** identity mode; text only as caller-preformatted `step.error` content (landed in v0.8.0; WP2-1b removes any clear-mode remainder) |
 | O2-3 | Legacy key sweep | Yes, with no clear caller-id exception in the default mode; the explicit `clear` mode (R8) reproduces v0.8.0 output; document ids leave T once they are in `retrieval.results` |
-| O2-4 | Digest gating by role mode | Yes (landed in v0.8.1 hotfix for the decision line; P2 applies it to every new digest) |
-| O2-5 | New v2 pseudonym types | Six (`ckp`, `eff`, `out`; `ctl`, `axn`, `prf`), admitted together in WP2-0. The reviewers approved seven; `idk` is dropped because v0.8.1 already emits idempotency keys as keyed `lbl-` |
+| O2-4 | Digest gating by role mode | Yes (landed in v0.8.0 for the decision line; P2 applies it to every new digest) |
+| O2-5 | New v2 pseudonym types | Six (`ckp`, `eff`, `out`; `ctl`, `axn`, `prf`), admitted together in WP2-0. The spec review approved seven; `idk` is dropped because v0.8.0 already emits idempotency keys as keyed `lbl-` |
 | O2-6 | Reported links carrier | Typed telemetry key `fabric.step.links` |
 | O2-7 | Update records and orphan update steps | Yes |
 | O2-8 | Dispatch and branch ids | Dispatch references existing branch tokens (`resume_tokens(n)`); never mints or seals |
 | O2-9 | Automatic `step.error` | Safe traceback metadata only (class names, frame file/line/function); no `str`/`repr` of application objects; text only when the caller passes strings (R9) |
 | O2-10 | Build/framework identity home | Manifest (per epoch) |
-| O2-11 | MCP inventory | Record only the application's own `list_*` results (landed in v0.8.1 hotfix) |
+| O2-11 | MCP inventory | Record only the application's own `list_*` results (landed in v0.8.0) |
 | O2-12 | Decision span step kind | Reuse P1's `agent_turn` (050 OD-4); no second vocabulary addition |
 | O2-13 | Cross-service hand-off identity (new, R1) | Join through a shared clear hand-off id mapped to `dsp-`; run ids never cross services or hosts |
 
@@ -1107,8 +1103,8 @@ Line numbers are rev 6.3 (`36f7a89`); the 049 rev 6.4 agent applies them.
 | D-11 | §3.4 N17 / §4.3 | N17 says boundary `tool`; `tool_call()` objects are written with boundary `caller` | state that `tool_call()` objects move to boundary `tool` in P2; `CallRecorder` keeps `caller` |
 | D-12 | §2.3 "Every step the SDK emits carries `actor.type` = `agent`" (line 315) | default `agent` | "… except run annotations (trigger initiator) and control records (spec 052), which default to `unknown`" |
 | D-13 | §8.2 P2 | no conformance ids | add C2-1…C2-7 (051 §8.1) |
-| D-14 | §7.7 rule 6 / §2.1 | P0-A gate states no original digests "for both inputs" | record that the decision-line `*_hash` keys digested originals under every mode in v0.8.0 and were gated in v0.8.1 (hotfix); P2 applies the same rule to new digests |
-| D-15 | §2.1 (rev 6.4 table) | — | add row: "`Decision` raised `ConcurrentDecisionUseError` into the application on overlap (`decision.py:519-541`); fail-open since v0.8.1 (hotfix); legacy `ValueError`s become fail-open in P2" |
+| D-14 | §7.7 rule 6 / §2.1 | P0-A gate states no original digests "for both inputs" | record that the decision-line `*_hash` keys digested originals under every mode before v0.8.0 (through v0.8.0-rc.2) and are gated since v0.8.0; P2 applies the same rule to new digests |
+| D-15 | §2.1 (rev 6.4 table) | — | add row: "`Decision` raised `ConcurrentDecisionUseError` into the application on overlap (`decision.py:519-541`); fail-open since v0.8.0; legacy `ValueError`s become fail-open in P2" |
 | D-16 | §2.10 resume-contract table (line 1127) | "Run id `r-` + 32 hex as emitted (never the clear id)" | superseded by R1 (spec 050): only tokens, carrying the run correlation id (050 §3.6: mapped clear id or minted), cross services and hosts; P2's cross-service hand-off joins by `dsp-` (051 §4.4) |
 | D-17 | §2.9 table (line 950ff) | 18 prefixes | add `ckp`/`checkpoint`, `eff`/`effect`, `out`/`outcome` (051) and `ctl`/`control`, `axn`/`action`, `prf`/`proof` (052) |
 | D-18 | §4.2 changed rows | — | add the changed validators of 051 §5.2 (legacy decision-line keys) |

@@ -23,12 +23,11 @@ timing, never-raise rules, budgets and verifier modules of spec 051; this
 spec only states what P3 adds. Section and assumption numbers `051 §x` /
 `A<n>` refer to spec 051.
 
-**Revision 2** applies the v0.9 spec reviews (Review A, Review B) through the
-revision decisions R1–R16: assumptions refreshed against spec 050 and
+**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)): assumptions refreshed against spec 050 and
 051 revision 2; one integration owner for `decision.py` and
 `records/__init__.py` (R13, new WP3-I); passivity per R9 (no conversion of
 application objects, every API fails open); the explicit clear-mode rule
-(R8); open decisions follow the reviewers' answers, pending owner
+(R8); open decisions follow the spec review's answers, pending owner
 confirmation.
 
 ---
@@ -524,8 +523,8 @@ edit TypeScript only; no Python exit gate depends on WP3-6.
 
 ## 8. Risks and open owner decisions
 
-Each default follows the reviewers' recommended answers (Review A §7 and
-Review B §7 approve all seven) and R1–R16, and is **Recommended — pending
+Each default follows the spec review's recommended answers (all seven
+approved) and R1–R16, and is **Recommended — pending
 owner confirmation**; build agents follow it unless the owner changes it.
 
 | # | Decision | Default (Recommended — pending owner confirmation) |

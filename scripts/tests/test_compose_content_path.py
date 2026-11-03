@@ -551,7 +551,7 @@ def test_collector_configs_keep_content_on_its_own_path(names: tuple[str, ...]) 
     assert exporter["backend"] == "file"
     assert exporter["file"]["directory"] == "/var/lib/fabric-node/content"
     # Spec 049 §7.8: production seals the queue (fabricenvelope wraps the
-    # file_storage queue); evaluation keeps the plain local queue.
+    # file_storage queue); the local trial keeps the plain local queue.
     production = "collector-production.yaml" in names
     assert exporter["sending_queue"]["storage"] == (
         "fabricenvelope/fabric_content" if production else "file_storage/fabric_content"
@@ -680,7 +680,7 @@ def _ports(service: dict[str, Any]) -> list[str]:
 
 def test_compose_publishes_content_port_and_volumes() -> None:
     base = _compose("docker-compose.yml")["services"]["fabric-node"]
-    # Evaluation is plaintext and unauthenticated: every port stays on loopback.
+    # The local trial is plaintext and unauthenticated: every port stays on loopback.
     assert "127.0.0.1:${FABRIC_OTLP_CONTENT_PORT:-4319}:4319" in _ports(base)
     assert "fabric-content-queue:/var/lib/fabric-node/content-queue" in base["volumes"]
     assert "fabric-content:/var/lib/fabric-node/content" in base["volumes"]
@@ -748,10 +748,10 @@ def test_content_s3_overlay_requires_bucket_and_region() -> None:
     assert env["FABRIC_CONTENT_S3_SSE"] == "${FABRIC_CONTENT_S3_SSE:-aws:kms}"
 
 
-def test_s3_eval_overlay_is_encrypted_loopback_and_node_only_credentials() -> None:
-    overlay = _compose("docker-compose.s3-eval.yml")
+def test_s3_local_overlay_is_encrypted_loopback_and_node_only_credentials() -> None:
+    overlay = _compose("docker-compose.s3-local.yml")
     services = overlay["services"]
-    store = services["s3-eval"]
+    store = services["s3-local"]
     # A maintained Apache-2.0 image, pinned by digest (MinIO's community
     # images are no longer published).
     assert re.fullmatch(
@@ -759,7 +759,7 @@ def test_s3_eval_overlay_is_encrypted_loopback_and_node_only_credentials() -> No
     )
     assert "minio" not in yaml.safe_dump(overlay).lower()
     assert re.fullmatch(
-        r"\$\{FABRIC_S3_EVAL_SSE_KEK:-[0-9a-f]{64}\}",
+        r"\$\{FABRIC_S3_LOCAL_SSE_KEK:-[0-9a-f]{64}\}",
         store["environment"]["WEED_S3_SSE_KEK"],
     )
     assert all(port.startswith("127.0.0.1:") for port in _ports(store))
@@ -773,8 +773,8 @@ def test_s3_eval_overlay_is_encrypted_loopback_and_node_only_credentials() -> No
     assert '"actions":["Read:%s/%s*","Write:%s/%s*"]' in script
     assert '"name":"fabric-reader"' in script
     assert '"actions":["Read:%s/%s*"]}' in script
-    init = services["s3-eval-init"]
-    assert init["depends_on"]["s3-eval"]["condition"] == "service_healthy"
+    init = services["s3-local-init"]
+    assert init["depends_on"]["s3-local"]["condition"] == "service_healthy"
     init_script = init["command"][0]
     assert "<SSEAlgorithm>AES256</SSEAlgorithm>" in init_script
     assert "grep -q AES256" in init_script
@@ -782,16 +782,16 @@ def test_s3_eval_overlay_is_encrypted_loopback_and_node_only_credentials() -> No
     assert "s3:DeleteObject" in init_script
     node = services["fabric-node"]
     assert (
-        node["depends_on"]["s3-eval-init"]["condition"]
+        node["depends_on"]["s3-local-init"]["condition"]
         == "service_completed_successfully"
     )
     env = node["environment"]
-    assert env["FABRIC_CONTENT_S3_ENDPOINT"] == "http://s3-eval:8333"
+    assert env["FABRIC_CONTENT_S3_ENDPOINT"] == "http://s3-local:8333"
     assert env["FABRIC_CONTENT_S3_PATH_STYLE"] == "true"
     assert env["FABRIC_CONTENT_S3_SSE"] == "AES256"
     assert (
         env["AWS_ACCESS_KEY_ID"]
-        == "${FABRIC_S3_EVAL_NODE_ACCESS_KEY:-fabric-node-writer}"
+        == "${FABRIC_S3_LOCAL_NODE_ACCESS_KEY:-fabric-node-writer}"
     )
     # The writer keys go to the Node only; the sink never sees them.
     assert "environment" not in services.get("test-sink", {})
@@ -799,12 +799,12 @@ def test_s3_eval_overlay_is_encrypted_loopback_and_node_only_credentials() -> No
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI unavailable")
-def test_s3_eval_overlay_merges_with_the_evaluation_stack() -> None:
+def test_s3_local_overlay_merges_with_the_local_stack() -> None:
     result = subprocess.run(
         [
             "docker", "compose", "--project-directory", str(COMPOSE_DIR),
             "-f", str(COMPOSE_DIR / "docker-compose.yml"),
-            "-f", str(COMPOSE_DIR / "docker-compose.s3-eval.yml"),
+            "-f", str(COMPOSE_DIR / "docker-compose.s3-local.yml"),
             "config", "--format", "json",
         ],
         cwd=COMPOSE_DIR, capture_output=True, text=True, check=False, timeout=60,
@@ -820,12 +820,12 @@ def test_s3_eval_overlay_merges_with_the_evaluation_stack() -> None:
         "--config=/etc/fabric-node/collector.yaml",
         "--config=/etc/fabric-node/collector-content-s3.yaml",
     ]
-    assert set(node["depends_on"]) == {"test-sink", "s3-eval-init"}
+    assert set(node["depends_on"]) == {"test-sink", "s3-local-init"}
     # Only the store's S3 port is published, on loopback.
     assert [
-        (port["host_ip"], port["target"]) for port in services["s3-eval"]["ports"]
+        (port["host_ip"], port["target"]) for port in services["s3-local"]["ports"]
     ] == [("127.0.0.1", 8333)]
-    assert "ports" not in services["s3-eval-init"]
+    assert "ports" not in services["s3-local-init"]
 
 
 def test_chart_and_compose_share_the_content_request_bound() -> None:

@@ -6,9 +6,11 @@ Fabric OSS is a customer-controlled, passive recorder for AI systems:
 CAPTURE -> PROTECT -> DELIVER
 ```
 
-These pages describe what the v0.8 release provides. A capability that is
-not described here is not built; see
-[limitations and roadmap](limitations-and-roadmap.md).
+These pages describe v0.8.0 and the unreleased work on main; each page
+says which. A capability that is not described here is not built; see
+[limitations and roadmap](limitations-and-roadmap.md). Superseded pages are
+deleted rather than archived (unlike superseded specs); their history lives
+in git.
 
 ## Use Fabric
 
@@ -52,7 +54,7 @@ not described here is not built; see
     [053](../specs/053-execution-channels-p4.md) (P4),
     [054](../specs/054-specialised-runtimes-p5.md) (P5) and
     [055](../specs/055-typescript-wire-capture.md) (TS-1, TypeScript wire
-    capture). All are drafts; none is built in v0.8.
+    capture). All are drafts; none is in a release. Waves 0–2 of 050 (P1) are built on the unreleased `feat/p1-integration` branch.
 
 ## Public contracts
 

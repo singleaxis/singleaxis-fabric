@@ -1,6 +1,7 @@
 ---
 title: Follow-on bounded evidence adapter scopes
-status: draft
+status: superseded
+superseded_by: 049
 qualification: NO_COVERAGE_CLAIM
 revision: 1
 last_updated: 2026-09-26

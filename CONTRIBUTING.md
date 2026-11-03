@@ -8,6 +8,28 @@ This document describes how to propose changes, the standards we hold the
 codebase to, and the legal arrangement under which contributions are
 accepted.
 
+## Scope and current work
+
+Fabric OSS is CAPTURE -> PROTECT -> DELIVER only; read
+[`AGENTS.md`](AGENTS.md) for what is in and out of scope. The current work
+is [spec 056](specs/056-agent-action-reconstruction.md), agent action
+reconstruction. Do not add evaluation, judging, scoring, red-teaming or PII
+detection; the release-boundary tests reject them.
+
+## Local setup
+
+```bash
+# from the repository root
+(cd sdk/python && uv sync --all-extras && uv run --no-sync pytest)
+(cd sdk/typescript && npm ci && npm test)
+# in each Go module (tools/fabricctl, components/host-emitter and the
+# components/otel-collector-fabric/* modules):
+go test ./...
+```
+
+[`docs/building-fabric.md`](docs/building-fabric.md) describes the product
+invariant and the small-feature workflow.
+
 ## Before you open a pull request
 
 1. **Read the relevant spec.** Design of record lives in [`specs/`](specs/).
@@ -67,7 +89,8 @@ Scope should identify the component (`otel-collector-fabric`,
   in its body — the squash commit becomes `main`'s HEAD, which the
   push-event DCO check inspects (per-commit sign-offs are not carried
   over into the squash automatically).
-- A PR may not be merged by its author.
+- A PR may not be merged by its author. Until a second maintainer joins,
+  the sole maintainer may merge their own PRs after CI passes.
 
 ## Code standards
 
@@ -93,13 +116,15 @@ Scope should identify the component (`otel-collector-fabric`,
 
 - Go 1.26+ (the Fabric Node components and host emitter require it;
   `tools/fabricctl` still builds with Go 1.22+).
-- Formatter: `gofmt` + `goimports`.
-- Linter: `golangci-lint` with the Fabric config.
-- Tests: standard library `testing`, `testify` for assertions.
+- Formatter: `gofmt`.
+- Linter: `go vet` (CI); `golangci-lint` is optional locally.
+- Tests: standard library `testing`.
 
 ### Helm / Kubernetes
 
-- Charts are linted with `helm lint` and `kubeconform`.
+- Charts are linted with `helm lint` and tested by the scripts in
+  [`charts/fabric/tests`](charts/fabric/tests) (schema validation, values
+  schema, package boundary).
 - Values schemas are required (`values.schema.json`).
 - All workloads must declare `securityContext`, resource requests/limits,
   and `NetworkPolicy` defaults.
@@ -114,15 +139,15 @@ Every PR must include tests appropriate to the change:
 | New feature | Unit tests + integration test if it crosses components |
 | Allowlist / protection logic | Unit + property-based tests (adversarial inputs) |
 | Schema change | Migration test + backward-compat test |
-| Helm value / config | Chart render test + kubeconform pass |
+| Helm value / config | Chart render test + `helm lint` and the chart tests |
 
-Minimum coverage for new code: **80% line, 70% branch**. PRs that reduce
-overall coverage will be flagged; reductions must be justified.
+CI enforces 85% line coverage for the Python SDK
+(`--cov-fail-under=85`). Reductions in coverage must be justified.
 
 ## Security review
 
-Any PR touching the following is automatically labelled `security-review`
-and requires approval from a security maintainer:
+Any PR touching the following requires approval from a security
+maintainer:
 
 - The metadata allowlist and content-filtering rules
   (`components/otel-collector-fabric/processor/fabricguardprocessor`)
@@ -142,7 +167,7 @@ Before requesting review:
 - [ ] Tests added / updated; CI is green
 - [ ] Spec updated if behaviour changed
 - [ ] `CHANGELOG.md` entry added under `Unreleased`
-- [ ] No new warnings from `ruff` / `golangci-lint` / `mypy`
+- [ ] No new warnings from `ruff` / `go vet` / `mypy`
 - [ ] Public API changes include docstrings
 - [ ] SBOM-relevant changes (new deps) noted in PR description
 

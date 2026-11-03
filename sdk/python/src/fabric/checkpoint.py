@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Checkpoint span event for replay-engine consumption.
 
-Spec 012 §Replayability. The SDK emits checkpoints as breadcrumbs;
-the replay engine (commercial) consumes them. This module ships the
+The SDK emits checkpoints as breadcrumbs; a downstream consumer, outside
+the recorder, may read them. This module ships the
 schema only.
 """
 

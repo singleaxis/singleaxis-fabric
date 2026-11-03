@@ -25,7 +25,7 @@ body:
       options:
         - Helm — shadow-dev profile
         - Helm — shadow-production profile
-        - Docker Compose — evaluation stack
+        - Docker Compose — local trial stack
         - Docker Compose — production overlay
         - SDK only (Python)
         - SDK only (TypeScript)

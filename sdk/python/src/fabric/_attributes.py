@@ -19,7 +19,7 @@ imports keep working unchanged.
 from __future__ import annotations
 
 # Schema version stamped on every emitted span and span event. Downstream
-# consumers (Telemetry Bridge, replay engine, audit exporters) read this
+# consumers read this
 # to negotiate the event-attribute contract across SDK releases. Bump on
 # any breaking change to the emitted attribute shape; additive changes
 # keep the same major.minor.
@@ -105,8 +105,8 @@ ATTR_CONTENT_RESULT_REF = "fabric.content.result_ref"
 # inventory, skills/plugins, sub-agent delegation, hooks/middleware, and
 # file access. Every touch point is a ``fabric.*`` span event carrying
 # metadata + SHA-256 hashes — never raw data. The rolling ``*_count``
-# attributes live on the decision span so the Telemetry Bridge can fold
-# them into the DecisionSummary without replaying every event. All keys
+# attributes live on the decision span so a downstream consumer can fold
+# them into a decision summary without replaying every event. All keys
 # are additive: emitted only when the matching method is called, so the
 # frozen conformance goldens stay byte-identical.
 
@@ -163,7 +163,7 @@ ATTR_FILE_SIZE_BYTES = "fabric.file.size_bytes"
 # These keys are additive: emitted only when ``record_interaction`` is
 # called, so the frozen conformance goldens stay byte-identical.
 
-# Rolling decision-span counters folded into the DecisionSummary.
+# Rolling decision-span counters folded into a decision summary.
 ATTR_INTERACTION_COUNT = "fabric.interaction_count"
 ATTR_INTERACTION_KINDS = "fabric.interaction_kinds"
 
@@ -206,7 +206,8 @@ ATTR_SIGNATURE_KEY_ID = "fabric.signature.key_id"
 # in a process, a one-shot ``fabric.coverage`` event signals "this type is
 # being captured generically; consider first-class support". A deviation with
 # no tags (an unclassified anomaly) emits the same low-rate signal. A SIGNAL,
-# not analysis — clustering / risk-scoring / auto-baselining is Commercial.
+# not analysis; clustering, risk scoring and auto-baselining are downstream
+# analysis, outside the recorder.
 ATTR_COVERAGE_KIND = "fabric.coverage.kind"
 ATTR_COVERAGE_SUGGESTION = "fabric.coverage.suggestion"
 ATTR_COVERAGE_REASON = "fabric.coverage.reason"

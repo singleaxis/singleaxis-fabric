@@ -46,7 +46,7 @@ afterEach(() => {
 });
 function policyData(): DeploymentPolicyData {
   return JSON.parse(
-    fs.readFileSync(path.join(ROOT, "examples/enterprise/policy.local.json"), "utf8"),
+    fs.readFileSync(path.join(ROOT, "examples/deployment-policy/policy.local.json"), "utf8"),
   ) as DeploymentPolicyData;
 }
 function policyFor(mode: PrivacyMode): DeploymentPolicy {

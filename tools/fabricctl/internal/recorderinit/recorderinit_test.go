@@ -16,15 +16,15 @@ import (
 
 func answers(confirmation string) string {
 	return strings.Join([]string{
-		"healthcare-shadow",
-		"system/ambient-assistant",
+		"example-shadow",
+		"system/example-agent",
 		"deployment/production-v1",
 		"otlp",
 		"metadata",
 		"privacy/metadata-only-v1",
 		"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"destination/customer-monitoring",
-		"installation/hospital-a",
+		"installation/example-shadow",
 		confirmation,
 	}, "\n") + "\n"
 }
@@ -92,15 +92,15 @@ func TestWizardRejectsCredentialShapedAnswersBeforeRender(t *testing.T) {
 	// value accepted. Previously these shapes passed the prompt and were only
 	// rejected later by recorder.Render, discarding every collected answer.
 	input := strings.Join([]string{
-		strings.Repeat("a", 48), "healthcare-shadow", // opaque-token name, then valid
-		"AKIAIOSFODNN7EXAMPLE", "system/ambient-assistant", // AWS-shaped identity, then valid
+		strings.Repeat("a", 48), "example-shadow", // opaque-token name, then valid
+		"AKIAIOSFODNN7EXAMPLE", "system/example-agent", // AWS-shaped identity, then valid
 		"deployment/production-v1",
 		"otlp",
 		"metadata",
 		"privacy/metadata-only-v1",
 		"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"sk-1234567890abcdefghij", "destination/customer-monitoring", // token-shaped destination, then valid
-		"installation/hospital-a",
+		"installation/example-shadow",
 		"no", // decline so nothing is written
 	}, "\n") + "\n"
 	var output bytes.Buffer

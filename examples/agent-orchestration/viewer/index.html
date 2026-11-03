@@ -167,7 +167,7 @@ function evHtml(e) {
   return `<div class="ev"><span class="sys">${e.syscall}</span>
     <span class="${e.result==='success'?'res-ok':'res-bad'}">${e.result||''}</span>
     pid=${e.pid} ppid=${e.ppid} — ${esc(bits)}
-    <span class="sub">${e.id}${e.link?' · '+e.link:''}</span></div>`;
+    <span class="sub">${e.id}${e.link?' · '+e.link:''}${e.link_confidence?' · '+e.link_confidence+' ('+e.link_method+')':''}${e.candidate_spans?' · '+e.candidate_spans.length+' candidate spans':''}</span></div>`;
 }
 
 function spanDetail(n) {
@@ -180,8 +180,8 @@ function spanDetail(n) {
   if (out.length)  h += `<h3>▲ output — what came out</h3>` + out.map(entryHtml).join('');
   if (doc.length)  h += `<h3>◆ documents / context</h3>`  + doc.map(entryHtml).join('');
   if (rest.length) h += `<h3>other captured</h3>`          + rest.map(entryHtml).join('');
-  const linked = J.host_events.filter(e => e.linked_span === n.span_id);
-  if (linked.length) h += '<h3>host events (inferred provenance)</h3>' + linked.map(evHtml).join('');
+  const linked = J.host_events.filter(e => e.linked_span === n.span_id || (e.candidate_spans||[]).includes(n.span_id));
+  if (linked.length) h += '<h3>host events (time-window heuristic; ambiguous events list every candidate)</h3>' + linked.map(evHtml).join('');
   h += '<h3>attributes</h3><table class="attrs">';
   for (const [k,v] of Object.entries(n.attributes))
     h += `<tr><td>${esc(k)}</td><td>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</td></tr>`;
@@ -223,7 +223,7 @@ function summaryView() {
     h += `<div class="turn"><div class="ttl">${esc(nodeLabel(t))}
       <span class="meta">call ${esc(t.attributes['fabric.tool.call.id']||'')} · ${t.duration_ms.toFixed(0)}ms</span></div>
       ${t.content.map(entryHtml).join('')}
-      ${(J.host_events.filter(e=>e.linked_span===t.span_id).map(evHtml).join(''))||''}</div>`;
+      ${(J.host_events.filter(e=>e.linked_span===t.span_id||(e.candidate_spans||[]).includes(t.span_id)).map(evHtml).join(''))||''}</div>`;
   }
 
   const rest = nodes.flatMap(n => n.content)

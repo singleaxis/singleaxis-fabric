@@ -4,7 +4,7 @@
 
 Unit tests use fakes; this module is the separate, environment-gated
 proof that ``S3ContentStore`` works against a real S3-compatible
-endpoint (the ``make up-s3-eval`` store in deploy/compose, or a configured
+endpoint (the ``make up-s3-local`` store in deploy/compose, or a configured
 test bucket).
 
 Gate — all four required, otherwise the whole module skips and no

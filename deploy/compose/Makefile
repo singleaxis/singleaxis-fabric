@@ -13,8 +13,8 @@ endif
 ifeq ($(FABRIC_CONTENT_BACKEND),file)
 PROD_FILES += -f docker-compose.content.yml
 endif
-# Evaluation with a local S3-compatible content store (SSE-S3), spec 048.
-S3_EVAL_FILES := -f docker-compose.yml -f docker-compose.s3-eval.yml
+# Local trial with a local S3-compatible content store (SSE-S3), spec 048.
+S3_LOCAL_FILES := -f docker-compose.yml -f docker-compose.s3-local.yml
 
 # Resolve a service's published host:port, normalizing wildcard binds
 # (0.0.0.0 / [::]) to loopback. Usage: $(call port_for,<service>,<port>)
@@ -23,17 +23,17 @@ port_for = $(shell $(COMPOSE) port $(1) $(2) 2>/dev/null | head -n 1 | sed -e 's
 # Where `make export-spans` copies the controlled sink's span requests.
 OUT ?= $(CURDIR)/fabric-spans
 
-.PHONY: up down reset logs status build smoke qualify export-spans up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod help
+.PHONY: up down reset logs status build smoke qualify export-spans up-s3-local down-s3-local reset-s3-local up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod help
 
 up: ## Build and start Fabric Node plus the controlled sink.
 	$(COMPOSE) up -d --build --wait
 	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318}"
 	@echo "Controlled sink status: http://localhost:$${FABRIC_SINK_PORT:-8080}/count"
 
-down: ## Stop the evaluation setup while keeping durable volumes.
+down: ## Stop the local trial while keeping durable volumes.
 	$(COMPOSE) down
 
-reset: ## Delete this evaluation setup and its queue/sink volumes.
+reset: ## Delete this local trial and its queue/sink volumes.
 	$(COMPOSE) down -v
 
 logs: ## Tail logs; use ARGS="fabric-node" to select a service.
@@ -63,18 +63,23 @@ export-spans: ## Copy the controlled sink's span requests (traces-*.otlp) to OUT
 	find "$$staging" -maxdepth 1 -type f -name 'traces-*.otlp' -exec cp {} "$(OUT)"/ \; && \
 	echo "$$(find "$(OUT)" -maxdepth 1 -type f -name 'traces-*.otlp' | wc -l | tr -d ' ') span request file(s) in $(OUT)"
 
-up-s3-eval: ## Evaluation with a local S3-compatible content store (SSE-S3, path-style).
-	$(COMPOSE) $(S3_EVAL_FILES) up -d --build --wait
-	@echo "Content ingress: http://localhost:$${FABRIC_OTLP_CONTENT_PORT:-4319}/v1/logs (tenant $${FABRIC_TENANT_ID:-evaluation})"
+up-s3-local: ## Local trial with a local S3-compatible content store (SSE-S3, path-style).
+	$(COMPOSE) $(S3_LOCAL_FILES) up -d --build --wait
+	@echo "Content ingress: http://localhost:$${FABRIC_OTLP_CONTENT_PORT:-4319}/v1/logs (tenant $${FABRIC_TENANT_ID:-local-trial})"
 	@echo "After a run, export its spans: make export-spans OUT=$(OUT)"
 	@echo "Then reconstruct (the reader needs pip install \"singleaxis-fabric[s3]\"; agents never do):"
-	@echo "  AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret python -m fabric.reconstruct --spans $(OUT) --tenant $${FABRIC_TENANT_ID:-evaluation} --store-uri s3://$${FABRIC_S3_EVAL_BUCKET:-fabric-content}/fabric/content/ --s3-endpoint-url http://127.0.0.1:$${FABRIC_S3_EVAL_PORT:-9000} --s3-path-style --s3-region us-east-1 --wait-for-objects 30 --out report.json"
+	@echo "  AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret python -m fabric.reconstruct --spans $(OUT) --tenant $${FABRIC_TENANT_ID:-local-trial} --store-uri s3://$${FABRIC_S3_LOCAL_BUCKET:-fabric-content}/fabric/content/ --s3-endpoint-url http://127.0.0.1:$${FABRIC_S3_LOCAL_PORT:-9000} --s3-path-style --s3-region us-east-1 --wait-for-objects 30 --out report.json"
 
-down-s3-eval: ## Stop the S3 evaluation setup while keeping volumes.
-	$(COMPOSE) $(S3_EVAL_FILES) down
+down-s3-local: ## Stop the S3 local trial while keeping volumes.
+	$(COMPOSE) $(S3_LOCAL_FILES) down
 
-reset-s3-eval: ## Delete the S3 evaluation setup and all its volumes (store, queues, sink).
-	$(COMPOSE) $(S3_EVAL_FILES) down -v
+reset-s3-local: ## Delete the S3 local trial and all its volumes (store, queues, sink).
+	$(COMPOSE) $(S3_LOCAL_FILES) down -v
+
+# Former target names, kept as aliases.
+up-s3-eval: up-s3-local
+down-s3-eval: down-s3-local
+reset-s3-eval: reset-s3-local
 
 # --- Client-VM production overlay -------------------------------------------
 # Requires .env (see .env.example): FABRIC_EXPORT_ENDPOINT,

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-03
+
+Fabric 0.9.0 narrows the repository and packages to the recorder and its
+current direction. It removes the last evaluation and red-team leftovers,
+including one public Python API, rewrites the README and documentation
+around what Fabric records, and publishes the design specs for one run
+record across every input (050) and agent action reconstruction (056).
+Capture, protection, delivery and verification behave as in 0.8.0.
+
 ### Removed
 
 - **Breaking (Python SDK):** the bundled MITRE ATLAS and OWASP LLM reference
@@ -15,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   its root exports (`Taxonomy`, `TaxonomyEntry`, `bundled_taxonomy_names`,
   `load_bundled_taxonomies`, `validate_tag`) are removed. Open-vocabulary
   `tags=` / `fabric.tags` capture is unchanged; validate tags against your
-  own vocabulary if you need to.
+  own vocabulary if you need to. This is a documented pre-1.0 break under
+  [API stability](docs/api-stability.md): the exports were never documented
+  in `docs/`, so no deprecation period applies.
 - Archived documentation (`docs/archive/`) is removed. Every page had a
   current replacement under `docs/`; the history stays in git.
 - Archived specs 001 (product vision), 025 (product planes and packaging) and
@@ -25,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Local Compose trial stack renamed from "evaluation" to "local trial".**
+  `docker-compose.s3-eval.yml` is now `docker-compose.s3-local.yml`; the make
+  targets are `up-s3-local` / `down-s3-local` / `reset-s3-local` (the
+  `-s3-eval` names remain as aliases); the overlay's services, volume and
+  variables are `s3-local`, `s3-local-init`, `s3-local-data` and
+  `FABRIC_S3_LOCAL_*` (rename `FABRIC_S3_EVAL_*` in your `.env`). The default
+  tenant id is `local-trial`, the Compose project is `fabric-node-local`, so
+  an existing local stack starts with fresh volumes. Production overlays are
+  unchanged.
 - The reference redaction service's sample rules
   (`examples/redaction-service/rules.example.json`) are now one neutral,
   illustrative marker rule (`CANARY-...` -> `[masked]`) instead of
@@ -2301,7 +2321,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0
 [0.8.0-rc.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.1...v0.8.0-rc.2
 [0.8.0-rc.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.7.1...v0.8.0-rc.1

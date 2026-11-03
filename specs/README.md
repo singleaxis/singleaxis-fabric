@@ -14,8 +14,7 @@ stays in the index with status `superseded` or moves to
 scope (see [`../AGENTS.md`](../AGENTS.md)) is deleted, not archived; its
 history lives in git and its number is retired.
 
-Numbers 013-018 and 024 are reserved. They are intentionally absent here; the
-next unused public number is 057.
+Numbers 013-018 and 024 were never used. The next unused number is 057.
 
 **Current work:** spec [056](056-agent-action-reconstruction.md) —
 reconstructing everything an agent did in a run: the model decisions, the
@@ -24,7 +23,7 @@ independent host-sensor evidence that corroborates them.
 
 The current capture contract is spec
 [049](049-four-layer-capture-coverage.md) (four-layer coverage, rev 6.4; P0 and
-P0-A are built in v0.8). Its phases P1–P5 and the TypeScript wire track are
+P0-A are built in v0.8; P1 waves 0–2 are built on the unreleased `feat/p1-integration` branch). Its phases P1–P5 and the TypeScript wire track are
 specified by the phase build specs
 [050](050-run-structure-and-records-p1.md) (P1),
 [051](051-context-and-lifecycle-p2.md) (P2),
@@ -129,8 +128,17 @@ reused.
 
 ### Retired numbers
 
-Specs 001 (product vision), 025 (product planes and packaging) and 037
-(enterprise deployment and control applicability) described capabilities
-outside the OSS scope and were deleted. Spec 027 supersedes 001 and 025; the
-spec 049 production profile replaces 037. Their history lives in git, and
-their numbers are not reused.
+Specs 001–009, 011, 012, 019, 025, 026 and 037 described capabilities
+outside the OSS scope and were deleted: product vision (001), platform
+architecture (002), decision graph (003), telemetry bridge (004), inline
+guardrails (005), LLM-as-judge (006), escalation workflow (007), deployment
+model (008), compliance mapping (009), roadmap (011), commercialization
+(012), policy engine (019), product planes and packaging (025), fabricctl
+lifecycle (026) and enterprise deployment and controls (037). Spec 027
+supersedes 001 and 025; the spec 049 production profile replaces 037. Their
+history lives in git, and their numbers are not reused.
+
+Superseded documentation pages are handled differently from specs: the
+former `docs/archive/` pages were deleted rather than archived, because each
+had a current replacement under [`../docs/`](../docs/README.md). Their
+history lives in git.

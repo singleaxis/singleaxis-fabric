@@ -5,7 +5,7 @@ release ships two components:
 
 | Directory | Role | Primary spec |
 |-----------|------|--------------|
-| [`otel-collector-fabric/`](otel-collector-fabric/) | Fabric Node — the OTel Collector distribution that captures, protects, and delivers recorder telemetry | [027](../specs/027-recorder-v1.md) |
+| [`otel-collector-fabric/`](otel-collector-fabric/) | Fabric Node — the OTel Collector distribution that captures, protects, and delivers recorder telemetry | [048](../specs/048-node-content-delivery-and-agent-spool.md) (scope: [027](../specs/027-recorder-v1.md)) |
 | [`host-emitter/`](host-emitter/) | Fabric Host Emitter — passive CO-RE eBPF DaemonSet that observes exec/connect/openat inside a configured cgroup scope and OTLP-exports them to the Node | [031](../specs/031-ebpf-host-emitter.md) |
 
 Fabric Node is the recorder core: OTLP receivers, the `fabricguard`

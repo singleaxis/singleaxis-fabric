@@ -25,9 +25,11 @@ CAPTURE  ->  PROTECT  ->  DELIVER
 ```
 
 Fabric gives you a complete, tamper-evident record of what your AI agents
-did. It records the exact bytes of every model call a Python agent makes,
-with no code changes, protects each record in the agent process before it
-touches disk, and delivers it through the Fabric Node to a file directory,
+did. With no code changes, it records the exact request and response bytes
+of every model call a Python agent sends through `httpx`, `httpx2` or
+`aiohttp` to a matched model endpoint, and reports calls through other
+detected clients as losses. It protects each record in the agent process
+before it touches disk, and delivers it through the Fabric Node to a file directory,
 an S3-compatible store and an OTLP destination that you control. An offline
 verifier proves whether each run's record is complete and unaltered.
 
@@ -44,8 +46,8 @@ For each agent run, Fabric builds a record that answers four questions:
 |---|---|---|
 | **Decisions** | What did the model see, and what did it return? | v0.8 |
 | **Actions** | Which tools did the model call, with which arguments, and what result came back? | v0.8 |
-| **Effects** | What did the agent's process actually run, and what did it return? | v0.9, in development |
-| **Corroboration** | What does the operating system independently record? | Host sensors in v0.8; linked to actions in v0.9 |
+| **Effects** | What did the agent's process actually run, and what did it return? | v0.10, in development |
+| **Corroboration** | What does the operating system independently record? | Host sensors since v0.8; linked to actions in v0.10 |
 
 Every link in the record says how it was established and how certain it
 is. Fabric never guesses a link: anything it cannot attribute is reported
@@ -72,7 +74,8 @@ is [spec 056](specs/056-agent-action-reconstruction.md).
   server-side encryption.
 - **Explicit APIs.** `decision()`, `record_*`, `CallRecorder` and
   byte-boundary adapters for anything the wire does not see, in Python and
-  TypeScript.
+  TypeScript, with governed content capture: content objects, transcript
+  manifests, authorized resolution and transcript export.
 - **Host sensors.** An eBPF emitter and an auditd receiver that record
   process starts and network connections on Linux, as metadata only.
 - **Deployment.** A Helm chart with development and production profiles,
@@ -168,7 +171,7 @@ More: [architecture](docs/architecture.md).
 | Fabric Node image `ghcr.io/singleaxis/fabric-otelcol` | Protect, buffer and deliver; `fabric-gate` entrypoint |
 | Host emitter image `ghcr.io/singleaxis/fabric-host-emitter` | Optional eBPF host sensor |
 | Helm chart `fabric` | Installs the Fabric Node |
-| `fabricctl` | Local recorder initialization, configuration validation, digest, help, and version |
+| `fabricctl` | Writes and validates a reviewable recorder declaration (`contracts/recorder/v1`); in v0.8 neither the SDK nor the Node reads it |
 | Public contracts | Activity, connect, content, delivery, privacy and recorder interchange formats |
 
 ## Known limits
@@ -188,7 +191,8 @@ The full list, with measurements: [limitations](docs/limitations-and-roadmap.md)
 | Release | Focus | Design |
 |---|---|---|
 | v0.8 | Model-call capture, protection, delivery and verification | [047](specs/047-llm-wire-capture-and-reconstruction.md), [048](specs/048-node-content-delivery-and-agent-spool.md), [049](specs/049-four-layer-capture-coverage.md) |
-| v0.9 | One run record across every input, and agent action reconstruction: effects linked to the tool calls that caused them, corroborated by host sensors | [050](specs/050-run-structure-and-records-p1.md), [053](specs/053-execution-channels-p4.md), [056](specs/056-agent-action-reconstruction.md) |
+| v0.9 | Recorder-only scope: out-of-scope leftovers removed; documentation and design specs for the agent record | [056](specs/056-agent-action-reconstruction.md) |
+| v0.10 | One run record across every input, and agent action reconstruction: effects linked to the tool calls that caused them, corroborated by host sensors | [050](specs/050-run-structure-and-records-p1.md), [053](specs/053-execution-channels-p4.md), [056](specs/056-agent-action-reconstruction.md) |
 | Later | Run context and lifecycle, decision and effect records, more execution channels, TypeScript wire capture | [051](specs/051-context-and-lifecycle-p2.md), [052](specs/052-decisions-and-effects-p3.md), [054](specs/054-specialised-runtimes-p5.md), [055](specs/055-typescript-wire-capture.md) |
 
 ## Scope
@@ -200,12 +204,13 @@ artifact tests keep such code out of every package and image
 
 ## Status and support
 
-v0.8.0 is the first stable release. It is tested in CI, on developer
-machines, against a matrix of 18 agent frameworks and patterns (OpenAI
-Agents SDK, LangGraph, LlamaIndex, PydanticAI, smolagents, AutoGen, AG2,
-CrewAI, DSPy and others) and through a real Node in the production profile.
-Before relying on a verdict in your environment, run the checks in
-[deployment](docs/deployment.md).
+v0.9.0 is the current stable release. It is tested in CI, including the
+production profile through a real Node. Before v0.8.0 it was also run
+against 18 agent frameworks and patterns (OpenAI Agents SDK, LangGraph,
+LlamaIndex, PydanticAI, smolagents, AutoGen, AG2, CrewAI, DSPy and others)
+with a fake model on a developer machine; that harness is not part of this
+repository or CI. Before relying on a verdict in your environment, run the
+checks in [deployment](docs/deployment.md).
 
 Security reports: [SECURITY.md](SECURITY.md). Support: [SUPPORT.md](SUPPORT.md).
 Apache-2.0. Contributions require DCO sign-off ([CONTRIBUTING.md](CONTRIBUTING.md)).

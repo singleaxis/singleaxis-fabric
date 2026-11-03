@@ -11,8 +11,7 @@ related: ["030", "031", "041", "043", "047", "048", "054", "055"]
 
 # 053 — Execution channels (P4)
 
-**Revision 2** applies the v0.9 spec reviews (Review A, Review B) through the
-revision decisions R1–R16, and binds this spec to spec 050 revision 2,
+**Revision 2** applies the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)), and binds this spec to spec 050 revision 2,
 which is now the frozen P1 contract. The changes:
 - Every hook records through the records input with provenance `observed`.
   The W-class record (`capture.input=wire` on a hook record) is withdrawn
@@ -1323,7 +1322,7 @@ reopening of approved decisions 1–25.
 | # | Decision | Default | Status |
 |---|---|---|---|
 | O4-1 | sqlite3 qualification surface | Caller-selected observing `Connection`/`Cursor` factories. Plain native connections stay declared uninstrumented. No proxy or C-type mutation. Full sqlite3 qualification waits for the §10 wording | RPOC (both reviews approve) |
-| O4-2 | Multi-source Node binding (R11) | Static dedicated ingress groups, one `bearertokenauth` per source, 64 by default and 256 at most, including separate auditd and eBPF groups. A custom credential-to-source authenticator is a later option with its own spec. This is configured-source DaemonSet support, not dynamic workload discovery | RPOC (Review A approves; Review B preferred the authenticator, R11 chose groups) |
+| O4-2 | Multi-source Node binding (R11) | Static dedicated ingress groups, one `bearertokenauth` per source, 64 by default and 256 at most, including separate auditd and eBPF groups. A custom credential-to-source authenticator is a later option with its own spec. This is configured-source DaemonSet support, not dynamic workload discovery | RPOC (the spec review was split; R11 chose groups) |
 | O4-3 | Host digests | Executable, argv and path digests are omitted by default; both the sensor policy and the group's fabricguard must permit them. Keyed host and source mapping always | RPOC |
 | O4-4 | Vector-store dialect (frozen) | **Qdrant REST** (`points/query`, `points/search`) through `qdrant-client` over httpx (`prefer_grpc=False`; gRPC unsupported), plus structure-only JSON-RPC 2.0. Qdrant server 1.x and `qdrant-client` 1.x; WP4-01 pins the exact minors current at freeze in `pins.json`. No other store is advertised from this fixture | RPOC |
 | O4-5 | SSH client (frozen) | **paramiko** 4.x through the explicit `fabric.hooks.ssh.observe` wrapper (`run` captures output; `exec_command` records the request only). WP4-01 pins the minor current at freeze; paramiko 3.x and asyncssh are unsupported | RPOC |

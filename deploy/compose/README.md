@@ -8,7 +8,7 @@ OTLP spans   (4317/4318) -> Fabric Node -> default-deny allowlist -> durable que
 wire content (4319)      -> Fabric Node -> fabriccontent (digest, tenant) -> durable queue -> content store
 ```
 
-It contains two services (`make up-s3-eval` adds a local S3-compatible
+It contains two services (`make up-s3-local` adds a local S3-compatible
 store and its one-shot setup job):
 
 - `fabric-node`: the current Collector-based recorder implementation;
@@ -24,7 +24,7 @@ Agents in wire-capture node mode POST each stored request/response body to
 the separate `otlp/content` receiver on port 4319 (OTLP/HTTP only). The
 `logs/content` pipeline runs only `memory_limiter` and the `fabriccontent`
 exporter, which checks the closed descriptor, recomputes digest and length,
-accepts only `FABRIC_TENANT_ID` (default `evaluation` here) and writes the body
+accepts only `FABRIC_TENANT_ID` (default `local-trial` here) and writes the body
 and its descriptor in the SDK store layout. The Node is the only content writer;
 agents need no store credentials. `fabric-gate` refuses any config that
 routes content into a telemetry pipeline or to the OTLP destination.
@@ -32,7 +32,7 @@ routes content into a telemetry pipeline or to the OTLP destination.
 | Where content goes | How |
 |---|---|
 | `fabric-content` volume (`/var/lib/fabric-node/content`) | local-harness default (`make up`); read it with `fabric.reconstruct --store-root` |
-| local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-eval` (local trial only, `docker-compose.s3-eval.yml`) |
+| local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-local` (local trial only, `docker-compose.s3-local.yml`) |
 | S3 / S3-compatible store, server-side encrypted | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content.yml` + `docker-compose.content-s3.yml`, merging `collector-config/collector-content.yaml` + `collector-content-s3.yaml`) |
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
 
@@ -40,27 +40,27 @@ The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
 production overlay is telemetry only (no port 4319). It still needs
 `FABRIC_TENANT_ID` and `FABRIC_SOURCE_ID` for the source binding.
 
-`make up-s3-eval` starts an S3-compatible local trial store (SeaweedFS,
-Apache-2.0, pinned by digest; an SSE-S3 key from `FABRIC_S3_EVAL_SSE_KEK`;
+`make up-s3-local` starts an S3-compatible local trial store (SeaweedFS,
+Apache-2.0, pinned by digest; an SSE-S3 key from `FABRIC_S3_LOCAL_SSE_KEK`;
 S3 published on `127.0.0.1:9000` only) with three static identities: an
-admin used only by the one-shot `s3-eval-init` job, a writer for the Node
+admin used only by the one-shot `s3-local-init` job, a writer for the Node
 (GetObject + PutObject on `fabric-content/fabric/content/*`) and a
-GetObject-only reader on the same prefix for reconstruction. `s3-eval-init`
+GetObject-only reader on the same prefix for reconstruction. `s3-local-init`
 creates the bucket with default SSE-S3 encryption and a bucket policy that
 denies `s3:DeleteObject` to everyone. The Node is pointed at
-`http://s3-eval:8333` with `use_path_style` and `sse: AES256`. Only the
+`http://s3-local:8333` with `use_path_style` and `sse: AES256`. Only the
 `fabric-node` service receives the writer keys.
 
 End to end, from a fresh stack to a verdict:
 
 ```bash
 cd deploy/compose
-make up-s3-eval                       # prints the commands below with your ports
+make up-s3-local                       # prints the commands below with your ports
 # ... run the agent with capture on (docs/deployment.md) ...
 make export-spans OUT=/tmp/fabric-spans   # the sink's span requests, traces-*.otlp
 pip install "singleaxis-fabric[s3]"   # reader only: boto3; agents never need it
 AWS_ACCESS_KEY_ID=fabric-reader AWS_SECRET_ACCESS_KEY=fabric-reader-secret \
-python -m fabric.reconstruct --spans /tmp/fabric-spans --tenant evaluation \
+python -m fabric.reconstruct --spans /tmp/fabric-spans --tenant local-trial \
   --store-uri s3://fabric-content/fabric/content/ \
   --s3-endpoint-url http://127.0.0.1:9000 --s3-path-style --s3-region us-east-1 \
   --wait-for-objects 30 --out report.json
@@ -82,7 +82,7 @@ This overlay used MinIO until October 2026. MinIO no longer publishes
 community images and the pinned image stopped being pullable, so it was
 replaced; the Node only needs S3 with `If-None-Match` writes and SSE, and
 any S3-compatible store that has both can stand in. The S3 end-to-end test
-(`scripts/tests/test_wire_capture_s3_eval_e2e.py`) runs against this overlay.
+(`scripts/tests/test_wire_capture_s3_local_e2e.py`) runs against this overlay.
 It verifies SSE as the store reports it (`ServerSideEncryption: AES256`) and
 that the bytes kept below its S3 gateway are not the plaintext; it does not
 verify AWS KMS (`aws:kms`) or bucket-key behaviour, which need real S3.
@@ -377,13 +377,13 @@ make reset       # deletes this Compose project's local harness volumes
 ```
 
 The S3 local trial overlay has its own pair, which also covers the store
-volume (`s3-eval-data`) that the base project does not declare:
+volume (`s3-local-data`) that the base project does not declare:
 
 ```bash
-make down-s3-eval    # stops it, keeping the store, queue, content and sink volumes
-make reset-s3-eval   # deletes them all, including every stored object
+make down-s3-local    # stops it, keeping the store, queue, content and sink volumes
+make reset-s3-local   # deletes them all, including every stored object
 ```
 
 Use the same `COMPOSE` (for example a `-p` project name) as for
-`make up-s3-eval`. `make down` and `make reset` read only the base file:
-they do not know the overlay's store service or its `s3-eval-data` volume.
+`make up-s3-local`. `make down` and `make reset` read only the base file:
+they do not know the overlay's store service or its `s3-local-data` volume.

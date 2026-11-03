@@ -2,7 +2,7 @@
 #
 # Merged last by docker-compose.content-s3.yml, after collector-production.yaml,
 # collector-content.yaml and collector-content-s3.yaml. collector-content-s3.yaml
-# stays shared with the evaluation S3 store (docker-compose.s3-eval.yml, local
+# stays shared with the local trial S3 store (docker-compose.s3-local.yml, local
 # profile); this file adds what production requires of fabriccontent/s3:
 #
 #   * the production profile and the same source binding as fabricguard

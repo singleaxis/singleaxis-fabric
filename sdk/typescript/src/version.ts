@@ -8,7 +8,7 @@
  */
 
 /** SDK build version; kept in lockstep with `package.json` `version`. */
-export const SDK_VERSION = "0.8.0";
+export const SDK_VERSION = "0.9.0";
 
 /**
  * Schema URL for the GenAI semantic conventions emitted by Fabric.

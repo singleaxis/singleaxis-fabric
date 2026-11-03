@@ -1,4 +1,4 @@
-"""Small, controlled OTLP/HTTP evaluation sink; not a production backend."""
+"""Small, controlled OTLP/HTTP local trial sink; not a production backend."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ def records() -> list[Path]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FabricEvaluationSink/1"
+    server_version = "FabricLocalTrialSink/1"
 
     def _json(self, status: HTTPStatus, value: object) -> None:
         body = json.dumps(value, sort_keys=True).encode()

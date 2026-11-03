@@ -47,7 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_DIR = REPO_ROOT / "deploy" / "compose"
 COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 # High ports keep the gate off the defaults — a dev may already run the
-# evaluation stack on 4318/8080.
+# local trial stack on 4318/8080.
 OTLP_HTTP_PORT = int(os.environ.get("FABRIC_OTLP_HTTP_PORT", "14318"))
 OTLP_GRPC_PORT = int(os.environ.get("FABRIC_OTLP_GRPC_PORT", "14317"))
 SINK_PORT = int(os.environ.get("FABRIC_SINK_PORT", "18080"))

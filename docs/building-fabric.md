@@ -11,9 +11,8 @@ Every released change must fit one of three responsibilities:
 CAPTURE -> PROTECT -> DELIVER
 ```
 
-Monitoring, evaluation, governance, inline enforcement, policy management,
-judges, red teams, assurance tiers, and regulatory content are not recorder
-runtime features.
+Anything else is outside the recorder; [AGENTS.md](../AGENTS.md) and
+[architecture](architecture.md#what-fabric-is-not) state the boundary.
 
 ## Small-feature workflow
 
@@ -25,7 +24,8 @@ runtime features.
 5. Test failure behavior, packaging, documentation, and upgrade compatibility.
 6. Update capability manifests and qualification evidence when coverage changes.
 
-Prefer adapters and public contracts over embedding vendor engines. New source
+Prefer capture at the model wire and public contracts over framework-specific
+adapters or embedded vendor engines. New source
 is not automatically a new shipped package; the release policy must explicitly
 permit every public artifact.
 
