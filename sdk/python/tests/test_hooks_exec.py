@@ -1039,3 +1039,86 @@ def test_a_non_callable_late_is_misuse_and_the_record_is_kept(rig: Rig) -> None:
     assert COUNTERS.api_misuse == 1
     (record,) = rig.records()
     assert record.lifecycle == "running"
+
+
+# --- review fixes: A0 parent, D2 adapter, repeated timeouts -------------------------------
+
+
+def test_an_explicit_tool_call_is_the_reported_parent(
+    rig: Rig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """056 A0: a child started inside a records-mode ``CallRecorder`` tool call names that
+    call's attempt as its parent (``fabric.step.parent_id``); outside it, none."""
+    from fabric import (  # noqa: PLC0415
+        ByteEvidenceConfig,
+        ByteEvidenceRecorder,
+        CallRecorder,
+        call_recorder,
+    )
+
+    monkeypatch.setattr(call_recorder, "installed_records", lambda: rig.harness.input)
+    store = LocalFilesystemContentStore(str(tmp_path / "explicit"), tenant_id="tenant")
+    writer = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=frozenset({
+        "tool.call.arguments", "tool.call.result"})))  # fmt: skip
+    try:
+        recorder = CallRecorder(writer, run_id="run", agent_id="agent", source_id="source")
+        recorder.call(b"{}", lambda d: (subprocess.run([SH, "-c", "true"]), d)[1], kind="tool")
+        subprocess.run([SH, "-c", "true"])
+        (call,) = recorder.snapshot()["calls"]
+    finally:
+        writer.close()
+    inside, outside = (records[0] for records in rig.attempts().values())
+    assert inside.attrs["fabric.step.parent_id"] == call["call_id"]
+    assert "fabric.step.parent_id" not in outside.attrs
+
+
+def test_the_explicit_terminal_adapter_is_recorded_once(rig: Rig, tmp_path: Path) -> None:
+    """053 §4.3 D2: ``BoundedTerminalAdapter`` is the explicit producer of its child, so
+    the observed hook defers to it (``deferred_to_explicit``) instead of recording it
+    again with the adapter's whole environment."""
+    from fabric import ByteEvidenceConfig, ByteEvidenceRecorder  # noqa: PLC0415
+    from fabric.adapters.synthetic_evidence import (  # noqa: PLC0415
+        BoundedTerminalAdapter,
+        SyntheticCaptureSession,
+    )
+
+    store = LocalFilesystemContentStore(str(tmp_path / "explicit"), tenant_id="tenant")
+    roles = frozenset({"terminal.argv", "terminal.stdin", "terminal.stdout", "terminal.stderr",
+                       "interaction.payload"})  # fmt: skip
+    writer = ByteEvidenceRecorder(ByteEvidenceConfig(store=store, roles=roles))
+    root = tmp_path / "work"
+    root.mkdir()
+    try:
+        with warnings.catch_warnings():  # the legacy journal: no records input here
+            warnings.simplefilter("ignore", DeprecationWarning)
+            session = SyntheticCaptureSession(writer, tenant_id="tenant", run_id="run")
+        terminal = BoundedTerminalAdapter(session, allowed_cwd_root=str(root))
+        result = terminal.run([SH, "-c", "echo done"], cwd=str(root), stdin=b"",
+                              operation_id="job", attempt_id="1")  # fmt: skip
+    finally:
+        writer.close()
+    assert result.returncode == 0
+    assert rig.records() == []
+    assert rig.producer.snapshot()[POINT]["deferred_to_explicit"] == 1
+
+
+def test_repeated_timeouts_keep_only_the_first_partial_output(rig: Rig) -> None:
+    """053 §5.1 N34 bounds: TimeoutExpired carries everything read so far, so only the
+    first timeout of a child stores it; later ones record the observation without bodies
+    (counted) and the final communicate() carries the whole output once."""
+    process = subprocess.Popen([SH, "-c", "printf a; sleep 0.3; printf b; sleep 0.3; printf c"],
+                               stdout=subprocess.PIPE)  # fmt: skip
+    timeouts = 0
+    while True:
+        try:
+            out, _ = process.communicate(timeout=0.1)
+            break
+        except subprocess.TimeoutExpired:
+            timeouts += 1
+    assert out == b"abc" and timeouts >= 2
+    _, *partials, end = rig.records()
+    assert len(partials) == timeouts
+    assert all(p.item["timeout_partial"] is True for p in partials)
+    assert all("terminal.stdout" not in p.bodies for p in partials[1:])
+    assert end.body("terminal.stdout") == b"abc"
+    assert rig.counters()["timeout_output_omitted"] == timeouts - 1

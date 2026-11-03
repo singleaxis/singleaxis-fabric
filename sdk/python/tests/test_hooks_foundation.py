@@ -388,6 +388,30 @@ def test_install_patches_publishes_active_and_is_idempotent(
     json.dumps(status)  # plain data
 
 
+def test_a_manifest_refusal_while_publishing_leaves_nothing_patched(
+    fake: FakeModule, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """053 §4: install never half-patches. When publishing the channel's capability fails
+    after the channel is live, no handle exists yet that could close it, so the channel is
+    stopped and its patches restored; the explicit install raises nothing but ValueError."""
+    _capture(tmp_path)
+
+    def refuse(*_: Any, **__: Any) -> None:
+        raise RuntimeError("manifest refused")
+
+    monkeypatch.setattr(_manifest, "capture_point_changed", refuse)
+    handle = hooks.install(exec=True)
+    assert handle.status()["capabilities"][POINT] == {"state": "failed",
+                                                      "reason": "internal_error"}  # fmt: skip
+    assert Target.__dict__["run"] is PRISTINE_RUN and not is_fabric_wrapper(TARGET_MODULE.spawn)
+    assert COUNTERS.internal_errors >= 1
+    monkeypatch.setenv(ct.STRICT_ENV, "1")
+    assert handle.close() is True
+    with pytest.raises(RuntimeError, match="manifest refused"):
+        hooks.install(exec=True)  # strict: the error surfaces, still nothing patched
+    assert Target.__dict__["run"] is PRISTINE_RUN
+
+
 def test_install_without_any_channel_patches_nothing(fake: FakeModule, tmp_path: Path) -> None:
     _capture(tmp_path)
     handle = hooks.install()

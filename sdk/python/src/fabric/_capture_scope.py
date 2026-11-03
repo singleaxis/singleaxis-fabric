@@ -35,6 +35,7 @@ __all__ = [
     "explicit_model_call",
     "explicit_model_call_active",
     "explicit_owner",
+    "explicit_tool_attempt",
 ]
 
 _P = ParamSpec("_P")
@@ -46,13 +47,16 @@ class ExplicitScope:
 
     ``kinds`` (spec 053 §4.3, D2) are the step kinds the explicit producer records itself
     (``terminal`` for an explicit subprocess artifact): an observed hook of one of those
-    kinds records nothing while the scope is live."""
+    kinds records nothing while the scope is live. ``attempt`` is the records-input
+    attempt uid of an explicit tool call: an observed hook that records inside it names
+    it as its reported parent (spec 056 §4.2 rule A0)."""
 
-    __slots__ = ("ended", "kinds", "model")
+    __slots__ = ("attempt", "ended", "kinds", "model")
 
-    def __init__(self, model: bool, kinds: Iterable[str] = ()) -> None:
+    def __init__(self, model: bool, kinds: Iterable[str] = (), attempt: str | None = None) -> None:
         self.model, self.ended = bool(model), False
         self.kinds: frozenset[str] = frozenset(kinds)
+        self.attempt = attempt
 
     def end(self) -> None:
         """The call is over: contexts that still hold this scope stop deferring."""
@@ -85,6 +89,13 @@ def explicit_owner(kind: str) -> bool:
     D2: explicit wins over an observed hook of the same kind)."""
     scope = _EXPLICIT_SCOPE.get()
     return scope is not None and not scope.ended and kind in scope.kinds
+
+
+def explicit_tool_attempt() -> str | None:
+    """The attempt uid of the innermost live explicit tool call, else ``None`` (056 A0:
+    an observed effect inside it reports it as its parent)."""
+    scope = _EXPLICIT_SCOPE.get()
+    return scope.attempt if scope is not None and not scope.ended else None
 
 
 @contextmanager

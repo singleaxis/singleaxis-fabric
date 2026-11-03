@@ -162,7 +162,19 @@ class HooksHandle:
             raise
         if capability[0] != "active":
             self._stop_channel(slot.point)
-        self._publish(slot.point, capability)
+        try:
+            self._publish(slot.point, capability)
+        except Exception:
+            # The manifest refused the change: no handle exists yet that could close a
+            # live channel, so nothing may stay patched (install never half-patches).
+            self._stop_channel(slot.point)
+            self._capabilities[slot.point] = ("failed", "internal_error")
+            COUNTERS.internal_errors += 1
+            if strict():
+                raise
+        except BaseException:
+            self._stop_channel(slot.point)
+            raise
 
     def _stop_channel(self, point: str) -> bool:
         """Switch the channel off, release it and restore its patches (fail-open)."""

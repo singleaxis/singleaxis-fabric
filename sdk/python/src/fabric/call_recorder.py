@@ -735,7 +735,12 @@ class CallRecorder:
             fields,
             span,
             self._append(self._calls, fields),
-            capture_scope=ExplicitScope(kind == "model"),
+            # A records-mode tool call is the reported parent of the effects an observed
+            # hook records inside it (spec 056 §4.2 rule A0).
+            capture_scope=ExplicitScope(
+                kind == "model",
+                attempt=attempt.uid if attempt is not None and kind == "tool" else None,
+            ),
         )
         if self.mode == "records":
             call.records, call.attempt, call.start_ns = True, attempt, time.time_ns()

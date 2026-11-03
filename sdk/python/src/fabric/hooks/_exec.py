@@ -77,6 +77,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final, cast
 
+from .._capture_scope import explicit_tool_attempt
 from .._capture_types import (
     EVIDENCE_ROLE,
     AnyBody,
@@ -136,7 +137,7 @@ _MISSING: Any = object()
 
 _COUNTER_NAMES: Final = (
     "starts", "spawn_failures", "outcomes", "updates", "timeouts", "duplicate_suppressed",
-    "untracked", "evicted", "observations_over_bound",
+    "untracked", "evicted", "observations_over_bound", "timeout_output_omitted",
 )  # fmt: skip
 
 
@@ -490,9 +491,10 @@ class ExecChannel:
         return {"argv_form": argv_form, "stdio": stdio}
 
     def _output_bodies(self, stdout: object, stderr: object, stdin: object,
-                       bodies: list[AnyBody]) -> str:  # fmt: skip
+                       bodies: list[AnyBody], *, keep: bool = True) -> str:  # fmt: skip
         """Bodies of what ``communicate`` returned (and its ``input``, under the explicitly
-        enabled ``terminal.stdin`` role); returns the ``output_form``."""
+        enabled ``terminal.stdin`` role); returns the ``output_form``. ``keep=False``
+        records the form only, no body."""
         form = "none"
         for role, value in (("terminal.stdout", stdout), ("terminal.stderr", stderr),
                             ("terminal.stdin", stdin)):  # fmt: skip
@@ -501,7 +503,7 @@ class ExecChannel:
                 continue
             if role != "terminal.stdin":
                 form = "text" if kind is str else "bytes"
-            if self.producer.mode(role) != "omit":
+            if keep and self.producer.mode(role) != "omit":
                 bodies.append(RecordBody(role, cast("str | bytes", value),
                                          TEXT if kind is str else OCTETS, BOUNDARY,
                                          "protocol"))  # fmt: skip
@@ -511,9 +513,11 @@ class ExecChannel:
 
     @fail_open(None)
     def before_spawn(self) -> _Pending | None:
-        """Open the attempt before the spawn (its uid is minted before the call)."""
+        """Open the attempt before the spawn (its uid is minted before the call). Inside an
+        explicit records-mode tool call, that call's attempt is the reported parent
+        (``fabric.step.parent_id``, spec 056 §4.2 rule A0)."""
         start = time.time_ns()
-        attempt = self.producer.begin(POINT, "terminal")
+        attempt = self.producer.begin(POINT, "terminal", parent_attempt=explicit_tool_attempt())
         return None if attempt is None else _Pending(attempt, start, _VIA.get())
 
     @fail_open(None)
@@ -601,13 +605,23 @@ class ExecChannel:
     def timed_out(self, proc: _Proc, exc: BaseException, stdin: object, api: str,
                   start_ns: int) -> None:  # fmt: skip
         """``communicate`` raised ``TimeoutExpired``: a ``data`` record with the partial
-        output the exception exposes; the attempt stays open (053 §5.1 N34, N35)."""
+        output the exception exposes; the attempt stays open (053 §5.1 N34, N35).
+
+        The exposed output is cumulative (everything read so far), so only the first
+        timeout of a child keeps it as bodies: an agent polling a chatty child with a
+        short timeout would otherwise queue every earlier byte again on each poll. Later
+        timeouts record the observation without bodies (counted as
+        ``timeout_output_omitted``); the final ``communicate`` result carries all of it."""
         index = self._next_index(proc)
         if index is None:
             return
         exposed = _own(exc) if type(exc) is subprocess.TimeoutExpired else {}
         bodies: list[AnyBody] = []
-        form = self._output_bodies(exposed.get("output"), exposed.get("stderr"), stdin, bodies)
+        keep = not proc.timed_out
+        form = self._output_bodies(exposed.get("output"), exposed.get("stderr"), stdin, bodies,
+                                   keep=keep)  # fmt: skip
+        if not keep:
+            self._count("timeout_output_omitted")
         item = self._output_item(proc, api, form, index)
         item["timeout_partial"] = True
         if (name := _error_class(exc)) is not None:

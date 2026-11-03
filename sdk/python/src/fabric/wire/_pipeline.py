@@ -603,7 +603,15 @@ class CapturePipeline:
         """PROTECT a record's bodies and evidence object, then store (direct) or stage
         (node) them; the span attributes gain ``fabric.content.object_ids`` (the objects in
         reference order: bodies, then the evidence object). Over 8 objects the record is
-        refused before any write (an ``internal_error`` loss, R6)."""
+        refused before any write (an ``internal_error`` loss, R6).
+
+        Worker-side attributes (``job.late``, spec 056 OD-2) are read first, before any body
+        work: the child's ``/proc`` entry is gone once it is reaped, so every PROTECT or
+        store round trip before the read loses short-lived children's start times."""
+        late: dict[str, AttributeValue] = {}
+        if job.late is not None:  # absent on any error
+            with contextlib.suppress(Exception):
+                late = dict(job.late())
         objects: list[Obj] = []
         if self._store is not None or self._node:  # no destination: no content objects
             for body in job.bodies:
@@ -624,10 +632,8 @@ class CapturePipeline:
                 continue  # never named by the record: it could not be verified
             kept.append(obj)
         attrs: dict[str, AttributeValue] = dict(job.attributes)
-        if job.late is not None:  # worker-side attributes (056 OD-2); absent on any error
-            with contextlib.suppress(Exception):
-                for key, value in job.late().items():
-                    attrs.setdefault(key, value)
+        for key, value in late.items():
+            attrs.setdefault(key, value)
         if kept:
             attrs["fabric.content.object_ids"] = [obj.object_id for obj in kept]
         self._record_content[id(job)] = [obj.descriptor.get("stored_sha256") for obj in kept]

@@ -36,6 +36,7 @@ from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any, BinaryIO, cast
 from urllib.parse import urlsplit
 
+from fabric._capture_scope import explicit_model_call
 from fabric._capture_types import (
     AnyBody,
     DescriptorOnlyBody,
@@ -863,16 +864,19 @@ class BoundedTerminalAdapter:
             )
         env = {**os.environ, **approved_env}
         try:
-            process = subprocess.Popen(  # noqa: S603 - explicit no-shell synthetic scope
-                argv,
-                cwd=resolved_cwd,
-                env=env,
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                shell=False,
-                start_new_session=True,
-            )
+            # This adapter is the explicit producer of the child (053 §4.3 D2): the
+            # observed exec.subprocess hook defers to it instead of recording it again.
+            with explicit_model_call(False, kinds=("terminal",)):
+                process = subprocess.Popen(  # noqa: S603 - explicit no-shell synthetic scope
+                    argv,
+                    cwd=resolved_cwd,
+                    env=env,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    shell=False,
+                    start_new_session=True,
+                )
         except OSError:
             self.session.gap(
                 source_id="terminal-1",
