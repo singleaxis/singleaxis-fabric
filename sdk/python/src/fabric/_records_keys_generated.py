@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@10"
+RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@11"
 
 RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
     "fabric.actor.type": {
@@ -97,6 +97,42 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "type": "string",
         "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
         "examples": ("7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",),
+    },
+    "fabric.execution.host_id": {
+        "type": "string",
+        "pattern": "^hst-[0-9a-f]{32}$",
+        "examples": ("hst-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.execution.image_digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "examples": ("sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.execution.sandbox_id": {
+        "type": "string",
+        "pattern": "^sbx-[0-9a-f]{32}$",
+        "examples": ("sbx-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.process.exit_code": {
+        "type": "int",
+        "min": -2147483648,
+        "max": 2147483647,
+    },
+    "fabric.process.parent_pid": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.process.pid": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.process.signal": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.process.start_ns": {
+        "type": "int",
+        "min": 0,
     },
     "fabric.run.id": {
         "type": "string",
@@ -231,5 +267,12 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
 }
 
 # Conditional records placements (capture_point_kinds / capture_points, matched against
-# the id part of fabric.capture.point); P1 ships none.
-RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {}
+# the id part of fabric.capture.point); spec 056 adds the exec.subprocess rows.
+RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
+    "fabric.process.parent_pid": {
+        "capture_points": ("exec.subprocess",),
+    },
+    "fabric.process.start_ns": {
+        "capture_points": ("exec.subprocess",),
+    },
+}

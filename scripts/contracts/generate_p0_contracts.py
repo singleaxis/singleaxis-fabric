@@ -430,8 +430,11 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.outcome.delivery_state": field_enum("D28"),
         "fabric.outcome.target_id": pseudonym("tgt"),
         "fabric.process.exit_code": integer(*INT32),
+        # spec 056 §4.3 (M1): the process-anchored join keys of exec.subprocess
+        "fabric.process.parent_pid": integer(1),
         "fabric.process.pid": integer(1),
         "fabric.process.signal": integer(1),
+        "fabric.process.start_ns": integer(0),
         "fabric.remote.host_key_verified": boolean,
         "fabric.remote.target_id": pseudonym("hst"),
         "fabric.run.agent_policy_digest": digest,
@@ -599,7 +602,7 @@ def generate_registry(w: Writer) -> None:
             raise SystemExit(f"no check for {key}")
         if key in capture_checks:
             row["capture_check"] = capture_checks[key]
-    keys["registry_revision"] = 10
+    keys["registry_revision"] = 11
     ordered: dict[str, Any] = {}
     for name, value in keys.items():
         if name in {"check_rule", "capture_check_rule"}:
@@ -611,10 +614,12 @@ def generate_registry(w: Writer) -> None:
     w.json(COVERAGE / coverage.REGISTRY["keys"], ordered)
     vocab = reg["vocab"]
     for row in vocab["inference_method"]:
-        row["confidence"] = re.search(
-            r"Confidence `(certain|tentative)`", row["meaning"]
-        ).group(1)
-    vocab["registry_revision"] = 9
+        # Spec 056 §4.3: a process join's confidence follows its start-time evidence.
+        fixed = re.search(r"Confidence `(certain|tentative)`", row["meaning"])
+        row["confidence"] = (
+            "varies" if "Confidence varies" in row["meaning"] else fixed.group(1)
+        )
+    vocab["registry_revision"] = 10
     w.json(COVERAGE / coverage.REGISTRY["vocab"], vocab)
 
 
@@ -5340,12 +5345,13 @@ def render_go_table(reg: dict[str, Any]) -> str:
         "\n",
         "// recordKeyConditions: conditional records placements (spec 050 §3.4 rule A):\n",
         "// capture_point_kinds / capture_points matched against the id part of\n",
-        "// fabric.capture.point. P1 ships none.\n",
+        "// fabric.capture.point (P1 ships none; spec 056 adds the exec.subprocess rows).\n",
         "var recordKeyConditions = map[string]map[string][]string{"
         + ("\n" if conditions else ""),
     ]
+    key_width = max((len(json.dumps(k)) + 1 for k in conditions), default=0)
     out += [
-        f"\t{json.dumps(k)}: {{"
+        f"\t{(json.dumps(k) + ':').ljust(key_width)} {{"
         + ", ".join(
             f"{json.dumps(c)}: {{" + ", ".join(json.dumps(v) for v in vs) + "}"
             for c, vs in cond.items()
@@ -5513,7 +5519,7 @@ def render_py_record_keys(reg: dict[str, Any]) -> str:
         f"RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {py_literal(records)}\n"
         "\n"
         "# Conditional records placements (capture_point_kinds / capture_points, matched against\n"
-        "# the id part of fabric.capture.point); P1 ships none.\n"
+        "# the id part of fabric.capture.point); spec 056 adds the exec.subprocess rows.\n"
         "RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = "
         f"{py_literal(coverage.record_conditions(reg))}\n"
     )

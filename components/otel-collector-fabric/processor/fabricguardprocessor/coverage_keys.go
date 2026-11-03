@@ -140,8 +140,10 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.outcome.delivery_state":                           oneOf(toSet("prepared", "sent", "accepted", "delivered", "read", "played", "failed", "unknown")),
 	"fabric.outcome.target_id":                                matches(pseudonymPattern("tgt")),
 	"fabric.process.exit_code":                                intIn(-2147483648, 2147483647),
+	"fabric.process.parent_pid":                               intAtLeast(1),
 	"fabric.process.pid":                                      intAtLeast(1),
 	"fabric.process.signal":                                   intAtLeast(1),
+	"fabric.process.start_ns":                                 intAtLeast(0),
 	"fabric.remote.host_key_verified":                         isBool,
 	"fabric.remote.target_id":                                 matches(pseudonymPattern("hst")),
 	"fabric.run.agent_policy_digest":                          matches(coverageDigestPattern),
@@ -280,6 +282,14 @@ var coverageKeyPlacements = map[string][]string{
 	"fabric.error.code":                 {"exchange"},
 	"fabric.error.domain":               {"exchange", "record"},
 	"fabric.event_id":                   {"exchange", "record", "loss", "run_start", "run_end", "segment_seal", "periodic", "final", "manifest"},
+	"fabric.execution.host_id":          {"record"},
+	"fabric.execution.image_digest":     {"record"},
+	"fabric.execution.sandbox_id":       {"record"},
+	"fabric.process.exit_code":          {"record"},
+	"fabric.process.parent_pid":         {"record"},
+	"fabric.process.pid":                {"record"},
+	"fabric.process.signal":             {"record"},
+	"fabric.process.start_ns":           {"record"},
 	"fabric.release_id":                 {"exchange", "run_start"},
 	"fabric.run.branch_ids":             {"run_start"},
 	"fabric.run.declared_branches":      {"run_start"},
@@ -324,32 +334,43 @@ var coverageKeyPlacements = map[string][]string{
 // labels and identity_mode apply as for every key). The SDK's
 // fabric/_records_keys_generated.py is generated from the same rows.
 var recordKeyValidators = map[string]func(pcommon.Value) bool{
-	"fabric.actor.type":           oneOf(toSet("user", "agent", "sub_agent", "human_approver", "human_operator", "system", "scheduler", "external_service", "provider", "unknown")),
-	"fabric.attempt.uid":          matches(captureObjectIDPattern),
-	"fabric.capture.input":        oneOf(toSet("wire", "records")),
-	"fabric.capture.point":        matches(capturePointPattern),
-	"fabric.capture.source":       oneOf(toSet("observed", "reported")),
-	"fabric.content.object_ids":   sliceOf(1, 8, true, matches(captureObjectIDPattern)),
-	"fabric.error.domain":         oneOf(toSet("application", "transport", "provider", "tool", "recorder")),
-	"fabric.event_id":             matches(captureObjectIDPattern),
-	"fabric.run.id":               matchesInt64(recordRunIDPattern, "epoch"),
-	"fabric.run.scope_id":         matches(captureObjectIDPattern),
-	"fabric.run.segment_id":       matches(pseudonymPattern("seg")),
-	"fabric.source.epoch":         intAtLeast(0),
-	"fabric.source.sequence":      intAtLeast(0),
-	"fabric.source_id":            matches(coverageOpaqueIDPattern),
-	"fabric.step.attempt_id":      matches(coverageOpaqueIDPattern),
-	"fabric.step.id":              matches(coverageOpaqueIDPattern),
-	"fabric.step.kind":            oneOf(toSet("run", "agent_turn", "model_call", "embedding", "input", "message", "tool_call", "provider_tool_call", "mcp_call", "retrieval", "memory", "terminal", "remote_exec", "database", "network", "file", "ui_action", "media_stream", "delegation", "workflow_node", "checkpoint", "control", "context_change", "selection", "side_effect", "outcome", "hook", "skill", "interaction", "extension")),
-	"fabric.step.lifecycle_state": oneOf(toSet("queued", "running", "suspended", "deferred", "completed", "cancelled", "unknown")),
-	"fabric.step.parent_id":       matches(coverageOpaqueIDPattern),
-	"fabric.step.status":          oneOf(toSet("ok", "error", "cancelled", "timeout", "unknown")),
+	"fabric.actor.type":             oneOf(toSet("user", "agent", "sub_agent", "human_approver", "human_operator", "system", "scheduler", "external_service", "provider", "unknown")),
+	"fabric.attempt.uid":            matches(captureObjectIDPattern),
+	"fabric.capture.input":          oneOf(toSet("wire", "records")),
+	"fabric.capture.point":          matches(capturePointPattern),
+	"fabric.capture.source":         oneOf(toSet("observed", "reported")),
+	"fabric.content.object_ids":     sliceOf(1, 8, true, matches(captureObjectIDPattern)),
+	"fabric.error.domain":           oneOf(toSet("application", "transport", "provider", "tool", "recorder")),
+	"fabric.event_id":               matches(captureObjectIDPattern),
+	"fabric.execution.host_id":      matches(pseudonymPattern("hst")),
+	"fabric.execution.image_digest": matches(coverageDigestPattern),
+	"fabric.execution.sandbox_id":   matches(pseudonymPattern("sbx")),
+	"fabric.process.exit_code":      intIn(-2147483648, 2147483647),
+	"fabric.process.parent_pid":     intAtLeast(1),
+	"fabric.process.pid":            intAtLeast(1),
+	"fabric.process.signal":         intAtLeast(1),
+	"fabric.process.start_ns":       intAtLeast(0),
+	"fabric.run.id":                 matchesInt64(recordRunIDPattern, "epoch"),
+	"fabric.run.scope_id":           matches(captureObjectIDPattern),
+	"fabric.run.segment_id":         matches(pseudonymPattern("seg")),
+	"fabric.source.epoch":           intAtLeast(0),
+	"fabric.source.sequence":        intAtLeast(0),
+	"fabric.source_id":              matches(coverageOpaqueIDPattern),
+	"fabric.step.attempt_id":        matches(coverageOpaqueIDPattern),
+	"fabric.step.id":                matches(coverageOpaqueIDPattern),
+	"fabric.step.kind":              oneOf(toSet("run", "agent_turn", "model_call", "embedding", "input", "message", "tool_call", "provider_tool_call", "mcp_call", "retrieval", "memory", "terminal", "remote_exec", "database", "network", "file", "ui_action", "media_stream", "delegation", "workflow_node", "checkpoint", "control", "context_change", "selection", "side_effect", "outcome", "hook", "skill", "interaction", "extension")),
+	"fabric.step.lifecycle_state":   oneOf(toSet("queued", "running", "suspended", "deferred", "completed", "cancelled", "unknown")),
+	"fabric.step.parent_id":         matches(coverageOpaqueIDPattern),
+	"fabric.step.status":            oneOf(toSet("ok", "error", "cancelled", "timeout", "unknown")),
 }
 
 // recordKeyConditions: conditional records placements (spec 050 §3.4 rule A):
 // capture_point_kinds / capture_points matched against the id part of
-// fabric.capture.point. P1 ships none.
-var recordKeyConditions = map[string]map[string][]string{}
+// fabric.capture.point (P1 ships none; spec 056 adds the exec.subprocess rows).
+var recordKeyConditions = map[string]map[string][]string{
+	"fabric.process.parent_pid": {"capture_points": {"exec.subprocess"}},
+	"fabric.process.start_ns":   {"capture_points": {"exec.subprocess"}},
+}
 
 var (
 	dbSystemPattern            = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
@@ -361,7 +382,7 @@ var (
 	frameworkNamePattern       = regexp.MustCompile(`^@?[a-z0-9][a-z0-9._/-]{0,127}$`)
 	softwareVersionPattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
 	manifestPointFieldsPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}=([XCSND][0-9]{2}(,[XCSND][0-9]{2}){0,255})?$`)
-	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|-)$`)
+	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|unattributed_effect|ambiguous_attribution|tool_result_missing|exchange_gap|source_gap|anchor_missing|unexplained_host_event|channel_disabled|no_effect_channel|none_in_window|remote_sandbox|-)$`)
 	coverageProfilePattern     = regexp.MustCompile(`^fabric\.profile\.[a-z0-9-]+/v[0-9]+$`)
 	keyIDPattern               = regexp.MustCompile(`^kid-[0-9a-f]{8}$`)
 	roleTableVersionPattern    = regexp.MustCompile(`^fabric\.content-role-table/v[0-9]+@[0-9]+$`)

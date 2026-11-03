@@ -686,7 +686,16 @@ def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
         namespace,
     )
     assert set(namespace["RECORD_KEY_CHECKS"]) == set(table)
-    assert dict(namespace["RECORD_KEY_CONDITIONS"]) == record_conditions(reg) == {}
+    # Spec 056 §5: the first conditional placements, exec.subprocess only.
+    exec_only = {"capture_points": ["exec.subprocess"]}
+    assert record_conditions(reg) == {
+        "fabric.process.parent_pid": exec_only,
+        "fabric.process.start_ns": exec_only,
+    }
+    assert {
+        key: {column: list(values) for column, values in cond.items()}
+        for key, cond in namespace["RECORD_KEY_CONDITIONS"].items()
+    } == record_conditions(reg)
     go = (
         REPO_ROOT
         / "components/otel-collector-fabric/processor/fabricguardprocessor/coverage_keys.go"

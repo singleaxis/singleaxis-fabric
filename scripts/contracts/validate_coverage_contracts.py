@@ -528,14 +528,21 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
                 "projection schema enum differs from the vocabulary",
             )
     for row in vocab["inference_method"]:
+        # Spec 056 §4.3: a process join's confidence follows its start-time evidence
+        # (``varies``); every other method has one fixed confidence.
+        stated = (
+            "Confidence varies"
+            if row.get("confidence") == "varies"
+            else f"Confidence `{row.get('confidence')}`"
+        )
         if (
-            row.get("confidence") not in ("certain", "tentative")
-            or f"Confidence `{row['confidence']}`" not in row["meaning"]
+            row.get("confidence") not in ("certain", "tentative", "varies")
+            or stated not in row["meaning"]
         ):
             _fail(
                 "coverage.vocab.confidence",
                 row["value"],
-                "each inference method has one fixed confidence",
+                "each inference method has one fixed confidence, or says it varies",
             )
     run_only = {r["value"] for r in vocab["run_only_verdicts"]}
     step_enum = list(
@@ -659,7 +666,7 @@ RECORD_CONDITION_COLUMNS = ("capture_point_kinds", "capture_points")
 
 
 def record_conditions(reg: Mapping[str, Any]) -> dict[str, dict[str, list[str]]]:
-    """Conditional records placements (050 §3.4 rule A, F1); P1 ships none."""
+    """Conditional records placements (050 §3.4 rule A, F1); spec 056 adds the first."""
     out: dict[str, dict[str, list[str]]] = {}
     for row in reg["keys"]["keys"]:
         cond = {c: list(row[c]) for c in RECORD_CONDITION_COLUMNS if c in row}
@@ -1446,6 +1453,12 @@ def _confidence(reg: Mapping[str, Any]) -> dict[str, str]:
     return {r["value"]: r["confidence"] for r in reg["vocab"]["inference_method"]}
 
 
+def _confidence_ok(confidence: Mapping[str, str], method: str, claimed: str) -> bool:
+    """A method's fixed confidence, or any confidence for a ``varies`` method (spec 056
+    §4.3: its rule fixtures pin when ``certain`` is allowed)."""
+    return confidence[method] in ("varies", claimed)
+
+
 SAME_AS_METHODS = {"trace_id_match", "cross_run_previous_response"}
 NOT_CHOSEN = {"value", "ref", "refs"}
 GRAPH_REASONS = {"segment_missing", "segment_conflict", "post_terminal_activity"}
@@ -1469,7 +1482,7 @@ def validate_projection(
             parents += link["type"] == "parent"
             if (
                 link["provenance"] == "inferred"
-                and confidence[link["method"]] != link["confidence"]
+                and not _confidence_ok(confidence, link["method"], link["confidence"])
             ):
                 _fail(
                     "coverage.projection.confidence",
@@ -1539,7 +1552,9 @@ def validate_projection(
                 )
             if (
                 wrapper.get("provenance") == "inferred"
-                and confidence[wrapper["method"]] != wrapper["confidence"]
+                and not _confidence_ok(
+                    confidence, wrapper["method"], wrapper["confidence"]
+                )
             ):
                 _fail(
                     "coverage.projection.confidence",
@@ -1573,7 +1588,7 @@ def validate_projection(
             )
         if (
             step["provenance"] == "inferred"
-            and confidence[step["method"]] != step["confidence"]
+            and not _confidence_ok(confidence, step["method"], step["confidence"])
         ):
             _fail(
                 "coverage.projection.confidence",

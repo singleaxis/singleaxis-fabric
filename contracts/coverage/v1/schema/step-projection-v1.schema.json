@@ -283,7 +283,11 @@
             "media_decoder",
             "pid_time_join",
             "trace_id_match",
-            "cross_run_previous_response"
+            "cross_run_previous_response",
+            "sequence_bracket",
+            "output_match",
+            "process_anchor",
+            "process_lineage"
           ]
         },
         "confidence": {
@@ -405,7 +409,18 @@
             "uninstrumented_client",
             "sampling",
             "retention_expired",
-            "deleted"
+            "deleted",
+            "unattributed_effect",
+            "ambiguous_attribution",
+            "tool_result_missing",
+            "exchange_gap",
+            "source_gap",
+            "anchor_missing",
+            "unexplained_host_event",
+            "channel_disabled",
+            "no_effect_channel",
+            "none_in_window",
+            "remote_sandbox"
           ]
         },
         "original_status": {
@@ -480,7 +495,11 @@
             "media_decoder",
             "pid_time_join",
             "trace_id_match",
-            "cross_run_previous_response"
+            "cross_run_previous_response",
+            "sequence_bracket",
+            "output_match",
+            "process_anchor",
+            "process_lineage"
           ]
         },
         "confidence": {
@@ -1101,7 +1120,11 @@
             "media_decoder",
             "pid_time_join",
             "trace_id_match",
-            "cross_run_previous_response"
+            "cross_run_previous_response",
+            "sequence_bracket",
+            "output_match",
+            "process_anchor",
+            "process_lineage"
           ]
         },
         "confidence": {

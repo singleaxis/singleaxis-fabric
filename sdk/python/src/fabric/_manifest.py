@@ -97,6 +97,10 @@ POINT_REASONS: frozenset[str] = frozenset({
     "run_unterminated", "post_terminal_activity", "clock_uncertain", "source_unauthenticated",
     "unsealed_epoch", "seal_mismatch", "uninstrumented_client", "sampling",
     "retention_expired", "deleted",
+    # spec 056 §5: attribution, corroboration and sandbox reasons
+    "unattributed_effect", "ambiguous_attribution", "tool_result_missing", "exchange_gap",
+    "source_gap", "anchor_missing", "unexplained_host_event", "channel_disabled",
+    "no_effect_channel", "none_in_window", "remote_sandbox",
 })  # fmt: skip
 
 

@@ -687,6 +687,10 @@ field wrappers, each with its fixed confidence):
 | `pid_time_join` | Host-sensor record joined by PID and time (`corroborated_by`). Confidence `tentative`. |
 | `trace_id_match` | Two runs whose root steps share a W3C trace id (`same_as` between runs). Confidence `tentative`. |
 | `cross_run_previous_response` | An exchange in one run names a response captured in another run (`same_as` between runs). Confidence `tentative`. |
+| `sequence_bracket` | An effect recorded on the same source epoch and run segment as the exchange that issued a tool call, after it in sequence order and inside the call's open window (spec 056 §4.2 rules A2, A3; `caused_by`). Confidence `tentative`. |
+| `output_match` | The effect's captured output (trailing whitespace removed, at least 16 bytes) is a contiguous substring of exactly one candidate tool call's result as fed back, or equal to it by SHA-256 (spec 056 §4.2 rule A1; `caused_by`). Confidence `certain`. |
+| `process_anchor` | A host-sensor process event with the effect's host, pid namespace, pid and parent pid, or the agent's own pid (spec 056 §4.3 rules H1, H2, H4; `corroborated_by`, `part_of`). Confidence varies: `certain` only when both sides carry the process start time and the times are equal, otherwise `tentative`. |
+| `process_lineage` | A host event whose parent-pid chain reaches a process anchored to an effect, on the same host, pid namespace and boot, at most 16 levels deep (spec 056 §4.3 rule H3; `part_of`). Confidence varies: the confidence of the anchor it extends. |
 <!-- generated:vocab:inference_method:end -->
 
 ### 2.6 Per-field coverage status
@@ -764,6 +768,17 @@ revision, never a new status). A reason is required for `not_captured`,
 | `sampling` | A sampler dropped the record. |
 | `retention_expired` | The object existed and was removed by retention. |
 | `deleted` | The object existed and was deleted on request. |
+| `unattributed_effect` | An effect channel recorded an effect that no tool call explains: it lies in no open tool-call window and has no reported parent (spec 056 §4.2 rule A4, §4.5 `effects`). |
+| `ambiguous_attribution` | An effect lies in the open windows of two or more tool calls and output matching does not single one out; every candidate is listed (spec 056 §4.2 rule A3, §4.5 `effects`). |
+| `tool_result_missing` | A tool call in a captured response has no result in any later captured request, and the run did not declare it outstanding (spec 056 §4.5 `actions`). |
+| `exchange_gap` | An exchange the action chain needs (the one that issued a tool call, or the one that fed its result back) is missing or unparsed (spec 056 §4.5 `actions`). |
+| `source_gap` | A host-sensor source does not verify for the whole run window: positions, heartbeats or upstream loss leave part of the window unobserved (spec 056 §4.5 `corroboration`). |
+| `anchor_missing` | An effect with a known process id has no host process event that anchors it (spec 056 §4.3, §4.5 `corroboration`). |
+| `unexplained_host_event` | A host event in the agent's configured scope during the run that no rule links, or an agent-process connection to a host no exchange called (spec 056 §4.3, §4.5 `corroboration`). |
+| `channel_disabled` | No effect was observed for a tool call because the effect channel that would observe it was not enabled for the source epoch; the manifest says so (spec 056 §4.2, `effect_not_observed`). |
+| `no_effect_channel` | No effect was observed for a tool call that runs inside the agent process; no hook observes a pure in-process tool (spec 056 §4.2, `effect_not_observed`). |
+| `none_in_window` | Effect channels were enabled, but no effect lies in the tool call's open window (spec 056 §4.2, `effect_not_observed`). |
+| `remote_sandbox` | The run called a configured remote sandbox host; host sensors cannot observe what ran there (spec 056 §4.4). |
 <!-- generated:vocab:reason:end -->
 
 **Descriptor-only producer reasons** (spec 050 §3.4, R5). A records body
@@ -1884,8 +1899,10 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.outcome.delivery_state` | new | D28 | META: closed enum (field type) | P2 |  |  |
 | `fabric.outcome.target_id` | new | D27 | ID: `tgt-` + 32 hex | P2 |  |  |
 | `fabric.process.exit_code` | new | N35 | META: integer, signed 32-bit | P4 |  |  |
+| `fabric.process.parent_pid` | new | N35 | META: integer ≥ 1 (the agent's process id when it spawned the child) | P4 (spec 056 M1) |  | Spec 056 §4.3: read with os.getpid() at spawn; no I/O. Joins host sensors (H1-H4). |
 | `fabric.process.pid` | new | N35 | META: integer ≥ 1 | P4 |  |  |
 | `fabric.process.signal` | new | N35 | META: integer ≥ 1 | P4 |  |  |
+| `fabric.process.start_ns` | new | N35 | META: integer ≥ 0 (the child's start time, boot-relative nanoseconds, Linux) | P4 (spec 056 M1) |  | Spec 056 §4.3, OD-2: read once by the capture worker from /proc/<pid>/stat field 22; absent when the child already exited, off Linux, or on any error. |
 | `fabric.remote.host_key_verified` | new | N36 | META: boolean | P4 |  |  |
 | `fabric.remote.target_id` | new | N36 | ID: `hst-` + 32 hex | P4 |  |  |
 | `fabric.run.agent_policy_digest` | new | C33 | DIGEST: `sha256:` + 64 hex | P2 |  |  |
