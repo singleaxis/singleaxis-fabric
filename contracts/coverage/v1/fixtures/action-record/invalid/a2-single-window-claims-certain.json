@@ -1,0 +1,151 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "a2-single-window-claims-certain",
+  "rules": [
+    "A2"
+  ],
+  "description": "Exactly one open window and no output match: sequence_bracket, tentative, resolved (OD-5: never certain).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 4100,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [],
+    "exchanges": [
+      {
+        "exchange_id": "652dca6a-a3dd-40e7-ab35-79141c3fb8b2",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_A2",
+            "name": "run_shell"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "a0210fc1-5678-427d-a203-abbbfed15b04",
+        "sequence": 4,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_A2",
+            "text": "There are three files."
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "156a43eb-23e4-4f02-a797-545e90df6c8e",
+        "event_id": "c9ef27d4-54bf-4bde-a185-97d4907224f0",
+        "label": "exec ls /data",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
+        "stdout": "a.txt\nb.txt\nc.txt\n"
+      }
+    ],
+    "host_events": []
+  },
+  "expected": {
+    "projection_links": [
+      {
+        "attempt_id": "156a43eb-23e4-4f02-a797-545e90df6c8e",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-48a2377d933539d8a4deac0af8243b62"
+            },
+            "provenance": "inferred",
+            "method": "sequence_bracket",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "sensor_events": [],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "not_observed",
+        "reasons": [
+          "not_configured"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "sequence_bracket": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "applied"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      }
+    },
+    "trace": {
+      "effects": {
+        "156a43eb-23e4-4f02-a797-545e90df6c8e": "A2"
+      },
+      "anchors": {},
+      "host_events": {},
+      "tool_calls": {
+        "p-48a2377d933539d8a4deac0af8243b62": "attributed"
+      }
+    }
+  }
+}

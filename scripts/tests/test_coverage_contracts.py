@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -35,6 +36,7 @@ from contracts.validate_coverage_contracts import (  # noqa: E402
     pseudonym_v2,
     validate_coverage_contracts,
 )
+from contracts import action_record  # noqa: E402
 from release import package_contracts as packaging  # noqa: E402
 
 
@@ -47,6 +49,15 @@ def _copy_tree(tmp_path: Path) -> Path:
         Path("contracts/content/v2/schema/content-object-v2.schema.json"),
         MANIFEST_RECORD_SCHEMA,
         PSEUDONYM_V1_VECTORS,
+        # Spec 056: the action-record fixtures read these outside the family.
+        action_record.REPORT_SCHEMA,
+        action_record.ALLOWLIST_GO,
+        action_record.PROCESSOR_GO,
+        *(
+            action_record.CAPTURE
+            / f"fixtures/valid/spool-record-exec-subprocess-{phase}.json"
+            for phase in ("start", "end")
+        ),
     ):
         (root / extra).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO_ROOT / extra, root / extra)
@@ -635,7 +646,7 @@ def _vector_code(document: Any) -> str:
 def test_p1_every_section_4_3_artifact_is_pinned() -> None:
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {record["path"]: record for record in manifest["artifacts"]}
-    assert manifest["version"] == "1.1.0"
+    assert manifest["version"] == "1.2.0"  # 1.2.0: spec 056 (WP6-01)
     for path in P1_ARTIFACTS:
         assert path in pinned, path
     assert (
@@ -667,7 +678,8 @@ def test_p1_registry_rows() -> None:
     assert evidence["allowed_modes"] == ["retain_original", "metadata_only", "omit"]
     assert reg["roles"]["registry_revision"] == 4
     assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
-        "fabric.test.items/v1"
+        "fabric.test.items/v1",
+        "fabric.exec.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-01
     ]
 
 
@@ -686,7 +698,16 @@ def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
         namespace,
     )
     assert set(namespace["RECORD_KEY_CHECKS"]) == set(table)
-    assert dict(namespace["RECORD_KEY_CONDITIONS"]) == record_conditions(reg) == {}
+    # Spec 056 §5: the first conditional placements, exec.subprocess only.
+    exec_only = {"capture_points": ["exec.subprocess"]}
+    assert record_conditions(reg) == {
+        "fabric.process.parent_pid": exec_only,
+        "fabric.process.start_ns": exec_only,
+    }
+    assert {
+        key: {column: list(values) for column, values in cond.items()}
+        for key, cond in namespace["RECORD_KEY_CONDITIONS"].items()
+    } == record_conditions(reg)
     go = (
         REPO_ROOT
         / "components/otel-collector-fabric/processor/fabricguardprocessor/coverage_keys.go"
@@ -903,3 +924,255 @@ def test_p1_registry_rules_are_enforced(
     root = _copy_tree(tmp_path)
     _edit_registry(root, registry, change)
     _assert_code(root, code)
+
+
+# ---------------------------------------------------------------- spec 056 (coverage/v1 1.2.0)
+from contracts import action_reference as rules  # noqa: E402
+
+ACTION = REPO_ROOT / FAMILY / action_record.ACTION
+
+
+def _rule(name: str) -> dict[str, Any]:
+    value = json.loads((ACTION / "rules" / f"{name}.json").read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def test_056_inference_methods_and_reasons_are_registered() -> None:
+    reg = load_registries(REPO_ROOT)
+    methods = {r["value"]: r["confidence"] for r in reg["vocab"]["inference_method"]}
+    assert (
+        methods["sequence_bracket"] == "tentative"
+    )  # OD-5: only A0 and A1 are certain
+    assert methods["output_match"] == "certain"
+    assert methods["process_anchor"] == methods["process_lineage"] == "varies"
+    assert methods["pid_time_join"] == "tentative"  # 053 §6.3's join is unchanged
+    reasons = {r["value"] for r in reg["vocab"]["reason"]}
+    assert {
+        "unattributed_effect", "ambiguous_attribution", "anchor_missing",
+        "unexplained_host_event", "tool_result_missing", "channel_disabled",
+        "no_effect_channel", "none_in_window", "remote_sandbox", "exchange_gap",
+        "source_gap",
+    } <= reasons  # fmt: skip
+    keys = {row["key"]: row for row in reg["keys"]["keys"]}
+    for key in ("fabric.process.parent_pid", "fabric.process.start_ns"):
+        assert keys[key]["placement"] == ["record"]
+        assert keys[key]["capture_points"] == ["exec.subprocess"]
+    for key in ("fabric.process.pid", "fabric.execution.host_id"):
+        assert "record" in keys[key]["placement"] and "capture_points" not in keys[key]
+    exec_type = next(
+        t
+        for t in reg["fields"]["evidence_types"]
+        if t["type"] == "fabric.exec.observation/v1"
+    )
+    assert exec_type["capture_points"] == ["exec.subprocess"]
+
+
+def test_056_a_varying_method_still_refuses_a_fixed_one(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+    _edit_registry(
+        root,
+        "vocab",
+        lambda d: next(
+            r for r in d["inference_method"] if r["value"] == "sequence_bracket"
+        ).update(confidence="varies"),
+    )
+    _assert_code(root, "coverage.vocab.confidence")
+
+
+def test_056_every_rule_and_edge_case_has_its_fixture() -> None:
+    valid = {p.stem: _rule(p.stem) for p in (ACTION / "rules").glob("*.json")}
+    covered = {r for doc in valid.values() for r in doc["rules"]}
+    assert {"A0", "A1", "A2", "A3", "A4", "H1", "H2", "H3", "H4"} <= covered
+    for edge in (
+        "edge-parallel-distinct-outputs",
+        "edge-parallel-metadata-only",
+        "edge-clock-margin-boundary",
+        "edge-background-thread",
+        "edge-pid-reuse",
+        "edge-lineage-depth-17",
+        "edge-agent-uncalled-host",
+        "ar1-run",
+    ):
+        assert edge in valid, edge  # fmt: skip
+    invalid = {p.stem[:2] for p in (ACTION / "invalid").glob("*.json")}
+    assert invalid == {"a0", "a1", "a2", "a3", "a4", "h1", "h2", "h3", "h4"}
+    manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
+    pinned = {r["path"]: r for r in manifest["artifacts"]}
+    for path in (ACTION / "invalid").glob("*.json"):
+        record = pinned[path.relative_to(REPO_ROOT / FAMILY).as_posix()]
+        assert record["expectation"] == "invalid" and record["expected_error"]
+
+
+def test_056_rule_fixtures_pin_the_rule_that_decides() -> None:
+    def trace(name: str) -> dict[str, Any]:
+        value: dict[str, Any] = _rule(name)["expected"]["trace"]
+        return value
+
+    assert list(trace("a0-reported-parent")["effects"].values()) == ["A0"]
+    assert list(trace("a2-single-window")["effects"].values()) == ["A2"]
+    assert list(trace("edge-parallel-distinct-outputs")["effects"].values()) == [
+        "A1",
+        "A1",
+    ]
+    assert list(trace("edge-parallel-metadata-only")["effects"].values()) == [
+        "A3",
+        "A3",
+    ]
+    assert list(trace("edge-background-thread")["effects"].values()) == ["A1", "A4"]
+    assert list(trace("edge-pid-reuse")["anchors"].values()) == ["H2-ambiguous"]
+    depth = _rule("edge-lineage-depth-17")["expected"]
+    assert depth["attribution"]["lineage_truncated"] == 1
+    assert depth["attribution"]["links"]["process_lineage"]["resolved"] == 16
+    assert list(trace("edge-agent-uncalled-host")["host_events"].values()) == [
+        "H4", "H4-uncalled"
+    ]  # fmt: skip
+    margin = _rule("edge-clock-margin-boundary")["expected"]["projection_links"][0]
+    assert [link["state"] for link in margin["links"]] == ["ambiguous", "ambiguous"]
+
+
+def test_056_ar1_expectation_is_the_spec_table() -> None:
+    """Spec 056 §6.2: the expected links and chain verdicts of AR-1."""
+    doc = _rule("ar1-run")
+    expected = doc["expected"]
+    effects = doc["input"]["effects"]
+    methods = [
+        [(link["method"], link["confidence"]) for link in entry["links"]]
+        for entry in expected["projection_links"]
+    ]
+    anchor = ("process_anchor", "certain")
+    assert methods == [[("output_match", "certain"), anchor]] * 5 + [[anchor]]
+    unattributed = expected["attribution"]["unattributed_effects"]["effects"]
+    assert [e["attempt_uid"] for e in unattributed] == [effects[5]["attempt_uid"]]
+    lineage = {
+        e["event_id"]: e["links"][0]["target"]["id"]
+        for e in expected["sensor_events"]
+        if any(link["method"] == "process_lineage" for link in e.get("links", []))
+    }
+    by_label = {e["label"]: e["event_id"] for e in doc["input"]["host_events"]}
+    assert lineage == {
+        by_label["exec-curl"]: effects[1]["attempt_uid"],
+        by_label["connect-curl"]: effects[1]["attempt_uid"],
+        by_label["exec-python"]: effects[4]["attempt_uid"],
+    }
+    assert expected["attribution"]["unexplained_host_events"]["event_ids"] == [
+        by_label["connect-uncalled"]
+    ]
+    assert {k: v.get("reasons", []) for k, v in expected["chains"].items()} == {
+        "decisions": [], "actions": [], "effects": ["unattributed_effect"],
+        "corroboration": ["unexplained_host_event"],
+    }  # fmt: skip
+    local = _rule("ar1-run-local-profile")["expected"]
+    confidences = {
+        link["confidence"]
+        for entry in local["projection_links"]
+        for link in entry["links"]
+        if link["method"] == "process_anchor"
+    }
+    assert confidences == {"tentative"}  # no start time: never certain
+
+
+def test_056_negative_variants() -> None:
+    a = _rule("ar1-negative-a-no-host-source")["expected"]["chains"]
+    assert a["corroboration"]["verdict"] == "not_observed"
+    assert a["effects"] == _rule("ar1-run")["expected"]["chains"]["effects"]
+    b = _rule("ar1-negative-b-effect-dropped")["expected"]["chains"]["effects"]
+    assert "sequence_gap" in b["reasons"]
+    c = _rule("ar1-negative-c-hook-disabled")["expected"]
+    assert c["chains"]["effects"]["verdict"] == "not_observed"
+    assert c["attribution"]["effects_not_observed"]["channel_disabled"] == 5
+    d = _rule("ar1-negative-d-metadata-only")["expected"]
+    assert d["attribution"]["output_match"] == {
+        "state": "not_applicable", "reason": "privacy_policy"
+    }  # fmt: skip
+    assert list(d["trace"]["effects"].values())[2:4] == ["A3", "A3"]
+
+
+def test_056_reference_boundaries() -> None:
+    assert rules.same_tick(60_120_000_000, 60_123_217_448)
+    assert not rules.same_tick(60_120_000_000, 60_130_000_000)
+    doc = _rule("a1-output-match")
+    inp = copy.deepcopy(doc["input"])
+    output = "x" * (rules.MIN_MATCH_BYTES - 1) + " \n"
+    inp["effects"][0]["stdout"] = output
+    inp["exchanges"][1]["tool_results"][0]["text"] = "result: " + output
+    assert list(
+        rules.reconstruct(inp, action_record.call_id)["trace"]["effects"].values()
+    ) == [
+        "A2"
+    ]  # 15 bytes after trailing whitespace: too short to match, never a weaker match
+    inp["effects"][0]["stdout"] = "x" * rules.MIN_MATCH_BYTES + "\n"
+    inp["exchanges"][1]["tool_results"][0]["text"] = (
+        "result: " + "x" * rules.MIN_MATCH_BYTES
+    )
+    assert list(
+        rules.reconstruct(inp, action_record.call_id)["trace"]["effects"].values()
+    ) == ["A1"]
+    h1 = copy.deepcopy(_rule("h1-anchor-exact")["input"])
+    h1["host_events"][0]["process_start_ns"] += rules.TICK_NS  # a different process
+    assert list(
+        rules.reconstruct(h1, action_record.call_id)["trace"]["anchors"].values()
+    ) == ["anchor_missing"]
+
+
+def test_056_a_drifted_rule_expectation_is_refused(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+    relative = (action_record.ACTION / "rules/a2-single-window.json").as_posix()
+    _rewrite(
+        root,
+        relative,
+        lambda d: d["expected"]["chains"]["effects"].update(verdict="complete"),
+    )
+    validate_coverage_contracts(root)  # unchanged values: still valid
+    _rewrite(
+        root,
+        relative,
+        lambda d: d["expected"]["projection_links"][0]["links"][0]["target"].update(
+            id="p-" + "0" * 32
+        ),
+    )
+    _assert_code(root, "coverage.action.expected")
+
+
+def test_056_interface_goldens() -> None:
+    golden = json.loads(
+        (ACTION / "interface/exec-subprocess-records.json").read_text(encoding="utf-8")
+    )
+    start = golden["records"][0]["span"]["attributes"]
+    assert golden["records"][0]["span"]["name"] == "fabric.activity"
+    assert start["fabric.capture.point"].startswith("exec.subprocess@")
+    assert start["fabric.capture.source"] == "observed"
+    assert {"fabric.process.pid", "fabric.process.parent_pid", "fabric.process.start_ns",
+            "fabric.execution.host_id"} <= set(start)  # fmt: skip
+    roles = [b["role"] for r in golden["records"] for b in r["bodies"]]
+    assert roles == [
+        "terminal.argv", "terminal.context", "record.evidence",
+        "terminal.stdout", "terminal.stderr", "record.evidence",
+    ]  # fmt: skip
+    context = json.loads(golden["records"][0]["bodies"][1]["utf8"])
+    assert context["env_names"] == ["DATA_TOKEN", "PATH"]  # names only, never values
+    local = json.loads(
+        (ACTION / "interface/host-local-log-records.json").read_text(encoding="utf-8")
+    )
+    ids = [n["event_id"] if n else None for n in local["normalized"]]
+    assert (
+        ids[0].startswith("host-") and ids[3] is None
+    )  # a loss record is not an event
+    assert ids[4].startswith("hev-") and ids[5].startswith("rec-")
+    assert all("process_start_ns" not in n for n in local["normalized"] if n)
+
+
+def test_056_interface_golden_refuses_an_unadmitted_host_key(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+    relative = (
+        action_record.ACTION / "interface/host-local-log-records.json"
+    ).as_posix()
+
+    def add_key(doc: Any) -> None:
+        record = doc["export"]["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]
+        record["attributes"].append(
+            {"key": "process.command_line", "value": {"stringValue": "sh -c ls"}}
+        )
+
+    _rewrite(root, relative, add_key)
+    _assert_code(root, "coverage.action.interface")

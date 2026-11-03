@@ -2,7 +2,8 @@
   "schema_version": "fabric.record-evidence-vectors/v1",
   "rule": "Spec 050 §3.4a: a record.evidence body is one fabric.record-evidence/v1 document in spec-029 canonical JSON. The Node's envelope check (before acknowledgement) refuses, in order: evidence_not_canonical (not canonical bytes: whitespace, key order, duplicate keys, floats), evidence_envelope (another top-level key, wrong schema_version, malformed continuation or refs), evidence_type_unregistered, evidence_bounds (over 1 MiB, 4096 items, item depth 4, 256-character strings, 64 refs). fabric.reconstruct then validates each item against its registered type schema (item_errors: those items' fields project not_captured(parse_failed)) and projects the registry's pointers ('*': every valid item) into fields. The evidence object is one of the record's bodies: its stored_sha256 is in the record digest's content list, so the seal covers it. A case is a document (hashed as its canonical bytes), raw text, or generate (base with count copies of item).",
   "registered_types": [
-    "fabric.test.items/v1"
+    "fabric.test.items/v1",
+    "fabric.exec.observation/v1"
   ],
   "cases": [
     {

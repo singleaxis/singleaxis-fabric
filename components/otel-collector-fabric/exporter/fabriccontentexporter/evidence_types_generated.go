@@ -33,5 +33,6 @@ var evidenceEnvelopeKeys = map[string]bool{
 
 // registeredEvidenceTypes is every registered evidence type.
 var registeredEvidenceTypes = map[string]bool{
-	"fabric.test.items/v1": true,
+	"fabric.exec.observation/v1": true,
+	"fabric.test.items/v1":       true,
 }

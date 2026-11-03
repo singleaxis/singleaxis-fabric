@@ -174,6 +174,31 @@ emitters).**
 python scripts/contracts/validate_capture_contracts.py
 ```
 
+## Version 1.5.0 (spec 056, agent action reconstruction)
+
+- `run-reconstruction-v1`: `runs[]` gains three optional objects.
+  - `chains`: one verdict per evidence chain, `decisions`, `actions`,
+    `effects` and `corroboration`, each `complete`, `partial`, `unverified`
+    or `not_observed` with its reasons (`$defs/chainReason`: a gap type of
+    this report or a coverage reason). `decisions` is the exchange-only
+    verdict and is never `not_observed`. A `partial` or `unverified` chain
+    bounds the run verdict: a run is never `complete_*` while one is.
+  - `attribution`: link counts by basis, the unattributed effects and the
+    unexplained host events (the first 64 with the full count), the tool
+    calls with no observed effect by reason, whether output matching applied,
+    and the host events a lineage bound left unlinked.
+  - `sensor_events`: the host events a link names, with the `part_of` links
+    whose subject they are (spec 053 §6.3's `sensor_events[]`, pulled
+    forward by spec 056).
+- New fixtures: `valid/spool-record-exec-subprocess-{start,end}.json` (the
+  two records of one `exec.subprocess` attempt), `valid/run-reconstruction-action-chains.json`
+  (AR-1's chains on a run with no gap, verdict `partial`) and four refusals
+  (`invalid/run-reconstruction-chain-*.json`).
+- The field-by-field description of these objects and of the rule fixtures
+  that produce them is
+  [`contracts/coverage/v1/fixtures/action-record/README.md`](../../coverage/v1/fixtures/action-record/README.md).
+  Additive: 1.4.0 reports stay valid.
+
 ## Version 1.4.0 (spec 050 §3.9, wire enrichment)
 
 - `spool-record-v1`: an exchange span may carry the P1 wire enrichment, each key

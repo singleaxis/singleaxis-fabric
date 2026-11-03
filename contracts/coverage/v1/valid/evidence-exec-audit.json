@@ -1,0 +1,18 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "exec.subprocess",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.exec.observation/v1",
+    "items": [
+      {
+        "api": "audit",
+        "pid_known": false,
+        "audit_event": "os.posix_spawn",
+        "argv_form": "not_exposed",
+        "duplicate_suppressed": true
+      }
+    ]
+  }
+}

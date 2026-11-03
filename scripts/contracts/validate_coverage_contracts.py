@@ -528,14 +528,21 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
                 "projection schema enum differs from the vocabulary",
             )
     for row in vocab["inference_method"]:
+        # Spec 056 §4.3: a process join's confidence follows its start-time evidence
+        # (``varies``); every other method has one fixed confidence.
+        stated = (
+            "Confidence varies"
+            if row.get("confidence") == "varies"
+            else f"Confidence `{row.get('confidence')}`"
+        )
         if (
-            row.get("confidence") not in ("certain", "tentative")
-            or f"Confidence `{row['confidence']}`" not in row["meaning"]
+            row.get("confidence") not in ("certain", "tentative", "varies")
+            or stated not in row["meaning"]
         ):
             _fail(
                 "coverage.vocab.confidence",
                 row["value"],
-                "each inference method has one fixed confidence",
+                "each inference method has one fixed confidence, or says it varies",
             )
     run_only = {r["value"] for r in vocab["run_only_verdicts"]}
     step_enum = list(
@@ -659,7 +666,7 @@ RECORD_CONDITION_COLUMNS = ("capture_point_kinds", "capture_points")
 
 
 def record_conditions(reg: Mapping[str, Any]) -> dict[str, dict[str, list[str]]]:
-    """Conditional records placements (050 §3.4 rule A, F1); P1 ships none."""
+    """Conditional records placements (050 §3.4 rule A, F1); spec 056 adds the first."""
     out: dict[str, dict[str, list[str]]] = {}
     for row in reg["keys"]["keys"]:
         cond = {c: list(row[c]) for c in RECORD_CONDITION_COLUMNS if c in row}
@@ -1446,6 +1453,12 @@ def _confidence(reg: Mapping[str, Any]) -> dict[str, str]:
     return {r["value"]: r["confidence"] for r in reg["vocab"]["inference_method"]}
 
 
+def _confidence_ok(confidence: Mapping[str, str], method: str, claimed: str) -> bool:
+    """A method's fixed confidence, or any confidence for a ``varies`` method (spec 056
+    §4.3: its rule fixtures pin when ``certain`` is allowed)."""
+    return confidence[method] in ("varies", claimed)
+
+
 SAME_AS_METHODS = {"trace_id_match", "cross_run_previous_response"}
 NOT_CHOSEN = {"value", "ref", "refs"}
 GRAPH_REASONS = {"segment_missing", "segment_conflict", "post_terminal_activity"}
@@ -1469,7 +1482,7 @@ def validate_projection(
             parents += link["type"] == "parent"
             if (
                 link["provenance"] == "inferred"
-                and confidence[link["method"]] != link["confidence"]
+                and not _confidence_ok(confidence, link["method"], link["confidence"])
             ):
                 _fail(
                     "coverage.projection.confidence",
@@ -1539,7 +1552,9 @@ def validate_projection(
                 )
             if (
                 wrapper.get("provenance") == "inferred"
-                and confidence[wrapper["method"]] != wrapper["confidence"]
+                and not _confidence_ok(
+                    confidence, wrapper["method"], wrapper["confidence"]
+                )
             ):
                 _fail(
                     "coverage.projection.confidence",
@@ -1573,7 +1588,7 @@ def validate_projection(
             )
         if (
             step["provenance"] == "inferred"
-            and confidence[step["method"]] != step["confidence"]
+            and not _confidence_ok(confidence, step["method"], step["confidence"])
         ):
             _fail(
                 "coverage.projection.confidence",
@@ -2480,7 +2495,11 @@ def validate_fixture(
     root: Path,
     schemas: Mapping[str, Mapping[str, Any]],
 ) -> None:
+    from contracts import action_record  # noqa: PLC0415 - it imports this module
+
     kind = document.get("schema_version")
+    if action_record.validate_document(document, reg, root, fail=_fail):
+        return
     if kind == "fabric.step-projection/v1":
         validate_projection(document, reg, schemas["projection"])
     elif kind == "fabric.capture-manifest/v1":
@@ -2488,11 +2507,27 @@ def validate_fixture(
     elif kind == ref.EVIDENCE_SCHEMA:
         validate_evidence_document(document, reg, root, schemas)
     elif kind == "fabric.record-evidence-fixture/v1":
-        # An evidence document with the identity mode its source manifest declares.
-        if set(document) != {"schema_version", "identity_mode", "document"} or (
+        # An evidence document with the identity mode its source manifest declares and,
+        # optionally, the capture point of the record that carries it (053 §3.2: the
+        # verifier admits a type only on its registered points).
+        keys = set(document) - {"capture_point"}
+        if keys != {"schema_version", "identity_mode", "document"} or (
             document["identity_mode"] not in {"pseudonymous", "clear"}
         ):
             _fail("coverage.schema", "$", "closed evidence fixture wrapper")
+        point = document.get("capture_point")
+        evidence_type = document["document"].get("evidence_type")
+        types = _evidence_types(reg)
+        if (
+            point is not None
+            and evidence_type in types
+            and point not in types[evidence_type]["capture_points"]
+        ):
+            _fail(
+                "coverage.evidence.point",
+                "$.capture_point",
+                f"{evidence_type} is not registered for {point}",
+            )
         validate_evidence_document(
             document["document"],
             reg,

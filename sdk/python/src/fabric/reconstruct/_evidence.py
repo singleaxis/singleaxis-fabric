@@ -81,6 +81,18 @@ EVIDENCE_TYPES: Mapping[str, Mapping[str, Any]] = MappingProxyType({
         ),
         "schema": EVIDENCE_ITEM_SCHEMAS["fabric.test.items/v1"],
     }),
+    "fabric.exec.observation/v1": MappingProxyType({
+        "capture_points": ("exec.subprocess",),
+        "fields": (
+            ("content", "x-fabric.exec.argv_form", "/items/*/argv_form"),
+            ("content", "x-fabric.exec.stdio", "/items/*/stdio"),
+            ("content", "x-fabric.exec.output_form", "/items/*/output_form"),
+            ("content", "x-fabric.exec.cumulative", "/items/*/cumulative"),
+            ("content", "x-fabric.exec.timeout_partial", "/items/*/timeout_partial"),
+            ("content", "x-fabric.exec.pid_known", "/items/*/pid_known"),
+        ),
+        "schema": EVIDENCE_ITEM_SCHEMAS["fabric.exec.observation/v1"],
+    }),
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------
 

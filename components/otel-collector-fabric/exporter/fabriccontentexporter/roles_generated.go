@@ -136,6 +136,17 @@ var statusReasons = map[string]bool{
 	"sampling":               true,
 	"retention_expired":      true,
 	"deleted":                true,
+	"unattributed_effect":    true,
+	"ambiguous_attribution":  true,
+	"tool_result_missing":    true,
+	"exchange_gap":           true,
+	"source_gap":             true,
+	"anchor_missing":         true,
+	"unexplained_host_event": true,
+	"channel_disabled":       true,
+	"no_effect_channel":      true,
+	"none_in_window":         true,
+	"remote_sandbox":         true,
 }
 
 // descriptorOnlyReasons are the producer reasons a descriptor-only records

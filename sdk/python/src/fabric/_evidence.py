@@ -55,8 +55,10 @@ EVIDENCE_ENVELOPE_KEYS: Mapping[str, bool] = {
     "schema_version": True, "evidence_type": True, "items": True, "continuation": False,
     "refs": False,
 }  # fmt: skip
-# Every registered evidence type (P1 registers only the test type; 053/054 add theirs).
-REGISTERED_EVIDENCE_TYPES: frozenset[str] = frozenset({"fabric.test.items/v1"})
+# Every registered evidence type (P1 registers the test type; 053/056 the exec type).
+REGISTERED_EVIDENCE_TYPES: frozenset[str] = frozenset(
+    {"fabric.test.items/v1", "fabric.exec.observation/v1"}
+)
 # An ID property's clear-mode alternative (R8), admitted only under identity_mode clear.
 CLEAR_KEYWORD = "x-fabric-clear"
 _TEST_ITEMS_SCHEMA: Mapping[str, Any] = {
@@ -81,11 +83,41 @@ _TEST_ITEMS_SCHEMA: Mapping[str, Any] = {
         },
     },
 }  # fmt: skip
+_STDIO = {"enum": ["pipe", "inherit", "devnull", "stdout", "fd", "file_object", "not_exposed"]}
+# Spec 053 §3.2 (registered by spec 056 WP6-01 for exec.subprocess).
+_EXEC_OBSERVATION_SCHEMA: Mapping[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.exec.observation-v1.schema.json",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["api", "pid_known"],
+    "properties": {
+        "api": {"enum": ["popen", "run", "communicate", "wait", "poll", "check_output",
+                         "asyncio_exec", "asyncio_shell", "asyncio_communicate",
+                         "asyncio_wait", "audit"]},
+        "audit_event": {"enum": ["subprocess.Popen", "os.system", "os.exec", "os.posix_spawn"]},
+        "argv_form": {"enum": ["argv", "shell_string", "not_exposed"]},
+        "stdio": {
+            "type": "object", "additionalProperties": False,
+            "required": ["stdin", "stdout", "stderr"],
+            "properties": {"stdin": _STDIO, "stdout": _STDIO, "stderr": _STDIO},
+        },
+        "output_form": {"enum": ["bytes", "text", "none"]},
+        "text_encoding": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,32}$"},
+        "observation_index": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "cumulative": {"type": "boolean"},
+        "timeout_partial": {"type": "boolean"},
+        "pid_known": {"type": "boolean"},
+        "duplicate_suppressed": {"type": "boolean"},
+        "error_class": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
+    },
+}  # fmt: skip
 #: The closed item schema of each registered type (its file under
 #: ``contracts/coverage/v1/evidence/``, annotations dropped). ``fabric.reconstruct``
 #: validates stored objects against the same dictionaries.
 EVIDENCE_ITEM_SCHEMAS: Mapping[str, Mapping[str, Any]] = MappingProxyType({
     "fabric.test.items/v1": _TEST_ITEMS_SCHEMA,
+    "fabric.exec.observation/v1": _EXEC_OBSERVATION_SCHEMA,
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------
 
