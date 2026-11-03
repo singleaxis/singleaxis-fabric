@@ -1,5 +1,9 @@
 # Recorder dependency reports
 
+> **Status:** describes the built license-report tooling:
+> [`scripts/license_scan.sh`](../../scripts/license_scan.sh) and
+> [`scripts/license_check.py`](../../scripts/license_check.py).
+
 The recorder license workflow generates Markdown, CSV, and JSON inventories
 from the exact released Python SDK, TypeScript SDK, Fabric Node distribution,
 and `fabricctl` command. Download `recorder-third-party-license-report` from the

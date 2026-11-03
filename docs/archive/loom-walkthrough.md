@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Quickstart](../quickstart.md). Kept for history only.
+> [Quickstart](../quickstart.md). Kept for history only; it may not match the current code.
 
 # Recorder v1 demo walkthrough
 

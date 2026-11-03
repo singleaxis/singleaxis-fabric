@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Qualified-run mode](../qualified-run-mode.md). Kept for history only.
+> [Qualified-run mode](../qualified-run-mode.md). Kept for history only; it may not match the current code.
 
 # Qualified custom-agent evidence testing
 

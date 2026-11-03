@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [Deployment](../deployment.md). Kept for history only.
+> [Deployment](../deployment.md). Kept for history only; it may not match the current code.
 
 # Deployment postures, not regulatory profiles
 

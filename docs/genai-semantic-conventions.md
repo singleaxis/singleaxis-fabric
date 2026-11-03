@@ -1,5 +1,10 @@
 # OpenTelemetry GenAI semantic conventions
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`fabric/_calls.py`](../sdk/python/src/fabric/_calls.py),
+> [`fabric/tracing.py`](../sdk/python/src/fabric/tracing.py) and TypeScript
+> [`calls.ts`](../sdk/typescript/src/calls.ts).
+
 SingleAxis Fabric emits OpenTelemetry GenAI semantic conventions alongside
 its stable `fabric.*` governance contract. The SDK instrumentation scope uses
 the GenAI schema URL `https://opentelemetry.io/schemas/gen-ai/1.42.0`.

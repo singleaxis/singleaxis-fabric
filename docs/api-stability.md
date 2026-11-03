@@ -1,5 +1,10 @@
 # Recorder v1 compatibility policy
 
+> **Status:** describes the compatibility policy of the released v0.8.0
+> artifacts. The artifact boundary it states is enforced by
+> [`scripts/release/`](../scripts/release/) (`release-policy.json`) and
+> [`scripts/tests/test_recorder_release_boundary.py`](../scripts/tests/test_recorder_release_boundary.py).
+
 The supported public surface consists of released artifacts, not every source
 file visible in the repository.
 

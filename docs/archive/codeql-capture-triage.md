@@ -1,5 +1,5 @@
 > **Archived; not part of recorder v1 documentation.** Superseded by
-> [the documentation index](../README.md). Kept for history only.
+> [the documentation index](../README.md). Kept for history only; it may not match the current code.
 
 # Capture PR CodeQL triage
 
