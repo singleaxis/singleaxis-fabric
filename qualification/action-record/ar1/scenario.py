@@ -29,6 +29,14 @@ HOST_LABEL = "ar1-host"
 # verifier pseudonymise ids and host labels with it; it protects nothing.
 ID_KEY = "ar1-test-id-key-not-a-secret"
 CLOCK_UNCERTAINTY_MS = 1
+# The agent's exit budget (FABRIC_WIRE_SHUTDOWN_TIMEOUT_S; the SDK default is 2 s). The
+# agent exits right after its last model call, with its last records still on the
+# capture worker, which fsyncs every stored object. One slow-disk stall of about 2 s on a
+# CI runner (the first variant, after the build steps) left the default budget short:
+# the tail of the run became a declared ``shutdown`` loss. A close returns as soon as
+# everything is delivered, so the budget only bounds a stall (and variant b's exit, whose
+# endpoint is closed on purpose: its records wait in the spool for the later drain).
+EXIT_BUDGET_S = 15
 DATA = {
     "a.txt": "alpha fixture file for the AR-1 run\n",
     "b.txt": "bravo fixture file read by parallel command one\n",
@@ -179,6 +187,7 @@ def agent_env(config: AgentConfig, base: Mapping[str, str] | None = None) -> dic
             "FABRIC_WIRE_ID_KEY": ID_KEY,
             "FABRIC_HOST_LABEL": HOST_LABEL,
             "FABRIC_CLOCK_UNCERTAINTY_MS": str(CLOCK_UNCERTAINTY_MS),
+            "FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": str(EXIT_BUDGET_S),
             "OTEL_EXPORTER_OTLP_ENDPOINT": config.otlp_endpoint,
             "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
         }

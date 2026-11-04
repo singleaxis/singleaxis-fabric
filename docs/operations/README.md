@@ -197,6 +197,7 @@ After any change to the Node, the store or the agents:
 | Calls missing from the record | The client is not httpx, httpx2 or aiohttp (`boto3`, gRPC, other processes), `FABRIC_WIRE_AIOHTTP=0`, the host is not matched (add `FABRIC_WIRE_ENDPOINTS`), or the path is not one of the five supported APIs. |
 | `queue_full` losses | Burst larger than the capture queue, CPU-bound threads starving the capture worker (see Throughput), or a full spool: raise `FABRIC_WIRE_QUEUE_MAX_ITEMS` or `FABRIC_WIRE_SPOOL_MAX_BYTES`. |
 | `disk_full` losses | The spool's volume filled before its bound; grow the volume. |
+| `shutdown` losses at exit | The process exited with records still on the capture worker (a short-lived process, or a slow disk stalling its fsyncs) past the exit budget, 2 s by default: raise `FABRIC_WIRE_SHUTDOWN_TIMEOUT_S` (seconds, at most 300). A close returns as soon as everything is delivered. |
 | Agent batches refused with `INVALID_ARGUMENT` | The agent's tenant or `fabric.source_id` does not match the Node's binding; compare the `s-` value on the agent's spans with the Node's configured source id. |
 | `flush()` returns `False` | Something was not delivered in time, the spool barrier is not established, or another process's records were quarantined. |
 | Multiprocessing workers' calls missing | The pool was ended by `with Pool():` (SIGTERM); use `close()`/`join()` (see Multiprocessing). |
