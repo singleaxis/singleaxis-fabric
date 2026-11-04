@@ -123,9 +123,11 @@ def _descriptor(
     *,
     attrs: Mapping[str, Any],
     captured_at: str,
+    boundary: str = "terminal",
 ) -> dict[str, Any]:
     """A records-body descriptor of an observed hook record (spec 050 §3.5, 053 §3.1):
-    content provenance ``protocol``, boundary ``terminal``, retained under the policy."""
+    content provenance ``protocol``, boundary ``terminal`` (``remote`` for remote.sandbox),
+    retained under the policy."""
     digest = ref.sha256_digest(data)
     return {
         "schema_version": "fabric.content-object/v2",
@@ -137,7 +139,7 @@ def _descriptor(
         "representation": "exact",
         "transformations": [],
         "provenance": "protocol",
-        "boundary": "terminal",
+        "boundary": boundary,
         "status": "stored",
         "source_id": attrs["fabric.source_id"],
         "source_epoch": attrs["fabric.source.epoch"],
@@ -158,10 +160,12 @@ def _descriptor(
     }
 
 
-def _evidence_doc(item: Mapping[str, Any]) -> dict[str, Any]:
+def _evidence_doc(
+    item: Mapping[str, Any], evidence_type: str = EXEC_TYPE
+) -> dict[str, Any]:
     return {
         "schema_version": ref.EVIDENCE_SCHEMA,
-        "evidence_type": EXEC_TYPE,
+        "evidence_type": evidence_type,
         "items": [dict(item)],
     }
 
@@ -253,22 +257,43 @@ def exec_records() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             },
         },
     ]
+    return hook_records(base, phases)
+
+
+def hook_records(
+    base: Mapping[str, Any],
+    phases: Sequence[Mapping[str, Any]],
+    *,
+    prefix: str = "ar-exec",
+    evidence_type: str = EXEC_TYPE,
+    boundary: str = "terminal",
+    name_hint: str = "fabric.terminal",
+    order_base: int = 20,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The spool records of one hook attempt from its phases (each: phase, sequence, event,
+    start, end, captured_at, attrs, bodies ``(role, bytes, media type)``, evidence item)."""
     spooled, parts = [], []
     for order, phase in enumerate(phases):
         attrs = dict(base)
         attrs["fabric.source.sequence"] = phase["sequence"]
         attrs["fabric.event_id"] = phase["event"]
         attrs.update(phase["attrs"])
-        evidence = _evidence_doc(phase["evidence"])
+        evidence = _evidence_doc(phase["evidence"], evidence_type)
         named = [
             *phase["bodies"],
             (ref.EVIDENCE_ROLE, ref.canonical_bytes(evidence), ref.EVIDENCE_MEDIA_TYPE),
         ]
         descriptors, offset, bodies, blobs = [], 0, [], {}
         for index, (role, data, media) in enumerate(named):
-            oid = uid(f"ar-exec-{phase['phase']}-body-{index}")
+            oid = uid(f"{prefix}-{phase['phase']}-body-{index}")
             descriptor = _descriptor(
-                oid, role, data, media, attrs=attrs, captured_at=phase["captured_at"]
+                oid,
+                role,
+                data,
+                media,
+                attrs=attrs,
+                captured_at=phase["captured_at"],
+                boundary=boundary,
             )
             descriptors.append(descriptor)
             bodies.append(
@@ -278,7 +303,7 @@ def exec_records() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
             offset += len(data)
         attrs["fabric.content.object_ids"] = [d["object_id"] for d in descriptors]
         span = {
-            "name": ref.span_category("fabric.terminal", attrs),
+            "name": ref.span_category(name_hint, attrs),
             "kind": "internal",
             "trace_id": TRACE,
             "span_id": hashlib.sha256(phase["event"].encode()).hexdigest()[:16],
@@ -293,7 +318,7 @@ def exec_records() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
                 "schema_version": "fabric.wire-spool-record/v1",
                 "record_kind": "record",
                 "source": {"source_id": SOURCE, "source_epoch": EPOCH},
-                "order": 20 + order,
+                "order": order_base + order,
                 "written_at_unix_nano": phase["end"] + 40_000,
                 "service_name": "travel-agent",
                 "span": span,
@@ -325,7 +350,8 @@ def effect_from_records(
 ) -> dict[str, Any]:
     """The normalized effect a reader derives from one exec.subprocess attempt's records:
     identity and position from the ``start`` record (the first by sequence), the process
-    keys from the first record carrying them, ``exit_observed_ns`` from the end time of the
+    keys (M2: the pid namespace and the created sandbox id) from the first record carrying
+    them, ``exit_observed_ns`` from the end time of the
     first record carrying an exit code or signal (spec 056 §4.3 exec chains), the decoded
     stdout from the ``end`` record's ``terminal.stdout`` body. Rule fixtures use this
     form."""
@@ -340,11 +366,18 @@ def effect_from_records(
         "sequence": attrs["fabric.source.sequence"],
         "start_ns": first["start_time_unix_nano"],
     }
+    point = attrs["fabric.capture.point"].split("@", 1)[0]
+    if point != EXEC_POINT:
+        out["capture_point"] = point  # spec 056 M2: a remote.sandbox effect
     for key, name in (
         ("fabric.process.pid", "pid"),
         ("fabric.process.parent_pid", "parent_pid"),
         ("fabric.process.start_ns", "process_start_ns"),
         ("fabric.execution.host_id", "host_id"),
+        # spec 056 M2 (§7.3.3 (a)): absent from M1 records
+        ("fabric.process.pid_ns", "pid_ns"),
+        ("fabric.sandbox.created_id", "created_sandbox_id"),
+        ("fabric.execution.sandbox_id", "sandbox_id"),
     ):
         value = next(
             (
@@ -369,7 +402,8 @@ def effect_from_records(
         out["exit_observed_ns"] = exited
     for record in ordered:
         for body in record.get("bodies", []):
-            if body["descriptor"]["role"] == "terminal.stdout":
+            # the output A1 reads: terminal.stdout, or remote.result (§7.3.3 (l))
+            if body["descriptor"]["role"] in ("terminal.stdout", "remote.result"):
                 out["stdout"] = blobs[body["descriptor"]["object_id"]].decode("utf-8")
     return out
 
@@ -787,6 +821,26 @@ def normalize_span(span: Mapping[str, Any]) -> dict[str, Any]:
     return out
 
 
+def normalize_span_m2(span: Mapping[str, Any]) -> dict[str, Any]:
+    """The M2 host event of a production record (spec 056 §7.3.3 (l) ``HostEvent``): the
+    M1 fields plus ``source_id``, both pid numberings, the scope, the container and pod
+    ids and the peer port."""
+    attrs = span["attributes"]
+    out = normalize_span(span)
+    out["source_id"] = attrs["fabric.source_id"]
+    for key, name in (
+        ("fabric.sensor.ns_pid", "ns_pid"),
+        ("fabric.sensor.ns_ppid", "ns_ppid"),
+        ("fabric.sensor.scope", "scope"),
+        ("fabric.execution.sandbox_id", "sandbox_id"),
+        ("fabric.sensor.pod_id", "pod_id"),
+        ("fabric.sensor.peer_port", "peer_port"),
+    ):
+        if key in attrs:
+            out[name] = attrs[key]
+    return out
+
+
 # ------------------------------------------------------------------ rule fixture builder
 class Scenario:
     """A small builder for rule-fixture inputs: one run, one agent epoch, times in
@@ -913,6 +967,8 @@ class Scenario:
         return event
 
     def fixture(self, rules_: Sequence[str], description: str) -> dict[str, Any]:
+        if not getattr(self, "m2", False):
+            _init_namespace(self.input)
         return {
             "schema_version": RULE_SCHEMA,
             "name": self.name,
@@ -922,6 +978,28 @@ class Scenario:
             "input": self.input,
             "expected": rules.reconstruct(self.input, call_id),
         }
+
+
+def _init_namespace(inp: dict[str, Any]) -> None:
+    """M1 fixtures with a ``recorded`` source model an agent in the init pid namespace:
+    its namespace-local numbers are the init numbers. Under the M2 rules (spec 056 §4.3,
+    per-source mode) an effect then carries its ``pid_ns`` and a recorded event its
+    ``ns_pid``/``ns_ppid``; the expected links are those of M1, unchanged."""
+    recorded = {
+        s.get("source_id", s["source"])
+        for s in inp.get("host_sources", [])
+        if s.get("pid_namespace") == "recorded"
+    }
+    if not recorded:
+        return
+    for effect in inp.get("effects", []):
+        if effect.get("pid") is not None:
+            effect.setdefault("pid_ns", inp["agent"].get("pid_ns", PID_NS))
+    for event in inp.get("host_events", []):
+        if event.get("source_id", event["source"]) in recorded and "pid_ns" in event:
+            event.setdefault("ns_pid", event["pid"])
+            if "ppid" in event:
+                event.setdefault("ns_ppid", event["ppid"])
 
 
 LS_OUTPUT = "a.txt\nb.txt\nc.txt\n"
@@ -1999,6 +2077,8 @@ def _register_invalid() -> None:
 
 
 _register_invalid()
+# Spec 056 M2 (WP6-11): action_record_m2 registers its refusals here when it loads.
+from contracts import action_record_m2  # noqa: E402, F401
 
 
 def generate(w: Any) -> None:
@@ -2023,6 +2103,57 @@ def generate(w: Any) -> None:
         CAPTURE / "fixtures/valid/run-reconstruction-nested-scopes.json"
     )
     for rel, (doc, _) in report_fixtures(nested, valid["ar1-run"]).items():
+        w.json(CAPTURE / rel, doc)
+    # Spec 056 M2 (WP6-11): evidence types, rule fixtures, golden sections, reports.
+    from contracts import action_record_m2 as m2  # noqa: PLC0415 - it imports this module
+
+    for rel, (doc, _) in m2.evidence_fixtures().items():
+        w.json(COVERAGE / rel, doc)
+    m2_valid = m2.rule_fixtures()
+    for name, doc in m2_valid.items():
+        w.json(COVERAGE / ACTION / f"rules/{name}.json", doc)
+    for name, (doc, _) in m2.invalid_rule_fixtures(m2_valid).items():
+        w.json(COVERAGE / ACTION / f"invalid/{name}.json", doc)
+    spools, sections = m2.spool_and_goldens()
+    for rel, doc in spools.items():
+        w.json(CAPTURE / rel, doc)
+    goldens = interface_goldens(spooled, parts)
+    exec_golden = goldens["interface/exec-subprocess-records.json"]
+    exec_golden["production"] = sections["ar2-exec"]
+    exec_golden["container_create"] = sections["ar2-docker"]
+    span_golden = goldens["interface/host-sensor-spans.json"]
+    production = m2.production_spans()
+    span_golden["production"] = {
+        "spans": production,
+        "normalized": [normalize_span_m2(span) for span in production],
+    }
+    for rel in (
+        "interface/exec-subprocess-records.json",
+        "interface/host-sensor-spans.json",
+    ):
+        w.json(COVERAGE / ACTION / rel, goldens[rel])
+    w.json(
+        COVERAGE / ACTION / "interface/remote-sandbox-records.json",
+        {
+            "schema_version": INTERFACE_SCHEMA,
+            "kind": "remote.sandbox",
+            "spec": "056 §4.4.1, §7.3.3 (k) (M2)",
+            "description": (
+                "The records of two remote.sandbox attempts as the agent spool holds them "
+                "and the Node exports them: an E2B Sandbox.commands.run call (start: "
+                "remote.request; end: remote.result and remote.stream with exit code 0) and "
+                "a run_code call (results only as a count). The start record's start time "
+                "is the effect's start time; the end record's start is the call's start. "
+                "Attributes are admitted by rule A; the evidence is "
+                "fabric.sandbox.observation/v1. normalized_effect is what the attribution "
+                "rules read: no pid, the output A1 compares is remote.result."
+            ),
+            "attempts": [sections["ar2-e2b-run"], sections["ar2-e2b-code"]],
+        },
+    )
+    for rel, (doc, _) in m2.report_fixtures(
+        nested, m2_valid["ar1-run-production"]
+    ).items():
         w.json(CAPTURE / rel, doc)
 
 
@@ -2086,7 +2217,25 @@ def _check_link(
             where,
             "an ambiguous link lists every candidate (two or more, its target among them); a resolved one lists none",
         )
-    if link["provenance"] == "reported" and (
+    if link.get("method") == "sandbox_report":
+        # M2 rule H5: the id rests on the runtime's own report (provenance reported); the
+        # match is exact (certain, resolved), and its subject is an event of the attempt.
+        if (
+            link["provenance"] != "reported"
+            or link["state"] != "resolved"
+            or link["type"] != "part_of"
+            or link["target"]["namespace"] != "attempt"
+        ):
+            _fail(
+                "coverage.action.link",
+                where,
+                "an H5 link is part_of an attempt, provenance reported, resolved",
+            )
+        if link["confidence"] != "certain":
+            _fail(
+                "coverage.action.confidence", where, "sandbox_report is always certain"
+            )
+    elif link["provenance"] == "reported" and (
         "method" in link or link.get("confidence") != "certain"
     ):
         _fail(
@@ -2116,10 +2265,17 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
         for index, item in enumerate(items):
             errors = list(validator.iter_errors(item))
             if errors:
+                confidence = any(
+                    "confidence" in list(e.absolute_path)
+                    or any("confidence" in list(c.absolute_path) for c in e.context)
+                    for e in errors
+                )
                 _fail(
-                    "coverage.action.link"
-                    if name == "sensor_events"
-                    else "coverage.action.chains",
+                    "coverage.action.chains"
+                    if name != "sensor_events"
+                    else "coverage.action.confidence"
+                    if confidence
+                    else "coverage.action.link",
                     f"$.expected.{name}[{index}]",
                     errors[0].message,
                 )
@@ -2131,6 +2287,25 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
 
     effects = {e["attempt_uid"]: e for e in inp.get("effects", [])}
     events = {e["event_id"]: e for e in inp.get("host_events", [])}
+    sources = {rules.source_key(s): s for s in inp.get("host_sources", [])}
+    for event_id, event in events.items():
+        source = sources.get(rules.source_key(event))
+        if source is None:
+            continue
+        if source.get("pid_namespace") == "recorded" and "pid_ns" not in event:
+            _fail(
+                "coverage.action.input",
+                f"$.input.host_events[{event_id}]",
+                "a recorded source's every record carries fabric.sensor.pid_ns (§4.3)",
+            )
+        if event.get("scope", "agent") not in {"agent", "sandbox"}:
+            _fail("coverage.action.input", f"$.input.host_events[{event_id}]", "scope")
+    for index, effect in enumerate(inp.get("effects", [])):
+        created = effect.get("created_sandbox_id")
+        if created is not None and re.fullmatch(r"sbx-[0-9a-f]{32}", created) is None:
+            _fail("coverage.action.input", f"$.input.effects[{index}]", "created id")
+        if effect.get("capture_point", EXEC_POINT) not in rules.EFFECT_POINTS:
+            _fail("coverage.action.input", f"$.input.effects[{index}]", "capture point")
     anchors: dict[str, str] = {}
     for index, entry in enumerate(expected["projection_links"]):
         effect = effects.get(entry["attempt_id"])
@@ -2159,6 +2334,23 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
                     "output_match is certain when it resolves one candidate and tentative "
                     "when several match (ambiguous)",
                 )
+            if method == "process_anchor" and link["type"] == "corroborated_by":
+                event = events.get(link["target"]["id"], {})
+                source = sources.get(rules.source_key(event)) if event else None
+                if (
+                    source is not None
+                    and source.get("pid_namespace") == "recorded"
+                    and (
+                        effect is None
+                        or effect.get("pid_ns") is None
+                        or event.get("pid_ns") != effect.get("pid_ns")
+                    )
+                ):
+                    _fail(
+                        "coverage.action.namespace",
+                        where,
+                        "under a recorded source an anchor joins only within the effect's own pid namespace (§4.3)",
+                    )
             if method == "process_anchor":
                 event = events.get(link["target"]["id"])
                 both = (
@@ -2206,6 +2398,17 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
                         "an agent-process event (H4) is certain only with the agent's start time",
                     )
     chains, attribution = expected["chains"], expected["attribution"]
+    sandbox_listed = [
+        event_id
+        for event_id in attribution["unexplained_host_events"]["event_ids"]
+        if events.get(event_id, {}).get("scope") == "sandbox"
+    ]
+    if sandbox_listed:
+        _fail(
+            "coverage.action.scope",
+            "$.expected.attribution.unexplained_host_events",
+            "a sandbox-scope event is counted in sandbox_events_unlinked, never listed as unexplained (§4.3)",
+        )
     for name in rules.CHAIN_NAMES:
         chain = chains[name]
         has = bool(chain.get("reasons"))
@@ -2254,7 +2457,7 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
         rule.split("-")[0]
         for part in ("effects", "anchors", "host_events")
         for rule in recomputed["trace"][part].values()
-        if re.fullmatch(r"[AH][0-4](-.*)?", rule)
+        if re.fullmatch(r"[AH][0-5](-.*)?", rule)
     }
     if set(doc["rules"]) != named:
         _fail(
@@ -2285,12 +2488,15 @@ def _check_interface(
     doc: Mapping[str, Any], reg: Mapping[str, Any], root: Path
 ) -> None:
     kind = doc.get("kind")
-    if kind == "exec.subprocess":
+
+    def check_records(
+        records: Sequence[Mapping[str, Any]], normalized: Any, at: str
+    ) -> None:
         table = coverage.record_checks(reg)
         blobs: dict[str, bytes] = {}
         spool: list[Mapping[str, Any]] = []
-        for index, record in enumerate(doc["records"]):
-            where = f"$.records[{index}]"
+        for index, record in enumerate(records):
+            where = f"{at}.records[{index}]"
             span = record["span"]
             disk = coverage._load(root / CAPTURE / record["spool_record"])
             if disk["span"] != span:
@@ -2359,6 +2565,22 @@ def _check_interface(
                             where,
                             "terminal.context is {executable?, cwd?, shell, env_names?}",
                         )
+                if body["role"] == "remote.request":
+                    request = json.loads(data)
+                    allowed = (
+                        {"kind", "command", "cwd", "user", "env_names"}
+                        if request.get("kind") == "command"
+                        else {"kind", "code", "language", "env_names"}
+                    )
+                    if not set(request) <= allowed or request.get("kind") not in {
+                        "command",
+                        "code",
+                    }:
+                        _fail(
+                            "coverage.action.interface",
+                            where,
+                            "remote.request is the §4.4.1 command or code document",
+                        )
             types = coverage._evidence_types(reg)
             point = span["attributes"]["fabric.capture.point"].split("@", 1)[0]
             if (
@@ -2373,12 +2595,44 @@ def _check_interface(
             if _record_digest(span, descriptors) != record["record_digest"]:
                 _fail("coverage.action.interface", where, "record digest")
             spool.append(disk)
-        if effect_from_records(spool, blobs) != doc["normalized_effect"]:
+        if effect_from_records(spool, blobs) != normalized:
             _fail(
                 "coverage.action.interface",
-                "$.normalized_effect",
+                f"{at}.normalized_effect",
                 "not derived from the records",
             )
+
+    if kind == "exec.subprocess":
+        check_records(doc["records"], doc["normalized_effect"], "$")
+        # Spec 056 M2: step 1 with the agent's pid namespace, and a container create
+        for section in ("production", "container_create"):
+            if section in doc:
+                check_records(
+                    doc[section]["records"],
+                    doc[section]["normalized_effect"],
+                    f"$.{section}",
+                )
+        created = doc.get("container_create", {}).get("normalized_effect", {})
+        if "container_create" in doc and "created_sandbox_id" not in created:
+            _fail(
+                "coverage.action.interface",
+                "$.container_create",
+                "a container create carries fabric.sandbox.created_id",
+            )
+        return
+    if kind == "remote.sandbox":
+        for index, attempt in enumerate(doc["attempts"]):
+            check_records(
+                attempt["records"],
+                attempt["normalized_effect"],
+                f"$.attempts[{index}]",
+            )
+            if "pid" in attempt["normalized_effect"]:
+                _fail(
+                    "coverage.action.interface",
+                    f"$.attempts[{index}]",
+                    "a remote effect has no pid",
+                )
         return
     if kind == "host.local_log":
         allowed = _audit_allowlist(root)
@@ -2448,6 +2702,38 @@ def _check_interface(
                 "$.normalized",
                 "not derived from the spans",
             )
+        production = doc.get("production")
+        if production is not None:
+            # Spec 056 M2: the registered 053 §6.2.3 rows decide (rule A, host placement).
+            from contracts import host_records  # noqa: PLC0415
+
+            placement = set(host_records.host_record_keys(reg))
+            for index, span in enumerate(production["spans"]):
+                attrs = span["attributes"]
+                kept, dropped = ref.project_record_attributes(
+                    attrs,
+                    coverage.record_checks(reg),
+                    coverage.check_value,
+                    conditions=coverage.record_conditions(reg),
+                    point_kinds=coverage.point_kinds(reg),
+                )
+                missing = [
+                    k for k in host_records.HOST_RECORD_REQUIRED if k not in attrs
+                ]
+                if dropped or set(kept) - placement or missing:
+                    _fail(
+                        "coverage.action.interface",
+                        f"$.production.spans[{index}]",
+                        f"not a host record: dropped {dropped}, missing {missing}",
+                    )
+            if [normalize_span_m2(s) for s in production["spans"]] != production[
+                "normalized"
+            ]:
+                _fail(
+                    "coverage.action.interface",
+                    "$.production.normalized",
+                    "not derived from the spans",
+                )
         return
     _fail("coverage.action.interface", "$.kind", f"unknown interface kind {kind!r}")
 

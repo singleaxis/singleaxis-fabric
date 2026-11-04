@@ -1,0 +1,230 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "edge-remote-sandbox-off",
+  "rules": [
+    "H4"
+  ],
+  "description": "The manifest row remote.sandbox is disabled(remote_sandbox) and the agent connects to a declared sandbox peer inside the tool call's window: effects partial(remote_sandbox), remote_sandbox_calls lists the connection, the tool call is effect_not_observed(channel_disabled), and the event is not unexplained.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 7,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000,
+      "pid_ns": "4026532481"
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active",
+      "remote.sandbox": "disabled"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [
+      {
+        "source": "host.ebpf",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      }
+    ],
+    "exchanges": [
+      {
+        "exchange_id": "eced6925-fefd-44f9-a04b-bc3220a44b94",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_RO",
+            "name": "run_remote"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "07033034-0773-4669-ad85-e067720b9e32",
+        "sequence": 2,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_RO",
+            "text": "ok"
+          }
+        ]
+      }
+    ],
+    "effects": [],
+    "host_events": [
+      {
+        "event_id": "host-d9a908ee1deaaa4d3015f42f03053355",
+        "label": "connect-provider",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331201001000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-d32b2b28478ae8bbfd12508f9a081d1d",
+        "peer_port": 8443
+      }
+    ],
+    "sandbox_peers": [
+      {
+        "peer_id": "hst-d32b2b28478ae8bbfd12508f9a081d1d",
+        "port": null
+      }
+    ]
+  },
+  "expected": {
+    "projection_links": [],
+    "sensor_events": [
+      {
+        "event_id": "host-d9a908ee1deaaa4d3015f42f03053355",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331201001000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "partial",
+        "reasons": [
+          "remote_sandbox"
+        ]
+      },
+      "corroboration": {
+        "verdict": "complete"
+      }
+    },
+    "attribution": {
+      "links": {
+        "process_anchor": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 1,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "not_applicable",
+        "reason": "not_exposed"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      },
+      "sandbox_events_unlinked": {
+        "count": 0
+      },
+      "remote_sandbox_calls": {
+        "count": 1,
+        "event_ids": [
+          "host-d9a908ee1deaaa4d3015f42f03053355"
+        ]
+      }
+    },
+    "trace": {
+      "effects": {},
+      "anchors": {},
+      "host_events": {
+        "host-d9a908ee1deaaa4d3015f42f03053355": "H4-sandbox"
+      },
+      "tool_calls": {
+        "p-67eea9497f6eeefb6c4b4cac25b1a996": "channel_disabled"
+      },
+      "host_sources": {
+        "s-2c6c641009e36ee2e6587ef29bc3a782": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        }
+      }
+    }
+  }
+}

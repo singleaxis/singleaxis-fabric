@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 10,
+  "registry_revision": 11,
   "coverage_status": [
     {
       "value": "captured",
@@ -842,6 +842,11 @@
       "value": "process_lineage",
       "meaning": "A host event whose parent-pid chain reaches a process anchored to an effect, on the same host, pid namespace and boot, at most 16 levels deep (spec 056 §4.3 rule H3; `part_of`). Confidence varies: the confidence of the anchor it extends.",
       "confidence": "varies"
+    },
+    {
+      "value": "sandbox_report",
+      "meaning": "A host event whose sandbox or pod id equals the id the container runtime printed in the effect's output, on any host source; provenance `reported` (spec 056 §4.3 rule H5; `part_of`). Confidence `certain`.",
+      "confidence": "certain"
     }
   ],
   "field_class": [

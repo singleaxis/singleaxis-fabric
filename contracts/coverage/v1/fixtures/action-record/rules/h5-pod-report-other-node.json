@@ -1,0 +1,445 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "h5-pod-report-other-node",
+  "rules": [
+    "A1",
+    "H1",
+    "H5"
+  ],
+  "description": "The pod is scheduled on another node: its events come from a second host.ebpf source (another host and source id). H5 links them (the id is unique across hosts), while H1 to H4 never join across hosts: an event on the other node with the kubectl process's namespace-local pids is not an anchor and is listed unexplained.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 7,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [
+      {
+        "source": "host.ebpf",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      },
+      {
+        "source": "host.ebpf",
+        "source_id": "s-5c82af85ea1884fe30c9dbf25b6a9582",
+        "host_id": "hst-8e02aa3df47854455574b69b097b5578",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      }
+    ],
+    "exchanges": [
+      {
+        "exchange_id": "25d40586-826f-4e4f-a2eb-9e71f8d05b00",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_K1",
+            "name": "run_pod"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "2508220e-6184-4874-a369-e41f3abe8b79",
+        "sequence": 4,
+        "start_ns": 1791331203000000000,
+        "end_ns": 1791331203900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_K1",
+            "text": "pod uid 0f6c2a9e-7d31-4b58-a2c4-9e1d5b7a3c60"
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "0351e51f-1868-47e4-a935-16f35ddefb51",
+        "event_id": "b8b9a3a3-40e6-4cc8-af4f-b7997790598a",
+        "label": "exec kubectl run job-7 --image=alpine:3.20 -o jsonpath='{.metadata.uid}'",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
+        "pid": 41,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 60120000000,
+        "stdout": "0f6c2a9e-7d31-4b58-a2c4-9e1d5b7a3c60",
+        "pid_ns": "4026532481",
+        "created_sandbox_id": "sbx-e08679efec8ca7618eec70d305655b14"
+      }
+    ],
+    "host_events": [
+      {
+        "event_id": "host-6342ecab7c9e5c352597379f56b8ee29",
+        "label": "exec-kubectl",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331201000300000,
+        "pid": 4121,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 41,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 60121000000
+      },
+      {
+        "event_id": "host-a4c6d5da20b0fdfc1ce061c84f057ad3",
+        "label": "pod-exec-pause",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331202000000000,
+        "pid": 8300,
+        "ppid": 8299,
+        "result": "success",
+        "source_id": "s-5c82af85ea1884fe30c9dbf25b6a9582",
+        "ns_pid": 1,
+        "ns_ppid": 0,
+        "pid_ns": "4026532612",
+        "scope": "sandbox",
+        "sandbox_id": "sbx-e2dc2597192cb254a757f6a6fc6abf76",
+        "pod_id": "sbx-e08679efec8ca7618eec70d305655b14",
+        "host_id": "hst-8e02aa3df47854455574b69b097b5578"
+      },
+      {
+        "event_id": "host-2d1296cf1998a3d3485c892109ad881f",
+        "label": "pod-exec-job",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331202200000000,
+        "pid": 8301,
+        "ppid": 8250,
+        "result": "success",
+        "source_id": "s-5c82af85ea1884fe30c9dbf25b6a9582",
+        "ns_pid": 2,
+        "ns_ppid": 0,
+        "pid_ns": "4026532612",
+        "scope": "sandbox",
+        "sandbox_id": "sbx-e2dc2597192cb254a757f6a6fc6abf76",
+        "pod_id": "sbx-e08679efec8ca7618eec70d305655b14",
+        "host_id": "hst-8e02aa3df47854455574b69b097b5578"
+      },
+      {
+        "event_id": "host-7dee83a006e68b609104ea3bb2cbd611",
+        "label": "pod-connect-job",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331202210000000,
+        "pid": 8301,
+        "ppid": 8250,
+        "result": "success",
+        "source_id": "s-5c82af85ea1884fe30c9dbf25b6a9582",
+        "ns_pid": 2,
+        "ns_ppid": 0,
+        "pid_ns": "4026532612",
+        "scope": "sandbox",
+        "sandbox_id": "sbx-e2dc2597192cb254a757f6a6fc6abf76",
+        "pod_id": "sbx-e08679efec8ca7618eec70d305655b14",
+        "host_id": "hst-8e02aa3df47854455574b69b097b5578"
+      },
+      {
+        "event_id": "host-d8e73db960d1e788c323687a252ef1a2",
+        "label": "exec-other-node-same-numbers",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331201000400000,
+        "pid": 9121,
+        "ppid": 9100,
+        "result": "success",
+        "source_id": "s-5c82af85ea1884fe30c9dbf25b6a9582",
+        "ns_pid": 41,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 60121000000,
+        "host_id": "hst-8e02aa3df47854455574b69b097b5578"
+      }
+    ]
+  },
+  "expected": {
+    "projection_links": [
+      {
+        "attempt_id": "0351e51f-1868-47e4-a935-16f35ddefb51",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-cee52c7139e849a06e82da54c57363a1"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-6342ecab7c9e5c352597379f56b8ee29"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "sensor_events": [
+      {
+        "event_id": "host-6342ecab7c9e5c352597379f56b8ee29",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4121,
+        "ppid": 4100,
+        "time_ns": 1791331201000300000,
+        "process_start_ns": 60121000000
+      },
+      {
+        "event_id": "host-a4c6d5da20b0fdfc1ce061c84f057ad3",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 8300,
+        "ppid": 8299,
+        "time_ns": 1791331202000000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "0351e51f-1868-47e4-a935-16f35ddefb51"
+            },
+            "provenance": "reported",
+            "method": "sandbox_report",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-2d1296cf1998a3d3485c892109ad881f",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 8301,
+        "ppid": 8250,
+        "time_ns": 1791331202200000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "0351e51f-1868-47e4-a935-16f35ddefb51"
+            },
+            "provenance": "reported",
+            "method": "sandbox_report",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-7dee83a006e68b609104ea3bb2cbd611",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 8301,
+        "ppid": 8250,
+        "time_ns": 1791331202210000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "0351e51f-1868-47e4-a935-16f35ddefb51"
+            },
+            "provenance": "reported",
+            "method": "sandbox_report",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "partial",
+        "reasons": [
+          "unexplained_host_event"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "output_match": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "process_anchor": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "sandbox_report": {
+          "resolved": 3,
+          "ambiguous": 0,
+          "unresolved": 0
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "applied"
+      },
+      "unexplained_host_events": {
+        "count": 1,
+        "event_ids": [
+          "host-d8e73db960d1e788c323687a252ef1a2"
+        ]
+      },
+      "sandbox_events_unlinked": {
+        "count": 0
+      }
+    },
+    "trace": {
+      "effects": {
+        "0351e51f-1868-47e4-a935-16f35ddefb51": "A1"
+      },
+      "anchors": {
+        "0351e51f-1868-47e4-a935-16f35ddefb51": "H1"
+      },
+      "host_events": {
+        "host-6342ecab7c9e5c352597379f56b8ee29": "H1",
+        "host-a4c6d5da20b0fdfc1ce061c84f057ad3": "H5",
+        "host-2d1296cf1998a3d3485c892109ad881f": "H5",
+        "host-7dee83a006e68b609104ea3bb2cbd611": "H5",
+        "host-d8e73db960d1e788c323687a252ef1a2": "unexplained"
+      },
+      "tool_calls": {
+        "p-cee52c7139e849a06e82da54c57363a1": "attributed"
+      },
+      "host_sources": {
+        "s-2c6c641009e36ee2e6587ef29bc3a782": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        },
+        "s-5c82af85ea1884fe30c9dbf25b6a9582": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        }
+      }
+    }
+  }
+}

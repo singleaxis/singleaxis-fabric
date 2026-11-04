@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.sandbox.observation-v1.schema.json",
+  "title": "Evidence type fabric.sandbox.observation/v1 (spec 056 §4.4.1, §5.1, §7.3.3 (k))",
+  "description": "The one item of a remote.sandbox record: the provider and the SDK call the hook observed, whether a command runs in the background, the form of the output the SDK returned, its exit code or the count of run_code results, the code language, and the error name or exception class as labels. Metadata only: the request (command or code) and the output travel as remote.* content bodies, never here; environment values, the API key and request headers are never read. The record says what the provider SDK returned to the agent, not what ran on the remote side. Closed: no other property, no free text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "provider",
+    "call",
+    "output_form"
+  ],
+  "properties": {
+    "provider": {
+      "description": "META: the remote sandbox provider (OD-3).",
+      "enum": [
+        "e2b"
+      ]
+    },
+    "call": {
+      "description": "META: the observed SDK call: Commands.run (commands_run), CommandHandle.wait (command_wait) or Sandbox.run_code (run_code), sync or async.",
+      "enum": [
+        "commands_run",
+        "command_wait",
+        "run_code"
+      ]
+    },
+    "background": {
+      "description": "META: Commands.run was called with background=True; the record is a start only and a later command_wait ends the attempt.",
+      "type": "boolean"
+    },
+    "output_form": {
+      "description": "META: the output the SDK returned was text (str), or none (retain_output=False, a background start, an error).",
+      "enum": [
+        "text",
+        "none"
+      ]
+    },
+    "exit_code": {
+      "description": "META (N37): the command's exit code as the SDK returned it (CommandResult or CommandExitException).",
+      "type": "integer",
+      "minimum": -1,
+      "maximum": 255
+    },
+    "result_count": {
+      "description": "META: the number of run_code results; the results themselves are not recorded.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 1024
+    },
+    "language": {
+      "description": "META: run_code's language; any other value is other.",
+      "enum": [
+        "python",
+        "javascript",
+        "typescript",
+        "r",
+        "java",
+        "bash",
+        "other"
+      ]
+    },
+    "error_name": {
+      "description": "LABEL: the name of run_code's Execution.error, never its value or traceback.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"
+    },
+    "error_class": {
+      "description": "LABEL: the raised exception class's __qualname__, never its message.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"
+    }
+  }
+}

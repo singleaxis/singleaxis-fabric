@@ -62,9 +62,23 @@ Spec 056 (agent action reconstruction, milestone M1) adds, in version 1.2.0:
 | `valid/evidence-exec-*.json`, `invalid/evidence-exec-*.json` | one valid document per `api` value; an extra key, an unknown enum value, a string over its bound, a path in a LABEL and a capture point the type is not registered for |
 | `fixtures/action-record/` | the shared interface goldens (an `exec.subprocess` attempt's records, today's local-profile host records, the spec 053 §6.2.3 host span) and the rule fixtures A0-A4, H1-H4, the §6.1 edge cases and AR-1; [its README](fixtures/action-record/README.md) documents every field |
 
+Spec 056 milestone M2 (production profile, WP6-11) adds, in version 1.3.0:
+
+| Path | Pins |
+|---|---|
+| `registry/telemetry-keys-v1.json` | the spec 053 §6.2.3 host-record keys (`fabric.sensor.*`, including `ns_pid`, `ns_ppid`, `pid_ns`, `scope`, `pod_id`, and `fabric.tenant_id`): placement `record`, `capture_point_kinds: ["S"]`; `fabric.sensor.upstream_lost` and `.upstream_loss_reason` (with `scope_late`) on `periodic` heartbeats; `fabric.process.pid_ns` and `fabric.sandbox.created_id` on `exec.subprocess` only; `http.request.method` and `.status_code` on `http.nonmodel` records; `fabric.network.host_id` on records |
+| `registry/capture-points-v1.json` | the `remote.sandbox` point (kind H, E2B), `http.nonmodel` on the records input, the production host rows |
+| `registry/field-registry-v1.json`, `evidence/fabric.{http,sandbox}.observation-v1.schema.json` | the evidence types `fabric.http.observation/v1` and `fabric.sandbox.observation/v1`, with one valid fixture per enum branch and five refusals each (`{valid,invalid}/evidence-{http,sandbox}-*.json`) |
+| `registry/vocabularies-v1.json`, `schema/step-projection-v1.schema.json` | the inference method `sandbox_report` (rule H5, certain, provenance reported) |
+| `schema/capture-manifest-v1.schema.json` | `sdk.language` `go` and the `sensor_*` uncaptured classes, for a host source's manifest |
+| `fixtures/vectors/peer-address-v1.json`, `sandbox-id-v1.json` | the canonical peer text that `fabric.network.host_id` keys; container and pod ids from cgroup names and from container-runtime output |
+| `fixtures/vectors/span-category-v1.json`, `records-span-v1.json` | the `fabric.sensor_event` branch (`sensor_cases`); the M2 records cases and the host-record cases with the host placement (`host_cases`, `host_placement`) |
+| `fixtures/action-record/` | the §6.1 M2 rule fixtures, four refusals, the goldens' M2 sections and `remote-sandbox-records.json` ([its README](fixtures/action-record/README.md), section 9) |
+
 The rules the fixtures pin are executable in
 `scripts/contracts/action_reference.py`; `scripts/contracts/action_record.py`
-builds the fixtures and checks them.
+and `action_record_m2.py` build the fixtures and check them, and
+`scripts/contracts/host_records.py` builds and checks the host vectors.
 
 The vectors are produced and re-checked by the reference implementations in
 `scripts/contracts/p1_reference.py` and `scripts/contracts/model_fields_reference.py`.

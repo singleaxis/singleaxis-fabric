@@ -2017,16 +2017,26 @@ def validate_p1_vectors(
                 )
         return True
     if kind == "fabric.span-category-vectors/v1":
-        for index, case in enumerate(document["cases"]):
-            if (
-                ref.span_category(case["name_hint"], case["attribute_keys"])
-                != case["category"]
-            ):
-                _vector_fail(
-                    "coverage.vectors.category",
-                    f"$.cases[{index}]",
-                    f"{case['name']}: differs",
-                )
+        for part in ("cases", "sensor_cases"):
+            for index, case in enumerate(document.get(part, [])):
+                if (
+                    ref.span_category(case["name_hint"], case["attribute_keys"])
+                    != case["category"]
+                ):
+                    _vector_fail(
+                        "coverage.vectors.category",
+                        f"$.{part}[{index}]",
+                        f"{case['name']}: differs",
+                    )
+        if not any(
+            c["category"] == "fabric.sensor_event"
+            for c in document.get("sensor_cases", [])
+        ):
+            _vector_fail(
+                "coverage.vectors.category",
+                "$.sensor_cases",
+                "the fabric.sensor_event branch is pinned (spec 053 §7)",
+            )
         return True
     if kind == "fabric.records-span-vectors/v1":
         table = record_checks(reg)
@@ -2054,6 +2064,33 @@ def validate_p1_vectors(
                 _vector_fail(
                     "coverage.vectors.records_span",
                     f"$.cases[{index}]",
+                    f"{case['name']}: differs",
+                )
+        from contracts import host_records  # noqa: PLC0415 - it imports this module
+
+        placement = set(host_records.host_record_keys(reg))
+        if document.get("host_placement") != sorted(placement) or not set(
+            placement
+        ) <= set(table) | {"fabric.tenant_id"}:
+            _vector_fail(
+                "coverage.vectors.records_span",
+                "$.host_placement",
+                "the host placement is the 053 §6.2.3 keys, every one a records key",
+            )
+        for index, case in enumerate(document.get("host_cases", [])):
+            kept, dropped = ref.project_record_attributes(
+                case["attributes"],
+                table,
+                check_value,
+                conditions=record_conditions(reg),
+                point_kinds=point_kinds(reg),
+            )
+            dropped = sorted(dropped + [k for k in kept if k not in placement])
+            kept = {k: v for k, v in kept.items() if k in placement}
+            if kept != case["admitted"] or dropped != case["dropped"]:
+                _vector_fail(
+                    "coverage.vectors.records_span",
+                    f"$.host_cases[{index}]",
                     f"{case['name']}: differs",
                 )
         return True
@@ -2289,6 +2326,10 @@ def validate_vectors(
     kind = document.get("schema_version")
     if validate_p1_vectors(document, reg, root):
         return
+    from contracts import host_records  # noqa: PLC0415 - it imports this module
+
+    if host_records.validate_coverage_vector(document, _fail):
+        return  # spec 056 M2: peer-address-v1, sandbox-id-v1
     if kind == "fabric.capture-manifest-chain-vectors/v1":
         previous = None
         for index, manifest in enumerate(document["manifests"]):

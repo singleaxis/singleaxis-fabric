@@ -93,6 +93,26 @@ EVIDENCE_TYPES: Mapping[str, Mapping[str, Any]] = MappingProxyType({
         ),
         "schema": EVIDENCE_ITEM_SCHEMAS["fabric.exec.observation/v1"],
     }),
+    "fabric.http.observation/v1": MappingProxyType({
+        "capture_points": ("http.nonmodel",),
+        "fields": (
+            ("content", "x-fabric.http.redirect_index", "/items/*/redirect_index"),
+            ("content", "x-fabric.http.request_body", "/items/*/request_body"),
+            ("content", "x-fabric.http.response_body", "/items/*/response_body"),
+            ("content", "x-fabric.http.dialect", "/items/*/dialect"),
+        ),
+        "schema": EVIDENCE_ITEM_SCHEMAS["fabric.http.observation/v1"],
+    }),
+    "fabric.sandbox.observation/v1": MappingProxyType({
+        "capture_points": ("remote.sandbox",),
+        "fields": (
+            ("content", "x-fabric.sandbox.call", "/items/*/call"),
+            ("content", "x-fabric.sandbox.output_form", "/items/*/output_form"),
+            ("decisions_effects", "x-fabric.sandbox.exit_code", "/items/*/exit_code"),
+            ("decisions_effects", "x-fabric.sandbox.result_count", "/items/*/result_count"),
+        ),
+        "schema": EVIDENCE_ITEM_SCHEMAS["fabric.sandbox.observation/v1"],
+    }),
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------
 

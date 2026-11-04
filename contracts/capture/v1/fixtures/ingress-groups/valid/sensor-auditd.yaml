@@ -1,0 +1,66 @@
+exporters:
+  otlp_http/node:
+    auth:
+      authenticator: bearertokenauth/node
+    endpoint: https://fabric-node.fabric-system.svc:4428
+    middlewares:
+    - id: noredirect
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_elapsed_time: 0s
+      max_interval: 30s
+    timeout: 30s
+    tls:
+      ca_file: /etc/fabric/sensor/ca.crt
+      insecure: false
+      insecure_skip_verify: false
+extensions:
+  bearertokenauth/node:
+    filename: /etc/fabric/sensor/token
+  health_check:
+    endpoint: 0.0.0.0:13133
+  noredirect: {}
+processors:
+  batch:
+    send_batch_size: 512
+    timeout: 1s
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+receivers:
+  audit:
+    connect: true
+    exec: true
+    file_access: false
+    log_path: /var/log/audit/audit.log
+    mode: production
+    production:
+      digests: omitted
+      heartbeat_interval: 10s
+      host_label: build-host-7
+      id_key_file: /etc/fabric/sensor/id_key
+      source_label: build-host-7/auditd
+      state_dir: /var/lib/fabric-sensor/auditd
+      state_key_file: /etc/fabric/sensor/state_key
+      tenant_id: tenant-a
+    rule_key: fabric
+    source: logfile
+    state_directory: /var/lib/fabric-sensor/auditd/local
+service:
+  extensions:
+  - health_check
+  - noredirect
+  - bearertokenauth/node
+  pipelines:
+    traces:
+      exporters:
+      - otlp_http/node
+      processors:
+      - memory_limiter
+      - batch
+      receivers:
+      - audit
+  telemetry:
+    logs:
+      level: info

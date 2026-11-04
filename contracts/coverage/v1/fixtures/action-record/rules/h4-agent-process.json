@@ -66,7 +66,9 @@
         "ppid": 1,
         "result": "success",
         "pid_ns": "4026531836",
-        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce",
+        "ns_pid": 4100,
+        "ns_ppid": 1
       },
       {
         "event_id": "host-0fda59a1c9af8145d1cc4a32e2cadb9f",
@@ -78,7 +80,9 @@
         "ppid": 1,
         "result": "success",
         "process_start_ns": 52484000000,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4100,
+        "ns_ppid": 1
       }
     ]
   },

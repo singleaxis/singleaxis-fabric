@@ -174,8 +174,10 @@ func TestRecordsAndLossKeyAdmission(t *testing.T) {
 			RawCapture *registryCheck `json:"capture_check"`
 			Placement  []string
 			// A conditional record placement (spec 050 rule A): exercised on a
-			// record of the first capture point it names.
-			CapturePoints []string `json:"capture_points"`
+			// record of the first capture point it names, or (spec 056 M2) of a
+			// host point for a key restricted to capture-point kind S.
+			CapturePoints     []string `json:"capture_points"`
+			CapturePointKinds []string `json:"capture_point_kinds"`
 		}
 	}
 	decodeJSON(t, coverageRegistry, &registry)
@@ -197,6 +199,8 @@ func TestRecordsAndLossKeyAdmission(t *testing.T) {
 						attrs = wireLossAttrs()
 					} else if len(row.CapturePoints) > 0 {
 						attrs["fabric.capture.point"] = row.CapturePoints[0] + "@0.9.0"
+					} else if slices.Contains(row.CapturePointKinds, "S") {
+						attrs["fabric.capture.point"] = "host.ebpf@0.9.0"
 					}
 					// Heartbeat discriminator changes the class; tested separately below.
 					if row.Key == "fabric.heartbeat.last_sequence" {

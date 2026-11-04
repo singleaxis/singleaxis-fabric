@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.span-category-vectors/v1",
-  "rule": "Spec 050 §3.4 rule N: a record's span name is category(name_hint, attribute keys), the port of fabricguard's activityCategory (processor/fabricguardprocessor/processor.go): heartbeat and loss markers first, then tool keys, model keys, the ordered key table, then the name itself when it is a known Fabric name, else fabric.activity. Only attribute keys decide, never values. fabricguard's Go test and the SDK's port read these cases.",
+  "rule": "Spec 050 §3.4 rule N: a record's span name is category(name_hint, attribute keys), the port of fabricguard's activityCategory (processor/fabricguardprocessor/processor.go): heartbeat and loss markers first, then tool keys, model keys, the ordered key table, then the name itself when it is a known Fabric name, else fabric.activity. Only attribute keys decide, never values. fabricguard's Go test and the SDK's port read these cases. sensor_cases (spec 053 §6.2.3, §7; spec 056 M2): the fabric.sensor_event branch, after the markers and before the tool keys: a span carrying fabric.sensor.event_class is a host record. fabricguard reads them (TestSensorEventCategory); the SDK emits no host record, and its port need not carry the branch (an agent batch with a fabric.sensor.* key is refused, 053 §6.2.7).",
   "cases": [
     {
       "name": "heartbeat beats loss",
@@ -390,6 +390,78 @@
       "name_hint": "fabric.tool_call",
       "attribute_keys": [],
       "category": "fabric.tool_call"
+    }
+  ],
+  "sensor_cases": [
+    {
+      "name": "host record",
+      "name_hint": "fabric.activity",
+      "attribute_keys": [
+        "fabric.sensor.event_class",
+        "fabric.source_id",
+        "fabric.capture.point"
+      ],
+      "category": "fabric.sensor_event"
+    },
+    {
+      "name": "host record keeps the name whatever the hint",
+      "name_hint": "fabric.model_call",
+      "attribute_keys": [
+        "fabric.sensor.event_class"
+      ],
+      "category": "fabric.sensor_event"
+    },
+    {
+      "name": "sensor key beats tool and model keys",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.tool.name",
+        "fabric.wire.exchange_id",
+        "fabric.sensor.event_class"
+      ],
+      "category": "fabric.sensor_event"
+    },
+    {
+      "name": "sensor key beats the ordered table",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.execution.status",
+        "fabric.sensor.event_class"
+      ],
+      "category": "fabric.sensor_event"
+    },
+    {
+      "name": "a heartbeat with upstream loss stays a heartbeat",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.heartbeat.last_sequence",
+        "fabric.sensor.upstream_lost",
+        "fabric.sensor.upstream_loss_reason"
+      ],
+      "category": "fabric.capture_heartbeat"
+    },
+    {
+      "name": "a loss marker stays a loss",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.loss.reason",
+        "fabric.sensor.event_class"
+      ],
+      "category": "fabric.capture_loss"
+    },
+    {
+      "name": "the name alone is not a host record",
+      "name_hint": "fabric.sensor_event",
+      "attribute_keys": [],
+      "category": "fabric.activity"
+    },
+    {
+      "name": "another sensor key alone does not decide",
+      "name_hint": "x",
+      "attribute_keys": [
+        "fabric.sensor.pid"
+      ],
+      "category": "fabric.activity"
     }
   ]
 }

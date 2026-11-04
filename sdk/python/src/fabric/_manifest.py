@@ -135,6 +135,7 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
     "http.nonmodel": PointSpec("W", True, True),
     "file.audit": PointSpec("H", True, True),
     "remote.ssh_wrapper": PointSpec("R", False, False),
+    "remote.sandbox": PointSpec("H", True, True),
     "ui.automation": PointSpec("H", True, True),
     "rt.websocket": PointSpec("W", True, True),
     "reconstruct.parse": PointSpec("P", False, False),

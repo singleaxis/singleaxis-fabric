@@ -6,6 +6,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -48,7 +51,9 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     validated = validate_capture_contracts(REPO_ROOT)
     # + WP-30 run-reconstruction attempts (valid, invalid); + WP-14 enriched exchange (1.4.0)
     # + spec 056 (1.5.0): two exec.subprocess spool records, one chain report, four refusals
-    assert len(validated) == 116
+    # + spec 056 M2 (1.6.0): eight spool records, one report and three refusals, the host
+    #   fixtures and vectors (26), the ingress-group index
+    assert len(validated) == 154
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -633,8 +638,9 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_5_0() -> None:
-    assert _json("manifest.json")["version"] == "1.5.0"
+def test_capture_family_is_version_1_6_0() -> None:
+    # 1.5.0: spec 056 M1 (WP6-01); 1.6.0: spec 056 M2 (WP6-11)
+    assert _json("manifest.json")["version"] == "1.6.0"
 
 
 # ------------------------------------------------------------------ capture/v1 1.4.0 (spec 050 §3.9)
@@ -909,7 +915,13 @@ def test_chain_reason_enum_is_gap_types_then_coverage_reasons() -> None:
     reasons = [r["value"] for r in vocab["reason"] if r["value"] not in gaps]
     assert schema["$defs"]["chainReason"]["enum"] == gaps + reasons
     link = schema["$defs"]["actionLink"]["properties"]
-    assert link["method"]["enum"] == ["process_anchor", "process_lineage"]
+    # M2 (WP6-11): rule H5's sandbox_report, the one reported method
+    assert link["method"]["enum"] == [
+        "process_anchor",
+        "process_lineage",
+        "sandbox_report",
+    ]
+    assert link["provenance"]["enum"] == ["inferred", "reported"]
     assert link["type"]["enum"] == ["part_of"]
 
 
@@ -923,3 +935,257 @@ def test_exec_subprocess_spool_records_are_observed_terminal_records() -> None:
         assert attrs["fabric.step.lifecycle_state"] == lifecycle
         assert {b["descriptor"]["provenance"] for b in record["bodies"]} == {"protocol"}
         assert {b["descriptor"]["boundary"] for b in record["bodies"]} == {"terminal"}
+
+
+# ------------------------------------------------------------------ capture/v1 1.6.0 (spec 056 M2)
+from contracts import host_records, ingress_groups  # noqa: E402
+from contracts import validate_coverage_contracts as coverage  # noqa: E402
+
+HOST = FAMILY / "fixtures" / "host"
+INGRESS = FAMILY / "fixtures" / "ingress-groups"
+
+
+def _pinned() -> dict[str, dict[str, Any]]:
+    return {r["path"]: r for r in _json("manifest.json")["artifacts"]}
+
+
+def _attrs(span: dict[str, Any]) -> dict[str, Any]:
+    return {a["key"]: host_records.decode_value(a["value"]) for a in span["attributes"]}
+
+
+def _host_spans(doc: dict[str, Any], batch: int = 0) -> list[dict[str, Any]]:
+    return [
+        span
+        for resource in doc["batches"][batch]["resourceSpans"]
+        for scope in resource["scopeSpans"]
+        for span in scope["spans"]
+    ]
+
+
+def test_053_host_record_fixtures() -> None:
+    """Spec 053 §7 / 056 §5.1: a host record per syscall class, the source markers, the
+    M2 eBPF shapes, and the refused batches, each pinned with its admission code."""
+    reg = coverage.load_registries(REPO_ROOT)
+    pinned = _pinned()
+    valid = sorted((HOST / "valid").glob("*.json"))
+    invalid = sorted((HOST / "invalid").glob("*.json"))
+    classes: set[str] = set()
+    markers: set[str] = set()
+    for path in valid:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        assert pinned[path.relative_to(FAMILY).as_posix()]["expectation"] == "valid"
+        validate_document(doc, _schemas())
+        for batch, expected in zip(doc["batches"], doc["expected"], strict=True):
+            assert host_records.admit(batch, doc["guard"], reg) == expected
+            for span in expected["spans"]:
+                assert span["attributes"]["fabric.source.authenticated"] is True
+        for span in _host_spans(doc):
+            attrs = _attrs(span)
+            if span["name"] == "fabric.sensor_event":
+                classes.add(attrs["fabric.sensor.event_class"])
+            else:
+                markers.add(attrs.get("fabric.heartbeat.kind") or span["name"])
+    assert classes == {"exec", "connect", "file"}
+    assert {
+        "fabric.capture_manifest",
+        "periodic",
+        "final",
+        "fabric.capture_loss",
+    } <= markers
+    codes = {}
+    for path in invalid:
+        record = pinned[path.relative_to(FAMILY).as_posix()]
+        assert record["expectation"] == "invalid"
+        with pytest.raises(CaptureContractError) as caught:
+            validate_document(json.loads(path.read_text(encoding="utf-8")), _schemas())
+        assert caught.value.code == record["expected_error"]
+        codes[path.stem] = caught.value.code
+    assert {
+        "duplicated-identity-key": "capture.host.repeated_key",
+        "agent-record-on-host-group": "capture.host.not_host_evidence",
+        "sensor-record-on-agent-group": "capture.host.sensor_on_agent",
+        "replay-changed-event-id": "capture.host.replay",
+        "unknown-source-kind": "capture.host.source_kind",
+    }.items() <= codes.items()
+    # the digest key without permission is stripped (step 7), not refused
+    stripped = json.loads(
+        (HOST / "valid/record-file-digest-without-permission.json").read_text()
+    )
+    assert stripped["expected"][0]["stripped"] == {"fabric.sensor.path_sha256": 1}
+    # M2: both pid numberings; a thread-spawned child's ns_ppid is the parent's tgid
+    thread = _attrs(
+        _host_spans(
+            json.loads((HOST / "valid/record-exec-thread-spawned.json").read_text())
+        )[0]
+    )
+    assert (thread["fabric.sensor.ppid"], thread["fabric.sensor.ns_ppid"]) == (4100, 7)
+    sandbox = _attrs(
+        _host_spans(json.loads((HOST / "valid/record-sandbox-scope.json").read_text()))[
+            0
+        ]
+    )
+    assert sandbox["fabric.sensor.scope"] == "sandbox"
+    assert sandbox["fabric.execution.sandbox_id"].startswith("sbx-")
+    assert sandbox["fabric.sensor.pod_id"].startswith("sbx-")
+    # one heartbeat per upstream-loss reason, same last sequence, enum order, own ids
+    two = [
+        _attrs(s)
+        for s in _host_spans(
+            json.loads((HOST / "valid/heartbeat-two-reasons.json").read_text())
+        )
+    ]
+    assert len({h["fabric.heartbeat.last_sequence"] for h in two}) == 1
+    assert len({h["fabric.event_id"] for h in two}) == 2
+    reasons = [h["fabric.sensor.upstream_loss_reason"] for h in two]
+    assert reasons == sorted(reasons, key=coverage_reasons().index)
+    late = _attrs(
+        _host_spans(json.loads((HOST / "valid/heartbeat-scope-late.json").read_text()))[
+            0
+        ]
+    )
+    assert (
+        late["fabric.sensor.upstream_loss_reason"],
+        late["fabric.sensor.upstream_lost"],
+    ) == ("scope_late", -1)
+    envelope = json.loads((HOST / "host-state-envelope-v1.json").read_text())
+    assert envelope["magic"] == "FABRIC-HOST-RECORDS-1\n"
+    assert {c["state_kind"] for c in envelope["cases"] if c["valid"]} == {
+        "epoch",
+        "staging",
+        "spool",
+        "cursor",
+    }
+
+
+def coverage_reasons() -> list[str]:
+    reg = coverage.load_registries(REPO_ROOT)
+    row = next(
+        r
+        for r in reg["keys"]["keys"]
+        if r["key"] == "fabric.sensor.upstream_loss_reason"
+    )
+    return list(row["check"]["values"])
+
+
+def test_056_m2_id_key_file_vectors() -> None:
+    """hostrecords.ReadIDKeyFile's format: Python's id_key_from_env, given the file's text
+    as FABRIC_WIRE_ID_KEY, gives each accepted vector's key, hst- and s- values."""
+    sequence = pytest.importorskip("fabric._sequence")
+    import base64  # noqa: PLC0415
+
+    doc = _json("fixtures/host/id-key-file-v1.json")
+    refused = set()
+    for case in doc["cases"]:
+        data = base64.b64decode(case["file_base64"])
+        if "refused" in case:
+            refused.add(case["refused"])
+            assert host_records.id_key_file(data, int(case["mode"], 8)) == (
+                None,
+                case["refused"],
+            )
+            continue
+        key = sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY": data.decode("utf-8")})
+        assert key == data == base64.b64decode(case["key_base64"]), case["name"]
+        assert sequence.pseudonym_v2("hst", "ar1-host", key) == case["host_id"]
+        assert sequence.label_pseudonym("s-", "node-a/ebpf", key) == case["source_id"]
+    assert refused == set(doc["reasons"])
+
+
+def test_056_m2_run_reconstruction_attribution() -> None:
+    report = _json("fixtures/valid/run-reconstruction-action-production.json")
+    validate_document(report, _schemas())
+    run = report["runs"][0]
+    assert run["attribution"]["links"]["sandbox_report"]["resolved"] >= 1
+    assert run["attribution"]["sandbox_events_unlinked"] == {"count": 0}
+    assert run["attribution"]["remote_sandbox_calls"] == {"count": 0, "event_ids": []}
+    h5 = [link for e in run["sensor_events"] for link in e.get("links", [])
+          if link["method"] == "sandbox_report"]  # fmt: skip
+    assert h5 and all(link["provenance"] == "reported" for link in h5)
+    pinned = _pinned()
+    for name, code in (
+        ("run-reconstruction-sandbox-report-inferred", "capture.schema"),
+        ("run-reconstruction-lineage-reported", "capture.schema"),
+        (
+            "run-reconstruction-remote-sandbox-call-not-a-reason",
+            "capture.reconstruction.chains",
+        ),
+    ):
+        rel = f"fixtures/invalid/{name}.json"
+        assert pinned[rel]["expected_error"] == code
+        _assert_error(_json(rel), code)
+    tentative = copy.deepcopy(report)
+    next(link for e in tentative["runs"][0]["sensor_events"] for link in e.get("links", [])
+         if link["method"] == "sandbox_report")["confidence"] = "tentative"  # fmt: skip
+    _assert_error(tentative, "capture.schema")
+    too_many = copy.deepcopy(report)
+    too_many["runs"][0]["attribution"]["remote_sandbox_calls"] = {
+        "count": 65, "event_ids": [f"host-{n:032x}" for n in range(65)]}  # fmt: skip
+    _assert_error(too_many, "capture.schema")
+
+
+def test_056_m2_ingress_group_goldens_parse(tmp_path: Path) -> None:
+    """Every golden parses; over a 0400 copy of the token tree with the /etc/fabric/
+    prefix rewritten, every valid configuration passes the group rules and every invalid
+    one is refused with its rule's text; the legacy single binding passes today's gate."""
+    yaml = pytest.importorskip("yaml")
+    index = _json("fixtures/ingress-groups/index.json")
+    root = tmp_path / "etc-fabric"
+    for entry in index["token_tree"]:
+        target = root / entry["path"][len("files/etc/fabric/") :]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((INGRESS / entry["path"]).read_bytes())
+        target.chmod(0o400)
+    for directory in sorted({p for p in root.rglob("*") if p.is_dir()}, reverse=True):
+        directory.chmod(0o700)
+
+    def read(path: str) -> bytes | None:
+        try:
+            return Path(path).read_bytes()
+        except OSError:
+            return None
+
+    rules = set()
+    for entry in index["configs"]:
+        doc = yaml.safe_load((INGRESS / entry["path"]).read_text(encoding="utf-8"))
+        assert isinstance(doc, dict)
+        assert ingress_groups.yaml_text(doc) == (INGRESS / entry["path"]).read_text()
+        got = ingress_groups.check(ingress_groups.rewrite(doc, str(root)), read)
+        assert got == entry["error"], entry["path"]
+        if entry["rule"]:
+            rules.add(entry["rule"])
+    assert rules == set(ingress_groups.ERRORS)
+    three = yaml.safe_load((INGRESS / "valid/agent-ebpf-three-nodes.yaml").read_text())
+    hosts = [
+        g for g, p in three["processors"].items() if p.get("source_kind") == "host.ebpf"
+    ]
+    assert hosts == ["fabricguard/ebpf-0", "fabricguard/ebpf-1", "fabricguard/ebpf-2"]
+    tokens = {
+        three["extensions"][f"bearertokenauth/{h.split('/')[1]}"]["filename"]
+        for h in hosts
+    }
+    assert {Path(t).parent.name for t in tokens} == {"ebpf-0", "ebpf-1", "ebpf-2"}
+    assert all(
+        t.startswith("/etc/fabric/ingress/") and t.endswith("/token") for t in tokens
+    )
+    legacy = (INGRESS / "valid/legacy-single-binding.yaml").read_text()
+    assert "fabricguard:" in legacy and "fabricguard/" not in legacy
+    go = shutil.which("go")
+    if go is None:
+        return
+    gate = tmp_path / "fabric-gate"
+    built = subprocess.run(  # noqa: S603 - the repository's own gate
+        [go, "build", "-o", str(gate), "."],
+        cwd=REPO_ROOT / "components/otel-collector-fabric/gate",
+        capture_output=True, text=True, check=False,
+    )  # fmt: skip
+    if built.returncode != 0:
+        pytest.skip("fabric-gate does not build here")
+    config = tmp_path / "legacy.yaml"
+    config.write_text(legacy.replace("/etc/fabric/", f"{root}/"))
+    run = subprocess.run(  # noqa: S603
+        [str(gate), "--config", str(config)],
+        env={"PATH": os.environ.get("PATH", ""), "FABRIC_EXPORT_AUTH": "Bearer fixture",
+             "FABRIC_GATE_COLLECTOR_BIN": shutil.which("true") or "/usr/bin/true"},
+        capture_output=True, text=True, check=False, timeout=120,
+    )  # fmt: skip
+    assert run.returncode == 0, run.stderr

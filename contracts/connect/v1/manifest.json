@@ -8,7 +8,7 @@
   "artifacts": [
     {
       "path": "manifests/python-sdk.json",
-      "sha256": "e2b4a94b7ca35d0bc575130aa9349851881f9e578adeaf9c3688f6691a56c2ee",
+      "sha256": "b4b78ab5c5b646a03523146a4b4c5e960eae42688de2fac88cff618b7c8c4450",
       "expectation": "valid"
     },
     {
@@ -28,12 +28,12 @@
     },
     {
       "path": "manifests/auditd-host-connector.json",
-      "sha256": "58d8a5d2af1e33fb7b96e1f7cc8605d50c189621fb15de33df53f4d0cc84edbe",
+      "sha256": "7d2a967f44e5f556ac8ad5466cb4cd6efec63080ea5328d56b80afe8362ef0e7",
       "expectation": "valid"
     },
     {
       "path": "manifests/ebpf-host-emitter.json",
-      "sha256": "b603accf9db95b85387dbb272c98ae43e7554d244490a46acd4bb7e1c2991b33",
+      "sha256": "519732bc42d93f4959270a6a82ddbe3bfece218ead5081ce118b1bc5858ac184",
       "expectation": "valid"
     },
     {

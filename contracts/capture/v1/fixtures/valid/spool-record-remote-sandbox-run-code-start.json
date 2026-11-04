@@ -1,0 +1,110 @@
+{
+  "schema_version": "fabric.wire-spool-record/v1",
+  "record_kind": "record",
+  "source": {
+    "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+    "source_epoch": 4611686018427387905
+  },
+  "order": 62,
+  "written_at_unix_nano": 1791331210600240000,
+  "service_name": "travel-agent",
+  "span": {
+    "name": "fabric.activity",
+    "kind": "internal",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "span_id": "9bc3a802ba17296e",
+    "trace_flags": 1,
+    "start_time_unix_nano": 1791331210600000000,
+    "end_time_unix_nano": 1791331210600200000,
+    "status": "unset",
+    "attributes": {
+      "fabric.capture.input": "records",
+      "fabric.capture.source": "observed",
+      "fabric.capture.point": "remote.sandbox@2.62.0",
+      "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "fabric.source.epoch": 4611686018427387905,
+      "fabric.attempt.uid": "b124fc77-09a5-4ecc-af8c-5ff5f344f8d3",
+      "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "fabric.run.scope_id": "a147135a-c047-4746-ac1e-7c091478d80d",
+      "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "fabric.step.kind": "remote_exec",
+      "fabric.actor.type": "agent",
+      "fabric.execution.sandbox_id": "sbx-7a6b9fbf6825a65c5bedc2538e85b5a7",
+      "fabric.source.sequence": 53,
+      "fabric.event_id": "07a5fb69-2ded-4948-a2ad-14dab2175195",
+      "fabric.step.lifecycle_state": "running",
+      "fabric.content.object_ids": [
+        "883688a7-85f1-4b0a-a7d7-9db25338ee8a",
+        "46a8d6f0-ecb6-4669-a61e-b58bda44e43b"
+      ]
+    }
+  },
+  "bodies": [
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "883688a7-85f1-4b0a-a7d7-9db25338ee8a",
+        "tenant_id": "tenant-a",
+        "role": "remote.request",
+        "media_type": "application/json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "remote",
+        "status": "stored",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 53,
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "operation_id": "b124fc77-09a5-4ecc-af8c-5ff5f344f8d3",
+        "attempt_id": "b124fc77-09a5-4ecc-af8c-5ff5f344f8d3",
+        "captured_at": "2026-10-07T00:00:10.000200+00:00",
+        "privacy_mode": "retain_original",
+        "policy_id": "acme-capture",
+        "policy_version": 3,
+        "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "protection_status": "retained",
+        "stored_byte_length": 97,
+        "stored_sha256": "sha256:82cdcc166e3346fc5191c1b28df1936d880d08e4cb71e6c4e9a6b0789840ccc6",
+        "source_byte_length": 97,
+        "source_sha256": "sha256:82cdcc166e3346fc5191c1b28df1936d880d08e4cb71e6c4e9a6b0789840ccc6"
+      },
+      "offset": 0,
+      "length": 97
+    },
+    {
+      "descriptor": {
+        "schema_version": "fabric.content-object/v2",
+        "object_id": "46a8d6f0-ecb6-4669-a61e-b58bda44e43b",
+        "tenant_id": "tenant-a",
+        "role": "record.evidence",
+        "media_type": "application/vnd.fabric.record-evidence+json",
+        "content_encoding": "identity",
+        "representation": "exact",
+        "transformations": [],
+        "provenance": "protocol",
+        "boundary": "remote",
+        "status": "stored",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 53,
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "operation_id": "b124fc77-09a5-4ecc-af8c-5ff5f344f8d3",
+        "attempt_id": "b124fc77-09a5-4ecc-af8c-5ff5f344f8d3",
+        "captured_at": "2026-10-07T00:00:10.000200+00:00",
+        "privacy_mode": "retain_original",
+        "policy_id": "acme-capture",
+        "policy_version": 3,
+        "policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "protection_status": "retained",
+        "stored_byte_length": 162,
+        "stored_sha256": "sha256:bc9182664eb06085274b0a850bcf05eda8772dd0d2dc564bdfb44c46858b3c2f",
+        "source_byte_length": 162,
+        "source_sha256": "sha256:bc9182664eb06085274b0a850bcf05eda8772dd0d2dc564bdfb44c46858b3c2f"
+      },
+      "offset": 97,
+      "length": 162
+    }
+  ]
+}

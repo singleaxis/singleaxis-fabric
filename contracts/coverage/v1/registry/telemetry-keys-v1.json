@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 11,
+  "registry_revision": 12,
   "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 §4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in its listed phase; today's admission stays until then). identity_mode names the admission under a Node configured identity_mode: clear ('existing': the clear value keeps its pre-049 admission); under the default pseudonymous Node only the check admits. Keys with owner receiver are stripped from every agent-supplied record. A check with span applies only on that span.",
   "capture_check_rule": "capture_check is the closed check fabricguard applies to a reused key on the capture classes its placement names (spec 050 §3.14: the records class, the X05 block on exchanges and run_start); elsewhere the key keeps its existing admission. placement lists the capture record classes a key may appear on: exchange, record (the records input, spec 050 §3.14), loss, the heartbeat kinds run_start, run_end, segment_seal, periodic and final, and manifest (the fabric.capture_manifest span). A key without placement is admitted on non-capture spans only. The records class admits exactly the keys whose placement names record, each with its check (capture_check when the row has one): generated into fabricguard's recordKeyValidators and the SDK's fabric._records_keys_generated (spec 050 §3.4 rule A).",
   "keys": [
@@ -1546,7 +1546,7 @@
       "key": "fabric.manifest.sdk.language",
       "change": "new",
       "field": "X36",
-      "validator": "META: closed enum `python`, `typescript`",
+      "validator": "META: closed enum `python`, `typescript`, `go` (`go`: a host sensor source's manifest, built by the host-records library; spec 056 M2)",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "sdk/language",
@@ -1554,7 +1554,8 @@
         "type": "enum",
         "values": [
           "python",
-          "typescript"
+          "typescript",
+          "go"
         ],
         "source": "validator"
       }
@@ -1648,7 +1649,10 @@
             "provider_batch_files",
             "non_post_endpoints",
             "unmatched_endpoints",
-            "other_runtime"
+            "other_runtime",
+            "sensor_exec",
+            "sensor_connect",
+            "sensor_file"
           ],
           "source": "schema:uncaptured_classes"
         },
@@ -1840,6 +1844,10 @@
       "field": "N43",
       "validator": "ID: `hst-` + 32 hex",
       "phase": "P4",
+      "placement": [
+        "record"
+      ],
+      "note": "Spec 053 §6.2.3, §5.4: `hst-` v2 of the canonical peer text (vector peer-address-v1.json) on host records and http.nonmodel records.",
       "check": {
         "type": "string",
         "pattern": "^hst-[0-9a-f]{32}$",
@@ -1949,6 +1957,27 @@
       "check": {
         "type": "int",
         "min": 1
+      }
+    },
+    {
+      "key": "fabric.process.pid_ns",
+      "change": "new",
+      "field": "N35",
+      "validator": "META: decimal uint64, `^[0-9]{1,20}$` (the inode of the agent's own /proc/self/ns/pid, Linux)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 056 §4.3, §7.3.3 (a): read once per process by the capture worker; joins production eBPF records by namespace (H1, H2).",
+      "placement": [
+        "record"
+      ],
+      "capture_points": [
+        "exec.subprocess"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": [
+          "4026531836"
+        ]
       }
     },
     {
@@ -2417,6 +2446,27 @@
       }
     },
     {
+      "key": "fabric.sandbox.created_id",
+      "change": "new",
+      "field": "X21",
+      "validator": "ID: `sbx-` + 32 hex (`sbx-` v2 of `container:<64 hex>` or `k8s-pod:<uid>` the container runtime printed)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 056 §4.3 rule H5, §7.3.3 (a): derived on the capture worker from standard output the caller already received; absent without an id key or under terminal.stdout omit. Vector sandbox-id-v1.json.",
+      "placement": [
+        "record"
+      ],
+      "capture_points": [
+        "exec.subprocess"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^sbx-[0-9a-f]{32}$",
+        "examples": [
+          "sbx-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
       "key": "fabric.segment.branch_ids",
       "change": "new",
       "field": "X46",
@@ -2529,6 +2579,497 @@
           "unknown"
         ],
         "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.sensor.argv_sha256",
+      "change": "new",
+      "field": "X21",
+      "validator": "DIGEST: 64 lowercase hex, bare (the Node hash-key rule for keys ending `_sha256`); only under the sensor's and the group's digest permission (053 §6.2.5)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 053 §6.2.3 writes `sha256:` + 64 hex; fabricguard strips any value of a key ending in sha256 that is not bare 64 hex (processor.go hashAttributeKey), as for today's local-profile digests, so the value is bare hex.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.audit_serial",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: decimal uint64, `^[0-9]{1,20}$` (auditd only, exact)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": [
+          "18446744073709551615"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.boot_time_s",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 0 (CLOCK_REALTIME − CLOCK_BOOTTIME at sensor start, seconds)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.sensor.cgroup_id",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: decimal uint64, `^[0-9]{1,20}$`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": [
+          "9123"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.errno",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum of the auditd receiver's errno names (`EPERM`, `ENOENT`, `EIO`, `EAGAIN`, `EACCES`, `EINVAL`, `ECONNREFUSED`, `ETIMEDOUT`, `EHOSTUNREACH`, `ENETUNREACH`) plus `other`; only when the result is `failed`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "EPERM",
+          "ENOENT",
+          "EIO",
+          "EAGAIN",
+          "EACCES",
+          "EINVAL",
+          "ECONNREFUSED",
+          "ETIMEDOUT",
+          "EHOSTUNREACH",
+          "ENETUNREACH",
+          "other"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.event_class",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `exec`, `connect`, `file`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "exec",
+          "connect",
+          "file"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.exe_sha256",
+      "change": "new",
+      "field": "X21",
+      "validator": "DIGEST: 64 lowercase hex, bare (the Node hash-key rule for keys ending `_sha256`); only under the sensor's and the group's digest permission (053 §6.2.5)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 053 §6.2.3 writes `sha256:` + 64 hex; fabricguard strips any value of a key ending in sha256 that is not bare 64 hex (processor.go hashAttributeKey), as for today's local-profile digests, so the value is bare hex.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.incomplete",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `path`, `args`, `path_and_args`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "path",
+          "args",
+          "path_and_args"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.ns_pid",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 1 (eBPF only: the group leader's number in its own pid namespace)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 1
+      }
+    },
+    {
+      "key": "fabric.sensor.ns_ppid",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 0 (eBPF only: the parent's thread-group id in the child's pid namespace, what getppid() returns there; 0 when the parent is outside it)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.sensor.path_sha256",
+      "change": "new",
+      "field": "X21",
+      "validator": "DIGEST: 64 lowercase hex, bare (the Node hash-key rule for keys ending `_sha256`); only under the sensor's and the group's digest permission (053 §6.2.5)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 053 §6.2.3 writes `sha256:` + 64 hex; fabricguard strips any value of a key ending in sha256 that is not bare 64 hex (processor.go hashAttributeKey), as for today's local-profile digests, so the value is bare hex.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.peer_family",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `ipv4`, `ipv6`, `unix`, `other` (connect class only)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "ipv4",
+          "ipv6",
+          "unix",
+          "other"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.peer_port",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer 0..65535",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0,
+        "max": 65535
+      }
+    },
+    {
+      "key": "fabric.sensor.pid",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 1 (the init-namespace thread-group id)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 1
+      }
+    },
+    {
+      "key": "fabric.sensor.pid_ns",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: decimal uint64, `^[0-9]{1,20}$` (the inode of the pid namespace ns_pid is numbered in)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": [
+          "4026531836"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.pod_id",
+      "change": "new",
+      "field": "X21",
+      "validator": "ID: `sbx-` + 32 hex (eBPF only: `sbx-` v2 of `k8s-pod:<uid>` from the event's cgroup names, sandbox scope only; rule H5)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^sbx-[0-9a-f]{32}$",
+        "examples": [
+          "sbx-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.ppid",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 0 (the init-namespace thread-group id of the real parent)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.sensor.process_start_ns",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 0 (eBPF only: the group leader's start_boottime, CLOCK_BOOTTIME nanoseconds, unrounded)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.sensor.result",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `success`, `failed`, `unknown`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "success",
+          "failed",
+          "unknown"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.scope",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `agent`, `sandbox` (eBPF only: the kind of the deepest configured cgroup root that admitted the event)",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "agent",
+          "sandbox"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.syscall",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `execve`, `execveat`, `connect`, `accept`, `bind`, `socket`, `openat`, `open`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "execve",
+          "execveat",
+          "connect",
+          "accept",
+          "bind",
+          "socket",
+          "openat",
+          "open"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.upstream_loss_reason",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: closed enum `ring_buffer_full`, `socket_overflow`, `assembly_evicted`, `rate_limited`, `backlog_limit`, `source_rotation_gap`, `source_truncated`, `source_missing`, `restart`, `scope_late`, `unknown`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.4 revision 4 (`scope_late`: an agent pod's scope was installed after its containers started, spec 056 §4.3). Present exactly when upstream_lost is not 0.",
+      "placement": [
+        "periodic"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "ring_buffer_full",
+          "socket_overflow",
+          "assembly_evicted",
+          "rate_limited",
+          "backlog_limit",
+          "source_rotation_gap",
+          "source_truncated",
+          "source_missing",
+          "restart",
+          "scope_late",
+          "unknown"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.sensor.upstream_lost",
+      "change": "new",
+      "field": "X35",
+      "validator": "META: integer ≥ −1 (−1: unknown count); events lost before translation, which never had a position",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.4: on a host source's periodic heartbeat; one reason per heartbeat span, one heartbeat per reason per interval (spec 056 §7.3.3 (b)). An unknown count stays unknown, never zero.",
+      "placement": [
+        "periodic"
+      ],
+      "check": {
+        "type": "int",
+        "min": -1
       }
     },
     {
@@ -3282,6 +3823,77 @@
           "lbl-9f86d081884c7d659a2feaa0c55ad015",
           "support-agent"
         ]
+      }
+    },
+    {
+      "key": "fabric.tenant_id",
+      "change": "reused",
+      "field": "X04",
+      "validator": "existing allowlist key; on a host record (capture-point kind S, spec 053 §6.2.3) the group's bound tenant",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §6.2.3, §6.2.7 step 5: a host record carries its tenant, which must equal the group binding. On the records class only for capture-point kind S; agent records keep their tenant in the resource and install configuration (X04).",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "examples": [
+          "tenant-a",
+          "acme.prod"
+        ]
+      }
+    },
+    {
+      "key": "http.request.method",
+      "change": "reused",
+      "field": "N43",
+      "validator": "existing allowlist key (spec 047 wire exchanges keep their own check, `POST`); on an http.nonmodel record the closed N43 enum `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `other`",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §5.4, §7 (N43): reused by the http.nonmodel hook's records (capture_check, records class only). Wire exchange spans keep carrying the key with their spec 047 check, so the placement names exchange too.",
+      "placement": [
+        "exchange",
+        "record"
+      ],
+      "capture_points": [
+        "http.nonmodel"
+      ],
+      "capture_check": {
+        "type": "enum",
+        "values": [
+          "GET",
+          "HEAD",
+          "POST",
+          "PUT",
+          "PATCH",
+          "DELETE",
+          "OPTIONS",
+          "other"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "http.response.status_code",
+      "change": "reused",
+      "field": "N43",
+      "validator": "existing allowlist key (spec 047 wire exchanges keep their own check); on an http.nonmodel record integer 100..599",
+      "phase": "P4 (spec 056 M2)",
+      "note": "Spec 053 §5.4, §7 (N43): reused by the http.nonmodel hook's records (capture_check, records class only). Wire exchange spans keep carrying the key with their spec 047 check, so the placement names exchange too.",
+      "placement": [
+        "exchange",
+        "record"
+      ],
+      "capture_points": [
+        "http.nonmodel"
+      ],
+      "capture_check": {
+        "type": "int",
+        "min": 100,
+        "max": 599
       }
     }
   ],

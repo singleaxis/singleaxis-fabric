@@ -1,0 +1,241 @@
+{
+  "schema_version": "fabric.ingress-group-goldens/v1",
+  "rule": "Spec 053 §6.1, §6.2.6, spec 056 §7.3.3 (f): rendered Node and sensor-collector configurations as fabric-gate reads them (YAML, sorted keys). Paths follow one convention: group tokens at /etc/fabric/ingress/<group>/token, receiver TLS at /etc/fabric/receiver-tls/{tls.crt,tls.key,client-ca.crt} (the chart's existing mount), the content key at /etc/fabric/content-key/key, the sensor collector's client token and keys at /etc/fabric/sensor/. files/ holds the token tree at those paths below 'files/'; a test copies it to a temporary root with modes 0400 (directories 0700) and rewrites the prefix '/etc/fabric/' in every string of the configuration to that root. Every valid configuration passes the gate; every invalid one is refused with an error containing its 'error' text. valid/legacy-single-binding.yaml is checked by the existing single-binding rule, unchanged.",
+  "prefix": "/etc/fabric/",
+  "default_groups": 64,
+  "max_groups": 256,
+  "errors": {
+    "name": "an ingress group name matches ^[a-z][a-z0-9-]{0,31}$ and does not start with content (053 §6.1)",
+    "mixing": "a configuration has the legacy single binding or only fabricguard/<group> instances, never both (053 §6.1)",
+    "r1": "each group has exactly one bearertokenauth/<group>, used only by that group's receivers (053 §6.1 rule 1)",
+    "r2": "a group pipeline uses only its own receiver, guard and content exporter; no unbound receiver (053 §6.1 rule 2)",
+    "r3": "no processor after fabricguard/<group> but batch (053 §6.1 rule 3)",
+    "r4": "fabricguard/<group> and fabriccontent/<group> carry the group's tenant and source; allowed_tenants is exactly that tenant (053 §6.1 rule 4)",
+    "r5": "group credentials differ byte for byte (053 §6.1 rule 5)",
+    "r6": "a group credential is one watched token file with require_single_token: true (053 §6.1 rule 6)",
+    "r7": "no two groups bind one (tenant, source) (053 §6.1 rule 7)",
+    "r8": "a group listener uses TLS unless it is loopback (053 §6.1 rule 8)",
+    "r9": "each fabriccontent/<group> has its own binding and encrypted queue (053 §6.1 rule 9)",
+    "h1": "a host group has only its traces pipeline (053 §6.2.6 rule 1)",
+    "h2": "a host group has no content receiver and no fabriccontent exporter (053 §6.2.6 rule 2)",
+    "h3": "fabricguard/<group> sets profile production, source_kind and the group's evidence_source_binding (053 §6.2.6 rule 3)",
+    "h4": "the audit receiver never runs in a production Node pipeline (053 §6.2.6 rule 4)",
+    "h5": "no two group listeners share an address; auditd and eBPF groups have their own (053 §6.1, §6.2.6 rule 5)",
+    "s1": "the sensor-collector profile holds exactly the production audit receiver, one traces pipeline from [memory_limiter, batch] and one otlp_http exporter (056 §7.3.3 (f))",
+    "s2": "the sensor collector exports with TLS or to loopback, refuses redirects and authenticates with a client bearertokenauth token file (056 §7.3.3 (f))"
+  },
+  "configs": [
+    {
+      "path": "invalid/group-name-content-prefix.yaml",
+      "sha256": "d5645b588192ee83d6d85a666b70d667322df1755ccbdd8e7403b6aea31ece51",
+      "expectation": "invalid",
+      "rule": "name",
+      "error": "an ingress group name matches ^[a-z][a-z0-9-]{0,31}$ and does not start with content (053 §6.1)"
+    },
+    {
+      "path": "invalid/h1-host-logs-pipeline.yaml",
+      "sha256": "11d09e7a757155b883b831c8d50c23e734f9a2d685749a8cfdd58951bbfc90b0",
+      "expectation": "invalid",
+      "rule": "h1",
+      "error": "a host group has only its traces pipeline (053 §6.2.6 rule 1)"
+    },
+    {
+      "path": "invalid/h2-host-content-receiver.yaml",
+      "sha256": "1bfc1bbc608eddb2ea21fad2fa13612fa5eb7fc9cb26b48f3f2620a75287fda2",
+      "expectation": "invalid",
+      "rule": "h2",
+      "error": "a host group has no content receiver and no fabriccontent exporter (053 §6.2.6 rule 2)"
+    },
+    {
+      "path": "invalid/h3-guard-without-source-kind.yaml",
+      "sha256": "ebfdf7b9e6e31799bcfcad93fbd145a25eaac2f6571729873e5519f51364cd95",
+      "expectation": "invalid",
+      "rule": "h3",
+      "error": "fabricguard/<group> sets profile production, source_kind and the group's evidence_source_binding (053 §6.2.6 rule 3)"
+    },
+    {
+      "path": "invalid/h4-audit-receiver-in-node.yaml",
+      "sha256": "e6de4e07ccb5b673f32b86422aa1cffa347d5809198d0f6aa1637e42e10ecd46",
+      "expectation": "invalid",
+      "rule": "h4",
+      "error": "the audit receiver never runs in a production Node pipeline (053 §6.2.6 rule 4)"
+    },
+    {
+      "path": "invalid/h5-auditd-ebpf-share-a-listener.yaml",
+      "sha256": "50bc8f721e98becc22310407b8dacea9ae495067535d41545a623b50c286869e",
+      "expectation": "invalid",
+      "rule": "h5",
+      "error": "no two group listeners share an address; auditd and eBPF groups have their own (053 §6.1, §6.2.6 rule 5)"
+    },
+    {
+      "path": "invalid/mixing-legacy-and-groups.yaml",
+      "sha256": "fae1c84d7979bfd6021eac078f9b740bf7ed343aff150e51cb78d29d2a9962d7",
+      "expectation": "invalid",
+      "rule": "mixing",
+      "error": "a configuration has the legacy single binding or only fabricguard/<group> instances, never both (053 §6.1)"
+    },
+    {
+      "path": "invalid/r1-shared-authenticator.yaml",
+      "sha256": "008a08c5d7a314c709f6df10a79846f7e3dfd4f97e7481e22456a9c7f5655a6c",
+      "expectation": "invalid",
+      "rule": "r1",
+      "error": "each group has exactly one bearertokenauth/<group>, used only by that group's receivers (053 §6.1 rule 1)"
+    },
+    {
+      "path": "invalid/r2-cross-wired-receiver.yaml",
+      "sha256": "2e117da2d3bf04c04b4e254da474ae0c6d785809e909ed81e1a93131eb595563",
+      "expectation": "invalid",
+      "rule": "r2",
+      "error": "a group pipeline uses only its own receiver, guard and content exporter; no unbound receiver (053 §6.1 rule 2)"
+    },
+    {
+      "path": "invalid/r3-mutating-processor-after-guard.yaml",
+      "sha256": "20b3281bbb77e33cab09adf09d0176337950094d0f8367848328e26b399070fa",
+      "expectation": "invalid",
+      "rule": "r3",
+      "error": "no processor after fabricguard/<group> but batch (053 §6.1 rule 3)"
+    },
+    {
+      "path": "invalid/r4-content-binding-differs.yaml",
+      "sha256": "e6b993c7d66d1b0020fe238fca1ffa9ccfd809340ce4a1e0a20654b8c6315bce",
+      "expectation": "invalid",
+      "rule": "r4",
+      "error": "fabricguard/<group> and fabriccontent/<group> carry the group's tenant and source; allowed_tenants is exactly that tenant (053 §6.1 rule 4)"
+    },
+    {
+      "path": "invalid/r5-equal-credentials.yaml",
+      "sha256": "0339f3439f94e450b13f02a5e75e21df3107ee487aa04eda77899354df634d68",
+      "expectation": "invalid",
+      "rule": "r5",
+      "error": "group credentials differ byte for byte (053 §6.1 rule 5)"
+    },
+    {
+      "path": "invalid/r6-inline-token.yaml",
+      "sha256": "9434affe09511aa3e2bd702817777d39e14c2e150529f361015bcde7d695bf75",
+      "expectation": "invalid",
+      "rule": "r6",
+      "error": "a group credential is one watched token file with require_single_token: true (053 §6.1 rule 6)"
+    },
+    {
+      "path": "invalid/r7-one-source-two-groups.yaml",
+      "sha256": "83b828e0a57486f17a79296bca17c42660f77ae99a02d5a3b73005e5ee135ac7",
+      "expectation": "invalid",
+      "rule": "r7",
+      "error": "no two groups bind one (tenant, source) (053 §6.1 rule 7)"
+    },
+    {
+      "path": "invalid/r8-plaintext-group-listener.yaml",
+      "sha256": "44174ba8f2f6325e0ea7484fc7da2d87e0cd85afe46a0b8e8490d9d7b0b931cb",
+      "expectation": "invalid",
+      "rule": "r8",
+      "error": "a group listener uses TLS unless it is loopback (053 §6.1 rule 8)"
+    },
+    {
+      "path": "invalid/r9-shared-content-queue.yaml",
+      "sha256": "fe27eae56249c809eaf0a294a12218f399108afafb8beeee9a8afd5f8ffa8806",
+      "expectation": "invalid",
+      "rule": "r9",
+      "error": "each fabriccontent/<group> has its own binding and encrypted queue (053 §6.1 rule 9)"
+    },
+    {
+      "path": "invalid/s1-sensor-extra-receiver.yaml",
+      "sha256": "9bcf05ed180ab6e1ade71ac05e32580ed1be64213c128c8b5b73b991cc6377d3",
+      "expectation": "invalid",
+      "rule": "s1",
+      "error": "the sensor-collector profile holds exactly the production audit receiver, one traces pipeline from [memory_limiter, batch] and one otlp_http exporter (056 §7.3.3 (f))"
+    },
+    {
+      "path": "invalid/s2-sensor-without-client-token.yaml",
+      "sha256": "c87269a3208c0ada16f6a0e929261b2d32311af3b9e5466bd1ef5ae2419ad814",
+      "expectation": "invalid",
+      "rule": "s2",
+      "error": "the sensor collector exports with TLS or to loopback, refuses redirects and authenticates with a client bearertokenauth token file (056 §7.3.3 (f))"
+    },
+    {
+      "path": "valid/agent-ebpf-auditd.yaml",
+      "sha256": "ae35160141542e566300ad202abe121146bd5f81c126efeb08c8954f4f283660",
+      "expectation": "valid",
+      "rule": null,
+      "error": null
+    },
+    {
+      "path": "valid/agent-ebpf-three-nodes.yaml",
+      "sha256": "d7ae252c5ed2347d3bc69e49d4cf15ad5852c8492ef2b4093510395513f8c364",
+      "expectation": "valid",
+      "rule": null,
+      "error": null
+    },
+    {
+      "path": "valid/legacy-single-binding.yaml",
+      "sha256": "1383625c59e708f77a32c165a14480e75f90e2d0dd7744bbdda34b7b603dc074",
+      "expectation": "valid",
+      "rule": null,
+      "error": null
+    },
+    {
+      "path": "valid/sensor-auditd.yaml",
+      "sha256": "7338754b471c8884f303a9de32a269b0fc3e5c1f9f20b9bc3a2ee776965b89f8",
+      "expectation": "valid",
+      "rule": null,
+      "error": null
+    }
+  ],
+  "token_tree": [
+    {
+      "path": "files/etc/fabric/content-key/key",
+      "sha256": "dcd0aa0225a2655e1a21f2b0a25e7cef879025e9bdb589d53a7e2bae69936c4d"
+    },
+    {
+      "path": "files/etc/fabric/ingress/agent-2/token",
+      "sha256": "0d80ddac0540e8f3ffe0df0e834791d1aacac340564bff55033b13ac1cb509c2"
+    },
+    {
+      "path": "files/etc/fabric/ingress/agent/token",
+      "sha256": "3efd2c546ab22968f8315b026e63c3bef3a148fd6bfe1cd4fe6cb0c856be274e"
+    },
+    {
+      "path": "files/etc/fabric/ingress/auditd/token",
+      "sha256": "c1c895b40a3abedaf356c076508379045bd575fb9ded30de4b0bb4101f0367eb"
+    },
+    {
+      "path": "files/etc/fabric/ingress/dup-a/token",
+      "sha256": "b7c39d725840143f646d83a414827fe037e76a51f32c436ad6766c8af6f669ef"
+    },
+    {
+      "path": "files/etc/fabric/ingress/dup-b/token",
+      "sha256": "b7c39d725840143f646d83a414827fe037e76a51f32c436ad6766c8af6f669ef"
+    },
+    {
+      "path": "files/etc/fabric/ingress/ebpf-0/token",
+      "sha256": "7e300bf7e7fcf5c5ba1f77a36bd2817d8be6a9397a4f4cef04839a92bbfc8c23"
+    },
+    {
+      "path": "files/etc/fabric/ingress/ebpf-1/token",
+      "sha256": "200ba2ce64fa273b390aafb9a698fcf5464ceb801b1a8468214df9e1aa89245f"
+    },
+    {
+      "path": "files/etc/fabric/ingress/ebpf-2/token",
+      "sha256": "6a15b79a13713ff89a5c508040fb6edf80d73f51c49dbb9f094d7999aa4d9b60"
+    },
+    {
+      "path": "files/etc/fabric/ingress/ebpf/token",
+      "sha256": "c4b9adbc281bd562eb456869b9c535300191ef99c89ec4e314a94629200ffe41"
+    },
+    {
+      "path": "files/etc/fabric/sensor/id_key",
+      "sha256": "2452c9978e943c447fc96f7afca64524a8beacd9a7f4f1e619075c1ff1f40fd7"
+    },
+    {
+      "path": "files/etc/fabric/sensor/state_key",
+      "sha256": "dcd0aa0225a2655e1a21f2b0a25e7cef879025e9bdb589d53a7e2bae69936c4d"
+    },
+    {
+      "path": "files/etc/fabric/sensor/token",
+      "sha256": "9079fe13ccee0ac3202039cec23eea97ccdda3ca29d3daeefc7394e6b9f827a4"
+    },
+    {
+      "path": "files/etc/fabric/workload-auth/token",
+      "sha256": "79e70b68fbab439870cf954891d2ef9035710d2d57b478601d4fe7fb68cc9c1d"
+    }
+  ]
+}

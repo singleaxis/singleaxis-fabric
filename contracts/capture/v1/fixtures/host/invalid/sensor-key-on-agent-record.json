@@ -1,0 +1,110 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "sensor-key-on-agent-record",
+  "description": "An agent record carrying one fabric.sensor.* key on an agent group: refused.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "agent",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "bee127ad44b4651402c5ebde3ff7493c",
+                  "spanId": "f0c637d497624309",
+                  "name": "fabric.activity",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331201210000000",
+                  "endTimeUnixNano": "1791331201210000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.sequence",
+                      "value": {
+                        "intValue": "9"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "91fa5bd6-2dd9-4271-a5b8-b3b5c62bfa71"
+                      }
+                    },
+                    {
+                      "key": "fabric.attempt.uid",
+                      "value": {
+                        "stringValue": "e11d3fb6-8366-4d6c-af0b-7fa3e81b5d03"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.input",
+                      "value": {
+                        "stringValue": "records"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.source",
+                      "value": {
+                        "stringValue": "observed"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "exec.subprocess@0.10.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.step.kind",
+                      "value": {
+                        "stringValue": "terminal"
+                      }
+                    },
+                    {
+                      "key": "fabric.process.pid",
+                      "value": {
+                        "intValue": "4121"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid",
+                      "value": {
+                        "intValue": "4121"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
