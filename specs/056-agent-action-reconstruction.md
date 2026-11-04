@@ -90,7 +90,7 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 |---|---|---|
 | Model exchanges with full bodies, run reconstruction | `fabric/wire/`, `fabric/reconstruct/` | Built (v0.8.0) |
 | Tool call ↔ tool result pairing by id | `reconstruct/_stitch.py` (`tool_call_id`, Responses `function_call` / `function_call_output`, Anthropic `tool_use` / `tool_result`) | Built (v0.8.0) |
-| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | Built after v0.9.0, not yet released (050 waves 0–2 and the WP-50 end-to-end test); P1-A (050 wave 4) not built |
+| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | Built, released in v0.10.0 (050 waves 0–2 except WP-15 and WP-21, and the WP-50 end-to-end test); P1-A (050 wave 4) not built |
 | Subprocess hook (`exec.subprocess`) | 053 §5.1, `fabric/hooks/_exec.py` | Specified, not built |
 | Hooks foundation (`fabric.hooks.install`) | 053 §4, `fabric/hooks/` | Specified, not built |
 | Host sensors, local profile | `components/host-emitter`, `receiver/auditreceiver` | Built; records carry pid, parent pid, hashed executable and argv, peer address and port; no source, epoch or sequence |
@@ -101,10 +101,11 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 | Remote sandboxes (E2B, Modal, Daytona and similar) | — | Not specified (this spec, §4.4) |
 
 The table is the state this spec started from. Milestone M1 (WP6-01 to
-WP6-07) is now built after v0.9.0, not yet released: the hooks foundation,
-the `exec.subprocess` hook, the effect ↔ tool call link (§4.2) and the
+WP6-07) is built and released in v0.10.0: the hooks foundation, the
+`exec.subprocess` hook, the effect ↔ tool call link (§4.2) and the
 process-tree join for local-profile host records (§4.3). AR-1 (§6.2) passes
-in hermetic mode; its live mode has not run yet.
+in CI in hermetic mode and in live mode (Linux, eBPF). Milestone M2 is not
+built.
 [Agent action reconstruction](../docs/action-reconstruction.md) describes
 what is built.
 

@@ -1,8 +1,9 @@
 # AR-1: the agent action reconstruction acceptance scenario
 
-> **Status:** test harness for code that is built but not yet released
-> (spec 056 milestone M1, WP6-06). Hermetic mode passes on macOS; live mode
-> (Linux, eBPF or auditd) is written for CI and has not been run yet. See
+> **Status:** test harness for code released in v0.10.0 (spec 056
+> milestone M1, WP6-06). In CI, hermetic mode passes on macOS and Linux, and
+> live mode passes on Linux with the eBPF sensor; the auditd fallback is
+> written but not run live in CI. See
 > [docs/action-reconstruction.md](../../docs/action-reconstruction.md) for the
 > feature itself.
 

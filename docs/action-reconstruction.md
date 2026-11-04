@@ -1,6 +1,6 @@
 # Agent action reconstruction
 
-> **Status:** describes code that is built but not yet released
+> **Status:** released in v0.10.0
 > ([spec 056](../specs/056-agent-action-reconstruction.md)
 > milestone M1, local profile). Implementation:
 > [`fabric/hooks/`](../sdk/python/src/fabric/hooks/) (the `exec.subprocess`
@@ -8,9 +8,9 @@
 > (attribution, chain verdicts, the `actions` view) and
 > [`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)
 > (host-sensor records and the process-tree join). The acceptance test,
-> [AR-1](../qualification/action-record/README.md), passes in hermetic mode;
-> its live mode (a real host sensor on Linux) has not run yet. Python agents
-> only.
+> [AR-1](../qualification/action-record/README.md), passes in CI in hermetic
+> mode (macOS and Linux) and in live mode on Linux with the eBPF sensor.
+> Python agents only; on the local profile every host anchor is `tentative`.
 
 For one run, Fabric can answer three questions: what the agent actually
 ran, which model decision caused each command, and what the operating
