@@ -22,7 +22,9 @@ const shutdownGrace = 30 * time.Second
 
 // checkWatched re-runs the token-file invariants. The collector's
 // bearertokenauth extension re-reads the file whenever it changes, so the
-// gate must keep holding the line after boot.
+// gate must keep holding the line after boot. Ingress-group tokens must also
+// stay distinct: a rotation that gives one group another group's token is a
+// cross-group credential swap (053 §6.1 rules 5, 6).
 func checkWatched(watched []tokenFile) error {
 	for _, tf := range watched {
 		var err error
@@ -35,7 +37,7 @@ func checkWatched(watched []tokenFile) error {
 			return err
 		}
 	}
-	return nil
+	return checkGroupTokensDiffer(watched)
 }
 
 // supervise runs the collector as a child process when token files need
