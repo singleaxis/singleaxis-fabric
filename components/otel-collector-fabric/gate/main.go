@@ -34,6 +34,17 @@
 //     redirect is never followed;
 //   - no OTLP exporter endpoint and no fabriccontent S3 endpoint carries user
 //     info, a query or a fragment;
+//   - a Node with static ingress groups (fabricguard/<group> instances, spec
+//     053 §6.1, §6.2.6) keeps every group's receiver, authenticator, guard,
+//     content exporter and queue to itself, with distinct credential bytes,
+//     its own listeners and host groups on their traces pipeline only, at
+//     most 64 groups (FABRIC_GATE_MAX_GROUPS raises the limit to 256); the
+//     legacy single binding (a plain fabricguard) is checked as before, and
+//     the two forms never mix (groups.go);
+//   - a sensor collector (an audit receiver in mode: production, spec 056
+//     §7.3.3 (f)) runs only that receiver, one traces pipeline and one
+//     otlp_http exporter with TLS or to loopback, no redirects and a client
+//     bearer token file;
 //
 // Diagnostics name config sources by position (--config #N) and never echo
 // source text, paths, URLs or underlying error text.
