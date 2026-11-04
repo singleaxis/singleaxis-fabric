@@ -13,8 +13,12 @@
    measurement runs in a fresh interpreter with no coverage tracer. Fabric's own work is
    isolated by wrapping a stub with Popen's signature (a real ``fork``/``exec`` costs
    about a millisecond and varies by more than the budget), on a real records input,
-   capture pipeline, sender and spool. ``test_the_gate_fails_when_the_hook_blocks``
-   injects a sleep of twice the scaled budget into each path and the gate must fail.
+   capture pipeline, sender and spool. On Linux every timed start includes the stat read
+   on the calling thread (spec 056 M2 OD-8): the stub's pid names a real child of the
+   measuring process, whose real ``/proc`` entry is read. Elsewhere there is no read (the
+   hook reads ``/proc`` only on Linux; a regular file is not a stand-in for its cost).
+   ``test_the_gate_fails_when_the_hook_blocks`` injects a sleep of twice the scaled budget
+   into each path and the gate must fail.
 """
 
 # These suites start real children with fixed, test-owned command lines on purpose.
@@ -328,6 +332,19 @@ def _rounds(baseline: Callable[[int], object], teed: Callable[[int], object], sa
     return rounds
 
 
+def _stat_target() -> subprocess.Popen[bytes] | None:
+    """On Linux, a real, long-lived child whose pid every stub reports, so each timed start
+    reads its real ``/proc`` stat line (OD-8). The worker fallback is disabled, so a
+    recorded start time is the caller's read."""
+    if not _exec._LINUX:
+        return None
+    child = subprocess.Popen(["sleep", "600"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # fmt: skip
+    _Stub.pids = itertools.repeat(child.pid)  # type: ignore[assignment]
+    _exec.read_start_ns = lambda *a: None
+    return child
+
+
 def measure(sleep_factor: float = 0.0) -> dict[str, Any]:
     """Every scenario's round overheads (ns per start or outcome) and the calibration. A
     sleep factor blocks each Fabric path for that many *scaled* budgets."""
@@ -337,6 +354,7 @@ def measure(sleep_factor: float = 0.0) -> dict[str, Any]:
     blocked = sleep_factor > 0
     rig = _rig()
     rig.patches.restore()  # only the stub's wrappers are timed, never a real child
+    target = _stat_target()
     try:
         if blocked:
             for name, budget in (("spawned", START_BUDGET_NS), ("communicated", START_BUDGET_NS)):
@@ -382,6 +400,9 @@ def measure(sleep_factor: float = 0.0) -> dict[str, Any]:
         out["inactive"] = _rounds(init(_Stub), init(off), samples["inactive"],
                                   rig.harness.flush, warmup)  # fmt: skip
         out["stats"] = dict(rig.channel.status())
+        out["caller_start_reads"] = sum(
+            "fabric.process.start_ns" in record.attrs for record in rig.records()
+        )  # fmt: skip
         calibration = before if blocked else min(before, calibrate())
         out["calibration"] = {"ns": calibration, "scale": scale_for(calibration)}
         return out
@@ -389,6 +410,9 @@ def measure(sleep_factor: float = 0.0) -> dict[str, Any]:
         rig.switch.on = False
         rig.channel.close()
         rig.harness.close()
+        if target is not None:
+            target.kill()
+            target.wait()
 
 
 def _measured(sleep_factor: float = 0.0) -> dict[str, Any]:
@@ -424,6 +448,11 @@ def test_the_timed_calls_were_recorded(measured: dict[str, Any]) -> None:
     stats = measured["stats"]
     assert stats["starts"] >= ROUNDS * SAMPLES["start"]
     assert stats["outcomes"] >= ROUNDS * SAMPLES["outcome"]
+    if _exec._LINUX and _exec._clk_tck() == _exec._STAT_HZ:
+        # every timed start read its stat line on the calling thread (OD-8)
+        assert measured["caller_start_reads"] == stats["starts"]
+    else:
+        assert measured["caller_start_reads"] == 0
 
 
 def test_the_gate_fails_when_the_hook_blocks() -> None:
