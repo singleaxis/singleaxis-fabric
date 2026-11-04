@@ -1,15 +1,16 @@
-# The P1 run record (unreleased)
+# The P1 run record
 
-> **Status:** describes code that is built but **not in any release**;
-> v0.8.0 and v0.9.0 do not have it. Design:
+> **Status:** released in v0.10.0, except the work packages marked
+> **Not built** [below](#what-is-built-and-what-is-not); v0.9.x and earlier
+> do not have it. Design:
 > [spec 050](../specs/050-run-structure-and-records-p1.md), which builds
 > phase P1 of [spec 049](../specs/049-four-layer-capture-coverage.md).
 > Implementation: the modules listed [below](#where-the-code-lives).
 > Terms are defined in the [glossary](glossary.md).
 
-v0.8.0 sequences only wire-captured model calls, per process. P1 turns the
-record into one ordered structure that both inputs share and that can span
-processes and hosts:
+Before v0.10.0 Fabric sequenced only wire-captured model calls, per
+process. P1 turns the record into one ordered structure that both inputs
+share and that can span processes and hosts:
 
 - **one allocator per process.** Wire exchanges and records from the SDK
   take positions from the same counter, so their order within a process
@@ -31,6 +32,9 @@ processes and hosts:
   coverage in the four layers and per-layer verdicts.
 
 ## What is built and what is not
+
+Every package marked Built is in v0.10.0.
+
 
 | 050 work package | What it delivers | State |
 |---|---|---|

@@ -2,8 +2,8 @@
 
 > **Status:** reference page. It defines the terms that specs 047–056 use,
 > whether or not the code behind a term is built. Each entry says where the
-> term is defined and, where it matters, whether it is released (v0.8.0), built but
-> not yet released, or only specified. For the code itself see the [map in docs/README.md](README.md).
+> term is defined and, where it matters, whether it is released (v0.8.0 or
+> v0.10.0) or only specified. For the code itself see the [map in docs/README.md](README.md).
 
 Spec references look like "049 §2.4": spec number, then section. Specs live
 in [`specs/`](../specs/README.md). Where a term has a module, the path is
@@ -53,7 +53,7 @@ host-sensor receiver on a production Node. Built. [048] §5.
 It keeps only allowlisted telemetry keys, checks identifier forms, binds
 each batch to an authenticated source and stamps
 `fabric.source.authenticated=true` on admitted records. Built; the P1
-records class is built, unreleased. 049 §7.9, [050] §3.14.
+records class since v0.10.0. 049 §7.9, [050] §3.14.
 
 **fabriccontent.** The Node's content exporter
 ([`fabriccontentexporter`](../components/otel-collector-fabric/exporter/fabriccontentexporter/)).
@@ -91,7 +91,7 @@ yields production-qualified verdicts. 049 §7.3. Not the same as a
 encrypted with the spool key in production, shared by every process on the
 same directory through a file lock. Records leave it only when the Node has
 accepted them. Built. [048] §2, [050] §3.5. Spool *kinds* name what a spool
-file holds: `exchange`, `record` (unreleased), `marker`, and loss entries.
+file holds: `exchange`, `record` (v0.10.0), `marker`, and loss entries.
 
 **Capture worker.** The one background thread per agent process that
 protects, digests and spools what was captured
@@ -129,7 +129,7 @@ wire, identified by `fabric.wire.exchange_id`. [047].
 **Records input.** Fabric's second input: everything the application
 reports through the SDK, and everything an opt-in hook observes, as
 sequenced records on the same allocator and spool as the wire input.
-Built, unreleased ([`_records.py`](../sdk/python/src/fabric/_records.py));
+Released in v0.10.0 ([`_records.py`](../sdk/python/src/fabric/_records.py));
 the explicit producers (`CallRecorder` and the adapters) can use it there
 when a wire handle is installed; the `decision()` API does not yet (050
 WP-15 is not built). 049 §1.3, [050] §3.4.
@@ -160,7 +160,7 @@ independent feed. 049 §2.2.
 performs, such as starting a subprocess (`exec.subprocess`) or running a
 database statement (`db.dbapi`). Hooks emit on the records input with
 provenance `observed`. Specified in [053]. Only the hooks foundation and
-the subprocess hook are built, unreleased, for spec 056 M1
+the subprocess hook are built, released in v0.10.0 for spec 056 M1
 ([`fabric/hooks/`](../sdk/python/src/fabric/hooks/)); the other channels are
 not built.
 
@@ -199,12 +199,12 @@ the response outlives the explicit call. Specified (P1-A); not built.
 from host and service. 049 §2.4.
 
 **Epoch.** One lifetime of a source's sequence counter, normally one
-process. In the unreleased P1 code an epoch is a 63-bit random number drawn at
-`install()` and again in a forked child; on v0.8.0 it is derived from time
+process. Since v0.10.0 (P1) an epoch is a 63-bit random number drawn at
+`install()` and again in a forked child; before, it was derived from time
 and pid. Every sequenced record carries `(source, epoch, sequence)`.
 049 §2.4, [050] §3.2.
 
-**Epoch registration.** In the unreleased P1 code, `install()` creates a lock-held
+**Epoch registration.** Since v0.10.0 (P1), `install()` creates a lock-held
 registration file for its epoch in the spool directory. The next process
 can then tell that a writer was killed and declare its epoch
 `unsealed_epoch`.
@@ -219,8 +219,8 @@ can then tell that a writer was killed and declare its epoch
 (`SourceAllocator`,
 [`_sequence.py`](../sdk/python/src/fabric/_sequence.py)) that gives
 positions to wire exchanges and records alike, so record order within an
-epoch is exact. Allocation is one short lock with no I/O. Built, unreleased
-(on v0.8.0 only the wire input is sequenced). 049 §2.4,
+epoch is exact. Allocation is one short lock with no I/O. Released in
+v0.10.0 (before, only the wire input was sequenced). 049 §2.4,
 [050] §3.3.
 
 **Event id.** `fabric.event_id`, a uuid4 minted once per record before it is
@@ -235,14 +235,14 @@ never identify them. 049 §2.3.
 **Segment.** A contiguous piece of one run recorded by one
 `(source, epoch)`, with an id `seg-` + 32 hex. A process has one open
 segment per run; a new one opens on a resume token, a fork or re-entry.
-Built, unreleased ([`_segments.py`](../sdk/python/src/fabric/_segments.py)).
+Released in v0.10.0 ([`_segments.py`](../sdk/python/src/fabric/_segments.py)).
 049 §2.10, [050] §3.6.
 
 **Seal (segment seal).** A digest over a segment's sequenced records (and
 the positions of its losses), written as a `segment_seal` marker once every
 position has *settled*, that is, been spooled or recorded as lost. The
 verifier recomputes it; a difference is `partial(seal_mismatch)`, a missing
-seal leaves the segment `unsealed`. Built, unreleased
+seal leaves the segment `unsealed`. Released in v0.10.0
 ([`_seal.py`](../sdk/python/src/fabric/_seal.py)). 049 §2.12, [050] §3.7.
 
 **Unsealed epoch.** A prior epoch on the same spool that never wrote its
@@ -255,13 +255,13 @@ the run in a new segment whose *predecessor* is the sealed one. The P1
 format is `fr3/` (it carries the run correlation id); 049 describes the
 older `fr2/`. `resume_tokens(n)` mints `n` *branch tokens* (`br-` ids), each
 for exactly one consumer. `fabric.wire.end_run()` ends a resumable run from
-its tokens. Built, unreleased. 049 §2.10, [050] §3.6.
+its tokens. Released in v0.10.0. 049 §2.10, [050] §3.6.
 
 **Run states and rules G1–G10.** The verifier builds each run's segment
 graph and applies rules G1–G10 in order. The run state is `terminated`,
 `open` (resumable, before its deadline), `unterminated` (after it),
-`conflicted`, `not_resumable_unclosed` or `deadline_uncertain`. Built,
-unreleased ([`reconstruct/_graph.py`](../sdk/python/src/fabric/reconstruct/_graph.py)).
+`conflicted`, `not_resumable_unclosed` or `deadline_uncertain`. Released
+in v0.10.0 ([`reconstruct/_graph.py`](../sdk/python/src/fabric/reconstruct/_graph.py)).
 049 §2.10.
 
 **Capture manifest.** A `fabric.capture-manifest/v1` document per
@@ -269,8 +269,8 @@ unreleased ([`reconstruct/_graph.py`](../sdk/python/src/fabric/reconstruct/_grap
 identity mode, capture-policy reference, limits, every capture point with
 its state and supplied fields, and the classes it cannot capture. Manifests
 are numbered (`manifest_seq`) and chained by digest. They let the verifier
-tell "nothing happened" from "nothing was instrumented". Built, unreleased
-([`_manifest.py`](../sdk/python/src/fabric/_manifest.py)). 049 §2.4,
+tell "nothing happened" from "nothing was instrumented". Released in
+v0.10.0 ([`_manifest.py`](../sdk/python/src/fabric/_manifest.py)). 049 §2.4,
 §2.8; [050] §3.8. Not the same as the content-v1 *transcript manifest* of
 [029].
 
@@ -278,7 +278,7 @@ tell "nothing happened" from "nothing was instrumented". Built, unreleased
 bounded container for structured metadata that has no single telemetry key
 (lists, indexes, correlations). A record has at most one evidence object
 (role `record.evidence`); its shape is one of the registered *evidence
-types* (for example `fabric.exec.observation/v1`). Built, unreleased
+types* (for example `fabric.exec.observation/v1`). Released in v0.10.0
 ([`_evidence.py`](../sdk/python/src/fabric/_evidence.py)). [050] §3.4a,
 [053] §3.2.
 
@@ -335,8 +335,8 @@ judged against: `fabric.profile.model-calls/v1` (the first release),
 **Step projection.** `fabric.step-projection/v1`, a document the verifier
 writes offline next to its report: one entry per attempt with its step
 kind, links, field wrappers in the four layers and per-layer verdicts.
-It is a verifier output, never produced in the agent or the Node. Built,
-unreleased, for model calls
+It is a verifier output, never produced in the agent or the Node. Released
+in v0.10.0, for model calls
 ([`reconstruct/_project.py`](../sdk/python/src/fabric/reconstruct/_project.py);
 `python -m fabric.reconstruct --projection FILE`). 049 §4.4, [050] §3.13.
 
@@ -397,12 +397,12 @@ scope and run, in the `fabric.run-reconstruction/v1` report. Built
 **Layer verdict.** Per step and per run, for each of the four layers:
 `captured_for_declared_fields`, `captured_with_withholding`, `open` (run
 only), `partial`, `unsupported`, `unverified`, `none_observed` (run only).
-Computed by decision tables R1–R6 (per step) and RR1–RR7 (per run). Built,
-unreleased, in the step projection. 049 §6.2.
+Computed by decision tables R1–R6 (per step) and RR1–RR7 (per run).
+Released in v0.10.0, in the step projection. 049 §6.2.
 
 **Chain verdict.** Spec 056 reports four chains separately: `decisions`,
 `actions`, `effects`, `corroboration`, each `complete`, `partial` (with
-reasons), `unverified` or `not_observed`. Built, unreleased
+reasons), `unverified` or `not_observed`. Released in v0.10.0
 (`reconstruct/_attribute.py`, WP6-04). [056] §4.5.
 
 **Qualified-run mode.** An opt-in, Python-only verification path for the
@@ -482,13 +482,13 @@ production. Built. 049 §7.8.
 
 ## Agent action reconstruction (spec 056)
 
-All of this is specified in [056]. Not yet released: the contracts and rule
-fixtures are merged
-([`contracts/coverage/v1/fixtures/action-record/`](../contracts/coverage/v1/fixtures/action-record/README.md));
+All of this is specified in [056]. Milestone M1 is released in v0.10.0
+for the local profile: the contracts and rule fixtures
+([`contracts/coverage/v1/fixtures/action-record/`](../contracts/coverage/v1/fixtures/action-record/README.md)),
 the hooks, the subprocess hook, attribution, chain verdicts, the `actions`
-view, the host join and its `--host-records` option are built
-(WP6-02 to WP6-06). The AR-1 acceptance test is built and passes in hermetic
-mode; its live mode has not run yet (milestone M1). See
+view, the host join and its `--host-records` option (WP6-01 to WP6-06).
+The AR-1 acceptance test passes in CI in hermetic mode and in live mode
+(Linux, eBPF). Milestone M2 is not built. See
 [agent action reconstruction](action-reconstruction.md).
 
 **The four chains.** *Decisions*: what the model saw and returned (wire
@@ -540,10 +540,12 @@ process to hosts no model call used). They are listed in the report's
 saw, recorded without a judgement. [056] §4.3, §4.5.
 
 **AR-1.** The end-to-end acceptance scenario of [056] §6.2. Fabric does not
-claim agent action reconstruction until AR-1 passes in CI. Built, unreleased
+claim agent action reconstruction until AR-1 passes in CI on the
+milestone's profile. Built
 ([`qualification/action-record/`](../qualification/action-record/README.md)):
-hermetic mode (recorded host-sensor events) passes; live mode (a real eBPF
-or auditd sensor) has not run yet.
+hermetic mode (recorded host-sensor events) passes in CI on macOS and
+Linux, and live mode with a real eBPF sensor on Linux; the auditd fallback
+is not run live in CI.
 
 ## Spec conventions
 
@@ -553,11 +555,11 @@ or auditd sensor) has not run yet.
 |---|---|---|
 | P0 | Coverage contract freeze (`contracts/coverage/v1`) | Built (v0.8.0) |
 | P0-A | PROTECT stage, production gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | Built (v0.8.0) |
-| P1 | Shared allocator, records input, event ids, segments, seals, manifests, step projection ([050]) | Mostly built, unreleased |
+| P1 | Shared allocator, records input, event ids, segments, seals, manifests, step projection ([050]) | Mostly built (v0.10.0); WP-15 and WP-21 not built |
 | P1-A | Mixed explicit and wire capture, passivity harness ([050] wave 4) | Not built |
 | P2 | Run context and lifecycle reporting ([051]) | Not built |
 | P3 | Decision and effect records, record-only ([052]) | Not built |
-| P4 | Opt-in hooks and production host sensors ([053]) | Not built; part moved into [056] M1 |
+| P4 | Opt-in hooks and production host sensors ([053]) | Not built, except the part moved into [056] M1 (v0.10.0) |
 | P5 | Realtime, media, batch, files, UI automation ([054]) | Not built |
 | TS-0, TS-1, TS-2 | TypeScript identity parity, wire capture, reporting APIs ([055]) | Not built |
 

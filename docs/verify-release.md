@@ -62,7 +62,8 @@ sha256sum singleaxis_fabric-*.whl singleaxis_fabric-*.tar.gz \
 
 The GitHub release is created as a draft and promoted by a maintainer;
 release-candidate tags are marked prerelease. The npm package is published
-with npm provenance under the `beta` dist-tag.
+with npm provenance: a stable release under the `latest` dist-tag, a release
+candidate under `next`.
 
 Confirm that the qualification report names the selected tag and full commit,
 has `qualified: true`, records each required workflow as completed and

@@ -46,8 +46,8 @@ For each agent run, Fabric builds a record that answers four questions:
 |---|---|---|
 | **Decisions** | What did the model see, and what did it return? | v0.8 |
 | **Actions** | Which tools did the model call, with which arguments, and what result came back? | v0.8 |
-| **Effects** | What did the agent's process actually run, and what did it return? | Built for subprocesses, unreleased; planned for v0.10 |
-| **Corroboration** | What does the operating system independently record? | Host sensors since v0.8; linking to actions built, unreleased; planned for v0.10 |
+| **Effects** | What did the agent's process actually run, and what did it return? | v0.10, for subprocesses (opt-in hook) |
+| **Corroboration** | What does the operating system independently record? | Host sensors since v0.8; linked to actions since v0.10 (local profile) |
 
 Every link in the record says how it was established and how certain it
 is. Fabric never guesses a link: anything it cannot attribute is reported
@@ -68,6 +68,10 @@ is [spec 056](specs/056-agent-action-reconstruction.md).
 - **Offline verification.** `python -m fabric.reconstruct` rebuilds each
   run, stitches tool calls to their results, and returns a verdict:
   complete, partial with the reason, or unverified.
+- **Agent action reconstruction.** An opt-in subprocess hook records what
+  the agent ran; `python -m fabric.reconstruct actions` links each command
+  to the tool call that caused it and to host-sensor events, with a verdict
+  per chain ([action reconstruction](docs/action-reconstruction.md)).
 - **Fabric Node.** An OpenTelemetry Collector distribution with a
   default-deny export allowlist, source authentication, a configuration gate
   that refuses unsafe setups, and delivery to a file directory or S3 with
@@ -88,7 +92,7 @@ pip install "singleaxis-fabric[otlp]"
 ```
 
 ```bash
-npm install @singleaxis/fabric@beta
+npm install @singleaxis/fabric
 ```
 
 The Fabric Node installs with the Helm chart
@@ -192,7 +196,7 @@ The full list, with measurements: [limitations](docs/limitations-and-roadmap.md)
 |---|---|---|
 | v0.8 | Model-call capture, protection, delivery and verification | [047](specs/047-llm-wire-capture-and-reconstruction.md), [048](specs/048-node-content-delivery-and-agent-spool.md), [049](specs/049-four-layer-capture-coverage.md) |
 | v0.9 | Recorder-only scope: out-of-scope leftovers removed; documentation and design specs for the agent record | [056](specs/056-agent-action-reconstruction.md) |
-| v0.10 (next) | One run record across every input, and agent action reconstruction: effects linked to the tool calls that caused them, corroborated by host sensors. Built, not yet released: most of the run record (050 P1) and reconstruction of subprocess effects on a local-profile Node (056 M1) | [050](specs/050-run-structure-and-records-p1.md), [053](specs/053-execution-channels-p4.md), [056](specs/056-agent-action-reconstruction.md) |
+| v0.10 | One run record across every input, and agent action reconstruction: effects linked to the tool calls that caused them, corroborated by host sensors. Released in v0.10.0: most of the run record (050 P1; WP-15, WP-21 and P1-A are not built) and reconstruction of subprocess effects on a local-profile Node (056 M1) | [050](specs/050-run-structure-and-records-p1.md), [053](specs/053-execution-channels-p4.md), [056](specs/056-agent-action-reconstruction.md) |
 | Later | Run context and lifecycle, decision and effect records, more execution channels, TypeScript wire capture | [051](specs/051-context-and-lifecycle-p2.md), [052](specs/052-decisions-and-effects-p3.md), [054](specs/054-specialised-runtimes-p5.md), [055](specs/055-typescript-wire-capture.md) |
 
 ## Scope
@@ -204,7 +208,7 @@ artifact tests keep such code out of every package and image
 
 ## Status and support
 
-v0.9.1 is the current stable release. It is tested in CI, including the
+v0.10.0 is the current stable release. It is tested in CI, including the
 production profile through a real Node. Before v0.8.0 it was also run
 against 18 agent frameworks and patterns (OpenAI Agents SDK, LangGraph,
 LlamaIndex, PydanticAI, smolagents, AutoGen, AG2, CrewAI, DSPy and others)

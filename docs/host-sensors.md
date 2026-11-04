@@ -6,8 +6,8 @@
 > and [`components/host-emitter/`](../components/host-emitter/). A
 > production ingress ([spec 053](../specs/053-execution-channels-p4.md)
 > §6.2) is specified, not built. The join of host events to agent effects
-> ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is built, not
-> yet released
+> ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is released
+> in v0.10.0, for the local profile
 > ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py))
 > and read with `python -m fabric.reconstruct actions --host-records`; see
 > [agent action reconstruction](action-reconstruction.md).
@@ -115,15 +115,18 @@ scope are deliberately unusable until you set them.
   identity that `fabric.reconstruct` reads; reconstruct ignores them in
   `--spans`. Joining host events to the agent's subprocess effects through
   pid and parent pid is specified in
-  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and built, not
-  yet released
+  [spec 056](../specs/056-agent-action-reconstruction.md) §4.3 and released
+  in v0.10.0 for the local profile
   ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py)):
   pass the records with `--host-records`
   ([agent action reconstruction](action-reconstruction.md)). The
   auditd logfile mode carries `audit.source_id` and `audit.source_generation`;
   netlink mode and the emitter carry no source identity.
-- **Not enterprise-qualified.** The live kernel, Linux BPF build, outage and
-  restart, and host-truth tests listed in specs 030 and 031 have not been
-  run as a qualification; CI builds and unit-tests both sensors only.
+- **Not enterprise-qualified.** The outage and restart and host-truth tests
+  listed in specs 030 and 031 have not been run as a qualification. CI builds
+  and unit-tests both sensors, and the AR-1 live run
+  ([qualification/action-record](../qualification/action-record/README.md))
+  loads the eBPF emitter on a CI Linux kernel; the auditd receiver is not run
+  against a live kernel in CI.
 - `fabric.event_count` on a `dedupe_collapsed` record counts all events in
   the auditd receiver but only the suppressed repeats in the emitter.

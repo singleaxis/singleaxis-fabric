@@ -4,7 +4,7 @@
 > [`fabric/wire/`](../sdk/python/src/fabric/wire/),
 > [`fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/),
 > [`components/otel-collector-fabric/`](../components/otel-collector-fabric/),
-> [`components/host-emitter/`](../components/host-emitter/). Unreleased
+> [`components/host-emitter/`](../components/host-emitter/). The v0.10.0
 > additions are in [the P1 run record](run-record.md) and
 > [agent action reconstruction](action-reconstruction.md).
 

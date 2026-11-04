@@ -8,11 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-This section describes work merged after 0.9.1 and not yet released: most
-of the one-run record of spec 050 (phase P1) and milestone M1 of spec 056,
-agent action reconstruction on a local-profile Node. Wire capture keeps its
-0.9.0 behaviour for agents that use none of the new options. Fabric stays a
-passive recorder: the new hook observes subprocesses and never approves,
+## [0.10.0] - 2026-11-04
+
+Fabric 0.10.0 can show what an agent actually did in a run, not only what
+it said to its model. Everything a process records (model calls and SDK
+records) now goes into one ordered run record that the verifier can check
+end to end. An opt-in subprocess hook records the commands the agent runs,
+and `python -m fabric.reconstruct actions` links each command to the tool
+call that caused it and, on a local-profile Node, to the process starts
+and connections a host sensor saw. Every link says how sure it is, and
+anything no tool call explains is listed. The AR-1 acceptance test passes
+in CI, with a real eBPF sensor on Linux. Wire capture keeps its 0.9
+behaviour for agents that use none of the new options, and Fabric stays a
+passive recorder: the hook observes subprocesses and never approves,
 blocks, delays or changes them.
 
 ### Added
@@ -70,8 +78,14 @@ blocks, delays or changes them.
 - **AR-1 acceptance harness** (`qualification/action-record/`, workflow
   `action-record.yml`). The hermetic mode runs a real agent, the hook, a
   natively built Node and the verifier against recorded host-sensor
-  events, plus the negative variants. The live mode (a real eBPF or auditd
-  sensor on Linux) is written but has not run yet.
+  events, plus the negative variants, on macOS and Linux. The live mode
+  runs the same agent under the real eBPF emitter on Linux and passes in
+  CI; the auditd fallback is not run live in CI.
+- **`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`.** The exit budget (seconds, 0 to 300,
+  default 2) can now be set from the environment, so a zero-code
+  (autoload) process on a slow disk can give its last records time to
+  reach the spool instead of declaring them a `shutdown` loss. A close
+  still returns as soon as everything is delivered.
 
 ### Changed
 
@@ -84,11 +98,29 @@ blocks, delays or changes them.
   captured response asks for a tool call that no later request answers is
   now `partial` (`actions: partial(tool_result_missing)`) where it was
   complete before. No API declares a call outstanding yet.
+- **npm:** each stable release of `@singleaxis/fabric` is published to the
+  `latest` dist-tag (it was `beta`, which needed a manual `npm dist-tag add`
+  after every release); release candidates go to `next`. Install with
+  `npm install @singleaxis/fabric`. The SDK's maturity is still beta.
+
+### Fixed
+
+- **Tests:** the forked-child epoch registration test failed intermittently
+  (Python 3.12 on main). The surviving forked child legitimately becomes the
+  spool's drainer once its parent is killed and declares the parent's epoch
+  itself, so the test's own scan found nothing left. The test now asserts
+  that the registration lock is free and that the epoch is declared exactly
+  once; a new deterministic test covers the child declaring it.
+- **AR-1:** the live run failed once with three of five model calls
+  missing. The agent had made every call; a disk stall of about 2 s on the CI
+  runner held the capture worker past the agent's default 2 s exit budget,
+  and the run's tail became a declared `shutdown` loss. The AR-1 agent now
+  runs with a 15 s exit budget (`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`).
 
 ### Known limits
 
-- Fabric makes no action-reconstruction claim until AR-1 live mode passes
-  in CI.
+- Action reconstruction is claimed for the local profile only (spec 056
+  milestone M1); local-profile host anchors are `tentative`.
 - No host sensor reports process exits, so a pid reused under the same
   parent pid within the H2 window by a process the hook did not start is
   read as one exec chain (`tentative`) on the local profile
@@ -2462,7 +2494,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0-rc.2...v0.8.0

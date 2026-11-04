@@ -24,7 +24,7 @@ import pytest
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
 
-from ar1 import expect, replay  # noqa: E402
+from ar1 import expect, replay, scenario  # noqa: E402
 from ar1.fixture_model import T1, T2, T3A, T3B, T4, Script  # noqa: E402
 from ar1.harness import Harness, Options  # noqa: E402
 
@@ -45,6 +45,25 @@ def test_the_agent_imports_nothing_from_fabric() -> None:
     }
     assert "fabric" not in imported and "ar1" not in imported
     assert "openai" in imported
+
+
+def test_the_agent_exit_budget_outlasts_a_slow_disk(tmp_path: Path) -> None:
+    """A 2 s fsync stall on a CI runner made the default 2 s exit budget lose the run's
+    tail (``shutdown``); the agent gets a budget the SDK accepts, and capture off none."""
+    from fabric.wire._config import config_from_env  # noqa: PLC0415 - the SDK under test
+
+    config = scenario.AgentConfig(
+        workdir=tmp_path, model_base_url="http://127.0.0.1:1/v1", model_endpoints="[]",
+        fixture_host="127.0.0.1", fixture_port=1, otlp_endpoint="http://127.0.0.1:2",
+        canaries=scenario.Canaries.fresh(), sandbox="python", run_id="ar1-test",
+        policy=None,
+    )  # fmt: skip
+    env = scenario.agent_env(config, base={"PATH": os.environ.get("PATH", "")})
+    assert float(env["FABRIC_WIRE_SHUTDOWN_TIMEOUT_S"]) >= 10
+    wire_config, _ = config_from_env(env)
+    assert wire_config.shutdown_timeout_s == scenario.EXIT_BUDGET_S
+    off = scenario.agent_env(scenario.AgentConfig(**{**config.__dict__, "capture": False}), base={})
+    assert not [k for k in off if k.startswith("FABRIC_")]
 
 
 def test_the_script_answers_only_the_expected_results() -> None:

@@ -15,9 +15,9 @@ contracts: contracts/coverage/v1 (draft), contracts/content/v2 (role widening), 
 # 049 — Four-layer capture contract
 
 **Status: accepted (revision 6.4), approved 2026-10-22.** Phases P0 and
-P0-A are built and released in v0.8.0. Phase P1 is mostly built after
-v0.9.0, not yet released (spec 050). P1-A, P2–P5 and the TypeScript track
-are not built (section 8.2). Every owner decision in section 9 was approved
+P0-A are built and released in v0.8.0. Phase P1 is mostly built and
+released in v0.10.0 (spec 050; WP-15 and WP-21 are not built). P1-A, P2–P5
+and the TypeScript track are not built (section 8.2). Every owner decision in section 9 was approved
 as recommended and is applied in this text, marked *Approved (owner,
 2026-10-18)* (decisions 1–20) or *Approved (owner, 2026-10-19..22)*
 (decisions 21–25); "decision n" in other specs means row n of that table.

@@ -2,7 +2,7 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.collector-otlp-receiver",
   "display_name": "SingleAxis Fabric Collector OTLP Receiver",
-  "release": {"version": "0.9.1", "maturity": "beta", "distribution": "container"},
+  "release": {"version": "0.10.0", "maturity": "beta", "distribution": "container"},
   "implementation": {"kind": "otlp_receiver", "deployment_modes": ["sidecar", "gateway", "collector"]},
   "compatibility": {
     "activity_contract": null,

@@ -121,7 +121,9 @@ matchers: `endpoint_id`, `dialect` `openai`/`anthropic`, `hosts` or
 (default 32 MiB, at most 63 MiB in node mode), `FABRIC_WIRE_QUEUE_MAX_ITEMS`
 (default 16384; the capture queue is bounded by 256 MiB of retained bodies,
 the entry cap only bounds per-entry overhead), `FABRIC_WIRE_SPOOL_MAX_BYTES`
-(default 1 GiB), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
+(default 1 GiB), `FABRIC_WIRE_SHUTDOWN_TIMEOUT_S` (the exit budget in
+seconds, default 2, at most 300: what is not spooled by then is a declared
+`shutdown` loss), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
 on by default),
 `FABRIC_WIRE_PROXY` (an explicit CONNECT proxy for Fabric's own delivery),
 `FABRIC_WIRE_LABELS=clear`. `FABRIC_WIRE_STORE_SSE` and

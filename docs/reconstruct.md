@@ -2,8 +2,9 @@
 
 > **Status:** describes built code, released in v0.8.0. Implementation:
 > [`fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/). The
-> unreleased options (`--projection` and the run-state options) are in
-> [the P1 run record](run-record.md#using-it).
+> options added in v0.10.0 (`--projection` and the run-state options) are
+> in [the P1 run record](run-record.md#using-it), and the `actions` view in
+> [agent action reconstruction](action-reconstruction.md).
 
 `python -m fabric.reconstruct` is Fabric's offline verifier for wire
 capture. It reads the capture spans and the content store, checks that the
@@ -12,10 +13,11 @@ and states an **integrity** verdict per run scope and per run. It is
 read-only, makes no network call except to the store you name, and never
 judges the agent's behaviour.
 
-Today the verifier checks integrity and pairs tool calls with their
-results. Linking those calls to the effects they caused and to host-sensor
-evidence is [spec 056](../specs/056-agent-action-reconstruction.md) and is
-not built.
+The verifier checks integrity and pairs tool calls with their results.
+Since v0.10.0, `python -m fabric.reconstruct actions` also links those
+calls to the subprocess effects they caused and to host-sensor evidence
+([spec 056](../specs/056-agent-action-reconstruction.md) milestone M1,
+local profile; see [agent action reconstruction](action-reconstruction.md)).
 
 Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 `fabric.run-reconstruction/v1`.
@@ -36,17 +38,17 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 | `--profile local\|production` | Default: `production` when any span carries the Node's stamp, else `local`. Production requires every record to be authenticated. |
 | `--model-allowlist TEXT` | Model names reported as is (default `$FABRIC_WIRE_MODEL_ALLOWLIST`); others appear as `m-` digests. |
 | `--out FILE` | Write the report atomically with mode `0600` instead of stdout. |
-| `--projection FILE` | Not yet released (see [step projection](#step-projection-unreleased)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
-| `--coverage-profile ID` | Not yet released. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
-| `--evaluated-at RFC3339` | Not yet released. The time run states and open-run deadlines are computed at (default: now). |
-| `--clock-uncertainty DURATION` | Not yet released. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
-| `--max-clock-uncertainty DURATION` | Not yet released. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
+| `--projection FILE` | Since v0.10.0 (see [step projection](#step-projection)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
+| `--coverage-profile ID` | Since v0.10.0. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
+| `--evaluated-at RFC3339` | Since v0.10.0. The time run states and open-run deadlines are computed at (default: now). |
+| `--clock-uncertainty DURATION` | Since v0.10.0. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
+| `--max-clock-uncertainty DURATION` | Since v0.10.0. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
 
 Diagnostics never echo an argument value, path, key or exception message.
 
-## Step projection (unreleased)
+## Step projection
 
-Spec 050 P1 waves 0–2 are built and are not yet in a release.
+Spec 050 P1 waves 0–2 are released in v0.10.0 (except WP-15 and WP-21).
 With them, the verifier also merges a run's segments (ordered within the
 clock uncertainty above), reports run states, and can write the run as a
 `fabric.step-projection/v1` document (`--projection`, spec 050 §3.13): the
@@ -171,6 +173,6 @@ read by it; the explicit line has its own offline checks, and portable,
 receipt-backed proof is [qualified-run mode](qualified-run-mode.md), which
 alone can state `verified_complete_for_declared_scope`. The four-layer
 coverage report of spec 049 (per-layer verdicts, step projection) is not in
-v0.8.0; in the unreleased P1 code the verifier also reads
-records-input records and writes the step projection for model calls
+v0.8.0 or v0.9.x; since v0.10.0 the verifier also reads records-input
+records and writes the step projection for model calls
 ([the P1 run record](run-record.md)).

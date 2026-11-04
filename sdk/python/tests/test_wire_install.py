@@ -208,6 +208,9 @@ def test_env_config_parsing(tmp_path: Path) -> None:
     assert config.max_body_bytes == 1024 and config.queue_max_items == 8
     assert config.source_id == "wire-node-1"
     assert config.extra_endpoints[0].ports == frozenset({11434})
+    assert config.shutdown_timeout_s == 2.0
+    longer, _ = config_from_env({**env, "FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": "30.5"})
+    assert longer.shutdown_timeout_s == 30.5
     with pytest.raises(ValueError, match="written by the Fabric Node"):  # spec 048 F1
         config_from_env({"FABRIC_TENANT_ID": "t", "FABRIC_WIRE_STORE": "s3://my-bucket/fabric"})
     for bad in (
@@ -220,6 +223,10 @@ def test_env_config_parsing(tmp_path: Path) -> None:
         {"FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "x", "dialect": "openai", "hosts": "h"}]'},
         {"FABRIC_WIRE_ENDPOINTS": '[{"endpoint_id": "x", "dialect": "openai", "nope": 1}]'},
         {"FABRIC_SOURCE_ID": "has space"},
+        {"FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": "soon"},
+        {"FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": "301"},
+        {"FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": "-1"},
+        {"FABRIC_WIRE_SHUTDOWN_TIMEOUT_S": "nan"},
     ):
         with pytest.raises(ValueError):
             config_from_env(bad)

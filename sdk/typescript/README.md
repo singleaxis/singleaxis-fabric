@@ -29,10 +29,12 @@ provider and exporters you register are your responsibility.
 ## Install
 
 ```bash
-npm install @singleaxis/fabric@beta @opentelemetry/api
+npm install @singleaxis/fabric @opentelemetry/api
 ```
 
-The package is published to npm under the `beta` dist-tag.
+Each stable release is published to npm as `latest`; release candidates go to
+the `next` dist-tag. The SDK's maturity is still beta (see its connector
+manifest): the dist-tag says which release you get, not how stable the API is.
 
 ## OpenTelemetry wiring
 

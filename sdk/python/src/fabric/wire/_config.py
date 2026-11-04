@@ -349,4 +349,12 @@ def config_from_env(
                 kwargs[name.lower()] = int(value)
             except ValueError:
                 raise ValueError(f"FABRIC_WIRE_{name} must be an integer") from None
+    # The exit budget (WireConfig.shutdown_timeout_s): a short-lived process on a slow disk
+    # raises it so the capture queue reaches the spool before exit; what misses it is a
+    # declared ``shutdown`` loss. A close returns as soon as everything is delivered.
+    if value := environ.get("FABRIC_WIRE_SHUTDOWN_TIMEOUT_S"):
+        try:
+            kwargs["shutdown_timeout_s"] = float(value)
+        except ValueError:
+            raise ValueError("FABRIC_WIRE_SHUTDOWN_TIMEOUT_S must be a number of seconds") from None
     return WireConfig(**kwargs), cast(Literal["private", "global"], tracer_mode)

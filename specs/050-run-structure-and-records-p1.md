@@ -18,9 +18,9 @@ implements 049 rev 6.4. It does not redesign 049. Where 049 is ambiguous or
 conflicts with the code or with 049's owner decisions 21–25 (049 §9), the
 conflict is listed in section 9 with exact replacement text.
 
-**Build state.** Waves 0–2 of section 5 are built after v0.9.0, not yet
-released, except WP-15 (decision records) and WP-21 (Node
-pre-acknowledgement validation). WP-50 is built as an end-to-end test; the
+**Build state.** Waves 0–2 of section 5 are built and released in
+v0.10.0, except WP-15 (decision records) and WP-21 (Node
+pre-acknowledgement validation), which are not built. WP-50 is built as an end-to-end test; the
 LR-1 harness and wave 4 (P1-A) are not built.
 [The P1 run record](../docs/run-record.md) describes what is built. Terms
 are defined in the [glossary](../docs/glossary.md).
