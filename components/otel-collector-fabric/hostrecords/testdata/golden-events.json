@@ -1,0 +1,127 @@
+{
+  "description": "The hostrecords.Event inputs of the host-record goldens in contracts/capture/v1/fixtures/host/valid/ (spec 053 \u00a76.2.3, spec 056 M2). Staged in this order into one source per kind, they give each fixture's batch span: the same names, keys and values, with the minted epoch, event ids and attempt uids. TestSpanGoldens and the replay command's TestReplayCommandGolden read this file.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "tenant": "tenant-a",
+  "version": "0.11.0",
+  "host_label": "build-host-7",
+  "sources": [
+    {
+      "kind": "host.ebpf",
+      "label": "build-host-7/ebpf",
+      "events": [
+        {
+          "fixture": "valid/record-exec-ebpf.json",
+          "event": {
+            "TimeUnixNano": 1791331201210600000,
+            "Class": "exec",
+            "Syscall": "execve",
+            "Result": "success",
+            "Pid": 4121,
+            "Ppid": 4100,
+            "NsPid": 41,
+            "NsPpid": 7,
+            "PidNS": 4026532481,
+            "ProcessStartNs": 60123217448,
+            "BootTimeS": 1791271080,
+            "CgroupID": 9123,
+            "Scope": "agent"
+          }
+        },
+        {
+          "fixture": "valid/record-exec-thread-spawned.json",
+          "event": {
+            "TimeUnixNano": 1791331201300200000,
+            "Class": "exec",
+            "Syscall": "execve",
+            "Result": "success",
+            "Pid": 4140,
+            "Ppid": 4100,
+            "NsPid": 44,
+            "NsPpid": 7,
+            "PidNS": 4026532481,
+            "ProcessStartNs": 60213000000,
+            "BootTimeS": 1791271080,
+            "CgroupID": 9123,
+            "Scope": "agent"
+          }
+        },
+        {
+          "fixture": "valid/record-connect.json",
+          "event": {
+            "TimeUnixNano": 1791331201214000000,
+            "Class": "connect",
+            "Syscall": "connect",
+            "Result": "success",
+            "Pid": 4122,
+            "Ppid": 4121,
+            "NsPid": 42,
+            "NsPpid": 41,
+            "PidNS": 4026532481,
+            "PeerFamily": "ipv4",
+            "Peer": "10.0.4.7",
+            "PeerPort": 443,
+            "CgroupID": 9123,
+            "Scope": "agent"
+          }
+        },
+        {
+          "fixture": "valid/record-file-digests-permitted.json",
+          "event": {
+            "TimeUnixNano": 1791331201216000000,
+            "Class": "file",
+            "Syscall": "openat",
+            "Result": "failed",
+            "Errno": "ENOENT",
+            "Pid": 4122,
+            "Ppid": 4121,
+            "NsPid": 42,
+            "NsPpid": 41,
+            "PidNS": 4026532481,
+            "CgroupID": 9123,
+            "Scope": "agent",
+            "PathSHA256": "3e6af32236747ec0d6b68775746e11834caefe1a48b387dde6fd494042c17cf3",
+            "Incomplete": "path"
+          }
+        },
+        {
+          "fixture": "valid/record-sandbox-scope.json",
+          "event": {
+            "TimeUnixNano": 1791331201400000000,
+            "Class": "exec",
+            "Syscall": "execve",
+            "Result": "success",
+            "Pid": 4180,
+            "Ppid": 4170,
+            "NsPid": 1,
+            "NsPpid": 0,
+            "PidNS": 4026532612,
+            "ProcessStartNs": 60313000000,
+            "CgroupID": 10442,
+            "Scope": "sandbox",
+            "ContainerID": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+            "PodUID": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+          }
+        }
+      ]
+    },
+    {
+      "kind": "host.auditd",
+      "label": "build-host-7/auditd",
+      "events": [
+        {
+          "fixture": "valid/record-exec-auditd.json",
+          "event": {
+            "TimeUnixNano": 1791331201210700000,
+            "Class": "exec",
+            "Syscall": "execve",
+            "Result": "success",
+            "Pid": 4121,
+            "Ppid": 4100,
+            "AuditSerial": 18446744073709551615,
+            "Incomplete": "args"
+          }
+        }
+      ]
+    }
+  ]
+}
