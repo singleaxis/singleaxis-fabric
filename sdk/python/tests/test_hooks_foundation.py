@@ -1,10 +1,14 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Spec 056 WP6-02 (spec 053 §4, §4.1-§4.3): the hooks foundation.
+"""Spec 056 WP6-02 (spec 053 §4, §4.1-§4.3) and M2 WP6-09a (056 §7.3.3 (i)): the hooks
+foundation.
 
 ``fabric.hooks.install``, environment activation, ``status``/``disable``/``close``, patch
 ownership, the Fabric internal-I/O guard, D2 explicit ownership, the records-input producer
-and the ``exec.subprocess`` capability states in the capture manifest.
+and the ``exec.subprocess`` capability states in the capture manifest; the M2 arguments
+``http_hosts``, ``remote_sandbox`` and ``sandbox_hosts`` with their switches, the
+``http.nonmodel`` and ``remote.sandbox`` slots and the ``remote.sandbox``
+``disabled(remote_sandbox)`` manifest row.
 
 The subprocess channel itself is WP6-03 (``fabric.hooks._exec``); these tests register a
 fake channel module in its slot. The producer's record shape is checked against the WP6-01
@@ -219,19 +223,25 @@ def test_unknown_attribute_of_fabric_still_raises() -> None:
         _ = package.not_a_module
 
 
-def test_only_the_exec_channel_is_registered() -> None:
-    from fabric.hooks import _exec  # noqa: PLC0415
+def test_the_registered_channels() -> None:
+    from fabric.hooks import _exec, _http  # noqa: PLC0415
 
     assert [(s.point, s.env, s.module) for s in hooks.CHANNELS] == [
-        ("exec.subprocess", "FABRIC_WIRE_EXEC", "fabric.hooks._exec")
+        ("exec.subprocess", "FABRIC_WIRE_EXEC", "fabric.hooks._exec"),
+        ("http.nonmodel", "FABRIC_WIRE_HTTP_HOSTS", "fabric.hooks._http"),
+        ("remote.sandbox", "FABRIC_WIRE_REMOTE_SANDBOX", "fabric.hooks._sandbox"),
     ]
-    load = hooks.CHANNELS[0].load
-    assert load is not None
-    loaded = load()  # a literal import of the slot's own module
-    assert loaded is _exec and loaded.__name__ == hooks.CHANNELS[0].module
-    assert POINT in _manifest.RUNTIME_POINTS and _manifest.HOOK_POINTS == (POINT,)
-    assert _manifest.DEFAULT_STATES[POINT] == ("disabled", "hook_disabled")
+    for slot, module in zip(hooks.CHANNELS[:2], (_exec, _http), strict=True):
+        assert slot.load is not None
+        loaded = slot.load()  # a literal import of the slot's own module
+        assert loaded is module and loaded.__name__ == slot.module
+    points = ("exec.subprocess", "http.nonmodel", "remote.sandbox")
+    assert points == _manifest.HOOK_POINTS
+    for point in points:
+        assert point in _manifest.RUNTIME_POINTS
+        assert _manifest.DEFAULT_STATES[point] == ("disabled", "hook_disabled")
     assert wire._HOOK_ENV_NAMES == _config.HOOK_ENV_NAMES
+    assert "FABRIC_WIRE_HTTP_HOSTS" not in _config.NOT_IN_BUILD_ENV
 
 
 # --- configuration error matrix -------------------------------------------------------
@@ -251,6 +261,56 @@ def test_explicit_install_with_malformed_arguments_raises_value_error(
     with pytest.raises(ValueError) as caught:
         hooks.install(**kwargs)
     assert "line" not in str(caught.value) and "x" * 20 not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"http_hosts": "api.example.com"},  # a string is not a list of hosts
+        {"http_hosts": None}, {"http_hosts": [1]}, {"http_hosts": [""]},
+        {"http_hosts": ["*.example.com"]}, {"http_hosts": ["api.example.com/v1"]},
+        {"http_hosts": ["api.example.com?q=1"]}, {"http_hosts": ["user@api.example.com"]},
+        {"http_hosts": ["api.example.com:0"]}, {"http_hosts": ["api.example.com:65536"]},
+        {"http_hosts": ["api.example.com:"]}, {"http_hosts": ["ftp://api.example.com"]},
+        {"http_hosts": ["https://https://api.example.com"]}, {"http_hosts": ["a..b"]},
+        {"http_hosts": ["-a.example"]}, {"http_hosts": [" api.example.com"]},
+        {"http_hosts": ["::1"]}, {"http_hosts": ["[::1"]}, {"http_hosts": ["[fe80::1%eth0]"]},
+        {"http_hosts": ["999.1.1.1"]}, {"http_hosts": ["x" * 301]},
+        {"http_hosts": ["api.example.com", "API.example.com:443"]},  # one host twice
+        {"http_hosts": [f"h{i}.example" for i in range(257)]},
+        {"remote_sandbox": "e2b"}, {"remote_sandbox": ["modal"]}, {"remote_sandbox": [None]},
+        {"remote_sandbox": ["e2b", "e2b"]},
+        {"sandbox_hosts": "api.e2b.app"}, {"sandbox_hosts": ["*.e2b.app"]},
+        {"sandbox_hosts": ["api.e2b.app", "API.E2B.APP"]},
+    ],
+)  # fmt: skip
+def test_explicit_install_with_malformed_m2_arguments_raises_value_error(
+    kwargs: dict[str, Any],
+) -> None:
+    with pytest.raises(ValueError) as caught:
+        hooks.install(**kwargs)
+    assert "example" not in str(caught.value) and "modal" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("given", "canonical"),
+    [
+        ("api.example.com", ("https", "api.example.com", 443)),
+        ("API.Example.COM.", ("https", "api.example.com", 443)),
+        ("https://api.example.com:443", ("https", "api.example.com", 443)),
+        ("HTTP://Internal.svc:8080", ("http", "internal.svc", 8080)),
+        ("http://internal.svc", ("http", "internal.svc", 80)),
+        ("bücher.example", ("https", "xn--bcher-kva.example", 443)),
+        ("[0:0:0:0:0:0:0:1]:9443", ("https", "::1", 9443)),
+        ("[2001:DB8:0:0:1:0:0:1]", ("https", "2001:db8::1:0:0:1", 443)),
+        ("10.0.4.7:8080", ("https", "10.0.4.7", 8080)),
+        ("my_service:8000", ("https", "my_service", 8000)),
+    ],
+)  # fmt: skip
+def test_hosts_are_normalised_once_at_install(given: str, canonical: tuple[str, str, int]) -> None:
+    (rule,) = _config.config_from_args(http_hosts=[given]).http_hosts
+    assert tuple(rule) == canonical
+    assert _config.parse_host(rule.text) == rule  # the canonical spelling round-trips
 
 
 def test_explicit_install_rejects_unknown_channels() -> None:
@@ -283,6 +343,49 @@ def test_environment_configuration_never_raises(env: dict[str, str], expected: o
         assert config is not None and (config.exec, config.host_label) == expected
 
 
+@pytest.mark.parametrize(
+    ("env", "expected"),
+    [
+        ({"FABRIC_WIRE_HTTP_HOSTS": '["api.example.com", "http://internal.svc:8080"]'},
+         {"http_hosts": ("api.example.com", "http://internal.svc:8080")}),
+        ({"FABRIC_WIRE_HTTP_HOSTS": "[]"}, {}),
+        ({"FABRIC_WIRE_HTTP_HOSTS": "  "}, {}),
+        ({"FABRIC_WIRE_REMOTE_SANDBOX": " e2b "}, {"remote_sandbox": ("e2b",)}),
+        ({"FABRIC_WIRE_SANDBOX_HOSTS": '["api.e2b.app"]'}, {"sandbox_hosts": ("api.e2b.app",)}),
+        ({"FABRIC_WIRE_HTTP_HOSTS": "api.example.com"}, "invalid"),  # not JSON
+        ({"FABRIC_WIRE_HTTP_HOSTS": '"api.example.com"'}, "invalid"),  # not an array
+        ({"FABRIC_WIRE_HTTP_HOSTS": '[{"host": "x"}]'}, "invalid"),
+        ({"FABRIC_WIRE_HTTP_HOSTS": '["*.example.com"]'}, "invalid"),
+        ({"FABRIC_WIRE_HTTP_HOSTS": '["a.example", "A.example"]'}, "invalid"),
+        ({"FABRIC_WIRE_HTTP_HOSTS": "[" * 100_000}, "invalid"),
+        ({"FABRIC_WIRE_REMOTE_SANDBOX": "e2b,modal"}, "invalid"),
+        ({"FABRIC_WIRE_REMOTE_SANDBOX": "e2b,,e2b"}, "invalid"),
+        ({"FABRIC_WIRE_SANDBOX_HOSTS": "api.e2b.app"}, "invalid"),
+    ],
+)  # fmt: skip
+def test_m2_environment_configuration_never_raises(env: dict[str, str], expected: object) -> None:
+    config, not_in_build = _config.config_from_env(env)
+    assert not_in_build == ()
+    if expected == "invalid":
+        assert config is None
+        return
+    assert isinstance(expected, dict) and config is not None
+    assert tuple(r.text for r in config.http_hosts) == expected.get("http_hosts", ())
+    assert config.remote_sandbox == expected.get("remote_sandbox", ())
+    assert tuple(r.text for r in config.sandbox_hosts) == expected.get("sandbox_hosts", ())
+
+
+def test_requested_covers_every_channel() -> None:
+    config = _config.config_from_args(exec=True, http_hosts=["a.example"],
+                                      remote_sandbox=["e2b"])  # fmt: skip
+    assert [config.requested(s.point) for s in hooks.CHANNELS] == [True, True, True]
+    assert not _config.HooksConfig().any_requested
+    only_hosts = _config.config_from_args(sandbox_hosts=["api.e2b.app"])
+    assert not only_hosts.any_requested and only_hosts.sandbox_undeclared
+    assert not _config.config_from_args(sandbox_hosts=["api.e2b.app"],
+                                        remote_sandbox=["e2b"]).sandbox_undeclared  # fmt: skip
+
+
 def test_environment_activation_with_a_malformed_value_disables_every_hook(
     fake: FakeModule, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
@@ -297,6 +400,23 @@ def test_environment_activation_with_a_malformed_value_disables_every_hook(
     warnings = [r for r in caplog.records if r.name == "fabric.hooks"]
     assert len(warnings) == 1 and "secret-ish-value" not in caplog.text
     assert "ValueError" in warnings[0].getMessage()
+
+
+@pytest.mark.parametrize(
+    "env",
+    [{"FABRIC_WIRE_HTTP_HOSTS": "not json"}, {"FABRIC_WIRE_REMOTE_SANDBOX": "modal"},
+     {"FABRIC_WIRE_SANDBOX_HOSTS": '["a b"]'}],
+)  # fmt: skip
+def test_a_malformed_m2_switch_disables_every_hook(
+    env: dict[str, str], fake: FakeModule, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    _capture(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="fabric.hooks"):
+        handle = hooks.install_from_env({"FABRIC_WIRE_EXEC": "1", **env})
+    assert handle is not None and handle.status()["state"] == "invalid_configuration"
+    assert fake.installed == [] and hooks.current_handle() is None
+    assert len([r for r in caplog.records if r.name == "fabric.hooks"]) == 1
+    assert not any(value in caplog.text for value in env.values())
 
 
 def test_environment_activation_absent_or_off_installs_nothing(fake: FakeModule) -> None:
@@ -342,6 +462,107 @@ def test_wire_install_from_env_activates_hooks_only_when_a_switch_is_set(
     assert seen == [{"FABRIC_WIRE_EXEC": "1"}]
     monkeypatch.setattr(hooks, "install_from_env", lambda env: 1 / 0)
     wire._hooks_from_env({"FABRIC_WIRE_EXEC": "1"})  # never raises
+
+
+# --- the M2 slots: http.nonmodel and remote.sandbox ------------------------------------
+
+
+def _rows(markers: list[Marker], point: str) -> list[tuple[str, str | None]]:
+    """The ``point`` row of every manifest queued so far, in order."""
+    rows = []
+    for marker in markers:
+        if marker.kind == "manifest" and marker.manifest is not None:
+            attributes = {k: list(v) if isinstance(v, tuple) else v
+                          for k, v in marker.manifest.items()}  # fmt: skip
+            document = manifest_from_attributes(attributes)
+            row = next(p for p in document["capture_points"] if p["id"] == point)
+            rows.append((row["state"], row.get("reason")))
+    return rows
+
+
+def test_manifest_zero_has_both_m2_rows_disabled(markers: list[Marker], tmp_path: Path) -> None:
+    _capture(tmp_path)
+    for point in ("http.nonmodel", "remote.sandbox"):
+        assert _rows(markers, point) == [("disabled", "hook_disabled")]
+
+
+def test_sandbox_hosts_without_a_provider_publish_remote_sandbox(
+    markers: list[Marker], tmp_path: Path
+) -> None:
+    """056 §4.4.1: declared sandbox hosts and no provider enabled: the manifest row is
+    ``remote.sandbox`` ``disabled`` with reason ``remote_sandbox`` (the manifest's
+    ``not_captured(remote_sandbox)``); nothing is patched or registered. Its
+    ``process_global`` and ``opt_in`` columns are the registry's (``yes``, opt-in per
+    provider: ``1:1``), which 056 §4.4.1's example row (``0:0``) does not match."""
+    _capture(tmp_path)
+    handle = hooks.install(sandbox_hosts=["api.e2b.app"])
+    assert handle.status()["state"] == "active"
+    assert handle.status()["capabilities"]["remote.sandbox"] == {
+        "state": "disabled", "reason": "remote_sandbox"}  # fmt: skip
+    assert _rows(markers, "remote.sandbox") == [("disabled", "hook_disabled"),
+                                                ("disabled", "remote_sandbox")]  # fmt: skip
+    rows = [m.manifest for m in markers if m.kind == "manifest" and m.manifest is not None]
+    points = cast("list[str]", list(rows[-1]["fabric.manifest.capture_points"]))  # type: ignore[arg-type]
+    encoded = [row for row in points if row.startswith("remote.sandbox@")]
+    assert len(encoded) == 1 and encoded[0].endswith(":H:disabled:1:1:remote_sandbox")
+    assert _rows(markers, "http.nonmodel")[-1] == ("disabled", "hook_disabled")
+    assert handle.close() is True
+    assert _rows(markers, "remote.sandbox")[-1] == ("disabled", "remote_sandbox")
+    assert hooks.install_from_env({"FABRIC_WIRE_SANDBOX_HOSTS": '["api.e2b.app"]'}) is not None
+
+
+def test_sandbox_hosts_without_a_capture_handle_still_say_remote_sandbox() -> None:
+    handle = hooks.install(sandbox_hosts=["api.e2b.app"])
+    assert handle.status()["state"] == "no_capture_handle"
+    assert handle.status()["capabilities"]["remote.sandbox"] == {
+        "state": "disabled", "reason": "remote_sandbox"}  # fmt: skip
+
+
+def test_a_provider_without_its_channel_module_is_unsupported(
+    markers: list[Marker], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``remote.sandbox`` slot dispatches to ``fabric.hooks._sandbox`` (056 WP6-09b);
+    a build without it reports the channel ``unsupported(not_instrumented)``."""
+    monkeypatch.setitem(sys.modules, "fabric.hooks._sandbox", None)  # absent in any build
+    _capture(tmp_path)
+    handle = hooks.install(remote_sandbox=["e2b"], sandbox_hosts=["api.e2b.app"])
+    assert handle.status()["capabilities"]["remote.sandbox"] == {
+        "state": "unsupported", "reason": "not_instrumented"}  # fmt: skip
+    assert _rows(markers, "remote.sandbox")[-1] == ("unsupported", "not_instrumented")
+
+
+def test_the_http_channel_publishes_active_and_shutdown(
+    markers: list[Marker], tmp_path: Path
+) -> None:
+    from fabric.wire import _routes  # noqa: PLC0415
+
+    _capture(tmp_path)
+    handle = hooks.install(http_hosts=["api.example.com"])
+    assert handle.status()["capabilities"]["http.nonmodel"] == {"state": "active"}
+    assert _rows(markers, "http.nonmodel")[-1] == ("active", None)
+    assert len(_routes.rules()) == 1
+    assert handle.disable("http.nonmodel") is True
+    assert _rows(markers, "http.nonmodel")[-1] == ("disabled", "hook_disabled")
+    assert handle.close() is True and _routes.rules() == ()
+
+
+def test_the_http_channel_needs_a_capture_handle() -> None:
+    from fabric.wire import _routes  # noqa: PLC0415
+
+    handle = hooks.install(http_hosts=["api.example.com"])
+    assert handle.status()["capabilities"]["http.nonmodel"] == {
+        "state": "installed_inactive", "reason": "not_configured"}  # fmt: skip
+    assert _routes.rules() == ()
+
+
+def test_environment_activation_installs_the_http_channel(tmp_path: Path) -> None:
+    _capture(tmp_path)
+    handle = hooks.install_from_env({"FABRIC_WIRE_HTTP_HOSTS": '["api.example.com"]'})
+    assert handle is not None and handle.status()["capabilities"]["http.nonmodel"] == {
+        "state": "active"}  # fmt: skip
+    assert handle.config is not None
+    assert [r.text for r in handle.config.http_hosts] == ["api.example.com"]
+    assert "not_in_build" not in handle.status()
 
 
 # --- activation needs a capture handle ------------------------------------------------

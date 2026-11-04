@@ -49,7 +49,7 @@ __all__ = [
     "CHANNEL_ENTRY", "HookChannel", "HookPoint", "HookProducer", "Switch", "UnsupportedChannel",
 ]  # fmt: skip
 
-HookPoint = Literal["exec.subprocess"]
+HookPoint = Literal["exec.subprocess", "http.nonmodel", "remote.sandbox"]
 CHANNEL_ENTRY = "install_channel"  # the one entry point of a channel module
 
 # Producer counters per channel (status() material: counts only, never a value).
