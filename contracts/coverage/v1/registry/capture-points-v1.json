@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.capture-point-registry/v1",
-  "registry_revision": 8,
+  "registry_revision": 9,
   "capture_points": [
     {
       "id": "fabric.self",
@@ -441,6 +441,8 @@
       "cannot_observe": "bytes the caller reads directly from pipes; descendants; PTYs; environment values",
       "passivity_gate": "P4-EXEC",
       "supplies": [
+        "X21",
+        "C41",
         "N32",
         "N33",
         "N34",
@@ -491,7 +493,7 @@
       "process_global": "yes (same patch as wire.py.httpx)",
       "activation": "opt-in per host allowlist",
       "state": "P4",
-      "observes": "method, status, host; path, query and bodies only for allowlisted hosts with a retaining role policy",
+      "observes": "method, status, host; path, query and bodies only for allowlisted hosts with a retaining role policy; recorded on the records input with provenance observed; bodies in pieces of at most 256 KiB",
       "cannot_observe": "headers, non-httpx clients, hosts not allowlisted",
       "passivity_gate": "P4-HTTP",
       "supplies": [
@@ -501,7 +503,7 @@
         "N43",
         "N44"
       ],
-      "input": "wire"
+      "input": "records"
     },
     {
       "id": "file.audit",
@@ -532,6 +534,22 @@
       "passivity_gate": "P4-SSH",
       "supplies": [
         "N36",
+        "N37"
+      ],
+      "input": "records"
+    },
+    {
+      "id": "remote.sandbox",
+      "kind": "H",
+      "runtime": "Python; `e2b` 2.62.x, `e2b-code-interpreter` 2.11.x",
+      "process_global": "yes",
+      "activation": "opt-in per provider (`FABRIC_WIRE_REMOTE_SANDBOX`)",
+      "state": "P4 (spec 056 M2)",
+      "observes": "the command or code the agent asked the provider SDK to run and the result the SDK returned",
+      "cannot_observe": "the remote side, other providers, SDK versions outside the pins, streaming callbacks",
+      "passivity_gate": "P4-SANDBOX",
+      "supplies": [
+        "C41",
         "N37"
       ],
       "input": "records"
@@ -653,10 +671,10 @@
       "runtime": "Linux nodes",
       "process_global": "n/a (separate component)",
       "activation": "customer-deployed",
-      "state": "built (031); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only; `local` profile only (decision 23): a production Node admits only its bound agent ingress, so these records never enter a production run's verdict; a production host ingress (one bound ingress per host source) is P4",
-      "observes": "exec and connect records; used only as `corroborated_by`",
+      "state": "Built local profile (031); P4 production (spec 056 M2): separate bound source with its own epoch, encrypted state and ingress group; records-class host records; corroboration only.",
+      "observes": "exec and connect records; used only as `corroborated_by`; host records (053 §6.2.3) on a production ingress group; production mode: pids in the init namespace and in the process's own pid namespace, sensor scope, container and pod ids of sandbox-scope events",
       "cannot_observe": "in-process content",
-      "passivity_gate": "031",
+      "passivity_gate": "P4-HOST, P4-BIND, 031",
       "supplies": [
         "C41"
       ],
@@ -668,10 +686,10 @@
       "runtime": "Linux nodes",
       "process_global": "n/a (separate component)",
       "activation": "customer-deployed",
-      "state": "built (030); optional out-of-process producer of records with its own (source, epoch) and its own cursor/spool (not the agent spool); corroboration only; `local` profile only (decision 23): a production Node admits only its bound agent ingress, so these records never enter a production run's verdict; a production host ingress (one bound ingress per host source) is P4",
-      "observes": "exec and connect records; used only as `corroborated_by`",
+      "state": "Built local profile (030); P4 production (spec 056 M2): separate bound source with its own epoch, encrypted state and ingress group; records-class host records; corroboration only.",
+      "observes": "exec and connect records; used only as `corroborated_by`; host records (053 §6.2.3) on a production ingress group",
       "cannot_observe": "in-process content",
-      "passivity_gate": "030",
+      "passivity_gate": "P4-HOST, P4-BIND, 030",
       "supplies": [
         "C41"
       ],

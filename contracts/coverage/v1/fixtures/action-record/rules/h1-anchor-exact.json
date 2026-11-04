@@ -84,7 +84,8 @@
         "parent_pid": 4100,
         "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
         "process_start_ns": 60120000000,
-        "stdout": "a.txt\nb.txt\nc.txt\n"
+        "stdout": "a.txt\nb.txt\nc.txt\n",
+        "pid_ns": "4026531836"
       }
     ],
     "host_events": [
@@ -98,7 +99,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 60123217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4121,
+        "ns_ppid": 4100
       }
     ]
   },

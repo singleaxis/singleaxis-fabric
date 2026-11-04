@@ -1,0 +1,79 @@
+{
+  "schema_version": "fabric.host-state-envelope-vectors/v1",
+  "rule": "Spec 053 §6.2.5 (revision 3): a host sensor seals epoch.state, staging batches, the spool and the cursor checkpoint as magic 'FABRIC-HOST-RECORDS-1\\n' | 12-byte nonce | AES-256-GCM(state key, nonce, plaintext, aad), ciphertext then the 16-byte tag, aad the canonical JSON array [\"fabric.host-records/v1\", state kind] (fabricenvelopeextension's sealer.aad with the host magic and schema). A reader requires the magic and authenticates with the kind it expects; an envelope of another kind, a changed byte or another magic is refused, and a refused state refuses start (the sensor never runs on unauthenticated state). Writers draw a random nonce per object; these vectors fix it.",
+  "magic": "FABRIC-HOST-RECORDS-1\n",
+  "schema": "fabric.host-records/v1",
+  "state_kinds": [
+    "epoch",
+    "staging",
+    "spool",
+    "cursor"
+  ],
+  "key_base64": "a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2s=",
+  "cases": [
+    {
+      "name": "epoch state",
+      "state_kind": "epoch",
+      "aad": "[\"fabric.host-records/v1\",\"epoch\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xCgABAgMEBQYHCAkKCxH/kV5rs+5Xea1qu1PwOmHI3I1SqFesvZ5E3JLcCPJBw1lfxKxDeHyHtl1Y0CoHu0i+3uL0PU5Jmk1ls62uy14yQjqcXL9w4IhwIk5K1Q==",
+      "plaintext_base64": "eyJlcG9jaCI6NjkxNzUyOTAyNzY0MTA4MTg1NywiZmluYWwiOmZhbHNlLCJuZXh0X3NlcXVlbmNlIjo0Mn0=",
+      "valid": true
+    },
+    {
+      "name": "staging state",
+      "state_kind": "staging",
+      "aad": "[\"fabric.host-records/v1\",\"staging\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xCgwNDg8QERITFBUWF4r0KApfOczAQAw4dO3QL1teSxKtqDASu+zOpCS1LF3iaMqUjsrIRA==",
+      "plaintext_base64": "eyJiYXRjaCI6MSwiZXZlbnRzIjpbXX0=",
+      "valid": true
+    },
+    {
+      "name": "spool state",
+      "state_kind": "spool",
+      "aad": "[\"fabric.host-records/v1\",\"spool\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xChgZGhscHR4fICEiIwTg+QhdRSN0u+ZS5Tl4FVnj5deO2w==",
+      "plaintext_base64": "CgMIARA=",
+      "valid": true
+    },
+    {
+      "name": "cursor state",
+      "state_kind": "cursor",
+      "aad": "[\"fabric.host-records/v1\",\"cursor\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xCiQlJicoKSorLC0uL+MfmrWlTSH5hj+jwdQv9NwXkEzBChyOFLvnMm3jjZ5JLV5k9HkepHlGyoICFDSN",
+      "plaintext_base64": "eyJnZW5lcmF0aW9uIjozLCJvZmZzZXQiOjQwOTYwfQ==",
+      "valid": true
+    },
+    {
+      "name": "a staging envelope opened as a spool record",
+      "state_kind": "spool",
+      "aad": "[\"fabric.host-records/v1\",\"spool\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xCgwNDg8QERITFBUWF4r0KApfOczAQAw4dO3QL1teSxKtqDASu+zOpCS1LF3iaMqUjsrIRA==",
+      "plaintext_base64": null,
+      "valid": false
+    },
+    {
+      "name": "a flipped tag",
+      "state_kind": "epoch",
+      "aad": "[\"fabric.host-records/v1\",\"epoch\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xCgABAgMEBQYHCAkKCxH/kV5rs+5Xea1qu1PwOmHI3I1SqFesvZ5E3JLcCPJBw1lfxKxDeHyHtl1Y0CoHu0i+3uL0PU5Jmk1ls62uy14yQjqcXL9w4IhwIk5K1A==",
+      "plaintext_base64": null,
+      "valid": false
+    },
+    {
+      "name": "the Node queue magic",
+      "state_kind": "epoch",
+      "aad": "[\"fabric.host-records/v1\",\"epoch\"]",
+      "envelope_base64": "RkFCUklDLU5PREUtUVVFVUUtMQoAAQIDBAUGBwgJCgsR/5Fea7PuV3mtartT8DphyNyNUqhXrL2eRNyS3AjyQcNZX8SsQ3h8h7ZdWNAqB7tIvt7i9D1OSZpNZbOtrsteMkI6nFy/cOCIcCJOStU=",
+      "plaintext_base64": null,
+      "valid": false
+    },
+    {
+      "name": "truncated below the tag",
+      "state_kind": "cursor",
+      "aad": "[\"fabric.host-records/v1\",\"cursor\"]",
+      "envelope_base64": "RkFCUklDLUhPU1QtUkVDT1JEUy0xCiQlJicoKSorLC0uL+MfmrWlTSH5",
+      "plaintext_base64": null,
+      "valid": false
+    }
+  ]
+}

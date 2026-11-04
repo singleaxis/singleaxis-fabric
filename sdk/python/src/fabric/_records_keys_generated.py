@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@11"
+RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@12"
 
 RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
     "fabric.actor.type": {
@@ -113,6 +113,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "pattern": "^sbx-[0-9a-f]{32}$",
         "examples": ("sbx-9f86d081884c7d659a2feaa0c55ad015",),
     },
+    "fabric.network.host_id": {
+        "type": "string",
+        "pattern": "^hst-[0-9a-f]{32}$",
+        "examples": ("hst-9f86d081884c7d659a2feaa0c55ad015",),
+    },
     "fabric.process.exit_code": {
         "type": "int",
         "min": -2147483648,
@@ -125,6 +130,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
     "fabric.process.pid": {
         "type": "int",
         "min": 1,
+    },
+    "fabric.process.pid_ns": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": ("4026531836",),
     },
     "fabric.process.signal": {
         "type": "int",
@@ -160,6 +170,151 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "type": "string",
         "pattern": "^seg-[0-9a-f]{32}$",
         "examples": ("seg-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.sandbox.created_id": {
+        "type": "string",
+        "pattern": "^sbx-[0-9a-f]{32}$",
+        "examples": ("sbx-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.sensor.argv_sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.sensor.audit_serial": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": ("18446744073709551615",),
+    },
+    "fabric.sensor.boot_time_s": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.sensor.cgroup_id": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": ("9123",),
+    },
+    "fabric.sensor.errno": {
+        "type": "enum",
+        "values": (
+            "EPERM",
+            "ENOENT",
+            "EIO",
+            "EAGAIN",
+            "EACCES",
+            "EINVAL",
+            "ECONNREFUSED",
+            "ETIMEDOUT",
+            "EHOSTUNREACH",
+            "ENETUNREACH",
+            "other",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.event_class": {
+        "type": "enum",
+        "values": (
+            "exec",
+            "connect",
+            "file",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.exe_sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.sensor.incomplete": {
+        "type": "enum",
+        "values": (
+            "path",
+            "args",
+            "path_and_args",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.ns_pid": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.sensor.ns_ppid": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.sensor.path_sha256": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.sensor.peer_family": {
+        "type": "enum",
+        "values": (
+            "ipv4",
+            "ipv6",
+            "unix",
+            "other",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.peer_port": {
+        "type": "int",
+        "min": 0,
+        "max": 65535,
+    },
+    "fabric.sensor.pid": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.sensor.pid_ns": {
+        "type": "string",
+        "pattern": "^[0-9]{1,20}$",
+        "examples": ("4026531836",),
+    },
+    "fabric.sensor.pod_id": {
+        "type": "string",
+        "pattern": "^sbx-[0-9a-f]{32}$",
+        "examples": ("sbx-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.sensor.ppid": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.sensor.process_start_ns": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.sensor.result": {
+        "type": "enum",
+        "values": (
+            "success",
+            "failed",
+            "unknown",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.scope": {
+        "type": "enum",
+        "values": (
+            "agent",
+            "sandbox",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.syscall": {
+        "type": "enum",
+        "values": (
+            "execve",
+            "execveat",
+            "connect",
+            "accept",
+            "bind",
+            "socket",
+            "openat",
+            "open",
+        ),
+        "source": "validator",
     },
     "fabric.source.epoch": {
         "type": "int",
@@ -264,6 +419,33 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         ),
         "source": "vocabulary:result_status",
     },
+    "fabric.tenant_id": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "examples": (
+            "tenant-a",
+            "acme.prod",
+        ),
+    },
+    "http.request.method": {
+        "type": "enum",
+        "values": (
+            "GET",
+            "HEAD",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+            "OPTIONS",
+            "other",
+        ),
+        "source": "validator",
+    },
+    "http.response.status_code": {
+        "type": "int",
+        "min": 100,
+        "max": 599,
+    },
 }
 
 # Conditional records placements (capture_point_kinds / capture_points, matched against
@@ -272,7 +454,85 @@ RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
     "fabric.process.parent_pid": {
         "capture_points": ("exec.subprocess",),
     },
+    "fabric.process.pid_ns": {
+        "capture_points": ("exec.subprocess",),
+    },
     "fabric.process.start_ns": {
         "capture_points": ("exec.subprocess",),
+    },
+    "fabric.sandbox.created_id": {
+        "capture_points": ("exec.subprocess",),
+    },
+    "fabric.sensor.argv_sha256": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.audit_serial": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.boot_time_s": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.cgroup_id": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.errno": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.event_class": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.exe_sha256": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.incomplete": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.ns_pid": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.ns_ppid": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.path_sha256": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.peer_family": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.peer_port": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.pid": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.pid_ns": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.pod_id": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.ppid": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.process_start_ns": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.result": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.scope": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.syscall": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.tenant_id": {
+        "capture_point_kinds": ("S",),
+    },
+    "http.request.method": {
+        "capture_points": ("http.nonmodel",),
+    },
+    "http.response.status_code": {
+        "capture_points": ("http.nonmodel",),
     },
 }

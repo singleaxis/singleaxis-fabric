@@ -1,0 +1,21 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "http.nonmodel",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.http.observation/v1",
+    "items": [
+      {
+        "rule_index": 0,
+        "scheme": "https",
+        "port": 443,
+        "redirect_index": 0,
+        "request_body": "complete",
+        "response_body": "complete",
+        "dialect": "none",
+        "error_class": "/v1/users/jane.doe@example.com"
+      }
+    ]
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "schema_version": "fabric.peer-address-vectors/v1",
+  "rule": "Spec 053 §6.2.3, spec 056 §5.1: the canonical text of a peer address, whose hst- v2 pseudonym under the id key is fabric.network.host_id: IPv4 dotted decimal; an IPv4-mapped IPv6 address (::ffff:0:0/96) as its IPv4 text; every other IPv6 address in RFC 5952 §4 form (lower case, leading zeros dropped, the longest run of two or more zero groups compressed to ::, the first on a tie). bytes_hex is the address as the kernel reports it (4 or 16 network-order bytes); text from bytes and text from input agree. Not an address (a name, a port, a zone, a prefix, surrounding space): text and host_id null. Python's peer_id and the Go library (hostrecords.PeerText) must equal these; neither may rely on its language's own IPv6 formatting (Python 3.13 changed str(IPv6Address) for mapped addresses).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "cases": [
+    {
+      "name": "IPv4",
+      "input": "10.0.4.7",
+      "bytes_hex": "0a000407",
+      "text": "10.0.4.7",
+      "host_id": "hst-757236b3429f3994c09d77b1127c1453"
+    },
+    {
+      "name": "IPv4 loopback",
+      "input": "127.0.0.1",
+      "bytes_hex": "7f000001",
+      "text": "127.0.0.1",
+      "host_id": "hst-16aef971f7240a537e7e45dbd0358eb5"
+    },
+    {
+      "name": "IPv4-mapped IPv6 is its IPv4 text",
+      "input": "::ffff:10.0.4.7",
+      "bytes_hex": "00000000000000000000ffff0a000407",
+      "text": "10.0.4.7",
+      "host_id": "hst-757236b3429f3994c09d77b1127c1453"
+    },
+    {
+      "name": "IPv4-mapped IPv6 in hex",
+      "input": "::ffff:a00:407",
+      "bytes_hex": "00000000000000000000ffff0a000407",
+      "text": "10.0.4.7",
+      "host_id": "hst-757236b3429f3994c09d77b1127c1453"
+    },
+    {
+      "name": "IPv4-mapped IPv6, upper case and full form",
+      "input": "0:0:0:0:0:FFFF:0A00:0407",
+      "bytes_hex": "00000000000000000000ffff0a000407",
+      "text": "10.0.4.7",
+      "host_id": "hst-757236b3429f3994c09d77b1127c1453"
+    },
+    {
+      "name": "IPv6 lower case, longest zero run",
+      "input": "2001:DB8:0:0:1:0:0:1",
+      "bytes_hex": "20010db8000000000001000000000001",
+      "text": "2001:db8::1:0:0:1",
+      "host_id": "hst-681888a0e0e2ac00b953c7f64ef06089"
+    },
+    {
+      "name": "IPv6 first of two equal zero runs",
+      "input": "2001:db8:0:0:1:0:0:2",
+      "bytes_hex": "20010db8000000000001000000000002",
+      "text": "2001:db8::1:0:0:2",
+      "host_id": "hst-cd76b2b367f80e98e0354d4d150d01d0"
+    },
+    {
+      "name": "IPv6 a single zero group is not compressed",
+      "input": "2001:db8:0:1:1:1:1:1",
+      "bytes_hex": "20010db8000000010001000100010001",
+      "text": "2001:db8:0:1:1:1:1:1",
+      "host_id": "hst-4c1325a091066a73947e64cb1ba133ed"
+    },
+    {
+      "name": "IPv6 leading zeros dropped",
+      "input": "2001:0db8:0000:0000:0000:0000:0002:0001",
+      "bytes_hex": "20010db8000000000000000000020001",
+      "text": "2001:db8::2:1",
+      "host_id": "hst-82b88119af893b44f9d3c1b3d16d1fbe"
+    },
+    {
+      "name": "IPv6 loopback",
+      "input": "::1",
+      "bytes_hex": "00000000000000000000000000000001",
+      "text": "::1",
+      "host_id": "hst-61f324854f691bfc93083dfcfd30ce71"
+    },
+    {
+      "name": "IPv6 unspecified",
+      "input": "::",
+      "bytes_hex": "00000000000000000000000000000000",
+      "text": "::",
+      "host_id": "hst-9f284b29ba4a2b2a041ebc3bbb81fea4"
+    },
+    {
+      "name": "IPv6 trailing zero run",
+      "input": "fe80:0:0:0:0:0:0:0",
+      "bytes_hex": "fe800000000000000000000000000000",
+      "text": "fe80::",
+      "host_id": "hst-8589f944b7f55bf5cbdbcc874a8854dc"
+    },
+    {
+      "name": "IPv4-compatible (deprecated) stays hex",
+      "input": "::10.0.4.7",
+      "bytes_hex": "0000000000000000000000000a000407",
+      "text": "::a00:407",
+      "host_id": "hst-5dd9640afbd4c3edf6d855e3dd29ce82"
+    },
+    {
+      "name": "IPv4-translated stays hex",
+      "input": "::ffff:0:10.0.4.7",
+      "bytes_hex": "0000000000000000ffff00000a000407",
+      "text": "::ffff:0:a00:407",
+      "host_id": "hst-79932bdcecd6335c421298f587a02145"
+    },
+    {
+      "name": "NAT64 well-known prefix stays hex",
+      "input": "64:ff9b::10.0.4.7",
+      "bytes_hex": "0064ff9b00000000000000000a000407",
+      "text": "64:ff9b::a00:407",
+      "host_id": "hst-6d8570ddede321032850b19904e5dab7"
+    },
+    {
+      "name": "IPv6 unique local",
+      "input": "fd12:3456:789a:1::42",
+      "bytes_hex": "fd123456789a00010000000000000042",
+      "text": "fd12:3456:789a:1::42",
+      "host_id": "hst-8efdd256bccbeab88cd7a708bcb7916f"
+    },
+    {
+      "name": "a host name is not an address",
+      "input": "fixture.test",
+      "text": null,
+      "host_id": null
+    },
+    {
+      "name": "an address with a port is not an address",
+      "input": "10.0.4.7:443",
+      "text": null,
+      "host_id": null
+    },
+    {
+      "name": "a zone is refused",
+      "input": "fe80::1%eth0",
+      "text": null,
+      "host_id": null
+    },
+    {
+      "name": "a prefix is refused",
+      "input": "10.0.4.0/24",
+      "text": null,
+      "host_id": null
+    },
+    {
+      "name": "surrounding space is refused",
+      "input": " 10.0.4.7",
+      "text": null,
+      "host_id": null
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "text": null,
+      "host_id": null
+    }
+  ]
+}

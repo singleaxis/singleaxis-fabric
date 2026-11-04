@@ -21,7 +21,7 @@ var capturePointKinds = map[string]string{
 	"sdk.records": "R", "run.scope": "R", "mcp.wrapper": "R",
 	"mcp.client": "H", "exec.subprocess": "H", "exec.audit": "H",
 	"db.dbapi": "H", "http.nonmodel": "W", "file.audit": "H",
-	"remote.ssh_wrapper": "R", "ui.automation": "H", "rt.websocket": "W",
+	"remote.ssh_wrapper": "R", "remote.sandbox": "H", "ui.automation": "H", "rt.websocket": "W",
 	"reconstruct.parse": "P", "reconstruct.infer": "I", "host.ebpf": "S",
 	"host.auditd": "S", "feed.independent": "S", "delivery.receipts": "S",
 }

@@ -287,7 +287,8 @@
             "sequence_bracket",
             "output_match",
             "process_anchor",
-            "process_lineage"
+            "process_lineage",
+            "sandbox_report"
           ]
         },
         "confidence": {
@@ -499,7 +500,8 @@
             "sequence_bracket",
             "output_match",
             "process_anchor",
-            "process_lineage"
+            "process_lineage",
+            "sandbox_report"
           ]
         },
         "confidence": {
@@ -1124,7 +1126,8 @@
             "sequence_bracket",
             "output_match",
             "process_anchor",
-            "process_lineage"
+            "process_lineage",
+            "sandbox_report"
           ]
         },
         "confidence": {

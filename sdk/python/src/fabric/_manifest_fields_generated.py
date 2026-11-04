@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@11"
+FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@12"
 
 MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
     "fabric.self": (
@@ -103,7 +103,7 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "C25",
         "C28",
     ),
-    "exec.subprocess": (),
+    "exec.subprocess": ("X21",),
     "exec.audit": (),
     "db.dbapi": (),
     "http.nonmodel": ("N26",),
@@ -112,6 +112,7 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "N46",
     ),
     "remote.ssh_wrapper": (),
+    "remote.sandbox": (),
     "ui.automation": (),
     "rt.websocket": (),
     "reconstruct.parse": (

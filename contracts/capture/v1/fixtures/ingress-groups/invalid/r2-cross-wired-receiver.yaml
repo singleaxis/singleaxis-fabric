@@ -1,0 +1,242 @@
+exporters:
+  fabriccontent/agent:
+    allowed_tenants:
+    - tenant-a
+    backend: s3
+    profile: production
+    queue_directory: /var/lib/otelcol-fabric/storage/content-queue-agent
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_elapsed_time: 0s
+      max_interval: 30s
+    s3:
+      bucket: acme-fabric-content
+      kms_key_id: alias/fabric-content
+      prefix: fabric/agent/
+      region: eu-west-1
+      sse: aws:kms
+      use_path_style: false
+    sending_queue:
+      block_on_overflow: true
+      enabled: true
+      num_consumers: 4
+      queue_size: 64
+      storage: fabricenvelope/fabric_content_agent
+    source_binding:
+      source_id: s-b94f348e8d6890782b2af72c847dc77b
+      tenant_id: tenant-a
+    timeout: 60s
+  otlp_http/fabric:
+    endpoint: https://otlp.example.invalid
+    headers:
+      Authorization: ${env:FABRIC_EXPORT_AUTH}
+    middlewares:
+    - id: noredirect
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_elapsed_time: 0s
+      max_interval: 30s
+    sending_queue:
+      block_on_overflow: true
+      enabled: true
+      num_consumers: 10
+      queue_size: 10000
+      storage: file_storage/fabric
+    timeout: 30s
+    tls:
+      insecure: false
+      insecure_skip_verify: false
+extensions:
+  bearertokenauth/agent:
+    filename: /etc/fabric/ingress/agent/token
+    require_single_token: true
+  bearertokenauth/auditd:
+    filename: /etc/fabric/ingress/auditd/token
+    require_single_token: true
+  bearertokenauth/ebpf:
+    filename: /etc/fabric/ingress/ebpf/token
+    require_single_token: true
+  fabricenvelope/fabric_content_agent:
+    key_file: /etc/fabric/content-key/key
+    storage: file_storage/fabric_content_agent
+  file_storage/fabric:
+    create_directory: true
+    directory: /var/lib/otelcol-fabric/storage
+    fsync: true
+    timeout: 1s
+  file_storage/fabric_content_agent:
+    create_directory: true
+    directory: /var/lib/otelcol-fabric/storage/content-queue-agent
+    directory_permissions: '0700'
+    fsync: true
+    timeout: 1s
+  health_check:
+    endpoint: 0.0.0.0:13133
+  noredirect: {}
+processors:
+  fabricguard/agent:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-b94f348e8d6890782b2af72c847dc77b
+      tenant_id: tenant-a
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: agent
+  fabricguard/auditd:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-8f7a2b26a947d94497736831c32f63ce
+      tenant_id: tenant-a
+    host_digests: omitted
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: host.auditd
+  fabricguard/ebpf:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-2c6c641009e36ee2e6587ef29bc3a782
+      tenant_id: tenant-a
+    host_digests: omitted
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: host.ebpf
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+receivers:
+  otlp/agent:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/agent
+        endpoint: 0.0.0.0:4317
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+      http:
+        auth:
+          authenticator: bearertokenauth/agent
+        endpoint: 0.0.0.0:4318
+        idle_timeout: 120s
+        max_request_body_size: 8388608
+        read_header_timeout: 5s
+        read_timeout: 30s
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/auditd:
+    protocols:
+      http:
+        auth:
+          authenticator: bearertokenauth/auditd
+        endpoint: 0.0.0.0:4428
+        idle_timeout: 120s
+        max_request_body_size: 8388608
+        read_header_timeout: 5s
+        read_timeout: 30s
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/content-agent:
+    protocols:
+      http:
+        auth:
+          authenticator: bearertokenauth/agent
+        endpoint: 0.0.0.0:4319
+        idle_timeout: 120s
+        max_request_body_size: 67108864
+        read_header_timeout: 5s
+        read_timeout: 120s
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/ebpf:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/ebpf
+        endpoint: 0.0.0.0:4417
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+service:
+  extensions:
+  - health_check
+  - noredirect
+  - file_storage/fabric
+  - bearertokenauth/agent
+  - file_storage/fabric_content_agent
+  - fabricenvelope/fabric_content_agent
+  - bearertokenauth/ebpf
+  - bearertokenauth/auditd
+  pipelines:
+    logs/agent:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/agent
+      receivers:
+      - otlp/agent
+    logs/content-agent:
+      exporters:
+      - fabriccontent/agent
+      processors:
+      - memory_limiter
+      receivers:
+      - otlp/content-agent
+    traces/agent:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/agent
+      receivers:
+      - otlp/agent
+    traces/auditd:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/auditd
+      receivers:
+      - otlp/auditd
+    traces/ebpf:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/ebpf
+      receivers:
+      - otlp/agent
+  telemetry:
+    logs:
+      level: info

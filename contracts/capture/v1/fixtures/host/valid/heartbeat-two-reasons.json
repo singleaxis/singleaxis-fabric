@@ -1,0 +1,201 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "heartbeat-two-reasons",
+  "description": "One interval with two upstream-loss reasons: two heartbeat spans at the same last sequence, in the order of the 053 §6.2.4 enum, each with its own count (−1: a report of unknown count) and its own event id (spec 056 §7.3.3 (b)).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "host.ebpf",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "43c4c8d6d6fa3072b686b56459464695",
+                  "spanId": "8625f9a203215757",
+                  "name": "fabric.capture_heartbeat",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331231000000000",
+                  "endTimeUnixNano": "1791331231000000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.heartbeat.kind",
+                      "value": {
+                        "stringValue": "periodic"
+                      }
+                    },
+                    {
+                      "key": "fabric.heartbeat.last_sequence",
+                      "value": {
+                        "intValue": "-1"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.manifest_seq",
+                      "value": {
+                        "intValue": "0"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "9145cbb4-fd2e-4bbb-a49a-bcfefa8ccd76"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.upstream_lost",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.upstream_loss_reason",
+                      "value": {
+                        "stringValue": "ring_buffer_full"
+                      }
+                    }
+                  ],
+                  "status": {}
+                },
+                {
+                  "traceId": "81299cc75768f785d4d9aea5fa281575",
+                  "spanId": "eb57c9459eb9df84",
+                  "name": "fabric.capture_heartbeat",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331231000000000",
+                  "endTimeUnixNano": "1791331231000000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.heartbeat.kind",
+                      "value": {
+                        "stringValue": "periodic"
+                      }
+                    },
+                    {
+                      "key": "fabric.heartbeat.last_sequence",
+                      "value": {
+                        "intValue": "-1"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.manifest_seq",
+                      "value": {
+                        "intValue": "0"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "13393a80-04cc-4085-afae-72d9cfbb212c"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.upstream_lost",
+                      "value": {
+                        "intValue": "-1"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.upstream_loss_reason",
+                      "value": {
+                        "stringValue": "rate_limited"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "spans": [
+        {
+          "name": "fabric.capture_heartbeat",
+          "attributes": {
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.heartbeat.kind": "periodic",
+            "fabric.heartbeat.last_sequence": -1,
+            "fabric.capture.manifest_seq": 0,
+            "fabric.capture.point": "host.ebpf@0.11.0",
+            "fabric.event_id": "9145cbb4-fd2e-4bbb-a49a-bcfefa8ccd76",
+            "fabric.sensor.upstream_lost": 3,
+            "fabric.sensor.upstream_loss_reason": "ring_buffer_full",
+            "fabric.source.authenticated": true
+          }
+        },
+        {
+          "name": "fabric.capture_heartbeat",
+          "attributes": {
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.heartbeat.kind": "periodic",
+            "fabric.heartbeat.last_sequence": -1,
+            "fabric.capture.manifest_seq": 0,
+            "fabric.capture.point": "host.ebpf@0.11.0",
+            "fabric.event_id": "13393a80-04cc-4085-afae-72d9cfbb212c",
+            "fabric.sensor.upstream_lost": -1,
+            "fabric.sensor.upstream_loss_reason": "rate_limited",
+            "fabric.source.authenticated": true
+          }
+        }
+      ],
+      "stripped": {},
+      "dropped": 0
+    }
+  ]
+}

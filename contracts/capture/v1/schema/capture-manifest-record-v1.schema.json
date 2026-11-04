@@ -241,7 +241,8 @@
         "fabric.manifest.sdk.language": {
           "enum": [
             "python",
-            "typescript"
+            "typescript",
+            "go"
           ]
         },
         "fabric.manifest.sequence_unit": {
@@ -284,7 +285,10 @@
               "provider_batch_files",
               "non_post_endpoints",
               "unmatched_endpoints",
-              "other_runtime"
+              "other_runtime",
+              "sensor_exec",
+              "sensor_connect",
+              "sensor_file"
             ]
           }
         },

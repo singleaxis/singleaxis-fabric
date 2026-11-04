@@ -431,7 +431,7 @@
         },
         "attribution": {"$ref": "#/$defs/attribution"},
         "sensor_events": {
-          "description": "Spec 053 §6.3, spec 056 §4.3: the host-sensor events a link of this run names (as a target or a candidate of an agent step's corroborated_by link, or as the subject of a part_of link), with the links whose subject they are (H3 process_lineage to an anchored effect, H4 process_anchor to the run). Never a peer address, path or argv: ids, pids and times only.",
+          "description": "Spec 053 §6.3, spec 056 §4.3: the host-sensor events a link of this run names (as a target or a candidate of an agent step's corroborated_by link, or as the subject of a part_of link), with the links whose subject they are (H3 process_lineage to an anchored effect, H4 process_anchor to the run, M2 H5 sandbox_report to the effect that reported the event's container or pod id). Never a peer address, path or argv: ids, pids and times only.",
           "type": "array",
           "maxItems": 4096,
           "items": {"$ref": "#/$defs/sensorEvent"}
@@ -482,7 +482,7 @@
       "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|host-[0-9a-f]{32}|rec-[0-9a-f]{64}|hev-[0-9a-f]{32})$"
     },
     "actionLink": {
-      "description": "A spec 056 link whose subject is a host event: the step-projection link shape (contracts/coverage/v1 step-projection-v1 $defs/link) narrowed to the 056 rules.",
+      "description": "A spec 056 link whose subject is a host event: the step-projection link shape (contracts/coverage/v1 step-projection-v1 $defs/link) narrowed to the 056 rules. M2 (rule H5): sandbox_report is the one reported method; its provenance is reported (the container runtime printed the id in the effect's output) and its confidence certain.",
       "type": "object",
       "additionalProperties": false,
       "required": ["type", "target", "provenance", "method", "confidence", "state"],
@@ -497,12 +497,15 @@
             "id": {"type": "string", "minLength": 1, "maxLength": 256}
           }
         },
-        "provenance": {"const": "inferred"},
-        "method": {"enum": ["process_anchor", "process_lineage"]},
+        "provenance": {"enum": ["inferred", "reported"]},
+        "method": {"enum": ["process_anchor", "process_lineage", "sandbox_report"]},
         "confidence": {"enum": ["certain", "tentative"]},
         "state": {"enum": ["resolved", "ambiguous"]},
         "candidates": {"type": "array", "minItems": 2, "maxItems": 64, "items": {"type": "string", "maxLength": 256}}
-      }
+      },
+      "if": {"properties": {"method": {"const": "sandbox_report"}}},
+      "then": {"properties": {"provenance": {"const": "reported"}, "confidence": {"const": "certain"}, "state": {"const": "resolved"}}},
+      "else": {"properties": {"provenance": {"const": "inferred"}}}
     },
     "sensorEvent": {
       "type": "object",
@@ -520,14 +523,14 @@
       }
     },
     "attribution": {
-      "description": "Spec 056 §4.5: the attribution summary. links counts each effect's or host event's decision by basis (reported is A0, none is A4; process_anchor counts H1, H2, H4 and effects with a pid that no event anchors as unresolved). unattributed_effects and unexplained_host_events list at most the first 64 in sequence or time order with the full count. effects_not_observed counts the tool calls with no attributed effect by reason. lineage_truncated counts host events an H3 depth or count bound left unlinked.",
+      "description": "Spec 056 §4.5: the attribution summary. links counts each effect's or host event's decision by basis (reported is A0, none is A4; process_anchor counts H1, H2, H4 and effects with a pid that no event anchors as unresolved; sandbox_report counts H5 links, M2). unattributed_effects and unexplained_host_events list at most the first 64 in sequence or time order with the full count. effects_not_observed counts the tool calls with no attributed effect by reason. lineage_truncated counts host events an H3 depth or count bound left unlinked. M2: sandbox_events_unlinked counts the sandbox-scope host events no H5 link names (never listed as unexplained); remote_sandbox_calls lists the H4 connect events of the agent process to a declared sandbox peer while the remote.sandbox capture point is not active (the first 64 in time order, with the full count).",
       "type": "object",
       "additionalProperties": false,
       "required": ["links", "unattributed_effects", "effects_not_observed", "output_match", "unexplained_host_events"],
       "properties": {
         "links": {
           "type": "object",
-          "propertyNames": {"enum": ["reported", "output_match", "sequence_bracket", "process_anchor", "process_lineage", "none"]},
+          "propertyNames": {"enum": ["reported", "output_match", "sequence_bracket", "process_anchor", "process_lineage", "sandbox_report", "none"]},
           "additionalProperties": {
             "type": "object",
             "additionalProperties": false,
@@ -588,7 +591,22 @@
             "event_ids": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/hostEventId"}}
           }
         },
-        "lineage_truncated": {"type": "integer", "minimum": 0}
+        "lineage_truncated": {"type": "integer", "minimum": 0},
+        "sandbox_events_unlinked": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count"],
+          "properties": {"count": {"type": "integer", "minimum": 0}}
+        },
+        "remote_sandbox_calls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["count", "event_ids"],
+          "properties": {
+            "count": {"type": "integer", "minimum": 0},
+            "event_ids": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/hostEventId"}}
+          }
+        }
       }
     }
   }

@@ -1,0 +1,103 @@
+exporters:
+  otlp_http/fabric:
+    endpoint: https://otlp.example.invalid
+    headers:
+      Authorization: ${env:FABRIC_EXPORT_AUTH}
+    middlewares:
+    - id: noredirect
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_elapsed_time: 0s
+      max_interval: 30s
+    sending_queue:
+      block_on_overflow: true
+      enabled: true
+      num_consumers: 10
+      queue_size: 10000
+      storage: file_storage/fabric
+    timeout: 30s
+    tls:
+      insecure: false
+      insecure_skip_verify: false
+extensions:
+  bearertokenauth/workload:
+    filename: /etc/fabric/workload-auth/token
+    require_single_token: true
+  file_storage/fabric:
+    create_directory: true
+    directory: /var/lib/otelcol-fabric/storage
+    fsync: true
+    timeout: 1s
+  health_check:
+    endpoint: 0.0.0.0:13133
+  noredirect: {}
+processors:
+  fabricguard:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-c5aedfd8a3ee415e277e335bf1517ff4
+      tenant_id: customer-production
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/workload
+        endpoint: 0.0.0.0:4317
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+      http:
+        auth:
+          authenticator: bearertokenauth/workload
+        endpoint: 0.0.0.0:4318
+        idle_timeout: 120s
+        max_request_body_size: 8388608
+        read_header_timeout: 5s
+        read_timeout: 30s
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+service:
+  extensions:
+  - health_check
+  - bearertokenauth/workload
+  - noredirect
+  - file_storage/fabric
+  pipelines:
+    logs:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard
+      receivers:
+      - otlp
+    traces:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard
+      receivers:
+      - otlp
+  telemetry:
+    logs:
+      level: info

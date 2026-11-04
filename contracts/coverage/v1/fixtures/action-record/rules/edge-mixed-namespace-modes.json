@@ -1,0 +1,391 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "edge-mixed-namespace-modes",
+  "rules": [
+    "A1",
+    "H1",
+    "H3",
+    "H4"
+  ],
+  "description": "An eBPF source (recorded) and an auditd source (declared_same) on the agent's host, the agent in its own pid namespace. The eBPF exec anchors the effect on ns_pid (H1) and the eBPF connect is the agent's (H4 on ns_pid). auditd reports init-namespace pids only: compared with the agent's numbering, nothing anchors (its exec of the anchored process is lineage of the eBPF anchor at depth 0, on init pids) and the agent's own connect is not recognised, so it is unexplained. Each source joins by its own mode.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 7,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [
+      {
+        "source": "host.ebpf",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      },
+      {
+        "source": "host.auditd",
+        "source_id": "s-8f7a2b26a947d94497736831c32f63ce",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "declared_same",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      }
+    ],
+    "exchanges": [
+      {
+        "exchange_id": "068766ec-0812-4724-a1ee-06e8a713bfa1",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_MX",
+            "name": "run_shell"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "31fb9fbc-a8a8-4c07-ab9c-9cdcbfe10eb5",
+        "sequence": 4,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_MX",
+            "text": "Command output:\na.txt\nb.txt\nc.txt\n\n(exit 0)"
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "15a01277-4ed9-44b0-a416-9dacfcf75118",
+        "event_id": "5588cfd9-51f9-433f-aa0c-b2ef5e53e26f",
+        "label": "exec sh -c 'ls /data'",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
+        "pid": 41,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 60120000000,
+        "stdout": "a.txt\nb.txt\nc.txt\n",
+        "pid_ns": "4026532481"
+      }
+    ],
+    "host_events": [
+      {
+        "event_id": "host-35bb10c8a7a9adbe4866d2836c92a186",
+        "label": "exec-sh-ebpf",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331201000300000,
+        "pid": 4121,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 41,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 60123217448
+      },
+      {
+        "event_id": "host-0d1ac8bc60a59772e6c83332fdefe3b6",
+        "label": "exec-sh-auditd",
+        "source": "host.auditd",
+        "event_class": "exec",
+        "time_ns": 1791331201000400000,
+        "pid": 4121,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-8f7a2b26a947d94497736831c32f63ce"
+      },
+      {
+        "event_id": "host-628eebca3ea69ff44f32c9ef888dfcb1",
+        "label": "connect-model-ebpf",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331200010000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      },
+      {
+        "event_id": "host-05da4db4813fc6dc877b9b404c33b480",
+        "label": "connect-model-auditd",
+        "source": "host.auditd",
+        "event_class": "connect",
+        "time_ns": 1791331200010100000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-8f7a2b26a947d94497736831c32f63ce",
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      }
+    ]
+  },
+  "expected": {
+    "projection_links": [
+      {
+        "attempt_id": "15a01277-4ed9-44b0-a416-9dacfcf75118",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-067ee4d37cfec451e0eae8ca4986c340"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-35bb10c8a7a9adbe4866d2836c92a186"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "sensor_events": [
+      {
+        "event_id": "host-628eebca3ea69ff44f32c9ef888dfcb1",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331200010000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-35bb10c8a7a9adbe4866d2836c92a186",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4121,
+        "ppid": 4100,
+        "time_ns": 1791331201000300000,
+        "process_start_ns": 60123217448
+      },
+      {
+        "event_id": "host-0d1ac8bc60a59772e6c83332fdefe3b6",
+        "source": "host.auditd",
+        "event_class": "exec",
+        "pid": 4121,
+        "ppid": 4100,
+        "time_ns": 1791331201000400000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "15a01277-4ed9-44b0-a416-9dacfcf75118"
+            },
+            "provenance": "inferred",
+            "method": "process_lineage",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "partial",
+        "reasons": [
+          "unexplained_host_event"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "output_match": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "process_anchor": {
+          "resolved": 2,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "process_lineage": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "applied"
+      },
+      "unexplained_host_events": {
+        "count": 1,
+        "event_ids": [
+          "host-05da4db4813fc6dc877b9b404c33b480"
+        ]
+      },
+      "sandbox_events_unlinked": {
+        "count": 0
+      }
+    },
+    "trace": {
+      "effects": {
+        "15a01277-4ed9-44b0-a416-9dacfcf75118": "A1"
+      },
+      "anchors": {
+        "15a01277-4ed9-44b0-a416-9dacfcf75118": "H1"
+      },
+      "host_events": {
+        "host-35bb10c8a7a9adbe4866d2836c92a186": "H1",
+        "host-0d1ac8bc60a59772e6c83332fdefe3b6": "H3",
+        "host-628eebca3ea69ff44f32c9ef888dfcb1": "H4",
+        "host-05da4db4813fc6dc877b9b404c33b480": "unexplained"
+      },
+      "tool_calls": {
+        "p-067ee4d37cfec451e0eae8ca4986c340": "attributed"
+      },
+      "host_sources": {
+        "s-2c6c641009e36ee2e6587ef29bc3a782": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        },
+        "s-8f7a2b26a947d94497736831c32f63ce": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        }
+      }
+    }
+  }
+}

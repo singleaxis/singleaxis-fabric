@@ -1,7 +1,7 @@
 {
   "schema_version": "fabric.records-span-vectors/v1",
   "rule": "Spec 050 §3.4 rule A and §3.14: a records-class span keeps exactly the keys whose registry placement names record, each value passing the key's check (capture_check for a reused key) under the Node's capture_labels and identity_mode; every other key, a failing value, a float, a map or bytes is dropped and counted (records_keys_dropped), never hashed or truncated. keys is the table (fabric/_records_keys_generated.py and fabricguard recordKeyValidators are generated from the same rows).",
-  "table_revision": 11,
+  "table_revision": 12,
   "keys": [
     "fabric.actor.type",
     "fabric.attempt.uid",
@@ -14,14 +14,38 @@
     "fabric.execution.host_id",
     "fabric.execution.image_digest",
     "fabric.execution.sandbox_id",
+    "fabric.network.host_id",
     "fabric.process.exit_code",
     "fabric.process.parent_pid",
     "fabric.process.pid",
+    "fabric.process.pid_ns",
     "fabric.process.signal",
     "fabric.process.start_ns",
     "fabric.run.id",
     "fabric.run.scope_id",
     "fabric.run.segment_id",
+    "fabric.sandbox.created_id",
+    "fabric.sensor.argv_sha256",
+    "fabric.sensor.audit_serial",
+    "fabric.sensor.boot_time_s",
+    "fabric.sensor.cgroup_id",
+    "fabric.sensor.errno",
+    "fabric.sensor.event_class",
+    "fabric.sensor.exe_sha256",
+    "fabric.sensor.incomplete",
+    "fabric.sensor.ns_pid",
+    "fabric.sensor.ns_ppid",
+    "fabric.sensor.path_sha256",
+    "fabric.sensor.peer_family",
+    "fabric.sensor.peer_port",
+    "fabric.sensor.pid",
+    "fabric.sensor.pid_ns",
+    "fabric.sensor.pod_id",
+    "fabric.sensor.ppid",
+    "fabric.sensor.process_start_ns",
+    "fabric.sensor.result",
+    "fabric.sensor.scope",
+    "fabric.sensor.syscall",
     "fabric.source.epoch",
     "fabric.source.sequence",
     "fabric.source_id",
@@ -30,7 +54,10 @@
     "fabric.step.kind",
     "fabric.step.lifecycle_state",
     "fabric.step.parent_id",
-    "fabric.step.status"
+    "fabric.step.status",
+    "fabric.tenant_id",
+    "http.request.method",
+    "http.response.status_code"
   ],
   "conditions": {
     "fabric.process.parent_pid": {
@@ -38,9 +65,139 @@
         "exec.subprocess"
       ]
     },
+    "fabric.process.pid_ns": {
+      "capture_points": [
+        "exec.subprocess"
+      ]
+    },
     "fabric.process.start_ns": {
       "capture_points": [
         "exec.subprocess"
+      ]
+    },
+    "fabric.sandbox.created_id": {
+      "capture_points": [
+        "exec.subprocess"
+      ]
+    },
+    "fabric.sensor.argv_sha256": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.audit_serial": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.boot_time_s": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.cgroup_id": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.errno": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.event_class": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.exe_sha256": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.incomplete": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.ns_pid": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.ns_ppid": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.path_sha256": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.peer_family": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.peer_port": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.pid": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.pid_ns": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.pod_id": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.ppid": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.process_start_ns": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.result": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.scope": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.syscall": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.tenant_id": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "http.request.method": {
+      "capture_points": [
+        "http.nonmodel"
+      ]
+    },
+    "http.response.status_code": {
+      "capture_points": [
+        "http.nonmodel"
       ]
     }
   },
@@ -689,6 +846,661 @@
       "dropped": [
         "fabric.process.parent_pid",
         "fabric.process.start_ns"
+      ]
+    },
+    {
+      "name": "exec.subprocess record keeps its namespace and created id",
+      "capture_labels": "pseudonymous",
+      "identity_mode": "pseudonymous",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "exec.subprocess@0.11.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "terminal",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.process.pid": 4121,
+        "fabric.process.parent_pid": 4100,
+        "fabric.process.start_ns": 60120000000,
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.process.pid_ns": "4026532481",
+        "fabric.sandbox.created_id": "sbx-7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+      },
+      "admitted": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "exec.subprocess@0.11.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "terminal",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.process.pid": 4121,
+        "fabric.process.parent_pid": 4100,
+        "fabric.process.start_ns": 60120000000,
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.process.pid_ns": "4026532481",
+        "fabric.sandbox.created_id": "sbx-7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+      },
+      "dropped": []
+    },
+    {
+      "name": "namespace and created id only on exec.subprocess",
+      "capture_labels": "pseudonymous",
+      "identity_mode": "pseudonymous",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.9.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "tool_call",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.process.pid_ns": "4026532481",
+        "fabric.sandbox.created_id": "sbx-7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+      },
+      "admitted": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.9.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "tool_call",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ]
+      },
+      "dropped": [
+        "fabric.process.pid_ns",
+        "fabric.sandbox.created_id"
+      ]
+    },
+    {
+      "name": "S-scoped keys on an agent record are dropped",
+      "capture_labels": "pseudonymous",
+      "identity_mode": "pseudonymous",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "exec.subprocess@0.11.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "terminal",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.process.pid": 4121,
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.scope": "agent",
+        "fabric.tenant_id": "tenant-a"
+      },
+      "admitted": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "exec.subprocess@0.11.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "terminal",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.process.pid": 4121
+      },
+      "dropped": [
+        "fabric.sensor.ns_pid",
+        "fabric.sensor.pid",
+        "fabric.sensor.scope",
+        "fabric.tenant_id"
+      ]
+    },
+    {
+      "name": "remote.sandbox record keys",
+      "capture_labels": "pseudonymous",
+      "identity_mode": "pseudonymous",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "remote.sandbox@2.62.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "remote_exec",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.execution.sandbox_id": "sbx-1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+        "fabric.process.parent_pid": 4100
+      },
+      "admitted": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "remote.sandbox@2.62.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "remote_exec",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.execution.sandbox_id": "sbx-1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
+      },
+      "dropped": [
+        "fabric.process.parent_pid"
+      ]
+    },
+    {
+      "name": "http.nonmodel record keys",
+      "capture_labels": "pseudonymous",
+      "identity_mode": "pseudonymous",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "http.nonmodel@0.11.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "network",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "http.request.method": "GET",
+        "http.response.status_code": 404,
+        "fabric.network.host_id": "hst-6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"
+      },
+      "admitted": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "http.nonmodel@0.11.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "network",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "http.request.method": "GET",
+        "http.response.status_code": 404,
+        "fabric.network.host_id": "hst-6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"
+      },
+      "dropped": []
+    },
+    {
+      "name": "method and status only on http.nonmodel",
+      "capture_labels": "pseudonymous",
+      "identity_mode": "pseudonymous",
+      "attributes": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.9.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "tool_call",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "http.request.method": "GET",
+        "http.response.status_code": 404,
+        "fabric.network.host_id": "hst-6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"
+      },
+      "admitted": {
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.9.0",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 1791331200000000000,
+        "fabric.source.sequence": 3,
+        "fabric.event_id": "e073061c-9fe5-4b51-af74-a6e6531ded84",
+        "fabric.attempt.uid": "1ea2eb10-eecb-47b8-aaef-1611af7d9fda",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.run.scope_id": "3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f60",
+        "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "fabric.step.kind": "tool_call",
+        "fabric.step.lifecycle_state": "completed",
+        "fabric.step.status": "ok",
+        "fabric.actor.type": "agent",
+        "fabric.content.object_ids": [
+          "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+          "6185ee41-5e88-45a0-a895-f95e494f8584",
+          "e478b53c-3ba7-43d4-ad04-04a38d8d3a89"
+        ],
+        "fabric.network.host_id": "hst-6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b"
+      },
+      "dropped": [
+        "http.request.method",
+        "http.response.status_code"
+      ]
+    }
+  ],
+  "host_rule": "Spec 053 §6.2.7 step 6 (spec 056 M2): a host group's fabricguard instance applies rule A, then keeps only the host placement (host_placement: the 053 §6.2.3 keys; the fabric.sensor.* rows and fabric.tenant_id are records keys only on a capture point of kind S). host_cases are read by fabricguard (TestRecordsSpanVectors); the SDK never emits a host record, and its rule A fails closed on a capture_point_kinds condition. Digest keys are admitted here; step 7 strips them without the group's permission.",
+  "host_placement": [
+    "fabric.attempt.uid",
+    "fabric.capture.input",
+    "fabric.capture.point",
+    "fabric.capture.source",
+    "fabric.event_id",
+    "fabric.execution.host_id",
+    "fabric.execution.image_digest",
+    "fabric.execution.sandbox_id",
+    "fabric.network.host_id",
+    "fabric.sensor.argv_sha256",
+    "fabric.sensor.audit_serial",
+    "fabric.sensor.boot_time_s",
+    "fabric.sensor.cgroup_id",
+    "fabric.sensor.errno",
+    "fabric.sensor.event_class",
+    "fabric.sensor.exe_sha256",
+    "fabric.sensor.incomplete",
+    "fabric.sensor.ns_pid",
+    "fabric.sensor.ns_ppid",
+    "fabric.sensor.path_sha256",
+    "fabric.sensor.peer_family",
+    "fabric.sensor.peer_port",
+    "fabric.sensor.pid",
+    "fabric.sensor.pid_ns",
+    "fabric.sensor.pod_id",
+    "fabric.sensor.ppid",
+    "fabric.sensor.process_start_ns",
+    "fabric.sensor.result",
+    "fabric.sensor.scope",
+    "fabric.sensor.syscall",
+    "fabric.source.epoch",
+    "fabric.source.sequence",
+    "fabric.source_id",
+    "fabric.tenant_id"
+  ],
+  "host_cases": [
+    {
+      "name": "eBPF host record keeps its host keys",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "agent",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+      },
+      "admitted": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "agent",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+      },
+      "dropped": []
+    },
+    {
+      "name": "sandbox-scope record keeps its container and pod ids",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "sandbox",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.execution.sandbox_id": "sbx-7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+        "fabric.sensor.pod_id": "sbx-8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b"
+      },
+      "admitted": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "sandbox",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.execution.sandbox_id": "sbx-7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+        "fabric.sensor.pod_id": "sbx-8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b"
+      },
+      "dropped": []
+    },
+    {
+      "name": "auditd host record",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.auditd@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.sensor.audit_serial": "18446744073709551615"
+      },
+      "admitted": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.auditd@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.sensor.audit_serial": "18446744073709551615"
+      },
+      "dropped": []
+    },
+    {
+      "name": "agent keys on a host record are dropped",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "agent",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "fabric.step.kind": "terminal",
+        "fabric.process.pid": 4121,
+        "fabric.process.pid_ns": "4026532481",
+        "fabric.actor.type": "agent"
+      },
+      "admitted": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "agent",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+      },
+      "dropped": [
+        "fabric.actor.type",
+        "fabric.process.pid",
+        "fabric.process.pid_ns",
+        "fabric.run.id",
+        "fabric.step.kind"
+      ]
+    },
+    {
+      "name": "failing host values are dropped",
+      "attributes": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 0,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "ns:[4026532481]",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "pod",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "fabric.sensor.exe_sha256": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.peer_port": 70000
+      },
+      "admitted": {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "fabric.source.epoch": 4611686018427387905,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": "4fd0baf9-72f6-45bc-adf3-20efe62c4910",
+        "fabric.attempt.uid": "2af2e52c-9eba-47c6-a6a0-efa36a2b392f",
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.execution.host_id": "hst-5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e"
+      },
+      "dropped": [
+        "fabric.sensor.exe_sha256",
+        "fabric.sensor.ns_pid",
+        "fabric.sensor.peer_port",
+        "fabric.sensor.pid_ns",
+        "fabric.sensor.scope"
       ]
     }
   ]

@@ -1,0 +1,666 @@
+{
+  "schema_version": "fabric.sandbox-id-vectors/v1",
+  "rule": "Spec 056 §4.3 rule H5, §7.3.3 (a) and (b): container and pod ids. cgroups: the eBPF emitter (hostrecords.SandboxIDs) reads the kernfs names of a sandbox-scope event's cgroup and its parent (last_two); the container id comes from the leaf, else the parent: docker-, cri-containerd-, crio- or libpod- + 64 lowercase hex + '.scope', or exactly 64 lowercase hex; the pod uid from kubepods[-<qos>]-pod<uid>.slice ('_' read as '-') or pod<uid>. The full path and last_two give the same ids. outputs: the exec hook (WP6-08) derives fabric.sandbox.created_id from one simple command (argv, or a shell string shlex.split turns into one with no ;, &, |, &&, ||, <, > token; argv[0] by basename) and its standard output with one trailing newline removed: docker, podman or nerdctl run with -d/--detach (also --detach=true and a short-flag cluster holding d, read up to the image: the first token that is neither an option nor the value of an option in value_options), or create (container run/create too), printing exactly 64 lowercase hex -> container:<hex>; kubectl run, create or apply with -o jsonpath={.metadata.uid} (-o X, -oX, -o=X, --output X, --output=X; one pair of quotes around the template removed) printing exactly a lowercase UUID, or with -o json printing a JSON object of at most 1 MiB whose kind is Pod and metadata.uid a lowercase UUID -> k8s-pod:<uid>. clear null: no id. ids and created_id are sbx- v2 of the clear text under the key; both sides use the same key, so they match.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "value_options": [
+    "-a",
+    "--attach",
+    "--add-host",
+    "--cap-add",
+    "--cap-drop",
+    "--cgroup-parent",
+    "--cgroupns",
+    "--cidfile",
+    "-c",
+    "--cpu-shares",
+    "--cpus",
+    "--cpuset-cpus",
+    "--device",
+    "--dns",
+    "--dns-search",
+    "-e",
+    "--entrypoint",
+    "--env",
+    "--env-file",
+    "--expose",
+    "--gpus",
+    "-h",
+    "--health-cmd",
+    "--hostname",
+    "--ipc",
+    "-l",
+    "--label",
+    "--label-file",
+    "--link",
+    "--log-driver",
+    "--log-opt",
+    "-m",
+    "--memory",
+    "--mount",
+    "--name",
+    "--net",
+    "--network",
+    "-p",
+    "--pid",
+    "--platform",
+    "--publish",
+    "--pull",
+    "--restart",
+    "--runtime",
+    "--security-opt",
+    "--shm-size",
+    "--stop-signal",
+    "--stop-timeout",
+    "--tmpfs",
+    "-u",
+    "--ulimit",
+    "--user",
+    "--userns",
+    "-v",
+    "--volume",
+    "--volumes-from",
+    "-w",
+    "--workdir"
+  ],
+  "json_max_bytes": 1048576,
+  "cgroups": [
+    {
+      "name": "docker cgroupfs default",
+      "path": "/sys/fs/cgroup/docker/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "last_two": "docker/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "docker cgroupfs with a custom parent",
+      "path": "/sys/fs/cgroup/fabric-sandboxes/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "last_two": "fabric-sandboxes/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "docker systemd default",
+      "path": "/sys/fs/cgroup/system.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "system.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "docker systemd with a custom parent slice",
+      "path": "/sys/fs/cgroup/fabric.slice/fabric-sandboxes.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "fabric-sandboxes.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "containerd CRI, systemd, burstable",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/cri-containerd-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/cri-containerd-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "containerd CRI, systemd, besteffort",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/cri-containerd-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "kubepods-besteffort-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/cri-containerd-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "containerd CRI, systemd, guaranteed",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/cri-containerd-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "kubepods-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/cri-containerd-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "containerd CRI, cgroupfs, burstable",
+      "path": "/sys/fs/cgroup/kubepods/burstable/pod6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "last_two": "pod6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "containerd CRI, cgroupfs, besteffort",
+      "path": "/sys/fs/cgroup/kubepods/besteffort/pod6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "last_two": "pod6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "containerd CRI, cgroupfs, guaranteed",
+      "path": "/sys/fs/cgroup/kubepods/pod6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "last_two": "pod6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "CRI-O, systemd, burstable",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/crio-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/crio-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755",
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "podman rootful",
+      "path": "/sys/fs/cgroup/machine.slice/libpod-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "machine.slice/libpod-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "podman rootless",
+      "path": "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/user.slice/libpod-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "user.slice/libpod-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "a sub-cgroup inside a container takes the parent's id",
+      "path": "/sys/fs/cgroup/system.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope/init.scope",
+      "last_two": "docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope/init.scope",
+      "container_id": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+      }
+    },
+    {
+      "name": "a pod slice alone gives only the pod",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice",
+      "last_two": "kubepods-burstable.slice/kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice",
+      "container_id": null,
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "the agent's own container under an agent root",
+      "path": "/sys/fs/cgroup/fabric.slice/fabric-agents.slice/docker-4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c.scope",
+      "last_two": "fabric-agents.slice/docker-4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c.scope",
+      "container_id": "4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c",
+      "pod_uid": null,
+      "clear": {
+        "fabric.execution.sandbox_id": "container:4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c"
+      },
+      "ids": {
+        "fabric.execution.sandbox_id": "sbx-a28ba79e91f391c0a46c3fdfeccbe0dc"
+      }
+    },
+    {
+      "name": "the docker service itself",
+      "path": "/sys/fs/cgroup/system.slice/docker.service",
+      "last_two": "system.slice/docker.service",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "a login session",
+      "path": "/sys/fs/cgroup/user.slice/user-1000.slice/session-3.scope",
+      "last_two": "user-1000.slice/session-3.scope",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "63 hex is not a container",
+      "path": "/sys/fs/cgroup/docker/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3",
+      "last_two": "docker/3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "upper-case hex is not a container",
+      "path": "/sys/fs/cgroup/docker/3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F",
+      "last_two": "docker/3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "a suffix after .scope",
+      "path": "/sys/fs/cgroup/system.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope.bak",
+      "last_two": "system.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope.bak",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "conmon is the runtime's monitor: no container id, only its pod",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/crio-conmon-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "last_two": "kubepods-burstable-pod6a1d9c2e_4b7f_4e10_9a3c_2f5d8e7b1c04.slice/crio-conmon-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope",
+      "container_id": null,
+      "pod_uid": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": {
+        "fabric.sensor.pod_id": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
+      },
+      "ids": {
+        "fabric.sensor.pod_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+      }
+    },
+    {
+      "name": "a QoS slice holds no pod",
+      "path": "/sys/fs/cgroup/kubepods.slice/kubepods-burstable.slice",
+      "last_two": "kubepods.slice/kubepods-burstable.slice",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "a malformed pod uid",
+      "path": "/sys/fs/cgroup/kubepods/burstable/pod6a1d9c2e/abc",
+      "last_two": "pod6a1d9c2e/abc",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "an id three levels up is not read",
+      "path": "/sys/fs/cgroup/system.slice/docker-3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f.scope/a/b",
+      "last_two": "a/b",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    },
+    {
+      "name": "the root cgroup",
+      "path": "/sys/fs/cgroup",
+      "last_two": "fs/cgroup",
+      "container_id": null,
+      "pod_uid": null,
+      "clear": {},
+      "ids": {}
+    }
+  ],
+  "outputs": [
+    {
+      "name": "docker run -d (shell string)",
+      "command": "docker run -d --cgroup-parent fabric-sandboxes.slice alpine:3.20 sh -c 'echo a; echo b'",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker run -d (argv)",
+      "command": [
+        "docker",
+        "run",
+        "-d",
+        "--cgroup-parent",
+        "fabric-sandboxes.slice",
+        "alpine:3.20",
+        "sh",
+        "-c",
+        "echo a; echo b"
+      ],
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker run --detach",
+      "command": "docker run --rm --detach alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker run --detach=true",
+      "command": "docker run --detach=true alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker run -dit, a combined short flag",
+      "command": "docker run -dit alpine:3.20 sh",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker run -d after value options",
+      "command": "docker run --name job-7 -e A=1 -v /data:/data:ro -d alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker container run -d",
+      "command": "docker container run -d alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "/usr/bin/docker by basename",
+      "command": [
+        "/usr/bin/docker",
+        "run",
+        "-d",
+        "alpine:3.20"
+      ],
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker create",
+      "command": "docker create alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "docker container create",
+      "command": "docker container create alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "podman create",
+      "command": "podman create alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "podman run -d",
+      "command": "podman run -d alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "nerdctl run -d",
+      "command": "nerdctl run -d alpine:3.20 true",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "no trailing newline",
+      "command": "docker create alpine:3.20",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "clear": "container:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "created_id": "sbx-7cb5e10a9c1878ab0c431f954a7a3755"
+    },
+    {
+      "name": "kubectl run -o jsonpath, quoted in the shell",
+      "command": "kubectl run job-7 --image=alpine:3.20 --restart=Never -o jsonpath='{.metadata.uid}'",
+      "stdout": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "created_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+    },
+    {
+      "name": "kubectl run -o jsonpath, unquoted",
+      "command": "kubectl run job-7 --image=alpine:3.20 -o jsonpath={.metadata.uid}",
+      "stdout": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "created_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+    },
+    {
+      "name": "kubectl run -o=jsonpath (argv)",
+      "command": [
+        "kubectl",
+        "run",
+        "job-7",
+        "--image=alpine:3.20",
+        "-o=jsonpath={.metadata.uid}"
+      ],
+      "stdout": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04\n",
+      "clear": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "created_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+    },
+    {
+      "name": "kubectl create --output jsonpath (argv)",
+      "command": [
+        "kubectl",
+        "create",
+        "-f",
+        "pod.yaml",
+        "--output",
+        "jsonpath={.metadata.uid}"
+      ],
+      "stdout": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "created_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+    },
+    {
+      "name": "kubectl apply -o json, a Pod",
+      "command": "kubectl apply -f pod.yaml -o json",
+      "stdout": "{\n    \"apiVersion\": \"v1\",\n    \"kind\": \"Pod\",\n    \"metadata\": {\n        \"name\": \"job-7\",\n        \"namespace\": \"agents\",\n        \"uid\": \"6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04\"\n    }\n}\n",
+      "clear": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "created_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+    },
+    {
+      "name": "kubectl create -ojson, a Pod",
+      "command": "kubectl create -f pod.yaml -ojson",
+      "stdout": "{\n    \"apiVersion\": \"v1\",\n    \"kind\": \"Pod\",\n    \"metadata\": {\n        \"name\": \"job-7\",\n        \"namespace\": \"agents\",\n        \"uid\": \"6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04\"\n    }\n}\n",
+      "clear": "k8s-pod:6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "created_id": "sbx-d76cbdadf50f9f5edc984b68beb76ab7"
+    },
+    {
+      "name": "a foreground docker run prints the container's output",
+      "command": "docker run alpine:3.20 sh -c 'echo 3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f'",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "-d after the image is the container's argument",
+      "command": "docker run alpine:3.20 sleep -d",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "a compound shell command",
+      "command": "docker run -d alpine:3.20 true && echo done",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "a pipeline",
+      "command": "docker create alpine:3.20 | tee id.txt",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "a redirect",
+      "command": "docker create alpine:3.20 > id.txt",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "output with two trailing newlines",
+      "command": "docker create alpine:3.20",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "a short container id",
+      "command": "docker create alpine:3.20",
+      "stdout": "3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "upper-case output",
+      "command": "docker create alpine:3.20",
+      "stdout": "3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F3F\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "docker start prints a name",
+      "command": "docker start job-7",
+      "stdout": "job-7\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "docker ps",
+      "command": "docker ps -q",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "kubectl get is not a create",
+      "command": "kubectl get pod job-7 -o jsonpath={.metadata.uid}",
+      "stdout": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "kubectl jsonpath of another field",
+      "command": "kubectl run job-7 --image=alpine:3.20 -o jsonpath={.metadata.name}",
+      "stdout": "job-7",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "kubectl -o json of a List",
+      "command": "kubectl apply -f pods.yaml -o json",
+      "stdout": "{\"kind\": \"List\", \"items\": []}",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "kubectl -o json of a Pod without a uid",
+      "command": "kubectl apply -f pod.yaml -o json",
+      "stdout": "{\"kind\": \"Pod\", \"metadata\": {\"name\": \"job-7\"}}",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "kubectl jsonpath with an upper-case uid",
+      "command": "kubectl run job-7 --image=alpine:3.20 -o jsonpath={.metadata.uid}",
+      "stdout": "6A1D9C2E-4B7F-4E10-9A3C-2F5D8E7B1C04",
+      "clear": null,
+      "created_id": null
+    },
+    {
+      "name": "another program",
+      "command": "echo 3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "stdout": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\n",
+      "clear": null,
+      "created_id": null
+    }
+  ]
+}

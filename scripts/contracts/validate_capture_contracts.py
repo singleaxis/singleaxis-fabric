@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contracts import p1_reference as ref  # noqa: E402
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.5.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.6.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -860,8 +860,13 @@ def _check_chains(run: Mapping[str, Any], path: str) -> None:
                 "corroboration",
                 "unexplained_host_event",
             ),
+            # spec 056 M2: optional; a declared sandbox peer called while remote.sandbox
+            # was not active is the effects chain's remote_sandbox reason
+            ("remote_sandbox_calls", "event_ids", "effects", "remote_sandbox"),
         )
         for key, items, chain_name, reason in listed:
+            if key not in attribution:
+                continue
             block = attribution[key]
             if block["count"] < len(block[items]) or (
                 block["count"] > 0 and len(block[items]) < min(block["count"], 64)
@@ -1059,12 +1064,38 @@ def _validate_scope_verdicts(
         )
 
 
+HOST_FIXTURE_SCHEMA = "fabric.host-record-fixture/v1"
+
+
+def _host_records() -> Any:
+    from contracts import host_records  # noqa: PLC0415 - it imports the coverage validator
+
+    return host_records
+
+
+def _host_registry() -> Mapping[str, Any]:
+    """The coverage registries the host-record admission reads (spec 053 §6.2.7)."""
+    from contracts import validate_coverage_contracts as coverage  # noqa: PLC0415
+
+    return coverage.load_registries(Path(__file__).resolve().parents[2])
+
+
+def _host_fail(code: str, path: str, message: str) -> Any:
+    raise CaptureContractError(code, path, message)
+
+
 def validate_document(
     document: Mapping[str, Any], schemas: Mapping[str, Mapping[str, Any]]
 ) -> None:
     """Validate one capture-v1 document by its schema_version."""
 
     version = document.get("schema_version")
+    if version == HOST_FIXTURE_SCHEMA:
+        # Spec 053 §6.2.7, spec 056 M2: a host batch and its admission (host_records.py).
+        _host_records().validate_capture_document(
+            document, _host_registry(), _host_fail
+        )
+        return
     relative = SCHEMAS.get(version) if isinstance(version, str) else None
     if relative is None:
         raise CaptureContractError(
@@ -1177,6 +1208,15 @@ def validate_vector_fixture(document: Mapping[str, Any], path: Path) -> None:
     """
 
     kind = document.get("schema_version")
+    if _host_records().validate_capture_document(
+        document, _host_registry(), _host_fail
+    ):
+        return  # spec 056 M2: the id key file and host-state envelope vectors
+    if kind == "fabric.ingress-group-goldens/v1":
+        from contracts import ingress_groups  # noqa: PLC0415
+
+        ingress_groups.validate_index(document, path.parent, _host_fail)
+        return  # spec 056 M2: the ingress-group configuration goldens
     if kind == "fabric.model-exposure-vectors/v1":
         shape, fields = (
             _MODEL_VECTOR_KEYS,

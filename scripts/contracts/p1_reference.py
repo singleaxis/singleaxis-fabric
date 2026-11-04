@@ -203,6 +203,7 @@ _ORDERED = (
     ("fabric.execution_id", "fabric.execution"),
     ("fabric.decision_id", "fabric.decision"),
 )
+SENSOR_EVENT_KEY = "fabric.sensor.event_class"
 KNOWN_NAMES = frozenset(
     {
         "fabric.execution", "fabric.decision", "fabric.llm_call", "fabric.model_call",
@@ -224,6 +225,10 @@ def span_category(name_hint: str, attribute_keys: Iterable[str]) -> str:
         return "fabric.capture_heartbeat"
     if "fabric.loss.reason" in keys:
         return "fabric.capture_loss"
+    if SENSOR_EVENT_KEY in keys:
+        # Spec 053 §6.2.3 (spec 056 M2): a host record. Only a host group's fabricguard
+        # instance admits one; an agent batch carrying a sensor key is refused (§6.2.7).
+        return "fabric.sensor_event"
     if any(k in keys for k in _TOOL_KEYS):
         return "fabric.tool_call"
     if any(k in keys for k in _MODEL_KEYS):

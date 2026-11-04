@@ -269,7 +269,8 @@ func captureCarrier(class uint8, key string, value pcommon.Value) ptrace.Traces 
 		attrs = wireHeartbeatAttrs()
 		attrs["fabric.run.scope_id"] = testScopeID
 		if kinds, ok := markerKeyKinds[key]; ok {
-			for _, kind := range []string{"run_start", "run_end", "segment_seal"} {
+			// spec 056 M2: a key placed only on periodic heartbeats (upstream loss)
+			for _, kind := range []string{"run_start", "run_end", "segment_seal", "periodic"} {
 				if _, defined := kinds[kind]; defined {
 					attrs["fabric.heartbeat.kind"] = kind
 					break

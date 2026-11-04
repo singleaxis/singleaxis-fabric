@@ -58,6 +58,18 @@ def _copy_tree(tmp_path: Path) -> Path:
             / f"fixtures/valid/spool-record-exec-subprocess-{phase}.json"
             for phase in ("start", "end")
         ),
+        # Spec 056 M2: the interface goldens' production, container-create and remote
+        # sandbox records
+        *(
+            action_record.CAPTURE / f"fixtures/valid/spool-record-{name}-{phase}.json"
+            for name in (
+                "exec-subprocess-production",
+                "exec-subprocess-container-create",
+                "remote-sandbox-commands-run",
+                "remote-sandbox-run-code",
+            )
+            for phase in ("start", "end")
+        ),
     ):
         (root / extra).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO_ROOT / extra, root / extra)
@@ -646,7 +658,9 @@ def _vector_code(document: Any) -> str:
 def test_p1_every_section_4_3_artifact_is_pinned() -> None:
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {record["path"]: record for record in manifest["artifacts"]}
-    assert manifest["version"] == "1.2.0"  # 1.2.0: spec 056 (WP6-01)
+    assert (
+        manifest["version"] == "1.3.0"
+    )  # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11)
     for path in P1_ARTIFACTS:
         assert path in pinned, path
     assert (
@@ -680,6 +694,8 @@ def test_p1_registry_rows() -> None:
     assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
         "fabric.test.items/v1",
         "fabric.exec.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-01
+        "fabric.http.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-11
+        "fabric.sandbox.observation/v1",  # spec 056 §4.4.1 (WP6-11)
     ]
 
 
@@ -690,6 +706,8 @@ def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
     assert not any(
         marker in key
         for key in table
+        # fabric.sensor.result is the host record's closed success/failed/unknown enum
+        if key != "fabric.sensor.result"
         for marker in ("content.ref", "arguments", "result", "message", "prompt")
     )
     namespace: dict[str, Any] = {}
@@ -698,12 +716,30 @@ def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
         namespace,
     )
     assert set(namespace["RECORD_KEY_CHECKS"]) == set(table)
-    # Spec 056 §5: the first conditional placements, exec.subprocess only.
+    # Spec 056 §5: the first conditional placements, exec.subprocess only; M2 (§5.1)
+    # adds the exec namespace and created id, the http.nonmodel keys and the kind-S
+    # host-record keys.
     exec_only = {"capture_points": ["exec.subprocess"]}
-    assert record_conditions(reg) == {
-        "fabric.process.parent_pid": exec_only,
-        "fabric.process.start_ns": exec_only,
+    host_only = {"capture_point_kinds": ["S"]}
+    http_only = {"capture_points": ["http.nonmodel"]}
+    conditions = record_conditions(reg)
+    assert {k: v for k, v in conditions.items() if v == exec_only} == {
+        k: exec_only
+        for k in (
+            "fabric.process.parent_pid",
+            "fabric.process.start_ns",
+            "fabric.process.pid_ns",
+            "fabric.sandbox.created_id",
+        )
     }
+    assert {k for k, v in conditions.items() if v == http_only} == {
+        "http.request.method",
+        "http.response.status_code",
+    }
+    assert {k for k, v in conditions.items() if v == host_only} == {
+        k for k in table if k.startswith("fabric.sensor.")
+    } | {"fabric.tenant_id"}
+    assert all(v in (exec_only, host_only, http_only) for v in conditions.values())
     assert {
         key: {column: list(values) for column, values in cond.items()}
         for key, cond in namespace["RECORD_KEY_CONDITIONS"].items()
@@ -1002,7 +1038,8 @@ def test_056_every_rule_and_edge_case_has_its_fixture() -> None:
     ):
         assert edge in valid, edge  # fmt: skip
     invalid = {p.stem[:2] for p in (ACTION / "invalid").glob("*.json")}
-    assert invalid == {"a0", "a1", "a2", "a3", "a4", "h1", "h2", "h3", "h4"}
+    # M2 (WP6-11) adds h1-, h5- and sandbox-scope- refusals
+    assert {"a0", "a1", "a2", "a3", "a4", "h1", "h2", "h3", "h4"} <= invalid
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {r["path"]: r for r in manifest["artifacts"]}
     for path in (ACTION / "invalid").glob("*.json"):
@@ -1251,3 +1288,289 @@ def test_056_window_margin_and_peerless_syscalls() -> None:
     uncalled["syscall"] = "bind"
     trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
     assert trace[uncalled["event_id"]] == "H4"
+
+
+# ---------------------------------------------------------------- spec 056 M2 (coverage/v1 1.3.0)
+from contracts import action_record_m2  # noqa: E402
+from contracts import host_records  # noqa: E402
+from contracts.validate_coverage_contracts import (  # noqa: E402
+    point_kinds as coverage_point_kinds,
+    record_checks as coverage_record_checks,
+    record_conditions as coverage_record_conditions,
+)
+
+M2_RULE_FIXTURES = (
+    "h1-anchor-exact-production",
+    "edge-production-other-namespace",
+    "edge-nested-pid-namespace",
+    "edge-start-tick-boundary",
+    "h5-sandbox-report",
+    "h5-pod-report",
+    "h5-pod-report-other-node",
+    "edge-mixed-namespace-modes",
+    "edge-recorded-effect-without-pid-ns",
+    "edge-thread-spawned-child",
+    "edge-quiet-host-epoch",
+    "edge-sandbox-peer-port",
+    "edge-scope-late",
+    "edge-sandbox-unlinked",
+    "edge-sandbox-before-effect",
+    "remote-sandbox-output-match",
+    "edge-remote-sandbox-off",
+    "ar1-run-production",
+    "ar1-negative-f-remote-sandbox-off",
+    "ar1-negative-g-container-id-not-reported",
+)
+M2_REFUSED = {
+    "h5-sandbox-report-claims-inferred": "coverage.action.link",
+    "h5-tentative": "coverage.action.confidence",
+    "h1-across-pid-namespaces": "coverage.action.namespace",
+    "sandbox-scope-listed-unexplained": "coverage.action.scope",
+}
+
+
+def _trace_by_label(doc: dict[str, Any]) -> dict[str, str]:
+    labels = {e["event_id"]: e["label"] for e in doc["input"]["host_events"]}
+    trace = doc["expected"]["trace"]["host_events"]
+    return {labels[k]: v for k, v in trace.items()}
+
+
+def test_056_m2_sensor_keys_are_s_scoped() -> None:
+    """053 §6.2.3 keys are records keys only on a capture point of kind S; the upstream
+    loss keys ride periodic heartbeats; the M2 agent keys are point-scoped."""
+    reg = load_registries(REPO_ROOT)
+    rows = {row["key"]: row for row in reg["keys"]["keys"]}
+    sensor = {k for k in rows if k.startswith("fabric.sensor.")}
+    upstream = {"fabric.sensor.upstream_lost", "fabric.sensor.upstream_loss_reason"}
+    assert {
+        "fabric.sensor.ns_pid", "fabric.sensor.ns_ppid", "fabric.sensor.pid_ns",
+        "fabric.sensor.scope", "fabric.sensor.pod_id", "fabric.sensor.process_start_ns",
+    } <= sensor  # fmt: skip
+    for key in sensor - upstream:
+        assert rows[key]["placement"] == ["record"], key
+        assert rows[key]["capture_point_kinds"] == ["S"], key
+    for key in upstream:
+        assert rows[key]["placement"] == ["periodic"], key
+        assert "capture_point_kinds" not in rows[key]
+    reasons = rows["fabric.sensor.upstream_loss_reason"]["check"]["values"]
+    assert reasons[-2:] == ["scope_late", "unknown"]
+    assert rows["fabric.tenant_id"]["capture_point_kinds"] == ["S"]
+    for key in ("fabric.process.pid_ns", "fabric.sandbox.created_id"):
+        assert rows[key]["capture_points"] == ["exec.subprocess"]
+    for key in ("http.request.method", "http.response.status_code"):
+        assert rows[key]["capture_points"] == ["http.nonmodel"]
+        assert rows[key]["placement"] == ["exchange", "record"]
+    assert rows["fabric.network.host_id"]["placement"] == ["record"]
+    points = {p["id"]: p for p in reg["points"]["capture_points"]}
+    assert points["remote.sandbox"]["kind"] == "H"
+    assert points["remote.sandbox"]["passivity_gate"] == "P4-SANDBOX"
+    assert points["http.nonmodel"]["input"] == "records"
+    methods = {r["value"]: r["confidence"] for r in reg["vocab"]["inference_method"]}
+    assert methods["sandbox_report"] == "certain"
+    # rule A: kept on a host record, dropped on an agent record of the same keys
+    attrs = {"fabric.sensor.pid": 4121, "fabric.sensor.scope": "agent"}
+    table = coverage_record_checks(reg)
+    for point, kept in (("host.ebpf@0.11.0", True), ("exec.subprocess@0.11.0", False)):
+        admitted, _ = ref.project_record_attributes(
+            {**attrs, "fabric.capture.point": point},
+            table,
+            check_value,
+            conditions=coverage_record_conditions(reg),
+            point_kinds=coverage_point_kinds(reg),
+        )
+        assert ("fabric.sensor.pid" in admitted) is kept, point
+    # the generated tables carry the same conditions (fabricguard, the SDK)
+    go = (
+        REPO_ROOT
+        / "components/otel-collector-fabric/processor/fabricguardprocessor/coverage_keys.go"
+    ).read_text()
+    assert '"fabric.sensor.pid":' in go and '{"capture_point_kinds": {"S"}}' in go
+    py = (REPO_ROOT / "sdk/python/src/fabric/_records_keys_generated.py").read_text()
+    assert "'fabric.sensor.ns_pid'" in py or '"fabric.sensor.ns_pid"' in py
+
+
+def test_056_m2_rule_fixtures_match_reference() -> None:
+    """Every §6.1 M2 rule fixture exists, validates, and its expected output is the
+    reference's; M1 fixtures keep their M1 expectations under the M2 rules."""
+    names = {p.stem for p in (ACTION / "rules").glob("*.json")}
+    assert set(M2_RULE_FIXTURES) <= names
+    reg = load_registries(REPO_ROOT)
+    for name in M2_RULE_FIXTURES:
+        doc = _rule(name)
+        assert doc["expected"] == rules.reconstruct(
+            doc["input"], action_record.call_id
+        ), name
+        assert action_record.validate_document(doc, reg, REPO_ROOT)
+    trace = _trace_by_label(_rule("h1-anchor-exact-production"))
+    assert trace == {"exec-sh": "H1"}
+    assert list(
+        _rule("edge-production-other-namespace")["expected"]["trace"][
+            "anchors"
+        ].values()
+    ) == ["anchor_missing"]
+    nested = _trace_by_label(_rule("edge-nested-pid-namespace"))
+    assert [
+        nested[k] for k in ("exec-python-inner", "exec-sh-inner", "open-inner")
+    ] == ["H3"] * 3
+    tick = _rule("edge-start-tick-boundary")["expected"]["trace"]["anchors"]
+    assert list(tick.values()) == ["H1", "anchor_missing"]
+    mixed = _trace_by_label(_rule("edge-mixed-namespace-modes"))
+    assert mixed == {"exec-sh-ebpf": "H1", "exec-sh-auditd": "H3", "connect-model-ebpf": "H4",
+                     "connect-model-auditd": "unexplained"}  # fmt: skip
+    assert list(
+        _rule("edge-recorded-effect-without-pid-ns")["expected"]["trace"][
+            "anchors"
+        ].values()
+    ) == ["anchor_missing"]
+    assert set(
+        _rule("edge-thread-spawned-child")["expected"]["trace"]["anchors"].values()
+    ) == {"H1"}
+    quiet = _rule("edge-quiet-host-epoch")["expected"]
+    assert quiet["chains"]["corroboration"] == {"verdict": "complete"}
+    assert [s["basis"] for s in quiet["trace"]["host_sources"].values()][1] == [
+        "manifest",
+        "declared",
+    ]
+    empty = _rule("edge-declared-source-empty")["expected"]["chains"]["corroboration"]
+    assert empty == {"verdict": "partial", "reasons": ["source_gap"]}
+    late = _rule("edge-scope-late")["expected"]["chains"]["corroboration"]
+    assert late == {"verdict": "partial", "reasons": ["source_gap"]}
+    port = _rule("edge-sandbox-peer-port")
+    assert _trace_by_label(port) == {
+        "connect-model": "H4",
+        "connect-provider": "H4-sandbox",
+    }
+    assert port["expected"]["attribution"]["remote_sandbox_calls"]["count"] == 1
+    unlinked = _rule("edge-sandbox-unlinked")["expected"]
+    assert unlinked["attribution"]["sandbox_events_unlinked"] == {"count": 3}
+    assert unlinked["attribution"]["unexplained_host_events"]["count"] == 0
+    assert unlinked["chains"]["corroboration"] == {"verdict": "complete"}
+    before = _trace_by_label(_rule("edge-sandbox-before-effect"))
+    assert (before["exec-before"], before["exec-after"]) == ("sandbox-unlinked", "H5")
+    remote = _rule("remote-sandbox-output-match")["expected"]
+    assert remote["trace"]["anchors"] == {} and remote["chains"]["corroboration"] == {
+        "verdict": "complete"
+    }
+    off = _rule("edge-remote-sandbox-off")["expected"]
+    assert off["chains"]["effects"] == {
+        "verdict": "partial",
+        "reasons": ["remote_sandbox"],
+    }
+    assert off["attribution"]["effects_not_observed"]["channel_disabled"] == 1
+    assert off["attribution"]["unexplained_host_events"]["count"] == 0
+    ar1 = _rule("ar1-run-production")["expected"]
+    assert {k: v.get("reasons", []) for k, v in ar1["chains"].items()} == {
+        "decisions": [], "actions": [], "effects": ["unattributed_effect"],
+        "corroboration": ["unexplained_host_event"],
+    }  # fmt: skip
+    assert ar1["attribution"]["sandbox_events_unlinked"] == {"count": 0}
+    anchors = [link for e in ar1["projection_links"] for link in e["links"]
+               if link["method"] == "process_anchor"]  # fmt: skip
+    assert {(a["confidence"], a["state"]) for a in anchors} == {("certain", "resolved")}
+    f = _rule("ar1-negative-f-remote-sandbox-off")["expected"]
+    assert f["chains"]["effects"]["reasons"] == [
+        "unattributed_effect",
+        "remote_sandbox",
+    ]
+    assert f["attribution"]["remote_sandbox_calls"]["count"] == 2
+    g = _rule("ar1-negative-g-container-id-not-reported")["expected"]
+    assert g["attribution"]["sandbox_events_unlinked"] == {"count": 2}
+    assert "sandbox_report" not in g["attribution"]["links"]
+    assert g["chains"]["corroboration"] == ar1["chains"]["corroboration"]
+
+
+def test_056_m2_h5_is_reported_and_certain() -> None:
+    """Every sandbox_report link: part_of the attempt that reported the id, provenance
+    reported, certain, resolved; on any host source; never before the effect."""
+    seen = 0
+    for path in sorted((ACTION / "rules").glob("*.json")):
+        doc = _rule(path.stem)
+        effects = {e["attempt_uid"]: e for e in doc["input"]["effects"]}
+        events = {e["event_id"]: e for e in doc["input"]["host_events"]}
+        for entry in doc["expected"]["sensor_events"]:
+            for link in entry.get("links", []):
+                if link["method"] != "sandbox_report":
+                    continue
+                seen += 1
+                assert (link["type"], link["provenance"], link["confidence"], link["state"]) == (
+                    "part_of", "reported", "certain", "resolved")  # fmt: skip
+                effect = effects[link["target"]["id"]]
+                event = events[entry["event_id"]]
+                assert effect["created_sandbox_id"] in (
+                    event.get("sandbox_id"),
+                    event.get("pod_id"),
+                )
+                assert event["time_ns"] >= effect["start_ns"] - 3 * action_record.MS
+    assert seen >= 10
+    other = _rule("h5-pod-report-other-node")
+    sources = {e["event_id"]: e["source_id"] for e in other["input"]["host_events"]}
+    linked = {e["event_id"] for e in other["expected"]["sensor_events"]
+              if any(link["method"] == "sandbox_report" for link in e.get("links", []))}  # fmt: skip
+    assert {sources[e] for e in linked} == {action_record_m2.SOURCE_B}
+    assert _trace_by_label(other)["exec-other-node-same-numbers"] == "unexplained"
+    # a created id never upgrades content: the effect keeps its A1 output_match link
+    links = other["expected"]["projection_links"][0]["links"]
+    assert [link["method"] for link in links] == ["output_match", "process_anchor"]
+
+
+def test_056_m2_refused_fixtures(tmp_path: Path) -> None:
+    pinned = {
+        r["path"]: r
+        for r in json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())[
+            "artifacts"
+        ]
+    }
+    reg = load_registries(REPO_ROOT)
+    for name, code in M2_REFUSED.items():
+        path = ACTION / "invalid" / f"{name}.json"
+        record = pinned[path.relative_to(REPO_ROOT / FAMILY).as_posix()]
+        assert (record["expectation"], record["expected_error"]) == ("invalid", code)
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        with pytest.raises(CoverageContractError) as caught:
+            action_record.validate_document(doc, reg, REPO_ROOT)
+        assert caught.value.code == code, name
+        assert doc["expected"] != rules.reconstruct(doc["input"], action_record.call_id)
+
+
+def test_056_m2_peer_address_and_sandbox_id_vectors() -> None:
+    vectors = REPO_ROOT / FAMILY / "fixtures/vectors"
+    peer = json.loads((vectors / "peer-address-v1.json").read_text(encoding="utf-8"))
+    texts = {c["input"]: c["text"] for c in peer["cases"]}
+    assert texts["::ffff:10.0.4.7"] == texts["::ffff:a00:407"] == "10.0.4.7"
+    assert texts["2001:DB8:0:0:1:0:0:1"] == "2001:db8::1:0:0:1"
+    assert texts["2001:db8:0:1:1:1:1:1"] == "2001:db8:0:1:1:1:1:1"
+    assert texts["fe80::1%eth0"] is None and texts["10.0.4.7:443"] is None
+    for case in peer["cases"]:
+        assert host_records.peer_text(case["input"]) == case["text"]
+        if "bytes_hex" in case:
+            assert (
+                host_records.peer_text(bytes.fromhex(case["bytes_hex"])) == case["text"]
+            )
+        if case["text"] is not None:
+            assert case["host_id"] == pseudonym_v2(
+                "hst", "host", case["text"], peer["key"]
+            )
+    sandbox = json.loads((vectors / "sandbox-id-v1.json").read_text(encoding="utf-8"))
+    for case in sandbox["cgroups"]:
+        assert host_records.sandbox_ids(case["path"]) == host_records.sandbox_ids(
+            case["last_two"]
+        )
+        assert host_records.sandbox_ids(case["path"]) == (
+            case["container_id"],
+            case["pod_uid"],
+        )
+    names = {c["name"]: c for c in sandbox["outputs"]}
+    for form in ("docker run -d (shell string)", "docker run -d (argv)", "podman create",
+                 "kubectl run -o jsonpath, quoted in the shell", "kubectl apply -o json, a Pod"):  # fmt: skip
+        assert names[form]["created_id"] is not None, form
+    for form in ("a foreground docker run prints the container's output", "a compound shell command",
+                 "kubectl -o json of a List", "output with two trailing newlines"):  # fmt: skip
+        assert names[form]["created_id"] is None, form
+    for case in sandbox["outputs"]:
+        clear = host_records.created_clear_text(case["command"], case["stdout"])
+        assert clear == case["clear"], case["name"]
+    # both sides key the same clear text alike: a created id equals the emitter's id
+    docker = names["docker run -d (argv)"]["created_id"]
+    assert docker in {
+        c["ids"].get("fabric.execution.sandbox_id") for c in sandbox["cgroups"]
+    }

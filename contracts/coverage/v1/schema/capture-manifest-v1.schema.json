@@ -68,9 +68,11 @@
       ],
       "properties": {
         "language": {
+          "description": "The emitter's language: an SDK (python, typescript) or, for a host sensor source (spec 053 §6.2.3, spec 056 M2), the host-records library (go).",
           "enum": [
             "python",
-            "typescript"
+            "typescript",
+            "go"
           ]
         },
         "version": {
@@ -406,7 +408,10 @@
           "provider_batch_files",
           "non_post_endpoints",
           "unmatched_endpoints",
-          "other_runtime"
+          "other_runtime",
+          "sensor_exec",
+          "sensor_connect",
+          "sensor_file"
         ]
       }
     },
