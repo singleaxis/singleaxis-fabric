@@ -6,9 +6,11 @@ The ``exec.subprocess`` channel (``fabric.hooks._exec``) on a real records input
 pipeline, sender and spool (the WP-11a harness): the records of ``Popen``,
 ``communicate``, ``wait``, ``poll``, ``run``, ``check_output`` and the asyncio equivalents,
 checked against the WP6-01 exec interface golden; the process anchor keys of 056 §4.3,
-including the capture-worker read of ``/proc/<pid>/stat`` (mocked here, so it runs on any
-OS); bounds, privacy canaries, D2, the internal-I/O guard, patch ownership, eviction and
-fork safety; and the channel installed through ``fabric.hooks.install``.
+including the read of ``/proc/<pid>/stat`` on the calling thread right after ``Popen``
+returned (spec 056 M2 OD-8) with the capture worker's read as its fallback, and
+``fabric.process.pid_ns`` (both mocked here, so they run on any OS, and checked against the
+real ``/proc`` on Linux); bounds, privacy canaries, D2, the internal-I/O guard, patch
+ownership, eviction and fork safety; and the channel installed through ``fabric.hooks.install``.
 
 Passivity (outputs, return codes, exceptions, timing budgets) is in
 ``test_hooks_exec_passivity.py``.
@@ -28,6 +30,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import types
 import uuid
 import warnings
@@ -150,10 +153,12 @@ def _policy(**modes: str) -> CapturePolicy:
     return CapturePolicy("acme", 1, "sha256:" + "1" * 64, resolved)
 
 
-def _rig(policy: CapturePolicy | None = None, host_label: str | None = HOST_LABEL) -> Rig:
+def _rig(policy: CapturePolicy | None = None, host_label: str | None = HOST_LABEL,
+         id_key: bytes | None = KEY) -> Rig:  # fmt: skip
     policy = policy or _policy()
     gate = ContentGate("production", "enabled", None, policy)
-    harness = Handle(gate=gate, protector=Protector(policy, max_body_bytes=1 << 20), id_key=KEY)
+    harness = Handle(gate=gate, protector=Protector(policy, max_body_bytes=1 << 20),
+                     id_key=id_key)  # fmt: skip
     producer = HookProducer(harness, harness.input,  # type: ignore[arg-type]
                             _config.HooksConfig(exec=True, host_label=host_label))  # fmt: skip
     producer.switch(POINT).on = True
@@ -201,10 +206,12 @@ def rig() -> Iterator[Rig]:
 
 def test_run_records_match_the_exec_interface_golden(rig: Rig, tmp_path: Path) -> None:
     """``subprocess.run(cmd, shell=True, capture_output=True, text=True, env={...},
-    cwd=...)`` (AR-1 step 1) gives the golden's two records: the same keys (bar the
-    worker-read start time, Linux only, and the run keys of a run-scoped record), the same
-    body roles in order, argv and context documents of the same shape, and evidence equal
-    to the golden's but for the values a different command and host naturally change."""
+    cwd=...)`` (AR-1 step 1) gives the golden's two records: on Linux its ``production``
+    section (the start time and the pid namespace, spec 056 M2), elsewhere the M1 records
+    without the Linux-only start time; the same keys (bar the run keys of a run-scoped
+    record), the same body roles in order, argv and context documents of the same shape,
+    and evidence equal to the golden's but for the values a different command and host
+    naturally change."""
     command = "printf 'a.txt\\nb.txt\\n'"
     done = subprocess.run(command, shell=True, capture_output=True, text=True,  # noqa: S602
                           env={"PATH": os.environ["PATH"], "DATA_TOKEN": CANARY},
@@ -212,12 +219,12 @@ def test_run_records_match_the_exec_interface_golden(rig: Rig, tmp_path: Path) -
     assert done.stdout == "a.txt\nb.txt\n" and done.returncode == 0
     (records,) = rig.attempts().values()
     assert [r.lifecycle for r in records] == ["running", "completed"]
-    # The start time is read late by the worker and only while the child still runs
-    # (read_start_ns): a child this short may be gone first, on Linux too. Its presence and
-    # absence are pinned by the start_ns tests below; here it is the one optional key.
-    read_start = "fabric.process.start_ns" in records[0].attrs
-    assert _exec._LINUX or not read_start
-    for record, golden in zip(records, GOLDEN["records"], strict=True):
+    # OD-8: on Linux the start time is read before the child can be reaped, so even this
+    # short child carries it (at the 100 Hz tick only); the pid namespace is Linux-only.
+    section = GOLDEN["production"] if _exec._LINUX else GOLDEN
+    read_start = _exec._LINUX and _exec._clk_tck() == _exec._STAT_HZ
+    assert read_start == ("fabric.process.start_ns" in records[0].attrs)
+    for record, golden in zip(records, section["records"], strict=True):
         expected = golden["span"]
         assert record.span["name"] == expected["name"] == "fabric.activity"
         assert record.span["kind"] == "internal" and record.span["status"] == "unset"
@@ -256,7 +263,7 @@ def test_run_records_match_the_exec_interface_golden(rig: Rig, tmp_path: Path) -
          for r in records],
         {d["object_id"]: data for r in records for d, data in r.bodies.values()},
     )  # fmt: skip
-    assert set(effect) == set(GOLDEN["normalized_effect"]) - (
+    assert set(effect) == set(section["normalized_effect"]) - (
         set() if read_start else {"process_start_ns"}
     )
     assert effect["host_id"] == GOLDEN["normalized_effect"]["host_id"]
@@ -481,7 +488,7 @@ def test_asyncio_exec_and_shell_are_observed_through_the_popen_observer(rig: Rig
     assert second[1].attrs["fabric.process.exit_code"] == 4
 
 
-# --- the process anchor (056 §4.3, OD-2) ---------------------------------------------------
+# --- the process anchor (056 §4.3; OD-8 caller read, OD-2 worker fallback; pid_ns) --------
 
 
 def _fake_stat(root: Path, pid: int, *, ppid: int, ticks: int, state: str = "S",
@@ -493,18 +500,162 @@ def _fake_stat(root: Path, pid: int, *, ppid: int, ticks: int, state: str = "S",
 
 @pytest.fixture()
 def linux(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """The OD-2 read pointed at a fixture ``/proc`` tree, on any OS."""
+    """The ``/proc`` reads pointed at a fixture tree, on any OS."""
     root = tmp_path / "proc"
     root.mkdir()
     monkeypatch.setattr(_exec, "_LINUX", True)
     monkeypatch.setattr(_exec, "_PROC_ROOT", str(root))
     monkeypatch.setattr(_exec, "_CLK_TCK", [100])
+    monkeypatch.setattr(_exec, "_PID_NS", [])
     return root
 
 
-def test_start_ns_is_read_by_the_capture_worker_from_proc_stat(
+def _caller_reads(monkeypatch: pytest.MonkeyPatch,
+                  before: Any = None) -> list[tuple[str, int]]:  # fmt: skip
+    """Spy on the caller-side stat read (OD-8): ``(thread name, pid)`` per read; ``before``
+    runs first with the pid (to shape what the read finds)."""
+    reads: list[tuple[str, int]] = []
+    real = _exec._read_stat
+
+    def spy(pid: int) -> bytes | None:
+        reads.append((threading.current_thread().name, pid))
+        if before is not None:
+            before(pid)
+        return real(pid)
+
+    monkeypatch.setattr(_exec, "_read_stat", spy)
+    return reads
+
+
+def test_start_ns_read_before_reap(linux: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """OD-8: a child that exits at once still carries ``start_ns``. The calling thread
+    reads the stat line right after ``Popen`` returned, before the caller can reap the
+    child, and a zombie (``Z``) is accepted; the worker only parses it, after the reap."""
+    reads = _caller_reads(monkeypatch, lambda pid: _fake_stat(
+        linux, pid, ppid=os.getpid(), ticks=6012, state="Z"))  # fmt: skip
+    worker: list[int] = []
+    monkeypatch.setattr(_exec, "read_start_ns", lambda *a: worker.append(1))
+    rig = _rig()
+    try:
+        process = subprocess.Popen([SH, "-c", "exit 0"])
+        assert reads == [(threading.current_thread().name, process.pid)]  # on the caller
+        assert process.wait() == 0  # reaped before the worker handles the record
+        start, end = rig.records()
+        assert start.attrs["fabric.process.start_ns"] == 60_120_000_000  # the golden's value
+        assert worker == []  # the fallback was not needed
+        assert "fabric.process.start_ns" not in end.attrs
+    finally:
+        _close(rig)
+
+
+@pytest.mark.skipif(not _exec._LINUX, reason="the real /proc is Linux-only")
+def test_start_ns_read_before_reap_on_the_real_proc(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same on the real ``/proc``: the caller's read finds the child exited but not
+    yet reaped (held until it is a zombie), and the worker runs after the reap."""
+
+    def zombie(pid: int) -> None:
+        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)  # type: ignore[attr-defined, unused-ignore]
+
+    reads = _caller_reads(monkeypatch, zombie)
+    monkeypatch.setattr(_exec, "read_start_ns", lambda *a: None)  # no fallback
+    rig = _rig()
+    try:
+        if _exec._clk_tck() != _exec._STAT_HZ:
+            pytest.skip("SC_CLK_TCK is not 100 on this host")
+        boottime: int = time.CLOCK_BOOTTIME  # type: ignore[attr-defined, unused-ignore]
+        before = time.clock_gettime_ns(boottime)
+        process = subprocess.Popen([SH, "-c", "exit 0"])  # exits, then the caller's read
+        after = time.clock_gettime_ns(boottime)
+        assert process.wait() == 0
+        assert len(reads) == 1
+        start, _ = rig.records()
+        tick = 1_000_000_000 // _exec._STAT_HZ
+        assert before // tick * tick <= start.attrs["fabric.process.start_ns"] <= after
+    finally:
+        _close(rig)
+
+
+def test_start_ns_absent_for_other_clock_tick(linux: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``SC_CLK_TCK`` other than 100: no caller read and no start time from either side,
+    even with a plausible stat line (a sensor compares the start at 100 Hz ticks)."""
+    monkeypatch.setattr(_exec, "_CLK_TCK", [250])
+    reads = _caller_reads(monkeypatch)
+    rig = _rig()
+    try:
+        process = subprocess.Popen([SH, "-c", "sleep 30"])
+        _fake_stat(linux, process.pid, ppid=os.getpid(), ticks=6012)
+        (start,) = rig.records()
+        assert [thread for thread, _ in reads] == ["fabric-wire-capture"]  # the fallback only
+        assert "fabric.process.start_ns" not in start.attrs
+        assert _exec.read_start_ns(process.pid, os.getpid(), weakref.ref(process)) is None
+        process.kill()
+        process.wait()
+    finally:
+        _close(rig)
+    monkeypatch.setattr(_exec, "_CLK_TCK", [100])
+    raw = linux / "4121" / "stat"
+    _fake_stat(linux, 4121, ppid=4100, ticks=250)
+    assert _exec._start_from_stat(raw.read_bytes(), 4121, 4100, _exec._DEAD_STATES) == 2_500_000_000
+    monkeypatch.setattr(_exec, "_CLK_TCK", [1000])
+    assert _exec._start_from_stat(raw.read_bytes(), 4121, 4100, _exec._DEAD_STATES) is None
+
+
+def test_pid_ns_is_proc_self_ns_inode(linux: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """``fabric.process.pid_ns`` is the decimal inode of ``/proc/self/ns/pid``, read by
+    the capture worker once per process id (a fork resets it); never on an outcome."""
+    (linux / "self" / "ns").mkdir(parents=True)
+    namespace = linux / "self" / "ns" / "pid"
+    namespace.write_text("")
+    readers: list[str] = []
+    real = _exec.pid_namespace
+
+    def spy() -> str | None:
+        readers.append(threading.current_thread().name)
+        return real()
+
+    monkeypatch.setattr(_exec, "pid_namespace", spy)
+    inode = str(namespace.stat().st_ino)
+    rig = _rig()
+    try:
+        subprocess.run([SH, "-c", "exit 0"], check=True)
+        rig.harness.flush()
+        namespace.unlink()  # cached: the second start keeps the value
+        subprocess.run([SH, "-c", "exit 0"], check=True)
+        first, first_end, second, second_end = rig.records()
+        assert readers == ["fabric-wire-capture"] * 2
+        assert first.attrs["fabric.process.pid_ns"] == second.attrs["fabric.process.pid_ns"]
+        assert first.attrs["fabric.process.pid_ns"] == inode
+        assert "fabric.process.pid_ns" not in first_end.attrs | second_end.attrs
+    finally:
+        _close(rig)
+    cached = _exec._PID_NS
+    assert cached == [(os.getpid(), inode)]
+    _exec._after_fork_in_child()  # a forked child reads its own
+    assert cached == []
+    assert real() is None  # the fixture entry is gone: absent, never a guess
+    monkeypatch.setattr(_exec, "_LINUX", False)
+    assert real() is None  # off Linux
+
+
+@pytest.mark.skipif(not _exec._LINUX, reason="the real /proc is Linux-only")
+def test_pid_ns_is_the_real_proc_self_ns_inode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(_exec, "_PID_NS", [])
+    expected = str(os.stat("/proc/self/ns/pid").st_ino)
+    assert _exec.pid_namespace() == expected
+    rig = _rig()
+    try:
+        subprocess.run([SH, "-c", "exit 0"], check=True)
+        start, _ = rig.records()
+        assert start.attrs["fabric.process.pid_ns"] == expected
+    finally:
+        _close(rig)
+
+
+def test_start_ns_falls_back_to_the_capture_worker(
     linux: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The caller's read finds no stat line (the fixture entry is written later): the
+    capture worker reads it (OD-2, M1), never the caller."""
     readers: list[str] = []
     real = _exec.read_start_ns
 
@@ -519,6 +670,7 @@ def test_start_ns_is_read_by_the_capture_worker_from_proc_stat(
         process = subprocess.Popen([SH, "-c", "sleep 30"])
         assert readers == []  # never on the caller's path
         (start,) = rig.records()
+        assert start.attrs["fabric.process.parent_pid"] == os.getpid()
         assert readers == ["fabric-wire-capture"]
         assert start.attrs["fabric.process.start_ns"] == 60_120_000_000  # the golden's value
         process.kill()
@@ -532,8 +684,9 @@ def test_start_ns_is_read_by_the_capture_worker_from_proc_stat(
 def test_start_ns_is_absent_when_the_child_has_already_exited(
     linux: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The worker reads after the caller reaped the child (its pid may already name
-    another process): no start time, even though a plausible stat line is there."""
+    """The caller's read found nothing and the worker reads after the caller reaped the
+    child (its pid may already name another process): no start time, even though a
+    plausible stat line is there."""
     reaped, results = threading.Event(), []
     real = _exec.read_start_ns
 

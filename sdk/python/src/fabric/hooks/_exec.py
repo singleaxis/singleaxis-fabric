@@ -38,10 +38,23 @@ synthesises an outcome it did not observe.
 The start record carries the process anchor of spec 056 §4.3: ``fabric.process.pid``
 (``Popen.pid``), ``fabric.process.parent_pid`` (``os.getpid()`` at spawn, no I/O),
 ``fabric.execution.host_id`` (the configured host label's ``hst-`` identity) and, on
-Linux, ``fabric.process.start_ns``. That one is read by the **capture worker**, never the
-caller (owner decision OD-2), from ``/proc/<pid>/stat`` field 22 times 10^9 / ``SC_CLK_TCK``,
-and is absent off Linux, on any error, or once the child has exited (or its pid no longer
-names a running child of this process).
+Linux, ``fabric.process.start_ns`` and ``fabric.process.pid_ns`` (056 §7.3.3 (a)):
+
+- ``start_ns`` is ``/proc/<pid>/stat`` field 22 times 10^7, present only when
+  ``SC_CLK_TCK`` is 100 (the tick a sensor's boot-relative start time is compared at). The
+  line is read once on the **calling thread** right after ``Popen.__init__`` returned (owner
+  decision OD-8: one open, read and close, nothing else; it is parsed by the capture
+  worker). Until the caller waits, the child cannot be reaped, so a child that already
+  exited (state ``Z``) still has its start time. If that read fails, the **capture
+  worker** reads it as in M1 (OD-2), and then only while the child still runs.
+- ``pid_ns`` is the decimal inode of ``/proc/self/ns/pid``, the namespace ``pid`` and
+  ``parent_pid`` are numbered in, read by the capture worker and cached per process id.
+
+A record that carries the first observed standard output of a container create command
+also carries ``fabric.sandbox.created_id`` (056 §4.3 rule H5, §7.3.3 (a)): the ``sbx-`` v2
+pseudonym of ``container:<64 hex>`` or ``k8s-pod:<uid>`` (:func:`created_clear_text`),
+absent without an id key or when ``terminal.stdout`` is ``omit``. The caller's path keeps
+only references (and a substring check of the command's head); parsing is on the worker.
 
 Passive (AGENTS.md; 053 §4.1): the original is called exactly once with the caller's own
 arguments; Fabric never tees a pipe, changes a ``stdin``/``stdout``/``stderr``
@@ -66,8 +79,10 @@ import contextlib
 import functools
 import inspect
 import io
+import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import threading
@@ -124,13 +139,41 @@ TESTED_VERSIONS: Final = ((3, 11), (3, 14))
 POPEN_POSITIONS: Final = {"args": 0, "executable": 2, "stdin": 3, "stdout": 4, "stderr": 5,
                           "shell": 8, "cwd": 9, "env": 10}  # fmt: skip
 
-# The OD-2 start-time read (worker side). Module attributes so tests can point them at a
-# fixture tree on any OS.
+# The start-time read (OD-8 caller side, OD-2 worker fallback) and the pid namespace.
+# Module attributes so tests can point them at a fixture tree on any OS.
 _LINUX = sys.platform.startswith("linux")
 _PROC_ROOT = "/proc"
+_O_CLOEXEC: Final = getattr(os, "O_CLOEXEC", 0)
 _STAT_READ_BYTES: Final = 4096
 _STAT_STARTTIME: Final = 19  # field 22, counted from field 3 (the first after "(comm)")
-_EXITED_STATES: Final = frozenset({b"Z", b"X", b"x"})
+_STAT_HZ: Final = 100  # the only SC_CLK_TCK whose ticks equal a sensor's start_ns // 10**7
+_EXITED_STATES: Final = frozenset({b"Z", b"X", b"x"})  # the worker read: exited or dead
+_DEAD_STATES: Final = frozenset({b"X", b"x"})  # the caller read: a zombie is not yet reaped
+
+# Container create commands (056 §7.3.3 (a); contracts/coverage/v1/fixtures/vectors/
+# sandbox-id-v1.json, whose value_options list these runtime options take a value).
+_RUNTIMES: Final = frozenset({"docker", "podman", "nerdctl"})
+_CREATE_TOOLS: Final = ("docker", "podman", "nerdctl", "kubectl")
+# The caller's only check: a tool name in the command's head. argv[0] is a path of at most
+# PATH_MAX (4096) bytes; the slack covers a shell string's leading blanks and quotes.
+_HEAD_CHARS: Final = 8192
+RUNTIME_VALUE_OPTIONS: Final = frozenset({
+    "-a", "--attach", "--add-host", "--cap-add", "--cap-drop", "--cgroup-parent",
+    "--cgroupns", "--cidfile", "-c", "--cpu-shares", "--cpus", "--cpuset-cpus",
+    "--device", "--dns", "--dns-search", "-e", "--entrypoint", "--env", "--env-file",
+    "--expose", "--gpus", "-h", "--health-cmd", "--hostname", "--ipc", "-l", "--label",
+    "--label-file", "--link", "--log-driver", "--log-opt", "-m", "--memory", "--mount",
+    "--name", "--net", "--network", "-p", "--pid", "--platform", "--publish", "--pull",
+    "--restart", "--runtime", "--security-opt", "--shm-size", "--stop-signal",
+    "--stop-timeout", "--tmpfs", "-u", "--ulimit", "--user", "--userns", "-v", "--volume",
+    "--volumes-from", "-w", "--workdir",
+})  # fmt: skip
+_SHORT_VALUE: Final = frozenset(o[1] for o in RUNTIME_VALUE_OPTIONS if len(o) == 2)  # noqa: PLR2004
+_SHELL_OPERATORS: Final = frozenset({";", "&", "|", "&&", "||", "<", ">"})
+_JSONPATH_UID: Final = "jsonpath={.metadata.uid}"
+JSON_MAX_BYTES: Final = 1 << 20
+_HEX64_RE: Final = re.compile(r"[0-9a-f]{64}")
+_UUID_RE: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _ERROR_CLASS_RE: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 _ENCODING_RE: Final = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
 _MISSING: Any = object()
@@ -156,10 +199,15 @@ class _Via:
 class _Proc:
     """What Fabric remembers about one observed child until its object is collected."""
 
-    __slots__ = ("attempt", "encoding", "ended", "index", "pid", "rc_done", "timed_out", "via")
+    __slots__ = ("attempt", "command", "encoding", "ended", "index", "pid", "rc_done",
+                 "timed_out", "via")  # fmt: skip
 
-    def __init__(self, attempt: Attempt, pid: int, via: _Via | None, encoding: str | None) -> None:
+    def __init__(self, attempt: Attempt, pid: int, via: _Via | None, encoding: str | None,
+                 command: dict[str, Any] | None = None) -> None:  # fmt: skip
         self.attempt, self.pid, self.via, self.encoding = attempt, pid, via, encoding
+        # The argv document of a possible container create command until its first
+        # standard output is observed (056 §7.3.3 (a)), else None.
+        self.command = command
         self.index = 0  # the next communicate observation_index
         self.timed_out = False  # an earlier communicate timed out: later output is cumulative
         self.ended = False  # an end record was emitted
@@ -257,14 +305,18 @@ def _status_keys(returncode: int) -> dict[str, int]:
     return {"fabric.process.exit_code": returncode}
 
 
-# --- the OD-2 start-time read (capture worker only) ---------------------------------------
+# --- the start-time read (OD-8 caller side, OD-2 worker fallback) and the pid namespace ---
 
 _CLK_TCK: list[int] = []
+_PID_NS: list[tuple[int, str]] = []  # (os.getpid(), the pid namespace inode), worker-side
 
 
 def _clk_tck() -> int:
     if not _CLK_TCK:
-        _CLK_TCK.append(int(os.sysconf("SC_CLK_TCK")))
+        try:
+            _CLK_TCK.append(int(os.sysconf("SC_CLK_TCK")))
+        except Exception:
+            _CLK_TCK.append(0)
     return _CLK_TCK[0]
 
 
@@ -273,41 +325,257 @@ def _gone(ref: weakref.ref[Any]) -> bool:
     return popen is None or _returncode(popen) is not None
 
 
-def read_start_ns(pid: int, parent_pid: int, ref: weakref.ref[Any]) -> int | None:  # noqa: PLR0911
-    """The child's start time in boot-relative ns from ``/proc/<pid>/stat`` field 22, or
-    ``None``: off Linux, on any error, once the child has exited (its return code is known,
-    or the stat line says zombie or dead), or when the pid no longer names this process's
-    child (its parent pid differs). Called by the capture worker, never the caller."""
+def _read_stat(pid: int) -> bytes | None:
+    """``/proc/<pid>/stat`` as one read (open, read, close; no other I/O), or ``None``."""
+    try:
+        with _guard.internal():
+            fd = os.open(f"{_PROC_ROOT}/{pid}/stat", os.O_RDONLY | _O_CLOEXEC)
+            try:
+                return os.read(fd, _STAT_READ_BYTES)
+            finally:
+                os.close(fd)
+    except Exception:
+        return None
+
+
+def _start_from_stat(raw: bytes, pid: int, parent_pid: int,
+                     refused: frozenset[bytes]) -> int | None:  # fmt: skip
+    """The boot-relative start time (ns) a stat line gives, or ``None``: another pid's
+    line, a state in ``refused``, another parent, or ``SC_CLK_TCK`` other than 100."""
+    try:
+        if not raw.startswith(f"{pid} (".encode("ascii")):
+            return None
+        fields = raw[raw.rindex(b")") + 2 :].split()
+        if fields[0] in refused or int(fields[1]) != parent_pid:
+            return None
+        ticks = int(fields[_STAT_STARTTIME])
+        if ticks < 0 or _clk_tck() != _STAT_HZ:
+            return None
+        return ticks * (1_000_000_000 // _STAT_HZ)
+    except Exception:
+        return None
+
+
+def read_start_ns(pid: int, parent_pid: int, ref: weakref.ref[Any]) -> int | None:
+    """The worker fallback (M1, OD-2): the child's start time in boot-relative ns from
+    ``/proc/<pid>/stat`` field 22, or ``None``: off Linux, on any error, once the child has
+    exited (its return code is known, or the stat line says zombie or dead), when the pid
+    no longer names this process's child (its parent pid differs), or when ``SC_CLK_TCK``
+    is not 100. Called by the capture worker, never the caller."""
     if not _LINUX:
         return None
     try:
         if _gone(ref):
             return None
-        with _guard.internal():
-            fd = os.open(f"{_PROC_ROOT}/{pid}/stat", os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
-            try:
-                raw = os.read(fd, _STAT_READ_BYTES)
-            finally:
-                os.close(fd)
-        if not raw.startswith(f"{pid} (".encode("ascii")) or _gone(ref):
+        raw = _read_stat(pid)
+        if raw is None or _gone(ref):
             return None
-        fields = raw[raw.rindex(b")") + 2 :].split()
-        if fields[0] in _EXITED_STATES or int(fields[1]) != parent_pid:
-            return None
-        ticks, hertz = int(fields[_STAT_STARTTIME]), _clk_tck()
-        if ticks < 0 or hertz <= 0:
-            return None
-        return ticks * 1_000_000_000 // hertz
+        return _start_from_stat(raw, pid, parent_pid, _EXITED_STATES)
     except Exception:
         return None
 
 
-def _start_ns_late(pid: int, parent_pid: int, popen: object) -> Callable[[], Mapping[str, int]]:
+def pid_namespace() -> str | None:
+    """``fabric.process.pid_ns``: the decimal inode of ``/proc/self/ns/pid``, the namespace
+    this process's pids (``os.getpid()``, ``Popen.pid``) are numbered in; cached per
+    process id (a forked child reads its own). ``None`` off Linux or on any error. Read by
+    the capture worker."""
+    if not _LINUX:
+        return None
+    pid = os.getpid()
+    cached = _PID_NS[:1]
+    if cached and cached[0][0] == pid:
+        return cached[0][1]
+    try:
+        with _guard.internal():
+            inode = os.stat(f"{_PROC_ROOT}/self/ns/pid").st_ino
+    except Exception:
+        return None
+    value = str(inode)
+    _PID_NS[:] = [(pid, value)]
+    return value
+
+
+def _start_late(pid: int, parent_pid: int, popen: object,
+                stat: bytes | None) -> Callable[[], Mapping[str, int | str]]:  # fmt: skip
+    """The start record's worker-side keys: the start time from the caller's stat line
+    (a zombie accepted: it is not reaped before the caller waits), else the worker's own
+    read; the pid namespace while this is still the spawning process."""
     ref = weakref.ref(popen)
 
-    def late() -> Mapping[str, int]:
-        value = read_start_ns(pid, parent_pid, ref)
-        return {} if value is None else {"fabric.process.start_ns": value}
+    def late() -> Mapping[str, int | str]:
+        values: dict[str, int | str] = {}
+        start = None if stat is None else _start_from_stat(stat, pid, parent_pid,
+                                                             _DEAD_STATES)  # fmt: skip
+        if start is None:
+            start = read_start_ns(pid, parent_pid, ref)
+        if start is not None:
+            values["fabric.process.start_ns"] = start
+        if os.getpid() == parent_pid and (namespace := pid_namespace()) is not None:
+            values["fabric.process.pid_ns"] = namespace
+        return values
+
+    return late
+
+
+# --- the created sandbox id (056 §7.3.3 (a), rule H5; capture worker only) ---------------
+
+
+def _simple_argv(command: str | list[str] | tuple[str, ...]) -> list[str] | None:
+    """The argv of one simple command: an argv as is, or a shell string ``shlex.split``
+    turns into one with no ``;``, ``&``, ``|``, ``&&``, ``||``, ``<``, ``>`` token."""
+    if type(command) is not str:
+        return list(command)
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return None
+    return None if any(token in _SHELL_OPERATORS for token in argv) else argv
+
+
+def _detached(options: list[str]) -> bool:
+    """Whether ``run``'s options hold ``-d``/``--detach`` (``--detach=true``, or ``d`` in a
+    cluster of short flags such as ``-dit``) before the image."""
+    skip = False
+    for arg in options:
+        if skip:
+            skip = False
+            continue
+        if arg == "--":
+            return False
+        if arg.startswith("--"):
+            name, eq, value = arg.partition("=")
+            if name == "--detach":
+                return not eq or value == "true"
+            skip = not eq and name in RUNTIME_VALUE_OPTIONS
+            continue
+        if arg.startswith("-") and len(arg) > 1:
+            cluster = arg[1:]
+            for index, flag in enumerate(cluster):
+                if flag == "d":
+                    return True
+                if flag in _SHORT_VALUE:  # the rest is its value, or the next token is
+                    skip = index == len(cluster) - 1
+                    break
+            continue
+        return False  # the image: what follows is the container's command
+    return False
+
+
+def _output_option(options: list[str]) -> str | None:
+    """kubectl's ``-o``/``--output`` value (``-o X``, ``-oX``, ``-o=X``, ``--output X``,
+    ``--output=X``; the last one wins), one pair of quotes around the template removed."""
+    found: str | None = None
+    for index, arg in enumerate(options):
+        value: str | None = None
+        if arg in ("-o", "--output") and index + 1 < len(options):
+            value = options[index + 1]
+        elif arg.startswith("--output="):
+            value = arg[len("--output=") :]
+        elif arg.startswith("-o") and arg != "-o" and not arg.startswith("--"):
+            value = arg[2:].removeprefix("=")
+        if value is not None:
+            kind, eq, template = value.partition("=")
+            if len(template) >= 2 and template[0] == template[-1] and template[0] in "'\"":  # noqa: PLR2004
+                template = template[1:-1]
+            found = f"{kind}={template}" if eq else kind
+    return found
+
+
+def _pod_uid(text: str) -> str | None:
+    """``metadata.uid`` of a JSON ``Pod`` object of at most 1 MiB, when a lowercase UUID."""
+    if len(text) > JSON_MAX_BYTES or len(text.encode("utf-8")) > JSON_MAX_BYTES:
+        return None
+    try:
+        doc = json.loads(text)
+    except ValueError:
+        return None
+    if type(doc) is not dict or doc.get("kind") != "Pod":
+        return None
+    metadata = doc.get("metadata")
+    uid = metadata.get("uid") if type(metadata) is dict else None
+    return uid if type(uid) is str and _UUID_RE.fullmatch(uid) else None
+
+
+def created_clear_text(command: str | list[str] | tuple[str, ...],  # noqa: PLR0911
+                       stdout: str | bytes | None) -> str | None:  # fmt: skip
+    """The clear text of what a container runtime reported it created (056 §7.3.3 (a)),
+    from one simple command and the standard output the caller received (bytes decoded as
+    UTF-8; one trailing newline removed): ``container:<64 hex>`` for ``docker``, ``podman``
+    or ``nerdctl`` ``run -d`` or ``create`` (``container run``/``create`` too) printing
+    exactly 64 lowercase hex; ``k8s-pod:<uid>`` for ``kubectl run``, ``create`` or
+    ``apply`` with ``-o jsonpath={.metadata.uid}`` printing exactly a lowercase UUID, or
+    with ``-o json`` printing a ``Pod`` object. ``argv[0]`` is compared by basename.
+    Anything else is ``None``. The capture worker's, never the caller's."""
+    if type(stdout) is bytes:
+        if len(stdout) > JSON_MAX_BYTES + 1:
+            return None
+        try:
+            stdout = stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    if type(stdout) is not str:
+        return None
+    argv = _simple_argv(command)
+    if not argv:
+        return None
+    text = stdout[:-1] if stdout.endswith("\n") else stdout
+    tool, rest = argv[0].rsplit("/", 1)[-1], argv[1:]
+    if tool in _RUNTIMES:
+        if rest[:1] == ["container"]:
+            rest = rest[1:]
+        if not rest or rest[0] not in ("run", "create"):
+            return None
+        if rest[0] == "run" and not _detached(rest[1:]):
+            return None
+        return f"container:{text}" if _HEX64_RE.fullmatch(text) else None
+    if tool == "kubectl" and rest and rest[0] in ("run", "create", "apply"):
+        output = _output_option(rest[1:])
+        if output == _JSONPATH_UID:
+            return f"k8s-pod:{text}" if _UUID_RE.fullmatch(text) else None
+        if output == "json" and (uid := _pod_uid(text)) is not None:
+            return f"k8s-pod:{uid}"
+    return None
+
+
+def _create_candidate(document: object, shell: bool | None) -> dict[str, Any] | None:
+    """The caller's check (no parsing): the argv document when its command's head names a
+    container tool, else ``None``. A list under ``shell=True`` (``args[0]`` is a script)
+    and a non-``str`` command are never create commands."""
+    if type(document) is not dict:
+        return None
+    if document["form"] == "shell":
+        cell = document["command"]
+    elif shell:
+        return None
+    else:
+        cells = document["args"]
+        if not cells:
+            return None
+        cell = cells[0]
+    if cell["t"] != "str":
+        return None
+    head = cell["v"][:_HEAD_CHARS]
+    return document if any(tool in head for tool in _CREATE_TOOLS) else None
+
+
+def _command_of(document: dict[str, Any]) -> str | list[str] | None:
+    """A candidate's command: the shell string, or the argv when every cell is a ``str``."""
+    if document["form"] == "shell":
+        return cast("str", document["command"]["v"])
+    cells = document["args"]
+    if any(cell["t"] != "str" for cell in cells):
+        return None
+    return [cast("str", cell["v"]) for cell in cells]
+
+
+def _created_late(producer: HookProducer, document: dict[str, Any],
+                  stdout: str | bytes) -> Callable[[], Mapping[str, int | str]]:  # fmt: skip
+    def late() -> Mapping[str, int | str]:
+        command = _command_of(document)
+        clear = None if command is None else created_clear_text(command, stdout)
+        created = None if clear is None else producer.ident("sbx", clear)
+        return {} if created is None else {"fabric.sandbox.created_id": created}
 
     return late
 
@@ -465,9 +733,11 @@ class ExecChannel:
         return None if chars > MAX_CONTEXT_CHARS else context
 
     def _spawn_bodies(self, args: tuple[Any, ...], kwargs: dict[str, Any],
-                      bodies: list[AnyBody]) -> dict[str, Any]:  # fmt: skip
-        """The start's argv and context bodies (each only when its role is not ``omit``)
-        and the evidence fields they imply."""
+                      bodies: list[AnyBody],
+                      ) -> tuple[dict[str, Any], dict[str, Any] | None]:  # fmt: skip
+        """The start's argv and context bodies (each only when its role is not ``omit``),
+        the evidence fields they imply and, for a possible container create command, its
+        argv document (056 §7.3.3 (a))."""
         flag = self._param(args, kwargs, "shell")
         # Popen tests the flag's truth; Fabric evaluates it only for exact builtins.
         shell = (flag if type(flag) is bool else flag != 0 if type(flag) is int
@@ -488,7 +758,7 @@ class ExecChannel:
             bodies.append(self._json_body("terminal.context", context))
         stdio = {name: _disposition(self._param(args, kwargs, name))
                  for name in ("stdin", "stdout", "stderr")}  # fmt: skip
-        return {"argv_form": argv_form, "stdio": stdio}
+        return {"argv_form": argv_form, "stdio": stdio}, _create_candidate(document, shell)
 
     def _output_bodies(self, stdout: object, stderr: object, stdin: object,
                        bodies: list[AnyBody], *, keep: bool = True) -> str:  # fmt: skip
@@ -509,6 +779,18 @@ class ExecChannel:
                                          "protocol"))  # fmt: skip
         return form
 
+    def _created(self, proc: _Proc, stdout: object) -> Callable[[], Mapping[str, int | str]] | None:
+        """The worker-side ``fabric.sandbox.created_id`` of the record that carries a
+        create command's first observed standard output; ``None`` for any other record or
+        when ``terminal.stdout`` is ``omit``. Keeps references only: nothing is parsed."""
+        document = proc.command
+        if document is None or (type(stdout) is not str and type(stdout) is not bytes):
+            return None
+        proc.command = None  # only the first observed standard output
+        if self.producer.mode("terminal.stdout") == "omit":
+            return None
+        return _created_late(self.producer, document, stdout)
+
     # -- Popen construction (Fabric-only sections: fail-open, R9) ---------------------
 
     @fail_open(None)
@@ -528,16 +810,20 @@ class ExecChannel:
         if type(pid) is not int or pid <= 0:  # never after a successful spawn
             self._count("untracked")
             return
+        # OD-8: the child's stat line now, before the caller can wait (it cannot be reaped
+        # yet); parsed by the worker.
+        stat = _read_stat(pid) if _LINUX and _clk_tck() == _STAT_HZ else None
         parent_pid = os.getpid()
         bodies: list[AnyBody] = []
         item: dict[str, Any] = {"api": _api(pending.via, "popen"), "pid_known": True}
-        item.update(self._spawn_bodies(args, kwargs, bodies))
+        fields, command = self._spawn_bodies(args, kwargs, bodies)
+        item.update(fields)
         evidence = self._evidence(item, bodies)
         attributes: dict[str, Any] = {"fabric.process.pid": pid,
                                       "fabric.process.parent_pid": parent_pid}  # fmt: skip
         if (host_id := self.producer.host_id) is not None:
             attributes["fabric.execution.host_id"] = host_id
-        proc = _Proc(pending.attempt, pid, pending.via, _text_encoding(popen))
+        proc = _Proc(pending.attempt, pid, pending.via, _text_encoding(popen), command)
         self._track(popen, proc)
         if pending.via is not None:
             pending.via.proc = proc
@@ -545,7 +831,7 @@ class ExecChannel:
         pending.attempt.emit(
             "start", name_hint=NAME_HINT, attributes=attributes, start_ns=pending.start_ns,
             end_ns=end_ns, lifecycle="running", bodies=bodies, evidence=evidence,
-            late=_start_ns_late(pid, parent_pid, popen) if _LINUX else None,
+            late=_start_late(pid, parent_pid, popen, stat) if _LINUX else None,
         )  # fmt: skip
 
     @fail_open(None)
@@ -555,7 +841,7 @@ class ExecChannel:
         ``pid_known: false``; it carries what was asked to run."""
         bodies: list[AnyBody] = []
         item: dict[str, Any] = {"api": _api(pending.via, "popen"), "pid_known": False}
-        item.update(self._spawn_bodies(args, kwargs, bodies))
+        item.update(self._spawn_bodies(args, kwargs, bodies)[0])
         if (name := _error_class(exc)) is not None:
             item["error_class"] = name
         evidence = self._evidence(item, bodies)
@@ -599,7 +885,8 @@ class ExecChannel:
         bodies: list[AnyBody] = []
         form = self._output_bodies(stdout, stderr, stdin, bodies)
         evidence = self._evidence(self._output_item(proc, api, form, index), bodies)
-        self._emit_outcome(proc, returncode, bodies, evidence, start_ns)
+        self._emit_outcome(proc, returncode, bodies, evidence, start_ns,
+                           self._created(proc, stdout))  # fmt: skip
 
     @fail_open(None)
     def timed_out(self, proc: _Proc, exc: BaseException, stdin: object, api: str,
@@ -620,6 +907,7 @@ class ExecChannel:
         keep = not proc.timed_out
         form = self._output_bodies(exposed.get("output"), exposed.get("stderr"), stdin, bodies,
                                    keep=keep)  # fmt: skip
+        late = self._created(proc, exposed.get("output")) if keep else None
         if not keep:
             self._count("timeout_output_omitted")
         item = self._output_item(proc, api, form, index)
@@ -632,7 +920,7 @@ class ExecChannel:
         proc.attempt.emit(
             "data", name_hint=NAME_HINT, attributes={"fabric.process.pid": proc.pid},
             start_ns=start_ns, end_ns=time.time_ns(), lifecycle="running", bodies=bodies,
-            evidence=evidence,
+            evidence=evidence, late=late,
         )  # fmt: skip
 
     @fail_open(None)
@@ -666,7 +954,9 @@ class ExecChannel:
         )  # fmt: skip
 
     def _emit_outcome(self, proc: _Proc, returncode: int | None, bodies: list[AnyBody],
-                      evidence: EvidenceDoc | None, start_ns: int) -> None:  # fmt: skip
+                      evidence: EvidenceDoc | None, start_ns: int,
+                      late: Callable[[], Mapping[str, int | str]] | None = None,
+                      ) -> None:  # fmt: skip
         end_ns = time.time_ns()
         attributes: dict[str, Any] = {"fabric.process.pid": proc.pid}
         if returncode is not None and not proc.rc_done:
@@ -674,7 +964,7 @@ class ExecChannel:
             proc.rc_done = True
         common: dict[str, Any] = {
             "name_hint": NAME_HINT, "attributes": attributes, "start_ns": start_ns,
-            "end_ns": end_ns, "bodies": bodies, "evidence": evidence,
+            "end_ns": end_ns, "bodies": bodies, "evidence": evidence, "late": late,
         }  # fmt: skip
         if proc.ended:  # content or an exit status seen after the outcome
             self._count("updates")
@@ -944,6 +1234,7 @@ def install_channel(producer: HookProducer, patches: PatchSet) -> ExecChannel:
 
 
 def _after_fork_in_child() -> None:
+    _PID_NS.clear()  # its namespace is the parent's pid_for_children (unshare may change it)
     for channel in list(_CHANNELS):
         with contextlib.suppress(Exception):
             channel._after_fork_in_child()
