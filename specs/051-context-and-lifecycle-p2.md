@@ -23,6 +23,10 @@ registry names (`contracts/coverage/v1/registry/*.json`). "Decision line"
 means today's `fabric.decision` span API (`decision.py`, `_calls.py`).
 "Records input" means 049 §1.3 input `records`, built by P1 (spec 050).
 
+**Status: draft; not built.** Codes in parentheses such as (R8) or (R13)
+name the cross-spec revision decisions that a rule applies, and "decision n"
+means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+
 **Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
 the introduction of [050](050-run-structure-and-records-p1.md)): §3
 refreshed

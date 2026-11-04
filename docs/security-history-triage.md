@@ -1,5 +1,8 @@
 # Historical secret-scan triage for recorder qualification
 
+> **Status:** a historical record of a secret-scan triage. It describes no
+> runtime code.
+
 Status: **historical matches classified; not a production security
 sign-off**. Source review identifies eight fixture matches across the two
 scans. On 2026-09-30 the maintainer confirmed the example credential was

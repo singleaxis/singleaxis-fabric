@@ -13,9 +13,10 @@
   "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
   "terminal": false,
   "manifest_seq": 0,
+  "event_id": "74b00331-7350-42b0-a364-e4a5a5113640",
   "seal": {
     "last_sequence": 41,
-    "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
+    "manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
     "seal_digest": "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
     "branch_ids": [
       "br-064e57314e3f26e664ffcbc1526ac062",

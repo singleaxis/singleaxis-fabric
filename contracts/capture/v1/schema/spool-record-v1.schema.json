@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://singleaxis.ai/contracts/capture/v1/spool-record-v1.schema.json",
   "title": "Fabric wire spool record header v1 (draft, spec 048)",
-  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and its content descriptors (spec 049 P0-A: at most 130 — per side a primary object or split skeleton, its extracted parts and a masked review copy — including descriptor-only not_captured bodies of length 0) whose bytes are blob[offset:offset+length]; a record record (spec 049 §2.4, the records input) one sequenced records-input span; a loss record one coalesced range; a marker record a run_start, run_end, segment_seal or final heartbeat, or a manifest (marker kind manifest, carrying the fabric.capture_manifest span attributes). From spec 049 P1 one allocator per (source, epoch) serves both inputs (sequence_unit: record): exchange and record entries take positions from the same counter, and loss ranges, heartbeats and markers count those shared positions. Headers carry no content. A batch file (spec 048 §2, b'FWSPOOLB' | u32 count | count x (u64 length | frame) | sha256 trailer) holds several exchange records' frames, each with a header of this schema. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
+  "description": "Header of one agent spool record file (spec 048 §2): b'FWSPOOL1' | u32 header length | this header as canonical JSON | blob | sha256 trailer. An exchange record carries the fully resolved fabric.model_call span (ids, timing, status, closed 047 §8 attributes) and its content descriptors (at most 260, spec 050 R6: per side a primary object or split skeleton, up to 64 extracted parts, a masked review copy of each part and of the side — including descriptor-only bodies of length 0; the writer refuses an over-bound record before writing, as an internal_error loss) whose bytes are blob[offset:offset+length]; a record record (spec 049 §2.4, the records input) one sequenced records-input span and its bodies (spec 050 §3.5: at most 8, the evidence object and descriptor-only bodies included; their object ids are the span's fabric.content.object_ids, in order); a loss record one coalesced range; a marker record a run_start, run_end, segment_seal or final heartbeat, or a manifest (marker kind manifest, carrying the fabric.capture_manifest span attributes). From spec 049 P1 one allocator per (source, epoch) serves both inputs (sequence_unit: record): exchange and record entries take positions from the same counter, and loss ranges, heartbeats and markers count those shared positions. Headers carry no content. A batch file (spec 048 §2, b'FWSPOOLB' | u32 count | count x (u64 length | frame) | sha256 trailer) holds several exchange records' frames, each with a header of this schema. Records are drained in file-name order and deleted only after every part was delivered; a replay re-sends identical spans.",
   "type": "object",
   "required": [
     "schema_version",
@@ -288,6 +288,140 @@
                 "fabric.run.segment_id": {
                   "type": "string",
                   "pattern": "^seg-[0-9a-f]{32}$"
+                },
+                "fabric.capture.point": {
+                  "description": "fabric.capture.point (X26, spec 050 §3.9): wire.py.httpx@<v> or wire.py.aiohttp@<v>.",
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$"
+                },
+                "fabric.capture.source": {
+                  "description": "fabric.capture.source (X27): an exchange is observed.",
+                  "enum": [
+                    "observed",
+                    "reported"
+                  ]
+                },
+                "fabric.step.kind": {
+                  "description": "fabric.step.kind (S01): embedding for openai.embeddings, else model_call.",
+                  "enum": [
+                    "run",
+                    "agent_turn",
+                    "model_call",
+                    "embedding",
+                    "input",
+                    "message",
+                    "tool_call",
+                    "provider_tool_call",
+                    "mcp_call",
+                    "retrieval",
+                    "memory",
+                    "terminal",
+                    "remote_exec",
+                    "database",
+                    "network",
+                    "file",
+                    "ui_action",
+                    "media_stream",
+                    "delegation",
+                    "workflow_node",
+                    "checkpoint",
+                    "control",
+                    "context_change",
+                    "selection",
+                    "side_effect",
+                    "outcome",
+                    "hook",
+                    "skill",
+                    "interaction",
+                    "extension"
+                  ]
+                },
+                "fabric.actor.type": {
+                  "description": "fabric.actor.type (S03): the SDK stamps agent on every step it emits.",
+                  "enum": [
+                    "user",
+                    "agent",
+                    "sub_agent",
+                    "human_approver",
+                    "human_operator",
+                    "system",
+                    "scheduler",
+                    "external_service",
+                    "provider",
+                    "unknown"
+                  ]
+                },
+                "fabric.step.lifecycle_state": {
+                  "description": "fabric.step.lifecycle_state (S07): completed; cancelled for closed_early.",
+                  "enum": [
+                    "queued",
+                    "running",
+                    "suspended",
+                    "deferred",
+                    "completed",
+                    "cancelled",
+                    "unknown"
+                  ]
+                },
+                "fabric.step.status": {
+                  "description": "fabric.step.status (S08): the spec 049 §2.3 legacy mapping of response_state and the HTTP status.",
+                  "enum": [
+                    "ok",
+                    "error",
+                    "cancelled",
+                    "timeout",
+                    "unknown"
+                  ]
+                },
+                "fabric.error.domain": {
+                  "description": "fabric.error.domain (S09) of an error step: transport (an exception, no HTTP error status) or provider (HTTP >= 400).",
+                  "enum": [
+                    "application",
+                    "transport",
+                    "provider",
+                    "tool",
+                    "recorder"
+                  ]
+                },
+                "fabric.wire.first_chunk_offset_ns": {
+                  "description": "fabric.wire.first_chunk_offset_ns (S30): monotonic ns from request start to the first non-empty response chunk; absent when the response had none.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "fabric.wire.endpoint_id": {
+                  "description": "fabric.wire.endpoint_id (C35): a built-in endpoint as <name>.default, a configured one as lbl- + 32 hex of its configured name; never a hostname.",
+                  "type": "string",
+                  "pattern": "^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$"
+                },
+                "fabric.wire.provider_request_id": {
+                  "description": "fabric.wire.provider_request_id (C40): opt-in (FABRIC_WIRE_PROVIDER_REQUEST_ID=1), the keyed v2 p- pseudonym of one named response header value; omitted without a key.",
+                  "type": "string",
+                  "pattern": "^p-[0-9a-f]{32}$"
+                },
+                "fabric.agent_id": {
+                  "description": "fabric.agent_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.system_id": {
+                  "description": "fabric.system_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.deployment_id": {
+                  "description": "fabric.deployment_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.release_id": {
+                  "description": "fabric.release_id (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "fabric.environment": {
+                  "description": "fabric.environment (X05) as emitted on capture spans: an operator label, lbl- + 32 hex under capture_labels pseudonymous.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
                 }
               }
             }
@@ -300,7 +434,7 @@
         },
         "bodies": {
           "type": "array",
-          "maxItems": 130,
+          "maxItems": 260,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -443,7 +577,17 @@
                   "type": "string",
                   "pattern": "^seg-[0-9a-f]{32}$"
                 },
-                "fabric.source.authenticated": false
+                "fabric.source.authenticated": false,
+                "fabric.content.object_ids": {
+                  "description": "X48: the record's content objects, in reference order (one per body).",
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 8,
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "#/$defs/uuid4"
+                  }
+                }
               },
               "additionalProperties": {
                 "$ref": "#/$defs/attributeValue"
@@ -454,6 +598,34 @@
             "parent_is_remote": [
               "parent_span_id"
             ]
+          }
+        },
+        "bodies": {
+          "description": "Spec 050 §3.5: the record's content objects in fabric.content.object_ids order (at most 8: up to four roles with a primary and a review copy each, the evidence object and descriptor-only bodies included). Same shape as exchange bodies; a descriptor-only body has length 0 and no stored_sha256 (R5).",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "descriptor",
+              "offset",
+              "length"
+            ],
+            "properties": {
+              "descriptor": {
+                "$ref": "#/$defs/descriptor",
+                "unevaluatedProperties": false
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "length": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
           }
         }
       }
@@ -502,6 +674,11 @@
             "last_sequence": {
               "type": "integer",
               "minimum": 0
+            },
+            "segment_id": {
+              "description": "Spec 050 R3: the segment of every position in this range (fabric.run.segment_id on the loss span). Ranges of different segments never coalesce, so a segment-attributed range is exact (count = last - first + 1; checked by the validator). Absent for positions allocated outside any run.",
+              "type": "string",
+              "pattern": "^seg-[0-9a-f]{32}$"
             }
           }
         }
@@ -652,6 +829,102 @@
             "manifest": {
               "description": "Marker kind manifest only (spec 049 §2.8, rev 6.3): the closed attributes of the fabric.capture_manifest span this marker exports, as contracts/capture/v1/schema/capture-manifest-record-v1.schema.json defines them (checked by the validator). last_sequence is the manifest's after_source_sequence; a manifest never occupies a position.",
               "type": "object"
+            },
+            "event_id": {
+              "description": "fabric.event_id (X02, spec 050 R2), every kind: a uuid4 minted once when the marker is built, persisted in the spool and the loss ledger and read back on every replay, so a retry or ledger export carries the same value. Every capture/v1 1.3.0 writer sets it; a pre-1.3.0 marker without it stays readable. On a manifest marker it is the manifest's own event_id.",
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+            },
+            "id_basis": {
+              "description": "fabric.run.id_basis (X49), run_start only: which run-identity rule decided run_id (spec 050 §3.6). Required on a run_start that carries a segment_id (checked by the validator).",
+              "enum": [
+                "caller",
+                "caller_join",
+                "token",
+                "token_conflict",
+                "minted",
+                "legacy"
+              ]
+            },
+            "session_id": {
+              "description": "fabric.session_id (X13), root run_start only (predecessors ['none']; checked by the validator): sess- + 32 hex (v2), or the id as given under identity_mode clear; omitted without a key.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "user_id": {
+              "description": "fabric.user_id (X14), root run_start only: usr- + 32 hex (v2), or the id as given under identity_mode clear; omitted without a key.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "parent_run_id": {
+              "description": "fabric.run.parent_id (X10), root run_start only: r- + 32 hex, or the clear id (opaque form) in clear mode.",
+              "$ref": "#/$defs/opaqueId"
+            },
+            "resumed_from": {
+              "description": "fabric.run.resumed_from (X11), root run_start only: r- + 32 hex, or the clear id (opaque form) in clear mode.",
+              "$ref": "#/$defs/opaqueId"
+            },
+            "links": {
+              "description": "fabric.run.links (X12), root run_start only: related runs, r- + 32 hex or clear ids (opaque form) in clear mode.",
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/opaqueId"
+              }
+            },
+            "outcome": {
+              "description": "fabric.run.outcome (D30), run_end only: on the outermost run_end of the run in this process and on end_run's run_end (spec 050 §3.6).",
+              "enum": [
+                "completed",
+                "failed",
+                "cancelled",
+                "suspended",
+                "unknown"
+              ]
+            },
+            "stop_reason": {
+              "description": "fabric.run.stop_reason (D30), run_end only, with outcome.",
+              "enum": [
+                "goal_reached",
+                "max_steps",
+                "max_tokens",
+                "error",
+                "cancelled",
+                "handoff",
+                "awaiting_input",
+                "other",
+                "unknown"
+              ]
+            },
+            "identity": {
+              "description": "The X05 deployment identity block, run_start only: fabric.agent_id, fabric.system_id, fabric.deployment_id, fabric.release_id and fabric.environment as emitted (operator labels; lbl- + 32 hex under capture_labels pseudonymous).",
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "agent_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "system_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "deployment_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "release_id": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                },
+                "environment": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+                }
+              }
             }
           },
           "allOf": [
@@ -811,6 +1084,45 @@
                   "manifest": false
                 }
               }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "not": {
+                      "const": "run_end"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "outcome": false,
+                  "stop_reason": false
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "not": {
+                      "const": "run_start"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "id_basis": false,
+                  "session_id": false,
+                  "user_id": false,
+                  "parent_run_id": false,
+                  "resumed_from": false,
+                  "links": false,
+                  "identity": false
+                }
+              }
             }
           ]
         }
@@ -833,7 +1145,7 @@
       "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "descriptor": {
-      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref to an object with bytes), as widened by spec 049 §4.3 (P0-A): every role of contracts/coverage/v1/registry/content-roles-v1.json (boundary, provenance, media type and cap per row are checked by the validator and the Node), the privacy fields, split parts and review copies, and descriptor-only not_captured records (no stored bytes, digest or ref; status_reason from the coverage reason vocabulary). source_authenticated is receiver-owned and never part of it. Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false.",
+      "description": "The content-v2 descriptor fields a writer needs, without encoding and ref (the writer adds encoding: binary and its own ref to an object with bytes), as widened by spec 049 §4.3 (P0-A): every role of contracts/coverage/v1/registry/content-roles-v1.json (boundary, provenance, media type and cap per row are checked by the validator and the Node), the privacy fields, split parts and review copies, and descriptor-only not_captured records (no stored bytes, digest or ref; status_reason from the coverage reason vocabulary). source_authenticated is receiver-owned and never part of it. Identical in spool-record-v1 and content-log-record-v1; each use closes it with unevaluatedProperties: false. Spec 050 (R5): a records body that could not be produced is descriptor-only too, with status not_captured or unsupported and a status_reason that may also name a producer reason (vocabulary descriptor_reason: payload_too_large, encoding_failed, not_exact_bytes).",
       "type": "object",
       "required": [
         "schema_version",
@@ -937,7 +1249,8 @@
             "media.frames",
             "media.events",
             "media.transcript",
-            "artifact.locator"
+            "artifact.locator",
+            "record.evidence"
           ]
         },
         "media_type": {
@@ -997,7 +1310,8 @@
             "stored",
             "truncated",
             "redacted",
-            "not_captured"
+            "not_captured",
+            "unsupported"
           ]
         },
         "status_reason": {
@@ -1047,7 +1361,10 @@
             "uninstrumented_client",
             "sampling",
             "retention_expired",
-            "deleted"
+            "deleted",
+            "payload_too_large",
+            "encoding_failed",
+            "not_exact_bytes"
           ]
         },
         "stored_byte_length": {
@@ -1196,7 +1513,10 @@
           "if": {
             "properties": {
               "status": {
-                "const": "not_captured"
+                "enum": [
+                  "not_captured",
+                  "unsupported"
+                ]
               }
             }
           },

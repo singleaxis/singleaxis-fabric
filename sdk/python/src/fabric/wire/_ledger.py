@@ -17,6 +17,10 @@ Layout: a 4 KiB header (``b"FWLEDGR1"``, slot count, slot size), then ``SLOTS`` 
 sha256(magic, len, payload)``, payload the canonical JSON ``{"owner": ..., "records": [...]}``
 of complete spool record headers (``loss`` and ``marker`` kinds only, with ``order`` and
 ``written_at_unix_nano``), so a record exports as the span the spool would have delivered.
+Records are stored unchanged (spec 050 §3.5): a marker keeps the uuid4 ``event_id`` minted
+when it was built and a loss its ``segment_id``, so a replay exports the same identity. A
+manifest marker larger than a slot is not mirrored (``manifests_unledgered``): the
+heartbeats' ``manifest_seq`` still exposes its loss (spec 049 §2.4 rule 4).
 
 Ownership: a process writes only slots it holds an exclusive POSIX record lock on
 (``lockf`` on the slot's byte range); the kernel releases those locks when the process
@@ -79,6 +83,12 @@ def decode_slot(data: bytes) -> list[dict[str, Any]] | None:
     return records if isinstance(records, list) else None
 
 
+def _manifest(record: Mapping[str, Any]) -> bool:
+    marker = record.get("marker")
+    return record.get("record_kind") == "marker" and isinstance(marker, Mapping) and (
+        marker.get("kind") == "manifest")  # fmt: skip
+
+
 def _blank() -> bytes:
     return b"\0" * SLOT_BYTES
 
@@ -117,6 +127,19 @@ class LossLedger:
         self._dirty = False  # written since the last successful fsync (EIO keeps it set)
         self._owner = f"{os.getpid()}-{os.urandom(4).hex()}"
         self.overflows = self.failures = self.corrupt = 0
+        self._unledgered: set[str] = set()  # event ids of manifests too large for a slot
+
+    def _unledger(self, record: Mapping[str, Any]) -> bool:
+        """``True`` when ``record`` is a manifest left out of the ledger (counted once)."""
+        if not _manifest(record):
+            return False
+        self._unledgered.add(str(record["marker"].get("event_id")))
+        return True
+
+    @property
+    def manifests_unledgered(self) -> int:
+        """Manifest markers this process held that were too large to mirror (050 §3.5)."""
+        return len(self._unledgered)
 
     def after_fork(self) -> None:
         """A forked child holds no record lock: it starts with no slots (the parent keeps
@@ -166,7 +189,9 @@ class LossLedger:
     def store(self, records: Sequence[Mapping[str, Any]]) -> bool:
         """Make this process's slots hold exactly ``records`` (loss records first, then
         markers, as given), fsync'd; ``[]`` clears and releases them. ``False`` when not all
-        of them fit (the rest stay in memory only; counted) or the write failed."""
+        of them fit (the rest, the newest, stay in memory only; counted) or the write
+        failed. Encoding stops once :data:`MAX_OWN_SLOTS` are full, so a long list of
+        held records costs no more than the slots it can fill."""
         with self._lock:
             chunks: list[bytes] = []
             batch: list[Mapping[str, Any]] = []
@@ -175,14 +200,17 @@ class LossLedger:
                 if _encode(self._owner, [*batch, record]) is None and batch:
                     chunks.append(_encode(self._owner, batch) or b"")
                     batch = []
+                    if len(chunks) >= MAX_OWN_SLOTS:  # the rest cannot be mirrored
+                        fits = False
+                        break
                 if _encode(self._owner, [record]) is None:
-                    fits = False  # a single record larger than a slot (never in practice)
+                    # a single record larger than a slot: a manifest is not mirrored (050
+                    # §3.5, counted apart); any other never happens in practice
+                    fits = self._unledger(record) and fits
                     continue
                 batch.append(record)
-            if batch:
+            if batch:  # at most MAX_OWN_SLOTS chunks: the loop stops at the last one
                 chunks.append(_encode(self._owner, batch) or b"")
-            if len(chunks) > MAX_OWN_SLOTS:
-                chunks, fits = chunks[:MAX_OWN_SLOTS], False
             try:
                 while len(self._own) < len(chunks):
                     if (index := self._claim()) is None:

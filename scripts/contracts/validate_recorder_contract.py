@@ -111,7 +111,7 @@ class _StrictLoader(yaml.SafeLoader):
 
 def _unique_mapping(
     loader: _StrictLoader, node: yaml.MappingNode, deep: bool = False
-) -> dict:
+) -> dict[Any, Any]:
     loader.flatten_mapping(node)
     mapping: dict[Any, Any] = {}
     for key_node, value_node in node.value:

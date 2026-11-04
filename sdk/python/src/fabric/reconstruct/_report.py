@@ -24,6 +24,17 @@ GapType = Literal[
     # 049 §7.9, decision 20: in the production profile a record without the Node's
     # fabric.source.authenticated stamp read back from a trusted location.
     "source_unauthenticated",
+    # Spec 050 §3.12 (capture/v1 1.3.0): segments, seals, manifests and run states.
+    "segment_missing",
+    "segment_conflict",
+    "post_terminal_activity",
+    "run_unterminated",
+    "run_open",
+    "seal_mismatch",
+    "unsealed_segment",
+    "unsealed_epoch",
+    "manifest_gap",
+    "clock_uncertain",
 ]
 Effect = Literal["info", "partial", "unverified"]
 Check = Literal["passed", "failed", "skipped", "not_applicable"]
@@ -35,6 +46,9 @@ COMPLETE: Final = "complete_for_declared_scope"
 COMPLETE_OBSERVED: Final = "complete_for_observed_scopes"
 #: Verdicts that make no completeness-blocking statement (CLI exit code 0).
 COMPLETE_VERDICTS: frozenset[str] = frozenset({COMPLETE, COMPLETE_OBSERVED})
+#: Run states (spec 050 §3.12) that do not keep a run from exit code 0: absent (a pre-P1
+#: capture) or ``terminated``. An ``open`` run exits 1 although ``run_open`` is ``info``.
+EXIT_RUN_STATES: frozenset[str | None] = frozenset({None, "terminated"})
 
 SCHEMA_VERSION = "fabric.run-reconstruction/v1"
 _REASON_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -56,6 +70,7 @@ class Gap:
     previous_response_id: str | None = None
     object_role: Literal["request", "response"] | None = None
     reason: str | None = None
+    segment_id: str | None = None  # spec 050 §3.12: the segment a P1 gap is about
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {"gap_type": self.gap_type, "effect": self.effect}
@@ -68,6 +83,7 @@ class Gap:
             "tool_call_id": self.tool_call_id,
             "previous_response_id": self.previous_response_id,
             "object_role": self.object_role,
+            "segment_id": self.segment_id,
             "reason": self.reason if self.reason and _REASON_RE.match(self.reason) else None,
         }
         out.update({key: value for key, value in optional.items() if value is not None})
@@ -90,6 +106,7 @@ def sort_gaps(gaps: Iterable[Gap], order_of: Mapping[str, int]) -> list[Gap]:
             gap.effect,
             gap.exchange_id or "",
             gap.previous_response_id or "",
+            gap.segment_id or "",
         )
 
     return sorted(dict.fromkeys(gaps), key=key)
@@ -138,3 +155,127 @@ def format_datetime(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+# --------------------------------------------------------------------------
+# Spec 056 §4.5: chain verdicts and the attribution summary
+# --------------------------------------------------------------------------
+
+ChainVerdict = Literal["complete", "partial", "unverified", "not_observed"]
+#: The four evidence chains of a run, in report order (spec 056 §0, §4.5).
+CHAIN_NAMES: Final = ("decisions", "actions", "effects", "corroboration")
+#: The bases ``attribution.links`` counts decisions by, in report order: ``reported`` is
+#: rule A0, ``none`` is A4 (no candidate), the others are link methods.
+ATTRIBUTION_BASES: Final = (
+    "reported",
+    "output_match",
+    "sequence_bracket",
+    "process_anchor",
+    "process_lineage",
+    "none",
+)
+#: ``unattributed_effects`` and ``unexplained_host_events`` list at most this many entries;
+#: their counts are exact.
+LIST_MAX: Final = 64
+_LINK_STATES: Final = ("resolved", "ambiguous", "unresolved")
+# A check that was skipped without a gap explaining it: the reason the decisions chain
+# names (``bytes`` is skipped when no content store was given).
+_SKIPPED_REASONS: Final = {"bytes": "not_configured", "stitching": "unparsed_exchange"}
+
+
+def chain(reasons: Iterable[str]) -> dict[str, Any]:
+    """A chain that is ``partial`` exactly when it has reasons (first occurrence order),
+    else ``complete``. A complete chain carries no reasons (spec 056 §4.5)."""
+
+    found = list(dict.fromkeys(reasons))
+    return {"verdict": "partial", "reasons": found} if found else {"verdict": "complete"}
+
+
+def not_observed(reason: str | None = None) -> dict[str, Any]:
+    """A chain with nothing to judge: no tool call, no enabled effect channel or no host
+    source. ``reason`` says why when the chain names one."""
+
+    return {"verdict": "not_observed", **({"reasons": [reason]} if reason else {})}
+
+
+def decisions_chain(gaps: Sequence[Gap], checks: Mapping[str, Check]) -> dict[str, Any]:
+    """The ``decisions`` chain: the existing exchange verdict (spec 047 §9.7) restated as a
+    chain verdict, its reasons the gap types behind it. Never ``not_observed``: wire
+    capture is the base of the record."""
+
+    verdict = verdict_for(gaps, checks)
+    if verdict == COMPLETE:
+        return {"verdict": "complete"}
+    reasons: list[str] = [gap.gap_type for gap in gaps if gap.effect != "info"]
+    if not reasons:  # unverified by a skipped check alone
+        reasons = [
+            _SKIPPED_REASONS.get(name, "not_configured")
+            for name, state in checks.items()
+            if state == "skipped"
+        ]
+    return {"verdict": verdict, "reasons": list(dict.fromkeys(reasons))}
+
+
+def chained_run_verdict(verdict: RunVerdict, chains: Mapping[str, Mapping[str, Any]]) -> RunVerdict:
+    """Spec 056 §4.5: the run verdict keeps its meaning (050 §3.12) and is bounded by the
+    chains: never complete while an observed chain is ``partial`` or ``unverified``.
+    ``not_observed`` chains bound nothing; partial beats unverified beats complete."""
+
+    states = {entry["verdict"] for entry in chains.values()}
+    if "partial" in states:
+        return "partial"
+    if "unverified" in states and verdict in COMPLETE_VERDICTS:
+        return "unverified"
+    return verdict
+
+
+def link_counts() -> dict[str, int]:
+    """One basis's zeroed ``{resolved, ambiguous, unresolved}`` counter."""
+
+    return dict.fromkeys(_LINK_STATES, 0)
+
+
+def attribution_json(
+    *,
+    counts: Mapping[str, Mapping[str, int]],
+    unattributed: Sequence[Mapping[str, str]],
+    effects_not_observed: Mapping[str, int],
+    output_match: Mapping[str, str],
+    unexplained: Sequence[str],
+    unexplained_count: int | None = None,
+    lineage_truncated: int = 0,
+) -> dict[str, Any]:
+    """The run's ``attribution`` object (spec 056 §4.5): link counts by basis in
+    :data:`ATTRIBUTION_BASES` order (a basis with no decision is absent), the first
+    :data:`LIST_MAX` unattributed effects (``{attempt_uid, event_id}``, sequence order) and
+    unexplained host event ids (time order) with their full counts, the tool calls without
+    an attributed effect by reason, the output-match state, and ``lineage_truncated`` only
+    when nonzero. ``unexplained_count`` is the full count when ``unexplained`` holds only
+    the first ids (``None``: ``len(unexplained)``)."""
+
+    out: dict[str, Any] = {
+        "links": {
+            basis: {state: int(counts[basis].get(state, 0)) for state in _LINK_STATES}
+            for basis in ATTRIBUTION_BASES
+            if basis in counts
+        },
+        "unattributed_effects": {
+            "count": len(unattributed),
+            "effects": [
+                {"attempt_uid": entry["attempt_uid"], "event_id": entry["event_id"]}
+                for entry in unattributed[:LIST_MAX]
+            ],
+        },
+        "effects_not_observed": {
+            reason: int(effects_not_observed.get(reason, 0))
+            for reason in ("channel_disabled", "no_effect_channel", "none_in_window")
+        },
+        "output_match": dict(output_match),
+        "unexplained_host_events": {
+            "count": len(unexplained) if unexplained_count is None else unexplained_count,
+            "event_ids": list(unexplained[:LIST_MAX]),
+        },
+    }
+    if lineage_truncated:
+        out["lineage_truncated"] = lineage_truncated
+    return out

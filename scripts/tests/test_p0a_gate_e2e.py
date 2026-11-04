@@ -141,9 +141,18 @@ def _by_op(descriptors: list[dict[str, Any]], exchange_id: str) -> list[dict[str
 def _assert_run(report: dict[str, Any], span: dict[str, Any]) -> dict[str, Any]:
     by_run = {run["run_id"]: run for run in report["runs"]}
     run = by_run[span["attributes"]["fabric.run.id"]]
-    assert run["verdict"] == "complete_for_declared_scope", run["gaps"]
     # A single call's emitted tool call is never consumed: an info gap, nothing else.
+    # The record itself is complete (every check passes, the decisions chain is
+    # complete); spec 056 §4.5 reports the unanswered call as the actions chain's
+    # tool_result_missing, which alone keeps the run verdict partial.
     assert all(g["effect"] == "info" for g in run["gaps"]), run["gaps"]
+    assert set(run["checks"].values()) == {"passed"}, run["checks"]
+    assert run["chains"]["decisions"] == {"verdict": "complete"}, run["chains"]
+    assert run["chains"]["actions"] == {
+        "verdict": "partial",
+        "reasons": ["tool_result_missing"],
+    }, run["chains"]
+    assert run["verdict"] == "partial", run["gaps"]
     assert report["inputs"]["telemetry_origin"] == "trusted_readback"
     (exchange,) = run["exchanges"]
     assert exchange["objects"]["request"]["verification"] == "verified"

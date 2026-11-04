@@ -530,3 +530,22 @@ def test_loss_and_heartbeat_keys_on_one_span_refuse_the_input() -> None:
     record = SpanRecord("a" * 32, "b" * 16, None, "fabric.capture_loss", 1, 2, attributes, {})
     with pytest.raises(ReconstructInputError, match="loss and the heartbeat"):
         observe(record)
+
+
+def test_an_unscoped_exchange_keeps_its_endpoint_id() -> None:
+    """An exchange outside every run scope keeps no span (no seal digest needs it), but its
+    C35 endpoint id is kept: spec 056 rule H4 resolves the endpoint a run's model calls
+    reached from it (found by the AR-1 harness: every agent connection was unexplained)."""
+    attributes = {
+        "fabric.wire.exchange_id": "ex-1", "fabric.source_id": "wire-1",
+        "fabric.source.epoch": 7, "fabric.source.sequence": 3, "fabric.run.id": "r-1",
+        "fabric.wire.api": "openai.chat_completions", "fabric.wire.response_state": "complete",
+        "fabric.wire.store_status": "disabled", "fabric.wire.truncated": False,
+        "fabric.wire.endpoint_id": "lbl-" + "c" * 32,
+    }  # fmt: skip
+    record = SpanRecord("a" * 32, "b" * 16, None, "fabric.model_call", 1, 2, attributes, {})
+    observed = observe(record)
+    assert getattr(observed, "span", "unset") is None
+    assert getattr(observed, "endpoint_id", None) == "lbl-" + "c" * 32
+    del attributes["fabric.wire.endpoint_id"]
+    assert getattr(observe(record), "endpoint_id", "unset") is None

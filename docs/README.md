@@ -22,6 +22,8 @@ in git.
 | [Privacy and security](privacy-and-security.md) | Protection modes, pseudonyms, encryption at rest, source authentication, threat model |
 | [Operations](operations/README.md) | Spool, queues, health, metrics, troubleshooting, upgrades; [recovery runbook](operations/dr.md) |
 | [Reconstruct and verdicts](reconstruct.md) | The offline verifier, gaps and verdicts |
+| [The P1 run record](run-record.md) | Shared allocator, records input, segments, seals, manifests, step projection (unreleased) |
+| [Agent action reconstruction](action-reconstruction.md) | The subprocess hook, a host sensor, effects linked to tool calls and host events, `python -m fabric.reconstruct actions`, what is not covered yet (unreleased) |
 | [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
 | [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
 | [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter |
@@ -29,6 +31,8 @@ in git.
 
 ## Reference
 
+- [Glossary](glossary.md): every term, rule label and decision code the
+  specs use.
 - [GenAI semantic conventions](genai-semantic-conventions.md): span and
   attribute names emitted by the decision API.
 - [API stability](api-stability.md): compatibility commitments.
@@ -55,7 +59,78 @@ in git.
     [054](../specs/054-specialised-runtimes-p5.md) (P5) and
     [055](../specs/055-typescript-wire-capture.md) (TS-1, TypeScript wire
     capture). All are drafts; none is in a release. Waves 0–2 of 050 (P1)
-    are built on the unreleased `feat/p1-integration` branch.
+    and the parts of 053 that 056 milestone M1 needs are built, not yet
+    released ([map](#map)).
+
+## Map
+
+### The four chains of an agent run
+
+[Spec 056](../specs/056-agent-action-reconstruction.md) states the goal of
+the current work: for one production run, say what the agent did, which
+model decision caused each action, and what independent evidence confirms
+it. That needs four chains of evidence:
+
+| Chain | Question | Source | State |
+|---|---|---|---|
+| Decisions | What did the model see and return? | Wire capture of model calls | Released (v0.8.0) |
+| Actions | Which tools did the model ask for, with which arguments, and what result did the agent feed back? | Parsed offline from the captured model bodies | Pairing by id released (v0.8.0); per-chain verdict built, unreleased (056 WP6-04) |
+| Effects | What did the agent's process actually run? | Opt-in subprocess hook | Hook and attribution to tool calls built, unreleased (056 WP6-03, WP6-04); AR-1 passes in hermetic mode |
+| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors released for the local profile; the join to effects built, unreleased (056 WP6-05), read with `python -m fabric.reconstruct actions --host-records` ([agent action reconstruction](action-reconstruction.md)); AR-1 live mode (a real sensor) not yet run |
+
+### Where things stand
+
+| | What it contains |
+|---|---|
+| **Released (v0.8.0, unchanged in v0.9.0)** | Python wire capture (httpx, httpx2, aiohttp); the PROTECT stage, production profile gate, encryption at rest and source authentication (049 phases P0 and P0-A); the agent spool and sender; the Fabric Node; `fabric.reconstruct` with integrity verdicts; the explicit APIs in Python and TypeScript; qualified-run mode; host sensors in the local profile; Helm chart and Compose files. |
+| **Built, not yet released** | Most of 049 phase P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)): one allocator for both inputs, the records input, random epochs with registration, segments, seals, resume tokens, capture manifests, the segment graph and the step projection. See [the P1 run record](run-record.md). Also spec 056 milestone M1: the contracts and rule fixtures (WP6-01), the hooks foundation and `exec.subprocess` hook (WP6-02, WP6-03), effect-to-tool-call attribution, chain verdicts and the `actions` view (WP6-04), the process-tree join of host events and the `--host-records` option (WP6-05, WP6-06), and the AR-1 harness (WP6-06). See [agent action reconstruction](action-reconstruction.md). |
+| **In progress** | Spec 056 milestone M1 acceptance: [AR-1](../qualification/action-record/README.md) passes in hermetic mode (real agent, hook, Node and verifier; recorded host-sensor events), and its live mode with a real eBPF or auditd sensor (CI, Linux) has not run yet. |
+| **Specified only** | 050 P1-A and the `decision()` move onto the records input; specs [051](../specs/051-context-and-lifecycle-p2.md) (P2), [052](../specs/052-decisions-and-effects-p3.md) (P3), [053](../specs/053-execution-channels-p4.md) (P4, except the part 056 moves forward), [054](../specs/054-specialised-runtimes-p5.md) (P5), [055](../specs/055-typescript-wire-capture.md) (TypeScript wire capture); spec 056 milestone M2. |
+
+[specs/README.md](../specs/README.md) gives the status of every spec, and
+[limitations and roadmap](limitations-and-roadmap.md) what the release does
+not do.
+
+### Where the code lives
+
+| Path | What it is | State |
+|---|---|---|
+| [`sdk/python/src/fabric/wire/`](../sdk/python/src/fabric/wire/) | Wire capture: transport tees (`_transport.py`, `_aiohttp.py`), endpoint matching (`_match.py`), the capture worker (`_pipeline.py`), PROTECT (`_protect.py`), the production gate (`_policy.py`), spool and sender (`_spool.py`, `_sender.py`), `install()`, `run()`, resume tokens (`__init__.py`) | Released (v0.8.0); P1 additions unreleased |
+| [`sdk/python/src/fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/) | The offline verifier: span readers (`_inputs.py`), integrity (`_verify.py`, `_report.py`), tool-call and conversation stitching (`_stitch.py`), segment graph (`_graph.py`), step projection (`_project.py`, `_fields_model.py`); effect attribution, chain verdicts and the `actions` view (`_attribute.py`); host-sensor reader and process join (`_host.py`) | Released (v0.8.0); graph, projection, attribution and host join unreleased |
+| [`sdk/python/src/fabric/`](../sdk/python/src/fabric/) (top level) | Shared allocator and pseudonyms (`_sequence.py`, `_identity.py`), content roles (`_roles.py`), records input (`_records.py`), segments (`_segments.py`), seals (`_seal.py`), manifests (`_manifest.py`); explicit APIs (`decision.py`, `call_recorder.py`, `byte_evidence.py`, `adapters/`); qualified-run mode (`qualified_run.py`, `receipt_sets.py`, `independent_feed.py`) | Explicit APIs released (v0.8.0); P1 modules unreleased |
+| [`sdk/python/src/fabric/hooks/`](../sdk/python/src/fabric/hooks/) | Opt-in hooks: install, status, disable and close, patch ownership and the records-input producer (`__init__.py`, `_config.py`, `_patches.py`, `_guard.py`, `_producer.py`); the `exec.subprocess` observer (`_exec.py`) | Unreleased (056 WP6-02, WP6-03) |
+| [`sdk/typescript/src/`](../sdk/typescript/src/) | TypeScript SDK: explicit APIs only (`decision.ts`, `byte-evidence.ts`, `identity.ts`, ...) | Released (v0.8.0); no wire capture |
+| [`components/otel-collector-fabric/`](../components/otel-collector-fabric/) | The Fabric Node: `gate/` (`fabric-gate`), `processor/fabricguardprocessor/`, `exporter/fabriccontentexporter/`, `extension/` (`fabricenvelope`, `noredirect`), `receiver/auditreceiver/` (auditd host sensor) | Released (v0.8.0); records class unreleased |
+| [`components/host-emitter/`](../components/host-emitter/) | eBPF host sensor (Go and a CO-RE BPF program in `bpf/`) | Released (v0.8.0), local profile only |
+| [`contracts/`](../contracts/) | Versioned JSON schemas, registries and fixtures; [`coverage/v1/registry/`](../contracts/coverage/v1/registry/) is the source of truth for field ids, capture points, content roles and vocabularies | Published or draft (see [Public contracts](#public-contracts)) |
+| [`scripts/contracts/`](../scripts/contracts/) | Contract validators and reference implementations (`p1_reference.py`, `action_reference.py`) | Built |
+| [`scripts/tests/`](../scripts/tests/) | Repository tests: contracts, release boundary, Compose and Node end-to-end | Built |
+| [`qualification/action-record/`](../qualification/action-record/README.md) | AR-1, the spec 056 acceptance scenario (hermetic and live) | Unreleased; hermetic mode passes |
+| [`charts/fabric/`](../charts/fabric/), [`deploy/`](../deploy/README.md) | Helm chart for the Node; Compose files, auditd rules, a host-emitter DaemonSet | Released (v0.8.0) |
+| [`tools/fabricctl/`](../tools/fabricctl/README.md) | Local recorder configuration CLI | Released (v0.8.0) |
+| [`examples/`](../examples/README.md) | Runnable examples; start with `wire-capture/` | Built |
+| [`specs/`](../specs/README.md) | Design of record | See its index |
+
+### Reading order
+
+For a first reading:
+
+1. [Architecture](architecture.md): components and data flow.
+2. [Quickstart](quickstart.md): run the offline example, then break the
+   record and watch the verdict change.
+3. [Reconstruct and verdicts](reconstruct.md) and
+   [privacy and security](privacy-and-security.md): what a verdict means
+   and how the record is protected.
+4. [Glossary](glossary.md): keep it open while reading the specs.
+5. [Spec 049](../specs/049-four-layer-capture-coverage.md) §1–§2 and §6:
+   the record model (four layers, coverage statuses, verdicts). Sections 3
+   and 4 are reference tables.
+6. [The P1 run record](run-record.md) and
+   [spec 050](../specs/050-run-structure-and-records-p1.md) §3: what P1
+   adds.
+7. [Spec 056](../specs/056-agent-action-reconstruction.md): the current
+   goal; it cites the sections of [053](../specs/053-execution-channels-p4.md)
+   it builds on.
 
 ## Public contracts
 
@@ -78,5 +153,6 @@ deployment-policy v1 (`contracts/deployment-policy/v1`),
 ## Contributors and maintainers
 
 - [Building Fabric](building-fabric.md)
+- [Contributing](../CONTRIBUTING.md): environment setup and tests
 - [Third-party licenses](licenses/README.md)
 - [Historical secret-scan triage](security-history-triage.md)

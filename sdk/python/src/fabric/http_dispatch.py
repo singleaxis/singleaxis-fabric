@@ -9,7 +9,9 @@ wire framing, or cloud/provider attestation are claimed. This adapter does not
 install hooks or restrict bypass routes. Only the declared URL is qualified;
 all independent receiver requests must reconcile, including bypass attempts.
 Digest-only witness data is local test evidence, never a production privacy
-policy replacement. The existing CallRecorder protects body bytes separately.
+policy replacement. The existing CallRecorder protects body bytes separately; in its
+records mode (spec 050 §3.10) the install's capture policy protects them on the records
+input, under the capture point ``explicit.final_http``.
 """
 
 from __future__ import annotations
@@ -29,6 +31,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .call_recorder import CallRecorder
+
+# Spec 050 §3.10: the adapter inherits its CallRecorder's mode; in records mode its calls
+# report this capture point on the install's manifest.
+_POINT = "explicit.final_http"
 
 
 def _digest(data: bytes) -> str:
@@ -162,6 +168,7 @@ class FinalHTTPAdapter:
                         kind="model",
                         operation_id=operation_id,
                         attempt_id=attempt_id,
+                        _point=_POINT,
                     )
                 except Exception:
                     if transport_failure is not None:
@@ -227,7 +234,12 @@ class FinalHTTPAdapter:
         else:
             try:
                 iterator = self.recorder.stream(
-                    body, dispatch, kind="model", operation_id=operation_id, attempt_id=attempt_id
+                    body,
+                    dispatch,
+                    kind="model",
+                    operation_id=operation_id,
+                    attempt_id=attempt_id,
+                    _point=_POINT,
                 )
             except Exception:
                 observation["recording_error"] = True

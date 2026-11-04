@@ -22,11 +22,10 @@ from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
 from requests import Response  # type: ignore[import-untyped, unused-ignore]
 from requests.adapters import BaseAdapter  # type: ignore[import-untyped, unused-ignore]
 
-import fabric._loss
-import fabric._sequence
-from fabric import tracing, wire
+from fabric import _loss, _sequence, tracing, wire
+from fabric._capture_types import RunScope
 from fabric._loss import LossEmitter
-from fabric._sequence import RunScope, SourceAllocator, id_key_from_env, run_pseudonym
+from fabric._sequence import SourceAllocator, id_key_from_env, run_pseudonym
 from fabric.wire import WireConfig
 from fabric.wire._config import config_from_env
 from fabric.wire._content import NodeContentClient
@@ -57,8 +56,8 @@ def node() -> Iterator[FakeNode]:
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     emitter = LossEmitter()
-    monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_loss, "_EMITTER", emitter)
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
     yield
     wire.uninstall()
@@ -172,7 +171,7 @@ def test_flush_and_close_are_false_when_losses_and_markers_cannot_be_spooled(
     loss = LossEmitter()
     sender = Sender(spool, _OkExporter(), loss, content=None, service_name="fabric-wire")
     loss.attach(sender.wake)
-    spool.write = _full_disk  # type: ignore[method-assign]
+    spool.write = spool.write_batch = _full_disk  # type: ignore[method-assign]
     allocator = SourceAllocator("disk-agent", "wire")
     allocator.next_sequence()
     loss.record("disk-agent", allocator.epoch, "queue_full", 0)
@@ -357,7 +356,7 @@ def test_run_pseudonym_forms() -> None:
     keyed = "r-" + hmac.new(KEY, CLEAR.encode(), hashlib.sha256).hexdigest()[:32]
     assert run_pseudonym(CLEAR, KEY) == keyed
     assert run_pseudonym(CLEAR) == "r-" + hashlib.sha256(CLEAR.encode()).hexdigest()[:32]
-    assert fabric._sequence.RUN_PSEUDONYM_RE.fullmatch(keyed)
+    assert _sequence.RUN_PSEUDONYM_RE.fullmatch(keyed)
     assert run_pseudonym(CLEAR, KEY) != run_pseudonym(CLEAR)
 
 
@@ -377,6 +376,7 @@ def test_clear_run_id_never_leaves_the_process(
     node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("FABRIC_WIRE_ID_KEY", KEY.decode())  # install() reads it
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     node.mode = "down"
     spool = tmp_path / "spool"
     handle = install_node(node, spool, id_key=None)  # the environment's key
@@ -393,7 +393,9 @@ def test_clear_run_id_never_leaves_the_process(
     (span,) = node.named("fabric.model_call")
     assert span["fabric.run.id"] == expected
     markers = [b for b in node.named("fabric.capture_heartbeat") if "fabric.run.id" in b]
-    assert {b["fabric.run.id"] for b in markers} == {expected} and len(markers) == 2
+    assert {b["fabric.run.id"] for b in markers} == {expected} and len(markers) == 3
+    assert sorted(b["fabric.heartbeat.kind"] for b in markers) == [
+        "run_end", "run_start", "segment_seal"]  # 050 §3.6: the run's terminal seal  # fmt: skip
     assert {attrs["run_id"] for attrs, _ in node.content} == {expected}
     with node.lock:
         assert all(CLEAR not in json.dumps(headers) for _, headers in node.requests)
@@ -401,8 +403,8 @@ def test_clear_run_id_never_leaves_the_process(
 
 def test_fallback_run_ids_are_unchanged(tmp_path: Path) -> None:
     allocator = SourceAllocator("wire-fallback", "wire")
-    assert fabric._sequence.resolve_run_id(allocator, trace_id=5) == f"trace:{5:032x}"
-    assert fabric._sequence.resolve_run_id(allocator).startswith("source:wire-fallback:")
+    assert _sequence.resolve_run_id(allocator, trace_id=5) == f"trace:{5:032x}"
+    assert _sequence.resolve_run_id(allocator).startswith("source:wire-fallback:")
 
 
 def test_model_names_hash_free_text_after_a_default_prefix() -> None:

@@ -1,0 +1,34 @@
+{
+  "schema_version": "fabric.record-evidence/v1",
+  "evidence_type": "fabric.test.items/v1",
+  "items": [
+    {
+      "name": "orders.lookup",
+      "count": 3,
+      "kind": "alpha",
+      "ref_index": 0
+    },
+    {
+      "name": "orders.refund",
+      "count": 0,
+      "kind": "beta",
+      "digest": "sha256:1d630127108f1feaf1f7beee59b66dd679daf712a441f3d0a39ee9ea0f2b7a95",
+      "tags": [
+        "late",
+        "partial"
+      ]
+    }
+  ],
+  "continuation": {
+    "index": 0,
+    "final": true
+  },
+  "refs": [
+    {
+      "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+      "role": "tool.call.arguments",
+      "pointer": "/q"
+    }
+  ],
+  "note": "free text"
+}

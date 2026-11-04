@@ -22,7 +22,7 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import InitVar, dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -94,6 +94,8 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 _MEDIA_TYPE_MAX_LENGTH = 128
 # Deployment modes whose stored object is a derivative (to the review store).
 _DERIVED = frozenset({"redact", "masked_only", "tokenize"})
+# A byte privacy mode as the capture policy names it (spec 050 §3.10 config check).
+_CAPTURE_POLICY_MODE = {"original": "retain_original"}
 _OPAQUE_ID_MAX_LENGTH = 128
 # Spec 049 §7.7 rule 3 / content-v2 2.2.0: every object stored under a masked mode records
 # the policy id, version and digest. Caller-supplied ``role_policies`` have no deployment
@@ -439,6 +441,31 @@ class ByteEvidenceRecorder:
         if (protector := self._config.content_protector) is not None:
             return protector.stats()
         return dict.fromkeys(("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0)
+
+    def capture_policy_conflicts(self, capture_mode: Callable[[str], str]) -> list[str]:
+        """The roles whose configured privacy mode (``role_policies``, or the deployment
+        policy's ``privacy`` for an enabled role) disagrees with ``capture_mode`` (the
+        install's capture policy, spec 050 §3.10), sorted. ``original`` is the capture
+        policy's ``retain_original``. Roles this config does not name are not compared."""
+        config = self._config
+        if config.deployment_policy is not None:
+            configured = {role: mode for role, mode in config.deployment_policy.privacy.items()
+                          if role in config.roles}  # fmt: skip
+        else:
+            configured = {role: _CAPTURE_POLICY_MODE.get(policy.mode, policy.mode)
+                          for role, policy in (config.role_policies or {}).items()}  # fmt: skip
+        return sorted(role for role, mode in configured.items() if capture_mode(role) != mode)
+
+    def check_capture_policy(self, capture_mode: Callable[[str], str]) -> None:
+        """Spec 050 §3.10: in records mode the install's capture policy governs the bodies
+        through the shared PROTECT stage, so a byte config whose role policies disagree
+        with it is malformed configuration (``ValueError``, fixed text naming roles only)."""
+        conflicts = self.capture_policy_conflicts(capture_mode)
+        if conflicts:
+            raise ValueError(
+                "byte evidence role policies disagree with the capture policy for: "
+                + ", ".join(conflicts)
+            )
 
     @property
     def emitted_ids(self) -> EmittedIds | None:

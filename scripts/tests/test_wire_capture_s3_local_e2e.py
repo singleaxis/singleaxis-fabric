@@ -908,9 +908,34 @@ def test_node_outage_is_absorbed_by_the_agent_spool_and_replayed(stack: Stack) -
         ]
         kinds = sorted(h["record_kind"] for h in headers)
         assert kinds.count("exchange") == 3, kinds
-        assert sorted(
-            h["marker"]["kind"] for h in headers if h["record_kind"] == "marker"
-        ) == ["final", "run_end", "run_end", "run_start", "run_start"], headers
+        # Spec 050: the epoch's manifest 0, one manifest chained at uninstall per
+        # wire tee that was active (its disabled(shutdown) state change; the
+        # aiohttp tee is active only where aiohttp is installed), the outer and
+        # nested scopes' run markers, and the run's one segment, sealed at the
+        # outermost exit, before the epoch's final.
+        markers = [h["marker"] for h in headers if h["record_kind"] == "marker"]
+        assert sorted(m["kind"] for m in markers if m["kind"] != "manifest") == [
+            "final",
+            "run_end",
+            "run_end",
+            "run_start",
+            "run_start",
+            "segment_seal",
+        ], markers
+        manifests = sorted(
+            (m["manifest"] for m in markers if m["kind"] == "manifest"),
+            key=lambda doc: doc["fabric.manifest.manifest_seq"],
+        )
+        active_tees = [
+            point
+            for point in manifests[0]["fabric.manifest.capture_points"]
+            if point.startswith("wire.py.") and ":active:" in point
+        ]
+        assert active_tees and len(manifests) == 1 + len(active_tees), manifests
+        scoped = [m for m in markers if m["kind"] != "final" and m.get("run_id")]
+        assert {m["run_id"] for m in scoped} == {emitted(RUN_BEFORE)}, scoped
+        (seal,) = [m for m in markers if m["kind"] == "segment_seal"]
+        assert seal["terminal"] is True, seal
         assert not stack.sink.spans_of(service)
     finally:
         stack.docker("start", node)

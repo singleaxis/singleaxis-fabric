@@ -1,5 +1,10 @@
 # Reconstruct and verdicts
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/). The
+> unreleased options (`--projection` and the run-state options) are in
+> [the P1 run record](run-record.md#using-it).
+
 `python -m fabric.reconstruct` is Fabric's offline verifier for wire
 capture. It reads the capture spans and the content store, checks that the
 record is complete and unaltered, rebuilds each run from the stored bytes,
@@ -31,17 +36,17 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 | `--profile local\|production` | Default: `production` when any span carries the Node's stamp, else `local`. Production requires every record to be authenticated. |
 | `--model-allowlist TEXT` | Model names reported as is (default `$FABRIC_WIRE_MODEL_ALLOWLIST`); others appear as `m-` digests. |
 | `--out FILE` | Write the report atomically with mode `0600` instead of stdout. |
-| `--projection FILE` | Not released; on the unreleased `feat/p1-integration` branch (see [step projection](#step-projection-unreleased)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
-| `--coverage-profile ID` | Not released; `feat/p1-integration` branch only. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
-| `--evaluated-at RFC3339` | Not released; `feat/p1-integration` branch only. The time run states and open-run deadlines are computed at (default: now). |
-| `--clock-uncertainty DURATION` | Not released; `feat/p1-integration` branch only. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
-| `--max-clock-uncertainty DURATION` | Not released; `feat/p1-integration` branch only. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
+| `--projection FILE` | Not yet released (see [step projection](#step-projection-unreleased)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
+| `--coverage-profile ID` | Not yet released. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
+| `--evaluated-at RFC3339` | Not yet released. The time run states and open-run deadlines are computed at (default: now). |
+| `--clock-uncertainty DURATION` | Not yet released. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
+| `--max-clock-uncertainty DURATION` | Not yet released. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
 
 Diagnostics never echo an argument value, path, key or exception message.
 
 ## Step projection (unreleased)
 
-Spec 050 P1 waves 0–2 are built on the unreleased `feat/p1-integration` branch and are not in a release.
+Spec 050 P1 waves 0–2 are built and are not yet in a release.
 With them, the verifier also merges a run's segments (ordered within the
 clock uncertainty above), reports run states, and can write the run as a
 `fabric.step-projection/v1` document (`--projection`, spec 050 §3.13): the
@@ -165,5 +170,7 @@ explicit APIs (`decision()`, `CallRecorder`, byte-boundary adapters) are not
 read by it; the explicit line has its own offline checks, and portable,
 receipt-backed proof is [qualified-run mode](qualified-run-mode.md), which
 alone can state `verified_complete_for_declared_scope`. The four-layer
-coverage report of spec 049 (per-layer verdicts, step projection) is not
-built.
+coverage report of spec 049 (per-layer verdicts, step projection) is not in
+v0.8.0; in the unreleased P1 code the verifier also reads
+records-input records and writes the step projection for model calls
+([the P1 run record](run-record.md)).

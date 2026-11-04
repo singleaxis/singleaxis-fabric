@@ -8,6 +8,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+This section describes work merged after 0.9.1 and not yet released: most
+of the one-run record of spec 050 (phase P1) and milestone M1 of spec 056,
+agent action reconstruction on a local-profile Node. Wire capture keeps its
+0.9.0 behaviour for agents that use none of the new options. Fabric stays a
+passive recorder: the new hook observes subprocesses and never approves,
+blocks, delays or changes them.
+
+### Added
+
+- **Run record (spec 050 P1, Python SDK and verifier).** One shared
+  allocator per process for wire exchanges and SDK records, the records
+  input (`WireHandle.records`), random registered epochs, immutable
+  segments with seals that the verifier recomputes from the store, `fr3/`
+  resume tokens (`fabric.wire.resume_token()`, `resume_tokens(n)`,
+  `end_run()`), new `fabric.wire.run()` arguments, a records-only install
+  (`fabric.wire.install(patch_httpx=False, patch_aiohttp=False)`), capture
+  manifests, and the `FABRIC_RUN_ID`, `FABRIC_RUN_RESUME_TOKEN`,
+  `FABRIC_RUN_OPEN_DEADLINE_S`, `FABRIC_CLOCK_UNCERTAINTY_MS` and
+  `FABRIC_RECORDS_MAX_OBJECT_BYTES` settings. `CallRecorder` and the
+  byte-boundary adapters can write through the records input. The Fabric
+  Node (fabricguard) admits the records class. `decision()` records
+  (WP-15), Node validation before acknowledgement (WP-21) and P1-A are not
+  built. See [the P1 run record](docs/run-record.md).
+- **Step projection.** `python -m fabric.reconstruct` reads records,
+  manifests and seals, orders segments into a run graph with run states,
+  and writes `fabric.step-projection/v1` with `--projection FILE`. New
+  options: `--coverage-profile`, `--evaluated-at`, `--clock-uncertainty`
+  and `--max-clock-uncertainty`.
+- **Subprocess hook (`exec.subprocess`, spec 053 §5.1).** Opt-in with
+  `FABRIC_WIRE_EXEC=1` or `fabric.hooks.install(exec=True)` after a
+  capturing `fabric.wire.install()`. It records each child started through
+  `subprocess.Popen` (and `run`, `check_output`, `call`) or asyncio's
+  `create_subprocess_exec`/`create_subprocess_shell`: arguments, working
+  directory, environment variable names (never values), output, exit
+  status, pid and parent pid, through the `terminal.*` content roles of the
+  capture policy. `FABRIC_HOST_LABEL` names the host for the host join. The
+  capture manifest records whether the channel was active or disabled.
+- **Agent action view (spec 056 M1).** `python -m fabric.reconstruct
+  actions` lists, per run, model calls and their tool calls, the effects
+  linked to them (`output_match`, `sequence_bracket`, ambiguous candidates,
+  unattributed effects) and host events, with a verdict for each of the
+  `decisions`, `actions`, `effects` and `corroboration` chains; `--json`
+  prints the same rows. The report command adds `chains`, `attribution`
+  and `sensor_events` to each run.
+- **Host-sensor linking (local profile).** `--host-records FILE` reads
+  eBPF-emitter or auditd-receiver records exported by a local-profile
+  Node and joins them to effects by pid and parent pid and through the
+  process tree, with `--host-label`, `--host-source`,
+  `--host-coverage-declared`, `--endpoint-peer`, `--known-peer`,
+  `--agent-pid` and `--in-process-tool`. Host events no rule explains are
+  listed. Local-profile host records carry no process start time, so these
+  links are `tentative`. A shell that execs its command in place (`bash -c`,
+  `dash` for the last command of a list) is read as one process (an exec
+  chain, spec 056 §4.3), unless the hook saw that pid exit in between.
+- **Contracts (drafts, additive).** capture/v1 1.3.0 (P1), 1.4.0 (wire
+  enrichment) and 1.5.0 (spec 056 chains and attribution in the run
+  reconstruction); coverage/v1 1.1.0 (P1) and 1.2.0 (spec 056 link methods,
+  reason values and the `fabric.process.*` keys), with rule fixtures in
+  `contracts/coverage/v1/fixtures/action-record/`.
+- **AR-1 acceptance harness** (`qualification/action-record/`, workflow
+  `action-record.yml`). The hermetic mode runs a real agent, the hook, a
+  natively built Node and the verifier against recorded host-sensor
+  events, plus the negative variants. The live mode (a real eBPF or auditd
+  sensor on Linux) is written but has not run yet.
+
+### Changed
+
+- `python -m fabric.reconstruct` exits `1` for a run whose run state is
+  `open` (a resumable run that has not ended); `0` still requires a
+  complete run. Captures made before P1 carry no run state and are
+  unaffected.
+- The run verdict also follows the new chain verdicts (spec 056 §4.5): it
+  is never `complete` while an observed chain is `partial`. A run whose
+  captured response asks for a tool call that no later request answers is
+  now `partial` (`actions: partial(tool_result_missing)`) where it was
+  complete before. No API declares a call outstanding yet.
+
+### Known limits
+
+- Fabric makes no action-reconstruction claim until AR-1 live mode passes
+  in CI.
+- No host sensor reports process exits, so a pid reused under the same
+  parent pid within the H2 window by a process the hook did not start is
+  read as one exec chain (`tentative`) on the local profile
+  ([agent action reconstruction](docs/action-reconstruction.md)).
+- Production host ingress, process start times on host records, container
+  and remote sandboxes, and the other execution channels (file, database,
+  non-model HTTP, MCP, SSH) are not built.
+
 ## [0.9.1] - 2026-11-04
 
 Fabric 0.9.1 fixes the package pages on PyPI and npm and deprecates the

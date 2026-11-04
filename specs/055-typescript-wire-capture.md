@@ -11,6 +11,11 @@ qualification: NO_COVERAGE_CLAIM
 
 # 055 — TypeScript wire capture
 
+**Status: draft; not built.** TypeScript has no wire capture, released or
+unreleased. Codes in parentheses such as (R8) or (R12) name the cross-spec
+revision decisions that a rule applies, and "decision n" means row n of 049
+§9; the [glossary](../docs/glossary.md) lists both.
+
 Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the
 introduction of [050](050-run-structure-and-records-p1.md)) (each pending
 owner confirmation, §10).

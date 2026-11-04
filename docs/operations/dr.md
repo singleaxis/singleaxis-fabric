@@ -1,5 +1,10 @@
 # Fabric Node recovery runbook
 
+> **Status:** describes operating the built Fabric Node, released in v0.8.0:
+> its persistent queues as configured by
+> [`charts/fabric/`](../../charts/fabric/) and
+> [`deploy/compose/`](../../deploy/compose/).
+
 This runbook covers the OSS recorder only. The durable state is the Collector's
 persistent sending queue; telemetry already accepted by a destination follows
 that destination's backup and recovery process.

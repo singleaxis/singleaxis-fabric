@@ -157,7 +157,7 @@ def test_sigkill_mid_send_then_restart_replays_exactly_the_undelivered(
     assert len(epochs) == 2  # the replay kept the first agent's epoch and sequences
     markers = [b for b in node.named("fabric.capture_heartbeat")
                if b.get("fabric.run.id") == REPLAY]  # fmt: skip
-    assert {b["fabric.heartbeat.kind"] for b in markers} == {"run_start", "run_end"}
+    assert {b["fabric.heartbeat.kind"] for b in markers} == {"run_start", "run_end", "segment_seal"}
     assert records(spool) == []
 
 

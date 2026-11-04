@@ -11,6 +11,10 @@ related: ["029", "032", "043", "047", "048", "052", "055"]
 
 # 054 — Specialised runtimes and media (P5)
 
+**Status: draft; not built.** Codes in parentheses such as (R7) or (R15)
+name the cross-spec revision decisions that a rule applies, and "decision n"
+means row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+
 Revision 2 applies the cross-spec revision decisions R1–R16 (defined in the
 introduction of [050](050-run-structure-and-records-p1.md)). It binds P5 to
 the frozen P1 contract,

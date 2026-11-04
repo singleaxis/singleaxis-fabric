@@ -23,6 +23,11 @@ timing, never-raise rules, budgets and verifier modules of spec 051; this
 spec only states what P3 adds. Section and assumption numbers `051 §x` /
 `A<n>` refer to spec 051.
 
+**Status: draft; not built.** Codes in parentheses such as (R8) or (R13)
+name the cross-spec revision decisions that a rule applies, and "decision n"
+means row n of 049 §9; the [glossary](../docs/glossary.md) lists both. The
+open decisions in section 8 are recommendations pending owner confirmation.
+
 **Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
 the introduction of [050](050-run-structure-and-records-p1.md)): assumptions
 refreshed against spec 050 and

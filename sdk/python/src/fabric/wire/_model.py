@@ -92,6 +92,11 @@ class CaptureJob:
     http_status_code: int | None = None
     error_type: str | None = None
     scope_id: str | None = None  # the innermost open fabric.wire.run() scope (spec 048 §6)
+    # 050 §3.3/§3.9: the allocation's segment (``Allocation.segment_id``; ``None`` outside a
+    # run) and the exchange's ``fabric.event_id`` (minted in ``WireTee.begin``/``adopt``).
+    # The pipeline settles a written or lost position in this segment's seal (§3.7).
+    segment_id: str | None = None
+    event_id: str | None = None
 
 
 class ExchangeSink(Protocol):

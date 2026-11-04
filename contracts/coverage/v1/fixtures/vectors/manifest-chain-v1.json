@@ -29,7 +29,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@3",
+      "role_table_version": "fabric.content-role-table/v1@4",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -80,6 +80,7 @@
             "X44",
             "X45",
             "X47",
+            "X48",
             "C16",
             "S01",
             "S03",
@@ -298,6 +299,7 @@
             "X43",
             "X44",
             "X46",
+            "X49",
             "S34"
           ]
         },
@@ -442,7 +444,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@3",
+      "role_table_version": "fabric.content-role-table/v1@4",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -493,6 +495,7 @@
             "X44",
             "X45",
             "X47",
+            "X48",
             "C16",
             "S01",
             "S03",
@@ -711,6 +714,7 @@
             "X43",
             "X44",
             "X46",
+            "X49",
             "S34"
           ]
         },
@@ -826,7 +830,7 @@
       "unsealed_prior_epochs": [],
       "unsealed_prior_epoch_count": 0,
       "source_auth": "unbound",
-      "previous_manifest_sha256": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c"
+      "previous_manifest_sha256": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
     },
     {
       "schema_version": "fabric.capture-manifest/v1",
@@ -855,7 +859,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@3",
+      "role_table_version": "fabric.content-role-table/v1@4",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -906,6 +910,7 @@
             "X44",
             "X45",
             "X47",
+            "X48",
             "C16",
             "S01",
             "S03",
@@ -1125,6 +1130,7 @@
             "X43",
             "X44",
             "X46",
+            "X49",
             "S34"
           ]
         },
@@ -1240,12 +1246,12 @@
       "unsealed_prior_epochs": [],
       "unsealed_prior_epoch_count": 0,
       "source_auth": "unbound",
-      "previous_manifest_sha256": "sha256:cbe8fa5590386b2b4df6f1c5a68c85ffc2ac40fb717d7253cd3cec8db9bd2920"
+      "previous_manifest_sha256": "sha256:fbed6cb3150368d6a95f371280b60c85d0c917ed2d6aa096b2487e1aead381dc"
     }
   ],
   "digests": [
-    "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
-    "sha256:cbe8fa5590386b2b4df6f1c5a68c85ffc2ac40fb717d7253cd3cec8db9bd2920",
-    "sha256:2ef92c98cbb03d98928d09fb233c9206d7962975997812b557620ddcee92d41b"
+    "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
+    "sha256:fbed6cb3150368d6a95f371280b60c85d0c917ed2d6aa096b2487e1aead381dc",
+    "sha256:7247508623a5d60d87bd012b9fc02154e8935bee558dda358a3685d4b4abfefa"
   ]
 }

@@ -1,0 +1,33 @@
+{
+  "schema_version": "fabric.model-call-size-golden/v1",
+  "name": "request-40mib-one-image",
+  "rule": "Spec 050 §1.4 P1 exit (049 §7.4): sizes are synthetic. A request with one inline base64 image is split (the part is extracted, the text stays in the skeleton) and reassembles to source_sha256; a side above max_retain_bytes is truncated(body_cap). The bytes are rebuilt from the recipe: the JSON template with '@IMAGE@' replaced by image_base64_length copies of 'A', or a response of side_bytes copies of 'x' inside a JSON string.",
+  "api": "openai.chat_completions",
+  "limits": {
+    "max_body_bytes": 33554432,
+    "max_retain_bytes": 67108864,
+    "part_min_bytes": 65536
+  },
+  "recipe": {
+    "side": "request",
+    "template": "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"Describe this photo.\"},{\"type\":\"image_url\",\"image_url\":{\"url\":\"data:image/png;base64,@IMAGE@\"}}]}]}",
+    "image_base64_length": 41942869
+  },
+  "expected": {
+    "source_byte_length": 41943040,
+    "source_sha256": "sha256:388e5d69c465d7b438f5ba44831d0b2fe24903df69e86a438442c4a7edb922d2",
+    "representation": "split",
+    "parts": [
+      {
+        "byte_range": [
+          164,
+          41943033
+        ],
+        "media_type": "image/png"
+      }
+    ],
+    "skeleton_byte_length": 171,
+    "text_locator": "request:/messages/0/content/0/text",
+    "status": "stored"
+  }
+}

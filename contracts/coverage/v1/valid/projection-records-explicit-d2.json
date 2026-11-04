@@ -1,0 +1,208 @@
+{
+  "schema_version": "fabric.step-projection/v1",
+  "projection_revision": 1,
+  "generated_at": "2026-10-19T10:00:00Z",
+  "parser": {
+    "name": "fabric.reconstruct",
+    "version": "0.9.0"
+  },
+  "field_registry": {
+    "schema_version": "fabric.field-registry/v1",
+    "registry_revision": 9
+  },
+  "coverage_profile": "fabric.profile.model-calls/v1",
+  "inputs": {
+    "reconstruction_sha256": "sha256:c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "manifests": [
+      {
+        "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
+        "sha256": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
+      }
+    ],
+    "telemetry_origin": "trusted_readback"
+  },
+  "pseudonym_mode": "keyed",
+  "key_id": "kid-b2a0080c",
+  "content_inline": false,
+  "runs": [
+    {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "integrity_verdict": "complete_for_observed_scopes",
+      "layer_verdicts": {
+        "context": {
+          "verdict": "partial",
+          "reasons": [
+            "deferred_to_explicit"
+          ]
+        },
+        "structure": {
+          "verdict": "partial",
+          "reasons": [
+            "deferred_to_explicit"
+          ]
+        },
+        "content": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      },
+      "fields": {
+        "cross_cutting": {
+          "run_id": {
+            "status": "captured",
+            "provenance": "observed",
+            "capture_point": "run.scope@0.9.0",
+            "value": "r-93347307304ecb0a9bb1b51ae90ac326"
+          }
+        }
+      },
+      "run_state": "terminated",
+      "segments": [
+        {
+          "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "source_epoch": 4611686018427387905,
+          "last_sequence": 41,
+          "manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
+          "terminal": true,
+          "predecessors": [
+            "none"
+          ],
+          "state": "sealed",
+          "seal_digest": "sha256:cdd4be7ebf85fe5f3a31e4b4b12bdc2192f3aff98065808657f55c6eed415815"
+        }
+      ],
+      "resumable": false
+    }
+  ],
+  "steps": [
+    {
+      "attempt_id": "e3369c8d-3da6-488e-ad69-3901fcbf3caf",
+      "step_id": "records:s-b94f348e8d6890782b2af72c847dc77b:a-4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+      "step_kind": "model_call",
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "aliases": {
+        "records.call_id": "s-b94f348e8d6890782b2af72c847dc77b/e3369c8d-3da6-488e-ad69-3901fcbf3caf"
+      },
+      "source": {
+        "input": "records",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "source_epoch": 4611686018427387905,
+        "source_sequence": 7,
+        "sequence_unit": "record",
+        "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4"
+      },
+      "event_ids": [
+        "592a0068-3544-4dd3-a679-0e1f77df4598",
+        "defe6196-5178-4ad1-a917-8b037393f7be",
+        "9ae7ab9f-00c7-40db-a6ec-7d233d766043"
+      ],
+      "capture_point": "explicit.call_recorder@0.9.0",
+      "provenance": "reported",
+      "actor": {
+        "type": "agent"
+      },
+      "timing": {
+        "started_at_ns": 1760864400000000000,
+        "ended_at_ns": 1760864401250000000,
+        "basis": "reported",
+        "clock_domain": "wall_utc"
+      },
+      "lifecycle_state": "completed",
+      "result_status": "ok",
+      "layers": {
+        "context": {
+          "model.provider": {
+            "status": "not_captured",
+            "provenance": "observed",
+            "capture_point": "wire.py.httpx@1.2.0",
+            "reason": "deferred_to_explicit"
+          },
+          "model.api": {
+            "status": "not_captured",
+            "provenance": "observed",
+            "capture_point": "wire.py.httpx@1.2.0",
+            "reason": "deferred_to_explicit"
+          },
+          "model.endpoint_id": {
+            "status": "not_captured",
+            "provenance": "observed",
+            "capture_point": "wire.py.httpx@1.2.0",
+            "reason": "deferred_to_explicit"
+          },
+          "model.requested": {
+            "status": "captured",
+            "provenance": "reported",
+            "capture_point": "explicit.call_recorder@0.9.0",
+            "value": "gpt-4o"
+          }
+        },
+        "structure": {
+          "stream.state": {
+            "status": "not_captured",
+            "provenance": "observed",
+            "capture_point": "wire.py.httpx@1.2.0",
+            "reason": "deferred_to_explicit"
+          },
+          "stream.first_chunk_offset_ns": {
+            "status": "not_captured",
+            "provenance": "observed",
+            "capture_point": "wire.py.httpx@1.2.0",
+            "reason": "deferred_to_explicit"
+          },
+          "step.kind": {
+            "status": "captured",
+            "provenance": "reported",
+            "capture_point": "explicit.call_recorder@0.9.0",
+            "value": "model_call"
+          }
+        },
+        "content": {
+          "model.exchange.request": {
+            "status": "captured",
+            "provenance": "reported",
+            "capture_point": "explicit.call_recorder@0.9.0",
+            "ref": {
+              "object_id": "dd3b9478-163e-473e-ab89-f9343d609c97",
+              "role": "model.request.messages"
+            }
+          },
+          "input.messages": {
+            "status": "captured",
+            "provenance": "reported",
+            "capture_point": "explicit.call_recorder@0.9.0",
+            "ref": {
+              "object_id": "dd3b9478-163e-473e-ab89-f9343d609c97",
+              "role": "model.request.messages",
+              "pointer": "/messages"
+            }
+          }
+        }
+      },
+      "layer_verdicts": {
+        "context": {
+          "verdict": "partial",
+          "reasons": [
+            "deferred_to_explicit"
+          ]
+        },
+        "structure": {
+          "verdict": "partial",
+          "reasons": [
+            "deferred_to_explicit"
+          ]
+        },
+        "content": {
+          "verdict": "captured_for_declared_fields"
+        },
+        "decisions_effects": {
+          "verdict": "captured_for_declared_fields"
+        }
+      }
+    }
+  ],
+  "evaluated_at": "2026-10-19T10:00:00Z"
+}

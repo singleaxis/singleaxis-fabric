@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -35,6 +36,7 @@ from contracts.validate_coverage_contracts import (  # noqa: E402
     pseudonym_v2,
     validate_coverage_contracts,
 )
+from contracts import action_record  # noqa: E402
 from release import package_contracts as packaging  # noqa: E402
 
 
@@ -47,6 +49,15 @@ def _copy_tree(tmp_path: Path) -> Path:
         Path("contracts/content/v2/schema/content-object-v2.schema.json"),
         MANIFEST_RECORD_SCHEMA,
         PSEUDONYM_V1_VECTORS,
+        # Spec 056: the action-record fixtures read these outside the family.
+        action_record.REPORT_SCHEMA,
+        action_record.ALLOWLIST_GO,
+        action_record.PROCESSOR_GO,
+        *(
+            action_record.CAPTURE
+            / f"fixtures/valid/spool-record-exec-subprocess-{phase}.json"
+            for phase in ("start", "end")
+        ),
     ):
         (root / extra).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO_ROOT / extra, root / extra)
@@ -573,3 +584,670 @@ def test_c0_5_contract_tree_is_release_qualifiable_and_drafts_stay_unpublished()
         m.relative_path.parts[:2] in {("coverage", "v1"), ("content", "v2")}
         for m in public
     )
+
+
+# ------------------------------------------------------------------ spec 050 (P1) contract deltas
+from contracts import p1_reference as ref  # noqa: E402
+from contracts.validate_coverage_contracts import (  # noqa: E402
+    record_checks,
+    record_conditions,
+    validate_vectors,
+)
+
+P1_ARTIFACTS = (
+    "fixtures/vectors/seal-digest-v1.json",
+    "fixtures/vectors/span-category-v1.json",
+    "fixtures/vectors/seal-parity-v1.json",
+    "fixtures/vectors/records-span-v1.json",
+    "fixtures/vectors/resume-token-v2.json",
+    "fixtures/vectors/record-evidence-v1.json",
+    "schema/record-evidence-v1.schema.json",
+    "evidence/fabric.test.items-v1.schema.json",
+    "valid/evidence-test-items.json",
+    "valid/evidence-clear-mode-id.json",
+    "invalid/evidence-unknown-type.json",
+    "invalid/evidence-extra-key.json",
+    "invalid/evidence-free-text-over-bound.json",
+    "invalid/evidence-too-deep.json",
+    "invalid/evidence-too-many-items.json",
+    "invalid/evidence-content-class-value.json",
+    "invalid/evidence-clear-id-pseudonymous.json",
+    "valid/projection-records-explicit-d2.json",
+    "valid/projection-many-records.json",
+    "fixtures/projection/chat.json",
+    "fixtures/projection/chat-stream.json",
+    "fixtures/projection/responses-hosted-tools-reasoning.json",
+    "fixtures/projection/responses-stream.json",
+    "fixtures/projection/responses-previous-response-resolved.json",
+    "fixtures/projection/responses-previous-response-unresolved.json",
+    "fixtures/projection/anthropic-thinking.json",
+    "fixtures/projection/anthropic-redacted-thinking.json",
+    "fixtures/projection/anthropic-server-tools.json",
+    "fixtures/projection/embeddings.json",
+    "fixtures/projection/chat-refusal.json",
+    "fixtures/projection/responses-unknown-item.json",
+    "fixtures/projection/responses-asset-references.json",
+    "fixtures/projection/request-40mib-one-image.json",
+    "fixtures/projection/response-70mib-side.json",
+)
+
+
+def _family_json(relative: str) -> Any:
+    return json.loads((REPO_ROOT / FAMILY / relative).read_text(encoding="utf-8"))
+
+
+def _vector_code(document: Any) -> str:
+    reg = load_registries(REPO_ROOT)
+    with pytest.raises(CoverageContractError) as caught:
+        validate_vectors(document, reg, REPO_ROOT, {})
+    return caught.value.code
+
+
+def test_p1_every_section_4_3_artifact_is_pinned() -> None:
+    manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
+    pinned = {record["path"]: record for record in manifest["artifacts"]}
+    assert manifest["version"] == "1.2.0"  # 1.2.0: spec 056 (WP6-01)
+    for path in P1_ARTIFACTS:
+        assert path in pinned, path
+    assert (
+        pinned["evidence/fabric.test.items-v1.schema.json"]["expectation"] == "schema"
+    )
+    assert pinned["fixtures/projection/chat.json"]["expectation"] == "vectors"
+
+
+def test_p1_registry_rows() -> None:
+    reg = load_registries(REPO_ROOT)
+    fields = {f["id"]: f for f in reg["fields"]["fields"]}
+    assert fields["X48"]["lives_in"] == "T `fabric.content.object_ids`"
+    assert fields["X49"]["lives_in"] == "T `fabric.run.id_basis`"
+    assert "emitted as given in clear mode" in fields["X08"]["definition"]
+    assert fields["C35"]["lives_in"].startswith("T `fabric.wire.endpoint_id`")
+    assert fields["C40"]["lives_in"] == "T `fabric.wire.provider_request_id`"
+    assert not [f["id"] for f in fields.values() if "P0" in f["phase"]]
+    keys = {k["key"]: k for k in reg["keys"]["keys"]}
+    assert not [k for k, row in keys.items() if "P0" in row["phase"]]
+    assert keys["fabric.capture.source"]["check"]["values"] == ["observed", "reported"]
+    assert keys["fabric.run.segment_id"]["placement"] == [
+        "exchange", "record", "loss", "run_start", "run_end", "segment_seal"
+    ]  # fmt: skip
+    assert "manifest" in keys["fabric.event_id"]["placement"]
+    assert [r["value"] for r in reg["vocab"]["step_kind"]][:2] == ["run", "agent_turn"]
+    roles = {r["role"]: r for r in reg["roles"]["roles"]}
+    evidence = roles["record.evidence"]
+    assert evidence["default_policy"] == "metadata" and evidence["cap"] == "1 MiB"
+    assert evidence["allowed_modes"] == ["retain_original", "metadata_only", "omit"]
+    assert reg["roles"]["registry_revision"] == 4
+    assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
+        "fabric.test.items/v1",
+        "fabric.exec.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-01
+    ]
+
+
+def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
+    reg = load_registries(REPO_ROOT)
+    table = record_checks(reg)
+    assert "fabric.capture.input" in table and "fabric.attempt.uid" in table
+    assert not any(
+        marker in key
+        for key in table
+        for marker in ("content.ref", "arguments", "result", "message", "prompt")
+    )
+    namespace: dict[str, Any] = {}
+    exec(  # noqa: S102 - the generated module only imports typing helpers
+        (REPO_ROOT / "sdk/python/src/fabric/_records_keys_generated.py").read_text(),
+        namespace,
+    )
+    assert set(namespace["RECORD_KEY_CHECKS"]) == set(table)
+    # Spec 056 §5: the first conditional placements, exec.subprocess only.
+    exec_only = {"capture_points": ["exec.subprocess"]}
+    assert record_conditions(reg) == {
+        "fabric.process.parent_pid": exec_only,
+        "fabric.process.start_ns": exec_only,
+    }
+    assert {
+        key: {column: list(values) for column, values in cond.items()}
+        for key, cond in namespace["RECORD_KEY_CONDITIONS"].items()
+    } == record_conditions(reg)
+    go = (
+        REPO_ROOT
+        / "components/otel-collector-fabric/processor/fabricguardprocessor/coverage_keys.go"
+    ).read_text()
+    block = go[
+        go.index("var recordKeyValidators") : go.index("var recordKeyConditions")
+    ]
+    assert set(re.findall(r'^\t"([^"]+)":', block, re.M)) == set(table)
+
+
+def test_p1_role_tables_are_generated_from_the_registry() -> None:
+    reg = load_registries(REPO_ROOT)
+    text = (REPO_ROOT / "sdk/python/src/fabric/_roles.py").read_text()
+    assert "# BEGIN GENERATED" in text and "ROLE_ROWS" in text
+    go = (
+        REPO_ROOT
+        / "components/otel-collector-fabric/exporter/fabriccontentexporter/evidence_types_generated.go"
+    ).read_text()
+    for row in reg["fields"]["evidence_types"]:
+        assert f'"{row["type"]}"' in go
+
+
+@pytest.mark.parametrize(
+    ("name", "change", "code"),
+    [
+        (
+            "fixtures/vectors/seal-digest-v1.json",
+            lambda d: d["segments"][1]["entries"].pop(),
+            "coverage.vectors.seal",
+        ),
+        (
+            "fixtures/vectors/seal-digest-v1.json",
+            lambda d: d["records"][1]["content"].reverse(),
+            "coverage.vectors.seal",
+        ),
+        (
+            "fixtures/vectors/span-category-v1.json",
+            lambda d: d["cases"][0].update(category="fabric.capture_loss"),
+            "coverage.vectors.category",
+        ),
+        (
+            "fixtures/vectors/records-span-v1.json",
+            lambda d: d["cases"][2]["dropped"].clear(),
+            "coverage.vectors.records_span",
+        ),
+        (
+            "fixtures/vectors/seal-parity-v1.json",
+            lambda d: d["cases"][0]["expected_export"].update(name="fabric.activity"),
+            "coverage.vectors.parity",
+        ),
+        (
+            "fixtures/vectors/record-evidence-v1.json",
+            lambda d: d["cases"][6].update(refusal=None),
+            "coverage.vectors.evidence",
+        ),
+        (
+            "fixtures/vectors/resume-token-v2.json",
+            lambda d: d["run_identity"][8]["expected"].update(id_basis="token"),
+            "coverage.vectors.run_identity",
+        ),
+        (
+            "fixtures/vectors/resume-token-v2.json",
+            lambda d: d["tokens"][-2].update(parsed={"version": 3}),
+            "coverage.vectors.resume_token",
+        ),
+        (
+            "fixtures/projection/chat.json",
+            lambda d: d["expected"].update(finish_reasons=["stop"]),
+            "coverage.vectors.model_call",
+        ),
+    ],
+)
+def test_p1_vector_drift_is_detected(
+    name: str, change: Callable[[Any], Any], code: str
+) -> None:
+    document = _family_json(name)
+    change(document)
+    assert _vector_code(document) == code
+
+
+def test_p1_reference_seal_and_record_digest() -> None:
+    assert ref.seal_digest([]) == "sha256:" + hashlib.sha256(b"[]").hexdigest()
+    entries = [[2, "loss:queue_full"], [1, "sha256:" + "ab" * 32]]
+    assert ref.seal_digest(entries) == ref.seal_digest(list(reversed(entries)))
+    with pytest.raises(ValueError):
+        ref.seal_digest([[1, "a"], [1, "b"]])
+    with pytest.raises(ValueError):
+        ref.loss_entries(
+            {
+                "reason": "queue_full",
+                "count": 1,
+                "first_sequence": 3,
+                "last_sequence": 4,
+            }
+        )
+    span = {
+        "name": "fabric.tool_call",
+        "start_ns": 1,
+        "end_ns": 2,
+        "status": "ok",
+        "attributes": {"a": 1},
+    }
+    stamped = dict(span, attributes={"a": 1, "fabric.source.authenticated": True})
+    assert ref.record_digest(**span, content=[None]) == ref.record_digest(
+        **stamped, content=[None]
+    )
+    with pytest.raises(ValueError):
+        ref.record_digest(**dict(span, attributes={"a": 1.5}), content=[])
+    with pytest.raises(ValueError):
+        ref.record_digest(**dict(span, status="Error: boom"), content=[])
+
+
+def test_p1_reference_rule_a_conditions() -> None:
+    reg = load_registries(REPO_ROOT)
+    table = {"fabric.step.kind": record_checks(reg)["fabric.step.kind"]}
+    conditions = {"fabric.step.kind": {"capture_point_kinds": ["H"]}}
+    kinds = {"exec.audit": ["H"], "sdk.records": ["R"]}
+    attrs = {"fabric.step.kind": "terminal", "fabric.capture.point": "exec.audit@0.9.0"}
+    kept, _ = ref.project_record_attributes(
+        attrs, table, check_value, conditions=conditions, point_kinds=kinds
+    )
+    assert kept == {"fabric.step.kind": "terminal"}
+    attrs["fabric.capture.point"] = "sdk.records@0.9.0"
+    kept, dropped = ref.project_record_attributes(
+        attrs, table, check_value, conditions=conditions, point_kinds=kinds
+    )
+    assert kept == {} and "fabric.step.kind" in dropped
+
+
+def test_p1_reference_tokens_and_identity() -> None:
+    entry = f"seg-{'1' * 32}/s-{'2' * 32}/7/41/sha256:{'ab' * 32}"
+    token = ref.format_token("r-" + "3" * 32, entry, f"br-{'4' * 32}")
+    assert token is not None and ref.parse_token(token)["branch_id"] == f"br-{'4' * 32}"
+    assert ref.format_token("orders/42", entry) is None
+    with pytest.raises(ValueError):
+        ref.run_identity([], None, minted="not-minted")
+    out = ref.run_identity([token], "ignored", key="k" * 16, minted="r-" + "5" * 32)
+    assert (out["run_id"], out["id_basis"]) == ("r-" + "3" * 32, "token")
+
+
+def test_p1_reference_evidence_envelope() -> None:
+    doc = {
+        "schema_version": ref.EVIDENCE_SCHEMA,
+        "evidence_type": "fabric.test.items/v1",
+        "items": [],
+    }
+    raw = ref.canonical_bytes(doc)
+    assert ref.evidence_envelope_refusal(raw, ["fabric.test.items/v1"]) is None
+    assert ref.evidence_envelope_refusal(raw + b" ", ["fabric.test.items/v1"]) == (
+        "evidence_not_canonical"
+    )
+    assert ref.evidence_envelope_refusal(raw, []) == "evidence_type_unregistered"
+    big = b" " * (ref.EVIDENCE_MAX_BYTES + 1)
+    assert (
+        ref.evidence_envelope_refusal(big, ["fabric.test.items/v1"])
+        == "evidence_bounds"
+    )
+    schema = _family_json("evidence/fabric.test.items-v1.schema.json")
+    item = {"name": "a", "count": 1, "actor": "agent:planner"}
+    assert ref.evidence_item_errors({"items": [item]}, schema) == [0]
+    assert (
+        ref.evidence_item_errors({"items": [item]}, schema, identity_mode="clear") == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("registry", "change", "code"),
+    [
+        (
+            "keys",
+            lambda d: _key(d, "fabric.run.id_basis").update(
+                placement=["record", "exchange"]
+            ),
+            "coverage.keys.placement",
+        ),
+        (
+            "keys",
+            lambda d: _key(d, "fabric.run.id_basis").update(
+                capture_check={"type": "bool"}
+            ),
+            "coverage.keys.capture_check",
+        ),
+        (
+            "keys",
+            lambda d: _key(d, "fabric.step.kind").update(
+                capture_points=["no.such.point"]
+            ),
+            "coverage.keys.condition",
+        ),
+        (
+            "roles",
+            lambda d: next(
+                r for r in d["roles"] if r["role"] == "record.evidence"
+            ).update(allowed_modes=["redact", "omit"]),
+            "coverage.roles.modes",
+        ),
+        (
+            "fields",
+            lambda d: d["evidence_types"][0]["fields"][0].update(
+                pointer="/items/*/nope"
+            ),
+            "coverage.evidence_types.fields",
+        ),
+        (
+            "fields",
+            lambda d: d["evidence_types"][0].update(capture_points=["wire.py.httpx"]),
+            "coverage.evidence_types.points",
+        ),
+    ],
+)
+def test_p1_registry_rules_are_enforced(
+    tmp_path: Path, registry: str, change: Callable[[Any], None], code: str
+) -> None:
+    root = _copy_tree(tmp_path)
+    _edit_registry(root, registry, change)
+    _assert_code(root, code)
+
+
+# ---------------------------------------------------------------- spec 056 (coverage/v1 1.2.0)
+from contracts import action_reference as rules  # noqa: E402
+
+ACTION = REPO_ROOT / FAMILY / action_record.ACTION
+
+
+def _rule(name: str) -> dict[str, Any]:
+    value = json.loads((ACTION / "rules" / f"{name}.json").read_text(encoding="utf-8"))
+    assert isinstance(value, dict)
+    return value
+
+
+def test_056_inference_methods_and_reasons_are_registered() -> None:
+    reg = load_registries(REPO_ROOT)
+    methods = {r["value"]: r["confidence"] for r in reg["vocab"]["inference_method"]}
+    assert (
+        methods["sequence_bracket"] == "tentative"
+    )  # OD-5: only A0 and A1 are certain
+    # A1 is certain only when one candidate matches; several matches are ambiguous and
+    # tentative (an ambiguous link is never certain), so its confidence varies.
+    assert methods["output_match"] == "varies"
+    assert methods["process_anchor"] == methods["process_lineage"] == "varies"
+    assert methods["pid_time_join"] == "tentative"  # 053 §6.3's join is unchanged
+    reasons = {r["value"] for r in reg["vocab"]["reason"]}
+    assert {
+        "unattributed_effect", "ambiguous_attribution", "anchor_missing",
+        "unexplained_host_event", "tool_result_missing", "channel_disabled",
+        "no_effect_channel", "none_in_window", "remote_sandbox", "exchange_gap",
+        "source_gap",
+    } <= reasons  # fmt: skip
+    keys = {row["key"]: row for row in reg["keys"]["keys"]}
+    for key in ("fabric.process.parent_pid", "fabric.process.start_ns"):
+        assert keys[key]["placement"] == ["record"]
+        assert keys[key]["capture_points"] == ["exec.subprocess"]
+    for key in ("fabric.process.pid", "fabric.execution.host_id"):
+        assert "record" in keys[key]["placement"] and "capture_points" not in keys[key]
+    exec_type = next(
+        t
+        for t in reg["fields"]["evidence_types"]
+        if t["type"] == "fabric.exec.observation/v1"
+    )
+    assert exec_type["capture_points"] == ["exec.subprocess"]
+
+
+def test_056_a_varying_method_still_refuses_a_fixed_one(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+    _edit_registry(
+        root,
+        "vocab",
+        lambda d: next(
+            r for r in d["inference_method"] if r["value"] == "sequence_bracket"
+        ).update(confidence="varies"),
+    )
+    _assert_code(root, "coverage.vocab.confidence")
+
+
+def test_056_every_rule_and_edge_case_has_its_fixture() -> None:
+    valid = {p.stem: _rule(p.stem) for p in (ACTION / "rules").glob("*.json")}
+    covered = {r for doc in valid.values() for r in doc["rules"]}
+    assert {"A0", "A1", "A2", "A3", "A4", "H1", "H2", "H3", "H4"} <= covered
+    for edge in (
+        "edge-parallel-distinct-outputs",
+        "edge-parallel-metadata-only",
+        "edge-clock-margin-boundary",
+        "edge-background-thread",
+        "edge-pid-reuse",
+        "edge-exec-in-place",
+        "edge-same-pid-other-parent",
+        "edge-lineage-depth-17",
+        "edge-agent-uncalled-host",
+        "edge-a1-several-matches",
+        "edge-lineage-pid-reuse",
+        "ar1-run",
+    ):
+        assert edge in valid, edge  # fmt: skip
+    invalid = {p.stem[:2] for p in (ACTION / "invalid").glob("*.json")}
+    assert invalid == {"a0", "a1", "a2", "a3", "a4", "h1", "h2", "h3", "h4"}
+    manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
+    pinned = {r["path"]: r for r in manifest["artifacts"]}
+    for path in (ACTION / "invalid").glob("*.json"):
+        record = pinned[path.relative_to(REPO_ROOT / FAMILY).as_posix()]
+        assert record["expectation"] == "invalid" and record["expected_error"]
+
+
+def test_056_rule_fixtures_pin_the_rule_that_decides() -> None:
+    def trace(name: str) -> dict[str, Any]:
+        value: dict[str, Any] = _rule(name)["expected"]["trace"]
+        return value
+
+    assert list(trace("a0-reported-parent")["effects"].values()) == ["A0"]
+    assert list(trace("a2-single-window")["effects"].values()) == ["A2"]
+    assert list(trace("edge-parallel-distinct-outputs")["effects"].values()) == [
+        "A1",
+        "A1",
+    ]
+    assert list(trace("edge-parallel-metadata-only")["effects"].values()) == [
+        "A3",
+        "A3",
+    ]
+    assert list(trace("edge-background-thread")["effects"].values()) == ["A1", "A4"]
+    assert list(trace("edge-pid-reuse")["anchors"].values()) == ["H2-ambiguous"]
+    # Spec 056 §4.3 exec chains: an in-place re-exec is one process, anchored tentative on
+    # its first exec; the later exec is lineage at depth 0. Another parent pid is not.
+    assert list(trace("edge-exec-in-place")["anchors"].values()) == ["H2"]
+    in_place = trace("edge-exec-in-place")["host_events"]
+    assert list(in_place.values()) == ["H2", "H3", "H3"]
+    assert list(trace("edge-same-pid-other-parent")["host_events"].values()) == [
+        "H2", "unexplained", "unexplained"
+    ]  # fmt: skip
+    depth = _rule("edge-lineage-depth-17")["expected"]
+    assert depth["attribution"]["lineage_truncated"] == 1
+    assert depth["attribution"]["links"]["process_lineage"]["resolved"] == 16
+    assert list(trace("edge-agent-uncalled-host")["host_events"].values()) == [
+        "H4", "H4-uncalled"
+    ]  # fmt: skip
+    margin = _rule("edge-clock-margin-boundary")["expected"]["projection_links"][0]
+    assert [link["state"] for link in margin["links"]] == ["ambiguous", "ambiguous"]
+
+
+def test_056_ar1_expectation_is_the_spec_table() -> None:
+    """Spec 056 §6.2: the expected links and chain verdicts of AR-1."""
+    doc = _rule("ar1-run")
+    expected = doc["expected"]
+    effects = doc["input"]["effects"]
+    methods = [
+        [(link["method"], link["confidence"]) for link in entry["links"]]
+        for entry in expected["projection_links"]
+    ]
+    anchor = ("process_anchor", "certain")
+    assert methods == [[("output_match", "certain"), anchor]] * 5 + [[anchor]]
+    unattributed = expected["attribution"]["unattributed_effects"]["effects"]
+    assert [e["attempt_uid"] for e in unattributed] == [effects[5]["attempt_uid"]]
+    lineage = {
+        e["event_id"]: e["links"][0]["target"]["id"]
+        for e in expected["sensor_events"]
+        if any(link["method"] == "process_lineage" for link in e.get("links", []))
+    }
+    by_label = {e["label"]: e["event_id"] for e in doc["input"]["host_events"]}
+    assert lineage == {
+        by_label["exec-curl"]: effects[1]["attempt_uid"],
+        by_label["connect-curl"]: effects[1]["attempt_uid"],
+        by_label["exec-python"]: effects[4]["attempt_uid"],
+    }
+    assert expected["attribution"]["unexplained_host_events"]["event_ids"] == [
+        by_label["connect-uncalled"]
+    ]
+    assert {k: v.get("reasons", []) for k, v in expected["chains"].items()} == {
+        "decisions": [], "actions": [], "effects": ["unattributed_effect"],
+        "corroboration": ["unexplained_host_event"],
+    }  # fmt: skip
+    local = _rule("ar1-run-local-profile")["expected"]
+    confidences = {
+        link["confidence"]
+        for entry in local["projection_links"]
+        for link in entry["links"]
+        if link["method"] == "process_anchor"
+    }
+    assert confidences == {"tentative"}  # no start time: never certain
+
+
+def test_056_negative_variants() -> None:
+    a = _rule("ar1-negative-a-no-host-source")["expected"]["chains"]
+    assert a["corroboration"]["verdict"] == "not_observed"
+    assert a["effects"] == _rule("ar1-run")["expected"]["chains"]["effects"]
+    b = _rule("ar1-negative-b-effect-dropped")["expected"]["chains"]
+    assert b["effects"]["reasons"][0] == "sequence_gap"
+    # The lost position is on the epoch the exchanges share (050 §3.3): nothing proves it
+    # was not an exchange, so decisions is partial(sequence_gap) as the verifier reports.
+    assert b["decisions"] == {"verdict": "partial", "reasons": ["sequence_gap"]}
+    c = _rule("ar1-negative-c-hook-disabled")["expected"]
+    assert c["chains"]["effects"]["verdict"] == "not_observed"
+    assert c["attribution"]["effects_not_observed"]["channel_disabled"] == 5
+    d = _rule("ar1-negative-d-metadata-only")["expected"]
+    assert d["attribution"]["output_match"] == {
+        "state": "not_applicable", "reason": "privacy_policy"
+    }  # fmt: skip
+    assert list(d["trace"]["effects"].values())[2:4] == ["A3", "A3"]
+
+
+def test_056_reference_boundaries() -> None:
+    assert rules.same_tick(60_120_000_000, 60_123_217_448)
+    assert not rules.same_tick(60_120_000_000, 60_130_000_000)
+    doc = _rule("a1-output-match")
+    inp = copy.deepcopy(doc["input"])
+    output = "x" * (rules.MIN_MATCH_BYTES - 1) + " \n"
+    inp["effects"][0]["stdout"] = output
+    inp["exchanges"][1]["tool_results"][0]["text"] = "result: " + output
+    assert list(
+        rules.reconstruct(inp, action_record.call_id)["trace"]["effects"].values()
+    ) == [
+        "A2"
+    ]  # 15 bytes after trailing whitespace: too short to match, never a weaker match
+    inp["effects"][0]["stdout"] = "x" * rules.MIN_MATCH_BYTES + "\n"
+    inp["exchanges"][1]["tool_results"][0]["text"] = (
+        "result: " + "x" * rules.MIN_MATCH_BYTES
+    )
+    assert list(
+        rules.reconstruct(inp, action_record.call_id)["trace"]["effects"].values()
+    ) == ["A1"]
+    h1 = copy.deepcopy(_rule("h1-anchor-exact")["input"])
+    h1["host_events"][0]["process_start_ns"] += rules.TICK_NS  # a different process
+    assert list(
+        rules.reconstruct(h1, action_record.call_id)["trace"]["anchors"].values()
+    ) == ["anchor_missing"]
+
+
+def test_056_a_drifted_rule_expectation_is_refused(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+    relative = (action_record.ACTION / "rules/a2-single-window.json").as_posix()
+    _rewrite(
+        root,
+        relative,
+        lambda d: d["expected"]["chains"]["effects"].update(verdict="complete"),
+    )
+    validate_coverage_contracts(root)  # unchanged values: still valid
+    _rewrite(
+        root,
+        relative,
+        lambda d: d["expected"]["projection_links"][0]["links"][0]["target"].update(
+            id="p-" + "0" * 32
+        ),
+    )
+    _assert_code(root, "coverage.action.expected")
+
+
+def test_056_interface_goldens() -> None:
+    golden = json.loads(
+        (ACTION / "interface/exec-subprocess-records.json").read_text(encoding="utf-8")
+    )
+    start = golden["records"][0]["span"]["attributes"]
+    assert golden["records"][0]["span"]["name"] == "fabric.activity"
+    assert start["fabric.capture.point"].startswith("exec.subprocess@")
+    assert start["fabric.capture.source"] == "observed"
+    assert {"fabric.process.pid", "fabric.process.parent_pid", "fabric.process.start_ns",
+            "fabric.execution.host_id"} <= set(start)  # fmt: skip
+    roles = [b["role"] for r in golden["records"] for b in r["bodies"]]
+    assert roles == [
+        "terminal.argv", "terminal.context", "record.evidence",
+        "terminal.stdout", "terminal.stderr", "record.evidence",
+    ]  # fmt: skip
+    context = json.loads(golden["records"][0]["bodies"][1]["utf8"])
+    assert context["env_names"] == ["DATA_TOKEN", "PATH"]  # names only, never values
+    local = json.loads(
+        (ACTION / "interface/host-local-log-records.json").read_text(encoding="utf-8")
+    )
+    ids = [n["event_id"] if n else None for n in local["normalized"]]
+    assert (
+        ids[0].startswith("host-") and ids[3] is None
+    )  # a loss record is not an event
+    assert ids[4].startswith("hev-") and ids[5].startswith("rec-")
+    assert all("process_start_ns" not in n for n in local["normalized"] if n)
+
+
+def test_056_interface_golden_refuses_an_unadmitted_host_key(tmp_path: Path) -> None:
+    root = _copy_tree(tmp_path)
+    relative = (
+        action_record.ACTION / "interface/host-local-log-records.json"
+    ).as_posix()
+
+    def add_key(doc: Any) -> None:
+        record = doc["export"]["resourceLogs"][0]["scopeLogs"][0]["logRecords"][0]
+        record["attributes"].append(
+            {"key": "process.command_line", "value": {"stringValue": "sh -c ls"}}
+        )
+
+    _rewrite(root, relative, add_key)
+    _assert_code(root, "coverage.action.interface")
+
+
+def test_056_several_a1_matches_are_tentative_and_ambiguous() -> None:
+    """An ambiguous link is never certain (§4.1): A1 with two matches links both, each
+    output_match, tentative, ambiguous."""
+    doc = _rule("edge-a1-several-matches")["expected"]
+    assert list(doc["trace"]["effects"].values()) == ["A1-ambiguous", "A1-ambiguous"]
+    for entry in doc["projection_links"]:
+        assert {(link["method"], link["confidence"], link["state"])
+                for link in entry["links"]} == {("output_match", "tentative", "ambiguous")}  # fmt: skip
+        assert len(entry["links"]) == 2
+    assert doc["chains"]["effects"] == {
+        "verdict": "partial",
+        "reasons": ["ambiguous_attribution"],
+    }
+
+
+def test_056_a_reused_pid_leaves_the_lineage() -> None:
+    """An unrelated exec of the anchored pid (another parent, a later start) proves pid
+    reuse: it, its connect and its child are unexplained, never lineage."""
+    doc = _rule("edge-lineage-pid-reuse")
+    trace = doc["expected"]["trace"]["host_events"]
+    by_label = {e["label"]: e["event_id"] for e in doc["input"]["host_events"]}
+    assert trace[by_label["exec-sh"]] == "H1" and trace[by_label["exec-curl"]] == "H3"
+    for label in ("exec-reused", "connect-reused", "exec-reused-child"):
+        assert trace[by_label[label]] == "unexplained", label
+    # The reference without the reuse rule would link all three: pin the difference.
+    inp = copy.deepcopy(doc["input"])
+    for event in inp["host_events"]:
+        if event["label"] == "exec-reused":
+            event["ppid"] = 4100  # the same parent and ...
+            event["process_start_ns"] = inp["effects"][0][
+                "process_start_ns"
+            ]  # same tick
+    again = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert again[by_label["exec-reused"]] == "H3"  # then it is the same process
+
+
+def test_056_window_margin_and_peerless_syscalls() -> None:
+    """H4 and the unexplained list use the run window widened by both clock margins;
+    socket() and bind() never count as connections to an uncalled peer."""
+    doc = _rule("edge-agent-uncalled-host")
+    inp = copy.deepcopy(doc["input"])
+    margin = (
+        inp["agent"]["clock_uncertainty_ns"]
+        + inp["host_sources"][0]["clock_uncertainty_ns"]
+    )
+    uncalled = next(e for e in inp["host_events"] if e["label"] == "connect-uncalled")
+    uncalled["time_ns"] = inp["run"]["window"][1] + margin
+    trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert trace[uncalled["event_id"]] == "H4-uncalled"
+    uncalled["time_ns"] += 1
+    trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert trace[uncalled["event_id"]] == "outside_run"
+    uncalled["time_ns"] -= 1
+    uncalled["syscall"] = "bind"
+    trace = rules.reconstruct(inp, action_record.call_id)["trace"]["host_events"]
+    assert trace[uncalled["event_id"]] == "H4"

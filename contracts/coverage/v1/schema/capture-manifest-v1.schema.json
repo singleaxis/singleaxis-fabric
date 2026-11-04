@@ -368,7 +368,18 @@
               "uninstrumented_client",
               "sampling",
               "retention_expired",
-              "deleted"
+              "deleted",
+              "unattributed_effect",
+              "ambiguous_attribution",
+              "tool_result_missing",
+              "exchange_gap",
+              "source_gap",
+              "anchor_missing",
+              "unexplained_host_event",
+              "channel_disabled",
+              "no_effect_channel",
+              "none_in_window",
+              "remote_sandbox"
             ]
           }
         }

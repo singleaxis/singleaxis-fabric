@@ -5,6 +5,7 @@ package fabricguardprocessor
 
 import (
 	"regexp"
+	"slices"
 	"strconv"
 	"time"
 
@@ -139,8 +140,10 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.outcome.delivery_state":                           oneOf(toSet("prepared", "sent", "accepted", "delivered", "read", "played", "failed", "unknown")),
 	"fabric.outcome.target_id":                                matches(pseudonymPattern("tgt")),
 	"fabric.process.exit_code":                                intIn(-2147483648, 2147483647),
+	"fabric.process.parent_pid":                               intAtLeast(1),
 	"fabric.process.pid":                                      intAtLeast(1),
 	"fabric.process.signal":                                   intAtLeast(1),
+	"fabric.process.start_ns":                                 intAtLeast(0),
 	"fabric.remote.host_key_verified":                         isBool,
 	"fabric.remote.target_id":                                 matches(pseudonymPattern("hst")),
 	"fabric.run.agent_policy_digest":                          matches(coverageDigestPattern),
@@ -176,7 +179,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.side_effect.state":                                oneOf(toSet("requested", "accepted", "applied", "failed", "unknown")),
 	"fabric.step.attempt_kind":                                oneOf(toSet("initial", "retry", "fallback", "hedge", "resume")),
 	"fabric.step.attempt_selected":                            isBool,
-	"fabric.step.kind":                                        oneOf(toSet("run", "model_call", "embedding", "input", "message", "tool_call", "provider_tool_call", "mcp_call", "retrieval", "memory", "terminal", "remote_exec", "database", "network", "file", "ui_action", "media_stream", "delegation", "workflow_node", "checkpoint", "control", "context_change", "selection", "side_effect", "outcome", "hook", "skill", "interaction", "extension")),
+	"fabric.step.kind":                                        oneOf(toSet("run", "agent_turn", "model_call", "embedding", "input", "message", "tool_call", "provider_tool_call", "mcp_call", "retrieval", "memory", "terminal", "remote_exec", "database", "network", "file", "ui_action", "media_stream", "delegation", "workflow_node", "checkpoint", "control", "context_change", "selection", "side_effect", "outcome", "hook", "skill", "interaction", "extension")),
 	"fabric.step.lifecycle_state":                             oneOf(toSet("queued", "running", "suspended", "deferred", "completed", "cancelled", "unknown")),
 	"fabric.step.parent_id":                                   matches(coverageOpaqueIDPattern),
 	"fabric.step.status":                                      oneOf(toSet("ok", "error", "cancelled", "timeout", "unknown")),
@@ -187,6 +190,11 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.workflow.iteration":                               intAtLeast(0),
 	"fabric.workflow.node":                                    matches(operatorLabelPattern),
 	"fabric.event_id":                                         matches(captureObjectIDPattern),
+	"fabric.content.object_ids":                               sliceOf(1, 8, true, matches(captureObjectIDPattern)),
+	"fabric.run.id_basis":                                     oneOf(toSet("caller", "caller_join", "token", "token_conflict", "minted", "legacy")),
+	"fabric.wire.endpoint_id":                                 matches(wireEndpointIDPattern),
+	"fabric.wire.provider_request_id":                         matches(pseudonymPattern("p")),
+	"fabric.capture.source":                                   oneOf(toSet("observed", "reported")),
 }
 
 // operatorLabelKeys are operator labels (spec 049 §4.2 LABEL exposure): under
@@ -255,6 +263,115 @@ var manifestSpanKeys = toSet(
 	"fabric.source_id",
 )
 
+// coverageKeyPlacements: the capture record classes each key may appear on
+// (registry placement; spec 050 §3.14): exchange, record, loss, a heartbeat kind
+// or manifest. fabricguard's class bits and marker kinds follow it.
+var coverageKeyPlacements = map[string][]string{
+	"fabric.actor.type":                 {"exchange", "record"},
+	"fabric.agent_id":                   {"exchange", "run_start"},
+	"fabric.attempt.uid":                {"record"},
+	"fabric.capture.input":              {"exchange", "record"},
+	"fabric.capture.manifest_digest":    {"run_start", "run_end"},
+	"fabric.capture.manifest_id":        {"run_start", "run_end"},
+	"fabric.capture.manifest_seq":       {"run_start", "run_end", "segment_seal", "periodic", "final"},
+	"fabric.capture.point":              {"exchange", "record", "loss", "run_start", "run_end", "segment_seal", "periodic", "final"},
+	"fabric.capture.source":             {"exchange", "record"},
+	"fabric.content.object_ids":         {"record"},
+	"fabric.deployment_id":              {"exchange", "run_start"},
+	"fabric.environment":                {"exchange", "run_start"},
+	"fabric.error.code":                 {"exchange"},
+	"fabric.error.domain":               {"exchange", "record"},
+	"fabric.event_id":                   {"exchange", "record", "loss", "run_start", "run_end", "segment_seal", "periodic", "final", "manifest"},
+	"fabric.execution.host_id":          {"record"},
+	"fabric.execution.image_digest":     {"record"},
+	"fabric.execution.sandbox_id":       {"record"},
+	"fabric.process.exit_code":          {"record"},
+	"fabric.process.parent_pid":         {"record"},
+	"fabric.process.pid":                {"record"},
+	"fabric.process.signal":             {"record"},
+	"fabric.process.start_ns":           {"record"},
+	"fabric.release_id":                 {"exchange", "run_start"},
+	"fabric.run.branch_ids":             {"run_start"},
+	"fabric.run.declared_branches":      {"run_start"},
+	"fabric.run.id":                     {"exchange", "record", "run_start", "run_end", "segment_seal"},
+	"fabric.run.id_basis":               {"run_start"},
+	"fabric.run.links":                  {"run_start"},
+	"fabric.run.open_deadline_s":        {"run_start"},
+	"fabric.run.outcome":                {"run_end"},
+	"fabric.run.parent_id":              {"run_start"},
+	"fabric.run.predecessors":           {"run_start"},
+	"fabric.run.resumable":              {"run_start", "segment_seal"},
+	"fabric.run.resumed_from":           {"run_start"},
+	"fabric.run.scope_id":               {"exchange", "record", "run_start", "run_end", "segment_seal"},
+	"fabric.run.scope_status":           {"run_end"},
+	"fabric.run.segment_id":             {"exchange", "record", "loss", "run_start", "run_end", "segment_seal"},
+	"fabric.run.stop_reason":            {"run_end"},
+	"fabric.run.terminal":               {"segment_seal"},
+	"fabric.segment.branch_ids":         {"segment_seal"},
+	"fabric.segment.last_sequence":      {"segment_seal"},
+	"fabric.segment.manifest_digest":    {"segment_seal"},
+	"fabric.segment.seal_digest":        {"segment_seal"},
+	"fabric.session_id":                 {"exchange", "run_start"},
+	"fabric.source.epoch":               {"exchange", "record", "loss", "run_start", "run_end", "segment_seal", "periodic", "final"},
+	"fabric.source.sequence":            {"exchange", "record"},
+	"fabric.source_id":                  {"exchange", "record", "loss", "run_start", "run_end", "segment_seal", "periodic", "final"},
+	"fabric.step.attempt_id":            {"record"},
+	"fabric.step.id":                    {"record"},
+	"fabric.step.kind":                  {"exchange", "record"},
+	"fabric.step.lifecycle_state":       {"exchange", "record"},
+	"fabric.step.parent_id":             {"record"},
+	"fabric.step.status":                {"exchange", "record"},
+	"fabric.system_id":                  {"exchange", "run_start"},
+	"fabric.user_id":                    {"exchange", "run_start"},
+	"fabric.wire.endpoint_id":           {"exchange"},
+	"fabric.wire.first_chunk_offset_ns": {"exchange"},
+	"fabric.wire.provider_request_id":   {"exchange"},
+	"fabric.wire.store_reason":          {"exchange"},
+}
+
+// recordKeyValidators: the exact key set of the records class (spec 050 §3.14,
+// rule A), each with its check (capture_check where the row has one; capture
+// labels and identity_mode apply as for every key). The SDK's
+// fabric/_records_keys_generated.py is generated from the same rows.
+var recordKeyValidators = map[string]func(pcommon.Value) bool{
+	"fabric.actor.type":             oneOf(toSet("user", "agent", "sub_agent", "human_approver", "human_operator", "system", "scheduler", "external_service", "provider", "unknown")),
+	"fabric.attempt.uid":            matches(captureObjectIDPattern),
+	"fabric.capture.input":          oneOf(toSet("wire", "records")),
+	"fabric.capture.point":          matches(capturePointPattern),
+	"fabric.capture.source":         oneOf(toSet("observed", "reported")),
+	"fabric.content.object_ids":     sliceOf(1, 8, true, matches(captureObjectIDPattern)),
+	"fabric.error.domain":           oneOf(toSet("application", "transport", "provider", "tool", "recorder")),
+	"fabric.event_id":               matches(captureObjectIDPattern),
+	"fabric.execution.host_id":      matches(pseudonymPattern("hst")),
+	"fabric.execution.image_digest": matches(coverageDigestPattern),
+	"fabric.execution.sandbox_id":   matches(pseudonymPattern("sbx")),
+	"fabric.process.exit_code":      intIn(-2147483648, 2147483647),
+	"fabric.process.parent_pid":     intAtLeast(1),
+	"fabric.process.pid":            intAtLeast(1),
+	"fabric.process.signal":         intAtLeast(1),
+	"fabric.process.start_ns":       intAtLeast(0),
+	"fabric.run.id":                 matchesInt64(recordRunIDPattern, "epoch"),
+	"fabric.run.scope_id":           matches(captureObjectIDPattern),
+	"fabric.run.segment_id":         matches(pseudonymPattern("seg")),
+	"fabric.source.epoch":           intAtLeast(0),
+	"fabric.source.sequence":        intAtLeast(0),
+	"fabric.source_id":              matches(coverageOpaqueIDPattern),
+	"fabric.step.attempt_id":        matches(coverageOpaqueIDPattern),
+	"fabric.step.id":                matches(coverageOpaqueIDPattern),
+	"fabric.step.kind":              oneOf(toSet("run", "agent_turn", "model_call", "embedding", "input", "message", "tool_call", "provider_tool_call", "mcp_call", "retrieval", "memory", "terminal", "remote_exec", "database", "network", "file", "ui_action", "media_stream", "delegation", "workflow_node", "checkpoint", "control", "context_change", "selection", "side_effect", "outcome", "hook", "skill", "interaction", "extension")),
+	"fabric.step.lifecycle_state":   oneOf(toSet("queued", "running", "suspended", "deferred", "completed", "cancelled", "unknown")),
+	"fabric.step.parent_id":         matches(coverageOpaqueIDPattern),
+	"fabric.step.status":            oneOf(toSet("ok", "error", "cancelled", "timeout", "unknown")),
+}
+
+// recordKeyConditions: conditional records placements (spec 050 §3.4 rule A):
+// capture_point_kinds / capture_points matched against the id part of
+// fabric.capture.point (P1 ships none; spec 056 adds the exec.subprocess rows).
+var recordKeyConditions = map[string]map[string][]string{
+	"fabric.process.parent_pid": {"capture_points": {"exec.subprocess"}},
+	"fabric.process.start_ns":   {"capture_points": {"exec.subprocess"}},
+}
+
 var (
 	dbSystemPattern            = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
 	coverageDigestPattern      = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -265,7 +382,7 @@ var (
 	frameworkNamePattern       = regexp.MustCompile(`^@?[a-z0-9][a-z0-9._/-]{0,127}$`)
 	softwareVersionPattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
 	manifestPointFieldsPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}=([XCSND][0-9]{2}(,[XCSND][0-9]{2}){0,255})?$`)
-	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|-)$`)
+	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|unattributed_effect|ambiguous_attribution|tool_result_missing|exchange_gap|source_gap|anchor_missing|unexplained_host_event|channel_disabled|no_effect_channel|none_in_window|remote_sandbox|-)$`)
 	coverageProfilePattern     = regexp.MustCompile(`^fabric\.profile\.[a-z0-9-]+/v[0-9]+$`)
 	keyIDPattern               = regexp.MustCompile(`^kid-[0-9a-f]{8}$`)
 	roleTableVersionPattern    = regexp.MustCompile(`^fabric\.content-role-table/v[0-9]+@[0-9]+$`)
@@ -273,6 +390,8 @@ var (
 	decimalEpochPattern        = regexp.MustCompile(`^(?P<epoch>0|[1-9][0-9]{0,18})$`)
 	mcpProtocolVersionPattern  = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 	predecessorPattern         = regexp.MustCompile(`^(none|seg-[0-9a-f]{32}/(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})/(?P<epoch>[1-9][0-9]{0,18})/(-1|0|[1-9][0-9]{0,18})/sha256:[0-9a-f]{64})$`)
+	wireEndpointIDPattern      = regexp.MustCompile(`^(?:[a-z][a-z0-9_]{0,31}\.default|lbl-[0-9a-f]{32})$`)
+	recordRunIDPattern         = regexp.MustCompile(`^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40}|source:(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,100}):(?P<epoch>[0-9]{1,19}))$`)
 )
 
 // END GENERATED
@@ -304,69 +423,73 @@ const (
 	onExchange uint8 = 1 << iota
 	onLoss
 	onHeartbeat
+	onRecord
 )
 
-// coverageCaptureKeys places the new keys spec 049 puts on capture records:
-// wire exchange spans (X26, X40, S01, S03, S07-S09, S11, S30; section 2.4
-// "every record carries fabric.capture.input ... fabric.run.segment_id") and
-// run markers and heartbeats (X10-X12, X34, X39, X41-X46, S34, D30). Every
-// other new key is admitted on non-capture spans only.
-var coverageCaptureKeys = map[string]uint8{
-	"fabric.event_id":                   onExchange | onLoss | onHeartbeat,
-	"fabric.capture.input":              onExchange,
-	"fabric.capture.point":              onExchange | onLoss | onHeartbeat,
-	"fabric.run.segment_id":             onExchange | onHeartbeat,
-	"fabric.wire.store_reason":          onExchange,
-	"fabric.wire.first_chunk_offset_ns": onExchange,
-	"fabric.step.kind":                  onExchange,
-	"fabric.actor.type":                 onExchange,
-	"fabric.step.lifecycle_state":       onExchange,
-	"fabric.step.status":                onExchange,
-	"fabric.error.domain":               onExchange,
-	"fabric.error.code":                 onExchange,
-	"fabric.capture.manifest_seq":       onHeartbeat,
-	"fabric.capture.manifest_id":        onHeartbeat,
-	"fabric.capture.manifest_digest":    onHeartbeat,
-	"fabric.run.predecessors":           onHeartbeat,
-	"fabric.run.resumable":              onHeartbeat,
-	"fabric.run.terminal":               onHeartbeat,
-	"fabric.run.open_deadline_s":        onHeartbeat,
-	"fabric.run.declared_branches":      onHeartbeat,
-	"fabric.run.branch_ids":             onHeartbeat,
-	"fabric.segment.last_sequence":      onHeartbeat,
-	"fabric.segment.manifest_digest":    onHeartbeat,
-	"fabric.segment.seal_digest":        onHeartbeat,
-	"fabric.segment.branch_ids":         onHeartbeat,
-	"fabric.run.scope_status":           onHeartbeat,
-	"fabric.run.parent_id":              onHeartbeat,
-	"fabric.run.resumed_from":           onHeartbeat,
-	"fabric.run.links":                  onHeartbeat,
-	"fabric.run.outcome":                onHeartbeat,
-	"fabric.run.stop_reason":            onHeartbeat,
+// coverageCaptureKeys and markerKeyKinds are derived views of the generated
+// placements. Keep one source of truth for class and heartbeat admission.
+var coverageCaptureKeys, markerKeyKinds = capturePlacements()
+
+func capturePlacements() (map[string]uint8, map[string]map[string]struct{}) {
+	classes := map[string]uint8{}
+	markers := map[string]map[string]struct{}{}
+	for key, placements := range coverageKeyPlacements {
+		for _, placement := range placements {
+			switch placement {
+			case "exchange":
+				classes[key] |= onExchange
+			case "record":
+				classes[key] |= onRecord
+			case "loss":
+				classes[key] |= onLoss
+			default:
+				if _, heartbeat := captureHeartbeatKinds[placement]; heartbeat {
+					classes[key] |= onHeartbeat
+					if markers[key] == nil {
+						markers[key] = map[string]struct{}{}
+					}
+					markers[key][placement] = struct{}{}
+				}
+			}
+		}
+		// Only keys narrowed to particular heartbeat kinds need the second pass.
+		if len(markers[key]) == len(captureHeartbeatKinds) {
+			delete(markers, key)
+		}
+		if _, coverage := coverageKeyValidators[key]; !coverage {
+			delete(classes, key)
+		}
+	}
+	return classes, markers
 }
 
-// markerKeyKinds narrows run-marker keys to the heartbeat kinds that define
-// them (spec 049 §2.10, §2.12 rule 4, X41-X46, S34, D30), exactly as the
-// capture/v1 loss-record and spool-record schemas do. fabric.run.scope_id
-// follows the same rule (scopeIDOnlyWhereDefined).
-var markerKeyKinds = map[string]map[string]struct{}{
-	"fabric.run.scope_id":            runMarkerKinds,
-	"fabric.run.segment_id":          toSet("run_start", "run_end", "segment_seal"),
-	"fabric.run.predecessors":        toSet("run_start"),
-	"fabric.run.open_deadline_s":     toSet("run_start"),
-	"fabric.run.declared_branches":   toSet("run_start"),
-	"fabric.run.branch_ids":          toSet("run_start"),
-	"fabric.run.resumable":           toSet("run_start", "segment_seal"),
-	"fabric.run.terminal":            toSet("segment_seal"),
-	"fabric.segment.last_sequence":   toSet("segment_seal"),
-	"fabric.segment.manifest_digest": toSet("segment_seal"),
-	"fabric.segment.seal_digest":     toSet("segment_seal"),
-	"fabric.segment.branch_ids":      toSet("segment_seal"),
-	"fabric.capture.manifest_id":     toSet("run_start", "run_end"),
-	"fabric.capture.manifest_digest": toSet("run_start", "run_end"),
-	"fabric.run.scope_status":        toSet("run_end"),
-	"fabric.run.outcome":             toSet("run_end"),
-	"fabric.run.stop_reason":         toSet("run_end"),
+// placementAllowed uses the unfiltered class/kind. Invalid marker values must
+// not opt a span into a more permissive class as attributes are removed.
+func placementAllowed(key string, class uint8, kind string) bool {
+	placements, listed := coverageKeyPlacements[key]
+	if !listed {
+		return false
+	}
+	switch class {
+	case onExchange:
+		return slices.Contains(placements, "exchange")
+	case onRecord:
+		return slices.Contains(placements, "record")
+	case onLoss:
+		return slices.Contains(placements, "loss")
+	case onHeartbeat:
+		if slices.Contains(placements, kind) {
+			return true
+		}
+		// Preserve common source metadata on legacy/invalid-kind heartbeats.
+		for heartbeat := range captureHeartbeatKinds {
+			if !slices.Contains(placements, heartbeat) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func coverageKeyNames() map[string]struct{} {
@@ -515,17 +638,25 @@ func (g *guard) applyManifestProfile(attrs pcommon.Map) {
 		}
 		return !keep
 	})
+	g.applyCaptureLabels(attrs)
 }
 
 // captureClass names the capture record class of a span's attributes.
 func captureClass(attrs pcommon.Map) uint8 {
-	switch activityCategory("", attrs) {
-	case "fabric.capture_heartbeat":
+	if _, ok := attrs.Get("fabric.heartbeat.last_sequence"); ok {
 		return onHeartbeat
-	case "fabric.capture_loss":
+	}
+	if _, ok := attrs.Get("fabric.loss.reason"); ok {
 		return onLoss
-	case "fabric.model_call":
+	}
+	if _, ok := attrs.Get("fabric.wire.exchange_id"); ok {
 		return onExchange
+	}
+	input, ok := attrs.Get("fabric.capture.input")
+	if ok && constStr("records")(input) {
+		if _, sequenced := attrs.Get("fabric.source.sequence"); sequenced {
+			return onRecord
+		}
 	}
 	return 0
 }

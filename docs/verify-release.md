@@ -1,5 +1,11 @@
 # Verify a Fabric recorder release
 
+> **Status:** describes the built release process for v0.8.0.
+> Implementation:
+> [`.github/workflows/release.yml`](../.github/workflows/release.yml),
+> [`scripts/release/`](../scripts/release/) and
+> [`scripts/verify_release_identity.py`](../scripts/verify_release_identity.py).
+
 Fabric qualifies the staged package artifacts and emits
 `release-qualification.json`. The publication workflow separately rebuilds OCI
 images from the tagged source after CI: the resulting signed image digest is

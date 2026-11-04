@@ -35,7 +35,6 @@ from fabric.wire import WireConfig, _spool
 from fabric.wire._spool import Spool, unframe, unframe_all
 
 from .test_wire_helpers import (
-    CAPTURE,
     OPENAI_CHAT,
     PRODUCTION_ID_KEY,
     capture_schemas,
@@ -46,15 +45,7 @@ from .test_wire_helpers import (
 )
 
 VALIDATOR = load_validator()
-SCHEMAS = {
-    **capture_schemas(),
-    **{
-        rel: json.loads((CAPTURE / rel).read_text("utf-8"))
-        for rel in (
-            "schema/spool-record-v1.schema.json", "schema/content-log-record-v1.schema.json"
-        )
-    },
-}  # fmt: skip
+SCHEMAS = capture_schemas()
 SMALL = 4096  # max_body_bytes in these tests
 SPOOL_MIN = 2 * SMALL + 1024 * 1024
 
@@ -210,8 +201,9 @@ def validate_header(doc: dict[str, Any]) -> None:
 
 
 def test_node_mode_delivers_content_then_span_and_empties_the_spool(
-    node: FakeNode, tmp_path: Path
+    node: FakeNode, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     handle = install_node(node, tmp_path / "spool")
     with wire.run("run-a"), model_client() as client:
         body = client.post(OPENAI_CHAT, json={"model": "gpt-4o", "messages": []}).content
@@ -256,13 +248,20 @@ def test_spooled_headers_match_the_contract(node: FakeNode, tmp_path: Path) -> N
         client.post(OPENAI_CHAT, json={"messages": []})
     assert handle._tee.flush(5.0)
     handle._tee.loss.record(handle.allocator.source_id, handle.allocator.epoch, "queue_full", 7)
+    # manifest 0 of the epoch (049 §2.8) and the run's terminal seal (050 §3.6); markers
+    # are spooled by the sender's pump, one at a time, after the records they follow.
+    expected = ["manifest", "run_end", "run_start", "segment_seal"]
+
+    def marker_kinds() -> list[str]:
+        return sorted(d["marker"]["kind"] for d in headers_of(spool)
+                      if d["record_kind"] == "marker")  # fmt: skip
+
     assert wait_for(lambda: {d["record_kind"] for d in headers_of(spool)} == {
-        "exchange", "loss", "marker"})  # fmt: skip
+        "exchange", "loss", "marker"} and marker_kinds() == expected)  # fmt: skip
     docs = headers_of(spool)
     for doc in docs:
         validate_header(doc)
-    kinds = sorted(d["marker"]["kind"] for d in docs if d["record_kind"] == "marker")
-    assert kinds == ["run_end", "run_start"]
+    assert marker_kinds() == expected
     exchange = next(d for d in docs if d["record_kind"] == "exchange")
     assert [b["descriptor"]["role"] for b in exchange["bodies"]] == [
         "model.exchange.request", "model.exchange.response"]  # fmt: skip

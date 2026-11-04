@@ -1,5 +1,13 @@
 # Explicit (app-reported) APIs
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`fabric/decision.py`](../sdk/python/src/fabric/decision.py),
+> [`fabric/call_recorder.py`](../sdk/python/src/fabric/call_recorder.py),
+> [`fabric/byte_evidence.py`](../sdk/python/src/fabric/byte_evidence.py),
+> [`fabric/adapters/`](../sdk/python/src/fabric/adapters/); TypeScript
+> [`decision.ts`](../sdk/typescript/src/decision.ts) and
+> [`byte-evidence.ts`](../sdk/typescript/src/byte-evidence.ts).
+
 Wire capture records what crosses the model HTTP boundary without code
 changes. Everything else Fabric records, the application reports itself
 through the SDK: decisions, tool calls, retrieval, memory, side effects,

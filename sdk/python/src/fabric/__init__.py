@@ -13,7 +13,14 @@ events to disk and delivers content to the Fabric Node, never to a cloud
 store) and ``fabric.reconstruct`` (offline run verifier, also
 ``python -m fabric.reconstruct``). Importing ``fabric`` never patches a
 transport, starts a thread or enables capture.
+
+``fabric.hooks`` (spec 053 §4) holds the opt-in observed hooks, in this build the
+subprocess hook: ``fabric.hooks.install(exec=True)`` on an installed capture handle, or
+``FABRIC_WIRE_EXEC=1`` with ``fabric.wire.install_from_env()``. It is imported on first
+attribute access (``fabric.hooks``), and importing it patches nothing.
 """
+
+from typing import Any
 
 from ._calls import LLMCall, ToolCall, ToolErrorCategory
 from ._capture_scope import bind_capture_context
@@ -63,6 +70,16 @@ from .signing import (
     verify_signature,
 )
 from .tracing import get_tracer, install_default_provider
+
+
+def __getattr__(name: str) -> Any:
+    """``fabric.hooks`` on first access, without importing it with ``fabric``."""
+    if name == "hooks":
+        import importlib  # noqa: PLC0415
+
+        return importlib.import_module(".hooks", __name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "CONTENT_ROLES",

@@ -1,0 +1,170 @@
+{
+  "schema_version": "fabric.action-interface-golden/v1",
+  "kind": "exec.subprocess",
+  "spec": "053 §3, §5.1; 056 §4.3",
+  "description": "The two records the exec.subprocess hook emits on the records input for one subprocess.run(cmd, shell=True, capture_output=True, text=True, env={...}) call (AR-1 step 1), as the agent spool holds them and the Node exports them: span name, attributes (every one admitted by rule A), the terminal.* bodies and the fabric.exec.observation/v1 evidence object, and each record's digest. normalized_effect is what the attribution rules read.",
+  "records": [
+    {
+      "phase": "start",
+      "spool_record": "fixtures/valid/spool-record-exec-subprocess-start.json",
+      "name_hint": "fabric.terminal",
+      "span": {
+        "name": "fabric.activity",
+        "kind": "internal",
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "span_id": "1f5131899340dd70",
+        "trace_flags": 1,
+        "start_time_unix_nano": 1791331201210000000,
+        "end_time_unix_nano": 1791331201210400000,
+        "status": "unset",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "observed",
+          "fabric.capture.point": "exec.subprocess@0.9.0",
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.attempt.uid": "60e732b4-6f7b-4cf1-a7e3-27962d017fd3",
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "a147135a-c047-4746-ac1e-7c091478d80d",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "terminal",
+          "fabric.actor.type": "agent",
+          "fabric.source.sequence": 5,
+          "fabric.event_id": "430cfa43-c0f8-4f2a-a1d7-7f393dfd9715",
+          "fabric.step.lifecycle_state": "running",
+          "fabric.process.pid": 4121,
+          "fabric.process.parent_pid": 4100,
+          "fabric.process.start_ns": 60120000000,
+          "fabric.execution.host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+          "fabric.content.object_ids": [
+            "a102f9fd-b41c-4db4-a86d-e6410678eaca",
+            "451f72c9-b1eb-4563-a25c-cc07a1a7a2fb",
+            "7cbf61ed-902b-42f1-a635-80c072226f5b"
+          ]
+        }
+      },
+      "bodies": [
+        {
+          "object_id": "a102f9fd-b41c-4db4-a86d-e6410678eaca",
+          "role": "terminal.argv",
+          "media_type": "application/json",
+          "utf8": "{\"command\":{\"t\":\"str\",\"v\":\"ls /data && sha256sum /data/a.txt\"},\"form\":\"shell\"}"
+        },
+        {
+          "object_id": "451f72c9-b1eb-4563-a25c-cc07a1a7a2fb",
+          "role": "terminal.context",
+          "media_type": "application/json",
+          "utf8": "{\"cwd\":{\"t\":\"str\",\"v\":\"/srv/agent\"},\"env_names\":[\"DATA_TOKEN\",\"PATH\"],\"shell\":true}"
+        },
+        {
+          "object_id": "7cbf61ed-902b-42f1-a635-80c072226f5b",
+          "role": "record.evidence",
+          "media_type": "application/vnd.fabric.record-evidence+json",
+          "utf8": "{\"evidence_type\":\"fabric.exec.observation/v1\",\"items\":[{\"api\":\"run\",\"argv_form\":\"shell_string\",\"pid_known\":true,\"stdio\":{\"stderr\":\"pipe\",\"stdin\":\"inherit\",\"stdout\":\"pipe\"}}],\"schema_version\":\"fabric.record-evidence/v1\"}"
+        }
+      ],
+      "evidence": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.exec.observation/v1",
+        "items": [
+          {
+            "api": "run",
+            "argv_form": "shell_string",
+            "stdio": {
+              "stdin": "inherit",
+              "stdout": "pipe",
+              "stderr": "pipe"
+            },
+            "pid_known": true
+          }
+        ]
+      },
+      "record_digest": "sha256:e02db42fe23bf2f5d21f8987be8cb895b131294a1cf1975a9436ec39614c870b"
+    },
+    {
+      "phase": "end",
+      "spool_record": "fixtures/valid/spool-record-exec-subprocess-end.json",
+      "name_hint": "fabric.terminal",
+      "span": {
+        "name": "fabric.activity",
+        "kind": "internal",
+        "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+        "span_id": "a000ce6312194f36",
+        "trace_flags": 1,
+        "start_time_unix_nano": 1791331201210500000,
+        "end_time_unix_nano": 1791331201236000000,
+        "status": "unset",
+        "attributes": {
+          "fabric.capture.input": "records",
+          "fabric.capture.source": "observed",
+          "fabric.capture.point": "exec.subprocess@0.9.0",
+          "fabric.source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+          "fabric.source.epoch": 4611686018427387905,
+          "fabric.attempt.uid": "60e732b4-6f7b-4cf1-a7e3-27962d017fd3",
+          "fabric.run.id": "r-93347307304ecb0a9bb1b51ae90ac326",
+          "fabric.run.scope_id": "a147135a-c047-4746-ac1e-7c091478d80d",
+          "fabric.run.segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+          "fabric.step.kind": "terminal",
+          "fabric.actor.type": "agent",
+          "fabric.source.sequence": 6,
+          "fabric.event_id": "47139e71-0f26-4fb3-a660-924bd619f470",
+          "fabric.step.lifecycle_state": "completed",
+          "fabric.step.status": "ok",
+          "fabric.process.pid": 4121,
+          "fabric.process.exit_code": 0,
+          "fabric.content.object_ids": [
+            "6e250c02-5340-4091-a126-0d39e3682480",
+            "c9230747-ef33-4136-a11d-cb5d32409521",
+            "95e0cd1e-cdbc-4082-ab9f-5a4ed4323873"
+          ]
+        }
+      },
+      "bodies": [
+        {
+          "object_id": "6e250c02-5340-4091-a126-0d39e3682480",
+          "role": "terminal.stdout",
+          "media_type": "text/plain",
+          "utf8": "a.txt\nb.txt\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /data/a.txt\n"
+        },
+        {
+          "object_id": "c9230747-ef33-4136-a11d-cb5d32409521",
+          "role": "terminal.stderr",
+          "media_type": "text/plain",
+          "utf8": ""
+        },
+        {
+          "object_id": "95e0cd1e-cdbc-4082-ab9f-5a4ed4323873",
+          "role": "record.evidence",
+          "media_type": "application/vnd.fabric.record-evidence+json",
+          "utf8": "{\"evidence_type\":\"fabric.exec.observation/v1\",\"items\":[{\"api\":\"run\",\"observation_index\":0,\"output_form\":\"text\",\"pid_known\":true,\"text_encoding\":\"utf-8\"}],\"schema_version\":\"fabric.record-evidence/v1\"}"
+        }
+      ],
+      "evidence": {
+        "schema_version": "fabric.record-evidence/v1",
+        "evidence_type": "fabric.exec.observation/v1",
+        "items": [
+          {
+            "api": "run",
+            "output_form": "text",
+            "text_encoding": "utf-8",
+            "observation_index": 0,
+            "pid_known": true
+          }
+        ]
+      },
+      "record_digest": "sha256:1fc6b021964b619528aedaf4c4304d7199395920985a6cda4794d5c922959ab7"
+    }
+  ],
+  "normalized_effect": {
+    "attempt_uid": "60e732b4-6f7b-4cf1-a7e3-27962d017fd3",
+    "event_id": "430cfa43-c0f8-4f2a-a1d7-7f393dfd9715",
+    "sequence": 5,
+    "start_ns": 1791331201210000000,
+    "pid": 4121,
+    "parent_pid": 4100,
+    "process_start_ns": 60120000000,
+    "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+    "exit_observed_ns": 1791331201236000000,
+    "stdout": "a.txt\nb.txt\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /data/a.txt\n"
+  }
+}

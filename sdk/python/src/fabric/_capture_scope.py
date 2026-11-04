@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import contextvars
 import functools
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import ParamSpec, TypeVar
@@ -34,6 +34,8 @@ __all__ = [
     "current_explicit_model_scope",
     "explicit_model_call",
     "explicit_model_call_active",
+    "explicit_owner",
+    "explicit_tool_attempt",
 ]
 
 _P = ParamSpec("_P")
@@ -41,12 +43,20 @@ _R = TypeVar("_R")
 
 
 class ExplicitScope:
-    """One explicit call's scope: a ``model`` scope defers wire capture until ``end()``."""
+    """One explicit call's scope: a ``model`` scope defers wire capture until ``end()``.
 
-    __slots__ = ("ended", "model")
+    ``kinds`` (spec 053 §4.3, D2) are the step kinds the explicit producer records itself
+    (``terminal`` for an explicit subprocess artifact): an observed hook of one of those
+    kinds records nothing while the scope is live. ``attempt`` is the records-input
+    attempt uid of an explicit tool call: an observed hook that records inside it names
+    it as its reported parent (spec 056 §4.2 rule A0)."""
 
-    def __init__(self, model: bool) -> None:
+    __slots__ = ("attempt", "ended", "kinds", "model")
+
+    def __init__(self, model: bool, kinds: Iterable[str] = (), attempt: str | None = None) -> None:
         self.model, self.ended = bool(model), False
+        self.kinds: frozenset[str] = frozenset(kinds)
+        self.attempt = attempt
 
     def end(self) -> None:
         """The call is over: contexts that still hold this scope stop deferring."""
@@ -74,17 +84,32 @@ def explicit_model_call_active() -> bool:
     return current_explicit_model_scope() is not None
 
 
+def explicit_owner(kind: str) -> bool:
+    """Whether the innermost live explicit scope records step ``kind`` itself (053 §4.3
+    D2: explicit wins over an observed hook of the same kind)."""
+    scope = _EXPLICIT_SCOPE.get()
+    return scope is not None and not scope.ended and kind in scope.kinds
+
+
+def explicit_tool_attempt() -> str | None:
+    """The attempt uid of the innermost live explicit tool call, else ``None`` (056 A0:
+    an observed effect inside it reports it as its parent)."""
+    scope = _EXPLICIT_SCOPE.get()
+    return scope.attempt if scope is not None and not scope.ended else None
+
+
 @contextmanager
 def explicit_model_call(
-    active: bool = True, *, scope: ExplicitScope | None = None
+    active: bool = True, *, scope: ExplicitScope | None = None, kinds: Iterable[str] = ()
 ) -> Iterator[ExplicitScope]:
     """Make the enclosed block part of an explicit call: a model call (``active``) or a
-    non-model call, which clears an enclosing model scope.
+    non-model call, which clears an enclosing model scope. ``kinds`` are the step kinds a
+    new scope's call records itself (D2); a shared ``scope`` keeps its own.
 
     Without ``scope`` a new one is created and ended when the block exits. With ``scope``
     (one call's scope shared by its activations) the caller ends it when the call ends."""
     owned = scope is None
-    current = ExplicitScope(active) if scope is None else scope
+    current = ExplicitScope(active, kinds) if scope is None else scope
     token = _EXPLICIT_SCOPE.set(current)
     try:
         yield current

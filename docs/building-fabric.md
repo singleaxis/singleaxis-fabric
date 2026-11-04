@@ -1,5 +1,9 @@
 # Building recorder v1
 
+> **Status:** contributor process, not a description of runtime code. The
+> checks it lists live in [`scripts/tests/`](../scripts/tests/) and
+> [`.github/workflows/`](../.github/workflows/).
+
 [Spec 027](../specs/027-recorder-v1.md) is the implementation authority. If an
 older spec or document conflicts with it, recorder v1 follows 027.
 

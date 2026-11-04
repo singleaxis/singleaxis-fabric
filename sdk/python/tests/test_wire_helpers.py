@@ -25,7 +25,7 @@ from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from fabric._loss import LossEmitter
+from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, SPAN_MANIFEST, LossEmitter
 from fabric._sequence import SourceAllocator
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.wire import WireConfig, WireHandle
@@ -163,13 +163,11 @@ def load_validator() -> Any:
 
 
 def capture_schemas() -> dict[str, Any]:
+    """Every capture-v1 schema the validator dispatches on, read from its own
+    ``SCHEMAS`` map so a schema added to the contract is never missing here."""
     return {
         rel: json.loads((CAPTURE / rel).read_text("utf-8"))
-        for rel in (
-            "schema/llm-exchange-v1.schema.json",
-            "schema/loss-record-v1.schema.json",
-            "schema/run-reconstruction-v1.schema.json",
-        )
+        for rel in load_validator().SCHEMAS.values()
     }
 
 
@@ -261,6 +259,7 @@ def exchange_document(span: ReadableSpan) -> dict[str, Any]:
 
 def loss_document(span: ReadableSpan) -> dict[str, Any]:
     """The ``fabric.loss-record/v1`` JSON form of a loss or heartbeat span."""
+    assert span.name in (SPAN_LOSS, SPAN_HEARTBEAT), f"not a loss-record span: {span.name}"
     a = attrs(span)
     document: dict[str, Any] = {
         "schema_version": "fabric.loss-record/v1",
@@ -273,10 +272,15 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
             heartbeat_kind=a["fabric.heartbeat.kind"],
             last_sequence=a["fabric.heartbeat.last_sequence"],
         )
-        if "fabric.run.id" in a:
-            document["run_id"] = a["fabric.run.id"]
-        if "fabric.run.scope_id" in a:
-            document["scope_id"] = a["fabric.run.scope_id"]
+        for key, value in a.items():  # every run-marker key (spec 050 §4.2, WP-12)
+            if key in _MARKER_BACK:
+                document[_MARKER_BACK[key]] = list(value) if isinstance(value, tuple) else value
+            elif key in _SEAL_BACK:
+                document.setdefault("seal", {})[_SEAL_BACK[key]] = (
+                    list(value) if isinstance(value, tuple) else value
+                )
+            elif key.startswith("fabric.") and key[7:] in _IDENTITY_KEYS:
+                document.setdefault("identity", {})[key[7:]] = value
     else:
         document.update(
             kind="loss",
@@ -285,7 +289,50 @@ def loss_document(span: ReadableSpan) -> dict[str, Any]:
             first_sequence=a["fabric.loss.first_sequence"],
             last_sequence=a["fabric.loss.last_sequence"],
         )
+        if "fabric.run.segment_id" in a:  # 050 R3: segment-attributed losses
+            document["segment_id"] = a["fabric.run.segment_id"]
     return document
+
+
+# Heartbeat span key -> loss-record-v1 field (the run-marker keys of capture/v1 1.3.0).
+_MARKER_BACK = {
+    "fabric.run.id": "run_id", "fabric.run.scope_id": "scope_id",
+    "fabric.run.segment_id": "segment_id", "fabric.run.predecessors": "predecessors",
+    "fabric.run.resumable": "resumable", "fabric.run.open_deadline_s": "open_deadline_s",
+    "fabric.run.declared_branches": "declared_branches", "fabric.run.branch_ids": "branch_ids",
+    "fabric.run.terminal": "terminal", "fabric.capture.manifest_id": "manifest_id",
+    "fabric.capture.manifest_digest": "manifest_digest",
+    "fabric.capture.manifest_seq": "manifest_seq", "fabric.run.scope_status": "scope_status",
+    "fabric.run.outcome": "outcome", "fabric.run.stop_reason": "stop_reason",
+    "fabric.session_id": "session_id", "fabric.user_id": "user_id",
+    "fabric.run.parent_id": "parent_run_id", "fabric.run.resumed_from": "resumed_from",
+    "fabric.run.links": "links", "fabric.run.id_basis": "id_basis",
+    "fabric.event_id": "event_id",
+}  # fmt: skip
+_SEAL_BACK = {
+    "fabric.segment.last_sequence": "last_sequence",
+    "fabric.segment.manifest_digest": "manifest_digest",
+    "fabric.segment.seal_digest": "seal_digest", "fabric.segment.branch_ids": "branch_ids",
+}  # fmt: skip
+_IDENTITY_KEYS = ("agent_id", "system_id", "deployment_id", "release_id", "environment")
+
+
+def manifest_document(span: ReadableSpan) -> dict[str, Any]:
+    """The ``fabric.capture-manifest-record/v1`` JSON form of a manifest span (049 §2.8)."""
+    assert span.name == SPAN_MANIFEST, f"not a manifest span: {span.name}"
+    return {
+        "schema_version": "fabric.capture-manifest-record/v1",
+        "name": span.name,  # OTLP JSON carries sequence attributes as arrays
+        "attributes": {k: list(v) if isinstance(v, tuple) else v for k, v in attrs(span).items()},
+    }
+
+
+def marker_span_document(span: ReadableSpan) -> dict[str, Any]:
+    """The contract document of any capture marker span: a loss or heartbeat span
+    maps to ``fabric.loss-record/v1``, a manifest span to its manifest record."""
+    if span.name == SPAN_MANIFEST:
+        return manifest_document(span)
+    return loss_document(span)
 
 
 STORE_REASONS = (
@@ -333,9 +380,9 @@ def validate_capture(rig: Rig) -> None:
     validator, schemas = load_validator(), capture_schemas()
     for span in rig.spans():
         validate_exchange_document(exchange_document(span))
-    for name in ("fabric.capture_loss", "fabric.capture_heartbeat"):
+    for name in (SPAN_LOSS, SPAN_HEARTBEAT, SPAN_MANIFEST):
         for span in rig.spans(name):
-            validator.validate_document(loss_document(span), schemas)
+            validator.validate_document(marker_span_document(span), schemas)
     if rig.store is not None and hasattr(rig.store, "root"):
         content = content_validator()
         for descriptor in rig.descriptors():

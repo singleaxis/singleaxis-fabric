@@ -15,8 +15,15 @@ implements: 049 rev 6.4 §8.2 P1 and P1-A (sections 1.3, 2.3-2.6, 2.8, 2.10-2.13
 This is the build spec for spec 049 phases **P1** (emitters and model-call
 projection) and **P1-A** (mixed capture and passivity qualification). It
 implements 049 rev 6.4. It does not redesign 049. Where 049 is ambiguous or
-conflicts with the code or with owner decisions 21–25, the conflict is listed
-in section 9 with exact replacement text.
+conflicts with the code or with 049's owner decisions 21–25 (049 §9), the
+conflict is listed in section 9 with exact replacement text.
+
+**Build state.** Waves 0–2 of section 5 are built after v0.9.0, not yet
+released, except WP-15 (decision records) and WP-21 (Node
+pre-acknowledgement validation). WP-50 is built as an end-to-end test; the
+LR-1 harness and wave 4 (P1-A) are not built.
+[The P1 run record](../docs/run-record.md) describes what is built. Terms
+are defined in the [glossary](../docs/glossary.md).
 
 Revision 2 changes the items below. The codes in brackets (R1–R16) name
 these cross-spec revision decisions; specs 051–055 cite them by code.
@@ -872,6 +879,7 @@ applies. The basis is emitted as `fabric.run.id_basis` on every `run_start`
 | 3 | Valid tokens with different correlation ids, no clear `run_id` | the lowest correlation id (byte order) | `token_conflict` |
 | 4 | No valid token, clear `run_id` (argument or same-host `FABRIC_RUN_ID`) | the mapped clear id | `caller` |
 | 5 | No valid token and no run id (`run()` with no arguments, typically an orchestrator that only issues tokens) | a **minted** correlation id: `r-` + 32 hex from `secrets.token_hex(16)`, an `EmittedId` with no caller input | `minted` |
+
 - The run's correlation id is the run id of its root segment (rule 4 or 5). It
   is copied into every token the run issues, so A → B → C keeps one id even
   when B is wholly lost: C's tokens came from B, which carried A's id.

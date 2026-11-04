@@ -1,0 +1,50 @@
+{
+  "schema": "fabric.ar1-host-replay/v1",
+  "description": "What a local-profile eBPF emitter scoped to the AR-1 agent's cgroup reports for one AR-1 run, written as process trees. Hermetic mode binds it to the real run: an anchor process ('parent': 'agent') takes the pid and parent pid of the exec.subprocess effect whose full command line contains 'match'; every other process gets a synthetic pid; times are the effect's start time plus offset_us, or the fixture host's own observation of the connection. The record keys are those of components/host-emitter (emitter.go) as contracts/coverage/v1/fixtures/action-record/interface/host-local-log-records.json pins them: no process start time, so anchors are H2 (tentative). Modelled on dash, the Ubuntu /bin/sh: it forks each command of a pipeline and every command of a list but the last, which it execs in place, so step 1's sha256sum is a second exec of the anchor process (same pid and parent pid, no start time) and H2 reads the two as one exec chain (spec 056 §4.3). An event of the anchor process ('proc' of the anchor, no 'parent') is placed before the effect's observed exit (the end of its record with an exit code), as a real re-exec is. It does not model Fabric's own sender connections.",
+  "audit_source": "ebpf",
+  "cgroup_id": 91234,
+  "agent": [
+    {"syscall": "connect", "peer": "model", "at": "exchange_start", "offset_us": 200},
+    {"syscall": "connect", "peer": "fixture_host", "at": "fixture_ping", "offset_us": -100}
+  ],
+  "effects": [
+    {"step": "1", "match": " && ", "events": [
+      {"proc": "sh", "exe": "sh", "parent": "agent", "syscall": "execve", "offset_us": 300},
+      {"proc": "ls", "exe": "ls", "parent": "sh", "syscall": "execve", "offset_us": 1100},
+      {"proc": "sh", "exe": "sha256sum", "syscall": "execve", "offset_us": 2500}
+    ]},
+    {"step": "2", "match": "curl -fsS", "events": [
+      {"proc": "sh", "exe": "sh", "parent": "agent", "syscall": "execve", "offset_us": 300},
+      {"proc": "curl", "exe": "curl", "parent": "sh", "syscall": "execve", "offset_us": 1200},
+      {"proc": "head", "exe": "head", "parent": "sh", "syscall": "execve", "offset_us": 1300},
+      {"proc": "curl", "syscall": "connect", "peer": "fixture_host", "at": "fixture_http", "offset_us": -100}
+    ]},
+    {"step": "3a", "match": "b.txt | tr", "events": [
+      {"proc": "sh", "exe": "sh", "parent": "agent", "syscall": "execve", "offset_us": 300},
+      {"proc": "cat", "exe": "cat", "parent": "sh", "syscall": "execve", "offset_us": 1000},
+      {"proc": "tr", "exe": "tr", "parent": "sh", "syscall": "execve", "offset_us": 1100}
+    ]},
+    {"step": "3b", "match": "c.txt | tr", "events": [
+      {"proc": "sh", "exe": "sh", "parent": "agent", "syscall": "execve", "offset_us": 300},
+      {"proc": "cat", "exe": "cat", "parent": "sh", "syscall": "execve", "offset_us": 1000},
+      {"proc": "tr", "exe": "tr", "parent": "sh", "syscall": "execve", "offset_us": 1100}
+    ]},
+    {"step": "4", "match": "bwrap ", "events": [
+      {"proc": "bwrap", "exe": "bwrap", "parent": "agent", "syscall": "execve", "offset_us": 300},
+      {"proc": "python", "exe": "python3", "parent": "bwrap", "syscall": "execve", "offset_us": 4000}
+    ]},
+    {"step": "4", "match": "import subprocess, sys", "events": [
+      {"proc": "runner", "exe": "python3", "parent": "agent", "syscall": "execve", "offset_us": 300},
+      {"proc": "python", "exe": "python3", "parent": "runner", "syscall": "execve", "offset_us": 30000}
+    ]},
+    {"step": "5", "match": "uname -a", "events": [
+      {"proc": "uname", "exe": "uname", "parent": "agent", "syscall": "execve", "offset_us": 300}
+    ]},
+    {"step": "sdk", "match": "uname -p", "events": [
+      {"proc": "uname", "exe": "uname", "parent": "agent", "syscall": "execve", "offset_us": 300}
+    ]},
+    {"step": "sdk", "match": "file -b", "events": [
+      {"proc": "file", "exe": "file", "parent": "agent", "syscall": "execve", "offset_us": 300}
+    ]}
+  ]
+}

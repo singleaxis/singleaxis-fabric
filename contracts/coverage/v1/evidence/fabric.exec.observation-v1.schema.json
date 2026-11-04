@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.exec.observation-v1.schema.json",
+  "title": "Evidence type fabric.exec.observation/v1 (spec 053 §3.2, §5.1; spec 056 §4.3)",
+  "description": "The one item of an exec.subprocess (or, later, exec.audit) record: which subprocess API the hook observed, how the arguments were given, the stdio dispositions the caller chose, the form of the output it received, and whether a pid is known. Metadata only: argv, cwd, environment names and output travel as terminal.* content bodies, never here. Closed: no other property, no free text. audit_event is set only with api audit (spec 053 WP4-02; not registered for a capture point in spec 056 M1).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api",
+    "pid_known"
+  ],
+  "properties": {
+    "api": {
+      "description": "META: the observed call. popen is Popen construction; run and check_output share its observer (duplicates suppressed); communicate, wait and poll report an outcome; the asyncio_* values are the qualified asyncio subprocess equivalents; audit is the exec-audit channel.",
+      "enum": [
+        "popen",
+        "run",
+        "communicate",
+        "wait",
+        "poll",
+        "check_output",
+        "asyncio_exec",
+        "asyncio_shell",
+        "asyncio_communicate",
+        "asyncio_wait",
+        "audit"
+      ]
+    },
+    "audit_event": {
+      "description": "META: the PEP 578 audit event name; only with api audit.",
+      "enum": [
+        "subprocess.Popen",
+        "os.system",
+        "os.exec",
+        "os.posix_spawn"
+      ]
+    },
+    "argv_form": {
+      "description": "META (N32): argv is a sequence (argv), one shell command string (shell_string), or not exposed to the hook.",
+      "enum": [
+        "argv",
+        "shell_string",
+        "not_exposed"
+      ]
+    },
+    "stdio": {
+      "description": "META (N33, N34): the disposition the caller chose for each stream; Fabric never changes it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stdin",
+        "stdout",
+        "stderr"
+      ],
+      "properties": {
+        "stdin": {
+          "enum": [
+            "pipe",
+            "inherit",
+            "devnull",
+            "stdout",
+            "fd",
+            "file_object",
+            "not_exposed"
+          ]
+        },
+        "stdout": {
+          "enum": [
+            "pipe",
+            "inherit",
+            "devnull",
+            "stdout",
+            "fd",
+            "file_object",
+            "not_exposed"
+          ]
+        },
+        "stderr": {
+          "enum": [
+            "pipe",
+            "inherit",
+            "devnull",
+            "stdout",
+            "fd",
+            "file_object",
+            "not_exposed"
+          ]
+        }
+      }
+    },
+    "output_form": {
+      "description": "META (N34): the output the caller received was bytes, text (a str the caller's encoding decoded), or none.",
+      "enum": [
+        "bytes",
+        "text",
+        "none"
+      ]
+    },
+    "text_encoding": {
+      "description": "LABEL: the caller's encoding name when output_form is text.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]{1,32}$"
+    },
+    "observation_index": {
+      "description": "META: the index of this output observation of the attempt (repeated communicate after a timeout).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "cumulative": {
+      "description": "META: this observation repeats earlier output (a later communicate after a timeout); its bytes are not new.",
+      "type": "boolean"
+    },
+    "timeout_partial": {
+      "description": "META: the output is the partial output an exposed TimeoutExpired carried.",
+      "type": "boolean"
+    },
+    "pid_known": {
+      "description": "META: the child's pid is known (Popen returned). A spawn failure is false; no pid is invented.",
+      "type": "boolean"
+    },
+    "duplicate_suppressed": {
+      "description": "META: an audit record suppressed because an exec.subprocess wrapper owns the operation.",
+      "type": "boolean"
+    },
+    "error_class": {
+      "description": "LABEL: the raised exception class's __qualname__, never its message.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"
+    }
+  }
+}

@@ -604,8 +604,8 @@ func TestRunMarkerKeysStayOnTheirKinds(t *testing.T) {
 	}
 	loss := wireLossAttrs()
 	loss["fabric.run.segment_id"] = segment
-	if _, ok := processOne(t, g, "native", loss).Attributes().Get("fabric.run.segment_id"); ok {
-		t.Error("loss record kept fabric.run.segment_id")
+	if _, ok := processOne(t, g, "native", loss).Attributes().Get("fabric.run.segment_id"); !ok {
+		t.Error("loss record dropped fabric.run.segment_id (R3)")
 	}
 }
 

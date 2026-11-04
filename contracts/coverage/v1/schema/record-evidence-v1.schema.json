@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/record-evidence-v1.schema.json",
+  "title": "Fabric record evidence v1 (draft, spec 050 §3.4a)",
+  "description": "The one structured-evidence carrier: the body of a records-input record's single record.evidence content object (media type application/vnd.fabric.record-evidence+json, at most 1 MiB, spec-029 canonical JSON). It carries structured metadata that has no single telemetry key (lists of objects, per-item metadata, correlations, indexes, continuation ranges) as items of one registered, closed evidence type (field-registry-v1.json evidence_types); never CONTENT: content travels in its own role and evidence refers to it only by locator (refs). The Node checks this envelope, the registered type and the bounds before acknowledgement; fabric.reconstruct validates each item against its type schema and projects the registry's pointers into field wrappers. Bounds: at most 4096 items, item depth 4, strings of 256 characters, 64 refs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evidence_type",
+    "items"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "fabric.record-evidence/v1"
+    },
+    "evidence_type": {
+      "description": "<namespace>.<name>/v<n>, registered in field-registry-v1.json evidence_types.",
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_-]*(\\.[a-z][a-z0-9_-]*)+/v[1-9][0-9]{0,3}$"
+    },
+    "items": {
+      "description": "Objects closed by the evidence type's schema (additionalProperties false; strings pattern-checked).",
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object"
+      }
+    },
+    "continuation": {
+      "description": "Bounded continuation (spec 050 §3.13): this record's window index within its attempt, and whether it is the last.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "final"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9223372036854775807
+        },
+        "final": {
+          "type": "boolean"
+        }
+      }
+    },
+    "refs": {
+      "description": "Locators into this record's bodies (an object of fabric.content.object_ids): a JSON pointer or a half-open byte range.",
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "object_id",
+          "role"
+        ],
+        "properties": {
+          "object_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "role": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+          },
+          "pointer": {
+            "type": "string",
+            "maxLength": 256,
+            "pattern": "^(/([^~/]|~[01]){0,64}){0,16}$"
+          },
+          "byte_range": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  }
+}

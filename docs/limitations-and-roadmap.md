@@ -1,5 +1,9 @@
 # Limitations and roadmap
 
+> **Status:** describes the limits of the released code (v0.8.0, unchanged
+> in v0.9.0) and the state of the planned work. Each roadmap row says
+> whether it is released, built but not yet released, or not built.
+
 This page lists what Fabric v0.8 does not do, the known defects found by
 testing, and the work planned in
 [spec 049](../specs/049-four-layer-capture-coverage.md) §8. If a capability
@@ -101,31 +105,35 @@ deployment has been qualified. Before production, run the tests in
 [deployment](deployment.md) against your own Node, store and agents, and
 read [privacy and security](privacy-and-security.md).
 
-## Roadmap (spec 049 §8)
+## Roadmap (spec 049 §8, spec 056)
 
 Spec 049 describes the record in four layers: context, structure, content,
-and decisions and effects. v0.8 delivers phase **P0-A** (the content path
-and privacy gate) on top of the 047/048 wire line. P1 waves 0–2 are built on the unreleased `feat/p1-integration`
-branch. The rest is not built.
+and decisions and effects. v0.8 delivers phases **P0** and **P0-A** (the
+contracts, the content path and the privacy gate) on top of the 047/048
+wire line. Most of P1 is built, not yet released; the rest is not built.
+[Spec 056](../specs/056-agent-action-reconstruction.md) moves the subprocess
+hook and host-sensor ingress of P4 ahead of P2 and P3.
 
 | Phase | Build spec | What it adds | Status |
 |---|---|---|---|
-| P0 | [049](../specs/049-four-layer-capture-coverage.md) | Coverage contract freeze (`contracts/coverage/v1`) | Contracts published; no run-level coverage report yet |
+| P0 | [049](../specs/049-four-layer-capture-coverage.md) | Coverage contract freeze (`contracts/coverage/v1`) | **Built in v0.8** (contracts); the run-level coverage report is P1 |
 | P0-A | [049](../specs/049-four-layer-capture-coverage.md) | PROTECT stage, production profile gate, encryption at rest, source authentication, typed extraction, pseudonym v2 | **Built in v0.8** |
-| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | Waves 0–2 (shared allocator, records input via `WireHandle.records`, segments, seals, manifests, step projection) are built on the unreleased `feat/p1-integration` branch |
+| P1 | [050](../specs/050-run-structure-and-records-p1.md) | One allocator and spool for both inputs, `event_id`, segment chaining and resume tokens, capture manifests, the step projection (`fabric.step-projection/v1`) and per-layer verdicts | **Mostly built, not yet released** (waves 0–2: shared allocator, records input via `WireHandle.records`, segments, seals, manifests, step projection); `decision()` records and Node pre-acknowledgement validation not built. See [the P1 run record](run-record.md) |
 | P1-A | [050](../specs/050-run-structure-and-records-p1.md) | Mixed explicit + wire capture qualification, passivity harness | Not built |
 | P2 | [051](../specs/051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (`record_trigger`, `record_input`, `record_run_context`, `record_outcome`, ...) | Not built |
 | P3 | [052](../specs/052-decisions-and-effects-p3.md) | Decision and effect records: observations of controls run by other systems, commit state, receipts. Record-only: Fabric never approves, blocks or waits | Not built |
-| P4 | [053](../specs/053-execution-channels-p4.md) | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built |
+| P4 | [053](../specs/053-execution-channels-p4.md) | Opt-in hooks for MCP clients, subprocesses, DB-API, non-model HTTP, file audit; host sensors on a production Node | Not built, except the hooks foundation and the subprocess hook, built for spec 056 and not yet released |
 | P5 | [054](../specs/054-specialised-runtimes-p5.md) | Realtime/websocket, provider batch and files, media, UI automation | Not built |
 | TS-1 | [055](../specs/055-typescript-wire-capture.md) | TypeScript wire capture on `undici` (Node.js 24+) | Not built |
+| 056 M1 | [056](../specs/056-agent-action-reconstruction.md) | Agent action reconstruction on the local profile: subprocess effects linked to the tool calls that caused them, host events joined through the process tree, per-chain verdicts | **Built, not yet released**: contracts, hooks, subprocess hook, attribution, chain verdicts, host join and `--host-records`; the AR-1 harness passes in hermetic mode, live mode not yet run ([agent action reconstruction](action-reconstruction.md)) |
+| 056 M2 | [056](../specs/056-agent-action-reconstruction.md) | The same against a production Node, container and remote sandboxes | Not built |
 
 ### Current focus: agent action reconstruction (spec 056)
 
 [Spec 056](../specs/056-agent-action-reconstruction.md) (draft) is the current
 work. It answers, for one run: what did the agent actually do, which model
 decision caused each action, and what independent evidence confirms it. It
-links four chains that Fabric records separately today:
+links four chains that Fabric records separately:
 
 - **Decisions:** what the model saw and returned (wire capture, 047/048, on
   the P1 run record, 050).
@@ -139,10 +147,14 @@ links four chains that Fabric records separately today:
 Each chain's completeness is reported separately, and anything the agent did
 that no tool call explains is listed.
 
-Built today: Decisions (wire capture) and tool call ↔ result pairing
-(Actions, `reconstruct/_stitch.py`). Not built: linking effects to tool
-calls, the subprocess hook, the process-tree host join and per-chain
-verdicts.
+Released in v0.8: Decisions (wire capture) and tool call ↔ result pairing
+(Actions, `reconstruct/_stitch.py`). Built for milestone M1, not yet
+released: the subprocess hook, linking effects to tool calls, the
+process-tree host join for local-profile host records and per-chain
+verdicts, read with `python -m fabric.reconstruct actions`
+([agent action reconstruction](action-reconstruction.md)). Not built
+(milestone M2): production host ingress, process start times on host
+records, and container and remote sandboxes.
 
 Out of scope for Fabric OSS at every phase: evaluation, judging, scoring,
 guardrails, escalation, blocking or modifying agent actions, policy engines

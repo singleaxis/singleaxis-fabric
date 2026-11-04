@@ -1,0 +1,510 @@
+{
+  "schema_version": "fabric.action-interface-golden/v1",
+  "kind": "host.local_log",
+  "spec": "030, 031; 056 §4.3 (M1)",
+  "description": "Today's local-profile host records (eBPF emitter and auditd receiver) as a local Node exports them: OTLP/JSON log records of event_class audit, with the keys emitter.go and translate.go write and fabricguard's audit class admits. They carry pid, parent pid, time, hashed executable and argv and a clear peer address, but no source, epoch, sequence, host id or process start time. normalized lists, per log record in export order, the host event a reader derives (null for a status record).",
+  "export": {
+    "resourceLogs": [
+      {
+        "resource": {
+          "attributes": []
+        },
+        "scopeLogs": [
+          {
+            "scope": {},
+            "logRecords": [
+              {
+                "timeUnixNano": "1791331201210600000",
+                "attributes": [
+                  {
+                    "key": "event_class",
+                    "value": {
+                      "stringValue": "audit"
+                    }
+                  },
+                  {
+                    "key": "audit.source",
+                    "value": {
+                      "stringValue": "ebpf"
+                    }
+                  },
+                  {
+                    "key": "process.pid",
+                    "value": {
+                      "intValue": "4121"
+                    }
+                  },
+                  {
+                    "key": "process.parent_pid",
+                    "value": {
+                      "intValue": "4100"
+                    }
+                  },
+                  {
+                    "key": "process.executable.name",
+                    "value": {
+                      "stringValue": "sh"
+                    }
+                  },
+                  {
+                    "key": "audit.syscall",
+                    "value": {
+                      "stringValue": "execve"
+                    }
+                  },
+                  {
+                    "key": "audit.result",
+                    "value": {
+                      "stringValue": "success"
+                    }
+                  },
+                  {
+                    "key": "process.executable.path_sha256",
+                    "value": {
+                      "stringValue": "6bfb5004339731b0429ac20ef9a649fce6473252ef4c6d4aba196a3e5b411a6a"
+                    }
+                  },
+                  {
+                    "key": "process.command_args_sha256",
+                    "value": {
+                      "stringValue": "2281787bc46de0fd51cad7a5f7de633ab71ca92a01f4cae08ce3451425d861e9"
+                    }
+                  },
+                  {
+                    "key": "audit.cgroup_id",
+                    "value": {
+                      "intValue": "9123"
+                    }
+                  },
+                  {
+                    "key": "log.record.uid",
+                    "value": {
+                      "stringValue": "host-690bbfc04dd0042d3e4ebaa9b152e581"
+                    }
+                  }
+                ]
+              },
+              {
+                "timeUnixNano": "1791331201212000000",
+                "attributes": [
+                  {
+                    "key": "event_class",
+                    "value": {
+                      "stringValue": "audit"
+                    }
+                  },
+                  {
+                    "key": "audit.source",
+                    "value": {
+                      "stringValue": "ebpf"
+                    }
+                  },
+                  {
+                    "key": "process.pid",
+                    "value": {
+                      "intValue": "4122"
+                    }
+                  },
+                  {
+                    "key": "process.parent_pid",
+                    "value": {
+                      "intValue": "4121"
+                    }
+                  },
+                  {
+                    "key": "process.executable.name",
+                    "value": {
+                      "stringValue": "curl"
+                    }
+                  },
+                  {
+                    "key": "audit.syscall",
+                    "value": {
+                      "stringValue": "execve"
+                    }
+                  },
+                  {
+                    "key": "audit.result",
+                    "value": {
+                      "stringValue": "success"
+                    }
+                  },
+                  {
+                    "key": "process.executable.path_sha256",
+                    "value": {
+                      "stringValue": "f0da955d46aa49e3cac477d43e22c56cf83a7cb4b2a9805b3d995c2920df9cff"
+                    }
+                  },
+                  {
+                    "key": "audit.event",
+                    "value": {
+                      "stringValue": "command_args_incomplete"
+                    }
+                  },
+                  {
+                    "key": "audit.cgroup_id",
+                    "value": {
+                      "intValue": "9123"
+                    }
+                  },
+                  {
+                    "key": "log.record.uid",
+                    "value": {
+                      "stringValue": "host-b62c9f28c636182ca0dd8b06e45a6be6"
+                    }
+                  }
+                ]
+              },
+              {
+                "timeUnixNano": "1791331201214000000",
+                "attributes": [
+                  {
+                    "key": "event_class",
+                    "value": {
+                      "stringValue": "audit"
+                    }
+                  },
+                  {
+                    "key": "audit.source",
+                    "value": {
+                      "stringValue": "ebpf"
+                    }
+                  },
+                  {
+                    "key": "process.pid",
+                    "value": {
+                      "intValue": "4122"
+                    }
+                  },
+                  {
+                    "key": "process.parent_pid",
+                    "value": {
+                      "intValue": "4121"
+                    }
+                  },
+                  {
+                    "key": "process.executable.name",
+                    "value": {
+                      "stringValue": "curl"
+                    }
+                  },
+                  {
+                    "key": "audit.syscall",
+                    "value": {
+                      "stringValue": "connect"
+                    }
+                  },
+                  {
+                    "key": "network.peer.address",
+                    "value": {
+                      "stringValue": "10.0.4.7"
+                    }
+                  },
+                  {
+                    "key": "network.peer.port",
+                    "value": {
+                      "intValue": "443"
+                    }
+                  },
+                  {
+                    "key": "audit.cgroup_id",
+                    "value": {
+                      "intValue": "9123"
+                    }
+                  },
+                  {
+                    "key": "log.record.uid",
+                    "value": {
+                      "stringValue": "host-8a2cb94d1a3e61505ca89d5bb3e11cd8"
+                    }
+                  }
+                ]
+              },
+              {
+                "timeUnixNano": "1791331205000000000",
+                "attributes": [
+                  {
+                    "key": "event_class",
+                    "value": {
+                      "stringValue": "audit"
+                    }
+                  },
+                  {
+                    "key": "audit.source",
+                    "value": {
+                      "stringValue": "ebpf"
+                    }
+                  },
+                  {
+                    "key": "audit.event",
+                    "value": {
+                      "stringValue": "capture_loss"
+                    }
+                  },
+                  {
+                    "key": "audit.loss_reason",
+                    "value": {
+                      "stringValue": "ring_buffer_full"
+                    }
+                  },
+                  {
+                    "key": "fabric.event_count",
+                    "value": {
+                      "intValue": "3"
+                    }
+                  },
+                  {
+                    "key": "log.record.uid",
+                    "value": {
+                      "stringValue": "host-39fb8fd8efe800f306cbcce722df299b"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "resource": {
+          "attributes": []
+        },
+        "scopeLogs": [
+          {
+            "scope": {},
+            "logRecords": [
+              {
+                "timeUnixNano": "1791331201211000000",
+                "attributes": [
+                  {
+                    "key": "event_class",
+                    "value": {
+                      "stringValue": "audit"
+                    }
+                  },
+                  {
+                    "key": "audit.syscall",
+                    "value": {
+                      "stringValue": "execve"
+                    }
+                  },
+                  {
+                    "key": "audit.source",
+                    "value": {
+                      "stringValue": "netlink"
+                    }
+                  },
+                  {
+                    "key": "audit.serial",
+                    "value": {
+                      "stringValue": "88412"
+                    }
+                  },
+                  {
+                    "key": "audit.result",
+                    "value": {
+                      "stringValue": "success"
+                    }
+                  },
+                  {
+                    "key": "process.pid",
+                    "value": {
+                      "intValue": "4121"
+                    }
+                  },
+                  {
+                    "key": "process.parent_pid",
+                    "value": {
+                      "intValue": "4100"
+                    }
+                  },
+                  {
+                    "key": "process.executable.name",
+                    "value": {
+                      "stringValue": "sh"
+                    }
+                  },
+                  {
+                    "key": "process.executable.path_sha256",
+                    "value": {
+                      "stringValue": "6bfb5004339731b0429ac20ef9a649fce6473252ef4c6d4aba196a3e5b411a6a"
+                    }
+                  },
+                  {
+                    "key": "process.owner",
+                    "value": {
+                      "stringValue": "1000"
+                    }
+                  },
+                  {
+                    "key": "process.command_args_sha256",
+                    "value": {
+                      "stringValue": "ba1e8b03f2d7b854234bee5cea6d2d15ad9d2571824eb8e6db4c9be6b6f748a9"
+                    }
+                  }
+                ]
+              },
+              {
+                "timeUnixNano": "1791331201300000000",
+                "attributes": [
+                  {
+                    "key": "event_class",
+                    "value": {
+                      "stringValue": "audit"
+                    }
+                  },
+                  {
+                    "key": "audit.syscall",
+                    "value": {
+                      "stringValue": "connect"
+                    }
+                  },
+                  {
+                    "key": "audit.source",
+                    "value": {
+                      "stringValue": "logfile"
+                    }
+                  },
+                  {
+                    "key": "audit.serial",
+                    "value": {
+                      "stringValue": "88420"
+                    }
+                  },
+                  {
+                    "key": "audit.result",
+                    "value": {
+                      "stringValue": "success"
+                    }
+                  },
+                  {
+                    "key": "process.pid",
+                    "value": {
+                      "intValue": "4100"
+                    }
+                  },
+                  {
+                    "key": "process.parent_pid",
+                    "value": {
+                      "intValue": "1"
+                    }
+                  },
+                  {
+                    "key": "process.executable.name",
+                    "value": {
+                      "stringValue": "python3"
+                    }
+                  },
+                  {
+                    "key": "process.executable.path_sha256",
+                    "value": {
+                      "stringValue": "f0d7a494a3f776233427cb85a7e198c7cf4913b50a203c6febc678cc4f5bf265"
+                    }
+                  },
+                  {
+                    "key": "process.owner",
+                    "value": {
+                      "stringValue": "1000"
+                    }
+                  },
+                  {
+                    "key": "network.peer.address",
+                    "value": {
+                      "stringValue": "10.0.9.1"
+                    }
+                  },
+                  {
+                    "key": "network.peer.port",
+                    "value": {
+                      "intValue": "443"
+                    }
+                  },
+                  {
+                    "key": "audit.source_id",
+                    "value": {
+                      "stringValue": "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+                    }
+                  },
+                  {
+                    "key": "audit.source_generation",
+                    "value": {
+                      "intValue": "2"
+                    }
+                  },
+                  {
+                    "key": "audit.cursor_start",
+                    "value": {
+                      "intValue": "40960"
+                    }
+                  },
+                  {
+                    "key": "audit.cursor_end",
+                    "value": {
+                      "intValue": "41388"
+                    }
+                  },
+                  {
+                    "key": "fabric.record_id",
+                    "value": {
+                      "stringValue": "4334bb56a62af08ecd7506a83b58d1b7fab0347e0cfc519436f9d96f7f4fd4be"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "normalized": [
+    {
+      "event_id": "host-690bbfc04dd0042d3e4ebaa9b152e581",
+      "source": "host.ebpf",
+      "event_class": "exec",
+      "time_ns": 1791331201210600000,
+      "pid": 4121,
+      "ppid": 4100,
+      "result": "success"
+    },
+    {
+      "event_id": "host-b62c9f28c636182ca0dd8b06e45a6be6",
+      "source": "host.ebpf",
+      "event_class": "exec",
+      "time_ns": 1791331201212000000,
+      "pid": 4122,
+      "ppid": 4121,
+      "result": "success"
+    },
+    {
+      "event_id": "host-8a2cb94d1a3e61505ca89d5bb3e11cd8",
+      "source": "host.ebpf",
+      "event_class": "connect",
+      "time_ns": 1791331201214000000,
+      "pid": 4122,
+      "ppid": 4121,
+      "result": "unknown",
+      "peer_id": "hst-757236b3429f3994c09d77b1127c1453"
+    },
+    null,
+    {
+      "event_id": "hev-f2e18fe67a3b42c38e0704627e0f96fd",
+      "source": "host.auditd",
+      "event_class": "exec",
+      "time_ns": 1791331201211000000,
+      "pid": 4121,
+      "ppid": 4100,
+      "result": "success"
+    },
+    {
+      "event_id": "rec-4334bb56a62af08ecd7506a83b58d1b7fab0347e0cfc519436f9d96f7f4fd4be",
+      "source": "host.auditd",
+      "event_class": "connect",
+      "time_ns": 1791331201300000000,
+      "pid": 4100,
+      "ppid": 1,
+      "result": "success",
+      "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+    }
+  ]
+}

@@ -7,7 +7,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -139,6 +138,7 @@ def test_replayed_loss_and_marker_spans_are_identical(tmp_path: Path) -> None:
         "fabric.source_id": "wire-a", "fabric.source.epoch": 7,
         "fabric.heartbeat.last_sequence": 3, "fabric.heartbeat.kind": "run_end",
         "fabric.run.id": "run-a", "fabric.run.scope_id": beat[4],
+        "fabric.event_id": doc["marker"]["event_id"],  # persisted in the record (050 R2)
     }  # fmt: skip
     assert first.start_time == first.end_time == 11 and first.parent is None
 
@@ -165,10 +165,10 @@ def test_unframe_rejects_damaged_records(mutate: Any) -> None:
     assert raised.value.doc == bad_header  # the header parsed: its sequence can be reported
 
 
-def test_epochs_carry_the_pid_below_the_microsecond(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Two processes of one service share a source id and may start in one microsecond."""
-    monkeypatch.setattr(fabric._sequence, "_LAST_EPOCH", 0)
-    before = time.time_ns() // 1000 * 1000
-    epoch = fabric._sequence._new_epoch()
-    assert epoch % 1000 == os.getpid() % 1000 and epoch - epoch % 1000 >= before
-    assert fabric._sequence._new_epoch() > epoch  # still unique and increasing
+def test_epochs_are_random_63_bit_values() -> None:
+    """050 §3.2 rule 1: two processes of one service share a source id and may start in
+    one microsecond; their epochs are 63 CSPRNG bits, never 0 (registration settles the
+    rare collision on a shared spool)."""
+    epochs = {fabric._sequence._new_epoch() for _ in range(1000)}
+    assert len(epochs) == 1000
+    assert all(0 < epoch < 1 << 63 for epoch in epochs)

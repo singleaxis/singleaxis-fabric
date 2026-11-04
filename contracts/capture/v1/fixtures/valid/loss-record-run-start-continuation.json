@@ -21,6 +21,8 @@
     "br-064e57314e3f26e664ffcbc1526ac062"
   ],
   "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-  "manifest_digest": "sha256:0d58d0ad484ba40aa9fae3bb0e1474109eac57b55e5e9d172aefcf649caccd6c",
-  "manifest_seq": 0
+  "manifest_digest": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
+  "manifest_seq": 0,
+  "event_id": "729aab49-8716-4b37-a2db-98ef120e109a",
+  "id_basis": "token"
 }

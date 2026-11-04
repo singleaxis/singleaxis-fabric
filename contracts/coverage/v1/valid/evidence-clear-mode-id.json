@@ -1,0 +1,28 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "clear",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.test.items/v1",
+    "items": [
+      {
+        "name": "orders.lookup",
+        "count": 3,
+        "kind": "alpha",
+        "ref_index": 0,
+        "actor": "agent:planner"
+      }
+    ],
+    "continuation": {
+      "index": 0,
+      "final": true
+    },
+    "refs": [
+      {
+        "object_id": "3d60b862-7f44-48cb-ae71-bb8134f69bac",
+        "role": "tool.call.arguments",
+        "pointer": "/q"
+      }
+    ]
+  }
+}

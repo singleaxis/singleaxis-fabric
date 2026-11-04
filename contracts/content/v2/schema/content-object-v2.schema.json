@@ -61,7 +61,8 @@
         "computer.snapshot", "control.checked", "control.reason",
         "control.approval", "selection.decision", "context.change",
         "terminal.context", "artifact.diff", "asset.bytes", "media.frames",
-        "media.events", "media.transcript", "artifact.locator"
+        "media.events", "media.transcript", "artifact.locator",
+        "record.evidence"
       ]
     },
     "media_type": {

@@ -173,3 +173,65 @@ emitters).**
 ```bash
 python scripts/contracts/validate_capture_contracts.py
 ```
+
+## Version 1.5.0 (spec 056, agent action reconstruction)
+
+- `run-reconstruction-v1`: `runs[]` gains three optional objects.
+  - `chains`: one verdict per evidence chain, `decisions`, `actions`,
+    `effects` and `corroboration`, each `complete`, `partial`, `unverified`
+    or `not_observed` with its reasons (`$defs/chainReason`: a gap type of
+    this report or a coverage reason). `decisions` is the exchange-only
+    verdict and is never `not_observed`. A `partial` or `unverified` chain
+    bounds the run verdict: a run is never `complete_*` while one is.
+  - `attribution`: link counts by basis, the unattributed effects and the
+    unexplained host events (the first 64 with the full count), the tool
+    calls with no observed effect by reason, whether output matching applied,
+    and the host events a lineage bound left unlinked.
+  - `sensor_events`: the host events a link names, with the `part_of` links
+    whose subject they are (spec 053 §6.3's `sensor_events[]`, pulled
+    forward by spec 056).
+- New fixtures: `valid/spool-record-exec-subprocess-{start,end}.json` (the
+  two records of one `exec.subprocess` attempt), `valid/run-reconstruction-action-chains.json`
+  (AR-1's chains on a run with no gap, verdict `partial`) and four refusals
+  (`invalid/run-reconstruction-chain-*.json`).
+- The field-by-field description of these objects and of the rule fixtures
+  that produce them is
+  [`contracts/coverage/v1/fixtures/action-record/README.md`](../../coverage/v1/fixtures/action-record/README.md).
+  Additive: 1.4.0 reports stay valid.
+
+## Version 1.4.0 (spec 050 §3.9, wire enrichment)
+
+- `spool-record-v1`: an exchange span may carry the P1 wire enrichment, each key
+  with its `telemetry-keys-v1.json` check (placement `exchange`):
+  `fabric.capture.point`, `fabric.capture.source`, `fabric.step.kind`,
+  `fabric.actor.type`, `fabric.step.lifecycle_state`, `fabric.step.status`,
+  `fabric.error.domain`, `fabric.wire.first_chunk_offset_ns`,
+  `fabric.wire.endpoint_id` (`<name>.default` or `lbl-` + 32 hex, never a
+  hostname), `fabric.wire.provider_request_id` (opt-in, `p-` + 32 hex) and the
+  X05 keys `fabric.agent_id`, `fabric.system_id`, `fabric.deployment_id`,
+  `fabric.release_id`, `fabric.environment` (operator labels). The attribute
+  set stays closed; `fabric.tenant_id` is not an exchange key. Additive:
+  1.3.0 exchanges stay valid.
+
+## Version 1.3.0 (spec 050 P1)
+
+- `spool-record-v1`: an exchange holds at most **260** bodies (two sides × one
+  primary, 64 parts, 64 part review copies and one side review copy) and a
+  `record` at most **8** (its `fabric.content.object_ids`, in order, the
+  evidence object and descriptor-only bodies included); the writer checks both
+  before writing. A descriptor-only body (`not_captured` or `unsupported`, no
+  bytes, length 0) may name a producer reason (`payload_too_large`,
+  `encoding_failed`, `not_exact_bytes`, vocabulary `descriptor_reason`).
+- Loss records and spool loss ranges carry the `segment_id` of their positions;
+  a segment-attributed range is exact (count = range size), so the segment
+  seal is recomputable and no range spans two segments.
+- Markers persist a uuid4 `event_id` (every kind; on a manifest marker the
+  manifest's own). A segment's `run_start` names its `id_basis`; only the root
+  `run_start` carries `session_id`, `user_id`, `parent_run_id`, `resumed_from`
+  and `links`; `outcome` and `stop_reason` ride only on `run_end`; `identity`
+  is the X05 block on `run_start`. Pre-1.3.0 markers without these stay
+  readable.
+- `run-reconstruction-v1`: `runs[]` gains `run_state`, `segments[]`,
+  `run_aliases`, `id_basis_conflicts`, `deadline_at` and `evaluated_at`;
+  `sources[]` gains `manifests[]` and `unsealed_epochs[]`; ten new gap types;
+  `run_open` is an `info` gap of an open run and never counts in the verdict.

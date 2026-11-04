@@ -11,6 +11,15 @@ related: ["030", "031", "041", "043", "047", "048", "054", "055"]
 
 # 053 — Execution channels (P4)
 
+**Status: draft; built only in part, for spec 056.** Spec 056 (its owner
+decision OD-1) moves the hooks foundation, the `exec.subprocess` channel and
+the host-sensor production ingress of this spec ahead of P2 and P3. The
+first two are built for 056 milestone M1 after v0.9.0, not yet released; the
+host ingress is 056 milestone M2. The rest of this spec is not built. Codes
+in parentheses such as (R8) or (R11) name the cross-spec revision decisions
+that a rule applies, and "decision n" means row n of 049 §9; the
+[glossary](../docs/glossary.md) lists both.
+
 **Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
 the introduction of [050](050-run-structure-and-records-p1.md)), and binds
 this spec to spec 050 revision 2,

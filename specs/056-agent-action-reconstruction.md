@@ -2,14 +2,17 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 2
-last_updated: 2026-11-03
+revision: 3
+last_updated: 2026-11-04
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
 related: ["030", "031", "047", "048", "054", "055"]
 ---
 
 # 056 — Agent action reconstruction
+
+> **Revision 3** (2026-11-04): H2 reads a same-pid, same-parent re-exec as
+> one exec chain (§4.3, owner decision OD-7).
 
 ## 0. Summary
 
@@ -87,7 +90,7 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 |---|---|---|
 | Model exchanges with full bodies, run reconstruction | `fabric/wire/`, `fabric/reconstruct/` | Built (v0.8.0) |
 | Tool call ↔ tool result pairing by id | `reconstruct/_stitch.py` (`tool_call_id`, Responses `function_call` / `function_call_output`, Anthropic `tool_use` / `tool_result`) | Built (v0.8.0) |
-| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | In the tree after v0.8.0, unreleased (050 waves 0–2 and the WP-50 end-to-end test); P1-A (050 wave 4) not built |
+| Shared allocator, records input, segments, seals, manifests, step projection | `_sequence.py`, `_records.py`, `_segments.py`, `_seal.py`, `_manifest.py`, `reconstruct/_project.py`, `reconstruct/_graph.py` | Built after v0.9.0, not yet released (050 waves 0–2 and the WP-50 end-to-end test); P1-A (050 wave 4) not built |
 | Subprocess hook (`exec.subprocess`) | 053 §5.1, `fabric/hooks/_exec.py` | Specified, not built |
 | Hooks foundation (`fabric.hooks.install`) | 053 §4, `fabric/hooks/` | Specified, not built |
 | Host sensors, local profile | `components/host-emitter`, `receiver/auditreceiver` | Built; records carry pid, parent pid, hashed executable and argv, peer address and port; no source, epoch or sequence |
@@ -96,6 +99,14 @@ which is a guess (053 §6.3, method `pid_time_join`, confidence
 | Effect ↔ tool call link | — | Not specified (this spec, §4.2) |
 | Process-tree join | — | Not specified (this spec, §4.3) |
 | Remote sandboxes (E2B, Modal, Daytona and similar) | — | Not specified (this spec, §4.4) |
+
+The table is the state this spec started from. Milestone M1 (WP6-01 to
+WP6-07) is now built after v0.9.0, not yet released: the hooks foundation,
+the `exec.subprocess` hook, the effect ↔ tool call link (§4.2) and the
+process-tree join for local-profile host records (§4.3). AR-1 (§6.2) passes
+in hermetic mode; its live mode has not run yet.
+[Agent action reconstruction](../docs/action-reconstruction.md) describes
+what is built.
 
 ## 4. Design
 
@@ -201,7 +212,7 @@ join on the process tree, not on timing.
 | Rule | Condition | Link | Method | Confidence |
 |---|---|---|---|---|
 | H1 Anchor, exact | A host `exec` event with the same host, pid namespace, pid, parent pid = the effect's `parent_pid`, and process start time equal to `fabric.process.start_ns` | effect `corroborated_by` → event | `process_anchor` | `certain` |
-| H2 Anchor, no start time | As H1 without a start time on either side; the event lies within the bounded window (default 100 ms, 053 §6.3) and is the only match | `corroborated_by` | `process_anchor` | `tentative` |
+| H2 Anchor, no start time | As H1 without a start time on either side; the event lies within the bounded window (default 100 ms, 053 §6.3) and is the only match, or every match is one exec chain (below) | `corroborated_by` the match, or the chain's first exec | `process_anchor` | `tentative` |
 | H3 Lineage | A host event whose parent-pid chain reaches an anchored child, on the same host, pid namespace and boot, with non-decreasing start times; at most depth 16 and 4096 events per anchor | event `part_of` → the anchored effect | `process_lineage` | the confidence of the anchor |
 | H4 Agent process | A host event whose pid is the agent's own pid (registered in the epoch registration, 050 §3.2) | event `part_of` → the run | `process_anchor` | `certain` with start time, else `tentative` |
 
@@ -216,9 +227,29 @@ H4 events that connect to a host the run's exchanges did not call are
 listed there too. These lists are the main compliance signal: the operating
 system saw the agent do something the agent's own record does not explain.
 
-**Pid reuse.** Where two host events match one anchor under H2, the state
-is `ambiguous` with both, and the effect counts as `anchor_missing`. H1
-cannot be ambiguous: pid plus start time is unique per boot.
+**Exec chains.** A shell that execs its command in place (`bash -c "cmd"`,
+or `dash` for the last command of `sh -c "a && b"`) keeps its pid and
+parent pid, so the sensor reports two successful exec events for one
+process. Several H2 matches (same pid and parent pid, inside the bounded
+window) are one exec chain when, in time order, no exit of that pid is
+observed at or between two consecutive execs and, where both carry a
+start time, their start times are in the same tick. The effect is
+`corroborated_by` the chain's first exec (`process_anchor · tentative`);
+the later execs, and the events of the pid until an observed exit, are H3
+lineage at depth 0. No host sensor reports
+process exits today (event classes `exec`, `connect`, `file`), so the
+only exit evidence is the hook's: a record of an effect with that pid,
+carrying `fabric.process.exit_code` or `fabric.process.signal`, shows the
+pid free by that record's end time. Without that evidence, same pid and
+parent pid in succession is accepted as a chain. A chain is never
+`certain`. When both start times exist, H1 decides and no chain is needed.
+
+**Pid reuse.** Where two host events match one anchor under H2 and are not
+one exec chain (an observed exit between them, or start times in different
+ticks), the state is `ambiguous` with every match, and the effect counts as
+`anchor_missing`. An exec of the anchored pid under another parent pid is
+another process: it is not an H2 match, and H3 drops the pid from the
+lineage. H1 cannot be ambiguous: pid plus start time is unique per boot.
 
 **Start-time resolution.** `/proc/<pid>/stat` reports the start time in
 clock ticks (10 ms at the usual `USER_HZ` of 100), while the eBPF sensor
@@ -311,7 +342,11 @@ projection and report:
 - an effect within the clock margin of a window boundary (candidate of
   both sides);
 - a background-thread effect between windows (A4);
-- a pid reused within the window (H2 `ambiguous`, never `certain`);
+- a pid reused within the window, with an observed exit between the two
+  execs (H2 `ambiguous`, never `certain`);
+- a shell that execs its command in place (one exec chain, H2
+  `tentative`), and the same pid exec'd under another parent pid (not a
+  chain: another process);
 - a lineage chain of depth 17 (truncated at 16, reported);
 - a host event from the agent process to a host no exchange called
   (listed as unexplained).
@@ -461,3 +496,4 @@ readable without the team's history:
 | OD-4 | Container sandboxes: record the container id the runtime returns (`docker run` output, or the Kubernetes API) as a reported link | Decide in M2 |
 | OD-5 | A2 (single window) confidence: `tentative` or `certain` | `tentative`; only A0 and A1 are `certain` |
 | OD-6 | AR-1 host sensor in hosted CI | Try eBPF on the hosted runner first; if it cannot load, run the host part on a self-hosted runner and keep the rest in hosted CI |
+| OD-7 | Local profile: two exec events with one pid and parent pid and no start times (a shell that execs in place) | Decided: one exec chain, `process_anchor · tentative`, unless an exit of the pid is observed between them (§4.3) |

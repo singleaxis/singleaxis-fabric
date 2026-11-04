@@ -11,6 +11,7 @@ is computed unless the role's mode retains the original."""
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -18,6 +19,7 @@ import queue
 import re
 import threading
 import time
+import uuid
 import weakref
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
@@ -25,21 +27,42 @@ from typing import TYPE_CHECKING, Any, cast
 
 from opentelemetry import trace
 from opentelemetry.context import Context
-from opentelemetry.sdk.trace.id_generator import RandomIdGenerator
+from opentelemetry.sdk.trace.id_generator import IdGenerator, RandomIdGenerator
 from opentelemetry.trace import (
     NonRecordingSpan,
     SpanContext,
     SpanKind,
     Status,
     StatusCode,
+    TraceFlags,
     TraceState,
 )  # fmt: skip
 from opentelemetry.util.types import AttributeValue
 
+from .._capture_types import (
+    EVIDENCE_MEDIA_TYPE,
+    EVIDENCE_ROLE,
+    MAX_RECORD_BODIES,
+    DescriptorOnlyBody,
+    RecordBody,
+    RecordJob,
+    SealAccumulator,
+    SealEntry,
+    Settle,
+    SpanIds,
+    settle_noop,
+)
+from .._evidence import OMIT_IDS, EvidenceIds
+from .._evidence import encode as encode_evidence
+from .._evidence import encode_raw as encode_raw_evidence
 from .._loss import LossEmitter, LossReason, PrivateFallback, resolve_capture_provider
 from .._model_names import expose_model
-from .._sequence import OPAQUE_ID_RE
+from .._records import BudgetRefusedBody, records_max_object_bytes
+from .._roles import ROLES, admits
+from .._seal import SegmentSeals, record_digest
+from .._sequence import OPAQUE_ID_RE, SourceAllocator
 from .._version import __version__
+from ._attrs import p1_attributes
 from ._match import OPERATION_NAMES
 from ._model import FINISH_REASONS, ROLE_REQUEST, ROLE_RESPONSE, SPAN_EXCHANGE, WireAttr
 from ._policy import LOCAL_DEFAULT, CapturePolicy, ContentGate
@@ -53,13 +76,15 @@ if TYPE_CHECKING:
     from ._model import CapturedBody, CaptureJob, StoreStatus
     from ._sender import Sender
 
+    Job = CaptureJob | RecordJob
+
 _MEDIA_RE = re.compile(r"^(?=.{3,128}$)[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _ENCODING_RE = re.compile(r"^[a-z0-9][a-z0-9._+-]{0,31}(,[a-z0-9][a-z0-9._+-]{0,31}){0,3}$")
 _ERROR_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
 _FINISH_KEY = {"openai.responses": "status", "anthropic.messages": "stop_reason"}
 _STATS = (
     "submitted", "dropped", "truncated", "internal_errors", "store_failures", "spans_emitted",
-    "spans_refused",
+    "spans_refused", "record_objects_refused",
 )  # fmt: skip
 _BACKOFFS_S = (0.1, 0.4, 1.6)  # one try plus three retries
 # Spool path (D4): the worker takes up to this many queued jobs (and about this many
@@ -111,6 +136,26 @@ def capture_parent(context: Context | None) -> Context:
         parent.trace_id, parent.span_id, parent.is_remote, parent.trace_flags, TraceState()
     )
     return trace.set_span_in_context(NonRecordingSpan(clean), Context())
+
+
+class Budget:
+    """In-flight retained-byte budget shared by every exchange of one tee (and charged by
+    the records path, :meth:`CapturePipeline.set_record_budget`). Defined here, not in
+    ``_stream.py`` (which imports this module and re-exports it)."""
+
+    def __init__(self, limit: int) -> None:
+        self._limit, self._lock, self.used = limit, threading.Lock(), 0
+
+    def try_reserve(self, size: int) -> bool:
+        with self._lock:
+            if self.used + size > self._limit:
+                return False
+            self.used += size
+            return True
+
+    def release(self, size: int) -> None:
+        with self._lock:
+            self.used = max(0, self.used - size)
 
 
 def media_type_of(value: str) -> str:
@@ -189,6 +234,8 @@ def exchange_attributes(
         "gen_ai.usage.input_tokens": metadata.get("input_tokens"),
         "gen_ai.usage.output_tokens": metadata.get("output_tokens"),
     }  # fmt: skip
+    with contextlib.suppress(Exception):  # 050 §3.9 P1 keys (WP-14); never costs the record
+        attrs.update(p1_attributes(job))
     return {key: value for key, value in attrs.items() if value is not None}
 
 
@@ -231,6 +278,17 @@ class CapturePipeline:
         )  # fmt: skip
         self._warned_epochs: set[int] = set()  # disabled state logged once per epoch
         self._backoffs: tuple[float, ...] = _BACKOFFS_S
+        # 050 §3.7: the seal accumulator this pipeline owns (its segment_seal markers go to
+        # the loss emitter's marker queue), and the allocator's settle (attached at install).
+        self.seals: SealAccumulator = SegmentSeals(loss.queue_marker)
+        self._settle: Settle = settle_noop
+        # 050 §3.4-§3.5: records-input jobs. Bodies are charged to the tee's in-flight
+        # budget at emit (the records input attaches it) and released when the job is done;
+        # one object is at most min(role cap, max_body_bytes, records_max_object_bytes).
+        self._record_budget: Callable[[], Budget | None] = _no_budget
+        self._evidence_ids: EvidenceIds = OMIT_IDS  # until a records input binds its rule
+        self._max_body = max_body_bytes if protector is None else protector.max_body
+        self._records_max = records_max_object_bytes(os.environ)
         self._init_state()
         _PIPELINES.add(self)
 
@@ -239,15 +297,103 @@ class CapturePipeline:
         self._cond, self._closing = threading.Condition(), threading.Event()
         self._closed, self._pending, self._stats = False, 0, dict.fromkeys(_STATS, 0)
         # The jobs in progress (by id) until their outcome is claimed.
-        self._current: dict[int, CaptureJob] = {}
+        self._current: dict[int, Job] = {}
+        # Records-input jobs: their in-flight charge (budget, bytes) until done, and the
+        # content list of their record digest (worker only) until settled.
+        self._charges: dict[int, tuple[Budget, int]] = {}
+        self._record_content: dict[int, list[str | None]] = {}
         self._worker = threading.Thread(target=self._run, name="fabric-wire-capture", daemon=True)
         self._worker.start()
 
-    def _lose(self, job: CaptureJob, reason: LossReason) -> None:
-        self._loss.record(job.source_id, job.source_epoch, reason, job.source_sequence)
+    def set_settle(self, settle: Settle | None) -> None:
+        """The allocator's settle (050 §3.3), called once a position is written. The seal
+        accumulator reads the segment's source and epoch from that allocator."""
+        self._settle = settle if settle is not None else settle_noop
+        owner = getattr(settle, "__self__", None)
+        if isinstance(owner, SourceAllocator) and isinstance(self.seals, SegmentSeals):
+            self.seals.bind_source(lambda: (owner.source_id, owner.epoch))
 
-    def submit(self, job: CaptureJob) -> bool:
-        """Non-blocking; ``False`` means dropped (``queue_full``/``shutdown``) and recorded."""
+    # -- records input (050 §3.4, §3.5) ---------------------------------------------------
+
+    def set_record_budget(self, budget: Callable[[], Budget | None] | None) -> None:
+        """How to reach the in-flight budget records-input bodies are charged to (read at
+        each charge: a forked child's tee has a new one)."""
+        self._record_budget = budget if budget is not None else _no_budget
+
+    def set_evidence_ids(self, ids: EvidenceIds | None) -> None:
+        """The records input's identity rule for evidence ID properties (R8); without one
+        they are omitted (§3.4a item 3)."""
+        self._evidence_ids = ids if ids is not None else OMIT_IDS
+
+    def charge_record(self, job: RecordJob) -> bool:
+        """Charge ``job``'s bodies to the in-flight budget (application thread: one short
+        lock, no wait). ``False``: over the budget, the bodies are refused
+        (``inflight_budget``). Released when the job is done (:meth:`_done`)."""
+        charge = job.inflight_charge
+        if charge <= 0:
+            return True
+        budget = self._record_budget()
+        if budget is None:
+            return True
+        if not budget.try_reserve(charge):
+            return False
+        with self._cond:
+            self._charges[id(job)] = (budget, charge)
+        return True
+
+    def _recharge(self, job: RecordJob, charged: int, actual: int) -> None:
+        """A ``str`` body was charged ``len * 4`` until encoded: release the excess."""
+        with self._cond:
+            entry = self._charges.get(id(job))
+            if entry is None or charged <= actual:
+                return
+            budget, charge = entry
+            excess = min(charge, charged - actual)
+            self._charges[id(job)] = (budget, charge - excess)
+        budget.release(excess)
+
+    def record_mode(self, role: str) -> str:
+        """The privacy mode the worker applies to a records-input body of ``role`` (049 §2.7
+        precedence). ``record.evidence`` (§3.4a item 3) holds no content: it is stored
+        (``retain_original``) whenever the content path exists, unless the policy names it
+        ``omit`` or ``metadata_only``; any other mode is refused for it (fail closed). Every
+        other role: ``omit`` while content capture is not enabled or the role is unknown."""
+        destination = self._store is not None or self._node
+        if role == EVIDENCE_ROLE:
+            if not destination:
+                return "omit"
+            named = self._protector.policy.modes.get(role) if self._protector else None
+            if named is None:
+                return "retain_original"
+            return named if named in ("omit", "metadata_only", "retain_original") else "omit"
+        if self._protector is None or role not in ROLES:
+            return "omit"
+        return self._protector.policy.mode(role)
+
+    def _lose(self, job: Job, reason: LossReason) -> None:
+        self._loss.record(
+            job.source_id, job.source_epoch, reason, job.source_sequence,
+            segment_id=_segment_of(job),
+        )  # fmt: skip
+
+    def _settle_written(self, job: Job, span: Mapping[str, Any]) -> None:
+        """050 §3.7: a written position settles its segment with its record digest."""
+        content = self._record_content.pop(id(job), None) if isinstance(job, RecordJob) else None
+        if (segment := _segment_of(job)) is None:
+            return
+        with contextlib.suppress(Exception):
+            if isinstance(self.seals, SegmentSeals):
+                self.seals.note_job(segment, job.source_id, job.source_epoch, job.run_id)
+            entry = _record_entry(span) if content is None else record_digest(
+                name=span["name"], start_ns=span["start_time_unix_nano"],
+                end_ns=span["end_time_unix_nano"], status=span["status"],
+                attributes=span["attributes"], content=content,
+            )  # fmt: skip
+            self._settle(segment, job.source_sequence, entry)
+
+    def submit(self, job: Job) -> bool:
+        """Non-blocking; ``False`` means dropped (``queue_full``/``shutdown``) and recorded.
+        Takes exchange jobs and records-input jobs (050 §3.5)."""
         reason: LossReason = "shutdown"
         with self._cond:
             if not self._closed:
@@ -261,21 +407,35 @@ class CapturePipeline:
         self._drop(job, reason)
         return False
 
-    def _drop(self, job: CaptureJob, reason: LossReason) -> None:
+    def _drop(self, job: Job, reason: LossReason) -> None:
         with self._cond:
             self._stats["dropped"] += 1
         self._lose(job, reason)
         self._done(job)
 
-    def _done(self, job: CaptureJob) -> None:
+    def _done(self, job: Job) -> None:
+        if isinstance(job, RecordJob):  # its bodies' in-flight charge is released
+            with contextlib.suppress(Exception):
+                with self._cond:
+                    charged = self._charges.pop(id(job), None)
+                    self._record_content.pop(id(job), None)
+                if charged is not None:
+                    charged[0].release(charged[1])
+            return
         if self._on_job_done is not None:
             with contextlib.suppress(Exception):
                 self._on_job_done(job)
 
     def flush(self, timeout_s: float = 5.0) -> bool:
-        """Wait until every accepted job has been processed."""
+        """Wait until every accepted job has been processed and every segment seal it
+        completed is built and queued (050 §3.7: seals are built on the seal worker)."""
+        deadline = time.monotonic() + max(0.0, timeout_s)
         with self._cond:
-            return self._cond.wait_for(lambda: not self._pending, max(0.0, timeout_s))
+            drained = self._cond.wait_for(lambda: not self._pending, max(0.0, timeout_s))
+        drain = getattr(self.seals, "drain", None)
+        if callable(drain):
+            drained = bool(drain(max(0.0, deadline - time.monotonic()))) and drained
+        return drained
 
     def close(self, timeout_s: float = 2.0) -> bool:
         """Drain within ``timeout_s``; every job unfinished then (the one in progress too, its
@@ -287,7 +447,7 @@ class CapturePipeline:
         if already:
             return drained
         self._closing.set()  # interrupts store retry backoff
-        lost: list[CaptureJob] = []
+        lost: list[Job] = []
         with contextlib.suppress(queue.Empty):
             while True:
                 lost.append(self._queue.get_nowait())
@@ -316,7 +476,7 @@ class CapturePipeline:
         """The provider exchange spans go through now; ``None`` when they are refused."""
         return resolve_capture_provider(self._provider, self._fallback)
 
-    def _commit(self, job: CaptureJob) -> bool:
+    def _commit(self, job: Job) -> bool:
         """The job's single terminal transition: ``True`` gives the worker its outcome;
         ``False`` means ``close`` already reported it as a shutdown loss. Exactly one wins.
         """
@@ -345,7 +505,7 @@ class CapturePipeline:
             if stop:
                 return
 
-    def _batch(self, job: CaptureJob) -> tuple[list[CaptureJob], bool]:
+    def _batch(self, job: Job) -> tuple[list[Job], bool]:
         """``job`` plus, on the spool path, the jobs already queued behind it (bounded by
         count and captured bytes); ``True`` when the stop sentinel was taken."""
         jobs, size = [job], _job_bytes(job)
@@ -360,7 +520,7 @@ class CapturePipeline:
             size += _job_bytes(queued)
         return jobs, False
 
-    def _fail(self, job: CaptureJob) -> None:
+    def _fail(self, job: Job) -> None:
         """An error before the commit: an ``internal_error`` loss (after the commit the
         outcome is the span or record)."""
         with contextlib.suppress(Exception):
@@ -368,21 +528,25 @@ class CapturePipeline:
                 self._stats["internal_errors"] += 1
                 self._lose(job, "internal_error")
 
-    def _emit_one(self, job: CaptureJob) -> None:
+    def _emit_one(self, job: Job) -> None:
         try:
-            self._emit(job, *self._prepare(job))
+            if isinstance(job, RecordJob):
+                self._emit_record(job, *self._prepare(job))
+            else:
+                self._emit(job, *self._prepare(job))
         except Exception:
             self._fail(job)
 
-    def _spool_batch(self, sender: Sender, jobs: Sequence[CaptureJob]) -> None:
+    def _spool_batch(self, sender: Sender, jobs: Sequence[Job]) -> None:
         """Protect each job, commit it, then spool the committed ones in one batch. A record
         the spool did not take is a loss: ``queue_full`` (over the bound), ``disk_full``
         (the volume is full) or ``internal_error``."""
-        ready: list[tuple[CaptureJob, dict[str, Any], Any]] = []
+        ready: list[tuple[Job, dict[str, Any], Any]] = []
         for job in jobs:
             try:
                 attrs, staged = self._prepare(job)
-                span = self._span_record(job, attrs)
+                span = (self._record_span(job, attrs) if isinstance(job, RecordJob)
+                        else self._span_record(job, attrs))  # fmt: skip
             except Exception:
                 self._fail(job)
                 continue
@@ -396,16 +560,20 @@ class CapturePipeline:
             )
         except Exception:
             outcomes = ["internal_error"] * len(ready)
-        for (job, _, _), outcome in zip(ready, outcomes, strict=True):
+        for (job, span, _), outcome in zip(ready, outcomes, strict=True):
             if outcome == "spooled":
+                self._settle_written(job, span)
                 continue
             if outcome == "internal_error":
                 self._stats["internal_errors"] += 1
             with contextlib.suppress(Exception):
                 self._lose(job, cast("LossReason", outcome))
 
-    def _prepare(self, job: CaptureJob) -> tuple[dict[str, AttributeValue], list[Any]]:
-        """Protect, then store (or stage, in node mode) both sides; the span attributes."""
+    def _prepare(self, job: Job) -> tuple[dict[str, AttributeValue], list[Any]]:
+        """Protect, then store (or stage, in node mode) both sides; the span attributes.
+        A records-input job takes its own path (050 §3.5)."""
+        if isinstance(job, RecordJob):
+            return self._prepare_record(job)
         sides = [(job.request, ROLE_REQUEST)]
         sides += [] if job.response is None else [(job.response, ROLE_RESPONSE)]
         staged: list[tuple[dict[str, Any], bytes]] = []
@@ -447,6 +615,240 @@ class CapturePipeline:
             truncated=truncated, metadata=response_metadata(job, self._models),
             store_reason=reason,
         ), staged  # fmt: skip
+
+    # -- records-input jobs (050 §3.4, §3.4a, §3.5) ------------------------------------------
+
+    def _prepare_record(self, job: RecordJob) -> tuple[dict[str, AttributeValue], list[Any]]:
+        """PROTECT a record's bodies and evidence object, then store (direct) or stage
+        (node) them; the span attributes gain ``fabric.content.object_ids`` (the objects in
+        reference order: bodies, then the evidence object). Over 8 objects the record is
+        refused before any write (an ``internal_error`` loss, R6).
+
+        Worker-side attributes (``job.late``, spec 056 OD-2) are read first, before any body
+        work: the child's ``/proc`` entry is gone once it is reaped, so every PROTECT or
+        store round trip before the read loses short-lived children's start times."""
+        late: dict[str, AttributeValue] = {}
+        if job.late is not None:  # absent on any error
+            with contextlib.suppress(Exception):
+                late = dict(job.late())
+        objects: list[Obj] = []
+        if self._store is not None or self._node:  # no destination: no content objects
+            for body in job.bodies:
+                objects += self._record_body(job, body)
+            if job.evidence is not None:
+                objects += self._record_evidence(job)
+        if len(objects) > MAX_RECORD_BODIES:
+            raise ValueError("a record carries at most 8 content objects")
+        staged: list[tuple[dict[str, Any], bytes]] = []
+        kept: list[Obj] = []
+        for obj in objects:
+            if not self._record_admissible(obj):  # the Node's role rules would refuse it
+                self._stats["record_objects_refused"] += 1
+                continue
+            if self._store is None:
+                staged.append((obj.descriptor, obj.data))
+            elif not self._store_object(obj):
+                continue  # never named by the record: it could not be verified
+            kept.append(obj)
+        attrs: dict[str, AttributeValue] = dict(job.attributes)
+        for key, value in late.items():
+            attrs.setdefault(key, value)
+        if kept:
+            attrs["fabric.content.object_ids"] = [obj.object_id for obj in kept]
+        self._record_content[id(job)] = [obj.descriptor.get("stored_sha256") for obj in kept]
+        return attrs, staged
+
+    def _record_base(
+        self, job: RecordJob, *, media_type: str, boundary: str, provenance: str,
+        stream_id: str | None = None, chunk_index: int | None = None,
+    ) -> dict[str, Any]:  # fmt: skip
+        """The identity fields of a record's content-v2 descriptor (the exchange base of
+        :meth:`_base`, with ``attempt_id``)."""
+        base: dict[str, Any] = {
+            "schema_version": "fabric.content-object/v2", "tenant_id": self._tenant_id,
+            "media_type": media_type_of(media_type), "content_encoding": "identity",
+            "provenance": provenance, "boundary": boundary, "source_id": job.source_id,
+            "source_epoch": job.source_epoch, "source_sequence": job.source_sequence,
+            "captured_at": datetime.fromtimestamp(job.end_ns / 1e9, UTC).isoformat(),
+            "operation_id": job.attempt_uid, "attempt_id": job.attempt_uid,
+        }  # fmt: skip
+        if job.run_id is not None:
+            base["run_id"] = job.run_id
+        if stream_id is not None:
+            base["stream_id"] = stream_id
+            if chunk_index is not None:
+                base["chunk_index"] = chunk_index
+        return base
+
+    def _record_body(  # noqa: PLR0911 - one return per body outcome
+        self, job: RecordJob, body: RecordBody | DescriptorOnlyBody
+    ) -> list[Obj]:
+        """One body's objects under its role's mode: a descriptor-only body without
+        PROTECT; a ``str`` encoded strictly here (a lone surrogate: ``parse_failed``); an
+        object over the cap ``not_captured(payload_too_large)``; else the P0-A PROTECT
+        stage (redaction service included). Exact or nothing: never truncated."""
+        role = body.role
+        mode = self.record_mode(role)
+        if mode == "omit":
+            return []
+        stream = (
+            (body.stream_id, body.chunk_index) if isinstance(body, RecordBody) else (None, None)
+        )
+        provenance = body.content_provenance if isinstance(body, RecordBody) else (
+            "protocol" if job.provenance == "observed" else "caller_reported")  # fmt: skip
+        base = self._record_base(job, media_type=body.media_type, boundary=body.boundary,
+                                 provenance=provenance, stream_id=stream[0],
+                                 chunk_index=stream[1])  # fmt: skip
+        if isinstance(body, BudgetRefusedBody):
+            return [self._record_withheld(base, role, mode, "inflight_budget")]
+        if isinstance(body, DescriptorOnlyBody):
+            return [self._record_withheld(base, role, mode, body.reason, status=body.status,
+                                          observed=body.observed_byte_length)]  # fmt: skip
+        data = body.data
+        if isinstance(data, str):
+            charged = len(data) * 4
+            try:
+                data = data.encode("utf-8")
+            except UnicodeEncodeError:
+                self._recharge(job, charged, 0)
+                return [self._record_withheld(base, role, mode, "parse_failed")]
+            self._recharge(job, charged, len(data))
+        cap = min(ROLES[role].cap_bytes(self._max_body), self._max_body, self._records_max)
+        if len(data) > cap:
+            return [self._record_withheld(base, role, mode, "payload_too_large",
+                                          observed=len(data))]  # fmt: skip
+        if role == EVIDENCE_ROLE:  # caller-made evidence bytes: the built document's path
+            try:  # closed schema and ids mapped before anything is written (§3.4a, R8)
+                document = encode_raw_evidence(data, self._evidence_ids)
+            except Exception:
+                return [self._record_withheld(base, role, mode, "parse_failed")]
+            if document is None or len(document) > cap:
+                return [self._record_withheld(base, role, mode, "payload_too_large")]
+            return [self._evidence_object(base, mode, document)]
+        if self._protector is None:
+            return []
+        return self._protector.side(
+            base, role, [data], observed=len(data), cut_reason=None, partial=False
+        ).objects
+
+    def _record_evidence(self, job: RecordJob) -> list[Obj]:
+        """The record's evidence object (§3.4a): serialised here, then stored under the
+        ``record.evidence`` mode. Its boundary is the record's (its first body's, else
+        ``caller``); its provenance follows the attempt's."""
+        mode = self.record_mode(EVIDENCE_ROLE)
+        if mode == "omit" or job.evidence is None:
+            return []
+        boundary = next((body.boundary for body in job.bodies), "caller")
+        provenance = "protocol" if job.provenance == "observed" else "caller_reported"
+        base = self._record_base(job, media_type=EVIDENCE_MEDIA_TYPE, boundary=boundary,
+                                 provenance=provenance)  # fmt: skip
+        try:
+            data = encode_evidence(job.evidence, self._evidence_ids)
+        except Exception:  # the items changed since emit: no longer a valid document
+            return [self._record_withheld(base, EVIDENCE_ROLE, mode, "encoding_failed")]
+        cap = min(ROLES[EVIDENCE_ROLE].cap_bytes(self._max_body), self._records_max)
+        if data is None or len(data) > cap:
+            return [self._record_withheld(base, EVIDENCE_ROLE, mode, "payload_too_large")]
+        return [self._evidence_object(base, mode, data)]
+
+    def _evidence_object(self, base: Mapping[str, Any], mode: str, data: bytes) -> Obj:
+        if mode == "metadata_only":
+            return self._record_withheld(base, EVIDENCE_ROLE, mode, "privacy_policy",
+                                         observed=len(data))  # fmt: skip
+        if self._protector is not None:
+            return self._protector._stored(
+                base, EVIDENCE_ROLE, mode, data, "exact", [], "stored", "retained",
+                {"source_byte_length": len(data), "source_sha256": _sha256(data)},
+            )  # fmt: skip
+        # content capture disabled (production without policy or key): the evidence object
+        # holds no content and is still written, without a policy block (§3.4a item 3)
+        descriptor = {
+            **base, "object_id": str(uuid.uuid4()), "role": EVIDENCE_ROLE, "status": "stored",
+            "representation": "exact", "transformations": [], "stored_byte_length": len(data),
+            "stored_sha256": _sha256(data), "source_byte_length": len(data),
+            "source_sha256": _sha256(data),
+        }  # fmt: skip
+        return Obj(descriptor, data)
+
+    def _record_withheld(
+        self, base: Mapping[str, Any], role: str, mode: str, reason: str, *,
+        status: str = "not_captured", observed: int | None = None,
+    ) -> Obj:  # fmt: skip
+        """A descriptor-only object (R5): no bytes, no stored digest; ``status`` and
+        ``status_reason`` as given, ``representation: unavailable``."""
+        sizes = {} if observed is None else {"source_byte_length": observed}
+        if self._protector is not None:
+            obj = self._protector._withheld(base, role, mode, reason, **sizes)
+        else:
+            obj = Obj({**base, "object_id": str(uuid.uuid4()), "role": role,
+                       "status": status, "representation": "unavailable",
+                       "transformations": [], "status_reason": reason})  # fmt: skip
+        obj.descriptor["status"] = status
+        return obj
+
+    def _record_admissible(self, obj: Obj) -> bool:
+        d = obj.descriptor
+        return admits(d["role"], boundary=d["boundary"], provenance=d["provenance"],
+                      media_type=d["media_type"], stored_byte_length=len(obj.data),
+                      max_body_bytes=self._max_body)  # fmt: skip
+
+    def _record_span(self, job: RecordJob, attrs: Mapping[str, Any]) -> dict[str, Any]:
+        """A record's span (spool path; 050 §3.4 "Span ids"): the host span's ids when
+        ``span_ids`` names one, else a new span id under the current span at emit."""
+        ids = job.span_ids
+        if ids is not None:
+            trace_id, span_id = ids.trace_id, ids.span_id
+            parent, remote = ids.parent_span_id, ids.parent_is_remote
+        else:
+            ctx = trace.get_current_span(capture_parent(job.parent_context)).get_span_context()
+            trace_id = ctx.trace_id if ctx.is_valid else _IDS.generate_trace_id()
+            span_id = _IDS.generate_span_id()
+            parent, remote = (ctx.span_id, ctx.is_remote) if ctx.is_valid else (None, False)
+        span: dict[str, Any] = {
+            "name": job.name, "kind": "internal", "trace_flags": 1,
+            "trace_id": f"{trace_id:032x}", "span_id": f"{span_id:016x}",
+            "start_time_unix_nano": job.start_ns, "end_time_unix_nano": job.end_ns,
+            "status": job.otlp_status,
+            "attributes": {k: list(v) if isinstance(v, tuple) else v for k, v in attrs.items()},
+        }  # fmt: skip
+        if parent is not None:
+            span |= {"parent_span_id": f"{parent:016x}", "parent_is_remote": remote}
+        return span
+
+    def _emit_record(self, job: RecordJob, attrs: dict[str, AttributeValue], staged: Any) -> None:
+        """A record through the provider path (050 §3.4 "Without a spool"), as
+        :meth:`_emit` does for exchanges: a refused provider (D3: a protected route never
+        carries a record) or a sampled-out span is a ``span_dropped`` loss."""
+        provider = resolve_capture_provider(self._provider, self._fallback)
+        if provider is None:
+            if self._commit(job):
+                self._stats["spans_refused"] += 1
+                self._lose(job, "span_dropped")
+            return
+        tracer = trace.get_tracer("fabric.records", __version__, tracer_provider=provider)
+        parent, fixed = _record_parent(tracer, job.span_ids, job.parent_context)
+        try:
+            span = tracer.start_span(job.name, parent, SpanKind.INTERNAL, attrs,
+                                     start_time=job.start_ns)  # fmt: skip
+        finally:
+            if fixed is not None:
+                fixed.clear()
+        if job.otlp_status != "unset":
+            span.set_status(Status(StatusCode.OK if job.otlp_status == "ok" else StatusCode.ERROR))
+        if not self._commit(job):
+            return  # already a shutdown loss: suppress the late outcome
+        try:
+            if not span.is_recording():  # sampled out: the sequence must not silently vanish
+                self._lose(job, "span_dropped")
+                return
+            span.end(end_time=job.end_ns)
+            self._stats["spans_emitted"] += 1
+            self._settle_written(job, {
+                "name": job.name, "start_time_unix_nano": job.start_ns,
+                "end_time_unix_nano": job.end_ns, "status": job.otlp_status, "attributes": attrs,
+            })  # fmt: skip
+        except Exception:  # committed: never a second outcome for this sequence
+            self._stats["internal_errors"] += 1
 
     def _warn_disabled(self, job: CaptureJob) -> None:
         """049 §7.3: the disabled state is logged at the first exchange of each epoch, by
@@ -510,16 +912,29 @@ class CapturePipeline:
                 return
             span.end(end_time=max(job.ended_ns, job.started_ns))
             self._stats["spans_emitted"] += 1
+            self._settle_written(job, {
+                "name": SPAN_EXCHANGE, "start_time_unix_nano": job.started_ns,
+                "end_time_unix_nano": max(job.ended_ns, job.started_ns),
+                "status": "error" if _is_error(job) else "unset", "attributes": attrs,
+            })  # fmt: skip
         except Exception:  # committed: never a second outcome for this sequence
             self._stats["internal_errors"] += 1
 
     def _store_object(self, obj: Obj) -> bool:
-        """Write one protected object to the direct store, with retries."""
+        """Write one protected object to the direct store, with retries. A descriptor-only
+        object (R5) is written as its descriptor alone, as the Node persists one (a store
+        without ``put_descriptor_only`` keeps it unwritten, as before)."""
         store = self._store
         if store is None:
             return False
+        descriptor_only = getattr(store, "put_descriptor_only", None)
+        if not obj.stored and descriptor_only is None:
+            return True
         for delay in (*self._backoffs, None):
             try:
+                if descriptor_only is not None and not obj.stored:
+                    descriptor_only(obj.descriptor)
+                    return True
                 ref = store.evidence_ref_for(obj.object_id)
                 descriptor = {**obj.descriptor, "encoding": "binary", "ref": ref}
                 result = store.put_bytes_object(descriptor, obj.data)
@@ -549,7 +964,84 @@ class CapturePipeline:
         }  # fmt: skip
 
 
-def _job_bytes(job: CaptureJob) -> int:
+def _segment_of(job: Job) -> str | None:
+    """The job's segment (050 §3.3); ``None`` outside a run and until segments exist (an
+    exchange job carries one once WP-12/WP-14 add it)."""
+    segment = getattr(job, "segment_id", None)
+    return segment if isinstance(segment, str) else None
+
+
+def _record_entry(span: Mapping[str, Any]) -> SealEntry:
+    """The seal entry of a written exchange (050 §3.7): the record digest over the span,
+    with the stored request and response digests, in that order, as its content."""
+    attrs = span["attributes"]
+    content = [f"sha256:{digest}" for key in (WireAttr.REQUEST_SHA256, WireAttr.RESPONSE_SHA256)
+               if isinstance(digest := attrs.get(key), str)]  # fmt: skip
+    return record_digest(
+        name=span["name"], start_ns=span["start_time_unix_nano"],
+        end_ns=span["end_time_unix_nano"], status=span["status"], attributes=attrs,
+        content=content,
+    )  # fmt: skip
+
+
+def _no_budget() -> Budget | None:
+    return None
+
+
+def _sha256(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+class _OverridableIds(IdGenerator):
+    """The id generator of Fabric's ``fabric.records`` tracer: the provider's own, except
+    while the capture worker sets a host span's ids for one ``start_span`` call (050 §3.4
+    "Span ids": the record then *is* the host span's record)."""
+
+    def __init__(self, base: IdGenerator) -> None:
+        self.base, self._local = base, threading.local()
+
+    def set(self, trace_id: int, span_id: int) -> None:
+        self._local.ids = (trace_id, span_id)
+
+    def clear(self) -> None:
+        self._local.ids = None
+
+    def generate_span_id(self) -> int:
+        ids = getattr(self._local, "ids", None)
+        return ids[1] if ids else self.base.generate_span_id()
+
+    def generate_trace_id(self) -> int:
+        ids = getattr(self._local, "ids", None)
+        return ids[0] if ids else self.base.generate_trace_id()
+
+
+def _record_parent(
+    tracer: Any, ids: SpanIds | None, context: Context | None
+) -> tuple[Context, _OverridableIds | None]:
+    """The parent context of a provider-path record, and the id override set for its one
+    ``start_span`` (cleared by the caller). Without ``span_ids``: the current span at emit.
+    With them, on an SDK tracer: the host span's own ids under its parent. A tracer whose
+    ids cannot be chosen (``global`` mode, K3): a child of the host span."""
+    if ids is None:
+        return capture_parent(context), None
+    generator = getattr(tracer, "id_generator", None)
+    if generator is not None and not isinstance(generator, _OverridableIds):
+        with contextlib.suppress(Exception):
+            generator = tracer.id_generator = _OverridableIds(generator)
+    flags = TraceFlags(TraceFlags.SAMPLED)
+    if isinstance(generator, _OverridableIds):
+        generator.set(ids.trace_id, ids.span_id)
+        if ids.parent_span_id is None:
+            return Context(), generator
+        parent = SpanContext(ids.trace_id, ids.parent_span_id, ids.parent_is_remote, flags)
+        return trace.set_span_in_context(NonRecordingSpan(parent), Context()), generator
+    host = SpanContext(ids.trace_id, ids.span_id, False, flags)
+    return trace.set_span_in_context(NonRecordingSpan(host), Context()), None
+
+
+def _job_bytes(job: Job) -> int:
+    if isinstance(job, RecordJob):
+        return job.inflight_charge
     sides = (job.request, job.response)
     return sum(side.captured_byte_length for side in sides if side is not None)
 

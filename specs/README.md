@@ -4,6 +4,10 @@ This directory is the **source of truth** for Fabric's product positioning,
 architecture, and major design decisions. Every non-trivial change to the
 codebase must either implement something here or come with a spec change.
 
+New to the specs? Read the [documentation map](../docs/README.md#map)
+first, and keep the [glossary](../docs/glossary.md) open: it defines every
+term, rule label and decision code the specs use.
+
 ## How specs are numbered
 
 Specs are numbered with a three-digit zero-padded prefix. New specs take
@@ -23,10 +27,9 @@ independent host-sensor evidence that corroborates them.
 
 The current capture contract is spec
 [049](049-four-layer-capture-coverage.md) (four-layer coverage, rev 6.4; P0 and
-P0-A are built in v0.8; P1 waves 0–2 are built on the unreleased
-`feat/p1-integration` branch). Its phases P1–P5 and the TypeScript wire
-track are
-specified by the phase build specs
+P0-A are built in v0.8; P1 waves 0–2 are built, not yet released). Its
+phases P1–P5 and the TypeScript wire track are specified by the phase build
+specs
 [050](050-run-structure-and-records-p1.md) (P1),
 [051](051-context-and-lifecycle-p2.md) (P2),
 [052](052-decisions-and-effects-p3.md) (P3),
@@ -103,14 +106,14 @@ otherwise current spec.
 | [046](046-qualified-call-run-verification.md) | Qualified offline call-run comparison and exact delivery receipt sets | implemented (opt-in qualified-run mode); NO_GO |
 | [047](047-llm-wire-capture-and-reconstruction.md) | LLM wire capture, exchange stitching and run reconstruction (Phase 1) | implemented; NO_COVERAGE_CLAIM; partly superseded by 048 |
 | [048](048-node-content-delivery-and-agent-spool.md) | Node content delivery, agent durable spool and run scopes | implemented; NO_COVERAGE_CLAIM |
-| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | accepted (rev 6.4); P0-A implemented (v0.8), P1–P5 not built; NO_COVERAGE_CLAIM |
-| [050](050-run-structure-and-records-p1.md) | Run structure, records input and model-call projection (049 P1 and P1-A) | draft; P1 implemented on the unreleased `feat/p1-integration` branch, P1-A not built; NO_COVERAGE_CLAIM |
+| [049](049-four-layer-capture-coverage.md) | Four-layer capture contract: context, structure, content, decisions and effects (field inventory, coverage statuses, projection, phases P0–P5) | accepted (rev 6.4); P0-A implemented (v0.8), P1 mostly built (unreleased), P1-A and P2–P5 not built; NO_COVERAGE_CLAIM |
+| [050](050-run-structure-and-records-p1.md) | Run structure, records input and model-call projection (049 P1 and P1-A) | draft; P1 waves 0–2 built except WP-15 and WP-21 (unreleased, [run record](../docs/run-record.md)), P1-A not built; NO_COVERAGE_CLAIM |
 | [051](051-context-and-lifecycle-p2.md) | Run context and lifecycle reporting (049 P2) | draft; NO_COVERAGE_CLAIM |
 | [052](052-decisions-and-effects-p3.md) | Decisions and effects records, record-only (049 P3) | draft; NO_COVERAGE_CLAIM |
-| [053](053-execution-channels-p4.md) | Execution channels — opt-in observed hooks and production host sources (049 P4) | draft; NO_COVERAGE_CLAIM |
+| [053](053-execution-channels-p4.md) | Execution channels — opt-in observed hooks and production host sources (049 P4) | draft; hooks foundation and subprocess hook built for 056 (unreleased), the rest not built; NO_COVERAGE_CLAIM |
 | [054](054-specialised-runtimes-p5.md) | Specialised runtimes and media — provider endpoints, realtime and automation (049 P5) | draft; NO_COVERAGE_CLAIM |
 | [055](055-typescript-wire-capture.md) | TypeScript model-call wire capture for Node.js agents (TS-1) | draft; NO_COVERAGE_CLAIM |
-| [056](056-agent-action-reconstruction.md) | **Agent action reconstruction** — linking model decisions, tool calls, effects and host evidence (current work) | draft; NO_COVERAGE_CLAIM |
+| [056](056-agent-action-reconstruction.md) | **Agent action reconstruction** — linking model decisions, tool calls, effects and host evidence (current work) | draft; milestone M1 built (unreleased, [action reconstruction](../docs/action-reconstruction.md)); AR-1 passes in hermetic mode, live mode not yet run; NO_COVERAGE_CLAIM |
 
 Specs 036 and 040–046 are the design of record for the explicit evidence
 line (`CallRecorder`, byte-boundary adapters, qualified-run mode), which

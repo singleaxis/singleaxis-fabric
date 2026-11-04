@@ -81,9 +81,11 @@ def test_allocator_is_thread_safe_and_gap_free() -> None:
     assert sorted(seen) == list(range(16000))
 
 
-def test_epochs_are_unique_and_increasing() -> None:
+def test_epochs_are_unique_nonzero_and_63_bit() -> None:
+    """050 §3.2 rule 1: CSPRNG epochs, no longer time-ordered."""
     epochs = [SourceAllocator(f"wire-{i}", "wire").epoch for i in range(50)]
-    assert epochs == sorted(set(epochs))
+    assert len(set(epochs)) == len(epochs)
+    assert all(0 < epoch < 1 << 63 for epoch in epochs)
 
 
 def test_default_source_id_shape(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -152,7 +154,7 @@ def test_fork_renews_epoch_and_restarts_sequence() -> None:
     os.waitpid(pid, 0)
     with os.fdopen(read_fd) as stream:
         child = json.loads(stream.read())
-    assert child["epoch"] > parent_epoch
+    assert child["epoch"] != parent_epoch  # a fresh CSPRNG epoch (050 §3.2 rule 1)
     assert child["sequence"] == 0
     assert allocator.epoch == parent_epoch
     assert allocator.next_sequence() == (parent_epoch, 2, None)

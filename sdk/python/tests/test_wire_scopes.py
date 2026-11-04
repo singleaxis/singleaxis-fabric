@@ -30,7 +30,7 @@ from .test_wire_helpers import (
     chat_response,
     exchange_document,
     load_validator,
-    loss_document,
+    marker_span_document,
     validate_exchange_document,
 )
 
@@ -39,6 +39,7 @@ UUID4 = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 
 @pytest.fixture
 def rig(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[wire.WireHandle, InMemorySpanExporter]]:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: clear emits run ids
     emitter = LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
     monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
@@ -81,8 +82,8 @@ def _validate(exporter: InMemorySpanExporter) -> None:
     for span in exporter.get_finished_spans():
         if span.name == "fabric.model_call":
             validate_exchange_document(exchange_document(span))
-        elif span.name.startswith("fabric.capture_"):
-            validator.validate_document(loss_document(span), schemas)
+        elif span.name.startswith("fabric.capture_"):  # loss, heartbeat or manifest
+            validator.validate_document(marker_span_document(span), schemas)
 
 
 def test_reused_and_serial_run_ids_get_distinct_scopes(
@@ -168,10 +169,15 @@ def test_a_call_started_after_its_block_closed_carries_no_scope(
     assert exchange["fabric.run.id"] != run_pseudonym("run-late")  # the 047 fallback run id
 
 
-def test_scope_without_an_installed_handle_only_scopes_the_context() -> None:
+def test_scope_without_an_installed_handle_only_scopes_the_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     assert wire.current_handle() is None
     with wire.run("run-quiet"):
         assert current_run_id() == run_pseudonym("run-quiet")
     assert current_run_id() is None
+    with wire.run("bad id"):  # 050 R9: any string is mapped (fail-open)
+        assert current_run_id() == run_pseudonym("bad id")
+    monkeypatch.setenv("FABRIC_RECORDS_STRICT", "1")  # only strict keeps the ValueError
     with pytest.raises(ValueError), wire.run("bad id"):
         pass

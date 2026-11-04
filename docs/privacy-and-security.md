@@ -1,5 +1,20 @@
 # Privacy and security
 
+> **Status:** describes built code, released in v0.8.0. Implementation:
+> [`fabric/wire/_protect.py`](../sdk/python/src/fabric/wire/_protect.py)
+> (PROTECT),
+> [`fabric/wire/_policy.py`](../sdk/python/src/fabric/wire/_policy.py)
+> (production gate),
+> [`fabric/redaction.py`](../sdk/python/src/fabric/redaction.py)
+> (redaction-service client),
+> [`fabric/_sequence.py`](../sdk/python/src/fabric/_sequence.py)
+> (pseudonyms),
+> [`fabric/wire/_spool.py`](../sdk/python/src/fabric/wire/_spool.py)
+> (encrypted spool) and the Node's
+> [`fabricguardprocessor/`](../components/otel-collector-fabric/processor/fabricguardprocessor/)
+> and
+> [`fabricenvelopeextension/`](../components/otel-collector-fabric/extension/fabricenvelopeextension/).
+
 Fabric's promise is to protect the record **before** it leaves the process
 that captured it, keep it encrypted wherever Fabric stores it, and deliver
 it only to a destination you choose. This page describes the controls that

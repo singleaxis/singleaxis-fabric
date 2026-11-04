@@ -181,7 +181,10 @@ def _agent_runs(runs: dict[str, dict[str, Any]], scoped: str) -> list[dict[str, 
     [
         ("1", 3, "partial"),  # run_end is durable, the last exchange is not: a gap in-window
         ("1", 2, "partial"),  # the worker parks on call 2: calls 2 and 3 stay in memory
-        ("0", 3, "unverified"),  # no run markers and no final heartbeat: the end is unproven
+        # No run markers and no final heartbeat, but the drainer declares the killed epoch an
+        # orphan (050 §3.2 rule 5): its periodic heartbeat at the last allocated position
+        # makes the in-window exchange a visible gap (T2), and partial beats unverified.
+        ("0", 3, "partial"),
     ],
 )
 def test_sigkill_inside_the_window_is_never_complete(
@@ -215,6 +218,11 @@ def test_sigkill_inside_the_window_is_never_complete(
     for run in runs:
         assert run["verdict"] not in COMPLETE
         assert run["verdict"] == expected
+        if scoped == "0":  # T2: the lost position is a gap, the end past it still unproven
+            found = {(g["gap_type"], g["effect"], g.get("first_sequence"), g.get("last_sequence"))
+                     for g in run["gaps"]}  # fmt: skip
+            assert ("sequence_gap", "partial", block_at - 1, block_at - 1) in found
+            assert ("tail_unverified", "unverified", None, None) in found
 
 
 @pytest.mark.parametrize("scoped", ["1", "0"])

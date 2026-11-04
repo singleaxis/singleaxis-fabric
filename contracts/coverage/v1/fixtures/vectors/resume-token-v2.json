@@ -1,0 +1,889 @@
+{
+  "schema_version": "fabric.resume-token-vectors/v2",
+  "rule": "Spec 050 §3.6: a resume token is 'fr3/' + the run correlation id + '/' + a predecessor entry (<segment_id>/<source_id>/<epoch>/<last_sequence>/sha256:<manifest digest>), optionally '/br-<32 hex>'. The correlation id is the root segment's run id: r- + 32 hex (the mapped clear id, or minted when the caller gave none); in clear mode (explicit opt-in, R8) a caller-rooted run's clear id as given (or its h- form), which then crosses the boundary in baggage. It matches ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ (no '/'), else the token is not issued (api_misuse). 'fr2/' tokens (no correlation id) are parsed for one release. A malformed token is dropped (tokens_rejected). Run identity at segment open, first rule that applies: 1 one correlation id among valid fr3 tokens -> it, verbatim (token); 2 differing ids and a clear run id -> the mapped clear id (caller_join); 3 differing ids, no run id -> the lowest by byte order (token_conflict); 4 no valid fr3 token and a clear run id (argument or same-host FABRIC_RUN_ID) -> the mapped clear id (caller); 5 neither -> a minted r- + 32 CSPRNG hex (minted). Rules 4 and 5 report legacy when the only valid tokens are fr2. Mapping (identity rule): pseudonymous mode maps every caller value whatever its shape (r- + 32 hex of HMAC-SHA256(key, value), SHA-256 without a key); only an EmittedId of the handle passes through; clear mode emits it as given (h- + 40 hex of SHA-256 when it is not an opaque id). minted stands in for the CSPRNG draw. end_run refuses without a valid token, and with run_id None and tokens of different runs.",
+  "tokens": [
+    {
+      "name": "pseudonymous correlation id",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "branch token",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": "br-064e57314e3f26e664ffcbc1526ac062"
+      }
+    },
+    {
+      "name": "clear-mode correlation id",
+      "token": "fr3/billing-run.42:eu/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "billing-run.42:eu",
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "h- correlation id (a clear id outside the opaque pattern)",
+      "token": "fr3/h-abababababababababababababababababababab/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "h-abababababababababababababababababababab",
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "clear source label",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-5456742e692c0b6e5b9590fd8b321b53/billing-agent.prod:7/4611686018427387905/3/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "segment_id": "seg-5456742e692c0b6e5b9590fd8b321b53",
+        "source_id": "billing-agent.prod:7",
+        "epoch": 4611686018427387905,
+        "last_sequence": 3,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "zero-width segment",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-f004c0559e9761ed511e632521c7fa7c/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/-1/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "segment_id": "seg-f004c0559e9761ed511e632521c7fa7c",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": -1,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "largest epoch",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-120bb0cd05d440cdf7a8fdaa1f9675c7/s-b94f348e8d6890782b2af72c847dc77b/9223372036854775807/0/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 3,
+        "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "segment_id": "seg-120bb0cd05d440cdf7a8fdaa1f9675c7",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 9223372036854775807,
+        "last_sequence": 0,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "legacy fr2 token (parsed for one release)",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": {
+        "version": 2,
+        "correlation_id": null,
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": null
+      }
+    },
+    {
+      "name": "legacy fr2 branch token",
+      "token": "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf",
+      "parsed": {
+        "version": 2,
+        "correlation_id": null,
+        "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+        "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+        "epoch": 4611686018427387905,
+        "last_sequence": 41,
+        "manifest_digest": "sha256:abababababababababababababababababababababababababababababababab",
+        "branch_id": "br-b1b9158d0d5d266bdd6f53758fce2fbf"
+      }
+    },
+    {
+      "name": "rev-3 prefix",
+      "token": "fr1/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "empty correlation id",
+      "token": "fr3//seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "correlation id with a space",
+      "token": "fr3/run 42/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "correlation id over 128 characters",
+      "token": "fr3/rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "correlation id with a slash",
+      "token": "fr3/orders/42/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "no correlation id (fr2 body under fr3)",
+      "token": "fr3/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "epoch 0",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "bare digest",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "trailing slash",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/",
+      "parsed": null
+    },
+    {
+      "name": "two branch ids",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062/br-b1b9158d0d5d266bdd6f53758fce2fbf",
+      "parsed": null
+    },
+    {
+      "name": "uppercase segment hex",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/SEG-DC036958C70A72CF420903C9385C1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "parsed": null
+    },
+    {
+      "name": "empty",
+      "token": "",
+      "parsed": null
+    }
+  ],
+  "issue": [
+    {
+      "name": "pseudonymous run",
+      "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "branch_id": null,
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "name": "branch token",
+      "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "branch_id": "br-45ef94596e2296c3f8ecf7eb64cdf570",
+      "token": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-45ef94596e2296c3f8ecf7eb64cdf570"
+    },
+    {
+      "name": "clear run id as given",
+      "correlation_id": "billing-run.42:eu",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "branch_id": null,
+      "token": "fr3/billing-run.42:eu/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+    },
+    {
+      "name": "clear run id with a slash is not issued (api_misuse)",
+      "correlation_id": "orders/42",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "branch_id": null,
+      "token": null
+    },
+    {
+      "name": "clear run id with a space is not issued",
+      "correlation_id": "order 42",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "branch_id": null,
+      "token": null
+    },
+    {
+      "name": "malformed branch id is not issued",
+      "correlation_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+      "entry": "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+      "branch_id": "br-45ef94596e2296c3f8ecf7eb64cdf57",
+      "token": null
+    }
+  ],
+  "carriers": [
+    {
+      "name": "environment join",
+      "carrier": "env",
+      "value": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab,fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab,fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab",
+      "tokens": [
+        "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+        "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab",
+        "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab"
+      ],
+      "valid": [
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "name": "baggage, comma encoded",
+      "carrier": "baggage",
+      "value": "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab%2Cfr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab%2Cfr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab",
+      "tokens": [
+        "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+        "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab",
+        "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab"
+      ],
+      "valid": [
+        true,
+        true,
+        false
+      ]
+    },
+    {
+      "name": "baggage, fully percent-encoded",
+      "carrier": "baggage",
+      "value": "fr3%2Fr-7caf7c2d19b76858b22ffcd4ce3fcbde%2Fseg-dc036958c70a72cf420903c9385c1051%2Fs-b94f348e8d6890782b2af72c847dc77b%2F4611686018427387905%2F41%2Fsha256%3Aabababababababababababababababababababababababababababababababab%2Cfr2%2Fseg-a8639869696e1abb8d4af8e7cac6f0e0%2Fs-f0b46814e5833e0aeceb03bd9f9b9eb4%2F7140025193451802113%2F7%2Fsha256%3Aabababababababababababababababababababababababababababababababab%2Cfr3%2Fr-7caf7c2d19b76858b22ffcd4ce3fcbde%2Fseg-dc036958c70a72cf420903c9385c1051%2Fs-b94f348e8d6890782b2af72c847dc77b%2F0%2F41%2Fsha256%3Aabababababababababababababababababababababababababababababababab",
+      "tokens": [
+        "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+        "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab",
+        "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab"
+      ],
+      "valid": [
+        true,
+        true,
+        false
+      ]
+    }
+  ],
+  "run_identity": [
+    {
+      "name": "one correlation id",
+      "rule": 1,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "one correlation id; a clear run id also passed is ignored",
+      "rule": 1,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "trip-planner-9",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "key rotation keeps the token's id (never re-mapped)",
+      "rule": 1,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "another-test-key",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "lost middle: C resumes from B's token carrying A's id (T7)",
+      "rule": 1,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "branch tokens name their branch ids",
+      "rule": 1,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062",
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-b1b9158d0d5d266bdd6f53758fce2fbf"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [
+          "br-064e57314e3f26e664ffcbc1526ac062",
+          "br-b1b9158d0d5d266bdd6f53758fce2fbf"
+        ],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "fr3 and fr2 together: the fr3 correlation id decides",
+      "rule": 1,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "differing correlation ids joined by a caller run id",
+      "rule": 2,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-f7d6de584396916d0a593ab85bb6311f/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "trip-planner-join",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-2310f79b12405c8b7af3c7d9c3175199",
+        "id_basis": "caller_join",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "caller join in clear mode: the clear id as given",
+      "rule": 2,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-f7d6de584396916d0a593ab85bb6311f/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "trip-join",
+        "identity_mode": "clear",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "trip-join",
+        "id_basis": "caller_join",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "differing correlation ids, no run id: the lowest",
+      "rule": 3,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-f7d6de584396916d0a593ab85bb6311f/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token_conflict",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "lowest is by byte order ('Z' < 'a')",
+      "rule": 3,
+      "inputs": {
+        "tokens": [
+          "fr3/alpha-run/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/Zeta-run/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "Zeta-run",
+        "id_basis": "token_conflict",
+        "predecessors": [
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "no token: the mapped clear run id",
+      "rule": 4,
+      "inputs": {
+        "tokens": [],
+        "run_id": "run-travel-42",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "an r--shaped caller id is mapped again",
+      "rule": 4,
+      "inputs": {
+        "tokens": [],
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-f05444f4cbc70ba79ad01c820f817f93",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "an EmittedId of this handle passes through",
+      "rule": 4,
+      "inputs": {
+        "tokens": [],
+        "run_id": "r-13d8a22a73adb410b76323c690baa8fe",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": true,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-13d8a22a73adb410b76323c690baa8fe",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "clear mode: the clear id as given",
+      "rule": 4,
+      "inputs": {
+        "tokens": [],
+        "run_id": "run-travel-42",
+        "identity_mode": "clear",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "run-travel-42",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "clear mode: an id outside the opaque pattern takes its h- form",
+      "rule": 4,
+      "inputs": {
+        "tokens": [],
+        "run_id": "orders/42",
+        "identity_mode": "clear",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "h-c4dd165f06c35f87f80d9c755d8703efce751ab5",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "local profile without a key: unkeyed v1",
+      "rule": 4,
+      "inputs": {
+        "tokens": [],
+        "run_id": "run-travel-42",
+        "identity_mode": "pseudonymous",
+        "key": null,
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-c5aedfd8a3ee415e277e335bf1517ff4",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "malformed tokens are dropped; the segment is a root",
+      "rule": 4,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr1/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "run-travel-42",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "id_basis": "caller",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 2
+      }
+    },
+    {
+      "name": "fr2 tokens only: caller id, legacy basis",
+      "rule": 4,
+      "inputs": {
+        "tokens": [
+          "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr2/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "run-travel-42",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+        "id_basis": "legacy",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "no token, no run id: minted",
+      "rule": 5,
+      "inputs": {
+        "tokens": [],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-b72dc199fb462a74c3e32ccfa05511d9",
+        "id_basis": "minted",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "clear mode still mints",
+      "rule": 5,
+      "inputs": {
+        "tokens": [],
+        "run_id": null,
+        "identity_mode": "clear",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-b72dc199fb462a74c3e32ccfa05511d9",
+        "id_basis": "minted",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "malformed tokens only, no run id: minted root",
+      "rule": 5,
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-b72dc199fb462a74c3e32ccfa05511d9",
+        "id_basis": "minted",
+        "predecessors": [
+          "none"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 1
+      }
+    },
+    {
+      "name": "fr2 tokens only, no run id: minted, legacy basis",
+      "rule": 5,
+      "inputs": {
+        "tokens": [
+          "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "run_id_emitted": false,
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "run_id": "r-b72dc199fb462a74c3e32ccfa05511d9",
+        "id_basis": "legacy",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    }
+  ],
+  "end_run": [
+    {
+      "name": "tokens of one run, run_id None",
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab/br-064e57314e3f26e664ffcbc1526ac062"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "status": "ended",
+        "run_id": "r-7caf7c2d19b76858b22ffcd4ce3fcbde",
+        "id_basis": "token",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [
+          "br-064e57314e3f26e664ffcbc1526ac062"
+        ],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "tokens of two runs, run_id None",
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-f7d6de584396916d0a593ab85bb6311f/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "status": "refused_conflicting_tokens"
+      }
+    },
+    {
+      "name": "tokens of two runs with a caller run id",
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "fr3/r-f7d6de584396916d0a593ab85bb6311f/seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "trip-planner-join",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "status": "ended",
+        "run_id": "r-2310f79b12405c8b7af3c7d9c3175199",
+        "id_basis": "caller_join",
+        "predecessors": [
+          "seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab",
+          "seg-a8639869696e1abb8d4af8e7cac6f0e0/s-f0b46814e5833e0aeceb03bd9f9b9eb4/7140025193451802113/7/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "branch_ids": [],
+        "tokens_rejected": 0
+      }
+    },
+    {
+      "name": "no valid token",
+      "inputs": {
+        "tokens": [
+          "fr3/r-7caf7c2d19b76858b22ffcd4ce3fcbde/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/0/41/sha256:abababababababababababababababababababababababababababababababab"
+        ],
+        "run_id": "trip-planner-7",
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "status": "refused_no_token"
+      }
+    },
+    {
+      "name": "no token at all",
+      "inputs": {
+        "tokens": [],
+        "run_id": null,
+        "identity_mode": "pseudonymous",
+        "key": "fabric-test-id-key-not-a-secret",
+        "minted": "r-b72dc199fb462a74c3e32ccfa05511d9"
+      },
+      "expected": {
+        "status": "refused_no_token"
+      }
+    }
+  ]
+}

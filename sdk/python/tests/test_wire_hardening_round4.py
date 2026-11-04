@@ -186,7 +186,7 @@ def test_flush_and_close_keep_their_deadline_while_another_pump_stalls_on_disk(
     spool, loss, sender = _sender(tmp_path / "spool")
     loss.attach(lambda: None)  # no sender thread: the test drives the pumps
     entered, release = threading.Event(), threading.Event()
-    write, take = spool.write, loss.take
+    write, take = spool.write_batch, loss.take
 
     def stalled_write(*args: Any, **kwargs: Any) -> Any:
         entered.set()
@@ -201,7 +201,7 @@ def test_flush_and_close_keep_their_deadline_while_another_pump_stalls_on_disk(
             time.sleep(0.05)  # it is queued on the lock before this pump releases it
         return taken
 
-    spool.write = stalled_write  # type: ignore[method-assign]
+    spool.write_batch = stalled_write  # type: ignore[method-assign]
     loss.take = take_then_race  # type: ignore[method-assign]
     try:
         started = time.monotonic()
@@ -478,6 +478,7 @@ def test_capture_telemetry_carries_no_operator_label_in_clear(
 def test_clear_labels_are_an_explicit_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")  # 050 R8: labels, not ids
     rows, _ = _capture_with_labels(tmp_path, monkeypatch, key=KEY, labels="clear")
     for row in rows:
         assert row["attributes"]["fabric.source_id"] == LABEL

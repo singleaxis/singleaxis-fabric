@@ -20,8 +20,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from fabric import _loss
+from fabric._capture_types import RunScope
 from fabric._loss import SPAN_HEARTBEAT, SPAN_LOSS, LossAttr, LossEmitter, get_loss_emitter
-from fabric._sequence import RunScope, SourceAllocator
+from fabric._sequence import SourceAllocator
 
 from .test_wire_helpers import capture_schemas, load_validator, loss_document
 
@@ -30,7 +31,7 @@ SPAN_KEYS = {
     "fabric.source_id", "fabric.source.epoch", "fabric.run.id", "fabric.run.scope_id",
     LossAttr.REASON, LossAttr.COUNT,
     LossAttr.FIRST_SEQUENCE, LossAttr.LAST_SEQUENCE, LossAttr.HEARTBEAT_LAST_SEQUENCE,
-    LossAttr.HEARTBEAT_KIND,
+    LossAttr.HEARTBEAT_KIND, LossAttr.EVENT_ID,  # every marker's persisted uuid4 (050 R2)
 }  # fmt: skip
 
 
@@ -164,7 +165,7 @@ def test_periodic_heartbeat_only_for_active_sources(
 def test_heartbeat_queue_overflow_drops_only_the_marker(
     emitter: LossEmitter, exporter: InMemorySpanExporter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_loss, "_MAX_QUEUED_HEARTBEATS", 2)
+    monkeypatch.setattr(_loss, "MAX_QUEUED_MARKERS", 2)
     allocator = SourceAllocator("wire-full", "wire")
     for index in range(5):
         scope = RunScope(f"run-{index}", f"3d7e1f2a-9b4c-4e5d-8a6f-1b2c3d4e5f6{index}", None)
