@@ -1,0 +1,17 @@
+# The auditd group and the agent's content path together, after
+# docker-compose.host-ingress-auditd.yml and docker-compose.host-ingress-content.yml:
+# the merged command and secrets of both (Compose replaces a command and
+# confmap replaces service.extensions, so neither overlay can name the other's).
+
+services:
+  fabric-node:
+    command:
+      - --config=/etc/fabric-node/collector-production-groups.yaml
+      - --config=/etc/fabric-node/collector-production-groups-auditd.yaml
+      - --config=/etc/fabric-node/collector-production-groups-content.yaml
+      - --config=/etc/fabric-node/collector-production-groups-auditd-content.yaml
+    secrets:
+      - fabric_ingress_token
+      - fabric_ebpf_token
+      - fabric_auditd_token
+      - fabric_content_key

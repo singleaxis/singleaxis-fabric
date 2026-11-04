@@ -1,0 +1,55 @@
+# valid/agent-ebpf-three-nodes.yaml: one agent group and one eBPF group per
+# node (node-a, node-b, node-c), as deploy/kubernetes/host-bindings.py writes
+# them with --base-port 4417.
+otel-collector:
+  receiver:
+    sourceBindings:
+      - name: agent
+        kind: agent
+        tenantId: tenant-a
+        sourceId: s-b94f348e8d6890782b2af72c847dc77b
+        tokenSecret: {name: fabric-ingress-agent, key: token}
+        protocols: {grpc: 4317, http: 4318}
+        content: {port: 4319}
+      - name: ebpf-0
+        kind: host.ebpf
+        tenantId: tenant-a
+        sourceId: s-f2388b6876ba4e4a4571b9c45e94ff2a   # node-a/ebpf
+        tokenSecret: {name: fabric-node-host-ingress, key: ebpf-0}
+        protocols: {grpc: 4417}
+        hostDigests: omitted
+        ingressFrom:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fabric-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: fabric-host-emitter
+      - name: ebpf-1
+        kind: host.ebpf
+        tenantId: tenant-a
+        sourceId: s-0dc28b6be19944633be7862f8ebe0def   # node-b/ebpf
+        tokenSecret: {name: fabric-node-host-ingress, key: ebpf-1}
+        protocols: {grpc: 4418}
+        hostDigests: omitted
+        ingressFrom:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fabric-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: fabric-host-emitter
+      - name: ebpf-2
+        kind: host.ebpf
+        tenantId: tenant-a
+        sourceId: s-2fddc2ced86723b22eb99ba2f3dc5fe4   # node-c/ebpf
+        tokenSecret: {name: fabric-node-host-ingress, key: ebpf-2}
+        protocols: {grpc: 4419}
+        hostDigests: omitted
+        ingressFrom:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fabric-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: fabric-host-emitter

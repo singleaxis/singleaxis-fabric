@@ -1,0 +1,11 @@
+# A group carries no inline credential: tokens come only from a Secret.
+otel-collector:
+  receiver:
+    sourceBindings:
+      - name: ebpf-0
+        kind: host.ebpf
+        tenantId: tenant-a
+        sourceId: s-00000000000000000000000000000000
+        tokenSecret: {name: fabric-node-host-ingress, key: ebpf-0}
+        protocols: {grpc: 4417}
+        tokenValue: not-a-secret

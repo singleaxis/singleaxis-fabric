@@ -7,7 +7,19 @@
 # output lands in terminals and CI logs. Messages name the variable instead.
 # The only values printed are fixed text, values from a closed set after they
 # matched it (e.g. the SSE mode), numeric uid/gids and file mode bits.
+#
+# --groups checks the static dedicated ingress groups of `make up-prod-groups`
+# (spec 053 §6.1, spec 056 §7.3.3 (h)) instead of the single binding: every
+# enabled group's token file and source id, distinct token bytes and distinct
+# source ids across groups, and receiver TLS on every listener.
 set -eu
+
+GROUPS_MODE=0
+case "${1:-}" in
+  '') ;;
+  --groups) GROUPS_MODE=1 ;;
+  *) printf 'usage: preflight-prod.sh [--groups]\n' >&2; exit 2 ;;
+esac
 
 fail=0
 note() { printf '  %s %s\n' "$1" "$2"; }
@@ -15,7 +27,11 @@ ok()   { note "PASS" "$1"; }
 bad()  { note "FAIL" "$1"; fail=1; }
 warn() { note "WARN" "$1"; }
 
-printf 'Fabric Node production preflight\n'
+if [ "${GROUPS_MODE}" -eq 1 ]; then
+  printf 'Fabric Node production preflight (ingress groups)\n'
+else
+  printf 'Fabric Node production preflight\n'
+fi
 
 # --- tooling ----------------------------------------------------------------
 if command -v docker >/dev/null 2>&1; then
@@ -54,6 +70,7 @@ fi
 
 FABRIC_EXPORT_ENDPOINT="$(envget FABRIC_EXPORT_ENDPOINT)"
 FABRIC_EXPORT_AUTH_HEADER="$(envget FABRIC_EXPORT_AUTH_HEADER)"
+# shellcheck disable=SC2034 # read through value_of by check_token
 FABRIC_INGRESS_TOKEN_FILE="$(envget FABRIC_INGRESS_TOKEN_FILE)"
 FABRIC_INGRESS_TLS_DIR="$(envget FABRIC_INGRESS_TLS_DIR)"
 FABRIC_BIND_ADDR="$(envget FABRIC_BIND_ADDR)"
@@ -72,6 +89,15 @@ FABRIC_CONTENT_S3_ENDPOINT="$(envget FABRIC_CONTENT_S3_ENDPOINT)"
 FABRIC_CONTENT_S3_PATH_STYLE="$(envget FABRIC_CONTENT_S3_PATH_STYLE)"
 FABRIC_CONTENT_S3_SSE="$(envget FABRIC_CONTENT_S3_SSE)"
 FABRIC_CONTENT_S3_KMS_KEY_ID="$(envget FABRIC_CONTENT_S3_KMS_KEY_ID)"
+# The group variables below are read through value_of (by name).
+# shellcheck disable=SC2034
+FABRIC_AGENT_SOURCE_ID="$(envget FABRIC_AGENT_SOURCE_ID)"
+# shellcheck disable=SC2034
+FABRIC_EBPF_SOURCE_ID="$(envget FABRIC_EBPF_SOURCE_ID)"
+# shellcheck disable=SC2034
+FABRIC_EBPF_TOKEN_FILE="$(envget FABRIC_EBPF_TOKEN_FILE)"
+FABRIC_AUDITD_SOURCE_ID="$(envget FABRIC_AUDITD_SOURCE_ID)"
+FABRIC_AUDITD_TOKEN_FILE="$(envget FABRIC_AUDITD_TOKEN_FILE)"
 # The image runs as distroless nonroot (uid/gid 65532). Bind-mounted files
 # keep their host owner and mode, so that user must be able to read them.
 # Override only for an image built with a different nonroot user.
@@ -258,37 +284,96 @@ token_last_byte() {
   # The trailing "x" keeps a final newline from being stripped by $(...).
   { tail -c1 "$1" 2>/dev/null && printf 'x'; } || true
 }
-if [ -z "${FABRIC_INGRESS_TOKEN_FILE:-}" ]; then
-  bad "FABRIC_INGRESS_TOKEN_FILE unset; ingress would have no bearer token"
-elif [ ! -f "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
-  bad "FABRIC_INGRESS_TOKEN_FILE points at a missing file"
-elif [ ! -r "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
-  bad "cannot read ingress token file (FABRIC_INGRESS_TOKEN_FILE) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
-elif [ ! -s "${FABRIC_INGRESS_TOKEN_FILE}" ]; then
-  bad "ingress token file (FABRIC_INGRESS_TOKEN_FILE) is empty"
-elif blank_lines=$(token_blank_lines "${FABRIC_INGRESS_TOKEN_FILE}")
-  last_byte=$(token_last_byte "${FABRIC_INGRESS_TOKEN_FILE}")
-  [ -z "${blank_lines}" ] || [ -z "${last_byte}" ]; then
-  bad "reading ingress token file (FABRIC_INGRESS_TOKEN_FILE) failed, so its format cannot be checked; ${SECRET_FIX}"
-elif [ "${blank_lines}" != "0" ]; then
-  # bearertokenauth v0.150.0 splits the file on newlines and keeps EMPTY
-  # entries: a blank line mints "Bearer " (empty token) as a valid
-  # credential, which gRPC metadata preserves verbatim -- auth bypass.
-  bad "ingress token file contains a blank line; an empty 'Bearer ' credential would authenticate -- remove blank lines"
-elif [ "${last_byte}" = "$(printf '\nx')" ]; then
-  # Same extension quirk: a trailing newline produces a trailing empty
-  # entry -> "Bearer " authenticates. The only safe file ends mid-line.
-  bad "ingress token file ends with a newline; an empty 'Bearer ' credential would authenticate -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
-else
-  ok "ingress token file present, non-empty, single-entry-safe format"
-  # Compose file secrets are bind mounts: owner and mode are the host's.
-  check_node_secret "ingress token file" "${FABRIC_INGRESS_TOKEN_FILE}"
+# value_of VAR: the value of the variable named VAR (empty when unset).
+value_of() {
+  eval "printf '%s' \"\${${1}:-}\""
+}
+
+# check_token VAR LABEL UNSET: one bearer token file. VAR names the variable,
+# LABEL is fixed text naming the file, UNSET the consequence of an unset VAR.
+check_token() {
+  token_path=$(value_of "$1")
+  if [ -z "${token_path}" ]; then
+    bad "$1 unset; $3"
+  elif [ ! -f "${token_path}" ]; then
+    bad "$1 points at a missing file"
+  elif [ ! -r "${token_path}" ]; then
+    bad "cannot read $2 ($1) as uid ${OPERATOR_UID}, so its format cannot be checked; ${SECRET_FIX}"
+  elif [ ! -s "${token_path}" ]; then
+    bad "$2 ($1) is empty"
+  elif blank_lines=$(token_blank_lines "${token_path}")
+    last_byte=$(token_last_byte "${token_path}")
+    [ -z "${blank_lines}" ] || [ -z "${last_byte}" ]; then
+    bad "reading $2 ($1) failed, so its format cannot be checked; ${SECRET_FIX}"
+  elif [ "${blank_lines}" != "0" ]; then
+    # bearertokenauth v0.150.0 splits the file on newlines and keeps EMPTY
+    # entries: a blank line mints "Bearer " (empty token) as a valid
+    # credential, which gRPC metadata preserves verbatim -- auth bypass.
+    bad "$2 contains a blank line; an empty 'Bearer ' credential would authenticate -- remove blank lines"
+  elif [ "${last_byte}" = "$(printf '\nx')" ]; then
+    # Same extension quirk: a trailing newline produces a trailing empty
+    # entry -> "Bearer " authenticates. The only safe file ends mid-line.
+    bad "$2 ends with a newline; an empty 'Bearer ' credential would authenticate -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
+  else
+    ok "$2 present, non-empty, single-entry-safe format"
+    # Compose file secrets are bind mounts: owner and mode are the host's.
+    check_node_secret "$2" "${token_path}"
+  fi
+}
+check_token FABRIC_INGRESS_TOKEN_FILE "ingress token file" "ingress would have no bearer token"
+
+# --- ingress groups (spec 053 §6.1): one credential and one source each -------
+# A group is enabled by its token file (the agent and eBPF groups always are).
+# Equal token bytes would let one group's sender present as another's source;
+# equal source ids would bind one source twice. Neither value is ever printed.
+if [ "${GROUPS_MODE}" -eq 1 ]; then
+  check_token FABRIC_EBPF_TOKEN_FILE "eBPF group token file" "the ebpf ingress group would have no bearer token"
+  group_tokens="FABRIC_INGRESS_TOKEN_FILE FABRIC_EBPF_TOKEN_FILE"
+  group_sources="FABRIC_AGENT_SOURCE_ID FABRIC_EBPF_SOURCE_ID"
+  if [ -n "${FABRIC_AUDITD_TOKEN_FILE:-}" ]; then
+    check_token FABRIC_AUDITD_TOKEN_FILE "auditd group token file" "the auditd ingress group would have no bearer token"
+    group_tokens="${group_tokens} FABRIC_AUDITD_TOKEN_FILE"
+    group_sources="${group_sources} FABRIC_AUDITD_SOURCE_ID"
+  elif [ -n "${FABRIC_AUDITD_SOURCE_ID:-}" ]; then
+    warn "FABRIC_AUDITD_SOURCE_ID is set without FABRIC_AUDITD_TOKEN_FILE; the auditd group stays disabled"
+  fi
+  seen=""
+  for variable in ${group_tokens}; do
+    path=$(value_of "${variable}")
+    for previous in ${seen}; do
+      previous_path=$(value_of "${previous}")
+      if [ -r "${path}" ] && [ -r "${previous_path}" ] && cmp -s "${path}" "${previous_path}"; then
+        bad "${previous} and ${variable} hold the same token bytes; every ingress group needs its own credential (spec 053 §6.1 rule 5)"
+      fi
+    done
+    seen="${seen} ${variable}"
+  done
+  seen=""
+  for variable in ${group_sources}; do
+    value=$(value_of "${variable}")
+    if [ -z "${value}" ]; then
+      bad "${variable} unset; an enabled ingress group binds exactly one source (spec 053 §6.1)"
+    elif matches '^s-[0-9a-f]{32}$' "${value}"; then
+      ok "${variable} set (pseudonymous s- form)"
+    elif [ "${variable}" = FABRIC_AGENT_SOURCE_ID ] && matches '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' "${value}"; then
+      warn "FABRIC_AGENT_SOURCE_ID is not an s-<32 hex> pseudonym; it binds only agents running with FABRIC_WIRE_LABELS=clear"
+    else
+      bad "${variable} must be s-<32 lowercase hex>: a host sensor's source id is the pseudonym of its source label (fabric-host-emitter print-source-id)"
+    fi
+    for previous in ${seen}; do
+      if [ -n "${value}" ] && [ "${value}" = "$(value_of "${previous}")" ]; then
+        bad "${variable} equals ${previous}; no two groups bind one source (spec 053 §6.1 rule 7) -- each sensor has its own source label"
+      fi
+    done
+    seen="${seen} ${variable}"
+  done
 fi
 
 # --- ingress TLS (only if enabled in collector-production.yaml) ---------------
 # Look for an uncommented tls: stanza inside the receivers: block only; the
 # exporter's TLS-verify settings are always on and must not trip this check.
 COLLECTOR_CONFIG=collector-config/collector-production.yaml
+[ "${GROUPS_MODE}" -eq 0 ] || COLLECTOR_CONFIG=collector-config/collector-production-groups.yaml
 if [ ! -f "${COLLECTOR_CONFIG}" ]; then
   bad "collector config missing: ${COLLECTOR_CONFIG} (run from deploy/compose)"
 fi
@@ -332,10 +417,19 @@ yaml_flatten() {
 # collector and fabric-gate see the merged configuration. Unset: telemetry
 # only, exactly the production profile without content.
 CONTENT_CONFIGS=""
-case "${FABRIC_CONTENT_BACKEND:-}" in
-  s3) CONTENT_CONFIGS="collector-config/collector-content.yaml collector-config/collector-content-s3.yaml collector-config/collector-content-s3-production.yaml" ;;
-  file) CONTENT_CONFIGS="collector-config/collector-content.yaml" ;;
-esac
+if [ "${GROUPS_MODE}" -eq 1 ]; then
+  # docker-compose.host-ingress-auditd.yml / -content.yml merge these.
+  [ -z "${FABRIC_AUDITD_TOKEN_FILE:-}" ] || CONTENT_CONFIGS="collector-config/collector-production-groups-auditd.yaml"
+  case "${FABRIC_CONTENT_BACKEND:-}" in
+    s3) CONTENT_CONFIGS="${CONTENT_CONFIGS} collector-config/collector-production-groups-content.yaml" ;;
+    file) bad "FABRIC_CONTENT_BACKEND=file is not available with ingress groups; use s3 (server-side encryption, as the Helm profile requires)" ;;
+  esac
+else
+  case "${FABRIC_CONTENT_BACKEND:-}" in
+    s3) CONTENT_CONFIGS="collector-config/collector-content.yaml collector-config/collector-content-s3.yaml collector-config/collector-content-s3-production.yaml" ;;
+    file) CONTENT_CONFIGS="collector-config/collector-content.yaml" ;;
+  esac
+fi
 FLAT_CONFIG="$(yaml_flatten "${COLLECTOR_CONFIG}")"
 for content_config in ${CONTENT_CONFIGS}; do
   if [ -f "${content_config}" ]; then
@@ -471,6 +565,17 @@ if [ -n "${RECEIVERS}" ]; then
   fi
 fi
 
+# Spec 053 §6.1 rule 8: every ingress-group listener uses TLS (fabric-gate
+# refuses a plaintext group listener even on a loopback-published port).
+if [ "${GROUPS_MODE}" -eq 1 ] && [ -n "${RECEIVERS}" ]; then
+  plain_groups=$(printf '%s\n' "${RECEIVERS}" | awk '$4 != "tls" { printf "%s.%s:%s ", $1, $2, $3 }')
+  if [ -n "${plain_groups}" ]; then
+    bad "ingress-group listeners without TLS: ${plain_groups% }; every group listener needs an uncommented tls: mapping with cert_file and key_file (spec 053 §6.1 rule 8)"
+  else
+    ok "every ingress-group listener serves TLS"
+  fi
+fi
+
 tlsdir="${FABRIC_INGRESS_TLS_DIR:-./tls}"
 if receiver_tls_enabled; then
   cert_path=$(host_tls_path "${FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}") || cert_path=""
@@ -517,6 +622,7 @@ fi
 # enabled, or bearer tokens, telemetry and content cross the network in
 # plaintext on that port.
 PUBLISHED_OTLP_PORTS="4317 4318 4319"
+[ "${GROUPS_MODE}" -eq 0 ] || PUBLISHED_OTLP_PORTS="${PUBLISHED_OTLP_PORTS} 4417 4428"
 bind="${FABRIC_BIND_ADDR:-127.0.0.1}"
 case "${bind}" in
   127.*|localhost|::1|\[::1\]) loopback=1 ;;
@@ -553,7 +659,31 @@ source_bound() {
     k[1] == "processors" && k[2] == "fabricguard" && k[3] == "evidence_source_binding" { found = 1 }
     END { exit(found ? 0 : 1) }'
 }
-if source_bound; then
+# group_bound GROUP: fabricguard/GROUP carries its evidence_source_binding.
+group_bound() {
+  printf '%s\n' "${FLAT_CONFIG}" | awk -F '\t' -v id="fabricguard/$1" '
+    { n = split($1, k, "|") }
+    k[1] == "processors" && k[2] == id && k[3] == "evidence_source_binding" { found = 1 }
+    END { exit(found ? 0 : 1) }'
+}
+if [ "${GROUPS_MODE}" -eq 1 ]; then
+  bound_groups="agent ebpf"
+  [ -z "${FABRIC_AUDITD_TOKEN_FILE:-}" ] || bound_groups="${bound_groups} auditd"
+  for group in ${bound_groups}; do
+    if group_bound "${group}"; then
+      ok "ingress group ${group} is bound (fabricguard/${group} evidence_source_binding)"
+    else
+      bad "fabricguard/${group} has no evidence_source_binding; every ingress group binds one source (spec 053 §6.1)"
+    fi
+  done
+  if [ -z "${FABRIC_TENANT_ID:-}" ]; then
+    bad "FABRIC_TENANT_ID unset; every ingress group binds one tenant (spec 053 §6.1)"
+  elif ! matches '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' "${FABRIC_TENANT_ID}"; then
+    bad "FABRIC_TENANT_ID is not a safe tenant id (^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\$)"
+  else
+    ok "bound tenant set"
+  fi
+elif source_bound; then
   if [ -z "${FABRIC_TENANT_ID:-}" ]; then
     bad "FABRIC_TENANT_ID unset; the production profile binds every agent batch to one tenant (spec 049 §7.9)"
   elif ! matches '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' "${FABRIC_TENANT_ID}"; then
@@ -711,7 +841,11 @@ note "INFO" "spec 049 P0-A: agents in node mode are the production profile; they
 
 printf '\n'
 if [ "${fail}" -ne 0 ]; then
-  printf 'Preflight FAILED -- resolve the items above before make up-prod\n' >&2
+  if [ "${GROUPS_MODE}" -eq 1 ]; then
+    printf 'Preflight FAILED -- resolve the items above before make up-prod-groups\n' >&2
+  else
+    printf 'Preflight FAILED -- resolve the items above before make up-prod\n' >&2
+  fi
   exit 1
 fi
 printf 'Preflight checks passed -- runtime certificate/configuration validation still required\n'

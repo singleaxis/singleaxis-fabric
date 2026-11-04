@@ -1,5 +1,6 @@
 {{- $contentFileVolume := include "otel-collector.contentFileVolume" . -}}
 {{- $contentS3Creds := and .Values.content.enabled (eq .Values.content.backend "s3") .Values.content.s3.credentialsSecret.name -}}
+{{- $groups := include "otel-collector.groupMode" . -}}
 apiVersion: apps/v1
 kind: {{ ternary "StatefulSet" "Deployment" .Values.exporter.sendingQueue.persistence.enabled }}
 metadata:
@@ -68,6 +69,9 @@ spec:
           args:
             - --config=/etc/otelcol-fabric/config.yaml
           ports:
+            {{- if $groups }}
+            {{- include "otel-collector.groupPorts" (dict "groups" .Values.receiver.sourceBindings "key" "containerPort") | nindent 12 }}
+            {{- else }}
             - name: otlp-grpc
               containerPort: {{ .Values.service.ports.otlpGrpc }}
               protocol: TCP
@@ -78,6 +82,7 @@ spec:
             - name: otlp-content
               containerPort: {{ .Values.service.ports.otlpContent }}
               protocol: TCP
+            {{- end }}
             {{- end }}
             - name: health
               containerPort: {{ .Values.service.ports.health }}
@@ -109,6 +114,12 @@ spec:
             {{- if .Values.receiver.workloadAuthentication.enabled }}
             - name: workload-auth-token
               mountPath: /etc/fabric/workload-auth
+              readOnly: true
+            {{- end }}
+            {{- range $i, $g := .Values.receiver.sourceBindings }}
+            # Group {{ $g.name }}'s token (spec 053 §6.1): its receivers only.
+            - name: ingress-token-{{ $i }}
+              mountPath: /etc/fabric/ingress/{{ $g.name }}
               readOnly: true
             {{- end }}
             {{- if and .Values.content.enabled .Values.content.encryption.keySecret.name }}
@@ -203,6 +214,17 @@ spec:
                   name: {{ .Values.receiver.workloadAuthentication.tokenSecret.name | quote }}
                   items:
                     - key: {{ .Values.receiver.workloadAuthentication.tokenSecret.key | quote }}
+                      path: token
+        {{- end }}
+        {{- range $i, $g := .Values.receiver.sourceBindings }}
+        - name: ingress-token-{{ $i }}
+          projected:
+            defaultMode: 0440
+            sources:
+              - secret:
+                  name: {{ $g.tokenSecret.name | quote }}
+                  items:
+                    - key: {{ $g.tokenSecret.key | quote }}
                       path: token
         {{- end }}
         {{- if and .Values.content.enabled .Values.content.encryption.keySecret.name }}

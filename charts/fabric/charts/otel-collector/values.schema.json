@@ -133,6 +133,13 @@
             "tokenSecret": {"$ref": "#/definitions/secretKeyReference"}
           }
         },
+        "sourceBindings": {
+          "description": "Static dedicated ingress groups (spec 053 §6.1, spec 056 §7.3.3 (g)); the render-time rules are otel-collector.validateSourceBindings.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {"$ref": "#/definitions/sourceBinding"}
+        },
+        "maxSourceBindings": {"type": "integer", "minimum": 1, "maximum": 256},
         "tls": {
           "type": "object",
           "additionalProperties": false,
@@ -498,6 +505,35 @@
         "name": {"type": "string", "maxLength": 253},
         "certKey": {"type": "string", "minLength": 1},
         "keyKey": {"type": "string", "minLength": 1}
+      }
+    },
+    "sourceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "tenantId", "sourceId", "tokenSecret", "protocols"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,31}$", "not": {"pattern": "^content"}},
+        "kind": {"enum": ["agent", "host.ebpf", "host.auditd"]},
+        "tenantId": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+        "sourceId": {"type": "string", "maxLength": 128, "pattern": "^(?:|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"},
+        "tokenSecret": {"$ref": "#/definitions/secretKeyReference"},
+        "protocols": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "grpc": {"$ref": "#/definitions/port"},
+            "http": {"$ref": "#/definitions/port"}
+          }
+        },
+        "content": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["port"],
+          "properties": {"port": {"$ref": "#/definitions/port"}}
+        },
+        "hostDigests": {"enum": ["omitted", "permitted"]},
+        "ingressFrom": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}}
       }
     },
     "networkPolicyPort": {

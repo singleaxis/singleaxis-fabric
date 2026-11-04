@@ -1,0 +1,46 @@
+# Static dedicated ingress groups (spec 053 §6.1; spec 056 §7.3.3 (h)): an
+# overlay on docker-compose.production.yml that runs the Node with
+# collector-config/collector-production-groups.yaml, one group per source:
+#
+#   agent  gRPC 4317, HTTP 4318   FABRIC_AGENT_SOURCE_ID, FABRIC_INGRESS_TOKEN_FILE
+#   ebpf   gRPC 4417              FABRIC_EBPF_SOURCE_ID, FABRIC_EBPF_TOKEN_FILE
+#                                 (published on FABRIC_EBPF_GRPC_PORT)
+#
+#   make up-prod-groups
+#
+# adds docker-compose.host-ingress-auditd.yml when FABRIC_AUDITD_TOKEN_FILE is
+# set and docker-compose.host-ingress-content.yml when FABRIC_CONTENT_BACKEND=s3
+# (and docker-compose.host-ingress-auditd-content.yml with both), after
+# preflight-prod.sh --groups. Direct `docker compose ... up` bypasses
+# preflight. Token files follow the production overlay's rule: exactly one
+# token, no trailing newline, readable by the image's user and closed to
+# everyone else (sudo chown root:65532 <file> && sudo chmod 0440 <file>), and
+# every group's bytes differ. Receiver TLS is required (FABRIC_INGRESS_TLS_DIR).
+#
+# The eBPF emitter runs on the host (components/host-emitter, production mode)
+# with EMIT_ENDPOINT=<this host>:4417, EMIT_BEARER_TOKEN_FILE holding the ebpf
+# group's token and EMIT_TLS_CA_FILE the CA of the Node's certificate.
+
+secrets:
+  fabric_ebpf_token:
+    file: ${FABRIC_EBPF_TOKEN_FILE:?set FABRIC_EBPF_TOKEN_FILE in .env to the eBPF group token file}
+
+services:
+  fabric-node:
+    command: ["--config=/etc/fabric-node/collector-production-groups.yaml"]
+    environment:
+      # The groups' bindings (spec 053 §6.1): the agents' and the emitter's
+      # source ids as they travel (s-<32 hex>).
+      FABRIC_AGENT_SOURCE_ID: ${FABRIC_AGENT_SOURCE_ID:?set FABRIC_AGENT_SOURCE_ID in .env to the agents' wire source id}
+      FABRIC_EBPF_SOURCE_ID: ${FABRIC_EBPF_SOURCE_ID:?set FABRIC_EBPF_SOURCE_ID in .env to the emitter's source id (fabric-host-emitter print-source-id)}
+    secrets:
+      - fabric_ingress_token
+      - fabric_ebpf_token
+    volumes:
+      - ./collector-config/collector-production-groups.yaml:/etc/fabric-node/collector-production-groups.yaml:ro
+      - ./collector-config/collector-production-groups-auditd.yaml:/etc/fabric-node/collector-production-groups-auditd.yaml:ro
+      - ./collector-config/collector-production-groups-content.yaml:/etc/fabric-node/collector-production-groups-content.yaml:ro
+      - ./collector-config/collector-production-groups-auditd-content.yaml:/etc/fabric-node/collector-production-groups-auditd-content.yaml:ro
+    ports:
+      # The ebpf group's listener, published like 4317/4318 on FABRIC_BIND_ADDR.
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_EBPF_GRPC_PORT:-4417}:4417"

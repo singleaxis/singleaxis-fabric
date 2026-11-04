@@ -1,0 +1,23 @@
+# The auditd group (spec 053 §6.2.8; spec 056 §7.3.3 (h)), with
+# docker-compose.host-ingress.yml: OTLP/HTTP 4428 (the sensor collector
+# exports with otlp_http), FABRIC_AUDITD_SOURCE_ID, FABRIC_AUDITD_TOKEN_FILE,
+# published on FABRIC_AUDITD_HTTP_PORT. `make up-prod-groups` adds it when
+# FABRIC_AUDITD_TOKEN_FILE is set.
+
+secrets:
+  fabric_auditd_token:
+    file: ${FABRIC_AUDITD_TOKEN_FILE:?set FABRIC_AUDITD_TOKEN_FILE in .env to the auditd group token file}
+
+services:
+  fabric-node:
+    command:
+      - --config=/etc/fabric-node/collector-production-groups.yaml
+      - --config=/etc/fabric-node/collector-production-groups-auditd.yaml
+    environment:
+      FABRIC_AUDITD_SOURCE_ID: ${FABRIC_AUDITD_SOURCE_ID:?set FABRIC_AUDITD_SOURCE_ID in .env to the auditd sensor's source id}
+    secrets:
+      - fabric_ingress_token
+      - fabric_ebpf_token
+      - fabric_auditd_token
+    ports:
+      - "${FABRIC_BIND_ADDR:-127.0.0.1}:${FABRIC_AUDITD_HTTP_PORT:-4428}:4428"

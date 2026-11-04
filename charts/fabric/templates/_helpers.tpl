@@ -91,12 +91,19 @@ regulatory certification and not proof that a destination persisted a batch.
 {{- fail "profile shadow-production with workload authentication requires content.allowedTenants to be exactly [tenant.id]" -}}
 {{- end -}}
 {{- end -}}
+{{- else if gt (len ($collector.receiver.sourceBindings | default list)) 0 -}}
+{{- /* Ingress groups (spec 053 §6.1): every group binds a source of this tenant. */ -}}
+{{- range $i, $g := $collector.receiver.sourceBindings -}}
+{{- if ne (toString (index $g "tenantId")) (toString $.Values.tenant.id) -}}
+{{- fail (printf "profile shadow-production requires receiver.sourceBindings[%d].tenantId to match tenant.id" $i) -}}
+{{- end -}}
+{{- end -}}
 {{- else if $collector.receiver.evidenceSourceBinding.enabled -}}
 {{- if ne $collector.receiver.evidenceSourceBinding.tenantId $.Values.tenant.id -}}
 {{- fail "profile shadow-production requires receiver.evidenceSourceBinding.tenantId to match tenant.id" -}}
 {{- end -}}
 {{- else -}}
-{{- fail "profile shadow-production requires receiver.workloadAuthentication.enabled=true or a dedicated evidenceSourceBinding" -}}
+{{- fail "profile shadow-production requires receiver.workloadAuthentication.enabled=true, receiver.sourceBindings or a dedicated evidenceSourceBinding" -}}
 {{- end -}}
 {{- $storage := $collector.exporter.sendingQueue.persistence -}}
 {{- if and (empty $storage.storageClass) (empty $storage.existingClaim) -}}

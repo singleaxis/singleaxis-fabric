@@ -172,6 +172,50 @@ Existing `shadow-production` installs must supply the new digest, workload
 credential/review and storage-review values on upgrade. No placeholder digest,
 shared workload credential, default StorageClass, or invented review is provided.
 
+### Ingress groups and host sensors (`shadow-production-host-ingress`)
+
+[`profiles/shadow-production-host-ingress.yaml`](./profiles/shadow-production-host-ingress.yaml)
+layers on `shadow-production` and replaces the single workload credential
+with static dedicated ingress groups, `otel-collector.receiver.sourceBindings[]`
+(spec 053 §6.1). Each group binds exactly one `(tenantId, sourceId, kind)` to
+its own bearer token, its own listener port(s) and its own
+`fabricguard/<name>` instance, so a batch's identity is fixed by the ingress
+it arrived on, never by a source named in the payload. `kind` is `agent`,
+`host.ebpf` or `host.auditd`; a host group has only a traces pipeline, and its
+guard admits only host records and their markers (spec 053 §6.2.7).
+
+| Field | Rule |
+|---|---|
+| `name` | `^[a-z][a-z0-9-]{0,31}$`, unique, not starting with `content` |
+| `kind`, `tenantId`, `sourceId` | `sourceId` is `s-<32 hex>` (the source id as it travels); `tenantId` equals `tenant.id`; no two groups bind one source |
+| `tokenSecret` | `{name, key}` of an operator-created Secret, a reference no other group uses; mounted at `/etc/fabric/ingress/<name>/token` |
+| `protocols` | `{grpc?, http?}` ports, unique across the Node; an auditd group uses `http` (the sensor collector exports with `otlp_http`) |
+| `content` | `{port}`, agent groups only, with `content.enabled` |
+| `hostDigests` | host groups only: `omitted` (default) or `permitted` |
+| `ingressFrom` | NetworkPolicy peers of this group's ports; default `networkPolicy.ingressFrom` |
+
+At most `receiver.maxSourceBindings` groups (default 64, ceiling 256). A
+non-empty list with `workloadAuthentication` or `evidenceSourceBinding`
+enabled fails the render, as do duplicate names, ports, sources or token
+Secret references; `content.allowedTenants` stays empty, because each content
+group allows exactly its own tenant. Service and container ports are named
+`g<index>-grpc`, `g<index>-http` and `g<index>-content`. fabric-gate checks
+the rendered groups again at start, including that no two tokens hold the
+same bytes. Legacy values (no `sourceBindings`) keep their exact render.
+
+A cluster of N nodes has N `host.ebpf` groups: each node's eBPF emitter is its
+own source (label `<node>/ebpf`) with its own token, provisioned on that node
+only. [`deploy/kubernetes/host-bindings.py`](../../deploy/kubernetes/host-bindings.py)
+writes the `sourceBindings` values for a node list and the per-node
+provisioning directories; the DaemonSet example
+[`deploy/kubernetes/host-emitter-daemonset.yaml`](../../deploy/kubernetes/host-emitter-daemonset.yaml)
+reads them. The chart installs no sensor (spec 056 OD-10): the privileged
+emitter and the auditd sensor collector
+([`deploy/kubernetes/auditd-sensor-collector.yaml`](../../deploy/kubernetes/auditd-sensor-collector.yaml))
+are customer-deployed. More nodes than one Node's groups allow means one Node
+per node pool. A group authenticates its credential, not an individual
+process or the truth of its reports.
+
 ## Namespace and operations notes
 
 - Install into a **dedicated namespace**. `networkPolicy.denyDefault`

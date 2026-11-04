@@ -1,0 +1,82 @@
+# auditd sensor collector (spec 053 §6.2.8; spec 056 §7.3.3 (h)) on a monitored
+# host, separate from the agent and from the Node:
+#
+#   make up-sensor-auditd
+#
+# The Node's image runs collector-config/sensor-auditd.yaml through fabric-gate,
+# whose sensor-collector profile allows exactly the production audit receiver,
+# one traces pipeline and one otlp_http exporter to the Node's auditd group.
+# The receiver tails the host's audit log (read-only; give it to the sensor
+# user with auditd.conf `log_group = 65532`, or point FABRIC_SENSOR_AUDIT_LOG_DIR
+# at a readable copy). Required, in .env or the environment:
+#
+#   FABRIC_TENANT_ID              the agents' tenant
+#   FABRIC_SENSOR_SOURCE_LABEL    <host>/auditd (the Node's FABRIC_AUDITD_SOURCE_ID
+#                                 is s- + its pseudonym under the id key)
+#   FABRIC_SENSOR_HOST_LABEL      the agents' FABRIC_HOST_LABEL on this host
+#   FABRIC_SENSOR_ENDPOINT        https://<node>:4428 (the auditd group)
+#   FABRIC_SENSOR_TOKEN_FILE      the auditd group's token (no trailing newline)
+#   FABRIC_SENSOR_ID_KEY_FILE     the agents' FABRIC_WIRE_ID_KEY bytes, mode 0440
+#                                 or 0400, no trailing newline (printf %s)
+#   FABRIC_SENSOR_STATE_KEY_FILE  the sensor's own state key (32 random bytes or
+#                                 their base64), never shared with another sensor
+#   FABRIC_SENSOR_CA_FILE         the CA of the Node's receiver certificate
+#   FABRIC_SENSOR_STATE_DIR       a host directory, mode 0700, owned by uid 65532:
+#                                 the encrypted epoch state, staging and cursor
+#
+# Secret files are bind mounts with their host owner and mode: chown
+# root:65532 and chmod 0440 (the id key 0440 or 0400).
+
+name: fabric-sensor-auditd
+
+networks:
+  fabric-node:
+    driver: bridge
+
+secrets:
+  fabric_sensor_token:
+    file: ${FABRIC_SENSOR_TOKEN_FILE:?set FABRIC_SENSOR_TOKEN_FILE to the auditd group token file}
+  fabric_id_key:
+    file: ${FABRIC_SENSOR_ID_KEY_FILE:?set FABRIC_SENSOR_ID_KEY_FILE to the shared id key file}
+  fabric_sensor_state_key:
+    file: ${FABRIC_SENSOR_STATE_KEY_FILE:?set FABRIC_SENSOR_STATE_KEY_FILE to the sensor state key file}
+  fabric_sensor_ca:
+    file: ${FABRIC_SENSOR_CA_FILE:?set FABRIC_SENSOR_CA_FILE to the CA of the Node certificate}
+
+services:
+  fabric-sensor-auditd:
+    image: ${FABRIC_NODE_IMAGE:-fabric/node:production}
+    pull_policy: ${FABRIC_NODE_PULL_POLICY:-build}
+    build:
+      context: ../../components/otel-collector-fabric
+      dockerfile: Dockerfile
+    command: ["--config=/etc/fabric-sensor/sensor-auditd.yaml"]
+    environment:
+      FABRIC_TENANT_ID: ${FABRIC_TENANT_ID:?set FABRIC_TENANT_ID to the agents' tenant id}
+      FABRIC_SENSOR_SOURCE_LABEL: ${FABRIC_SENSOR_SOURCE_LABEL:?set FABRIC_SENSOR_SOURCE_LABEL to <host>/auditd}
+      FABRIC_SENSOR_HOST_LABEL: ${FABRIC_SENSOR_HOST_LABEL:?set FABRIC_SENSOR_HOST_LABEL to the agents' FABRIC_HOST_LABEL}
+      FABRIC_SENSOR_ENDPOINT: ${FABRIC_SENSOR_ENDPOINT:?set FABRIC_SENSOR_ENDPOINT to https://<node>:4428}
+    secrets:
+      - fabric_sensor_token
+      - fabric_id_key
+      - fabric_sensor_state_key
+      - fabric_sensor_ca
+    volumes:
+      - ./collector-config/sensor-auditd.yaml:/etc/fabric-sensor/sensor-auditd.yaml:ro
+      - ${FABRIC_SENSOR_AUDIT_LOG_DIR:-/var/log/audit}:/var/log/audit:ro
+      - ${FABRIC_SENSOR_STATE_DIR:?set FABRIC_SENSOR_STATE_DIR to the sensor state directory (0700, uid 65532)}:/var/lib/fabric-sensor/auditd
+    # Read-only observation: no capability, no privilege, no published port.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 30s
+    mem_limit: 512m
+    pids_limit: 128
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks: [fabric-node]

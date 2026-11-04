@@ -1,3 +1,4 @@
+{{- include "otel-collector.validateSourceBindings" . -}}
 {{- include "otel-collector.validateReceiver" . -}}
 {{- include "otel-collector.validateExporter" . -}}
 {{- include "otel-collector.validateDelivery" . -}}
@@ -18,6 +19,9 @@ metadata:
     {{- include "otel-collector.labels" . | nindent 4 }}
 data:
   config.yaml: |
+    {{- if include "otel-collector.groupMode" . }}
+    {{- include "otel-collector.groupConfig" . | nindent 4 }}
+    {{- else }}
     receivers:
       otlp:
         protocols:
@@ -333,3 +337,4 @@ data:
           processors: [memory_limiter]
           exporters: [fabriccontent]
         {{- end }}
+    {{- end }}

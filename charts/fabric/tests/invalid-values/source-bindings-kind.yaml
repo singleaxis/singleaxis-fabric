@@ -1,0 +1,10 @@
+# A group kind is agent, host.ebpf or host.auditd (spec 053 §6.1).
+otel-collector:
+  receiver:
+    sourceBindings:
+      - name: ebpf-0
+        kind: host.other
+        tenantId: tenant-a
+        sourceId: s-00000000000000000000000000000000
+        tokenSecret: {name: fabric-node-host-ingress, key: ebpf-0}
+        protocols: {grpc: 4417}

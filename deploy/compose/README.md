@@ -353,6 +353,55 @@ actually exposes. `otelcol_*` metrics belong to the Collector, not the Python
 agent: monitor `otelcol_receiver_refused_spans` on the Node for admission
 pressure. A healthy Node cannot detect spans lost before they reach it.
 
+## Ingress groups and the auditd sensor collector
+
+Spec 053 §6.1: a Node that serves more than one source gives each its own
+**ingress group**, bound to exactly one `(tenant, source, kind)` by its own
+bearer token, listener and `fabricguard/<group>` instance. A batch's identity
+is the ingress it arrived on, never a source it names, and a host group admits
+only host records (spec 053 §6.2.7).
+
+```bash
+make preflight-prod-groups   # also run by up-prod-groups
+make up-prod-groups
+```
+
+`docker-compose.host-ingress.yml` (an overlay on `docker-compose.production.yml`)
+runs `collector-config/collector-production-groups.yaml`:
+
+| Group | Kind | Listener | Variables |
+|---|---|---|---|
+| `agent` | `agent` | gRPC 4317, HTTP 4318 (content 4319 with `FABRIC_CONTENT_BACKEND=s3`) | `FABRIC_AGENT_SOURCE_ID`, `FABRIC_INGRESS_TOKEN_FILE` |
+| `ebpf` | `host.ebpf` | gRPC 4417 | `FABRIC_EBPF_SOURCE_ID`, `FABRIC_EBPF_TOKEN_FILE`, `FABRIC_EBPF_GRPC_PORT` |
+| `auditd` | `host.auditd` | HTTP 4428 (the sensor collector exports with `otlp_http`) | `FABRIC_AUDITD_SOURCE_ID`, `FABRIC_AUDITD_TOKEN_FILE`, `FABRIC_AUDITD_HTTP_PORT` |
+
+The auditd group is on when `FABRIC_AUDITD_TOKEN_FILE` is set
+(`docker-compose.host-ingress-auditd.yml`, `collector-production-groups-auditd.yaml`);
+the agent's content path with `FABRIC_CONTENT_BACKEND=s3`
+(`docker-compose.host-ingress-content.yml`; the groups profile has no file
+backend). Receiver TLS is required on every group listener. `preflight-prod.sh
+--groups` refuses equal token bytes across groups, an unset source id for an
+enabled group and two groups with one source id (two sensors with one source
+label); fabric-gate checks every group rule again at start. The eBPF emitter
+runs on the host in production mode with `EMIT_ENDPOINT=<host>:4417` and the
+ebpf group's token.
+
+The **auditd sensor collector** runs on a monitored host, separate from the
+agent and the Node: the Node's image with `collector-config/sensor-auditd.yaml`,
+the audit receiver in production mode tailing the host's audit log, and one
+`otlp_http` exporter to the auditd group with that group's token
+(`docker-compose.sensor-auditd.yml`, `make up-sensor-auditd`; its variables are
+listed in that file and in `.env.example`). fabric-gate's sensor-collector
+profile refuses any other component in that process. It reads only; it holds no
+capability and publishes no port.
+
+`./qualify-sensor-auditd.sh` (Linux, Docker) proves the path end to end with
+throwaway credentials: the sensor collector on the checked-in
+`fixtures/sensor-auditd/audit.log`, through the auditd group, to the TLS test
+sink, which must hold authenticated `host.auditd` records, a capture manifest
+and heartbeats of the expected source, and none of the fixture's executable,
+argv, path or peer-address canaries.
+
 ## Honest limitations
 
 This harness is plaintext and unauthenticated. It is for a local trial

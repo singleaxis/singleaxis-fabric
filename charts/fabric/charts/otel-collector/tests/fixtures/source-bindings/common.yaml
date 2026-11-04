@@ -1,0 +1,47 @@
+# Render-only values for test-source-bindings.sh: they complete
+# profiles/shadow-production.yaml + profiles/shadow-production-host-ingress.yaml
+# into the configurations of contracts/capture/v1/fixtures/ingress-groups/
+# (tenant tenant-a, ids keyed with the fixture key fabric-test-id-key-not-a-secret).
+# The references and digests name no live resource.
+tenant:
+  id: tenant-a
+otel-collector:
+  image:
+    digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  exporter:
+    endpoint: https://otlp.example.invalid
+    sendingQueue:
+      persistence:
+        storageClass: fixture-encrypted-storage
+        encryptionAttestationRef: fixture-storage-review
+  content:
+    enabled: true
+    backend: s3
+    # The goldens' memory_limiter (the chart raises it to 768 MiB with content
+    # by default; any value below the container limit is valid).
+    memoryLimiterMiB: 512
+    s3:
+      bucket: acme-fabric-content
+      prefix: fabric/agent/
+      region: eu-west-1
+      sse: aws:kms
+      kmsKeyId: alias/fabric-content
+  networkPolicy:
+    ingressFrom:
+      - namespaceSelector:
+          matchLabels:
+            fabric.singleaxis.ai/agent: "true"
+    exporterEgress:
+      to:
+        - ipBlock:
+            cidr: 203.0.113.10/32
+      ports:
+        - protocol: TCP
+          port: 443
+    contentEgress:
+      to:
+        - ipBlock:
+            cidr: 203.0.113.20/32
+      ports:
+        - protocol: TCP
+          port: 443
