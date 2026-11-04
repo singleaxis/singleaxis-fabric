@@ -7,6 +7,10 @@
 // them as OTLP log records on the logs pipeline — where fabricguard, the
 // durable queue, and the exporter treat them like any other record.
 //
+// In mode: production (spec 053 §6.2.8) it is instead one host source in a
+// customer-deployed sensor collector: it emits host records and source
+// markers as traces through the host-records library, for a Node host group.
+//
 // The receiver only observes; it never enforces, and raw argv is reduced to
 // a SHA-256 at collection so secret-bearing command lines never leave the
 // host boundary.
@@ -30,7 +34,23 @@ func NewFactory() receiver.Factory {
 		component.MustNewType(typeStr),
 		createDefaultConfig,
 		receiver.WithLogs(createLogsReceiver, component.StabilityLevelAlpha),
+		receiver.WithTraces(createTracesReceiver, component.StabilityLevelAlpha),
 	)
+}
+
+// createTracesReceiver is production mode (spec 053 §6.2.8): host records as
+// traces. Local mode refuses a traces pipeline and keeps its logs output.
+func createTracesReceiver(
+	_ context.Context,
+	set receiver.Settings,
+	cfg component.Config,
+	next consumer.Traces,
+) (receiver.Traces, error) {
+	rcfg, ok := cfg.(*Config)
+	if !ok {
+		return nil, fmt.Errorf("audit receiver: expected *Config, got %T", cfg)
+	}
+	return newProductionReceiver(rcfg, set, next)
 }
 
 func createLogsReceiver(
