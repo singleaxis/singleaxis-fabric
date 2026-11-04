@@ -70,6 +70,9 @@ jobs:
           - name: envelope-extension
             # Spec 049 §7.8: the Node's encrypted queue storage wrapper.
             path: components/otel-collector-fabric/extension/fabricenvelopeextension
+          - name: host-records
+            # Spec 056 WP4-07a: the host-records library of both host sensors.
+            path: components/otel-collector-fabric/hostrecords
           - name: host-emitter
             path: components/host-emitter
           - name: fabricctl
@@ -111,6 +114,7 @@ jobs:
           components/otel-collector-fabric/exporter/fabriccontentexporter
           components/otel-collector-fabric/extension/noredirectextension
           components/otel-collector-fabric/extension/fabricenvelopeextension
+          components/otel-collector-fabric/hostrecords
           components/host-emitter
           tools/fabricctl/cmd/fabricctl/release_main.go
           tools/fabricctl/internal/recorder
@@ -142,6 +146,7 @@ jobs:
             components/otel-collector-fabric/exporter/fabriccontentexporter
             components/otel-collector-fabric/extension/noredirectextension
             components/otel-collector-fabric/extension/fabricenvelopeextension
+            components/otel-collector-fabric/hostrecords
             components/host-emitter
             tools/fabricctl
 

@@ -130,6 +130,15 @@ jobs:
           "$(go env GOPATH)/bin/go-licenses" report ./... \
             --ignore github.com/singleaxis/singleaxis-fabric \
             > "${GITHUB_WORKSPACE}/raw/go-host-emitter.csv"
+      - name: Inventory the host-records library
+        # Spec 056 WP4-07a: compiled into the auditd receiver and the eBPF
+        # emitter. Only the library package ships; cmd/hostrecords-replay is
+        # test-only and never built by an image or a release.
+        working-directory: components/otel-collector-fabric/hostrecords
+        run: |
+          "$(go env GOPATH)/bin/go-licenses" report . \
+            --ignore github.com/singleaxis/singleaxis-fabric \
+            > "${GITHUB_WORKSPACE}/raw/go-hostrecords.csv"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: recorder-license-go
@@ -165,6 +174,7 @@ jobs:
             --go 'fabricctl=raw/go-fabricctl.csv' \
             --go 'fabric-gate=raw/go-fabric-gate.csv' \
             --go 'host-emitter=raw/go-host-emitter.csv' \
+            --go 'hostrecords=raw/go-hostrecords.csv' \
             --ignore go.opentelemetry.io/collector/cmd/builder \
             --ignore @singleaxis/fabric \
             --ignore singleaxis-fabric \
