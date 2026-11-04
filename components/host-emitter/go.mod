@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/cilium/ebpf v0.22.0
+	github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/collector/pdata v1.56.0
 	golang.org/x/sys v0.48.0
 	google.golang.org/grpc v1.83.2
@@ -21,3 +22,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+// The host-records library (spec 056 §7.3.3 (b)) is built from this
+// repository; the Docker build context is components/ for that reason.
+replace github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords => ../otel-collector-fabric/hostrecords

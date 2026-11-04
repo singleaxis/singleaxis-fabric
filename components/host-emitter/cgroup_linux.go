@@ -8,6 +8,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -24,4 +25,17 @@ func cgroupIDFromPath(path string) (uint64, error) {
 		return 0, fmt.Errorf("cgroup path %s is not a directory", path)
 	}
 	return st.Ino, nil
+}
+
+// bootTimeSeconds is CLOCK_REALTIME - CLOCK_BOOTTIME in seconds.
+func bootTimeSeconds() *int64 {
+	var boot unix.Timespec
+	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &boot); err != nil {
+		return nil
+	}
+	v := (time.Now().UnixNano() - boot.Nano()) / int64(time.Second)
+	if v < 0 {
+		return nil
+	}
+	return &v
 }

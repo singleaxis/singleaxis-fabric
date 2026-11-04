@@ -15,6 +15,8 @@ func loadBPF(cfg *Config) (*bpfRuntime, error) {
 	return nil, fmt.Errorf("fabric-host-emitter requires Linux (eBPF tracepoints, kernel >= 5.8 with BTF)")
 }
 
-func (rt *bpfRuntime) next() (*event, error)      { return nil, fmt.Errorf("unsupported") }
-func (rt *bpfRuntime) close()                     {}
-func (rt *bpfRuntime) lossCount() (uint64, error) { return 0, fmt.Errorf("unsupported") }
+func (rt *bpfRuntime) next() (*event, error)        { return nil, fmt.Errorf("unsupported") }
+func (rt *bpfRuntime) close()                       {}
+func (rt *bpfRuntime) lossCount() (uint64, error)   { return 0, fmt.Errorf("unsupported") }
+func (rt *bpfRuntime) setRoot(uint64, uint32) error { return fmt.Errorf("unsupported") }
+func (rt *bpfRuntime) deleteRoot(uint64) error      { return fmt.Errorf("unsupported") }

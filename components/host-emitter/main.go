@@ -73,8 +73,8 @@ func envInt64(k string, def int64) int64 {
 }
 
 func loadConfig() *Config {
-	return &Config{
-		Endpoint:        envStr("EMIT_ENDPOINT", "localhost:4317"),
+	cfg := &Config{
+		Endpoint:        os.Getenv("EMIT_ENDPOINT"),
 		BearerTokenFile: envStr("EMIT_BEARER_TOKEN_FILE", ""),
 		Insecure:        envBool("EMIT_INSECURE", false),
 		TLSCAFile:       envStr("EMIT_TLS_CA_FILE", ""),
@@ -90,9 +90,29 @@ func loadConfig() *Config {
 		SpoolDir:        envStr("EMIT_SPOOL_DIR", "/var/lib/fabric-host-emitter"),
 		SpoolMaxBytes:   envInt64("EMIT_SPOOL_MAX_BYTES", 1<<30),
 	}
+	cfg.endpointSet = cfg.Endpoint != ""
+	cfg.loadProductionConfig()
+	// Local mode keeps its historical default endpoint.
+	if !cfg.Production && !cfg.endpointSet && cfg.EndpointFile == "" {
+		cfg.Endpoint = "localhost:4317"
+	}
+	return cfg
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "print-source-id":
+			id, err := printSourceID(os.Getenv("EMIT_SOURCE_LABEL"), os.Getenv("EMIT_ID_KEY_FILE"))
+			if err != nil {
+				log.Fatalf("fabric-host-emitter: %v", err)
+			}
+			fmt.Println(id)
+			return
+		default:
+			log.Fatalf("fabric-host-emitter: unknown subcommand; the only one is print-source-id")
+		}
+	}
 	if err := run(); err != nil {
 		log.Fatalf("fabric-host-emitter: %v", err)
 	}
@@ -102,6 +122,12 @@ func run() error {
 	cfg := loadConfig()
 	if err := cfg.Validate(); err != nil {
 		return err
+	}
+	if err := cfg.resolveEndpoint(); err != nil {
+		return err
+	}
+	if cfg.Production {
+		return runProduction(cfg)
 	}
 	spool, err := openDiskSpool(cfg.SpoolDir, cfg.SpoolMaxBytes)
 	if err != nil {

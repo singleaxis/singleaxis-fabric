@@ -3,9 +3,12 @@
 Passive CO-RE eBPF host sensor for SingleAxis Fabric (spec `031-ebpf-host-emitter`).
 
 Observes `execve`, `connect`, and (optionally) `openat` inside a configured
-cgroup scope and exports them to a Fabric Node as `event_class=audit` log
-records — the same schema the auditd receiver emits, so downstream consumers
-see one shape regardless of collection mechanism.
+cgroup scope and exports them to a Fabric Node. Local mode (the default)
+exports `event_class=audit` log records — the same schema the auditd receiver
+emits, so downstream consumers see one shape regardless of collection
+mechanism. Production mode (`EMIT_PRODUCTION=true`, spec 053 §6.2.9 and spec
+056 §7.3.3 (c)) exports host records as traces through the host-records
+library; see [Production mode](#production-mode).
 
 It is read-only by construction: tracepoints only. No LSM hooks, no packet
 interception, no enforcement — it cannot block or delay the workload.
@@ -33,7 +36,8 @@ privilege and already approved.
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `EMIT_ENDPOINT` | `localhost:4317` | OTLP/gRPC of the Fabric Node |
+| `EMIT_ENDPOINT` | `localhost:4317` (local mode) | OTLP/gRPC of the Fabric Node |
+| `EMIT_ENDPOINT_FILE` | — | file holding one line `host:port`; an alternative to `EMIT_ENDPOINT` (setting both is refused) |
 | `EMIT_CGROUP_PATH` | — | cgroup dir to scope observation to |
 | `EMIT_ALL_HOST` | `false` | explicit opt-in to unscoped collection |
 | `EMIT_EXEC` | `true` | sched_process_exec tracepoint |
@@ -112,11 +116,81 @@ is volatile until a loss record is queued, and activity while the sensor is
 down is unobservable. These gaps must be reconciled against independent
 sources before any run-level completeness claim.
 
+## Production mode
+
+`EMIT_PRODUCTION=true` turns every observed event into a host record
+(`fabric.sensor_event`, 053 §6.2.3) of one host source, staged and sealed by
+the host-records library (`components/otel-collector-fabric/hostrecords`)
+before it is first sent, and exported as OTLP/gRPC traces to the source's
+own ingress group on the Node. Local mode is unchanged.
+
+| Var | Default | Notes |
+|-----|---------|-------|
+| `EMIT_PRODUCTION` | `false` | `true` or `false`; any other value refuses start |
+| `EMIT_TENANT_ID`, `EMIT_SOURCE_LABEL`, `EMIT_HOST_LABEL` | — | required. The source id is the `s-` label pseudonym of the source label (`<node>/ebpf`); the host label is the agents' `FABRIC_HOST_LABEL` |
+| `EMIT_ID_KEY_FILE` | — | required; the agents' `FABRIC_WIRE_ID_KEY` bytes exactly (mode 0400/0440, no trailing newline: write it with `printf %s`) |
+| `EMIT_STATE_KEY_FILE` | — | required; 32 raw bytes or their base64 (mode 0400/0440); seals `epoch.state` and every staged batch |
+| `EMIT_STATE_DIR` | — | required; mode 0700, owned by the emitter, used by no other sensor. `EMIT_SPOOL_DIR` is not used |
+| `EMIT_AGENT_CGROUP_ROOTS` | — | comma-separated cgroup v2 directories (at most 8, each existing at start); each and its descendants are scope `agent` |
+| `EMIT_AGENT_POD_SELECTOR`, `EMIT_NODE_NAME` | — | Kubernetes: `key=value[,key=value]` and `spec.nodeName`. The emitter lists and watches this node's matching pods over HTTPS with the mounted service-account token (read-only `get`, `list`, `watch` on `pods`) and installs each pod's slice as an agent root when it appears (at most 64) |
+| `EMIT_SANDBOX_CGROUP_ROOTS` | — | comma-separated cgroup v2 directories (at most 8); descendants are scope `sandbox` and carry container and pod ids |
+| `EMIT_ALL_HOST` | `false` | every event outside a sandbox root is scope `agent` |
+| `EMIT_DIGESTS` | `omitted` | `permitted` emits executable, argv and path digests (the Node's group must permit them too) |
+| `EMIT_HEARTBEAT_INTERVAL` | `10s` | 1s to 60s |
+
+Production refuses `EMIT_CGROUP_PATH` (an exact cgroup cannot scope a pod;
+use `EMIT_AGENT_CGROUP_ROOTS`), a non-zero `EMIT_DEDUPE_WINDOW` (every event
+keeps its own position), `EMIT_INSECURE=true` to a non-loopback endpoint,
+and a start with no agent root, no pod selector and no `EMIT_ALL_HOST`.
+There is no default endpoint in production.
+
+`fabric-host-emitter print-source-id` prints the `s-` source id of
+`EMIT_SOURCE_LABEL` under `EMIT_ID_KEY_FILE` and exits; the operator puts it
+in the Node's group as `sourceId`.
+
+**Scope.** The BPF program keeps every root in one map (cgroup id to scope,
+at most 256 entries) and walks the task's cgroup ancestors from level 1 down
+to its own cgroup; the deepest root that contains it decides the scope.
+Events under no root are not emitted. A pod root installed after a container
+other than the pod's sandbox container already exists in its slice (or after
+the API server lists one of its containers as created) may have missed
+events: the next heartbeat reports upstream loss `scope_late` with an
+unknown count. API-server errors are retried with backoff and counted in the
+health line; they never remove a root already installed.
+
+**Records.** Each record carries the init-namespace `pid` and `ppid` (thread
+group ids), the process as numbered in its own pid namespace (`ns_pid`), the
+parent's thread-group id in that namespace (`ns_ppid`, 0 when the parent is
+outside it, never the spawning thread's id), the namespace inode (`pid_ns`),
+the group leader's unrounded `start_boottime` (`process_start_ns`), the
+cgroup id and the scope. Sandbox-scope events also carry
+`fabric.execution.sandbox_id` and `fabric.sensor.pod_id`, derived from the
+kernfs names of the event's cgroup and its parent, which the BPF program
+reads at event time, so a container removed right after its exec keeps its
+ids. Every id is keyed by the library; no executable name, raw path, argv or
+peer address leaves the host. `connect` and `openat` are observed at syscall
+entry, so their result is `unknown`.
+
+**Delivery and loss.** Every record and marker (manifest, heartbeat, loss,
+final) is a sealed, staged batch until the Node accepts it in full, and is
+replayed after a restart with the same positions and event ids. Ring-buffer
+and rate-limit drops are upstream loss on the next heartbeat (one heartbeat
+span per reason). An OTLP partial success quarantines the batch, still
+sealed, and declares its positions `span_dropped`. At shutdown the emitter
+stages the final marker and tries for 5 s to deliver what is pending; what
+remains is replayed by the next epoch.
+
 ## Build
 
+The build context is `components/`, because the emitter links the
+host-records library:
+
 ```sh
-docker build -t fabric-host-emitter:local .
+docker build -f components/host-emitter/Dockerfile -t fabric-host-emitter:local components
 ```
+
+`Dockerfile.dockerignore` limits that context to the emitter's sources and
+the library's non-test sources; the library's replay command is not built.
 
 The builder compiles `bpf/emit.bpf.c` with clang via `bpf2go` against the
 vendored `bpf/vmlinux.h` (CO-RE), then links the emitter. `vmlinux.h` is
@@ -129,9 +203,15 @@ CO-RE relocation still requires qualification on each target kernel.
 ## Test
 
 ```sh
-go test ./...              # unit: translation, argv-hash, dedupe, config
-bash e2e-emitter.sh        # live: loads real BPF objects, cross-container exec/connect
+go test ./...                       # unit: translation, config, spool, production pipeline, pod watcher
+bash e2e-emitter.sh                 # live: loads real BPF objects, cross-container exec/connect
+bash e2e-emitter.sh --production    # live, privileged: production scope roots and pid numbering
 ```
+
+`--production` builds the image's builder stage and runs the `e2e`-tagged Go
+tests in a privileged container in the host's pid namespace and cgroup v2
+hierarchy: namespace pids against `/proc` (a child spawned from a second
+thread), a pod-shaped agent root, and a short-lived sandbox container's id.
 
 The e2e runs the emitter privileged on a Linux-capable Docker engine
 (Docker Desktop's VM has BTF), generates a marker exec in a *different*

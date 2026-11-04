@@ -256,14 +256,22 @@ jobs:
         working-directory: components/host-emitter
         run: |
           # The generated emit_bpfel.{go,o} exist only after go generate —
-          # the linux-tagged loader needs them to compile.
+          # the linux-tagged loader needs them to compile. The module links
+          # the host-records library from ../otel-collector-fabric/hostrecords.
           go generate ./...
-          go test ./...
+          go test -race ./...
           go vet ./...
+          go vet -tags e2e ./...
+      - name: Production-mode eBPF e2e (privileged)
+        # Loads the real BPF programs with production scope roots: namespace
+        # pids against /proc, a pod-shaped agent root, a short-lived sandbox
+        # container's id (spec 056 §7.3.2 WP4-07c).
+        run: bash components/host-emitter/e2e-emitter.sh --production
       - name: Build emitter image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
-          context: components/host-emitter
+          # Context components/: the emitter links the host-records library.
+          context: components
           file: components/host-emitter/Dockerfile
           push: false
           load: true
