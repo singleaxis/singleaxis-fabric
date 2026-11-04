@@ -1,0 +1,11 @@
+# BuildKit reads this file for Dockerfile (context components/): only the
+# emitter's sources and the host-records library's sources enter the build.
+*
+!host-emitter/go.mod
+!host-emitter/go.sum
+!host-emitter/*.go
+!host-emitter/bpf
+!otel-collector-fabric/hostrecords
+otel-collector-fabric/hostrecords/cmd
+otel-collector-fabric/hostrecords/testdata
+otel-collector-fabric/hostrecords/**/*_test.go

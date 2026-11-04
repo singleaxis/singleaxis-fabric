@@ -10,6 +10,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/cilium/ebpf"
@@ -22,8 +23,13 @@ import (
 type rawEvent struct {
 	CgroupID           uint64
 	TsNs               uint64
+	StartBoottime      uint64
 	Pid                uint32
 	Ppid               uint32
+	NsPid              uint32
+	NsPpid             uint32
+	PidNS              uint32
+	Scope              uint32
 	Type               uint32
 	Family             uint32
 	Port               uint32
@@ -31,10 +37,21 @@ type rawEvent struct {
 	ArgvLen            uint32
 	ArgvIncomplete     uint32
 	FilenameIncomplete uint32
+	CgroupNames        uint32
+	Reserved           uint32
 	Comm               [16]byte
 	Filename           [240]byte
 	Argv               [384]byte
+	CgroupName         [128]byte
+	CgroupParent       [128]byte
 }
+
+// BPF map keys and values shared with bpf/emit.bpf.c.
+const (
+	cfgLocalCgroup  = 0
+	cfgMode         = 1
+	cfgDefaultScope = 2
+)
 
 // bpfRuntime owns the loaded objects and attached links.
 type bpfRuntime struct {
@@ -43,9 +60,10 @@ type bpfRuntime struct {
 	reader *ringbuf.Reader
 }
 
-// loadBPF loads the CO-RE objects, applies the cgroup filter, and attaches
-// the enabled tracepoints. It fails closed: any missing capability or
-// verifier rejection is a startup error, never partial-silent operation.
+// loadBPF loads the CO-RE objects, applies the cgroup filter (local mode) or
+// the static scope roots (production mode), and attaches the enabled
+// tracepoints. It fails closed: any missing capability or verifier rejection
+// is a startup error, never partial-silent operation.
 func loadBPF(cfg *Config) (*bpfRuntime, error) {
 	if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK, &unix.Rlimit{Cur: unix.RLIM_INFINITY, Max: unix.RLIM_INFINITY}); err != nil {
 		return nil, fmt.Errorf("memlock rlimit: %w", err)
@@ -56,21 +74,27 @@ func loadBPF(cfg *Config) (*bpfRuntime, error) {
 	}
 	rt := &bpfRuntime{objs: objs}
 
-	// Cgroup scope: resolve the configured path to a cgroup id and pin it in
-	// the config map. 0 = unfiltered (explicit all_host opt-in).
-	cgID := uint64(0)
-	if cfg.CgroupPath != "" {
-		id, err := cgroupIDFromPath(cfg.CgroupPath)
-		if err != nil {
+	if cfg.Production {
+		if err := rt.applyProductionScope(cfg); err != nil {
 			objs.Close()
-			return nil, fmt.Errorf("cgroup_filter %q: %w", cfg.CgroupPath, err)
+			return nil, err
 		}
-		cgID = id
-	}
-	key := uint32(0)
-	if err := objs.Cfg.Put(key, cgID); err != nil {
-		objs.Close()
-		return nil, fmt.Errorf("write cgroup filter: %w", err)
+	} else {
+		// Cgroup scope: resolve the configured path to a cgroup id and pin it
+		// in the config map. 0 = unfiltered (explicit all_host opt-in).
+		cgID := uint64(0)
+		if cfg.CgroupPath != "" {
+			id, err := cgroupIDFromPath(cfg.CgroupPath)
+			if err != nil {
+				objs.Close()
+				return nil, fmt.Errorf("cgroup_filter %q: %w", cfg.CgroupPath, err)
+			}
+			cgID = id
+		}
+		if err := objs.Cfg.Put(uint32(cfgLocalCgroup), cgID); err != nil {
+			objs.Close()
+			return nil, fmt.Errorf("write cgroup filter: %w", err)
+		}
 	}
 
 	attach := func(group, name string, prog *ebpf.Program) error {
@@ -106,6 +130,46 @@ func loadBPF(cfg *Config) (*bpfRuntime, error) {
 	}
 	rt.reader = rd
 	return rt, nil
+}
+
+// applyProductionScope installs the static agent and sandbox roots before
+// any tracepoint is attached, then switches the program to root-based scope.
+func (rt *bpfRuntime) applyProductionScope(cfg *Config) error {
+	for _, root := range cfg.staticRoots() {
+		id, err := cgroupIDFromPath(root.path)
+		if err != nil {
+			return fmt.Errorf("scope root %q: %w", root.path, err)
+		}
+		if err := rt.setRoot(id, root.scope); err != nil {
+			return err
+		}
+	}
+	defaultScope := uint64(scopeNone)
+	if cfg.AllHost {
+		defaultScope = scopeAgent
+	}
+	if err := rt.objs.Cfg.Put(uint32(cfgDefaultScope), defaultScope); err != nil {
+		return fmt.Errorf("write default scope: %w", err)
+	}
+	if err := rt.objs.Cfg.Put(uint32(cfgMode), uint64(1)); err != nil {
+		return fmt.Errorf("write production mode: %w", err)
+	}
+	return nil
+}
+
+// setRoot and deleteRoot implement rootTable for the pod scope watcher.
+func (rt *bpfRuntime) setRoot(cgroupID uint64, scope uint32) error {
+	if err := rt.objs.Roots.Put(cgroupID, scope); err != nil {
+		return fmt.Errorf("install scope root: %w", err)
+	}
+	return nil
+}
+
+func (rt *bpfRuntime) deleteRoot(cgroupID uint64) error {
+	if err := rt.objs.Roots.Delete(cgroupID); err != nil && !errors.Is(err, ebpf.ErrKeyNotExist) {
+		return fmt.Errorf("remove scope root: %w", err)
+	}
+	return nil
 }
 
 // next reads one raw event from the ringbuf and converts it to the
@@ -155,6 +219,14 @@ func rawToEvent(r *rawEvent) *event {
 		Port:               r.Port,
 		Addr:               r.Addr,
 		CgroupID:           r.CgroupID,
+		StartBoottime:      r.StartBoottime,
+		NsPid:              r.NsPid,
+		NsPpid:             r.NsPpid,
+		PidNS:              r.PidNS,
+		Scope:              r.Scope,
+		CgroupNamesRead:    r.CgroupNames != 0,
+		CgroupName:         cstr(r.CgroupName[:]),
+		CgroupParentName:   cstr(r.CgroupParent[:]),
 	}
 }
 

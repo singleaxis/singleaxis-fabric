@@ -3,7 +3,9 @@
 
 // Package main implements fabric-host-emitter (spec 031): a passive
 // CO-RE eBPF DaemonSet that observes exec/connect/openat inside a configured
-// cgroup scope and OTLP-exports them as event_class=audit log records.
+// cgroup scope and OTLP-exports them as event_class=audit log records
+// (local mode), or as host records on traces through the host-records
+// library (production mode, spec 053 §6.2.9, spec 056 §7.3.3 (c)).
 //
 // The emitter only observes. It attaches no LSM hooks, drops no packets,
 // and never blocks the workload — it is read-only by construction.
@@ -51,14 +53,51 @@ type Config struct {
 	DedupeWindow    time.Duration
 	SpoolDir        string
 	SpoolMaxBytes   int64
+
+	// EndpointFile names a file holding one line host:port, an alternative
+	// to Endpoint (spec 056 §7.3.3 (c), (n)).
+	EndpointFile string
+
+	// Production selects host records as traces (spec 053 §6.2.9); the
+	// fields below apply to it only (config_production.go).
+	Production         bool
+	TenantID           string
+	SourceLabel        string
+	HostLabel          string
+	IDKeyFile          string
+	StateKeyFile       string
+	StateDir           string
+	AgentCgroupRoots   []string
+	SandboxCgroupRoots []string
+	AgentPodSelector   string
+	NodeName           string
+	Digests            string
+	HeartbeatInterval  time.Duration
+	// CgroupRoot is the cgroup v2 mount the pod watcher resolves pod
+	// slices under (/sys/fs/cgroup).
+	CgroupRoot string
+
+	// endpointSet records whether EMIT_ENDPOINT was given explicitly.
+	endpointSet bool
+	loadErrs    []error
 }
 
 // Validate enforces the safety invariants before any BPF is loaded.
 func (c *Config) Validate() error {
-	if c.Endpoint == "" {
+	if len(c.loadErrs) != 0 {
+		return c.loadErrs[0]
+	}
+	if c.endpointSet && c.EndpointFile != "" {
+		return fmt.Errorf("EMIT_ENDPOINT and EMIT_ENDPOINT_FILE are exclusive; set one")
+	}
+	if c.Production {
+		if err := c.validateProduction(); err != nil {
+			return err
+		}
+	} else if c.Endpoint == "" && c.EndpointFile == "" {
 		return fmt.Errorf("endpoint is required")
 	}
-	if c.CgroupPath == "" && !c.AllHost {
+	if !c.Production && c.CgroupPath == "" && !c.AllHost {
 		return fmt.Errorf("cgroup_path or explicit all_host=true is required — refusing to silently watch the entire host")
 	}
 	if math.IsNaN(c.MaxEventsPerSec) || math.IsInf(c.MaxEventsPerSec, 0) || c.MaxEventsPerSec < 0 {
@@ -70,7 +109,7 @@ func (c *Config) Validate() error {
 	if !c.Exec && !c.Connect && !c.FileAccess {
 		return fmt.Errorf("at least one host observation event type must be enabled")
 	}
-	if c.SpoolDir == "" || c.SpoolMaxBytes <= 0 {
+	if !c.Production && (c.SpoolDir == "" || c.SpoolMaxBytes <= 0) {
 		return fmt.Errorf("spool_dir and positive spool_max_bytes are required")
 	}
 	if (c.TLSCertFile == "") != (c.TLSKeyFile == "") {
@@ -109,6 +148,20 @@ type event struct {
 	Port               uint32
 	Addr               [16]byte
 	CgroupID           uint64
+
+	// Production fields (053 §6.2.3 revisions 3 and 4). StartBoottime is the
+	// group leader's start_boottime; NsPid, NsPpid and PidNS are the pids in
+	// the process's own pid namespace and that namespace's inode; Scope is the
+	// admitting root's scope; the cgroup names are the kernfs names of the
+	// event's cgroup and its parent (sandbox-scope events only).
+	StartBoottime    uint64
+	NsPid            uint32
+	NsPpid           uint32
+	PidNS            uint32
+	Scope            uint32
+	CgroupNamesRead  bool
+	CgroupName       string
+	CgroupParentName string
 }
 
 // bootEpochOffsetNs converts kernel monotonic ns to wall-clock ns. Computed

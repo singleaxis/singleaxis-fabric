@@ -12,7 +12,38 @@
 #   4. Raw argv never crosses — only process.command_args_sha256.
 # This smoke uses privileged all-host mode on a disposable Linux test host;
 # it does not qualify the production capability set or cgroup scoping.
+#
+#   bash components/host-emitter/e2e-emitter.sh --production
+#
+# Production mode (spec 056 §7.3.2 WP4-07c): builds the image's builder stage
+# (context components/) and runs the privileged Go e2e tests against the
+# real BPF programs with production scope roots, in the host's pid
+# namespace and cgroup v2 hierarchy:
+#   TestNamespacePidsMatchProc  ns_pid, ns_ppid (child spawned from a second
+#                               thread), pid_ns and start_boottime vs /proc
+#   TestAgentRootPodShape       a pod-shaped agent root with two container
+#                               scopes created at run time; a sibling is not
+#                               emitted
+#   TestSandboxRootScope        a short-lived container cgroup removed before
+#                               user space reads the event keeps its id
 set -euo pipefail
+
+if [ "${1:-}" = "--production" ]; then
+  ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+  BUILD_IMG="${BUILD_IMG:-fabric-host-emitter-e2e:build}"
+  echo "==> building the emitter's builder stage (context components/)"
+  docker build --target builder -f "$ROOT/components/host-emitter/Dockerfile" \
+    -t "$BUILD_IMG" "$ROOT/components"
+  echo "==> running the production e2e tests (privileged, host pid namespace)"
+  exec docker run --rm --privileged --pid=host --cgroupns=host --user 0 \
+    -v /sys/fs/cgroup:/sys/fs/cgroup \
+    -v /sys/kernel/btf:/sys/kernel/btf:ro \
+    -v /sys/kernel/tracing:/sys/kernel/tracing \
+    -v /sys/kernel/debug:/sys/kernel/debug \
+    -w /src/host-emitter "$BUILD_IMG" \
+    go test -tags e2e -count=1 -v \
+      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope)$' .
+fi
 
 EMIT_IMG="${EMIT_IMG:-fabric-host-emitter:local}"
 COL_IMG="${COL_IMG:-fabric-otelcol:local}"

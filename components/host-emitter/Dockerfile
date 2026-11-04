@@ -2,6 +2,12 @@
 # The builder compiles the BPF program with clang via bpf2go, then builds the
 # emitter; the runtime is distroless and carries only the binary.
 #
+# Build context: components/ (the emitter links the host-records library,
+# components/otel-collector-fabric/hostrecords, spec 056 §7.3.3 (b)):
+#   docker build -f components/host-emitter/Dockerfile components
+# Dockerfile.dockerignore limits the context to the emitter and the library's
+# sources; the library's test-only replay command is never copied or built.
+#
 # Privilege: the running container needs CAP_BPF+CAP_PERFMON (kernel >=5.8) or
 # --privileged, hostPID for process correlation, and read-only mounts for
 # /sys/kernel/btf, /sys/fs/cgroup, /sys/kernel/debug.
@@ -25,14 +31,17 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends clang llvm libbpf-dev bpftool \
     && rm -rf /var/lib/apt/lists/*
 
+# go.mod replaces the library with ../otel-collector-fabric/hostrecords.
 WORKDIR /src
-COPY go.mod go.sum ./
+COPY otel-collector-fabric/hostrecords ./otel-collector-fabric/hostrecords
+WORKDIR /src/host-emitter
+COPY host-emitter/go.mod host-emitter/go.sum ./
 RUN go mod download
 
 # gen.sh maps the build arch to the correct __TARGET_ARCH_* define itself.
 ARG TARGETARCH
-COPY bpf ./bpf
-COPY *.go ./
+COPY host-emitter/bpf ./bpf
+COPY host-emitter/*.go ./
 RUN chmod +x bpf/gen.sh \
     && go generate ./... \
     && CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH:-arm64}" go build -trimpath -o /out/fabric-host-emitter . \

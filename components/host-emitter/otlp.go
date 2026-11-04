@@ -12,8 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
+	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,6 +28,7 @@ import (
 type exporter struct {
 	conn   *grpc.ClientConn
 	client plogotlp.GRPCClient
+	traces ptraceotlp.GRPCClient
 	token  string
 }
 
@@ -72,7 +75,7 @@ func newExporter(ctx context.Context, cfg *Config) (*exporter, error) {
 	if err != nil {
 		return nil, fmt.Errorf("otlp dial %s: %w", cfg.Endpoint, err)
 	}
-	e := &exporter{conn: conn, client: plogotlp.NewGRPCClient(conn)}
+	e := &exporter{conn: conn, client: plogotlp.NewGRPCClient(conn), traces: ptraceotlp.NewGRPCClient(conn)}
 	if cfg.BearerTokenFile != "" {
 		tok, err := os.ReadFile(cfg.BearerTokenFile)
 		if err != nil {
@@ -109,6 +112,32 @@ func (e *exporter) send(ctx context.Context, records []plog.LogRecord) error {
 		return err
 	}
 	return checkExportResponse(resp, len(records))
+}
+
+// sendBatch exports one staged host-records batch (production mode).
+func (e *exporter) sendBatch(ctx context.Context, b *hostrecords.Batch) error {
+	td := b.Traces()
+	spans := td.SpanCount()
+	if spans == 0 {
+		return nil
+	}
+	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if e.token != "" {
+		callCtx = metadata.AppendToOutgoingContext(callCtx, "authorization", "Bearer "+e.token)
+	}
+	resp, err := e.traces.Export(callCtx, ptraceotlp.NewExportRequestFromTraces(td))
+	if err != nil {
+		return err
+	}
+	return checkTraceResponse(resp, spans)
+}
+
+func checkTraceResponse(resp ptraceotlp.ExportResponse, spanCount int) error {
+	if rejected := resp.PartialSuccess().RejectedSpans(); rejected != 0 {
+		return &partialExportError{rejected: rejected, total: spanCount}
+	}
+	return nil
 }
 
 func checkExportResponse(resp plogotlp.ExportResponse, recordCount int) error {
