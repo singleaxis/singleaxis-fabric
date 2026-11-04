@@ -49,5 +49,24 @@ expect_failure "non-boolean collector toggle" "otelCollector" \
   "${chart_dir}" --values "${script_dir}/invalid-values/umbrella-toggle-type.yaml"
 expect_failure "misspelled umbrella key" "otelColletor" \
   "${chart_dir}" --values "${script_dir}/invalid-values/umbrella-unknown-key.yaml"
+# receiver.sourceBindings[] (spec 053 §6.1, spec 056 §7.3.3 (g)); the
+# render-time rules are in charts/otel-collector/tests/test-source-bindings.sh.
+expect_failure "inline group credential" "tokenValue" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/source-bindings-unknown-key.yaml"
+expect_failure "unknown group kind" "sourceBindings" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/source-bindings-kind.yaml"
+expect_failure "content-prefixed group name" "sourceBindings" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/source-bindings-content-name.yaml"
+expect_failure "group port out of range" "sourceBindings" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/source-bindings-port.yaml"
+expect_failure "group without a protocol" "sourceBindings" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/source-bindings-no-protocol.yaml"
+expect_failure "group ceiling above 256" "maxSourceBindings" \
+  "${chart_dir}" --values "${script_dir}/invalid-values/source-bindings-ceiling.yaml"
+helm template host-ingress "${chart_dir}" \
+  --values "${chart_dir}/profiles/shadow-production.yaml" \
+  --values "${chart_dir}/profiles/shadow-production-host-ingress.yaml" \
+  --values "${chart_dir}/charts/otel-collector/tests/fixtures/source-bindings/common.yaml" \
+  --values "${chart_dir}/charts/otel-collector/tests/fixtures/source-bindings/agent-ebpf-three-nodes.yaml" >/dev/null
 
 printf 'PASS: Fabric Node and Collector values schemas\n'

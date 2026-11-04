@@ -1,0 +1,211 @@
+# auditd sensor collector DaemonSet (spec 053 §6.2.8; spec 056 §7.3.3 (d), (f),
+# (n)): the Node's collector image, run through fabric-gate's sensor-collector
+# profile, reading each node's audit log and delivering host records to that
+# node's own host.auditd ingress group on the Node.
+#
+# A customer-deployed example, never part of the Helm chart (spec 056 OD-10),
+# and a template to qualify, not a ready install: replace the image digest and
+# FABRIC_TENANT_ID, run auditd on every selected node (audit rules tagged
+# -k fabric), provision each node, then test the exact manifest you apply.
+#
+# One source per node: label $(NODE_NAME)/auditd, its own token, state key and
+# group port. The Node's values get one host.auditd group per node, with an
+# http port (the sensor exports with otlp_http), its sourceId (s- + the label's
+# pseudonym under the shared id key) and its own token Secret key. Copy each
+# node's files to that node only:
+#
+#   /etc/fabric-auditd-sensor/        0700, owned by root
+#     token          0400   the node group's bearer token
+#     state_key      0400   this sensor's state key (32 random bytes or base64)
+#     endpoint.yaml  0400   the node's group, merged as a second --config:
+#                             exporters:
+#                               otlp_http/node:
+#                                 endpoint: https://<node service>:<port>
+#   /var/lib/fabric-auditd-sensor/    0700, owned by root, on encrypted storage:
+#                           the encrypted epoch state, staging and cursor
+#
+# A single Secret holding every node's token is not used: a sensor holding
+# another node's credential could present that node's records. A node whose
+# directories are missing fails to start, visibly. The id key (the agents'
+# FABRIC_WIRE_ID_KEY bytes, no trailing newline) comes from the Secret
+# fabric-wire-id-key; the client certificate (the production Node verifies
+# client certificates on every listener) and the Node's CA from the Secret
+# fabric-auditd-sensor-tls (ca.crt, tls.crt, tls.key).
+#
+# It only reads: the host's audit log through a read-only hostPath (logfile
+# mode). It installs no audit rule, holds no capability, shares no host
+# namespace, and never alters, blocks or delays a monitored process.
+#
+# One List document (kubectl apply -f takes it): the objects are its items.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: fabric-auditd-sensor-config
+      namespace: fabric-system
+      labels:
+        app.kubernetes.io/name: fabric-auditd-sensor
+    data:
+      sensor-auditd.yaml: |
+        extensions:
+          health_check:
+            endpoint: 0.0.0.0:13133
+          # Spec 048 H1: never follow a redirect with the token.
+          noredirect: {}
+          bearertokenauth/node:
+            filename: /etc/fabric-auditd-sensor/token
+        receivers:
+          audit:
+            source: logfile
+            log_path: /var/log/audit/audit.log
+            rule_key: fabric
+            exec: true
+            connect: true
+            file_access: false
+            mode: production
+            production:
+              tenant_id: ${env:FABRIC_TENANT_ID}
+              source_label: ${env:FABRIC_SENSOR_SOURCE_LABEL}
+              host_label: ${env:FABRIC_SENSOR_HOST_LABEL}
+              id_key_file: /var/run/secrets/fabric-id-key/id_key
+              state_key_file: /etc/fabric-auditd-sensor/state_key
+              state_dir: /var/lib/fabric-auditd-sensor
+              digests: omitted
+              heartbeat_interval: 10s
+        processors:
+          memory_limiter:
+            check_interval: 1s
+            limit_mib: 256
+          batch:
+            timeout: 1s
+            send_batch_size: 512
+        exporters:
+          otlp_http/node:
+            # Set per node by /etc/fabric-auditd-sensor/endpoint.yaml.
+            endpoint: https://fabric-otel-collector.fabric-system.svc.cluster.local:4428
+            timeout: 30s
+            auth:
+              authenticator: bearertokenauth/node
+            middlewares:
+              - id: noredirect
+            tls:
+              insecure: false
+              insecure_skip_verify: false
+              ca_file: /var/run/secrets/fabric/ca.crt
+              cert_file: /var/run/secrets/fabric/tls.crt
+              key_file: /var/run/secrets/fabric/tls.key
+            retry_on_failure:
+              enabled: true
+              initial_interval: 1s
+              max_interval: 30s
+              max_elapsed_time: 0s
+        service:
+          extensions: [health_check, noredirect, bearertokenauth/node]
+          pipelines:
+            traces:
+              receivers: [audit]
+              processors: [memory_limiter, batch]
+              exporters: [otlp_http/node]
+          telemetry:
+            logs:
+              level: info
+  - apiVersion: apps/v1
+    kind: DaemonSet
+    metadata:
+      name: fabric-auditd-sensor
+      namespace: fabric-system
+      labels:
+        app.kubernetes.io/name: fabric-auditd-sensor
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: fabric-auditd-sensor
+      updateStrategy:
+        type: RollingUpdate
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: fabric-auditd-sensor
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          hostPID: false
+          hostNetwork: false
+          # Select the nodes that run auditd with the fabric rules, e.g.:
+          #   nodeSelector:
+          #     fabric.singleaxis.ai/auditd: "true"
+          containers:
+            - name: sensor
+              # A zero digest intentionally cannot pull until an approved release
+              # digest of the Fabric Node image is substituted.
+              image: ghcr.io/singleaxis/fabric-otelcol@sha256:0000000000000000000000000000000000000000000000000000000000000000
+              imagePullPolicy: IfNotPresent
+              args:
+                - --config=/etc/fabric-auditd-sensor-config/sensor-auditd.yaml
+                - --config=/etc/fabric-auditd-sensor/endpoint.yaml
+              env:
+                - name: NODE_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: spec.nodeName
+                - name: FABRIC_TENANT_ID
+                  value: ""        # tenant.id of the Node
+                - name: FABRIC_SENSOR_SOURCE_LABEL
+                  value: "$(NODE_NAME)/auditd"
+                # The agents' FABRIC_HOST_LABEL on this node.
+                - name: FABRIC_SENSOR_HOST_LABEL
+                  value: "$(NODE_NAME)"
+              securityContext:
+                # Root without capabilities: the audit log is root-owned 0600 (or
+                # give it to group 65532 with auditd.conf log_group and run as 65532).
+                runAsUser: 0
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: config
+                  mountPath: /etc/fabric-auditd-sensor-config
+                  readOnly: true
+                - name: audit-log
+                  mountPath: /var/log/audit
+                  readOnly: true
+                - name: node-provisioning
+                  mountPath: /etc/fabric-auditd-sensor
+                  readOnly: true
+                - name: sensor-state
+                  mountPath: /var/lib/fabric-auditd-sensor
+                # subPath: the file itself (a Secret volume's entries are symlinks).
+                - name: id-key
+                  mountPath: /var/run/secrets/fabric-id-key/id_key
+                  subPath: id_key
+                  readOnly: true
+                - name: sensor-tls
+                  mountPath: /var/run/secrets/fabric
+                  readOnly: true
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits:   { cpu: 500m, memory: 512Mi }
+          volumes:
+            - name: config
+              configMap:
+                name: fabric-auditd-sensor-config
+            - name: audit-log
+              hostPath: { path: /var/log/audit, type: Directory }
+            - name: node-provisioning
+              hostPath: { path: /etc/fabric-auditd-sensor, type: Directory }
+            - name: sensor-state
+              hostPath: { path: /var/lib/fabric-auditd-sensor, type: Directory }
+            - name: id-key
+              secret:
+                secretName: fabric-wire-id-key
+                defaultMode: 0400
+                items:
+                  - key: id_key
+                    path: id_key
+            - name: sensor-tls
+              secret:
+                secretName: fabric-auditd-sensor-tls
+                defaultMode: 0400

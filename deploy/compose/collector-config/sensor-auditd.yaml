@@ -1,0 +1,91 @@
+# auditd sensor collector (spec 053 §6.2.8; spec 056 §7.3.3 (d), (f), (h)).
+#
+# A customer-deployed collector on the monitored host, separate from the agent
+# and from the Node: the audit receiver in production mode turns audit events
+# into host records (records-class spans, source `<host>/auditd`) and one
+# otlp_http exporter delivers them to the Node's auditd group with that
+# group's own bearer token. fabric-gate's sensor-collector profile refuses any
+# other receiver, exporter, processor or pipeline in this process.
+#
+# It only reads: the audit log (logfile mode, the default here) or the kernel
+# audit multicast socket (netlink mode, CAP_AUDIT_READ). It never installs
+# audit rules, blocks or delays a monitored process. Production records carry
+# no executable name, argv, path or raw peer address; executable, argv and
+# path digests need digests: permitted here and host_digests: permitted on the
+# Node's auditd group.
+#
+# docker-compose.sensor-auditd.yml supplies the files: the client token, the
+# shared id key (the agents' FABRIC_WIRE_ID_KEY bytes, written with printf %s)
+# and the sensor's own state key as Compose secrets, the Node's CA, and the
+# state directory (0700, owned by the sensor user).
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  # Spec 048 H1: never follow a redirect with the token.
+  noredirect: {}
+  # Client side: the auditd group's token, read from a file.
+  bearertokenauth/node:
+    filename: /run/secrets/fabric_sensor_token
+
+receivers:
+  audit:
+    # logfile tails the host's audit.log (mounted read-only); netlink reads the
+    # audit multicast socket instead (CAP_AUDIT_READ, host network namespace).
+    source: logfile
+    log_path: /var/log/audit/audit.log
+    rule_key: fabric
+    exec: true
+    connect: true
+    file_access: false
+    mode: production
+    production:
+      tenant_id: ${env:FABRIC_TENANT_ID}
+      # The source label (<host>/auditd) and the agents' FABRIC_HOST_LABEL on
+      # this host. The Node's group binds s- + the label's pseudonym under
+      # the id key (FABRIC_AUDITD_SOURCE_ID there).
+      source_label: ${env:FABRIC_SENSOR_SOURCE_LABEL}
+      host_label: ${env:FABRIC_SENSOR_HOST_LABEL}
+      id_key_file: /run/secrets/fabric_id_key
+      state_key_file: /run/secrets/fabric_sensor_state_key
+      state_dir: /var/lib/fabric-sensor/auditd
+      digests: omitted
+      heartbeat_interval: 10s
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  batch:
+    timeout: 1s
+    send_batch_size: 512
+
+exporters:
+  otlp_http/node:
+    # The Node's auditd group, https://<node>:4428 (FABRIC_AUDITD_HTTP_PORT).
+    endpoint: ${env:FABRIC_SENSOR_ENDPOINT}
+    timeout: 30s
+    auth:
+      authenticator: bearertokenauth/node
+    middlewares:
+      - id: noredirect
+    tls:
+      insecure: false
+      insecure_skip_verify: false
+      ca_file: /run/secrets/fabric_sensor_ca
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 0s
+
+service:
+  extensions: [health_check, noredirect, bearertokenauth/node]
+  pipelines:
+    traces:
+      receivers: [audit]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/node]
+  telemetry:
+    logs:
+      level: info

@@ -304,7 +304,13 @@ Diagnostics name the field and index only, never a configured value.
 {{- if not $np.enabled -}}
 {{- fail "networkPolicy.requireExplicitIngress=true requires networkPolicy.enabled=true" -}}
 {{- end -}}
-{{- if not $hasIngressPeers -}}
+{{- if include "otel-collector.groupMode" . -}}
+{{- range $i, $g := .Values.receiver.sourceBindings -}}
+{{- if not (gt (len (ternary (index $g "ingressFrom" | default list) $np.ingressFrom (hasKey $g "ingressFrom"))) 0) -}}
+{{- fail (printf "networkPolicy.requireExplicitIngress=true requires ingress peers for receiver.sourceBindings[%d]: its own ingressFrom or networkPolicy.ingressFrom" $i) -}}
+{{- end -}}
+{{- end -}}
+{{- else if not $hasIngressPeers -}}
 {{- fail "networkPolicy.requireExplicitIngress=true requires an operator-supplied networkPolicy.ingressFrom peer" -}}
 {{- end -}}
 {{- end -}}
@@ -512,7 +518,12 @@ a profile that requires encryption.
    rules on the rendered config; failing here keeps the render honest. */ -}}
 {{- if eq .Values.fabric.profile "production" -}}
 {{- $r := .Values.receiver -}}
-{{- if $r.workloadAuthentication.enabled -}}
+{{- $groups := include "otel-collector.groupMode" . -}}
+{{- if $groups -}}
+{{- /* Ingress groups (spec 053 §6.1): every group's fabricguard and
+   fabriccontent instance carries its own binding; validateSourceBindings
+   checks them. */ -}}
+{{- else if $r.workloadAuthentication.enabled -}}
 {{- $sourceId := $r.workloadAuthentication.sourceId | toString -}}
 {{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" $sourceId) -}}
 {{- fail "fabric.profile=production requires receiver.workloadAuthentication.sourceId: the agents' source id as it travels (s-<32 hex> under pseudonymous labels); every batch is bound to it (spec 049 §7.9)" -}}
@@ -527,7 +538,7 @@ a profile that requires encryption.
 {{- fail "fabric.profile=production rejects unauthenticated sources: set receiver.workloadAuthentication.enabled=true (with sourceId) or a dedicated evidenceSourceBinding (spec 049 §7.9)" -}}
 {{- end -}}
 {{- if .Values.content.enabled -}}
-{{- if not .Values.receiver.workloadAuthentication.enabled -}}
+{{- if not (or $groups .Values.receiver.workloadAuthentication.enabled) -}}
 {{- fail "fabric.profile=production with content.enabled=true requires receiver.workloadAuthentication (the bound content ingress)" -}}
 {{- end -}}
 {{- if not .Values.content.encryption.keySecret.name -}}
@@ -539,7 +550,7 @@ a profile that requires encryption.
 {{- if .Values.content.allowMultipleTenants -}}
 {{- fail "fabric.profile=production binds content to one tenant: content.allowMultipleTenants must be false" -}}
 {{- end -}}
-{{- if ne (toString (first .Values.content.allowedTenants)) (toString .Values.receiver.workloadAuthentication.tenantId) -}}
+{{- if and (not $groups) (ne (toString (first .Values.content.allowedTenants)) (toString .Values.receiver.workloadAuthentication.tenantId)) -}}
 {{- fail "fabric.profile=production requires content.allowedTenants to be exactly [receiver.workloadAuthentication.tenantId]" -}}
 {{- end -}}
 {{- end -}}
@@ -550,7 +561,10 @@ a profile that requires encryption.
 {{- $c := .Values.content -}}
 {{- if $c.enabled -}}
 {{- $tenantRe := "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$" -}}
-{{- if eq (len $c.allowedTenants) 0 -}}
+{{- if include "otel-collector.groupMode" . -}}
+{{- /* Ingress groups: each fabriccontent/<group> allows exactly its group's
+   tenantId (validateSourceBindings refuses allowedTenants). */ -}}
+{{- else if eq (len $c.allowedTenants) 0 -}}
 {{- fail "content.enabled=true requires content.allowedTenants: name every FABRIC_TENANT_ID the Node may write; an empty list would accept no content and is refused" -}}
 {{- end -}}
 {{- range $i, $tenant := $c.allowedTenants -}}

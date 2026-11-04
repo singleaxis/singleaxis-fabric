@@ -37,6 +37,18 @@ MERGES = [
         "collector-content-s3.yaml",
         "collector-content-s3-production.yaml",
     ),
+    # Spec 053 §6.1: the ingress-group Node (docker-compose.host-ingress*.yml)
+    # and the auditd sensor collector (docker-compose.sensor-auditd.yml).
+    ("collector-production-groups.yaml",),
+    ("collector-production-groups.yaml", "collector-production-groups-auditd.yaml"),
+    ("collector-production-groups.yaml", "collector-production-groups-content.yaml"),
+    (
+        "collector-production-groups.yaml",
+        "collector-production-groups-auditd.yaml",
+        "collector-production-groups-content.yaml",
+        "collector-production-groups-auditd-content.yaml",
+    ),
+    ("sensor-auditd.yaml",),
 ]
 
 

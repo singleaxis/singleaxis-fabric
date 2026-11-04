@@ -1,0 +1,6 @@
+# service.extensions for the auditd group with the agent's content path,
+# merged last when both are enabled (docker-compose.host-ingress-auditd-content.yml):
+# confmap replaces lists, so neither overlay alone can name the other's
+# extensions.
+service:
+  extensions: [health_check, noredirect, file_storage/fabric, bearertokenauth/agent, bearertokenauth/ebpf, bearertokenauth/auditd, file_storage/fabric_content_agent, fabricenvelope/fabric_content_agent]

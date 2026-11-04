@@ -16,14 +16,38 @@ endif
 # Local trial with a local S3-compatible content store (SSE-S3), spec 048.
 S3_LOCAL_FILES := -f docker-compose.yml -f docker-compose.s3-local.yml
 
+# Static dedicated ingress groups (spec 053 §6.1, spec 056 §7.3.3 (h)):
+# `make up-prod-groups` runs the production overlay with one group per source
+# (agent and ebpf; auditd when FABRIC_AUDITD_TOKEN_FILE is set; the agent's
+# content path when FABRIC_CONTENT_BACKEND=s3), after preflight-prod.sh --groups.
+env_value = $(shell sed -n 's/^$(1)=//p' .env 2>/dev/null | tail -n 1 | tr -d "\"'")
+FABRIC_AUDITD_TOKEN_FILE ?= $(call env_value,FABRIC_AUDITD_TOKEN_FILE)
+FABRIC_AGENT_SOURCE_ID ?= $(call env_value,FABRIC_AGENT_SOURCE_ID)
+GROUP_FILES := -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.host-ingress.yml
+ifneq ($(FABRIC_AUDITD_TOKEN_FILE),)
+GROUP_FILES += -f docker-compose.host-ingress-auditd.yml
+endif
+ifeq ($(FABRIC_CONTENT_BACKEND),s3)
+GROUP_FILES += -f docker-compose.host-ingress-content.yml
+ifneq ($(FABRIC_AUDITD_TOKEN_FILE),)
+GROUP_FILES += -f docker-compose.host-ingress-auditd-content.yml
+endif
+endif
+# docker-compose.production.yml requires FABRIC_SOURCE_ID (its single binding);
+# with groups the agent group's id is FABRIC_AGENT_SOURCE_ID, so pass it on.
+GROUP_ENV := FABRIC_SOURCE_ID="$${FABRIC_SOURCE_ID:-$(FABRIC_AGENT_SOURCE_ID)}"
+# The auditd sensor collector on a monitored host (docker-compose.sensor-auditd.yml).
+SENSOR_FILES := -f docker-compose.sensor-auditd.yml
+
 # Resolve a service's published host:port, normalizing wildcard binds
 # (0.0.0.0 / [::]) to loopback. Usage: $(call port_for,<service>,<port>)
 port_for = $(shell $(COMPOSE) port $(1) $(2) 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')
 
 # Where `make export-spans` copies the controlled sink's span requests.
 OUT ?= $(CURDIR)/fabric-spans
+comma := ,
 
-.PHONY: up down reset logs status build smoke qualify export-spans up-s3-local down-s3-local reset-s3-local up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod help
+.PHONY: up down reset logs status build smoke qualify export-spans up-s3-local down-s3-local reset-s3-local up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod preflight-prod-groups up-prod-groups down-prod-groups logs-prod-groups up-sensor-auditd down-sensor-auditd logs-sensor-auditd qualify-sensor-auditd help
 
 up: ## Build and start Fabric Node plus the controlled sink.
 	$(COMPOSE) up -d --build --wait
@@ -108,6 +132,39 @@ down-prod: ## Stop the production overlay while keeping the queue volume.
 
 logs-prod: ## Tail production overlay logs; use ARGS="fabric-node".
 	$(COMPOSE) $(PROD_FILES) logs -f $(ARGS)
+
+# --- Ingress groups and the auditd sensor collector --------------------------
+# Requires .env as for up-prod, plus FABRIC_AGENT_SOURCE_ID, FABRIC_EBPF_SOURCE_ID
+# and FABRIC_EBPF_TOKEN_FILE (and FABRIC_AUDITD_SOURCE_ID with
+# FABRIC_AUDITD_TOKEN_FILE for the auditd group), and receiver TLS in
+# FABRIC_INGRESS_TLS_DIR.
+
+preflight-prod-groups: ## Check env/secrets/TLS readiness of the ingress-group Node.
+	@chmod +x preflight-prod.sh 2>/dev/null || true
+	./preflight-prod.sh --groups
+
+up-prod-groups: preflight-prod-groups ## Start the production Node with one ingress group per source. Runs preflight first.
+	$(GROUP_ENV) $(COMPOSE) $(GROUP_FILES) up -d --wait
+	@echo "Ingress groups: agent 4317/4318, ebpf $${FABRIC_EBPF_GRPC_PORT:-4417}$(if $(FABRIC_AUDITD_TOKEN_FILE),$(comma) auditd $${FABRIC_AUDITD_HTTP_PORT:-4428}) (TLS and each group's own token required)"
+
+down-prod-groups: ## Stop the ingress-group Node while keeping the queue volume.
+	$(GROUP_ENV) $(COMPOSE) $(GROUP_FILES) down
+
+logs-prod-groups: ## Tail ingress-group Node logs; use ARGS="fabric-node".
+	$(GROUP_ENV) $(COMPOSE) $(GROUP_FILES) logs -f $(ARGS)
+
+up-sensor-auditd: ## Start the auditd sensor collector (production mode) toward the Node's auditd group.
+	$(COMPOSE) $(SENSOR_FILES) up -d --wait
+
+down-sensor-auditd: ## Stop the auditd sensor collector; its state directory is kept.
+	$(COMPOSE) $(SENSOR_FILES) down
+
+logs-sensor-auditd: ## Tail the auditd sensor collector's logs.
+	$(COMPOSE) $(SENSOR_FILES) logs -f $(ARGS)
+
+qualify-sensor-auditd: ## Linux: sensor collector on a fixture audit.log -> auditd group -> TLS sink.
+	@chmod +x qualify-sensor-auditd.sh 2>/dev/null || true
+	./qualify-sensor-auditd.sh
 
 help:
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
