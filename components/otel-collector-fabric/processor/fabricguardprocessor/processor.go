@@ -42,6 +42,13 @@ type guardStats struct {
 	aggregateCapped      atomic.Uint64
 	unboundSpanDropped   atomic.Uint64
 	duplicateKeyRejected atomic.Uint64
+	// Host admission (spec 053 §6.2.7) and the agent-side host refusal.
+	hostBatchRefused     atomic.Uint64
+	hostLogDropped       atomic.Uint64
+	hostSpanDropped      atomic.Uint64
+	hostKeyStripped      atomic.Uint64
+	hostDigestStripped   atomic.Uint64
+	sensorOnAgentRefused atomic.Uint64
 }
 
 type guardStatsSnapshot struct {
@@ -58,6 +65,12 @@ type guardStatsSnapshot struct {
 	AggregateCapped      uint64
 	UnboundSpanDropped   uint64
 	DuplicateKeyRejected uint64
+	HostBatchRefused     uint64
+	HostLogDropped       uint64
+	HostSpanDropped      uint64
+	HostKeyStripped      uint64
+	HostDigestStripped   uint64
+	SensorOnAgentRefused uint64
 }
 
 func (s *guardStats) snapshot() guardStatsSnapshot {
@@ -75,6 +88,12 @@ func (s *guardStats) snapshot() guardStatsSnapshot {
 		AggregateCapped:      s.aggregateCapped.Load(),
 		UnboundSpanDropped:   s.unboundSpanDropped.Load(),
 		DuplicateKeyRejected: s.duplicateKeyRejected.Load(),
+		HostBatchRefused:     s.hostBatchRefused.Load(),
+		HostLogDropped:       s.hostLogDropped.Load(),
+		HostSpanDropped:      s.hostSpanDropped.Load(),
+		HostKeyStripped:      s.hostKeyStripped.Load(),
+		HostDigestStripped:   s.hostDigestStripped.Load(),
+		SensorOnAgentRefused: s.sensorOnAgentRefused.Load(),
 	}
 }
 
@@ -87,6 +106,10 @@ func (g *guard) processLogs(_ context.Context, ld plog.Logs) (plog.Logs, error) 
 	// binding and the evidence validators) reads the only occurrence.
 	if g.duplicateKeyInLogs(ld) {
 		return ld, g.refuseDuplicateKey()
+	}
+	if g.hostInstance() {
+		g.dropHostLogs(ld)
+		return ld, nil
 	}
 	if g.cfg.EvidenceSourceBinding != nil && !g.boundEvidenceBatch(ld) {
 		return ld, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: evidence source binding rejected"))
@@ -481,11 +504,23 @@ func validSHA256Prefixed(value pcommon.Value) bool {
 }
 
 func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Traces, error) {
+	if g.hostInstance() {
+		return g.processHostTraces(td)
+	}
 	bound := g.cfg.EvidenceSourceBinding != nil
-	switch g.checkTraceBatch(td) {
-	case traceDuplicateKey:
+	// An agent instance (source_kind agent or absent) never admits host
+	// evidence: a span of a kind-S capture point or any fabric.sensor.* key
+	// refuses the batch (spec 053 §6.2.7, last paragraph). A duplicate key
+	// still wins, so the reason does not depend on key order.
+	scan := g.checkTraceBatch(td)
+	switch {
+	case scan.duplicate:
 		return td, g.refuseDuplicateKey()
-	case traceForeignBinding:
+	case scan.sensor:
+		g.stats.sensorOnAgentRefused.Add(1)
+		g.logger.Debug("refusing batch", zap.String("reason", hostRefusalSensorOnAgent))
+		return td, hostRefusal(hostRefusalSensorOnAgent)
+	case scan.foreign:
 		return td, consumererror.NewPermanent(status.Error(codes.InvalidArgument, "fabricguard: source binding rejected"))
 	}
 	if bound {
@@ -536,41 +571,42 @@ func (g *guard) processTraces(_ context.Context, td ptrace.Traces) (ptrace.Trace
 	return td, nil
 }
 
-type traceBatchVerdict int
-
-const (
-	traceAdmitted traceBatchVerdict = iota
-	traceDuplicateKey
-	traceForeignBinding
-)
+// traceBatchScan is what checkTraceBatch found in a whole request.
+type traceBatchScan struct {
+	duplicate bool // a fabric.* key repeated in one map (checked first, wins)
+	foreign   bool // a binding key naming another tenant or source
+	sensor    bool // a fabric.sensor.* key or a kind-S fabric.capture.point
+}
 
 // checkTraceBatch checks the whole request before mutating or forwarding any
 // span, in one pass over every attribute map the processor filters or stamps
 // (resource, scope, span, span event, span link):
 //
 //   - A fabric.* key carried more than once in one map refuses the batch
-//     (traceDuplicateKey). pcommon.Map.Get returns the first occurrence while
+//     (duplicate). pcommon.Map.Get returns the first occurrence while
 //     a last-wins consumer reads the last, so a duplicate would let a span be
 //     validated under one identity and read under another (D2). OTLP forbids
 //     duplicate keys; for Fabric's own keys a duplicate is a forgery signal.
 //   - On a bound ingress (spec 049 §7.9), every occurrence of
 //     fabric.source_id / fabric.tenant_id must name the bound source and
-//     tenant (traceForeignBinding). A span that names no source at all is
+//     tenant (foreign). A span that names no source at all is
 //     not a forgery: dropUnboundSpans removes it on its own.
+//   - Any fabric.sensor.* key, or a fabric.capture.point of kind S, is host
+//     evidence (sensor); the caller decides what it means for its kind.
 //
-// A duplicate anywhere in the batch wins over a binding mismatch, so the
-// refusal reason does not depend on key order.
-func (g *guard) checkTraceBatch(td ptrace.Traces) traceBatchVerdict {
-	verdict := traceAdmitted
+// The scan stops at the first duplicate: a duplicate anywhere in the batch
+// wins over every other finding, so the refusal reason does not depend on
+// key order.
+func (g *guard) checkTraceBatch(td ptrace.Traces) traceBatchScan {
+	var verdict traceBatchScan
 	check := func(attrs pcommon.Map) bool {
-		dup, foreign := g.checkTraceAttrs(attrs)
+		dup, foreign, sensor := g.checkTraceAttrs(attrs)
 		if dup {
-			verdict = traceDuplicateKey
+			verdict.duplicate = true
 			return false
 		}
-		if foreign {
-			verdict = traceForeignBinding
-		}
+		verdict.foreign = verdict.foreign || foreign
+		verdict.sensor = verdict.sensor || sensor
 		return true
 	}
 	resourceSpans := td.ResourceSpans()
@@ -607,10 +643,10 @@ func (g *guard) checkTraceBatch(td ptrace.Traces) traceBatchVerdict {
 }
 
 // checkTraceAttrs makes the single Range over one map: it reports a repeated
-// fabric.* key and, on a bound ingress, any occurrence of fabric.source_id or
-// fabric.tenant_id that is not the bound string. Every occurrence is visited;
-// nothing relies on Get's first match.
-func (g *guard) checkTraceAttrs(attrs pcommon.Map) (dup, foreign bool) {
+// fabric.* key, on a bound ingress any occurrence of fabric.source_id or
+// fabric.tenant_id that is not the bound string, and any host-evidence key.
+// Every occurrence is visited; nothing relies on Get's first match.
+func (g *guard) checkTraceAttrs(attrs pcommon.Map) (dup, foreign, sensor bool) {
 	bound := g.cfg.EvidenceSourceBinding
 	var seen guardedKeySet
 	attrs.Range(func(key string, value pcommon.Value) bool {
@@ -620,6 +656,9 @@ func (g *guard) checkTraceAttrs(attrs pcommon.Map) (dup, foreign bool) {
 		if seen.addOrFind(key) {
 			dup = true
 			return false
+		}
+		if strings.HasPrefix(key, sensorKeyPrefix) || key == "fabric.capture.point" && capturePointKind(value) == "S" {
+			sensor = true
 		}
 		if bound != nil {
 			switch key {
@@ -631,7 +670,7 @@ func (g *guard) checkTraceAttrs(attrs pcommon.Map) (dup, foreign bool) {
 		}
 		return true
 	})
-	return dup, foreign
+	return dup, foreign, sensor
 }
 
 // isTraceGuardedKey: every key in Fabric's own namespace. The binding keys,
@@ -924,6 +963,11 @@ func activityCategory(name string, attrs pcommon.Map) string {
 	}
 	if _, ok := attrs.Get("fabric.loss.reason"); ok {
 		return "fabric.capture_loss"
+	}
+	// A host record (spec 053 §6.2.3) is named by its event class, after the
+	// markers and before every agent category; the name alone never makes one.
+	if _, ok := attrs.Get("fabric.sensor.event_class"); ok {
+		return "fabric.sensor_event"
 	}
 	for _, key := range []string{"fabric.tool.name", "gen_ai.tool.name", "fabric.tool.result_hash"} {
 		if _, ok := attrs.Get(key); ok {

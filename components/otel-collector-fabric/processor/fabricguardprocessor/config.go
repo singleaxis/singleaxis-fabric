@@ -62,6 +62,19 @@ type Config struct {
 	// pattern only.
 	CaptureLabels string `mapstructure:"capture_labels"`
 
+	// SourceKind is the kind of the ingress group this instance guards (spec
+	// 053 §6.1, §6.2.7; spec 056 §7.3.3 (e)): "agent", "host.auditd" or
+	// "host.ebpf". Absent means the legacy single-source behaviour (agent). A
+	// host instance admits only host records and host source markers; an agent
+	// instance refuses any host evidence.
+	SourceKind string `mapstructure:"source_kind"`
+
+	// HostDigests is the Node half of the digest permission (spec 053
+	// §6.2.5): "omitted" (default) strips fabric.sensor.{exe,argv,path}_sha256,
+	// "permitted" admits them when the sensor's own policy emitted them. Only a
+	// host instance may set it.
+	HostDigests string `mapstructure:"host_digests"`
+
 	// Retained only to fail old unsafe configurations with an actionable error.
 	// Prefix allowlisting is intentionally unsupported.
 	TraceAttributePrefixes []string `mapstructure:"trace_attribute_prefixes"`
@@ -81,6 +94,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Profile == profileProduction && c.EvidenceSourceBinding == nil {
 		return errors.New("fabricguard: the production profile rejects unauthenticated sources; it requires evidence_source_binding")
+	}
+	if err := c.validateSourceKind(); err != nil {
+		return err
 	}
 	if c.IdentityMode != identityModePseudonymous && c.IdentityMode != identityModeClear {
 		return errors.New("fabricguard: identity_mode must be pseudonymous or clear")
@@ -138,6 +154,41 @@ func (c *Config) Validate() error {
 	}
 	return nil
 }
+
+// validateSourceKind applies spec 056 §7.3.3 (e): a host instance needs the
+// production profile and a binding to an s- source id; host_digests is a
+// host-instance setting only.
+func (c *Config) validateSourceKind() error {
+	switch c.SourceKind {
+	case "", sourceKindAgent:
+		if c.HostDigests != "" {
+			return errors.New("fabricguard: host_digests is refused on an agent instance; it applies only to source_kind host.auditd or host.ebpf")
+		}
+		return nil
+	case sourceKindAuditd, sourceKindEBPF:
+	default:
+		return errors.New("fabricguard: source_kind must be agent, host.auditd or host.ebpf")
+	}
+	if c.Profile != profileProduction || c.EvidenceSourceBinding == nil {
+		return errors.New("fabricguard: a host source_kind requires profile production and evidence_source_binding")
+	}
+	if !sourcePseudonymPattern.MatchString(c.EvidenceSourceBinding.SourceID) {
+		return errors.New("fabricguard: a host source_kind requires an evidence_source_binding source_id of the form s-<32 hex>")
+	}
+	if c.HostDigests != "" && c.HostDigests != hostDigestsOmitted && c.HostDigests != hostDigestsPermitted {
+		return errors.New("fabricguard: host_digests must be omitted or permitted")
+	}
+	return nil
+}
+
+const (
+	sourceKindAgent  = "agent"
+	sourceKindAuditd = "host.auditd"
+	sourceKindEBPF   = "host.ebpf"
+
+	hostDigestsOmitted   = "omitted"
+	hostDigestsPermitted = "permitted"
+)
 
 const (
 	profileLocal      = "local"
