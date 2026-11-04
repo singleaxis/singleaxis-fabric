@@ -624,12 +624,107 @@ def test_a_forked_child_never_keeps_its_parent_registered(tmp_path: Path) -> Non
         assert got["parent_mirror"] == 2  # the child never writes the parent's mirror
         parent.kill()  # SIGKILL while the forked child lives
         parent.wait(30)
+        expected = reg.Orphan(got["source"], got["parent_epoch"], 2)
+        # The living child holds no copy of its dead parent's lock.
+        assert _registration_unlocked(spool_dir, got["parent_epoch"])
         scanner = Spool(spool_dir, SPOOL_MAX)
         try:
             orphans = reg.scan_orphans(scanner)
+            declared = reg.declared_orphans(scanner)
         finally:
             scanner.release()
-        assert orphans == [reg.Orphan(got["source"], got["parent_epoch"], 2)]
+        # Declared exactly once: by this scan, or already by the child itself, whose sender
+        # becomes the spool's drainer once the parent's drain lock is gone and scans then
+        # (test_a_surviving_forked_child_drains_and_declares_its_dead_parent).
+        assert orphans in ([], [expected])
+        assert declared == [expected]
+    finally:
+        if child_pid:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(child_pid, signal.SIGKILL)
+        if parent.poll() is None:
+            parent.kill()
+        parent.communicate(timeout=30)
+
+
+def _registration_unlocked(spool_dir: str, epoch: int) -> bool:
+    """Whether no open description holds the flock of ``epoch``'s registration, under
+    either name (a concurrent scan may rename it ``.orphan``; the inode is the same)."""
+    import fcntl  # noqa: PLC0415 - POSIX only
+
+    for suffix in (reg.REG_SUFFIX, reg.ORPHAN_SUFFIX):
+        path = os.path.join(spool_dir, reg.EPOCHS_DIR, f"{epoch:020d}{suffix}")
+        try:
+            fd = os.open(path, os.O_RDONLY)
+        except FileNotFoundError:
+            continue
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return False
+        finally:
+            os.close(fd)
+        return True
+    raise AssertionError(f"no registration of epoch {epoch}")
+
+
+# The parent forks a child that waits on the shared stdin until the parent is dead, then
+# keeps capturing: its own sender takes the free drain lock and its first scan declares
+# the dead parent's epoch, with the orphan heartbeat queued for delivery.
+_FORK_SURVIVOR = textwrap.dedent(
+    """
+    import json, os, sys, time
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from fabric import wire
+    handle = wire.install(spool_dir=sys.argv[1], span_exporter=InMemorySpanExporter(),
+                          patch_httpx=False, patch_aiohttp=False)
+    allocator = handle.allocator
+    allocator.allocate()
+    allocator.allocate()
+    parent_epoch, source = allocator.epoch, allocator.source_id
+    pid = os.fork()
+    if pid == 0:
+        sys.stdin.readline()  # written only once the parent is dead
+        allocator.allocate()
+        sender = handle._tee.sender
+        sender.wake()
+        deadline = time.monotonic() + 60
+        while sender.stats()["orphan_heartbeats"] == 0 and time.monotonic() < deadline:
+            time.sleep(0.02)
+        print(json.dumps({"holder": sender.spool.holder,
+                          "heartbeats": sender.stats()["orphan_heartbeats"]}), flush=True)
+        sys.stdin.readline()
+        os._exit(0)
+    print(json.dumps({"child_pid": pid, "parent_epoch": parent_epoch, "source": source}),
+          flush=True)
+    sys.stdin.readline()
+    """
+)
+
+
+@POSIX
+def test_a_surviving_forked_child_drains_and_declares_its_dead_parent(tmp_path: Path) -> None:
+    spool_dir = str(tmp_path / "spool")
+    parent = _python(_FORK_SURVIVOR, spool_dir)
+    child_pid = 0
+    try:
+        got = _first_line(parent)
+        child_pid = got["child_pid"]
+        parent.kill()  # SIGKILL: no close, no final; the child is still waiting
+        parent.wait(30)
+        assert parent.stdin is not None
+        parent.stdin.write("\n")  # only the child still reads the shared pipe
+        parent.stdin.flush()
+        child = _first_line(parent)  # the child shares the parent's stdout as well
+        assert child == {"holder": True, "heartbeats": 1}
+        scanner = Spool(spool_dir, SPOOL_MAX)
+        try:
+            assert reg.scan_orphans(scanner) == []  # declared once, by the child
+            assert reg.declared_orphans(scanner) == [
+                reg.Orphan(got["source"], got["parent_epoch"], 2)
+            ]
+        finally:
+            scanner.release()
     finally:
         if child_pid:
             with contextlib.suppress(ProcessLookupError):
