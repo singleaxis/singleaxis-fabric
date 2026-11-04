@@ -28,6 +28,7 @@ from ._forks import ForkLedger
 from ._match import EndpointIndex
 from ._model import CaptureJob
 from ._pipeline import Budget, CapturePipeline, protector_for
+from ._routes import NONE, Decision, decide
 from ._stream import DELEGATION_MARK, FLAVORS, Exchange, drain_reaper, private_copy
 
 if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
@@ -146,9 +147,22 @@ class WireTee:
         )  # fmt: skip
         _TEES.add(self)
 
+    def route(self, request: Any) -> Decision:
+        """053 §5.4 (``_routes.py``): the route of one httpx request, decided once, at the
+        capture decision; ``none`` once closed or on any failure (counted, nothing
+        recorded, the request is sent unchanged)."""
+        if self.closed:
+            return NONE
+        try:
+            return decide(request, self.index)
+        except Exception:
+            self.internal_errors += 1
+            return NONE
+
     def begin(
-        self, request: Any, *, factory: type[Exchange] | None = None
-    ) -> tuple[bool, Exchange | None]:
+        self, request: Any, *, factory: type[Exchange] | None = None,
+        decision: Decision | None = None,
+    ) -> tuple[bool, Exchange | None]:  # fmt: skip
         """Match ``request``, open an exchange; never raises. ``owned`` once a sequence is
         allocated or a provisional exchange opened (nested tees stay off; a failed setup is
         an ``internal_error`` loss).
@@ -157,12 +171,19 @@ class WireTee:
         request opens a *provisional* exchange with no sequence. If the call is still live
         when the response ends, the explicit record owns it and the tee allocates nothing
         (no gap); if the response outlives the call (a lazy stream the call returned), the
-        tee captures it then (:meth:`adopt`)."""
+        tee captures it then (:meth:`adopt`).
+
+        ``decision`` is the request's route (httpx: :meth:`route`); a request routed
+        anything but ``model`` opens nothing. Without one (aiohttp) the request is matched
+        against the model endpoints here."""
         if self.closed:
             return False, None
         try:
-            url = request.url
-            found = self.index.match(request.method, url.scheme, url.host, url.port, url.path)
+            if decision is None:
+                url = request.url
+                found = self.index.match(request.method, url.scheme, url.host, url.port, url.path)
+            else:
+                found = decision.found if decision.route == "model" else None
             if found is None:
                 return False, None
             if (deferral := current_explicit_model_scope()) is None:
@@ -242,8 +263,13 @@ class WireTee:
         delegate: Callable[..., Any] | None = None,
     ) -> Any:  # fmt: skip
         """``call`` sends an unowned request; ``delegate`` (default ``call``) an owned one,
-        also after a setup failure, without any nested capture."""
-        owned, exchange = self.begin(request)
+        also after a setup failure, without any nested capture. A request routed
+        ``nonmodel`` goes to its rule's handler (``fabric.hooks._http``) instead."""
+        decision = self.route(request)
+        if decision.route == "nonmodel" and decision.rule is not None:
+            return decision.rule.handler.handle_sync(call, transport, request, delegate,
+                                                     decision.rule_index)  # fmt: skip
+        owned, exchange = self.begin(request, decision=decision)
         if not owned:
             return call(transport, request)
         # The transport gets this invocation's private copy (its own tee), never ``request``.
@@ -264,7 +290,11 @@ class WireTee:
         self, call: Callable[..., Any], transport: Any, request: Any,
         delegate: Callable[..., Any] | None = None,
     ) -> Any:  # fmt: skip
-        owned, exchange = self.begin(request)
+        decision = self.route(request)
+        if decision.route == "nonmodel" and decision.rule is not None:
+            return await decision.rule.handler.handle_async(call, transport, request, delegate,
+                                                            decision.rule_index)  # fmt: skip
+        owned, exchange = self.begin(request, decision=decision)
         if not owned:
             return await call(transport, request)
         # The transport gets this invocation's private copy (its own tee), never ``request``.

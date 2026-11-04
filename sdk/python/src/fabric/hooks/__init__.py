@@ -1,24 +1,30 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Opt-in observed hooks (spec 053 §4; spec 056 §7.2 WP6-02).
+"""Opt-in observed hooks (spec 053 §4; spec 056 §7.2 WP6-02, §7.3.3 (i)).
 
 A hook observes an operation the agent's own process performs (in this build: starting a
-subprocess, ``exec.subprocess``) and records it on the records input of the installed
-capture handle, with provenance ``observed``. Hooks are passive: they never approve,
-block, retry, modify or delay the operation (AGENTS.md; 053 §4.1).
+subprocess, ``exec.subprocess``; an httpx request to an allowlisted non-model host,
+``http.nonmodel``; a remote sandbox provider's command and code calls, ``remote.sandbox``)
+and records it on the records input of the installed capture handle, with provenance
+``observed``. Hooks are passive: they never approve, block, retry, modify or delay the
+operation (AGENTS.md; 053 §4.1).
 
 Nothing is patched by importing this package or ``fabric``. Every channel is off until
 asked for::
 
     import fabric.wire, fabric.hooks
     fabric.wire.install(...)                     # a capture handle first (records-only works)
-    hooks = fabric.hooks.install(exec=True, host_label="build-node-1")
+    hooks = fabric.hooks.install(exec=True, host_label="build-node-1",
+                                 http_hosts=("api.internal.example",))
     hooks.status()                               # capability states and counters only
     hooks.disable("exec.subprocess")             # wrappers stay installed but inert
     hooks.close(timeout_s=2.0)                   # restores Fabric's own patches
 
 or, with ``fabric.wire.install_from_env()`` (and so the autoload bootstrap),
-``FABRIC_WIRE_EXEC=1`` (optionally ``FABRIC_HOST_LABEL``).
+``FABRIC_WIRE_EXEC=1`` (optionally ``FABRIC_HOST_LABEL``), ``FABRIC_WIRE_HTTP_HOSTS``
+(a JSON array of hosts), ``FABRIC_WIRE_REMOTE_SANDBOX=e2b`` and
+``FABRIC_WIRE_SANDBOX_HOSTS`` (a JSON array of the sandbox provider hosts a deployment
+uses; manifest only).
 
 Rules (053 §4):
 - Hooks need an installed capture handle. Without one nothing is patched and ``status()``
@@ -33,20 +39,26 @@ Rules (053 §4):
   another instrumentor's.
 - Each channel's capability state (``active``, ``disabled``, ``unsupported``, ``failed``)
   is published in the capture manifest through ``capture_point_changed`` (050 §3.8).
+- Declared sandbox hosts with no provider enabled publish ``remote.sandbox``
+  ``disabled(remote_sandbox)`` (056 §4.4.1): the manifest's statement that the run may
+  call a sandbox Fabric does not observe.
 
 Channels are registered in :data:`CHANNELS`. Each names a module with one entry point,
 ``install_channel(producer, patches) -> HookChannel`` (``_producer.py``), and a loader that
 imports that module with a literal import (never a name computed at run time). This build
-registers only ``exec.subprocess`` (module ``fabric.hooks._exec``).
+registers ``exec.subprocess`` (module ``fabric.hooks._exec``), ``http.nonmodel``
+(``fabric.hooks._http``) and ``remote.sandbox`` (``fabric.hooks._sandbox``, which
+dispatches to the provider module; a build without it reports ``unsupported``).
 """
 
 from __future__ import annotations
 
 import contextlib
+import importlib
 import logging
 import os
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from types import ModuleType
 from typing import TYPE_CHECKING, Any, Literal
@@ -57,6 +69,8 @@ from ._config import (
     EXEC_ENV,
     HOOK_ENV_NAMES,
     HOST_LABEL_ENV,
+    HTTP_HOSTS_ENV,
+    REMOTE_SANDBOX_ENV,
     HooksConfig,
     config_from_args,
     config_from_env,
@@ -68,9 +82,10 @@ if TYPE_CHECKING:
     from ..wire import WireHandle
 
 __all__ = [
-    "CHANNELS", "EXEC_ENV", "HOOK_ENV_NAMES", "HOST_LABEL_ENV", "ChannelSlot", "HookChannel",
-    "HookProducer", "HooksConfig", "HooksHandle", "PatchSet", "Switch", "UnsupportedChannel",
-    "current_handle", "install", "install_from_env",
+    "CHANNELS", "EXEC_ENV", "HOOK_ENV_NAMES", "HOST_LABEL_ENV", "HTTP_HOSTS_ENV",
+    "REMOTE_SANDBOX_ENV", "ChannelSlot", "HookChannel", "HookProducer", "HooksConfig",
+    "HooksHandle", "PatchSet", "Switch", "UnsupportedChannel", "current_handle", "install",
+    "install_from_env",
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.hooks")
@@ -83,6 +98,9 @@ Capability = tuple[str, str | None]
 _OFF: Capability = ("disabled", "hook_disabled")
 _SHUTDOWN: Capability = ("disabled", "shutdown")
 _NO_HANDLE: Capability = ("installed_inactive", "not_configured")
+_SANDBOX_POINT = "remote.sandbox"
+# 056 §4.4.1: sandbox hosts declared, no provider enabled.
+_SANDBOX_UNDECLARED: Capability = ("disabled", "remote_sandbox")
 
 
 def _load_exec() -> ModuleType:
@@ -90,6 +108,19 @@ def _load_exec() -> ModuleType:
     import fabric.hooks._exec as module  # noqa: PLC0415 - imported only when switched on
 
     return module
+
+
+def _load_http() -> ModuleType:
+    """The ``http.nonmodel`` channel module, imported only when the channel is on."""
+    import fabric.hooks._http as module  # noqa: PLC0415 - imported only when switched on
+
+    return module
+
+
+def _load_sandbox() -> ModuleType:
+    """The ``remote.sandbox`` channel module (056 WP6-09b), imported only when a provider
+    is enabled; a build without it reports the channel ``unsupported``."""
+    return importlib.import_module("fabric.hooks._sandbox")
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +139,8 @@ class ChannelSlot:
 
 CHANNELS: tuple[ChannelSlot, ...] = (
     ChannelSlot("exec.subprocess", EXEC_ENV, "fabric.hooks._exec", _load_exec),
+    ChannelSlot("http.nonmodel", HTTP_HOSTS_ENV, "fabric.hooks._http", _load_http),
+    ChannelSlot(_SANDBOX_POINT, REMOTE_SANDBOX_ENV, "fabric.hooks._sandbox", _load_sandbox),
 )
 
 
@@ -149,6 +182,8 @@ class HooksHandle:
             self._capabilities[slot.point] = (
                 _NO_HANDLE if requested and state == "no_capture_handle" else _OFF
             )
+        if config is not None and config.sandbox_undeclared:
+            self._capabilities[_SANDBOX_POINT] = _SANDBOX_UNDECLARED
         self._closed: bool | None = None  # the close() result, once closed
 
     # -- lifecycle (under _LOCK by install) -----------------------------------------------
@@ -197,6 +232,16 @@ class HooksHandle:
         except BaseException:
             self._stop_channel(slot.point)
             raise
+
+    def _declare_sandbox_hosts(self) -> None:
+        """056 §4.4.1: sandbox hosts are declared and no provider is enabled; the manifest
+        says so (``remote.sandbox`` ``disabled(remote_sandbox)``). Fail-open."""
+        try:
+            self._publish(_SANDBOX_POINT, _SANDBOX_UNDECLARED)
+        except Exception:
+            COUNTERS.internal_errors += 1
+            if strict():
+                raise
 
     def _stop_channel(self, point: str) -> bool:
         """Switch the channel off, release it and restore its patches (fail-open)."""
@@ -335,16 +380,32 @@ def current_handle() -> HooksHandle | None:
     return _HANDLE
 
 
-def install(*, exec: bool = False, host_label: str | None = None) -> HooksHandle:
+def install(
+    *, exec: bool = False, host_label: str | None = None, http_hosts: Sequence[str] = (),
+    remote_sandbox: Sequence[str] = (), sandbox_hosts: Sequence[str] = (),
+) -> HooksHandle:  # fmt: skip
     """Install the hook channels asked for (all off by default) on the installed capture
-    handle. ``exec`` turns on the subprocess hook (``exec.subprocess``, 053 §5.1);
-    ``host_label`` is the operator's host label whose ``hst-`` pseudonym the exec records
-    carry as ``fabric.execution.host_id`` (053 C41).
+    handle (056 §7.3.3 (i)).
+
+    - ``exec`` turns on the subprocess hook (``exec.subprocess``, 053 §5.1);
+      ``host_label`` is the operator's host label whose ``hst-`` pseudonym the exec
+      records carry as ``fabric.execution.host_id`` (053 C41).
+    - ``http_hosts`` turns on the non-model HTTP hook (``http.nonmodel``, 053 §5.4) for
+      exactly these hosts: ``"host"`` or ``"host:port"``, https unless ``"http://"`` is
+      given; no wildcard, never matched as a substring.
+    - ``remote_sandbox`` names the remote sandbox providers to observe
+      (``remote.sandbox``; only ``"e2b"``, 056 §4.4.1).
+    - ``sandbox_hosts`` declares the sandbox provider hosts the deployment uses (manifest
+      only): with no provider enabled the manifest says ``remote.sandbox``
+      ``disabled(remote_sandbox)``.
 
     Without an installed, capturing capture handle nothing is patched and the returned
-    handle's ``status()`` reports ``no_capture_handle``. Malformed arguments, or a
-    configuration different from the live install's, raise ``ValueError``."""
-    config = config_from_args(exec=exec, host_label=host_label)
+    handle's ``status()`` reports ``no_capture_handle``. Malformed or contradictory
+    arguments, or a configuration different from the live install's, raise
+    ``ValueError``."""
+    config = config_from_args(exec=exec, host_label=host_label, http_hosts=http_hosts,
+                              remote_sandbox=remote_sandbox,
+                              sandbox_hosts=sandbox_hosts)  # fmt: skip
     return _install(config)
 
 
@@ -383,12 +444,16 @@ def _install(config: HooksConfig, not_in_build: tuple[str, ...] = ()) -> HooksHa
         for slot in CHANNELS:
             if config.requested(slot.point):
                 hooks._start(slot)
+        if config.sandbox_undeclared:
+            hooks._declare_sandbox_hosts()
         _HANDLE = hooks
         return hooks
 
 
 def install_from_env(environ: Mapping[str, str] | None = None) -> HooksHandle | None:
-    """Install from ``FABRIC_WIRE_EXEC`` (and ``FABRIC_HOST_LABEL``); never raises.
+    """Install from ``FABRIC_WIRE_EXEC`` (and ``FABRIC_HOST_LABEL``),
+    ``FABRIC_WIRE_HTTP_HOSTS``, ``FABRIC_WIRE_REMOTE_SANDBOX`` and
+    ``FABRIC_WIRE_SANDBOX_HOSTS``; never raises.
     ``None`` when no hook switch is set. A malformed value enables nothing and returns a
     handle whose ``status()`` reports ``invalid_configuration`` (one class-only warning);
     a set switch of a channel this build does not have is listed as ``not_in_build``."""
