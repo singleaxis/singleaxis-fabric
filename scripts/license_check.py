@@ -206,6 +206,9 @@ class Policy:
     allow: set[str] = field(default_factory=set)
     allow_log: set[str] = field(default_factory=set)
     deny_substrings: list[str] = field(default_factory=list)
+    # (ecosystem, lower-cased name, version) -> reviewed license expression for
+    # a release whose scanner metadata carries none (DECLARE).
+    declared: dict[tuple[str, str, str], str] = field(default_factory=dict)
 
     @classmethod
     def load(cls, path: str) -> "Policy":
@@ -219,7 +222,16 @@ class Policy:
                 if len(parts) != 2:
                     continue
                 directive, value = parts[0].upper(), parts[1].strip()
-                if directive == "ALLOW":
+                if directive == "DECLARE":
+                    fields = value.split(None, 3)
+                    if len(fields) != 4:
+                        raise ValueError(
+                            f"policy {path!r}: DECLARE needs ecosystem, name, "
+                            f"version and license: {line!r}"
+                        )
+                    ecosystem, name, version, expr = fields
+                    pol.declared[(ecosystem.lower(), name.lower(), version)] = expr
+                elif directive == "ALLOW":
                     pol.allow.add(value)
                 elif directive == "ALLOW-LOG":
                     pol.allow_log.add(value)
@@ -675,7 +687,18 @@ def main(argv: Iterable[str] | None = None) -> int:
     # row conceal a denied declaration from another optional-install inventory.
     seen: dict[tuple, Dep] = {}
     for d in deps:
+        # A DECLARE fills in only a license the scanner did not report, for that
+        # exact release; it is classified like any other and cannot override a
+        # reported (possibly denied) license.
+        declared = policy.declared.get((d.ecosystem, d.name.lower(), d.version))
+        missing = d.raw_license.strip().upper() in ("", "UNKNOWN")
+        if declared is not None and missing:
+            d.raw_license = declared
         d.disposition, d.spdx, d.detail = policy.classify(d.raw_license)
+        if declared is not None and missing:
+            d.detail = "; ".join(
+                part for part in (d.detail, "license declared in policy") if part
+            )
         k = (d.surface, *d.key(), d.raw_license)
         seen.setdefault(k, d)
     deps = list(seen.values())

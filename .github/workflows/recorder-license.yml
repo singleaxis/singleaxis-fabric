@@ -23,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [otlp, s3, mcp, signing]
+        extra: [otlp, s3, mcp, signing, hooks-sandbox-e2b]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
@@ -159,6 +159,7 @@ jobs:
             --pip 'sdk/python=raw/python-s3.json' \
             --pip 'sdk/python=raw/python-mcp.json' \
             --pip 'sdk/python=raw/python-signing.json' \
+            --pip 'sdk/python=raw/python-hooks-sandbox-e2b.json' \
             --npm 'sdk/typescript=raw/npm-typescript.json' \
             --npm 'sdk/typescript=raw/npm-typescript-s3.json' \
             --go 'fabric-node=raw/go-fabric-node.csv' \
