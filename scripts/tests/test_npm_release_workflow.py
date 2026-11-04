@@ -39,7 +39,15 @@ def test_publish_job_consumes_qualified_tarball_without_rebuilding() -> None:
 
     assert "needs: qualify-release" in publish
     assert "name: qualified-typescript-dist" in publish
-    assert 'npm publish "${package}" --access public --tag beta --provenance' in publish
+    assert (
+        'npm publish "${package}" --access public --tag "${dist_tag}" --provenance'
+        in publish
+    )
+    assert (
+        '*) dist_tag="latest" ;;' in publish
+    )  # a stable release is the default install
+    assert '*-*) dist_tag="next" ;;' in publish  # a prerelease never becomes latest
+    assert "--tag beta" not in text and "dist-tag add" not in text
     assert "sha256sum --check SHA256SUMS.typescript" in publish
     assert "id-token: write" in publish
     assert "NODE_AUTH_TOKEN" not in publish

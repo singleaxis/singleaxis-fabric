@@ -88,7 +88,7 @@ pip install "singleaxis-fabric[otlp]"
 ```
 
 ```bash
-npm install @singleaxis/fabric@beta
+npm install @singleaxis/fabric
 ```
 
 The Fabric Node installs with the Helm chart

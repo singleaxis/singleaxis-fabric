@@ -457,7 +457,7 @@ jobs:
           packages-dir: dist
 
   publish-npm:
-    name: Publish TypeScript SDK to npm beta
+    name: Publish TypeScript SDK to npm
     runs-on: ubuntu-latest
     needs: qualify-release
     # One-time registry prerequisite: configure npm trusted publishing for
@@ -492,7 +492,13 @@ jobs:
             fi
             echo "@singleaxis/fabric@${version} already contains the qualified bytes; nothing to republish."
           else
-            npm publish "${package}" --access public --tag beta --provenance
+            # A stable version becomes `latest`; a prerelease (-rc, -beta ...) goes to
+            # `next` so it never replaces the stable install.
+            case "${version}" in
+              *-*) dist_tag="next" ;;
+              *) dist_tag="latest" ;;
+            esac
+            npm publish "${package}" --access public --tag "${dist_tag}" --provenance
           fi
 
   github-release:
