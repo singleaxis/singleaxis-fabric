@@ -212,12 +212,17 @@ def test_run_records_match_the_exec_interface_golden(rig: Rig, tmp_path: Path) -
     assert done.stdout == "a.txt\nb.txt\n" and done.returncode == 0
     (records,) = rig.attempts().values()
     assert [r.lifecycle for r in records] == ["running", "completed"]
+    # The start time is read late by the worker and only while the child still runs
+    # (read_start_ns): a child this short may be gone first, on Linux too. Its presence and
+    # absence are pinned by the start_ns tests below; here it is the one optional key.
+    read_start = "fabric.process.start_ns" in records[0].attrs
+    assert _exec._LINUX or not read_start
     for record, golden in zip(records, GOLDEN["records"], strict=True):
         expected = golden["span"]
         assert record.span["name"] == expected["name"] == "fabric.activity"
         assert record.span["kind"] == "internal" and record.span["status"] == "unset"
         keys = set(expected["attributes"]) - RUN_KEYS
-        if not _exec._LINUX:
+        if not read_start:
             keys.discard("fabric.process.start_ns")
         assert set(record.attrs) - RUN_KEYS == keys
         for key in ("fabric.capture.input", "fabric.capture.source", "fabric.step.kind",
@@ -252,7 +257,7 @@ def test_run_records_match_the_exec_interface_golden(rig: Rig, tmp_path: Path) -
         {d["object_id"]: data for r in records for d, data in r.bodies.values()},
     )  # fmt: skip
     assert set(effect) == set(GOLDEN["normalized_effect"]) - (
-        set() if _exec._LINUX else {"process_start_ns"}
+        set() if read_start else {"process_start_ns"}
     )
     assert effect["host_id"] == GOLDEN["normalized_effect"]["host_id"]
     assert effect["event_id"] == start.attrs["fabric.event_id"]
