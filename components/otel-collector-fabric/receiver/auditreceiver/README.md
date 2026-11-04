@@ -140,3 +140,104 @@ Netlink assembly retains at most 256 records per pending serial. Excess records
 produce `assembly_records_dropped` with a record count, independently of event
 evictions. Control queries use a separate non-multicast socket and match kernel
 responses by sequence and type, with bounded receive time and message count.
+
+## Production mode (spec 053 §6.2.8)
+
+`mode: local` (the default) is everything above, unchanged: audit-class log
+records on a logs pipeline. `mode: production` makes the receiver one **host
+source** in a customer-deployed sensor collector, separate from the agent and
+from the Node. It emits host records (`fabric.sensor_event` spans) and the
+source's markers (manifest, periodic heartbeats, `span_dropped` loss, final)
+as **traces** through the host-records library (`../../hostrecords`), for the
+Node's `host.auditd` ingress group. Production settings are refused in local
+mode, a traces pipeline is refused in local mode, and a logs pipeline is
+refused in production mode; production never falls back to local.
+
+```yaml
+receivers:
+  audit:
+    mode: production
+    source: logfile               # or netlink
+    log_path: /var/log/audit/audit.log
+    production:
+      tenant_id: tenant-a
+      source_label: node-a/auditd  # source id = s- label pseudonym under the id key
+      host_label: node-a           # the agents' FABRIC_HOST_LABEL on this host
+      id_key_file: /run/secrets/fabric_id_key            # hostrecords.ReadIDKeyFile
+      state_key_file: /run/secrets/fabric_sensor_state_key
+      state_dir: /var/lib/fabric-sensor/auditd           # 0700, owned by the sensor
+      digests: omitted             # or permitted (the group's fabricguard must also permit)
+      heartbeat_interval: 10s      # 1s to 60s
+exporters:
+  otlp_http/node:
+    endpoint: https://node.example:4428
+    sending_queue:
+      enabled: false               # see "Acknowledgement" below
+service:
+  pipelines:
+    traces:
+      receivers: [audit]
+      exporters: [otlp_http/node]
+```
+
+- **Keys.** The id key file is the agents' `FABRIC_WIRE_ID_KEY`, byte for
+  byte (mode 0400 or 0440, 16 to 4096 bytes of UTF-8, no trailing newline:
+  write it with `printf %s`). The state key file is 32 raw bytes or their
+  base64 (mode 0400 or 0440). Both are read at start; a refused key refuses
+  start, and errors never include a key.
+- **What leaves the receiver.** Only the 053 §6.2.3 values: class, syscall,
+  result, errno name (`other` outside the closed enum), init-namespace pid and
+  ppid, the exact audit serial, `incomplete` (`path` for an exec without
+  `exe` or a file event without a path, `args` for an exec without a readable
+  argv), and for `connect` and `accept` the peer family, port and keyed peer
+  id (`fabric.network.host_id`). `bind`'s address is local and is not a peer.
+  The command name, owner, raw peer address, argv, working directory and
+  paths are never emitted; executable, argv and path digests (bare hex) only
+  under `digests: permitted`. Deduplication never applies: every event keeps
+  its own position.
+- **State.** `state_dir/records/` is the library's sealed state (epoch,
+  staging, quarantine); `state_dir/cursor.state` is the logfile cursor,
+  sealed in the host-records envelope (kind `cursor`) with the state key.
+  There is no plaintext checkpoint in production. Corrupt or unauthenticated
+  state refuses start and is never reset.
+- **Acknowledgement.** A staged batch is acknowledged, and the logfile cursor
+  advanced, only when the next consumer accepted all of it. That equals the
+  Node's acknowledgement only on a synchronous pipeline: **no `batch`
+  processor and `sending_queue.enabled: false`** on the `otlp_http`
+  exporter. The library's staging is the durable queue; an exporter queue
+  would acknowledge before the Node does. A batch the Node refuses with
+  INVALID_ARGUMENT (HTTP 400) is quarantined: its positions become a
+  `span_dropped` loss marker and the batch stays sealed in
+  `records/quarantine/`. Every other failure (401, 403, network) keeps the
+  batch staged and retries with backoff; nothing is read past a staged
+  logfile range until it is acknowledged.
+- **Logfile cursor.** For each range the receiver records the range end as
+  in flight, stages the range's upstream losses on a heartbeat, stages the
+  range's events in one batch, marks the range staged, delivers, and only
+  then moves the cursor. A restart in between asks the library whether the
+  range was staged, so a range is never staged twice and a replay never mints
+  new ids. A partial read (oversized or invalid lines, untranslatable
+  events), `source_rotation_gap`, `source_truncated` (copytruncate or
+  rewrite) and `source_missing` are upstream loss with an unknown count. A
+  proven adjacent numeric rotation is not a loss.
+- **Netlink.** No cursor. Events are staged in batches of at most 512.
+  Upstream loss on the next heartbeat: `socket_overflow` (ENOBUFS, unknown
+  count), `assembly_evicted` and `rate_limited` (exact), `backlog_limit` (the
+  kernel's audit `lost` counter, read with AUDIT_GET when the process has
+  CAP_AUDIT_CONTROL; kernel-wide, so it can over-report for this listener; and
+  events refused while 256 staged batches await the Node), `restart`
+  (unknown, at every start of an existing source: events in kernel buffers
+  across a restart are never read) and `unknown` (a truncated or malformed
+  datagram).
+- **Shutdown** stages the final marker and makes one bounded (2 s) attempt to
+  deliver it and anything still staged; the rest is replayed by the next
+  start, whose manifest lists the epoch if it was not sealed.
+
+Local verification: `go test -race ./...` (the logfile tests need Linux):
+`TestProductionTracesGolden` (equal to
+`contracts/capture/v1/fixtures/host/valid/record-exec-auditd.json`),
+`TestLogfileCursorAdvancesOnlyAfterAck`, `TestNetlinkOverflowIsUpstreamLoss`,
+`TestStagedReplayKeepsIDs`, `TestRotationAndTruncationReasons`,
+`TestProductionRefusesWithoutLabelOrKey`, `TestCanariesNotInStagingOrCheckpoint`
+and `TestRefusedRecordBatchIsQuarantined`. They do not qualify live kernel
+audit collection.

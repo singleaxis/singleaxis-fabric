@@ -5,8 +5,11 @@ package auditreceiver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"go.opentelemetry.io/collector/component"
@@ -22,18 +25,40 @@ type logLike interface {
 	Warn(msg string, fields ...zap.Field)
 }
 
+// errNetlinkTruncated is a datagram larger than the read buffer: a record lost.
+var errNetlinkTruncated = errors.New("truncated audit netlink datagram")
+
+// netlinkConn is the audit multicast socket (a fake in tests).
+type netlinkConn interface {
+	read(buf []byte) (int, error)
+	close() error
+}
+
 type auditReceiver struct {
-	cfg     *Config
-	logger  *zap.Logger
-	next    consumer.Logs
+	cfg    *Config
+	logger *zap.Logger
+	next   consumer.Logs
+	// traces and version are production mode's consumer and capture point
+	// version (the distribution's build version).
+	traces  consumer.Traces
+	version string
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	asm     *assembler
 	dedup   *deduper
 	bucket  *tokenBucket
-	conn    *auditConn
+	conn    netlinkConn
 	stats   recvStats
-	durable *durableLog
+	// Production mode: the host source and the netlink loss counters the
+	// reader goroutine fills (production_netlink.go).
+	prod               *productionSink
+	netlinkOverflows   atomic.Uint64
+	netlinkMalformed   atomic.Uint64
+	kernelLost         func() (uint32, error)
+	kernelLostDisabled bool
+	kernelLostSeen     bool
+	kernelLostLast     uint32
+	durable            *durableLog
 	// consume owns this bounded retry queue. It is intentionally not durable:
 	// a collector crash can still lose records queued here.
 	pending        []plog.Logs
@@ -64,6 +89,31 @@ func newAuditReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if cfg.Mode == modeProduction {
+		return nil, fmt.Errorf("audit receiver: mode: production exports host records as traces; use it in a traces pipeline")
+	}
+	return newReceiver(cfg, set, next), nil
+}
+
+// newProductionReceiver is the traces receiver of production mode.
+func newProductionReceiver(cfg *Config, set receiver.Settings, next consumer.Traces) (*auditReceiver, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if cfg.Mode != modeProduction {
+		return nil, fmt.Errorf("audit receiver: a traces pipeline needs mode: production; local mode exports logs")
+	}
+	if set.BuildInfo.Version == "" {
+		return nil, fmt.Errorf("audit receiver: production mode needs the distribution's build version for its capture point")
+	}
+	r := newReceiver(cfg, set, nil)
+	r.traces = next
+	r.version = set.BuildInfo.Version
+	r.kernelLost = auditLostCounter
+	return r, nil
+}
+
+func newReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) *auditReceiver {
 	return &auditReceiver{
 		cfg:    cfg,
 		logger: set.Logger,
@@ -71,10 +121,13 @@ func newAuditReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*
 		asm:    newAssembler(cfg.AssemblyTimeout, 4096),
 		dedup:  newDeduper(cfg.DedupeWindow),
 		bucket: newTokenBucket(cfg.MaxEventsPerSec),
-	}, nil
+	}
 }
 
 func (r *auditReceiver) Start(ctx context.Context, _ component.Host) error {
+	if r.cfg.Mode == modeProduction {
+		return r.startProduction()
+	}
 	ctx, r.cancel = context.WithCancel(context.Background())
 	if r.cfg.Source == "logfile" {
 		d, err := openDurableLog(r.cfg)
@@ -154,6 +207,11 @@ func (r *auditReceiver) readNetlink(ctx context.Context, out chan<- string) {
 				return
 			default:
 			}
+			if errors.Is(err, syscall.ENOBUFS) {
+				r.netlinkOverflows.Add(1)
+			} else if errors.Is(err, errNetlinkTruncated) {
+				r.netlinkMalformed.Add(1)
+			}
 			r.noteSourceIssue("netlink_read_error")
 			select {
 			case <-ctx.Done():
@@ -164,6 +222,7 @@ func (r *auditReceiver) readNetlink(ctx context.Context, out chan<- string) {
 		}
 		lines, err := decodeAuditNetlink(buf[:n])
 		if err != nil {
+			r.netlinkMalformed.Add(1)
 			r.noteSourceIssue("netlink_malformed_frame")
 			continue
 		}

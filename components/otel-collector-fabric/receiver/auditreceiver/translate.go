@@ -25,20 +25,8 @@ const (
 // reduced to a SHA-256 here — collection-side minimization, so secret-bearing
 // command lines never leave the host boundary.
 func (r *auditReceiver) translate(ev *auditEvent) (plog.LogRecord, string, bool) {
-	sys := ev.find(recSyscall)
-	if sys == nil {
-		return plog.LogRecord{}, "", false
-	}
-	nr, _ := strconv.Atoi(sys.fields["syscall"])
-	name := syscallNames[[2]int{archIndex(sys.fields["arch"]), nr}]
-	if name == "" {
-		return plog.LogRecord{}, "", false
-	}
-	class := syscallClass(name)
-	if !r.cfg.classEnabled(class) {
-		return plog.LogRecord{}, "", false
-	}
-	if r.cfg.RuleKey != "" && sys.fields["key"] != r.cfg.RuleKey {
+	sys, name, class, ok := r.selectEvent(ev)
+	if !ok {
 		return plog.LogRecord{}, "", false
 	}
 
@@ -112,6 +100,29 @@ func (r *auditReceiver) translate(ev *auditEvent) (plog.LogRecord, string, bool)
 		}
 	}
 	return rec, dedupeKey(name, sys, ev), true
+}
+
+// selectEvent finds the SYSCALL record of an assembled event and returns it
+// with the syscall name and class, or false when the event carries no
+// syscall the configuration enabled (class, native ABI, rule key).
+func (r *auditReceiver) selectEvent(ev *auditEvent) (*auditRecord, string, string, bool) {
+	sys := ev.find(recSyscall)
+	if sys == nil {
+		return nil, "", "", false
+	}
+	nr, _ := strconv.Atoi(sys.fields["syscall"])
+	name := syscallNames[[2]int{archIndex(sys.fields["arch"]), nr}]
+	if name == "" {
+		return nil, "", "", false
+	}
+	class := syscallClass(name)
+	if !r.cfg.classEnabled(class) {
+		return nil, "", "", false
+	}
+	if r.cfg.RuleKey != "" && sys.fields["key"] != r.cfg.RuleKey {
+		return nil, "", "", false
+	}
+	return sys, name, class, true
 }
 
 // syscallClass buckets a syscall name into a config class.

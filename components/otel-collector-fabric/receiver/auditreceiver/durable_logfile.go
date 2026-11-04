@@ -319,6 +319,7 @@ func (d *durableLog) transition(reason string) (plog.Logs, logCursor, error) {
 		return ld, c, errors.New("audit rotation changed during inventory; retrying without cursor advance")
 	}
 	end := logCursor{FileID: id, Generation: c.Generation + 1}
+	d.transitionReason = reason
 	lr := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
 	lr.SetTimestamp(pcommonNow())
 	lr.Attributes().PutStr("event_class", "audit")
@@ -386,162 +387,17 @@ func readBoundedLine(ctx context.Context, br *bufio.Reader, max int, observe fun
 }
 func (r *auditReceiver) readDurableBatch(ctx context.Context, d *durableLog) (plog.Logs, logCursor, error) {
 	ld := plog.NewLogs()
-	c := d.state.Cursor
-	if d.file == nil {
-		return ld, c, errors.New("audit logfile is unavailable")
+	rng, err := r.readDurableRange(ctx, d)
+	if err != nil {
+		return ld, d.state.Cursor, err
 	}
-	if _, err := d.file.Seek(c.Offset, io.SeekStart); err != nil {
-		return ld, c, err
-	}
-	br := bufio.NewReaderSize(d.file, 4096)
-	events := make(map[string]*batchEvent)
-	var order []*batchEvent
-	counts := batchCounts{}
-	start := c.Offset
-	// Retain only the last 256 actually observed source bytes. The committed
-	// anchor must never be minted from different bytes read after translation.
-	tailN := int64(256)
-	if start < tailN {
-		tailN = start
-	}
-	tail := make([]byte, tailN)
-	if tailN > 0 {
-		if _, err := d.file.ReadAt(tail, start-tailN); err != nil {
-			return ld, d.state.Cursor, errSourceChanged
-		}
-		if digest(tail) != c.Anchor {
-			return ld, d.state.Cursor, errSourceChanged
-		}
-	}
-	observe := func(part []byte) {
-		if len(part) >= 256 {
-			tail = append(tail[:0], part[len(part)-256:]...)
-		} else {
-			tail = append(tail, part...)
-			if len(tail) > 256 {
-				tail = append(tail[:0], tail[len(tail)-256:]...)
-			}
-		}
-	}
-	var observed []observedRange
-	lastActivity := time.Now()
-	for chunks := 0; chunks < r.cfg.MaxBatchRecords && c.Offset-start < int64(r.cfg.MaxBatchBytes); chunks++ {
-		if ctx.Err() != nil {
-			return ld, d.state.Cursor, ctx.Err()
-		}
-		// Never split a potentially valid <=max_record_bytes line merely because
-		// prior records used the batch budget. Resume it in the next batch instead.
-		if c.Offset > start && c.Offset-start+int64(r.cfg.MaxRecordBytes) > int64(r.cfg.MaxBatchBytes) {
-			break
-		}
-		priorTail := append([]byte(nil), tail...)
-		line, n, large, sum, err := readBoundedLine(ctx, br, r.cfg.MaxRecordBytes, observe)
-		if err == io.EOF && c.Discarding && n > 0 {
-			observed = append(observed, observedRange{c.Offset, c.Offset + n, sum})
-			c.Offset += n
-			counts.discarded += n
-			break
-		}
-		if err == io.EOF {
-			tail = priorTail
-			// Rewind fragments consumed on EOF. Wait briefly for trailing records.
-			if _, e := d.file.Seek(c.Offset, io.SeekStart); e != nil {
-				return ld, d.state.Cursor, e
-			}
-			br.Reset(d.file)
-			if time.Since(lastActivity) < r.cfg.AssemblyTimeout && (len(events) > 0 || n > 0) {
-				if !waitLog(ctx, 20*time.Millisecond) {
-					return ld, d.state.Cursor, ctx.Err()
-				}
-				continue
-			}
-			if n > 0 {
-				nf, id, e := openLog(d.cfg.LogPath)
-				if e == nil {
-					nf.Close()
-					if id != c.FileID {
-						counts.input++
-						counts.invalid++
-						observe(line)
-						observed = append(observed, observedRange{c.Offset, c.Offset + n, sum})
-						c.Offset += n
-					}
-				}
-			}
-			break
-		}
-		if err != nil && err != io.ErrShortBuffer {
-			return ld, d.state.Cursor, err
-		}
-		before := c.Offset
-		observed = append(observed, observedRange{c.Offset, c.Offset + n, sum})
-		c.Offset += n
-		lastActivity = time.Now()
-		if c.Discarding || large {
-			if !c.Discarding {
-				counts.input++
-				counts.oversized++
-			}
-			counts.discarded += n
-			c.Discarding = err == io.ErrShortBuffer
-			// ReadSlice may have consumed bytes beyond the exact configured limit.
-			// Rewind buffered lookahead to the persisted discard boundary.
-			if _, e := d.file.Seek(c.Offset, io.SeekStart); e != nil {
-				return ld, d.state.Cursor, e
-			}
-			br.Reset(d.file)
-			continue
-		}
-		counts.input++
-		rec := parseRecord(string(line))
-		if rec == nil {
-			counts.invalid++
-			continue
-		}
-		key := fmt.Sprintf("%d:%d:%d", rec.sec, rec.msec, rec.serial)
-		ev := events[key]
-		if ev == nil {
-			ev = &batchEvent{event: &auditEvent{serial: rec.serial, sec: rec.sec, msec: rec.msec}, start: before}
-			events[key] = ev
-			order = append(order, ev)
-		}
-		ev.end = c.Offset
-		if rec.typ == recEOE {
-			ev.complete = true
-			delete(events, key)
-		} else {
-			ev.event.records = append(ev.event.records, rec)
-		}
-	}
-	if c.Offset == start {
+	c := rng.end
+	if c.Offset == rng.start {
 		return ld, c, nil
 	}
-	if d.beforeVerify != nil {
-		d.beforeVerify()
-	}
-	// Revalidate what was actually read, not a fresh anchor alone: copytruncate
-	// may rewrite an equal/longer inode between reading records and checkpoint.
-	oldAnchor, err := anchorAt(d.file, start)
-	if err != nil || oldAnchor != d.state.Cursor.Anchor {
-		return plog.NewLogs(), d.state.Cursor, errSourceChanged
-	}
-	for _, span := range observed {
-		if ctx.Err() != nil {
-			return plog.NewLogs(), d.state.Cursor, ctx.Err()
-		}
-		h := sha256.New()
-		_, err = io.Copy(h, io.NewSectionReader(d.file, span.start, span.end-span.start))
-		if err != nil || hex.EncodeToString(h.Sum(nil)) != span.hash {
-			return plog.NewLogs(), d.state.Cursor, errSourceChanged
-		}
-	}
-	c.Anchor = digest(tail)
-	fresh, err := anchorAt(d.file, c.Offset)
-	if err != nil || fresh != c.Anchor {
-		return plog.NewLogs(), d.state.Cursor, errSourceChanged
-	}
+	counts := rng.counts
 	out := ld.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
-	for _, ev := range order {
+	for _, ev := range rng.order {
 		if !ev.complete {
 			counts.incomplete++
 		}
@@ -573,6 +429,176 @@ func (r *auditReceiver) readDurableBatch(ctx context.Context, d *durableLog) (pl
 	a.PutInt("audit.incomplete_events", counts.incomplete)
 	a.PutInt("audit.unmatched_events", counts.unmatched)
 	a.PutInt("audit.discarded_bytes", counts.discarded)
-	d.identify(marker, c, start, "checkpoint:"+strconv.FormatInt(c.Offset, 10))
+	d.identify(marker, c, rng.start, "checkpoint:"+strconv.FormatInt(c.Offset, 10))
 	return ld, c, nil
+}
+
+// durableRange is one verified read of the source: the assembled events in
+// order, the input counters and the candidate cursor. end.Offset == start
+// means nothing was consumed.
+type durableRange struct {
+	order  []*batchEvent
+	counts batchCounts
+	start  int64
+	end    logCursor
+}
+
+// readDurableRange reads and verifies the next bounded range of the source
+// without translating it (both modes translate the result their own way).
+func (r *auditReceiver) readDurableRange(ctx context.Context, d *durableLog) (durableRange, error) {
+	c := d.state.Cursor
+	if d.file == nil {
+		return durableRange{}, errors.New("audit logfile is unavailable")
+	}
+	if _, err := d.file.Seek(c.Offset, io.SeekStart); err != nil {
+		return durableRange{}, err
+	}
+	br := bufio.NewReaderSize(d.file, 4096)
+	events := make(map[string]*batchEvent)
+	var order []*batchEvent
+	counts := batchCounts{}
+	start := c.Offset
+	// Retain only the last 256 actually observed source bytes. The committed
+	// anchor must never be minted from different bytes read after translation.
+	tailN := int64(256)
+	if start < tailN {
+		tailN = start
+	}
+	tail := make([]byte, tailN)
+	if tailN > 0 {
+		if _, err := d.file.ReadAt(tail, start-tailN); err != nil {
+			return durableRange{}, errSourceChanged
+		}
+		if digest(tail) != c.Anchor {
+			return durableRange{}, errSourceChanged
+		}
+	}
+	observe := func(part []byte) {
+		if len(part) >= 256 {
+			tail = append(tail[:0], part[len(part)-256:]...)
+		} else {
+			tail = append(tail, part...)
+			if len(tail) > 256 {
+				tail = append(tail[:0], tail[len(tail)-256:]...)
+			}
+		}
+	}
+	var observed []observedRange
+	lastActivity := time.Now()
+	for chunks := 0; chunks < r.cfg.MaxBatchRecords && c.Offset-start < int64(r.cfg.MaxBatchBytes); chunks++ {
+		if ctx.Err() != nil {
+			return durableRange{}, ctx.Err()
+		}
+		// Never split a potentially valid <=max_record_bytes line merely because
+		// prior records used the batch budget. Resume it in the next batch instead.
+		if c.Offset > start && c.Offset-start+int64(r.cfg.MaxRecordBytes) > int64(r.cfg.MaxBatchBytes) {
+			break
+		}
+		priorTail := append([]byte(nil), tail...)
+		line, n, large, sum, err := readBoundedLine(ctx, br, r.cfg.MaxRecordBytes, observe)
+		if err == io.EOF && c.Discarding && n > 0 {
+			observed = append(observed, observedRange{c.Offset, c.Offset + n, sum})
+			c.Offset += n
+			counts.discarded += n
+			break
+		}
+		if err == io.EOF {
+			tail = priorTail
+			// Rewind fragments consumed on EOF. Wait briefly for trailing records.
+			if _, e := d.file.Seek(c.Offset, io.SeekStart); e != nil {
+				return durableRange{}, e
+			}
+			br.Reset(d.file)
+			if time.Since(lastActivity) < r.cfg.AssemblyTimeout && (len(events) > 0 || n > 0) {
+				if !waitLog(ctx, 20*time.Millisecond) {
+					return durableRange{}, ctx.Err()
+				}
+				continue
+			}
+			if n > 0 {
+				nf, id, e := openLog(d.cfg.LogPath)
+				if e == nil {
+					nf.Close()
+					if id != c.FileID {
+						counts.input++
+						counts.invalid++
+						observe(line)
+						observed = append(observed, observedRange{c.Offset, c.Offset + n, sum})
+						c.Offset += n
+					}
+				}
+			}
+			break
+		}
+		if err != nil && err != io.ErrShortBuffer {
+			return durableRange{}, err
+		}
+		before := c.Offset
+		observed = append(observed, observedRange{c.Offset, c.Offset + n, sum})
+		c.Offset += n
+		lastActivity = time.Now()
+		if c.Discarding || large {
+			if !c.Discarding {
+				counts.input++
+				counts.oversized++
+			}
+			counts.discarded += n
+			c.Discarding = err == io.ErrShortBuffer
+			// ReadSlice may have consumed bytes beyond the exact configured limit.
+			// Rewind buffered lookahead to the persisted discard boundary.
+			if _, e := d.file.Seek(c.Offset, io.SeekStart); e != nil {
+				return durableRange{}, e
+			}
+			br.Reset(d.file)
+			continue
+		}
+		counts.input++
+		rec := parseRecord(string(line))
+		if rec == nil {
+			counts.invalid++
+			continue
+		}
+		key := fmt.Sprintf("%d:%d:%d", rec.sec, rec.msec, rec.serial)
+		ev := events[key]
+		if ev == nil {
+			ev = &batchEvent{event: &auditEvent{serial: rec.serial, sec: rec.sec, msec: rec.msec}, start: before}
+			events[key] = ev
+			order = append(order, ev)
+		}
+		ev.end = c.Offset
+		if rec.typ == recEOE {
+			ev.complete = true
+			delete(events, key)
+		} else {
+			ev.event.records = append(ev.event.records, rec)
+		}
+	}
+	if c.Offset == start {
+		return durableRange{start: start, end: c}, nil
+	}
+	if d.beforeVerify != nil {
+		d.beforeVerify()
+	}
+	// Revalidate what was actually read, not a fresh anchor alone: copytruncate
+	// may rewrite an equal/longer inode between reading records and checkpoint.
+	oldAnchor, err := anchorAt(d.file, start)
+	if err != nil || oldAnchor != d.state.Cursor.Anchor {
+		return durableRange{}, errSourceChanged
+	}
+	for _, span := range observed {
+		if ctx.Err() != nil {
+			return durableRange{}, ctx.Err()
+		}
+		h := sha256.New()
+		_, err = io.Copy(h, io.NewSectionReader(d.file, span.start, span.end-span.start))
+		if err != nil || hex.EncodeToString(h.Sum(nil)) != span.hash {
+			return durableRange{}, errSourceChanged
+		}
+	}
+	c.Anchor = digest(tail)
+	fresh, err := anchorAt(d.file, c.Offset)
+	if err != nil || fresh != c.Anchor {
+		return durableRange{}, errSourceChanged
+	}
+	return durableRange{order: order, counts: counts, start: start, end: c}, nil
 }

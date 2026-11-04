@@ -21,6 +21,10 @@ func (c *auditConn) manageRules(cfg *Config, logger logLike) error {
 	return fmt.Errorf("manage_rules requires Linux (CAP_AUDIT_CONTROL)")
 }
 
+func auditLostCounter() (uint32, error) {
+	return 0, fmt.Errorf("audit lost counter requires Linux")
+}
+
 func decodeAuditNetlink([]byte) ([]string, error) {
 	return nil, fmt.Errorf("audit netlink requires Linux")
 }
