@@ -66,3 +66,19 @@ f4f8d914eb1fcf8ced43b2222760187e0e358db7:sdk/typescript/test/identity.test.ts:ge
 36f7a8927387e1e4b90cb2cc6ba7a7e446cbb210:sdk/typescript/test/identity.test.ts:generic-api-key:247
 67d32c8654e712be4776dc242a505e877625f798:components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:generic-api-key:31
 e7f51825264e116a36e00ce4b29d26e8fbb4f975:components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:generic-api-key:31
+# Spec 056 M2 id-key-file test vectors: the public, synthetic key_base64 values
+# in contracts/capture/v1/fixtures/host/id-key-file-v1.json, under the
+# feature-branch commit 240fa33 and the PR #219 squash 067de5a. See
+# "Spec 056 M2 id-key-file vectors".
+240fa334c8da31470b3f30101b93adb130031f0d:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:17
+240fa334c8da31470b3f30101b93adb130031f0d:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:25
+240fa334c8da31470b3f30101b93adb130031f0d:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:33
+240fa334c8da31470b3f30101b93adb130031f0d:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:49
+240fa334c8da31470b3f30101b93adb130031f0d:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:57
+240fa334c8da31470b3f30101b93adb130031f0d:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:73
+067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:17
+067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:25
+067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:33
+067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:49
+067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:57
+067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:73
