@@ -796,3 +796,95 @@ func TestPrintSourceIDVector(t *testing.T) {
 		t.Fatal("print-source-id without a label accepted")
 	}
 }
+
+// fakeRing is an eventSource whose ring holds a fixed set of records; next
+// blocks until stop, like the BPF reader, once the ring is empty.
+type fakeRing struct {
+	ring    chan *event
+	stopped chan struct{}
+	stopErr error
+}
+
+func newFakeRing(n int, stopErr error) *fakeRing {
+	r := &fakeRing{ring: make(chan *event, n), stopped: make(chan struct{}), stopErr: stopErr}
+	for i := 0; i < n; i++ {
+		r.ring <- &event{Type: evConnect, Pid: uint32(100 + i), Ppid: 1, Family: 2, Port: 443, Scope: scopeAgent}
+	}
+	return r
+}
+
+func (r *fakeRing) next() (*event, error) {
+	select {
+	case e := <-r.ring:
+		return e, nil
+	case <-r.stopped:
+		select {
+		case e := <-r.ring:
+			return e, nil
+		default:
+			return nil, errors.New("flushed")
+		}
+	}
+}
+
+func (r *fakeRing) lossCount() (uint64, error) { return 0, nil }
+
+func (r *fakeRing) stop() error {
+	if r.stopErr != nil {
+		return r.stopErr
+	}
+	close(r.stopped)
+	return nil
+}
+
+func sentSpans(send *fakeSender, name string) []span {
+	var out []span
+	for _, batch := range send.sent {
+		for _, s := range batch {
+			if s.name == name {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// TestShutdownStagesTheQueueAndTheRing: on SIGTERM every event still queued
+// or in the ring is staged before the final marker, with no loss declared;
+// when the ring cannot be stopped, unknown loss precedes the final marker.
+func TestShutdownStagesTheQueueAndTheRing(t *testing.T) {
+	const n = 3*4096 + 17 // more than the event queue holds
+	for _, tc := range []struct {
+		name    string
+		stopErr error
+	}{{"drained", nil}, {"stop fails", errors.New("no ring")}} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := productionConfig(t, t.TempDir())
+			src := openTestSource(t, cfg)
+			send := &fakeSender{}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // SIGTERM before the loop read anything
+			if err := productionLoop(ctx, cfg, newFakeRing(n, tc.stopErr), newProduction(src, send), nil); err != nil {
+				t.Fatal(err)
+			}
+			events := len(sentSpans(send, "fabric.sensor_event"))
+			var lost []any
+			for _, s := range sentSpans(send, "fabric.capture_heartbeat") {
+				if s.attrs["fabric.sensor.upstream_loss_reason"] == lossUnknown {
+					lost = append(lost, s.attrs["fabric.sensor.upstream_lost"])
+				}
+			}
+			// The final marker: the last span, a heartbeat without upstream keys.
+			last := send.sent[len(send.sent)-1]
+			if final := last[len(last)-1]; final.name != "fabric.capture_heartbeat" || final.attrs["fabric.sensor.upstream_lost"] != nil {
+				t.Fatalf("last span is not the final marker: %+v", final)
+			}
+			switch {
+			case tc.stopErr == nil && (events != n || len(lost) != 0):
+				t.Fatalf("staged %d of %d events, unknown loss %v", events, n, lost)
+			case tc.stopErr != nil && (len(lost) != 1 || lost[0] != int64(-1)):
+				t.Fatalf("unknown loss = %v (events %d)", lost, events)
+			}
+		})
+	}
+}

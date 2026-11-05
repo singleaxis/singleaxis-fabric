@@ -244,6 +244,16 @@ func min(a, b int) int {
 	return b
 }
 
+// stop detaches the programs, so nothing new enters the ring, and flushes
+// the reader: next returns every record still in the ring, then ErrFlushed.
+func (rt *bpfRuntime) stop() error {
+	for _, l := range rt.links {
+		l.Close()
+	}
+	rt.links = nil
+	return rt.reader.Flush()
+}
+
 func (rt *bpfRuntime) close() {
 	if rt.reader != nil {
 		rt.reader.Close()

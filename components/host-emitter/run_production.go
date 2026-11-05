@@ -18,6 +18,10 @@ import (
 // shutdown; anything unsent stays staged and is replayed by the next epoch.
 const finalDrainTimeout = 5 * time.Second
 
+// ringDrainTimeout bounds reading what the BPF ring still holds at shutdown;
+// past it the epoch declares unknown upstream loss before its final marker.
+const ringDrainTimeout = 5 * time.Second
+
 // printSourceID returns the s- id of the configured label under the id key
 // (the value an operator puts in the Node's group as sourceId).
 func printSourceID(label, keyFile string) (string, error) {
@@ -62,6 +66,9 @@ func sourceConfig(cfg *Config, idKey, stateKey []byte) hostrecords.Config {
 type eventSource interface {
 	next() (*event, error)
 	lossCount() (uint64, error)
+	// stop ends production into the ring and wakes next, which then returns
+	// every record still in the ring followed by an error.
+	stop() error
 }
 
 // runProduction exports host records as traces (053 §6.2.9).
@@ -108,7 +115,9 @@ func runProduction(cfg *Config) error {
 }
 
 // productionLoop reads events, stages them, and stages heartbeats until ctx
-// ends; it then stages the final marker and tries once to deliver it.
+// ends; it then stops the ring, stages what it and the event queue still
+// hold (or declares unknown upstream loss when it cannot), stages the final
+// marker and tries once to deliver it.
 func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *production, pods *podScope) error {
 	drainCtx, stopDrain := context.WithCancel(ctx)
 	drainErr := make(chan error, 1)
@@ -124,6 +133,10 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 
 	bucket := newTokenBucket(cfg.MaxEventsPerSec)
 	evCh := make(chan *event, 4096)
+	// The reader runs until the ring ends (stop, or a reader error), not until
+	// ctx ends: at shutdown the queue and the ring are read to the end.
+	abandon := make(chan struct{})
+	defer close(abandon)
 	go func() {
 		defer close(evCh)
 		for {
@@ -133,7 +146,7 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 			}
 			select {
 			case evCh <- e:
-			case <-ctx.Done():
+			case <-abandon:
 				return
 			}
 		}
@@ -171,7 +184,51 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 		pending = nil
 		return nil
 	}
+	add := func(e *event) error {
+		if !bucket.allow(time.Now()) {
+			rateLimited++
+			return nil
+		}
+		ev, ok := hostEvent(e)
+		if !ok {
+			return nil
+		}
+		pending = append(pending, ev)
+		if len(pending) >= stageBatchMax {
+			return flush()
+		}
+		return nil
+	}
+	// drainRing stages every event still queued or in the ring. Whatever it
+	// cannot read is declared, so a sealed epoch never hides a loss.
+	drainRing := func() error {
+		if err := rt.stop(); err != nil {
+			log.Printf("fabric-host-emitter: cannot stop the BPF ring at shutdown (%v); declared unknown upstream loss", err)
+			prod.upstreamLoss(lossUnknown, -1)
+			return nil
+		}
+		timeout := time.NewTimer(ringDrainTimeout)
+		defer timeout.Stop()
+		for {
+			select {
+			case e, ok := <-evCh:
+				if !ok {
+					return nil
+				}
+				if err := add(e); err != nil {
+					return err
+				}
+			case <-timeout.C:
+				log.Printf("fabric-host-emitter: BPF ring not drained within %s at shutdown; declared unknown upstream loss", ringDrainTimeout)
+				prod.upstreamLoss(lossUnknown, -1)
+				return nil
+			}
+		}
+	}
 	shutdown := func() error {
+		if err := drainRing(); err != nil {
+			return err
+		}
 		if err := flush(); err != nil {
 			return err
 		}
@@ -214,23 +271,15 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 		case e, ok := <-evCh:
 			if !ok {
 				if ctx.Err() != nil {
+					// The reader ended on its own error, not on stop: what the
+					// ring still held is unknown.
+					prod.upstreamLoss(lossUnknown, -1)
 					return shutdown()
 				}
 				return fmt.Errorf("ringbuf closed")
 			}
-			if !bucket.allow(time.Now()) {
-				rateLimited++
-				continue
-			}
-			ev, ok := hostEvent(e)
-			if !ok {
-				continue
-			}
-			pending = append(pending, ev)
-			if len(pending) >= stageBatchMax {
-				if err := flush(); err != nil {
-					return err
-				}
+			if err := add(e); err != nil {
+				return err
 			}
 		case <-batchTick.C:
 			if err := flush(); err != nil {
