@@ -527,6 +527,20 @@ def _caller_reads(monkeypatch: pytest.MonkeyPatch,
     return reads
 
 
+def test_stat_read_matches_the_os_read(linux: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """OD-8's caller-side read calls libc with the GIL held (an ``os`` call would let the
+    capture worker run first); without ctypes it falls back to the ``os`` functions. Both
+    read the same bytes, and a missing pid reads ``None``."""
+    _fake_stat(linux, 4242, ppid=os.getpid(), ticks=6012)
+    held = _exec._read_stat(4242)
+    assert _exec._libc() is not None  # CPython on POSIX: the libc path
+    assert held is not None and held.startswith(b"4242 (sh (x) y) S ")
+    assert _exec._read_stat(4243) is None
+    monkeypatch.setattr(_exec, "_LIBC", [None])
+    assert _exec._read_stat(4242) == held
+    assert _exec._read_stat(4243) is None
+
+
 def test_start_ns_read_before_reap(linux: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """OD-8: a child that exits at once still carries ``start_ns``. The calling thread
     reads the stat line right after ``Popen`` returned, before the caller can reap the

@@ -325,15 +325,62 @@ def _gone(ref: weakref.ref[Any]) -> bool:
     return popen is None or _returncode(popen) is not None
 
 
+class _HeldRead(threading.local):
+    """libc ``open``/``read``/``close`` called with the GIL held (``ctypes.PyDLL``), and
+    this thread's read buffer. ``os.open``/``os.read``/``os.close`` each release the GIL,
+    and on the caller's thread every release lets the capture worker run first, so the
+    caller would wait out the worker's encoding three times per start (053 §4.4, P4-EXEC).
+    A procfs stat read never blocks, so holding the GIL across it is safe."""
+
+    buffer: Any = None
+
+
+_HELD = _HeldRead()
+_LIBC: list[Any] = []  # [(open, read, close, string_at, buffer factory)] or [None]
+
+
+def _libc() -> Any:
+    if not _LIBC:
+        try:
+            import ctypes  # noqa: PLC0415 - only where the caller-side read runs
+
+            libc = ctypes.PyDLL(None)
+            c_open, c_read, c_close = libc.open, libc.read, libc.close
+            c_open.argtypes, c_open.restype = (ctypes.c_char_p, ctypes.c_int), ctypes.c_int
+            c_read.argtypes = (ctypes.c_int, ctypes.c_void_p, ctypes.c_size_t)
+            c_read.restype = ctypes.c_ssize_t
+            c_close.argtypes, c_close.restype = (ctypes.c_int,), ctypes.c_int
+            _LIBC.append((c_open, c_read, c_close, ctypes.string_at,
+                          ctypes.create_string_buffer))  # fmt: skip
+        except Exception:
+            _LIBC.append(None)  # no ctypes or no libc symbols: the os functions below
+    return _LIBC[0]
+
+
 def _read_stat(pid: int) -> bytes | None:
     """``/proc/<pid>/stat`` as one read (open, read, close; no other I/O), or ``None``."""
     try:
-        with _guard.internal():
-            fd = os.open(f"{_PROC_ROOT}/{pid}/stat", os.O_RDONLY | _O_CLOEXEC)
-            try:
-                return os.read(fd, _STAT_READ_BYTES)
-            finally:
-                os.close(fd)
+        libc = _libc()
+        if libc is None:
+            with _guard.internal():
+                fd = os.open(f"{_PROC_ROOT}/{pid}/stat", os.O_RDONLY | _O_CLOEXEC)
+                try:
+                    return os.read(fd, _STAT_READ_BYTES)
+                finally:
+                    os.close(fd)
+        # Foreign calls only: no Python-level I/O a hook could observe, so no guard scope.
+        c_open, c_read, c_close, string_at, new_buffer = libc
+        buffer = _HELD.buffer
+        if buffer is None:
+            buffer = _HELD.buffer = new_buffer(_STAT_READ_BYTES)
+        fd = c_open(b"%b/%d/stat" % (os.fsencode(_PROC_ROOT), pid), os.O_RDONLY | _O_CLOEXEC)
+        if fd < 0:
+            return None
+        try:
+            size = c_read(fd, buffer, _STAT_READ_BYTES)
+        finally:
+            c_close(fd)
+        return None if size < 0 else string_at(buffer, size)
     except Exception:
         return None
 
