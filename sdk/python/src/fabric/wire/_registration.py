@@ -22,12 +22,21 @@ writer epoch, ``flock``-held for the writer's lifetime, with an mmap mirror of
   :func:`retire_orphan` removes one once it is declared, delivered and past the deadline.
 
 The file holds the emitted (pseudonymous) source id, the pid and the registration time:
-no content, and no clear label unless ``FABRIC_WIRE_LABELS=clear`` (050 §3.17)."""
+no content, and no clear label unless ``FABRIC_WIRE_LABELS=clear`` (050 §3.17).
+
+A filesystem that does not enforce ``flock`` between two open descriptions (a Docker
+Desktop bind mount from the macOS host, some network filesystems) lets any scan take a
+live writer's lock. The scan therefore never declares a registration this process still
+holds (its own drainer would otherwise declare its own live epoch an orphan), a finished
+writer removes its file under either name, and :func:`register` warns once when the
+spool's filesystem does not enforce the lock (another process's scan can still declare a
+live epoch there)."""
 
 from __future__ import annotations
 
 import contextlib
 import hashlib
+import logging
 import mmap
 import os
 import stat
@@ -65,6 +74,8 @@ _EPOCH_DIGITS = 20
 _U16, _U32, _U64 = struct.Struct("<H"), struct.Struct("<I"), struct.Struct("<Q")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 _HELD: weakref.WeakSet[Registration] = weakref.WeakSet()
+_LOG = logging.getLogger("fabric.wire")
+_WARNED_UNENFORCED: set[str] = set()  # spool directories already warned about
 if OFF_NEXT_SEQUENCE != MIRROR_OFFSET:  # pragma: no cover - the allocator writes this offset
     raise ImportError("registration mirror offset mismatch")
 
@@ -113,9 +124,27 @@ class Registration:
             with contextlib.suppress(Exception):
                 allocator.unbind_registration(self)
         if self._final and self.path is not None and self._fd >= 0:
-            with contextlib.suppress(OSError):
+            try:
                 os.unlink(self.path)
+            except FileNotFoundError:
+                # Declared while alive by a scan that took the lock on a filesystem that
+                # does not enforce flock: the renamed file is this one (the mirror maps
+                # its inode), and ``final`` is set, so it is no orphan.
+                self._unlink_declared()
+            except OSError:
+                pass
         self._release()
+
+    def _unlink_declared(self) -> None:
+        """Remove this epoch's ``.orphan`` file when it is this registration's own inode
+        with ``final`` set (never another writer's)."""
+        if self.path is None or self._fd < 0:
+            return
+        declared = os.path.join(os.path.dirname(self.path), _name(self.epoch, ORPHAN_SUFFIX))
+        with contextlib.suppress(OSError):
+            info, own = os.lstat(declared), os.fstat(self._fd)
+            if (info.st_dev, info.st_ino) == (own.st_dev, own.st_ino):
+                os.unlink(declared)
 
     def _release(self) -> None:
         mapped, fd = self._map, self._fd
@@ -339,7 +368,29 @@ def _new_file(path: str, directory: str, epoch: int, source_id: str, data: bytes
     registration = Registration("registered", epoch, source_id, None, path, fd, mapped,
                                 os.getpid())  # fmt: skip
     _HELD.add(registration)
+    _check_lock_enforced(path, directory)
     return registration
+
+
+def _check_lock_enforced(path: str, directory: str) -> None:
+    """Warn once per spool directory when its filesystem lets a second open description
+    take the held registration's flock (a Docker Desktop bind mount): another process's
+    scan could then declare a live epoch an orphan. One extra open at install only."""
+    if directory in _WARNED_UNENFORCED:
+        return
+    with contextlib.suppress(OSError):
+        fd = os.open(path, os.O_RDONLY | _NOFOLLOW)
+        try:
+            taken = _try_lock(fd)
+        finally:
+            os.close(fd)
+        if taken:
+            _WARNED_UNENFORCED.add(directory)
+            _LOG.warning(
+                "fabric.wire: the spool directory's filesystem does not enforce file locks "
+                "(a Docker Desktop bind mount?); put the spool on a local disk or a named "
+                "volume so several processes can share it safely"
+            )
 
 
 def _clear_stale(path: str) -> None:
@@ -376,12 +427,22 @@ def scan_orphans(spool: Spool, *, admitted: bool = False) -> list[Orphan]:
         return []
 
 
+def _held_here() -> set[int]:
+    """The epochs whose registration this process holds now (never orphans, whatever the
+    filesystem's locks say)."""
+    pid = os.getpid()
+    return {r.epoch for r in list(_HELD) if r._fd >= 0 and r._owner == pid}
+
+
 def _scan(directory: str) -> list[Orphan]:
     found: list[Orphan] = []
     renamed = False
+    held = _held_here()
     for name in sorted(os.listdir(directory)):
         if not name.endswith(REG_SUFFIX) or (epoch := _epoch_of(name)) is None:
             continue
+        if epoch in held:
+            continue  # this process's own live writer
         path = os.path.join(directory, name)
         try:
             fd, data = _read(path)

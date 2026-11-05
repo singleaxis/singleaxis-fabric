@@ -41,6 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   package metadata. The host emitter's Dockerfile gains its own title and
   description labels.
 
+- **A cleanly closed process no longer leaves `spool/.epochs/<epoch>.orphan`.**
+  On a filesystem that does not enforce `flock` between two open files (a
+  Docker Desktop bind mount from macOS), the agent's own drainer took its
+  live epoch registration's lock in its periodic scan and declared that
+  epoch an orphan; the writer then set `final` in the renamed file and could
+  not remove it. The scan now never declares a registration its own process
+  holds, a finished writer removes its file under either name, and
+  `fabric.wire.install()` warns once when the spool's filesystem does not
+  enforce locks (several processes sharing such a spool can still declare
+  each other's live epochs: use a named volume).
+
 ### Changed
 
 - **The `actions` view lists non-model HTTP requests.** Requests the
