@@ -851,7 +851,8 @@ def test_through_the_installed_wire_tee(tmp_path: Path) -> None:
         assert hooks.install(http_hosts=("api.example.com",)) is handle  # same configuration
         with pytest.raises(ValueError):
             hooks.install(http_hosts=["other.example"])
-        assert handle.close() is True
+        closed = handle.close()
+        assert closed is True
         assert _routes.rules() == ()
         assert handle.status()["capabilities"][POINT] == {"state": "disabled",
                                                           "reason": "shutdown"}  # fmt: skip

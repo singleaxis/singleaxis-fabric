@@ -506,7 +506,8 @@ def test_sandbox_hosts_without_a_provider_publish_remote_sandbox(
     encoded = [row for row in points if row.startswith("remote.sandbox@")]
     assert len(encoded) == 1 and encoded[0].endswith(":H:disabled:1:1:remote_sandbox")
     assert _rows(markers, "http.nonmodel")[-1] == ("disabled", "hook_disabled")
-    assert handle.close() is True
+    closed = handle.close()
+    assert closed is True
     assert _rows(markers, "remote.sandbox")[-1] == ("disabled", "remote_sandbox")
     assert hooks.install_from_env({"FABRIC_WIRE_SANDBOX_HOSTS": '["api.e2b.app"]'}) is not None
 
@@ -543,7 +544,8 @@ def test_the_http_channel_publishes_active_and_shutdown(
     assert len(_routes.rules()) == 1
     assert handle.disable("http.nonmodel") is True
     assert _rows(markers, "http.nonmodel")[-1] == ("disabled", "hook_disabled")
-    assert handle.close() is True and _routes.rules() == ()
+    closed = handle.close()
+    assert closed is True and _routes.rules() == ()
 
 
 def test_the_http_channel_needs_a_capture_handle() -> None:

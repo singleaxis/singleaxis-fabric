@@ -14,7 +14,7 @@
  * SDK's console output or in the governed content spool and store.
  */
 
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -214,9 +214,9 @@ function telemetry(exporter: InMemorySpanExporter): string {
 function files(root: string): string {
   const out: string[] = [];
   const walk = (dir: string) => {
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name);
-      if (statSync(path).isDirectory()) walk(path);
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
       else out.push(readFileSync(path, "utf8"));
     }
   };
