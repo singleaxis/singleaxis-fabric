@@ -652,3 +652,13 @@ def test_minted_ids_differ_across_threads_and_forks() -> None:
     os.close(read)
     os.waitpid(pid, 0)
     assert child != ct.mint_uuid4()
+
+
+def test_a_body_may_hold_exact_bytes_chunks() -> None:
+    """An observed stream's piece is a tuple of exact ``bytes`` chunks, joined on the
+    capture worker; it is charged by its total length, and any other element is misuse."""
+    body = RecordBody("network.response", (b"ab", b"", b"cde"), "text/plain", "network")
+    assert body.inflight_charge == 5
+    for chunks in ((b"a", bytearray(b"b")), (b"a", "b"), ([b"a"],)):
+        with pytest.raises(RecordsMisuseError):
+            RecordBody("network.response", chunks, "text/plain", "network")  # type: ignore[arg-type]

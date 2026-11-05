@@ -603,11 +603,13 @@ def _check_text(value: object, what: str) -> None:
 @dataclass(frozen=True, slots=True)
 class RecordBody:
     """One body, held by reference until the worker's PROTECT. ``str`` data is encoded to
-    UTF-8 on the capture worker only; a mutable buffer (``bytearray``, ``memoryview``) is
-    misuse. Empty ``data`` is a captured zero-byte object, never a failure marker."""
+    UTF-8 on the capture worker only, and a tuple of exact ``bytes`` chunks (an observed
+    stream's piece) is joined there, so the caller never copies it; a mutable buffer
+    (``bytearray``, ``memoryview``) is misuse. Empty ``data`` is a captured zero-byte
+    object, never a failure marker."""
 
     role: str
-    data: bytes | str
+    data: bytes | str | tuple[bytes, ...]
     media_type: str
     boundary: str
     content_provenance: ContentProvenance = "caller_reported"
@@ -618,7 +620,11 @@ class RecordBody:
         _check_text(self.role, "body role")
         _check_text(self.media_type, "body media_type")
         _check_text(self.boundary, "body boundary")
-        if not isinstance(self.data, (bytes, str)):
+        data = self.data
+        if type(data) is tuple:
+            if not all(type(chunk) is bytes for chunk in data):
+                raise RecordsMisuseError("records API misuse: body chunks must be bytes")
+        elif not isinstance(data, (bytes, str)):
             raise RecordsMisuseError("records API misuse: body data must be bytes or str")
         if self.content_provenance not in CONTENT_PROVENANCES:
             raise RecordsMisuseError("records API misuse: unknown content_provenance")
@@ -631,8 +637,11 @@ class RecordBody:
     @property
     def inflight_charge(self) -> int:
         """Bytes charged to ``max_inflight_bytes`` until encoded: ``len * 4`` for ``str``
-        (the UTF-8 upper bound), else the length."""
-        return len(self.data) * 4 if isinstance(self.data, str) else len(self.data)
+        (the UTF-8 upper bound), else the length (of all chunks)."""
+        data = self.data
+        if type(data) is tuple:
+            return sum(map(len, data))
+        return len(data) * 4 if isinstance(data, str) else len(data)
 
 
 # reason -> the content-v2 descriptor status it implies, and its projection (§3.4, R5).

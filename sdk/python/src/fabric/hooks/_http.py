@@ -284,16 +284,23 @@ class _Hop:
             self.stopped = True
 
     def _emit_pieces(self) -> None:
-        """Emit every whole 256 KiB piece of the window as a ``data`` record."""
-        joined = b"".join(self.window)
-        offset = 0
-        while len(joined) - offset >= PIECE_BYTES:
-            piece = joined[offset : offset + PIECE_BYTES]
-            offset += PIECE_BYTES
-            self.channel.piece(self, piece)
-        rest = joined[offset:]
-        self.window = [rest] if rest else []
-        self.window_bytes = len(rest)
+        """Emit every whole 256 KiB piece of the window as a ``data`` record. A piece is
+        the tuple of its chunks, joined by the capture worker: the caller copies only a
+        chunk that crosses a piece boundary, never the window."""
+        pending: list[bytes] = []
+        size = 0
+        for whole in self.window:
+            chunk = whole
+            while size + len(chunk) >= PIECE_BYTES:
+                need = PIECE_BYTES - size
+                pending.append(chunk if need == len(chunk) else chunk[:need])
+                chunk = chunk[need:] if need < len(chunk) else b""
+                self.channel.piece(self, tuple(pending))
+                pending, size = [], 0
+            if chunk:
+                pending.append(chunk)
+                size += len(chunk)
+        self.window, self.window_bytes = pending, size
 
     def _claim(self) -> bool:
         with _FINISH_LOCK:
@@ -579,7 +586,7 @@ class HttpChannel:
         for index, piece in enumerate(pieces[1:], start=1):
             self._request_piece(hop, piece, index, index == len(pieces) - 1)
 
-    def _piece_body(self, role: str, hop: _Hop, data: bytes, index: int,
+    def _piece_body(self, role: str, hop: _Hop, data: bytes | tuple[bytes, ...], index: int,
                     media_type: str) -> RecordBody:  # fmt: skip
         return RecordBody(role, data, media_type, BOUNDARY, "protocol", stream_id=hop.attempt.uid,
                           chunk_index=index)  # fmt: skip
@@ -664,7 +671,7 @@ class HttpChannel:
         self._count("transport_errors")
         self.outcome(hop, exc)
 
-    def piece(self, hop: _Hop, data: bytes) -> None:
+    def piece(self, hop: _Hop, data: tuple[bytes, ...]) -> None:
         """One whole 256 KiB response piece: a ``data`` record (after the start)."""
         self._start(hop)
         index = hop.pieces
@@ -703,7 +710,7 @@ class HttpChannel:
                 self._request_bodies(hop, pieces, bodies)
                 continuation = (0, True) if pieces else None
         if hop.retain and (hop.window or hop.response_body == "complete" or hop.pieces):
-            data = hop.window[0] if len(hop.window) == 1 else b"".join(hop.window)
+            data = hop.window[0] if len(hop.window) == 1 else tuple(hop.window)
             hop.window, hop.window_bytes = [], 0
             if hop.pieces:
                 continuation = (hop.pieces, True)

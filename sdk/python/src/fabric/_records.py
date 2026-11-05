@@ -637,7 +637,7 @@ class RecordsInput:
         has_evidence = evidence is not None
         for body in bodies:
             if isinstance(body, RecordBody):
-                if type(body.data) not in (bytes, str):  # a mutable or foreign buffer
+                if type(body.data) not in (bytes, str, tuple):  # a mutable or foreign buffer
                     misuse("body data must be frozen bytes or str")
                     continue
                 if body.content_provenance == "protocol" and provenance != "observed":
