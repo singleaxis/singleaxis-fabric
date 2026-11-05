@@ -186,6 +186,11 @@ def test_rbac_is_read_only_on_pods() -> None:
         "kind": roles[0]["kind"],
         "name": roles[0]["metadata"]["name"],
     }
+    # RBAC cannot scope a pod read to one node: the manifest says the grant is
+    # cluster-wide and what a compromised emitter can read with it (review, OD-12).
+    text = re.sub(r"\s*\n\s*#\s*", " ", EMITTER.read_text(encoding="utf-8"))
+    assert "The grant itself is cluster-wide" in text
+    assert "inline env values included" in text
     account = _one(docs, "ServiceAccount")
     assert binding["subjects"] == [
         {

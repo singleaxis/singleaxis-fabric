@@ -132,7 +132,7 @@ own ingress group on the Node. Local mode is unchanged.
 | `EMIT_STATE_KEY_FILE` | — | required; 32 raw bytes or their base64 (mode 0400/0440); seals `epoch.state` and every staged batch |
 | `EMIT_STATE_DIR` | — | required; mode 0700, owned by the emitter, used by no other sensor. `EMIT_SPOOL_DIR` is not used |
 | `EMIT_AGENT_CGROUP_ROOTS` | — | comma-separated cgroup v2 directories (at most 8, each existing at start); each and its descendants are scope `agent` |
-| `EMIT_AGENT_POD_SELECTOR`, `EMIT_NODE_NAME` | — | Kubernetes: `key=value[,key=value]` and `spec.nodeName`. The emitter lists and watches this node's matching pods over HTTPS with the mounted service-account token (read-only `get`, `list`, `watch` on `pods`) and installs each pod's slice as an agent root when it appears (at most 64) |
+| `EMIT_AGENT_POD_SELECTOR`, `EMIT_NODE_NAME` | — | Kubernetes: `key=value[,key=value]` and `spec.nodeName`. The emitter lists and watches this node's matching pods over HTTPS with the mounted service-account token (read-only `get`, `list`, `watch` on `pods`) and installs each pod's slice as an agent root when it appears (at most 64). The grant is cluster-wide (RBAC cannot scope a read to one node): the token can read every pod object, inline env values included |
 | `EMIT_SANDBOX_CGROUP_ROOTS` | — | comma-separated cgroup v2 directories (at most 8); descendants are scope `sandbox` and carry container and pod ids |
 | `EMIT_ALL_HOST` | `false` | every event outside a sandbox root is scope `agent` |
 | `EMIT_DIGESTS` | `omitted` | `permitted` emits executable, argv and path digests (the Node's group must permit them too) |

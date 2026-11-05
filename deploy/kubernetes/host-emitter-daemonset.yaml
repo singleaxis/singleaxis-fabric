@@ -48,8 +48,13 @@ items:
     automountServiceAccountToken: false
   # Spec 056 OD-12: the emitter watches the pods of its own node
   # (fieldSelector=spec.nodeName=<node>) that match EMIT_AGENT_POD_SELECTOR and
-  # installs each one's pod slice as an agent root. It reads pod uids and labels
+  # installs each one's pod slice as an agent root. It uses pod uids and labels
   # only; nothing it reads is exported. Read-only: get, list, watch on pods.
+  # The grant itself is cluster-wide: RBAC cannot restrict a read to one node,
+  # so this token can read every pod object in every namespace, inline env
+  # values included. A compromised emitter (it runs privileged on every node)
+  # can read all of them; keep secrets out of inline pod env (use Secret
+  # references) or use the static agent roots fallback without this role.
   - apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
