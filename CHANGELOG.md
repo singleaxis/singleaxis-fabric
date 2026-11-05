@@ -70,6 +70,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   today's records cannot support (host records carry keyed peer addresses,
   the HTTP record a host name). See
   [action reconstruction](docs/action-reconstruction.md#what-is-not-covered-yet).
+- **Spool disk latency.** No spool `fsync` runs on the monitored call's
+  thread (now pinned by a test), but the capture worker's `fsync`s compete
+  for the disk: on a slow-`fsync` mount shared with the agent's own files,
+  the UAT measured 20–270 ms added per subprocess and 9–22 ms on an
+  unobserved file write (2–10 ms per subprocess on a local disk). Put the
+  spool on a local disk or named volume
+  ([deployment](docs/deployment.md#what-the-agent-needs), "Spool disk").
 
 ## [0.11.0] - 2026-11-05
 

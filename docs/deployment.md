@@ -130,6 +130,30 @@ on by default),
 `FABRIC_WIRE_STORE_KMS_KEY_ID` are refused: encryption is configured on the
 Node. Source: `sdk/python/src/fabric/wire/_config.py`.
 
+**Spool disk.** Put `FABRIC_WIRE_SPOOL_DIR` on a local disk, or a local
+named volume, with ordinary `fsync` latency and working `flock` locks:
+
+- **Latency.** No spool write or `fsync` ever runs on the thread that made
+  the monitored call: the hook's caller path is one `/proc` read and a
+  non-blocking queue put, and the capture worker and drainer do every write,
+  `fsync` and directory `fsync`
+  (`sdk/python/tests/test_spool_fsync_off_caller.py` pins it: with `fsync`
+  slowed to 200 ms, a `subprocess.run` costs the same as without). The
+  worker's `fsync`s still compete for the disk. In the v0.11.0 UAT, a spool
+  on a local disk added a median of 2–10 ms per subprocess. A spool on a
+  slow-`fsync` mount that also held the agent's working files (a Docker
+  Desktop bind mount) added
+  20–270 ms per subprocess and 9–22 ms to an in-process file write that
+  Fabric does not observe: the agent's own I/O waited behind the worker's
+  `fsync`s on the same device. Keep the spool off the disk your agent's tools
+  write to if that disk is slow.
+- **Locks.** A Docker Desktop bind mount from the macOS host does not enforce
+  `flock` between two open files. Fabric then warns at install (`the spool
+  directory's filesystem does not enforce file locks`). One process per
+  spool works, but several processes sharing such a spool can declare each
+  other's live epochs orphans. Use a named volume (`docker volume create`)
+  or a directory inside the container instead.
+
 **Source id.** The Node is bound to one source id **as it travels**. The
 agent always emits its `FABRIC_SOURCE_ID` as a keyed pseudonym, `s-` + the
 first 32 hex of HMAC-SHA256(`FABRIC_WIRE_ID_KEY`, `FABRIC_SOURCE_ID`), even

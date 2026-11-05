@@ -9,7 +9,9 @@
 This page moved. Configuration files and scripts in `deploy/compose` still
 point here.
 
-- Agent and Node configuration: [deployment](deployment.md).
+- Agent and Node configuration: [deployment](deployment.md); spool disk
+  requirements (`fsync` latency, file locks):
+  [deployment](deployment.md#what-the-agent-needs) ("Spool disk").
 - Content canary and verifying a run (formerly section 5):
   [operations](operations/README.md#verify-a-deployment) and
   [reconstruct](reconstruct.md).
