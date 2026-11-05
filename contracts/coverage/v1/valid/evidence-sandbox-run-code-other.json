@@ -1,0 +1,18 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "remote.sandbox",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.sandbox.observation/v1",
+    "items": [
+      {
+        "provider": "e2b",
+        "call": "run_code",
+        "output_form": "text",
+        "result_count": 6,
+        "language": "other"
+      }
+    ]
+  }
+}

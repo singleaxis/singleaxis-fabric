@@ -102,6 +102,44 @@ receiver:
     tokenSecret:
       name: ""
       key: token
+  # Static dedicated ingress groups (spec 053 §6.1, spec 056 §7.3.3 (g)): one
+  # entry per source the Node serves, each with its own token, listener(s) and
+  # fabricguard/<name> instance, so identity is fixed by the ingress a batch
+  # arrived on. Requires fabric.profile=production and receiver TLS, and
+  # replaces workloadAuthentication and evidenceSourceBinding (setting either
+  # with a non-empty list fails the render). Empty (default): the legacy single
+  # binding above, rendered exactly as before.
+  #
+  #   sourceBindings:
+  #     - name: agent                 # ^[a-z][a-z0-9-]{0,31}$, not content...
+  #       kind: agent                 # agent | host.ebpf | host.auditd
+  #       tenantId: <tenant.id>
+  #       sourceId: s-<32 hex>        # the source id as it travels
+  #       tokenSecret: {name: fabric-ingress-agent, key: token}
+  #       protocols: {grpc: 4317, http: 4318}
+  #       content: {port: 4319}       # agent only, needs content.enabled
+  #     - name: ebpf-0                # one host.ebpf group per node
+  #       kind: host.ebpf
+  #       tenantId: <tenant.id>
+  #       sourceId: s-<32 hex>        # print-source-id / host-bindings.py
+  #       tokenSecret: {name: fabric-node-host-ingress, key: ebpf-0}
+  #       protocols: {grpc: 4417}     # the eBPF emitter exports OTLP/gRPC
+  #       hostDigests: omitted        # host kinds only: omitted | permitted
+  #       ingressFrom: []             # NetworkPolicy peers of this group's
+  #                                   # ports; default networkPolicy.ingressFrom
+  #
+  # A host.auditd group listens on OTLP/HTTP (http: <port>): the sensor
+  # collector exports with otlp_http. Tokens mount at
+  # /etc/fabric/ingress/<name>/token from operator-created Secrets; the chart
+  # never holds a token, and each group's token bytes must differ from every
+  # other group's (fabric-gate compares them at start). Service and container
+  # ports are named g<index>-grpc, g<index>-http and g<index>-content.
+  # deploy/kubernetes/host-bindings.py generates one host.ebpf group per node
+  # (profiles/shadow-production-host-ingress.yaml shows the whole shape).
+  sourceBindings: []
+  # At most this many groups (spec 053 §6.1): default 64, ceiling 256. A larger
+  # cluster deploys one Node per node pool.
+  maxSourceBindings: 64
   tls:
     serverCertificateSecret:
       name: ""

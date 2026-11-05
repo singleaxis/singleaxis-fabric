@@ -185,3 +185,99 @@ def test_redaction_service_example_is_not_a_release_artifact() -> None:
             text = path.read_text(encoding="utf-8", errors="replace")
             assert "redaction-service" not in text, path
             assert "redaction_service" not in text, path
+
+
+# Spec 056 M2 (WP6-10): the production profile adds no runtime dependency, no
+# privileged chart workload, no shipped test command and no evaluation component.
+
+_PROVIDER_SDKS = ("openai", "anthropic", "e2b", "e2b-code-interpreter", "modal", "daytona",
+                  "boto3", "mcp", "langchain", "litellm")  # fmt: skip
+
+
+def _requirement_name(requirement: str) -> str:
+    return re.split(r"[\s<>=!~;\[(]", requirement.strip(), maxsplit=1)[0].lower()
+
+
+def test_default_wheel_installs_no_provider_sdk() -> None:
+    """The SDK observes provider SDKs the application already uses (the remote sandbox
+    hook included); installing Fabric never installs one. They stay in extras."""
+    import tomllib
+
+    project = tomllib.loads(
+        (ROOT / "sdk/python/pyproject.toml").read_text(encoding="utf-8")
+    )["project"]
+    installed = {_requirement_name(r) for r in project["dependencies"]}
+    assert not installed & set(_PROVIDER_SDKS), installed
+    extras = project.get("optional-dependencies", {})
+    assert {_requirement_name(r) for r in extras.get("hooks-sandbox-e2b", ())} == {
+        "e2b",
+        "e2b-code-interpreter",
+    }
+
+
+def test_chart_packages_no_privileged_workload() -> None:
+    """OD-10: the chart adds only the host ingress groups; the privileged eBPF sensor
+    stays a customer-deployed example under deploy/kubernetes."""
+    templates = [
+        p
+        for p in (ROOT / "charts").rglob("*")
+        if p.is_file() and "templates" in p.parts
+    ]
+    assert templates
+    for path in templates:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for forbidden in ("privileged: true", "hostPID: true", "hostNetwork: true",
+                          "SYS_ADMIN", "CAP_BPF", "/sys/fs/cgroup", "/sys/kernel"):  # fmt: skip
+            assert forbidden not in text, (path, forbidden)
+    example = (ROOT / "deploy/kubernetes/host-emitter-daemonset.yaml").read_text(
+        encoding="utf-8"
+    )
+    assert "privileged: true" in example or "CAP_BPF" in example or "BPF" in example
+
+
+def test_no_image_or_release_builds_the_replay_command() -> None:
+    """hostrecords-replay (spec 056 §7.3.3 (m)) is built only by tests and CI: no
+    Dockerfile, release workflow, release script or Make target names it."""
+    scanned = [
+        *(ROOT / ".github/workflows").glob("release*.yml"),
+        *(ROOT / "scripts/release").rglob("*"),
+        *(ROOT / "components").rglob("Dockerfile*"),
+        *(ROOT / "deploy").rglob("Dockerfile*"),
+        *(ROOT / "components").rglob("Makefile"),
+        *(ROOT / "components").rglob(".goreleaser*"),
+        ROOT / "components/otel-collector-fabric/ocb-config.yaml",
+    ]
+    for path in scanned:
+        if path.is_file():
+            text = path.read_text(encoding="utf-8", errors="replace")
+            assert "hostrecords-replay" not in text, path
+            assert "cmd/hostrecords-replay" not in text, path
+    assert (
+        ROOT / "components/otel-collector-fabric/hostrecords/cmd/hostrecords-replay"
+    ).is_dir()
+
+
+_EVALUATION = re.compile(
+    r"(?i)(evaluat|judge|enforc|red[-_]?team|verdict_engine|guardrail)"
+)
+
+
+def test_no_artifact_gains_an_evaluator_policy_or_enforcement_component() -> None:
+    """AGENTS.md: the Node binary, its images and the wheel carry capture, protection and
+    delivery only. Policy here means the capture policy (what to keep), never a decision
+    about the agent."""
+    manifest = (ROOT / "components/otel-collector-fabric/ocb-config.yaml").read_text(
+        encoding="utf-8"
+    )
+    modules = re.findall(r"(?m)^\s*- gomod: (\S+)", manifest)
+    assert modules
+    for module in modules:
+        assert not _EVALUATION.search(module), module
+        assert "policyprocessor" not in module and "enforce" not in module, module
+    package = ROOT / "sdk/python/src/fabric"
+    for path in package.rglob("*.py"):
+        assert not _EVALUATION.search(str(path.relative_to(package))), path
+    for dockerfile in (ROOT / "components").rglob("Dockerfile*"):
+        lines = dockerfile.read_text(encoding="utf-8", errors="replace").splitlines()
+        instructions = [line for line in lines if not line.lstrip().startswith("#")]
+        assert not _EVALUATION.search("\n".join(instructions)), dockerfile

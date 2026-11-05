@@ -1,0 +1,14 @@
+{
+  "schema_version": "fabric.remote-sandbox-pins/v1",
+  "spec": "056 §4.4.1, §7.3.2 WP6-09b",
+  "description": "The provider SDK versions the remote.sandbox hook observes (fabric.hooks._sandbox_e2b.PINS) and the fixture E2B server answers. The SDK extra hooks-sandbox-e2b pins the same series; any other version reports remote.sandbox unsupported(unsupported_version).",
+  "providers": {
+    "e2b": {
+      "distributions": {
+        "e2b": "2.62.*",
+        "e2b-code-interpreter": "2.11.*"
+      },
+      "envd_version": "0.6.4"
+    }
+  }
+}

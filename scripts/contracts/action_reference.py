@@ -3,7 +3,8 @@
 """Reference rules of spec 056 (agent action reconstruction), over normalized inputs.
 
 This module is the executable form of spec 056 §4.2 (effect -> tool call, rules A0-A4),
-§4.3 (host event -> effect, rules H1-H4) and §4.5 (chain verdicts and the attribution
+§4.3 (host event -> effect, rules H1-H5, the per-source pid-namespace mode and the sensor
+scope; M2 adds H5, the modes and the scope) and §4.5 (chain verdicts and the attribution
 summary). It reads the ``input`` object of a rule fixture
 (``contracts/coverage/v1/fixtures/action-record/rules/*.json``) and returns the
 ``expected`` object the fixture must carry; ``validate_coverage_contracts.py`` recomputes
@@ -46,8 +47,14 @@ BASES = (
     "sequence_bracket",
     "process_anchor",
     "process_lineage",
+    "sandbox_report",
     "none",
 )
+# Spec 056 §4.3 rule H5: at most this many events are linked to one effect.
+SANDBOX_MAX_EVENTS = 4096
+# The capture points whose records are effects (§7.3.3 (l) _attribute.EFFECT_POINTS).
+EFFECT_POINTS = ("exec.subprocess", "remote.sandbox")
+REMOTE_SANDBOX = "remote.sandbox"
 CHAIN_NAMES = ("decisions", "actions", "effects", "corroboration")
 
 
@@ -239,50 +246,162 @@ def attribute_effect(
 
 
 # ------------------------------------------------------------------ §4.3 host event -> effect
+def source_key(record: Mapping[str, Any]) -> str:
+    """The host source a host-source declaration or a host event names: its ``s-`` source id
+    (M2: one export may hold several sources of one kind, one per node), else its kind."""
+    key = record.get("source_id", record["source"])
+    return str(key)
+
+
+def agent_pid_ns(inp: Mapping[str, Any]) -> str | None:
+    """Spec 056 §4.3 "The agent's namespace": the declared namespace
+    (``--agent-pid-namespace``, ``agent.pid_ns``), else the value every effect that carries
+    ``pid_ns`` agrees on; ``None`` when they disagree or none carries one."""
+    declared = inp["agent"].get("pid_ns")
+    if declared is not None:
+        return str(declared)
+    seen = {e["pid_ns"] for e in inp.get("effects", []) if e.get("pid_ns") is not None}
+    return seen.pop() if len(seen) == 1 else None
+
+
+def source_verified(
+    source: Mapping[str, Any], window: Sequence[int], margin: int
+) -> bool:
+    """Whether a host source verifies for the run window (§4.5 ``corroboration``). A
+    declaration that states ``verified`` decides (M1). With ``heartbeats`` (M2, production
+    records): the source is authenticated, has no position gap, a heartbeat at or after the
+    window end (both clock margins applied, so no heartbeat-less tail), and no heartbeat of
+    an interval overlapping the window reports upstream loss (a nonzero or unknown count;
+    053 §6.2.4). A declared source with nothing in the window does not verify."""
+    if "heartbeats" not in source:
+        return bool(source.get("verified", False))
+    if not source.get("authenticated", True) or source.get("sequence_gaps"):
+        return False
+    first, last = window
+    beats = sorted(source["heartbeats"], key=lambda h: h["time_ns"])
+    covering = [h for h in beats if h["time_ns"] >= first - margin]
+    end = next(
+        (i for i, h in enumerate(covering) if h["time_ns"] >= last + margin), None
+    )
+    if end is None:
+        return False
+    return all(h.get("upstream_lost", 0) == 0 for h in covering[: end + 1])
+
+
 class _Hosts:
     """Host-source facts shared by the H rules."""
 
     def __init__(self, inp: Mapping[str, Any]) -> None:
         self.agent = inp["agent"]
+        self.agent_ns = agent_pid_ns(inp)
         self.window = inp["run"]["window"]
-        self.sources = {s["source"]: s for s in inp.get("host_sources", [])}
+        self.sources = {source_key(s): s for s in inp.get("host_sources", [])}
         self.events = sorted(
-            (e for e in inp.get("host_events", []) if e["source"] in self.sources),
+            (e for e in inp.get("host_events", []) if source_key(e) in self.sources),
             key=lambda e: (e["time_ns"], e["event_id"]),
         )
         # The only exit evidence today (no host sensor reports process exits): an effect
         # whose record carries its exit code or signal freed its pid by ``exit_observed_ns``.
+        # Keyed in the agent's numbering (H2 exec chains compare the effect's own pid) ...
         self.exits: dict[tuple[str | None, int], list[int]] = {}
         for effect in inp.get("effects", []):
             pid, seen = effect.get("pid"), effect.get("exit_observed_ns")
             if pid is not None and seen is not None:
                 self.exits.setdefault((effect.get("host_id"), pid), []).append(seen)
+        # ... and in the init namespace (H3 follows init-namespace pids): an anchored effect
+        # maps to its anchor's pid; an unanchored one only where the operator declared the
+        # sensor's numbering the agent's (declared_same).
+        self.init_exits: dict[tuple[str | None, int], list[int]] = {}
+        declared = {
+            s.get("host_id")
+            for s in self.sources.values()
+            if s.get("pid_namespace", "declared_same") == "declared_same"
+        }
+        for effect in inp.get("effects", []):
+            pid, seen = effect.get("pid"), effect.get("exit_observed_ns")
+            if (
+                pid is not None
+                and seen is not None
+                and effect.get("host_id") in declared
+            ):
+                self.init_exits.setdefault((effect.get("host_id"), pid), []).append(
+                    seen
+                )
+
+    def anchored(self, effect: Mapping[str, Any], anchor: Mapping[str, Any]) -> None:
+        """Record an anchored effect's exit evidence under its init-namespace pid."""
+        seen = effect.get("exit_observed_ns")
+        if seen is not None and anchor["pid"] != effect.get("pid"):
+            self.init_exits.setdefault(
+                (effect.get("host_id"), anchor["pid"]), []
+            ).append(seen)
 
     def exited(self, host_id: str | None, pid: int, after: int, until: int) -> bool:
-        """Whether an exit of ``pid`` on ``host_id`` was observed in ``[after, until]``:
-        the pid named another process (or none) from then on."""
+        """Whether an exit of ``pid`` (agent numbering) on ``host_id`` was observed in
+        ``[after, until]``: the pid named another process (or none) from then on."""
         return any(after <= x <= until for x in self.exits.get((host_id, pid), ()))
 
+    def exited_init(
+        self, host_id: str | None, pid: int, after: int, until: int
+    ) -> bool:
+        """The same for an init-namespace pid (H3)."""
+        return any(after <= x <= until for x in self.init_exits.get((host_id, pid), ()))
+
+    def source(self, event: Mapping[str, Any]) -> Mapping[str, Any]:
+        return self.sources[source_key(event)]
+
+    def mode(self, event: Mapping[str, Any]) -> str:
+        """The pid-namespace mode of the event's source (§4.3, per source)."""
+        return str(self.source(event).get("pid_namespace", "declared_same"))
+
     def host_of(self, event: Mapping[str, Any]) -> str | None:
-        host = event.get("host_id", self.sources[event["source"]].get("host_id"))
+        host = event.get("host_id", self.source(event).get("host_id"))
         return host if isinstance(host, str) else None
 
-    def joinable(self, event: Mapping[str, Any], host_id: str | None) -> bool:
-        """Same host and pid namespace: the record's own pid namespace when the source
-        records one, else the operator's declaration that the sensor reports pids in the
-        agent's namespace (local profile). No join across hosts or unknown namespaces."""
-        if host_id is None or self.host_of(event) != host_id:
+    def same_host(self, event: Mapping[str, Any], host_id: str | None) -> bool:
+        return host_id is not None and self.host_of(event) == host_id
+
+    def sandbox(self, event: Mapping[str, Any]) -> bool:
+        """A sandbox-scope event (§4.3 "Sensor scope"): read only for rule H5."""
+        return event.get("scope") == "sandbox"
+
+    def anchor_match(self, event: Mapping[str, Any], effect: Mapping[str, Any]) -> bool:
+        """H1/H2's pid comparison, per the source's mode: under ``recorded`` the effect's
+        pid and parent pid against the event's ``ns_pid`` and ``ns_ppid``, and only when the
+        effect's own ``pid_ns`` equals the event's; under ``declared_same`` against the
+        event's ``pid`` and ``ppid``. Never across hosts or namespaces, and never a fallback
+        to init-namespace pids under ``recorded``."""
+        if not self.same_host(event, effect.get("host_id")):
             return False
-        source = self.sources[event["source"]]
-        if source.get("pid_namespace") == "declared_same":
-            return True
-        mine, theirs = self.agent.get("pid_ns"), event.get("pid_ns")
-        return mine is not None and mine == theirs
+        if self.mode(event) == "recorded":
+            mine = effect.get("pid_ns")
+            return (
+                mine is not None
+                and event.get("pid_ns") == mine
+                and event.get("ns_pid") == effect["pid"]
+                and event.get("ns_ppid") == effect.get("parent_pid")
+            )
+        return event["pid"] == effect["pid"] and event.get("ppid") == effect.get(
+            "parent_pid"
+        )
+
+    def agent_match(self, event: Mapping[str, Any]) -> bool:
+        """H4's comparison: the agent's pid with the event's ``ns_pid`` when the source is
+        ``recorded`` and the agent's namespace equals the event's; with ``pid`` when
+        ``declared_same``."""
+        if not self.same_host(event, self.agent.get("host_id")):
+            return False
+        if self.mode(event) == "recorded":
+            return (
+                self.agent_ns is not None
+                and event.get("pid_ns") == self.agent_ns
+                and event.get("ns_pid") == self.agent["pid"]
+            )
+        return bool(event["pid"] == self.agent["pid"])
 
     def margin(self, event: Mapping[str, Any]) -> int:
-        source = self.sources[event["source"]]
         return int(self.agent["clock_uncertainty_ns"]) + int(
-            source.get("clock_uncertainty_ns", 0)
+            self.source(event).get("clock_uncertainty_ns", 0)
         )
 
     def during(self, event: Mapping[str, Any]) -> bool:
@@ -306,16 +425,14 @@ def anchor_effect(
     either side, inside the bounded window. Several H2 matches are one process when they
     form an exec chain (:func:`exec_chain`): the anchor is its first exec and the later
     ones are lineage at depth 0. Otherwise (pid reuse) the anchor stays ambiguous."""
-    pid, ppid = effect["pid"], effect.get("parent_pid")
     host_id = effect.get("host_id")
     exec_events = [
         e
         for e in hosts.events
         if e["event_class"] == "exec"
         and e.get("result", "success") == "success"
-        and e["pid"] == pid
-        and e.get("ppid") == ppid
-        and hosts.joinable(e, host_id)
+        and not hosts.sandbox(e)
+        and hosts.anchor_match(e, effect)
     ]
     start = effect.get("process_start_ns")
     if start is not None:
@@ -336,7 +453,7 @@ def anchor_effect(
         for e in pool
         if abs(e["time_ns"] - effect["start_ns"]) <= H2_WINDOW_NS + hosts.margin(e)
     ]
-    if len(near) == 1 or exec_chain(hosts, host_id, near):
+    if len(near) == 1 or exec_chain(hosts, host_id, effect["pid"], near):
         return "H2", near[:1], "tentative"
     if near:
         return "H2-ambiguous", near, "tentative"
@@ -344,7 +461,7 @@ def anchor_effect(
 
 
 def exec_chain(
-    hosts: _Hosts, host_id: str | None, events: Sequence[Mapping[str, Any]]
+    hosts: _Hosts, host_id: str | None, pid: int, events: Sequence[Mapping[str, Any]]
 ) -> bool:
     """Whether H2's matches (same pid and parent pid, in time order) are one process that
     exec'd again in place (``bash -c "cmd"``; ``dash`` for the last command of a list):
@@ -356,7 +473,7 @@ def exec_chain(
         one, two = first.get("process_start_ns"), later.get("process_start_ns")
         if one is not None and two is not None and not same_tick(one, two):
             return False
-        if hosts.exited(host_id, later["pid"], first["time_ns"], later["time_ns"]):
+        if hosts.exited(host_id, pid, first["time_ns"], later["time_ns"]):
             return False
     return True
 
@@ -368,8 +485,11 @@ def lineage(
     claimed: set[str],
 ) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
     """H3 for one anchored effect: the host events whose parent-pid chain reaches the
-    anchored child (same host and pid namespace, non-decreasing times and start times),
-    at most depth 16 and 4096 events; and the events a bound left out. A connect or file
+    anchored child (same host, non-decreasing times and start times), at most depth 16 and
+    4096 events; and the events a bound left out. The chain follows init-namespace pids
+    (``pid``, ``ppid``), where every process has a number, so it crosses a nested pid
+    namespace (a sandbox's inner processes) without a gap; the anchor's init-namespace pid
+    is the matched event's ``pid`` (M2). A connect or file
     event joins a process of the chain only when its start time, if both carry one, is in
     that process's tick. A successful exec of a known pid that is neither that process
     nor a child of the chain proves pid reuse: the pid leaves the chain. So does an
@@ -377,11 +497,11 @@ def lineage(
     host_id = effect.get("host_id")
     start = effect.get("process_start_ns", anchor.get("process_start_ns"))
     procs: dict[int, dict[str, Any]] = {
-        effect["pid"]: {
+        anchor["pid"]: {
             "depth": 0,
             "time": anchor["time_ns"],
             "start": start,
-            "ppid": effect.get("parent_pid"),
+            "ppid": anchor.get("ppid"),
         }
     }
     linked: list[Mapping[str, Any]] = []
@@ -390,11 +510,12 @@ def lineage(
         if (
             event["event_id"] in claimed
             or event["time_ns"] < anchor["time_ns"]
-            or not hosts.joinable(event, host_id)
+            or hosts.sandbox(event)
+            or not hosts.same_host(event, host_id)
         ):
             continue
         pid, ppid, own = event["pid"], event.get("ppid"), event.get("process_start_ns")
-        if pid in procs and hosts.exited(
+        if pid in procs and hosts.exited_init(
             host_id, pid, procs[pid]["time"], event["time_ns"]
         ):
             # The pid was freed: whatever holds it now is another process.
@@ -467,6 +588,16 @@ def _chain(reasons: Iterable[str]) -> dict[str, Any]:
     )
 
 
+def _sandbox_peer(event: Mapping[str, Any], peers: Sequence[Mapping[str, Any]]) -> bool:
+    """§4.4.1, §7.3.3 (l) ``--sandbox-peer ADDRESS[:PORT]``: a connection to a declared
+    sandbox provider; with a port, only connections to that port."""
+    return event["event_class"] == "connect" and any(
+        event.get("peer_id") == peer["peer_id"]
+        and (peer.get("port") is None or event.get("peer_port") == peer["port"])
+        for peer in peers
+    )
+
+
 def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     """The ``expected`` object of a rule fixture: the 056 links on each effect step, the
     host events the report lists with their links, the chain verdicts, the attribution
@@ -474,7 +605,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     calls = _tool_calls(inp, call_id)
     effects = sorted(inp.get("effects", []), key=lambda e: e["sequence"])
     counts: dict[str, dict[str, int]] = {}
-    trace: dict[str, dict[str, str]] = {
+    trace: dict[str, dict[str, Any]] = {
         "effects": {},
         "anchors": {},
         "host_events": {},
@@ -509,24 +640,11 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
 
     channels = inp.get("effect_channels", {})
     active = any(state == "active" for state in channels.values())
-    not_observed = {"channel_disabled": 0, "no_effect_channel": 0, "none_in_window": 0}
-    in_process = set(inp.get("in_process_tools", []))
-    for call in calls:
-        if call["id"] in attributed:
-            trace["tool_calls"][call["id"]] = "attributed"
-            continue
-        reason = (
-            "channel_disabled"
-            if not active
-            else "no_effect_channel"
-            if call["name"] in in_process
-            else "none_in_window"
-        )
-        not_observed[reason] += 1
-        trace["tool_calls"][call["id"]] = reason
+    remote_active = channels.get(REMOTE_SANDBOX) == "active"
 
     # §4.3: anchors first (an anchor never becomes another effect's lineage), then H3,
-    # then H4, then whatever is left in the agent's scope during the run is unexplained.
+    # then H5, then H4, then whatever is left in the agent's scope during the run is
+    # unexplained; sandbox-scope events are read only by H5 and otherwise counted.
     hosts = _Hosts(inp)
     claimed: set[str] = set()
     listed: dict[str, dict[str, Any]] = {}
@@ -553,7 +671,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     if hosts.sources:
         for effect in effects:
             if effect.get("pid") is None:
-                continue
+                continue  # a remote.sandbox effect has no pid: never anchor_missing
             rule, found, confidence = anchor_effect(hosts, effect)
             trace["anchors"][effect["attempt_uid"]] = rule
             state = {
@@ -588,6 +706,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
                 )
             if state == "resolved" and confidence is not None:
                 anchors.append((effect, found[0], confidence))
+                hosts.anchored(effect, found[0])
 
     truncated: list[Mapping[str, Any]] = []
     for effect, anchor, confidence in anchors:
@@ -608,20 +727,62 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             counts.setdefault("process_lineage", _counts())["resolved"] += 1
             trace["host_events"][event["event_id"]] = "H3"
 
+    # H5 (M2, OD-4): the id a container runtime printed in an effect's output, matched on
+    # any host source (a scheduler places a created pod on any node), inside the run window
+    # and not before the effect's start, both clock margins applied.
+    first, last = hosts.window
+    for effect in effects:
+        created = effect.get("created_sandbox_id")
+        if created is None or not hosts.sources:
+            continue
+        linked_here = 0
+        for event in hosts.events:
+            margin = hosts.margin(event)
+            if (
+                event["event_id"] in claimed
+                or created not in (event.get("sandbox_id"), event.get("pod_id"))
+                or not first - margin <= event["time_ns"] <= last + margin
+                or event["time_ns"] < effect["start_ns"] - margin
+            ):
+                continue
+            if linked_here >= SANDBOX_MAX_EVENTS:
+                break
+            linked_here += 1
+            claimed.add(event["event_id"])
+            lists(event).setdefault("links", []).append(
+                {
+                    "type": "part_of",
+                    "target": {"namespace": "attempt", "id": effect["attempt_uid"]},
+                    "provenance": "reported",
+                    "method": "sandbox_report",
+                    "confidence": "certain",
+                    "state": "resolved",
+                }
+            )
+            counts.setdefault("sandbox_report", _counts())["resolved"] += 1
+            trace["host_events"][event["event_id"]] = "H5"
+
     agent = inp["agent"]
     called = {
         peer
         for exchange in inp["exchanges"]
         for peer in inp.get("endpoint_peers", {}).get(exchange.get("endpoint_id"), [])
     }
+    sandbox_peers = list(inp.get("sandbox_peers", []))
     unexplained: list[Mapping[str, Any]] = []
+    remote_calls: list[Mapping[str, Any]] = []
+    sandbox_unlinked = 0
     for event in hosts.events:
         inside = hosts.during(event)
         if event["event_id"] in claimed or not inside:
             if not inside and event["event_id"] not in claimed:
                 trace["host_events"][event["event_id"]] = "outside_run"
             continue
-        if event["pid"] == agent["pid"] and hosts.joinable(event, agent.get("host_id")):
+        if hosts.sandbox(event):
+            sandbox_unlinked += 1
+            trace["host_events"][event["event_id"]] = "sandbox-unlinked"
+            continue
+        if hosts.agent_match(event):
             start, own = agent.get("process_start_ns"), event.get("process_start_ns")
             certain = start is not None and own is not None and same_tick(start, own)
             lists(event).setdefault("links", []).append(
@@ -635,6 +796,13 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
                 }
             )
             counts.setdefault("process_anchor", _counts())["resolved"] += 1
+            if _sandbox_peer(event, sandbox_peers):
+                # §4.4.1: a declared sandbox provider is called, never unexplained; with
+                # remote.sandbox not active the call is evidence of an unrecorded effect.
+                trace["host_events"][event["event_id"]] = "H4-sandbox"
+                if not remote_active:
+                    remote_calls.append(event)
+                continue
             # socket() and bind() are connect-class but contact no host; a connect
             # whose peer is unknown stays uncalled (never assumed away).
             uncalled = (
@@ -653,6 +821,32 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             trace["host_events"][event["event_id"]] = (
                 "H3-truncated" if event in truncated else "unexplained"
             )
+
+    not_observed = {"channel_disabled": 0, "no_effect_channel": 0, "none_in_window": 0}
+    in_process = set(inp.get("in_process_tools", []))
+    margin = int(agent["clock_uncertainty_ns"])
+    for call in calls:
+        if call["id"] in attributed:
+            trace["tool_calls"][call["id"]] = "attributed"
+            continue
+        # M2: a call in whose window the agent called a declared sandbox provider while
+        # remote.sandbox was not active had its effect on an observable but disabled
+        # channel.
+        sandboxed = any(
+            call["open"] - margin - hosts.margin(e)
+            <= e["time_ns"]
+            < call["close"] + margin + hosts.margin(e)
+            for e in remote_calls
+        )
+        reason = (
+            "channel_disabled"
+            if not active or sandboxed
+            else "no_effect_channel"
+            if call["name"] in in_process
+            else "none_in_window"
+        )
+        not_observed[reason] += 1
+        trace["tool_calls"][call["id"]] = reason
 
     decisions: dict[str, Any] = {"verdict": inp["exchange_verdict"]}
     if inp.get("exchange_reasons"):
@@ -681,19 +875,25 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
                 *(["sequence_gap"] if inp.get("effect_sequence_gaps") else []),
                 *(["unattributed_effect"] if unattributed else []),
                 *(["ambiguous_attribution"] if ambiguous else []),
+                *(["remote_sandbox"] if remote_calls else []),
             ]
         )
         if active
         else {"verdict": "not_observed", "reasons": ["channel_disabled"]}
     )
+    verified = {
+        key: source_verified(
+            source,
+            hosts.window,
+            int(agent["clock_uncertainty_ns"])
+            + int(source.get("clock_uncertainty_ns", 0)),
+        )
+        for key, source in hosts.sources.items()
+    }
     corroboration = (
         _chain(
             [
-                *(
-                    ["source_gap"]
-                    if any(not s.get("verified", False) for s in hosts.sources.values())
-                    else []
-                ),
+                *(["source_gap"] if not all(verified.values()) else []),
                 *(["anchor_missing"] if missing_anchor else []),
                 *(["unexplained_host_event"] if unexplained else []),
             ]
@@ -731,6 +931,38 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     }
     if truncated:
         attribution["lineage_truncated"] = len(truncated)
+    # M2 summary objects: present when the input holds production scope facts (a sensor
+    # scope on any host event) or declares sandbox peers, so M1 reports are unchanged.
+    if any("scope" in e for e in inp.get("host_events", [])):
+        attribution["sandbox_events_unlinked"] = {"count": sandbox_unlinked}
+    if "sandbox_peers" in inp:
+        attribution["remote_sandbox_calls"] = {
+            "count": len(remote_calls),
+            "event_ids": [e["event_id"] for e in remote_calls[:LIST_MAX]],
+        }
+    if any("source_id" in s for s in inp.get("host_sources", [])):
+        # §7.3.3 (l) host-source rule: why each declared source is a host source, and
+        # whether it verified. A host source never creates a sources[] entry.
+        events_of = {source_key(e) for e in inp.get("host_events", [])}
+        trace["host_sources"] = {
+            key: {
+                "basis": [
+                    b
+                    for b, holds in (
+                        ("host_record", key in events_of),
+                        (
+                            "manifest",
+                            bool(source.get("manifest_point_kinds"))
+                            and set(source["manifest_point_kinds"]) == {"S"},
+                        ),
+                        ("declared", bool(source.get("declared", True))),
+                    )
+                    if holds
+                ],
+                "verified": verified[key],
+            }
+            for key, source in hosts.sources.items()
+        }
     return {
         "projection_links": [
             {"attempt_id": uid, "links": made} for uid, made in links.items() if made
@@ -751,6 +983,11 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
 
 __all__ = [
     "BASES",
+    "EFFECT_POINTS",
+    "SANDBOX_MAX_EVENTS",
+    "agent_pid_ns",
+    "source_key",
+    "source_verified",
     "CHAIN_NAMES",
     "H2_WINDOW_NS",
     "LINEAGE_MAX_DEPTH",

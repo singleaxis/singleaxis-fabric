@@ -72,16 +72,17 @@ class ExecCapture(Capture):
 
     def _terminal_object(
         self, object_id: str, sequence: int, data: bytes, *, role: str, media_type: str,
-        attempt_uid: str,
+        attempt_uid: str, boundary: str = "terminal",
     ) -> None:  # fmt: skip
         """A ``terminal.*`` body as the Node persists it (boundary ``terminal``, content
-        provenance ``protocol``), bound to its record."""
+        provenance ``protocol``), bound to its record; M2's ``remote.*`` bodies and their
+        evidence have boundary ``remote``."""
         assert self.store is not None
         digest = "sha256:" + sha_hex(data)
         descriptor: dict[str, Any] = {
             "schema_version": "fabric.content-object/v2", "object_id": object_id,
             "tenant_id": TENANT, "role": role, "media_type": media_type,
-            "content_encoding": "identity", "transformations": [], "boundary": "terminal",
+            "content_encoding": "identity", "transformations": [], "boundary": boundary,
             "provenance": "protocol", "source_id": self.source_id,
             "source_epoch": self.epoch, "source_sequence": sequence, "run_id": RUN,
             "operation_id": attempt_uid, "attempt_id": attempt_uid,
@@ -93,8 +94,9 @@ class ExecCapture(Capture):
         self.store.put_bytes_object(descriptor, data)
 
     def _exec_record(
-        self, attempt_uid: str, attrs: Mapping[str, Any], bodies: list[tuple[str, str, bytes]]
-    ) -> None:
+        self, attempt_uid: str, attrs: Mapping[str, Any], bodies: list[tuple[str, str, bytes]],
+        boundary: str = "terminal",
+    ) -> None:  # fmt: skip
         sequence = self.sequence
         object_ids = [self.new_id() for _ in bodies]
         row = self.record(
@@ -109,7 +111,7 @@ class ExecCapture(Capture):
         row["name"] = "fabric.activity"
         for object_id, (role, media_type, data) in zip(object_ids, bodies, strict=True):
             self._terminal_object(object_id, sequence, data, role=role, media_type=media_type,
-                                  attempt_uid=attempt_uid)  # fmt: skip
+                                  attempt_uid=attempt_uid, boundary=boundary)  # fmt: skip
         # The seal commits to each named object's stored digest (spec 050 §3.7).
         self.record_content[row["attributes"]["fabric.event_id"]] = [
             "sha256:" + sha_hex(data) for _, _, data in bodies

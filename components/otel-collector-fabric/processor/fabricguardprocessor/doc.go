@@ -11,7 +11,11 @@
 // recognised by their marker keys, never by name) get a stricter profile:
 // only their own keys, each value-validated; a resource holding any capture
 // record keeps nothing but a well-formed service.name, and its scopes keep no
-// attributes. Processing is idempotent: a second pass changes nothing.
+// attributes. An instance's source_kind names the ingress group it guards
+// (spec 053 §6.2.7): a host instance (host.auditd, host.ebpf) admits only
+// host records and that source's markers and refuses any other span; an
+// agent instance refuses host evidence. Processing is idempotent: a second
+// pass changes nothing.
 // Its purpose is export protection for passive capture; it is not an evaluator,
 // a runtime control engine, or a claim of legal de-identification.
 package fabricguardprocessor

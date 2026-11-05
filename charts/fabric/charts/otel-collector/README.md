@@ -81,6 +81,22 @@ Secret's sole use by the declared source, its rotation and the source's route
 closure require deployment proof; this chart setting alone does not establish
 complete capture or production readiness.
 
+## Ingress groups (`receiver.sourceBindings[]`)
+
+A non-empty `receiver.sourceBindings` renders one static dedicated ingress
+group per entry (spec 053 §6.1): `bearertokenauth/<name>` reading
+`/etc/fabric/ingress/<name>/token`, `otlp/<name>` (and `otlp/content-<name>`
+for an agent group with content), `fabricguard/<name>` with `profile:
+production`, `source_kind` and the group's `evidence_source_binding`, and
+the pipelines `traces/<name>`, `logs/<name>` (agents) and
+`logs/content-<name>`. Each content group has its own `fabriccontent/<name>`
+and sealed queue. It requires the production profile, receiver TLS, an HTTPS
+exporter and no debug exporter, and it cannot be combined with
+`workloadAuthentication` or `evidenceSourceBinding`. The rules and the
+profile are described in the [umbrella chart README](../../README.md);
+`tests/test-source-bindings.sh` proves the renders equal the ingress-group
+goldens in `contracts/capture/v1/fixtures/ingress-groups/`.
+
 ## Ordinary workload authentication
 
 `receiver.workloadAuthentication` requires mTLS and a separate workload-scoped

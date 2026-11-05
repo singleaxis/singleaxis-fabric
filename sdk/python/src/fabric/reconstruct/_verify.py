@@ -32,6 +32,7 @@ from fabric._sequence import encode_opaque_id
 from fabric._version import __version__
 from fabric.reconstruct._attribute import ActionReader
 from fabric.reconstruct._graph import RunGraph, SegmentNode, build_run_graphs
+from fabric.reconstruct._host import split_host_records
 from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
     A_OBJECT_IDS,
@@ -489,10 +490,23 @@ def reconstruct_with_graphs(
     verifier.actions = actions or ActionReader(clock_uncertainty_ns=clock_uncertainty_ns)
     if projection_sink is not None:
         projection_sink.attach(verifier)
+    files: list[list[SpanRecord]] = []
     for index, path in enumerate(paths, start=1):
         fmt, records = read_span_file(path, label=f"span file {index}")
         span_files.append(_span_file_entry(path, fmt, len(records)))
+        files.append(records)
+    # Spec 056 §7.3.3 (l): host records and every span of a host source are corroboration
+    # only; they leave the export before the agent verifier sees it, so a host source never
+    # becomes a sources[] entry, gap, segment or seal.
+    agent, host_evidence = split_host_records(
+        (record for records in files for record in records),
+        verifier.actions.declared_host_sources,
+    )
+    kept = {id(record) for record in agent}
+    for index, records in enumerate(files, start=1):
         for number, record in enumerate(records, start=1):
+            if id(record) not in kept:
+                continue
             try:
                 observation = observe(record)
             except ReconstructInputError:
@@ -503,7 +517,12 @@ def reconstruct_with_graphs(
     verifier.finalize()
     verifier.trusted_source = trusted_source
     verifier.production = (
-        profile == "production" if profile is not None else verifier.stamp_observed
+        profile == "production"
+        if profile is not None
+        else verifier.stamp_observed or host_evidence.stamped
+    )
+    verifier.actions.add_host_evidence(
+        host_evidence, production=verifier.production, trusted=trusted_source
     )
     graphs = build_run_graphs(
         verifier.segment_nodes(),

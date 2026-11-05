@@ -91,22 +91,44 @@ def fixture_host(fixture: Mapping[str, Any]) -> HostJoin | None:
         entry["attempt_id"]: [link for link in entry["links"] if link["type"] == "corroborated_by"]
         for entry in expected["projection_links"]
     }
+    attribution, trace = expected["attribution"], expected["trace"]
+    # M2: a source with a source id verifies by its own rule (heartbeats); the fixture's
+    # trace states the outcome. The remote sandbox calls carry their time and margin.
+    host_sources = trace.get("host_sources")
+    events = {e["event_id"]: e for e in inp.get("host_events", [])}
+    sources = {s.get("source_id", s["source"]): s for s in inp["host_sources"]}
+    agent_margin = int(inp["agent"]["clock_uncertainty_ns"])
+    calls = attribution.get("remote_sandbox_calls")
+    remote = None
+    if calls is not None:
+        remote = [
+            (event_id, events[event_id]["time_ns"], agent_margin + int(
+                sources[events[event_id].get("source_id", events[event_id]["source"])]
+                .get("clock_uncertainty_ns", 0)))
+            for event_id in calls["event_ids"]
+        ]  # fmt: skip
+    unlinked = attribution.get("sandbox_events_unlinked")
     return HostJoin(
         links={uid: found for uid, found in links.items() if found},
         sensor_events=expected["sensor_events"],
         counts={
             basis: counts
-            for basis, counts in expected["attribution"]["links"].items()
-            if basis in ("process_anchor", "process_lineage")
+            for basis, counts in attribution["links"].items()
+            if basis in ("process_anchor", "process_lineage", "sandbox_report")
         },
-        unexplained=expected["attribution"]["unexplained_host_events"]["event_ids"],
-        anchor_missing=any(
-            rule not in ("H1", "H2") for rule in expected["trace"]["anchors"].values()
+        unexplained=attribution["unexplained_host_events"]["event_ids"],
+        anchor_missing=any(rule not in ("H1", "H2") for rule in trace["anchors"].values()),
+        source_gap=(
+            not all(entry["verified"] for entry in host_sources.values())
+            if host_sources is not None
+            else any(not source.get("verified", False) for source in inp["host_sources"])
         ),
-        source_gap=any(not source.get("verified", False) for source in inp["host_sources"]),
-        lineage_truncated=expected["attribution"].get("lineage_truncated", 0),
-        trace_anchors=expected["trace"]["anchors"],
-        trace_host_events=expected["trace"]["host_events"],
+        lineage_truncated=attribution.get("lineage_truncated", 0),
+        trace_anchors=trace["anchors"],
+        trace_host_events=trace["host_events"],
+        trace_host_sources=host_sources,
+        sandbox_events_unlinked=None if unlinked is None else unlinked["count"],
+        remote_sandbox_calls=remote,
     )
 
 
@@ -129,7 +151,7 @@ def test_every_rule_fixture_named_by_the_task_is_present() -> None:
             "edge-clock-margin-boundary", "edge-background-thread", "ar1-run",
             "ar1-negative-d-metadata-only", "edge-exec-in-place", "edge-pid-reuse",
             "edge-same-pid-other-parent"} <= names  # fmt: skip
-    assert len(RULE_FIXTURES) == 26
+    assert len(RULE_FIXTURES) == 47  # 26 M1 + 21 M2 (WP6-11)
 
 
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)
@@ -469,3 +491,30 @@ def test_action_rows_render_a_fixture_run() -> None:
     assert view["complete"] is False
     effects = [row for row in view["rows"] if row["kind"] == "effect"]
     assert all("rule" in row for row in effects)
+
+
+def test_exec_hook_off_with_remote_sandbox_on_is_channel_disabled() -> None:
+    # §6.2 variant (c) with only the exec hook off: the remote channel explains T9, but
+    # every local call's effect channel is disabled, never "looked, saw nothing".
+    fixture = load(ACTION / "rules" / "ar1-run-production.json")
+    inp = dict(fixture["input"])
+    inp["effect_channels"] = {"exec.subprocess": "disabled", "remote.sandbox": "active"}
+    inp["effects"] = [e for e in inp["effects"] if "capture_point" in e]
+    inp["host_sources"] = []
+    result = attribute(inp, call_id)
+    reasons = set(result.trace["tool_calls"].values())
+    assert reasons == {"attributed", "channel_disabled"}
+    assert list(result.trace["tool_calls"].values()).count("attributed") == 1
+    not_observed = result.attribution["effects_not_observed"]
+    assert not_observed == {
+        "channel_disabled": len(result.calls) - 1,
+        "no_effect_channel": 0,
+        "none_in_window": 0,
+    }
+    assert result.chains["effects"] == {"verdict": "partial", "reasons": ["channel_disabled"]}
+    # With both channels off the M1 verdict stands.
+    inp["effect_channels"] = {"exec.subprocess": "disabled", "remote.sandbox": "disabled"}
+    inp["effects"] = []
+    off = attribute(inp, call_id)
+    assert off.chains["effects"] == {"verdict": "not_observed", "reasons": ["channel_disabled"]}
+    assert set(off.trace["tool_calls"].values()) == {"channel_disabled"}

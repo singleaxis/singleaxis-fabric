@@ -1,0 +1,89 @@
+# The agent group's content path (spec 048; spec 053 §6.1 rules 4 and 9),
+# merged after collector-production-groups.yaml when FABRIC_CONTENT_BACKEND=s3
+# (docker-compose.host-ingress-content.yml): the content receiver on 4319 with
+# the agent group's own token, its own sealed queue and its own fabriccontent
+# exporter carrying the group's binding and exactly its tenant. The groups
+# profile supports the S3 backend only: production content has server-side
+# encryption (as the Helm shadow-production profile requires).
+#
+# Maps merge and lists replace: service.extensions is the base list plus the
+# content queue (collector-production-groups-auditd-content.yaml holds the
+# list for auditd with content).
+
+extensions:
+  file_storage/fabric_content_agent:
+    directory: /var/lib/fabric-node/content-queue
+    timeout: 1s
+    create_directory: true
+    directory_permissions: "0700"
+    fsync: true
+    compaction:
+      directory: /var/lib/fabric-node/content-queue
+      on_start: true
+      on_rebound: true
+  # Spec 049 §7.8: the content queue is sealed with the Node content key.
+  fabricenvelope/fabric_content_agent:
+    storage: file_storage/fabric_content_agent
+    key_file: /run/secrets/fabric_content_key
+
+receivers:
+  otlp/content-agent:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4319
+        auth:
+          authenticator: bearertokenauth/agent
+        read_header_timeout: 5s
+        read_timeout: 120s
+        idle_timeout: 120s
+        max_request_body_size: 67108864 # 64 MiB -- one stored body per request
+        tls:
+          cert_file: ${env:FABRIC_INGRESS_TLS_CERT_FILE:-/run/fabric-node/tls/server.crt}
+          key_file: ${env:FABRIC_INGRESS_TLS_KEY_FILE:-/run/fabric-node/tls/server.key}
+          min_version: "1.3"
+
+processors:
+  memory_limiter:
+    # One 64 MiB body in flight; docker-compose.host-ingress-content.yml
+    # raises the container limit to match.
+    limit_mib: 1536
+
+exporters:
+  fabriccontent/agent:
+    profile: production
+    source_binding:
+      tenant_id: ${env:FABRIC_TENANT_ID}
+      source_id: ${env:FABRIC_AGENT_SOURCE_ID}
+    allowed_tenants: ["${env:FABRIC_TENANT_ID}"]
+    backend: s3
+    s3:
+      bucket: ${env:FABRIC_CONTENT_S3_BUCKET}
+      prefix: ${env:FABRIC_CONTENT_S3_PREFIX:-fabric/content/}
+      region: ${env:FABRIC_CONTENT_S3_REGION:-}
+      endpoint: ${env:FABRIC_CONTENT_S3_ENDPOINT:-}
+      use_path_style: ${env:FABRIC_CONTENT_S3_PATH_STYLE:-false}
+      sse: ${env:FABRIC_CONTENT_S3_SSE:-aws:kms}
+      kms_key_id: ${env:FABRIC_CONTENT_S3_KMS_KEY_ID:-}
+    timeout: 60s
+    queue_directory: /var/lib/fabric-node/content-queue
+    sending_queue:
+      enabled: true
+      num_consumers: 4
+      queue_size: 64
+      block_on_overflow: true
+      storage: fabricenvelope/fabric_content_agent
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 30s
+      max_elapsed_time: 0s
+
+service:
+  extensions: [health_check, noredirect, file_storage/fabric, bearertokenauth/agent, bearertokenauth/ebpf, file_storage/fabric_content_agent, fabricenvelope/fabric_content_agent]
+  pipelines:
+    # Content bodies bypass fabricguard (they must pass unchanged); the
+    # group's fabriccontent exporter enforces the closed descriptor itself.
+    logs/content-agent:
+      receivers: [otlp/content-agent]
+      processors: [memory_limiter]
+      exporters: [fabriccontent/agent]

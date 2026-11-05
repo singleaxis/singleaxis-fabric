@@ -10,6 +10,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -269,7 +270,8 @@ func captureCarrier(class uint8, key string, value pcommon.Value) ptrace.Traces 
 		attrs = wireHeartbeatAttrs()
 		attrs["fabric.run.scope_id"] = testScopeID
 		if kinds, ok := markerKeyKinds[key]; ok {
-			for _, kind := range []string{"run_start", "run_end", "segment_seal"} {
+			// spec 056 M2: a key placed only on periodic heartbeats (upstream loss)
+			for _, kind := range []string{"run_start", "run_end", "segment_seal", "periodic"} {
 				if _, defined := kinds[kind]; defined {
 					attrs["fabric.heartbeat.kind"] = kind
 					break
@@ -280,6 +282,43 @@ func captureCarrier(class uint8, key string, value pcommon.Value) ptrace.Traces 
 	td := makeRawSpan("native", attrs)
 	value.CopyTo(firstSpan(td).Attributes().PutEmpty(key))
 	return td
+}
+
+// hostKeyKept reports whether a host instance (digests permitted) keeps
+// key=value on a host record and on a periodic heartbeat that reports loss.
+func hostKeyKept(t *testing.T, key string, value pcommon.Value) (record, heartbeat bool) {
+	t.Helper()
+	recordAttrs := with(hostRecordAttrs(), map[string]any{"fabric.sensor.result": "failed"})
+	switch key {
+	case "fabric.sensor.event_class":
+		syscalls := map[string]string{"exec": "execve", "connect": "connect", "file": "openat"}
+		if syscall, ok := syscalls[value.AsString()]; ok && value.Type() == pcommon.ValueTypeStr {
+			recordAttrs["fabric.sensor.syscall"] = syscall
+		}
+	case "fabric.sensor.syscall":
+		if class, ok := hostSyscallClass[value.AsString()]; ok && value.Type() == pcommon.ValueTypeStr {
+			recordAttrs["fabric.sensor.event_class"] = class
+		}
+	}
+	for i, attrs := range []map[string]any{recordAttrs, with(hostHeartbeatAttrs(), map[string]any{"fabric.sensor.upstream_lost": int64(1)})} {
+		td := makeRawSpan("native", attrs)
+		value.CopyTo(firstSpan(td).Attributes().PutEmpty(key))
+		out, err := hostGuard(t, sourceKindEBPF, hostDigestsPermitted).processTraces(context.Background(), td)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kept := false
+		if spans := allSpans(out); len(spans) == 1 {
+			got, ok := spans[0].Attributes().Get(key)
+			kept = ok && reflect.DeepEqual(got.AsRaw(), value.AsRaw())
+		}
+		if i == 0 {
+			record = kept
+		} else {
+			heartbeat = kept
+		}
+	}
+	return record, heartbeat
 }
 
 func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
@@ -317,6 +356,36 @@ func TestCoverageKeysMatchTheRegistryKeyByKey(t *testing.T) {
 			validate := coverageKeyValidators[row.Key]
 			if _, ok := TraceAllowedFields[row.Key]; !ok || sensitiveAttributeKey(row.Key) {
 				t.Fatalf("%q is not admitted on spans", row.Key)
+			}
+			if strings.HasPrefix(row.Key, sensorKeyPrefix) {
+				// Host keys never pass an agent instance (spec 053 §6.2.7); their
+				// placement is checked on a host instance.
+				placements := coverageKeyPlacements[row.Key]
+				for _, value := range admitted(row.Check) {
+					v := valueOf(t, value)
+					if !validate(v) {
+						t.Errorf("validator rejects registry value %v", value)
+					}
+					for _, g := range []*guard{pseudonymous, clear} {
+						if _, err := g.processTraces(context.Background(), decisionSpan(row.Key, v)); err == nil || !strings.Contains(err.Error(), hostRefusalSensorOnAgent) {
+							t.Errorf("agent instance admitted %v: %v", value, err)
+						}
+					}
+					record, heartbeat := hostKeyKept(t, row.Key, v)
+					if record != slices.Contains(placements, "record") || heartbeat != slices.Contains(placements, "periodic") {
+						t.Errorf("host instance: record=%v periodic=%v for %v, placement %v", record, heartbeat, value, placements)
+					}
+				}
+				for _, value := range rejected(row.Check) {
+					v := valueOf(t, value)
+					if validate(v) {
+						t.Errorf("validator admits %v", value)
+					}
+					if record, heartbeat := hostKeyKept(t, row.Key, v); record || heartbeat {
+						t.Errorf("host instance keeps %v", value)
+					}
+				}
+				return
 			}
 			for _, value := range admitted(row.Check) {
 				v := valueOf(t, value)

@@ -7,13 +7,17 @@ It decodes each export request (protobuf or JSON) into the sink JSONL that
 host reader reads with ``--host-records`` (``kind: log`` rows), and keeps the delivered
 bytes so the privacy canaries can be searched in exactly what left the Node. It answers
 200 after the rows are written. A test destination only: plain HTTP on loopback, no
-authentication and no durability claim.
+authentication and no durability claim, except for AR-1 production, which gives it a
+server certificate (the Node verifies it with the test CA) and a bearer token it compares
+(a request without it gets 401 and is not written).
 """
 
 from __future__ import annotations
 
 import gzip
+import hmac
 import json
+import ssl
 import threading
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -90,13 +94,26 @@ def decode_logs(request: Any) -> list[dict[str, Any]]:
 
 class Sink:
     """``start()`` binds ``127.0.0.1`` on a free port; rows go to ``records.jsonl`` and
-    every decoded request body to ``raw.bin`` under ``directory``."""
+    every decoded request body to ``raw.bin`` under ``directory``. With ``tls`` (certificate
+    and key files) it serves HTTPS; with ``token`` it answers 401 to a request whose
+    ``Authorization`` is not ``Bearer <token>``."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(
+        self,
+        directory: Path,
+        *,
+        tls: tuple[Path, Path] | None = None,
+        token: str | None = None,
+        host: str = "127.0.0.1",
+    ) -> None:
         self.directory = directory
         self.records = directory / "records.jsonl"
         self.raw = directory / "raw.bin"
         self.requests = 0
+        self.refused = 0
+        self.tls = tls
+        self.token = token
+        self.host = host
         self._lock = threading.Lock()
         self._server: ThreadingHTTPServer | None = None
 
@@ -108,7 +125,7 @@ class Sink:
 
     @property
     def url(self) -> str:
-        return f"http://127.0.0.1:{self.port}"
+        return f"{'https' if self.tls else 'http'}://{self.host}:{self.port}"
 
     def start(self) -> Sink:
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -123,6 +140,14 @@ class Sink:
 
             def do_POST(self) -> None:
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+                if sink.token is not None and not hmac.compare_digest(
+                    self.headers.get("Authorization", "").encode(),
+                    f"Bearer {sink.token}".encode(),
+                ):
+                    with sink._lock:
+                        sink.refused += 1
+                    self._reply(401)
+                    return
                 encoding = self.headers.get("Content-Encoding", "").lower()
                 if encoding == "gzip":
                     body = gzip.decompress(body)
@@ -157,8 +182,13 @@ class Sink:
                 self.end_headers()
                 self.wfile.write(body)
 
-        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server = ThreadingHTTPServer((self.host, 0), Handler)
         self._server.daemon_threads = True
+        if self.tls is not None:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(str(self.tls[0]), str(self.tls[1]))
+            self._server.socket = context.wrap_socket(self._server.socket, server_side=True)
         threading.Thread(target=self._server.serve_forever, name="ar1-sink", daemon=True).start()
         return self
 

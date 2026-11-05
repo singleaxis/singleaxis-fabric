@@ -1,0 +1,13 @@
+type=SYSCALL msg=audit(1760000000.101:7101): arch=c000003e syscall=59 success=yes exit=0 a0=55d0 a1=55d1 a2=55d2 a3=0 items=2 ppid=4100 pid=4201 auid=1000 uid=1000 gid=1000 euid=1000 suid=1000 fsuid=1000 egid=1000 sgid=1000 fsgid=1000 tty=(none) ses=3 comm="qualcanarycomm" exe="/opt/qualcanary-exe/bin/tool" subj=unconfined key="fabric"
+type=EXECVE msg=audit(1760000000.101:7101): argc=3 a0="qualcanarycomm" a1="--secret-arg" a2="qualcanary-argv-value"
+type=CWD msg=audit(1760000000.101:7101): cwd="/home/qualcanary-cwd"
+type=PATH msg=audit(1760000000.101:7101): item=0 name="/opt/qualcanary-exe/bin/tool" inode=4242 dev=08:01 mode=0100755 ouid=0 ogid=0 rdev=00:00 nametype=NORMAL
+type=PROCTITLE msg=audit(1760000000.101:7101): proctitle=7175616C63616E617279636F6D6D002D2D7365637265742D617267007175616C63616E6172792D617267762D76616C7565
+type=EOE msg=audit(1760000000.101:7101):
+type=SYSCALL msg=audit(1760000000.202:7102): arch=c000003e syscall=42 success=yes exit=0 a0=3 a1=7ffd a2=10 a3=0 items=0 ppid=4100 pid=4201 auid=1000 uid=1000 gid=1000 euid=1000 suid=1000 fsuid=1000 egid=1000 sgid=1000 fsgid=1000 tty=(none) ses=3 comm="qualcanarycomm" exe="/opt/qualcanary-exe/bin/tool" subj=unconfined key="fabric"
+type=SOCKADDR msg=audit(1760000000.202:7102): saddr=020001BBC00002630000000000000000
+type=EOE msg=audit(1760000000.202:7102):
+type=SYSCALL msg=audit(1760000000.303:7103): arch=c000003e syscall=59 success=no exit=-13 a0=55d0 a1=55d1 a2=55d2 a3=0 items=1 ppid=4100 pid=4202 auid=1000 uid=1000 gid=1000 euid=1000 suid=1000 fsuid=1000 egid=1000 sgid=1000 fsgid=1000 tty=(none) ses=3 comm="qualcanarycomm" exe="/opt/qualcanary-exe/bin/denied" subj=unconfined key="fabric"
+type=EOE msg=audit(1760000000.303:7103):
+type=SYSCALL msg=audit(1760000000.404:7104): arch=c000003e syscall=59 success=yes exit=0 a0=55d0 a1=55d1 a2=55d2 a3=0 items=2 ppid=1 pid=4300 auid=4294967295 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=(none) ses=4294967295 comm="cron" exe="/usr/sbin/cron" subj=unconfined key="other-rule"
+type=EOE msg=audit(1760000000.404:7104):

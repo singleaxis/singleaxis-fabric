@@ -307,8 +307,12 @@ jobs:
         include:
           - component: otel-collector-fabric
             image: fabric-otelcol
+            context: components/otel-collector-fabric
+          # The emitter links the host-records library, so its context is
+          # components/ (spec 056 §7.3.2 WP4-07c).
           - component: host-emitter
             image: fabric-host-emitter
+            context: components
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/${{ matrix.image }}
@@ -335,7 +339,7 @@ jobs:
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
-          context: components/${{ matrix.component }}
+          context: ${{ matrix.context }}
           file: components/${{ matrix.component }}/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64

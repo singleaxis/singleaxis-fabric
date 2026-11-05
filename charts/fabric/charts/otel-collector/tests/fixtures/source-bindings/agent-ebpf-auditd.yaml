@@ -1,0 +1,39 @@
+# valid/agent-ebpf-auditd.yaml: one agent group with content, one eBPF and one
+# auditd group of host build-host-7.
+otel-collector:
+  receiver:
+    sourceBindings:
+      - name: agent
+        kind: agent
+        tenantId: tenant-a
+        sourceId: s-b94f348e8d6890782b2af72c847dc77b   # build-host-7/travel-agent
+        tokenSecret: {name: fabric-ingress-agent, key: token}
+        protocols: {grpc: 4317, http: 4318}
+        content: {port: 4319}
+      - name: ebpf
+        kind: host.ebpf
+        tenantId: tenant-a
+        sourceId: s-2c6c641009e36ee2e6587ef29bc3a782   # build-host-7/ebpf
+        tokenSecret: {name: fabric-node-host-ingress, key: ebpf}
+        protocols: {grpc: 4417}
+        ingressFrom:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fabric-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: fabric-host-emitter
+      - name: auditd
+        kind: host.auditd
+        tenantId: tenant-a
+        sourceId: s-8f7a2b26a947d94497736831c32f63ce   # build-host-7/auditd
+        tokenSecret: {name: fabric-node-host-ingress, key: auditd}
+        protocols: {http: 4428}
+        hostDigests: omitted
+        ingressFrom:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fabric-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: fabric-auditd-sensor

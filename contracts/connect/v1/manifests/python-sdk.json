@@ -53,7 +53,8 @@
     "baggage": "pass_through",
     "correlation_limitations": [
       "Propagation across network or process boundaries depends on host OpenTelemetry instrumentation.",
-      "Caller-reported operations are complete only when application code records them."
+      "Caller-reported operations are complete only when application code records them.",
+      "A container or pod the agent creates is linked to its host records only through the id the container runtime printed, which the opt-in exec hook keys as fabric.sandbox.created_id (spec 056 rule H5); a Docker or Kubernetes API client inside the agent process is not observed."
     ]
   },
   "data_egress": {
@@ -72,6 +73,8 @@
     "Uninstrumented application branches, subprocesses, and off-the-shelf agent internals are not visible.",
     "Tenant and agent identifiers are validated assertions, not cryptographically bound workload identity.",
     "Raw LLM or tool content can be opted into per call; the SDK has no pre-egress redactor, so protected export requires Fabric Node or an equivalent customer-controlled processor.",
-    "The SDK emits OpenTelemetry and does not materialize Activity Envelope v2, privacy assertions, delivery receipts, durable retention, or immutable evidence."
+    "The SDK emits OpenTelemetry and does not materialize Activity Envelope v2, privacy assertions, delivery receipts, durable retention, or immutable evidence.",
+    "The opt-in http.nonmodel hook (spec 053 §5.4, without dialects; spec 056 M2) records httpx requests to exact allowlisted hosts only: requests, urllib3, aiohttp and native HTTP clients, other hosts and every raw header stay invisible, and target, path and bodies are content off by default.",
+    "The opt-in remote.sandbox hook (spec 056 §4.4.1) observes E2B at its Python SDK call API only (e2b 2.62.x, e2b-code-interpreter 2.11.x): it records what the SDK returned to the agent, not what ran on the remote side; other providers, other SDK versions and streaming callbacks are not observed, and environment values, the API key and request headers are never read."
   ]
 }

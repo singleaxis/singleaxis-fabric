@@ -1,8 +1,10 @@
 name: Action record (AR-1)
 
-# Spec 056 §6.2 AR-1, the agent action reconstruction acceptance scenario
-# (milestone M1, local-profile Node). Not one of the release-required
-# workflows: Fabric makes no action reconstruction claim until this is green.
+# Spec 056 §6.2 AR-1, the agent action reconstruction acceptance scenario:
+# milestone M1 against a local-profile Node (hermetic, live) and M2 against a
+# production-profile Node (production-replay, production-live,
+# production-auditd). Not one of the release-required workflows: Fabric makes
+# no action reconstruction claim until this is green.
 #
 # - hermetic: the agent, the exec.subprocess hook, a natively built Node and
 #   the verifier run for real; the host chain is a recorded host-sensor event
@@ -10,6 +12,17 @@ name: Action record (AR-1)
 # - live: the same with the eBPF host emitter scoped to the agent's cgroup;
 #   when the eBPF programs cannot load on the hosted runner, the auditd
 #   receiver with uid-scoped rules (spec 056 §6.2, OD-6). Needs sudo.
+# - production-replay: the agent in node mode against the native Node with
+#   static ingress groups (agent, ebpf, a quiet ebpf node), TLS and tokens;
+#   the host side staged through the host-records library by the test-only
+#   hostrecords-replay command (built here with Go, never by an image).
+# - production-live: the Compose production Node with the host-ingress
+#   overlay, the eBPF emitter in production mode on the runner's kernel, the
+#   agent in a container under fabric-agents.slice, a real docker run under
+#   fabric-sandboxes.slice and bwrap --unshare-pid. Docker on the systemd
+#   cgroup driver; sudo.
+# - production-auditd: deploy/compose/qualify-sensor-auditd.sh (WP4-09): the
+#   auditd sensor collector through its own group, on a fixture audit.log.
 #
 # Passive by construction: the sensors are tracepoints and audit rules, the
 # hook only observes; nothing here evaluates, blocks or alters the agent.
@@ -23,6 +36,8 @@ on:
       - "components/host-emitter/**"
       - "contracts/**"
       - "qualification/action-record/**"
+      - "qualification/remote-sandbox/**"
+      - "deploy/compose/**"
       - ".github/workflows/action-record.yml"
   pull_request:
     branches: [main]
@@ -32,6 +47,8 @@ on:
       - "components/host-emitter/**"
       - "contracts/**"
       - "qualification/action-record/**"
+      - "qualification/remote-sandbox/**"
+      - "deploy/compose/**"
       - ".github/workflows/action-record.yml"
   workflow_dispatch:
 
@@ -69,21 +86,26 @@ jobs:
       - name: Install the SDK and the harness dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e sdk/python pytest pytest-cov jsonschema PyYAML httpx \
-            "openai>=3.26.1" cryptography opentelemetry-exporter-otlp-proto-http \
-            ruff==0.13.0 mypy
+          python -m pip install -e "sdk/python[otlp,hooks-sandbox-e2b]" pytest pytest-cov \
+            jsonschema PyYAML httpx "openai>=3.26.1" cryptography \
+            opentelemetry-exporter-otlp-proto-http ruff==0.13.0 mypy
       - name: Lint and type-check the harness
         working-directory: qualification/action-record
+        env:
+          MYPYPATH: ../remote-sandbox # the fixture E2B service the production harness runs
         run: |
           ruff check .
           ruff format --check .
           mypy --strict --config-file ../../sdk/python/pyproject.toml ar1 run_ar1.py tests
       - name: Harness unit tests
-        # The end-to-end test (test_ar1_hermetic) is the next step's run_ar1.py; deselect
-        # it by node id (a -k on its name also matches the module and deselects everything).
+        # The end-to-end tests are run_ar1.py runs (this job's next step, and the
+        # production-replay job); deselect them by node id (a -k on a name also matches
+        # its module and deselects everything).
         run: >-
           python -m pytest qualification/action-record/tests -q -p no:cacheprovider
           --deselect qualification/action-record/tests/test_ar1_hermetic.py::test_ar1_hermetic
+          --deselect
+          qualification/action-record/tests/test_ar1_production_replay.py::test_ar1_production_replay
       - name: AR-1 hermetic
         run: |
           python qualification/action-record/run_ar1.py --mode hermetic --node required \
@@ -163,3 +185,139 @@ jobs:
           path: ${{ runner.temp }}/ar1-live
           if-no-files-found: ignore
           retention-days: 14
+
+  production-replay:
+    name: AR-1 production replay (${{ matrix.os }})
+    # Spec 056 §6.2 "Hermetic production replay": the gate, admission, delivery and
+    # reader path of a production-profile Node, not the emitter.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          # Also builds the replay command (go build in hostrecords).
+          go-version: "1.26"
+          cache-dependency-path: components/otel-collector-fabric/**/go.sum
+      - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
+        run: |
+          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
+      - name: Install the SDK and the harness dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "sdk/python[otlp,hooks-sandbox-e2b]" pytest pytest-cov \
+            jsonschema PyYAML httpx "openai>=3.26.1" cryptography \
+            opentelemetry-exporter-otlp-proto-http
+      - name: AR-1 production replay
+        run: |
+          python qualification/action-record/run_ar1.py --profile production --mode replay \
+            --out "${RUNNER_TEMP}/ar1-production-replay"
+      - name: Make the AR-1 record readable for upload
+        # The run's throwaway TLS keys, tokens and id key stay on the runner.
+        if: always()
+        run: |
+          if [ -d "${RUNNER_TEMP}/ar1-production-replay" ]; then
+            rm -rf "${RUNNER_TEMP}/ar1-production-replay/secrets"
+            chmod -R a+rX "${RUNNER_TEMP}/ar1-production-replay"
+          fi
+      - name: Upload the AR-1 record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ar1-production-replay-${{ matrix.os }}
+          path: ${{ runner.temp }}/ar1-production-replay
+          if-no-files-found: ignore
+          retention-days: 14
+
+  production-live:
+    name: AR-1 production live (eBPF, production-profile Node)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: "1.26"
+          cache-dependency-path: components/host-emitter/go.sum
+      - name: Install system packages (BPF toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev jq
+      - name: Docker on the systemd cgroup driver (cgroup v2)
+        # Spec 056 §6.2: the harness asserts the driver and fails, never skips.
+        run: |
+          if [ "$(docker info --format '{{.CgroupDriver}}')" != systemd ]; then
+            config=/etc/docker/daemon.json
+            current='{}'
+            if sudo test -s "$config"; then current="$(sudo cat "$config")"; fi
+            printf '%s' "$current" \
+              | jq '. + {"exec-opts": ["native.cgroupdriver=systemd"]}' \
+              | sudo tee "$config" >/dev/null
+            sudo systemctl restart docker
+          fi
+          docker info --format '{{.CgroupDriver}} cgroup v{{.CgroupVersion}}'
+      - name: Build the eBPF host emitter
+        working-directory: components/host-emitter
+        run: |
+          go generate ./...
+          CGO_ENABLED=0 go build -trimpath -o fabric-host-emitter .
+      - name: Install the SDK and the harness dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e "sdk/python[otlp,hooks-sandbox-e2b]" pytest pytest-cov \
+            jsonschema PyYAML httpx "openai>=3.26.1" cryptography \
+            opentelemetry-exporter-otlp-proto-http
+      - name: Build the Fabric Node image (once, for every variant's Compose project)
+        run: docker build -q -t fabric/node:ar1-production components/otel-collector-fabric
+      - name: AR-1 production live
+        env:
+          AR1_NODE_IMAGE: fabric/node:ar1-production
+        run: |
+          python qualification/action-record/run_ar1.py --profile production --mode live \
+            --out "${RUNNER_TEMP}/ar1-production-live"
+      - name: Make the AR-1 record readable for upload
+        # The emitter and the agent's container leave root-owned files; the run's
+        # throwaway TLS keys, tokens and id key stay on the runner.
+        if: always()
+        run: |
+          if [ -d "${RUNNER_TEMP}/ar1-production-live" ]; then
+            sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/ar1-production-live"
+            sudo find "${RUNNER_TEMP}/ar1-production-live" \
+              \( -name secrets -o -name node-secrets -o -name sensor-keys \) -prune \
+              -exec rm -rf {} +
+            chmod -R a+rX "${RUNNER_TEMP}/ar1-production-live"
+          fi
+      - name: Upload the AR-1 record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ar1-production-live
+          path: ${{ runner.temp }}/ar1-production-live
+          if-no-files-found: ignore
+          retention-days: 14
+
+  production-auditd:
+    name: AR-1 production auditd sensor collector
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Qualify the auditd sensor collector through its group
+        run: bash deploy/compose/qualify-sensor-auditd.sh

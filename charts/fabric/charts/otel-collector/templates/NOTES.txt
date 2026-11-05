@@ -1,11 +1,18 @@
 Fabric Node Collector is running in {{ .Release.Namespace }}.
 
+{{- if include "otel-collector.groupMode" . }}
+CAPTURE: {{ len .Values.receiver.sourceBindings }} ingress groups (spec 053 §6.1), each with its own source, token and listeners:
+{{- range $g := .Values.receiver.sourceBindings }}
+  {{ $g.name }} ({{ $g.kind }}): {{ include "otel-collector.groupPortNumbers" $g | fromYamlArray | join ", " }}
+{{- end }}
+{{- else }}
 CAPTURE: OTLP/gRPC {{ .Values.service.ports.otlpGrpc }}, OTLP/HTTP {{ .Values.service.ports.otlpHttp }}
+{{- end }}
 PROTECT: default-deny fabricguard allowlist on logs and traces
-PROFILE: {{ .Values.fabric.profile }}{{ if eq .Values.fabric.profile "production" }} -- every batch bound to tenant/source {{ if .Values.receiver.workloadAuthentication.enabled }}(workload ingress){{ else }}(dedicated evidence ingress){{ end }}; spans stamped fabric.source.authenticated{{ end }}
+PROFILE: {{ .Values.fabric.profile }}{{ if eq .Values.fabric.profile "production" }} -- every batch bound to tenant/source {{ if include "otel-collector.groupMode" . }}(its ingress group){{ else if .Values.receiver.workloadAuthentication.enabled }}(workload ingress){{ else }}(dedicated evidence ingress){{ end }}; spans stamped fabric.source.authenticated{{ end }}
 DELIVER: {{ .Values.exporter.endpoint | default "debug stdout (development only)" }}
 {{- if .Values.content.enabled }}
-CONTENT: OTLP/HTTP {{ .Values.service.ports.otlpContent }} -> fabriccontent ({{ .Values.content.backend }}{{ if eq .Values.content.backend "s3" }}, sse={{ .Values.content.s3.sse }}{{ end }}); tenants: {{ join ", " .Values.content.allowedTenants }}
+CONTENT: {{ if include "otel-collector.groupMode" . }}each agent group's content port -> its own fabriccontent ({{ .Values.content.backend }}{{ if eq .Values.content.backend "s3" }}, sse={{ .Values.content.s3.sse }}{{ end }}); tenant: the group's{{ else }}OTLP/HTTP {{ .Values.service.ports.otlpContent }} -> fabriccontent ({{ .Values.content.backend }}{{ if eq .Values.content.backend "s3" }}, sse={{ .Values.content.s3.sse }}{{ end }}); tenants: {{ join ", " .Values.content.allowedTenants }}{{ end }}
 The Node is the only content writer; agents need no store credentials.
 {{- if .Values.content.encryption.keySecret.name }}
 Content queue{{ if eq .Values.content.backend "file" }} and file store{{ end }}: sealed with the Node key (AES-256-GCM, spec 049 §7.8).

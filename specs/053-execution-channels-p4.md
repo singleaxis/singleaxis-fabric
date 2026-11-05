@@ -2,8 +2,8 @@
 title: Execution channels — P4 opt-in observed hooks and production host sources
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 2
-last_updated: 2026-10-22
+revision: 4
+last_updated: 2026-11-04
 owner: recorder-engineering
 depends_on: ["049", "050", "051", "052"]
 related: ["030", "031", "041", "043", "047", "048", "054", "055"]
@@ -19,6 +19,26 @@ host ingress is 056 milestone M2. The rest of this spec is not built. Codes
 in parentheses such as (R8) or (R11) name the cross-spec revision decisions
 that a rule applies, and "decision n" means row n of 049 §9; the
 [glossary](../docs/glossary.md) lists both.
+
+**Revision 4** (2026-11-04) corrects revision 3 after review of the 056 M2
+plan (056 revision 5): `ns_ppid` is the parent's thread-group id in the
+child's namespace (§6.2.3); the eBPF emitter scopes by cgroup roots,
+including a node's agent pods, and derives container ids for sandbox scope
+only (§6.2.3, §6.2.9); upstream loss gains `scope_late` (§6.2.4); the
+sensor collector exports with `otlp_http`, the only OTLP exporter the Node
+build contains (§6.2.8); the legacy single-binding values keep their
+current render (§6.1); a cluster has one host group per node (§6.1
+"DaemonSet Nodes").
+
+**Revision 3** (2026-11-04) amends only what spec 056 milestone M2 needs
+([056 §7.3](056-agent-action-reconstruction.md#73-m2-production-profile)):
+the host record of §6.2.3 reports pids in two namespaces, a sensor scope and
+container and pod ids, and defines the process start time exactly; the
+eBPF emitter's production settings are environment variables (§6.2.9), as
+its other settings are; the host-records library lives in the Node's module
+tree (§8 WP4-07a); a group name cannot start with `content` (§6.1). M2
+builds §5.4 without its dialects; observing remote sandbox providers is
+056's `remote.sandbox` capture point, not this spec's HTTP channel.
 
 **Revision 2** applies the cross-spec revision decisions R1–R16 (defined in
 the introduction of [050](050-run-structure-and-records-p1.md)), and binds
@@ -822,7 +842,7 @@ credential to one source. It is the proven P0-A shape, repeated.
 
 | Property | Rule |
 |---|---|
-| `name` | `^[a-z][a-z0-9-]{0,31}$`, unique |
+| `name` | `^[a-z][a-z0-9-]{0,31}$`, unique, not starting with `content` (revision 3: fabric-gate reads `otlp/content…` and `logs/content…` ids as content components) |
 | `tenantId` | the bound tenant string |
 | `sourceId` | the emitted source id (`s-` + 32 hex), unique within the tenant |
 | `kind` | `agent`, `host.auditd` or `host.ebpf` |
@@ -833,7 +853,11 @@ credential to one source. It is the proven P0-A shape, repeated.
 - At most **64 groups** by default; an explicit ceiling of **256**. Each
   group uses one to three listeners, so 64 groups need at most 192.
 - No on-demand registration service and no fleet-management API.
-- The legacy single-binding values compile to one `agent` group. Mixing the
+- The legacy single-binding values keep their current render (one OTLP
+  receiver, the plain `fabricguard` instance), which fabric-gate keeps
+  checking with its existing single-binding rule; they are not rewritten
+  into a group (revision 4: revision 2 said they compile to one `agent`
+  group, which would change every existing production render). Mixing the
   old and new forms fails the render.
 
 Rendered components for group B (illustrative names; TLS, timeouts and body
@@ -893,6 +917,14 @@ A source not in the static set cannot use a wildcard binding. Dynamic
 source onboarding is outside P4: regenerate the customer configuration or
 deploy separate Nodes. Bound ingress authenticates the source credential,
 not an individual process or the truth of its reports.
+
+**Host sensors on many nodes** (revision 4; 056 §7.3.3 (n)). Each node's
+sensor is its own source (label `<node>/ebpf` or `<node>/auditd`), so a
+cluster of N nodes has N host groups of each sensor kind, each with its own
+token and port, within the group limits above. Each node's token is
+provisioned on that node only (a hostPath directory read by the sensor),
+never in one Secret every sensor pod can read, because a sensor holding
+another node's credential could present that node's records.
 
 **Later option, not built in P4: a custom credential-to-source
 authenticator.** A small collector authenticator extension could map each
@@ -971,19 +1003,23 @@ There are no bodies, no evidence object and no `fabric.content.object_ids`.
 | `fabric.sensor.syscall` | R | enum `execve`, `execveat`, `connect`, `accept`, `bind`, `socket`, `openat`, `open` | |
 | `fabric.sensor.result` | R | enum `success`, `failed`, `unknown` | |
 | `fabric.sensor.errno` | O | enum of `errno.go` names plus `other` | only when `failed` |
-| `fabric.sensor.pid` | R | int ≥ 1 | |
-| `fabric.sensor.ppid` | O | int ≥ 0 | |
-| `fabric.sensor.pid_ns` | O | `^[0-9]{1,20}$` (uint64 decimal) | when the sensor supplies it |
-| `fabric.sensor.process_start_ns` | O | int ≥ 0, boot-relative | eBPF only |
+| `fabric.sensor.pid` | R | int ≥ 1 | init-namespace tgid (revision 3) |
+| `fabric.sensor.ppid` | O | int ≥ 0 | init-namespace tgid of the real parent |
+| `fabric.sensor.ns_pid` | O | int ≥ 1 | eBPF only (revision 3): the group leader's number in its own pid namespace, `thread_pid->numbers[level].nr` |
+| `fabric.sensor.ns_ppid` | O | int ≥ 0 | eBPF only (revision 3; corrected in revision 4): the parent's thread-group id in the child's namespace, as `getppid()` returns there: the number of `real_parent->group_leader->thread_pid` at the child's level, 0 when that pid is not in the child's namespace. Never the spawning thread's own id |
+| `fabric.sensor.pid_ns` | O | `^[0-9]{1,20}$` (uint64 decimal) | the inode of the namespace `ns_pid` is numbered in (`numbers[level].ns->ns.inum`) |
+| `fabric.sensor.process_start_ns` | O | int ≥ 0, boot-relative | eBPF only: the group leader's `start_boottime` (`CLOCK_BOOTTIME` ns, unrounded), the field `/proc/<pid>/stat` field 22 is computed from (revision 3; 056 §4.3) |
 | `fabric.sensor.boot_time_s` | O | int ≥ 0 | computed once at start from `CLOCK_REALTIME − CLOCK_BOOTTIME`; no file reads |
 | `fabric.sensor.cgroup_id` | O | `^[0-9]{1,20}$` | |
+| `fabric.sensor.scope` | O | enum `agent`, `sandbox` | eBPF only (revision 3): which configured cgroup root admitted the event, the deepest when roots nest (revision 4; 056 §4.3) |
+| `fabric.sensor.pod_id` | O | `sbx-` v2 of `k8s-pod:<uid>` from the cgroup path | eBPF only (revision 3; 056 rule H5) |
 | `fabric.sensor.audit_serial` | O | `^[0-9]{1,20}$` | auditd only; unsigned decimal |
 | `fabric.sensor.incomplete` | O | enum `path`, `args`, `path_and_args` | |
 | `fabric.sensor.peer_family` | O | enum `ipv4`, `ipv6`, `unix`, `other` | `connect` only |
 | `fabric.network.host_id` | O | `hst-` v2 of the canonical peer address text | omitted without a key |
 | `fabric.sensor.peer_port` | O | int 0..65535 | |
 | `fabric.execution.host_id` | O | `hst-` v2 of the configured host label (C41) | |
-| `fabric.execution.sandbox_id` | O | `sbx-` v2 of a configured sandbox label (C41) | |
+| `fabric.execution.sandbox_id` | O | `sbx-` v2 of a configured sandbox label (C41); for eBPF in M2, of `container:<64 hex>` derived from the cgroup names of a sandbox-scope event, read at event time (revisions 3 and 4; 056 rule H5) | |
 | `fabric.execution.image_digest` | O | DIGEST, from trusted configuration only (C41) | the filesystem is never inspected |
 | `fabric.sensor.exe_sha256`, `.argv_sha256`, `.path_sha256` | O | `^sha256:[0-9a-f]{64}$` | only under an explicit digest permission (§6.2.5) |
 
@@ -1018,7 +1054,10 @@ heartbeat:
 - `fabric.sensor.upstream_loss_reason`: enum `ring_buffer_full`,
   `socket_overflow`, `assembly_evicted`, `rate_limited`, `backlog_limit`,
   `source_rotation_gap`, `source_truncated`, `source_missing`, `restart`,
-  `unknown`.
+  `scope_late` (revision 4: an agent pod's scope was installed after its
+  containers started, 056 §4.3), `unknown`. A heartbeat carries one reason;
+  an interval with several reasons has one heartbeat per reason (056
+  §7.3.3 (b)).
 
 The verifier reports a sensor window with a nonzero or unknown upstream
 loss as `partial` for corroboration, and an unknown count stays unknown,
@@ -1039,7 +1078,9 @@ upstream loss (`restart`, −1) on the next epoch's first heartbeat.
   encrypted with the AES-256-GCM envelope of the collector's
   `fabricenvelope` extension (magic, 12-byte nonce, ciphertext and tag),
   with a host-records magic and the state kind as additional data. The
-  envelope vectors are shared with `fabricenvelopeextension`.
+  envelope vectors are shared with `fabricenvelopeextension` (revision 3:
+  magic `FABRIC-HOST-RECORDS-1\n`, vectors in
+  `contracts/capture/v1/fixtures/host/host-state-envelope-v1.json`).
 - A key failure disables the production stream and the sensitive
   metadata. It never disturbs monitored workloads. The sensor reports health
   through safe counters.
@@ -1088,8 +1129,9 @@ present host evidence, and a sensor can never present agent records.
 
 - It runs in a customer-deployed sensor collector, separate from the
   monitored agent and from the Node, whose configuration is the `audit`
-  receiver (production mode) → a traces pipeline → one `otlp` exporter to
-  its group's endpoint with its own bearer token. A sensor-profile check
+  receiver (production mode) → a traces pipeline → one `otlp_http`
+  exporter (revision 4: the Node build has no gRPC OTLP exporter) to its
+  group's OTLP/HTTP endpoint with its own bearer token. A sensor-profile check
   in the collector refuses any other receiver or exporter in that process.
 - The receiver's factory gains a traces creator for production mode;
   local mode keeps its logs output.
@@ -1103,9 +1145,16 @@ present host evidence, and a sensor can never present agent records.
 
 #### 6.2.9 eBPF emitter (production mode)
 
-- New flags: `--production`, `--source-label`, `--id-key-file`,
-  `--state-dir`, `--spool-key-file`, with the existing endpoint, token and
-  TLS flags. It exports traces (host records) instead of audit-class logs.
+- New settings (revision 3: environment variables, as every other emitter
+  setting is; 056 §7.3.3 (c)): `EMIT_PRODUCTION`, `EMIT_TENANT_ID`,
+  `EMIT_SOURCE_LABEL`, `EMIT_HOST_LABEL`, `EMIT_ID_KEY_FILE`,
+  `EMIT_STATE_KEY_FILE`, `EMIT_STATE_DIR`, `EMIT_SANDBOX_CGROUP_ROOTS`,
+  `EMIT_DIGESTS`, `EMIT_HEARTBEAT_INTERVAL`, with the existing endpoint,
+  token and TLS settings; revision 4 adds `EMIT_AGENT_CGROUP_ROOTS`,
+  `EMIT_AGENT_POD_SELECTOR`, `EMIT_NODE_NAME` and `EMIT_ENDPOINT_FILE`, and
+  production refuses the exact `EMIT_CGROUP_PATH`. It exports traces (host records) instead of
+  audit-class logs. Production mode refuses event deduplication: every
+  event keeps its own position.
 - Ring-buffer and rate-limit drops are upstream loss.
 - The spool becomes encrypted (§6.2.5). Partial OTLP success keeps today's
   quarantine: the batch's positions are declared `span_dropped` loss
@@ -1230,7 +1279,7 @@ Host and Node work never blocks the Python hooks, and the reverse.
 | **WP4-06b SSH** | `hooks/ssh.py`, `tests/test_hooks_ssh*` | WP4-00 | §5.6 | fixture SSH server ledger; host-key basis cases; `exec_command` pass-through identity; canaries | P4-SSH passes |
 | **WP4-10a Channel projection** | `reconstruct/_channels.py`, `reconstruct/_diff.py`, tests | WP4-01 fixtures; 051 WP2-9a hook | channel field wrappers from evidence and keys; piece reassembly; N48 protected diff | per-type projection fixtures; no false completeness | C1-3, C1-5 for P4 steps |
 | **WP4-10b Host corroboration** | `reconstruct/_host.py`, the `sensor_events` writer in the report (through the WP-30 report interface), tests | WP4-01 host fixtures | §6.3 | pid reuse, clock uncertainty, ambiguity, imported-stamp negatives, upstream-loss windows | joins tentative; no agent verdict change |
-| **WP4-07a host-records library** | `components/host-records/**` (new Go module) | WP4-01 | §6.2.2–§6.2.5: label and v2 pseudonyms, `epoch.state`, allocator, persisted ids, envelope, staging batch, span builders, upstream-loss accumulator | vectors equal Python's (`pseudonym-v2`, `run-id-pseudonym-v1`, span category, host fixtures); envelope vectors equal `fabricenvelope`'s; property tests for ids and replay | vector parity; corruption, key-rotation and restart tests |
+| **WP4-07a host-records library** | `components/otel-collector-fabric/hostrecords/**` (new Go module; revision 3: inside the Node's image build context, 056 OD-11) | WP4-01 | §6.2.2–§6.2.5: label and v2 pseudonyms, `epoch.state`, allocator, persisted ids, envelope, staging batch, span builders, upstream-loss accumulator | vectors equal Python's (`pseudonym-v2`, `run-id-pseudonym-v1`, span category, host fixtures); envelope vectors equal `fabricenvelope`'s; property tests for ids and replay | vector parity; corruption, key-rotation and restart tests |
 | **WP4-07b auditreceiver production mode** | `receiver/auditreceiver/**`, `ocb-config.yaml` (host-records replace line), `examples/host-sensor-production/` | **WP4-07a merged** | §6.2.8 | logfile cursor and restart; netlink overflow; staged replay keeps ids; canaries in staging and spool | Linux audit ledger survives restart with no source-id or event-id churn |
 | **WP4-07c host-emitter production mode** | `components/host-emitter/**` | **WP4-07a merged** | §6.2.9 | ring overrun; encrypted spool; partial-OTLP quarantine; restart replay | eBPF ledger survives restart with no id churn |
 | **WP4-08a Gate** | `gate/**` | this spec §6.1, §6.2.6 | multi-group graph validation | forged, mixed and swapped groups; duplicate credentials by bytes; host-group pipeline rules; legacy single binding still passes | P4-BIND gate matrix |

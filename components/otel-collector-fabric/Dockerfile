@@ -41,6 +41,7 @@ RUN go install go.opentelemetry.io/collector/cmd/builder@${OCB_VERSION} \
 COPY ocb-config.yaml ./
 COPY processor/fabricguardprocessor ./processor/fabricguardprocessor
 COPY receiver/auditreceiver ./receiver/auditreceiver
+COPY hostrecords ./hostrecords
 COPY exporter/fabriccontentexporter ./exporter/fabriccontentexporter
 COPY extension/noredirectextension ./extension/noredirectextension
 COPY extension/fabricenvelopeextension ./extension/fabricenvelopeextension

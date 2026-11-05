@@ -1,0 +1,21 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "http.nonmodel",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.http.observation/v1",
+    "items": [
+      {
+        "rule_index": 3,
+        "scheme": "http",
+        "port": 8080,
+        "redirect_index": 1,
+        "request_body": "unconsumed",
+        "response_body": "not_retained",
+        "dialect": "none",
+        "redirect_of": "1a3d9605-46ed-4936-ac11-177cdba96119"
+      }
+    ]
+  }
+}

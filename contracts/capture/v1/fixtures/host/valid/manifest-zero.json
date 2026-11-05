@@ -1,0 +1,365 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "manifest-zero",
+  "description": "Manifest 0 of a host source (053 §6.2.3): one capture-point row of kind S, inputs records, source_auth bound, content disabled, an unsealed prior epoch the sensor found at start (its heartbeat was staged first).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "host.ebpf",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "039ce8c335e37bc9eff51cd897f7831b",
+                  "spanId": "2b2eed135987e7bb",
+                  "name": "fabric.capture_manifest",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331201000000000",
+                  "endTimeUnixNano": "1791331201000000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.capture.manifest_id",
+                      "value": {
+                        "stringValue": "2434aa1d-8f1d-4a58-a380-79712ccbf700"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.after_source_sequence",
+                      "value": {
+                        "intValue": "-1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.capture_point_fields",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "host.ebpf=C41"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.capture_points",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "host.ebpf@0.11.0:S:active:0:1:-"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.chunk_boundaries_retained",
+                      "value": {
+                        "boolValue": false
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.clock.domain",
+                      "value": {
+                        "stringValue": "wall_utc"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.clock.uncertainty_ns",
+                      "value": {
+                        "intValue": "2000000"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.content_capture",
+                      "value": {
+                        "stringValue": "disabled"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.content_capture_reason",
+                      "value": {
+                        "stringValue": "not_configured"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.coverage_profile",
+                      "value": {
+                        "stringValue": "fabric.profile.host-sensor/v1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.emitted_at",
+                      "value": {
+                        "stringValue": "2026-10-07T00:00:00Z"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.identity_mode",
+                      "value": {
+                        "stringValue": "pseudonymous"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.inputs",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "records"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.key_id",
+                      "value": {
+                        "stringValue": "kid-b2a0080c"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.max_body_bytes",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.max_inflight_bytes",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.max_retain_bytes",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.open_run_deadline_s",
+                      "value": {
+                        "intValue": "60"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.part_min_bytes",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.queue_max_items",
+                      "value": {
+                        "intValue": "512"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.limits.records_max_object_bytes",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.manifest_seq",
+                      "value": {
+                        "intValue": "0"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.profile",
+                      "value": {
+                        "stringValue": "production"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.pseudonym_mode",
+                      "value": {
+                        "stringValue": "keyed"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.role_table_version",
+                      "value": {
+                        "stringValue": "fabric.content-role-table/v1@4"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.runtime.name",
+                      "value": {
+                        "stringValue": "other"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.runtime.version",
+                      "value": {
+                        "stringValue": "go1.26.2"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.sdk.language",
+                      "value": {
+                        "stringValue": "go"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.sequence_unit",
+                      "value": {
+                        "stringValue": "record"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.source_auth",
+                      "value": {
+                        "stringValue": "bound"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.spool_encrypted",
+                      "value": {
+                        "boolValue": true
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.uncaptured_classes",
+                      "value": {
+                        "arrayValue": {
+                          "values": []
+                        }
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.unsealed_prior_epoch_count",
+                      "value": {
+                        "intValue": "1"
+                      }
+                    },
+                    {
+                      "key": "fabric.manifest.unsealed_prior_epochs",
+                      "value": {
+                        "arrayValue": {
+                          "values": [
+                            {
+                              "stringValue": "6917529027641081601"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "89e964c5-3cd5-41f8-aaea-ce4734f7ac13"
+                      }
+                    },
+                    {
+                      "key": "fabric.schema_version",
+                      "value": {
+                        "stringValue": "fabric.capture-manifest/v1"
+                      }
+                    },
+                    {
+                      "key": "fabric.sdk.version",
+                      "value": {
+                        "stringValue": "0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "spans": [
+        {
+          "name": "fabric.capture_manifest",
+          "attributes": {
+            "fabric.capture.manifest_id": "2434aa1d-8f1d-4a58-a380-79712ccbf700",
+            "fabric.manifest.after_source_sequence": -1,
+            "fabric.manifest.capture_point_fields": [
+              "host.ebpf=C41"
+            ],
+            "fabric.manifest.capture_points": [
+              "host.ebpf@0.11.0:S:active:0:1:-"
+            ],
+            "fabric.manifest.chunk_boundaries_retained": false,
+            "fabric.manifest.clock.domain": "wall_utc",
+            "fabric.manifest.clock.uncertainty_ns": 2000000,
+            "fabric.manifest.content_capture": "disabled",
+            "fabric.manifest.content_capture_reason": "not_configured",
+            "fabric.manifest.coverage_profile": "fabric.profile.host-sensor/v1",
+            "fabric.manifest.emitted_at": "2026-10-07T00:00:00Z",
+            "fabric.manifest.identity_mode": "pseudonymous",
+            "fabric.manifest.inputs": [
+              "records"
+            ],
+            "fabric.manifest.key_id": "kid-b2a0080c",
+            "fabric.manifest.limits.max_body_bytes": 1,
+            "fabric.manifest.limits.max_inflight_bytes": 1,
+            "fabric.manifest.limits.max_retain_bytes": 1,
+            "fabric.manifest.limits.open_run_deadline_s": 60,
+            "fabric.manifest.limits.part_min_bytes": 1,
+            "fabric.manifest.limits.queue_max_items": 512,
+            "fabric.manifest.limits.records_max_object_bytes": 1,
+            "fabric.manifest.manifest_seq": 0,
+            "fabric.manifest.profile": "production",
+            "fabric.manifest.pseudonym_mode": "keyed",
+            "fabric.manifest.role_table_version": "fabric.content-role-table/v1@4",
+            "fabric.manifest.runtime.name": "other",
+            "fabric.manifest.runtime.version": "go1.26.2",
+            "fabric.manifest.sdk.language": "go",
+            "fabric.manifest.sequence_unit": "record",
+            "fabric.manifest.source_auth": "bound",
+            "fabric.manifest.spool_encrypted": true,
+            "fabric.manifest.uncaptured_classes": [],
+            "fabric.manifest.unsealed_prior_epoch_count": 1,
+            "fabric.manifest.unsealed_prior_epochs": [
+              "6917529027641081601"
+            ],
+            "fabric.event_id": "89e964c5-3cd5-41f8-aaea-ce4734f7ac13",
+            "fabric.schema_version": "fabric.capture-manifest/v1",
+            "fabric.sdk.version": "0.11.0",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.authenticated": true
+          }
+        }
+      ],
+      "stripped": {},
+      "dropped": 0
+    }
+  ]
+}

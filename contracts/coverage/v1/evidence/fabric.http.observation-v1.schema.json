@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.http.observation-v1.schema.json",
+  "title": "Evidence type fabric.http.observation/v1 (spec 053 §3.2, §5.4; spec 056 M2)",
+  "description": "The one item of an http.nonmodel record: which allowlist rule matched, the scheme and port, the redirect hop, how complete each body is, and the dialect parser selected. Metadata only: method, status and host travel as telemetry keys (N43); target, path, query and bodies travel as network.* content bodies (N44), never here; raw headers are never recorded. Closed: no other property, no free text. Spec 056 M2 emits dialect none only; jsonrpc2 and qdrant_rest_v1 stay with spec 053 WP4-05.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rule_index",
+    "scheme",
+    "port",
+    "redirect_index",
+    "request_body",
+    "response_body",
+    "dialect"
+  ],
+  "properties": {
+    "rule_index": {
+      "description": "META: the index of the matching host rule in the install-time allowlist.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "scheme": {
+      "description": "META: the request's scheme.",
+      "enum": [
+        "http",
+        "https"
+      ]
+    },
+    "port": {
+      "description": "META: the request's port.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "redirect_index": {
+      "description": "META (N44): the hop of a redirect chain; 0 for the first request. httpx follows redirects through the transport, so each hop is its own attempt.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "redirect_of": {
+      "description": "ID: the previous hop's attempt uid (uuid4).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "request_body": {
+      "description": "META (N44): how complete the recorded request body is.",
+      "enum": [
+        "complete",
+        "partial",
+        "early_close",
+        "unconsumed",
+        "not_retained",
+        "not_exposed"
+      ]
+    },
+    "response_body": {
+      "description": "META (N44): how complete the recorded response body is; early_close is partial, never EOF.",
+      "enum": [
+        "complete",
+        "partial",
+        "early_close",
+        "unconsumed",
+        "not_retained",
+        "not_exposed"
+      ]
+    },
+    "dialect": {
+      "description": "META: the offline parser the reader selects for the stored bytes (N26, N28).",
+      "enum": [
+        "none",
+        "jsonrpc2",
+        "qdrant_rest_v1"
+      ]
+    },
+    "error_class": {
+      "description": "LABEL: the raised exception class's __qualname__, never its message.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"
+    }
+  }
+}

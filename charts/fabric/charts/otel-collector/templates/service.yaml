@@ -9,6 +9,9 @@ spec:
   selector:
     {{- include "otel-collector.selectorLabels" . | nindent 4 }}
   ports:
+    {{- if include "otel-collector.groupMode" . }}
+    {{- include "otel-collector.groupPorts" (dict "groups" .Values.receiver.sourceBindings "key" "port") | nindent 4 }}
+    {{- else }}
     - name: otlp-grpc
       port: {{ .Values.service.ports.otlpGrpc }}
       targetPort: otlp-grpc
@@ -22,6 +25,7 @@ spec:
       port: {{ .Values.service.ports.otlpContent }}
       targetPort: otlp-content
       protocol: TCP
+    {{- end }}
     {{- end }}
     - name: health
       port: {{ .Values.service.ports.health }}

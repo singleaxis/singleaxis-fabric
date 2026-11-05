@@ -1,0 +1,176 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "sensor-record-on-agent-group",
+  "description": "Sensor impersonation by an agent: an agent group's batch holds a span of capture point host.ebpf; an agent instance refuses any kind-S span or fabric.sensor.* key (053 §6.2.7, last paragraph).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "agent",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "68e2ba00307f031afdfd933f99fd26f7",
+                  "spanId": "0979e0a8121e94a5",
+                  "name": "fabric.sensor_event",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331201210600000",
+                  "endTimeUnixNano": "1791331201210600000",
+                  "attributes": [
+                    {
+                      "key": "fabric.tenant_id",
+                      "value": {
+                        "stringValue": "tenant-a"
+                      }
+                    },
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.sequence",
+                      "value": {
+                        "intValue": "0"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "07dde3b1-c61c-4e0e-a0e8-78bdd8e049e2"
+                      }
+                    },
+                    {
+                      "key": "fabric.attempt.uid",
+                      "value": {
+                        "stringValue": "113eb822-5f48-4cee-a789-ff2c3926d026"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.input",
+                      "value": {
+                        "stringValue": "records"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.source",
+                      "value": {
+                        "stringValue": "observed"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.event_class",
+                      "value": {
+                        "stringValue": "exec"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.syscall",
+                      "value": {
+                        "stringValue": "execve"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.result",
+                      "value": {
+                        "stringValue": "success"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid",
+                      "value": {
+                        "intValue": "4121"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ppid",
+                      "value": {
+                        "intValue": "4100"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ns_pid",
+                      "value": {
+                        "intValue": "41"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ns_ppid",
+                      "value": {
+                        "intValue": "7"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid_ns",
+                      "value": {
+                        "stringValue": "4026532481"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.process_start_ns",
+                      "value": {
+                        "intValue": "60123217448"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.boot_time_s",
+                      "value": {
+                        "intValue": "1791271080"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.cgroup_id",
+                      "value": {
+                        "stringValue": "9123"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.scope",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "fabric.execution.host_id",
+                      "value": {
+                        "stringValue": "hst-96164cc6e2bd169f1beee83173bb7293"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

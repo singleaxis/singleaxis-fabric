@@ -165,13 +165,15 @@ ChainVerdict = Literal["complete", "partial", "unverified", "not_observed"]
 #: The four evidence chains of a run, in report order (spec 056 §0, §4.5).
 CHAIN_NAMES: Final = ("decisions", "actions", "effects", "corroboration")
 #: The bases ``attribution.links`` counts decisions by, in report order: ``reported`` is
-#: rule A0, ``none`` is A4 (no candidate), the others are link methods.
+#: rule A0, ``none`` is A4 (no candidate), the others are link methods (``sandbox_report``
+#: is rule H5, M2).
 ATTRIBUTION_BASES: Final = (
     "reported",
     "output_match",
     "sequence_bracket",
     "process_anchor",
     "process_lineage",
+    "sandbox_report",
     "none",
 )
 #: ``unattributed_effects`` and ``unexplained_host_events`` list at most this many entries;

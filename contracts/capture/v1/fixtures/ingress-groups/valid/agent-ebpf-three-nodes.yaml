@@ -1,0 +1,284 @@
+exporters:
+  fabriccontent/agent:
+    allowed_tenants:
+    - tenant-a
+    backend: s3
+    profile: production
+    queue_directory: /var/lib/otelcol-fabric/storage/content-queue-agent
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_elapsed_time: 0s
+      max_interval: 30s
+    s3:
+      bucket: acme-fabric-content
+      kms_key_id: alias/fabric-content
+      prefix: fabric/agent/
+      region: eu-west-1
+      sse: aws:kms
+      use_path_style: false
+    sending_queue:
+      block_on_overflow: true
+      enabled: true
+      num_consumers: 4
+      queue_size: 64
+      storage: fabricenvelope/fabric_content_agent
+    source_binding:
+      source_id: s-b94f348e8d6890782b2af72c847dc77b
+      tenant_id: tenant-a
+    timeout: 60s
+  otlp_http/fabric:
+    endpoint: https://otlp.example.invalid
+    headers:
+      Authorization: ${env:FABRIC_EXPORT_AUTH}
+    middlewares:
+    - id: noredirect
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_elapsed_time: 0s
+      max_interval: 30s
+    sending_queue:
+      block_on_overflow: true
+      enabled: true
+      num_consumers: 10
+      queue_size: 10000
+      storage: file_storage/fabric
+    timeout: 30s
+    tls:
+      insecure: false
+      insecure_skip_verify: false
+extensions:
+  bearertokenauth/agent:
+    filename: /etc/fabric/ingress/agent/token
+    require_single_token: true
+  bearertokenauth/ebpf-0:
+    filename: /etc/fabric/ingress/ebpf-0/token
+    require_single_token: true
+  bearertokenauth/ebpf-1:
+    filename: /etc/fabric/ingress/ebpf-1/token
+    require_single_token: true
+  bearertokenauth/ebpf-2:
+    filename: /etc/fabric/ingress/ebpf-2/token
+    require_single_token: true
+  fabricenvelope/fabric_content_agent:
+    key_file: /etc/fabric/content-key/key
+    storage: file_storage/fabric_content_agent
+  file_storage/fabric:
+    create_directory: true
+    directory: /var/lib/otelcol-fabric/storage
+    fsync: true
+    timeout: 1s
+  file_storage/fabric_content_agent:
+    create_directory: true
+    directory: /var/lib/otelcol-fabric/storage/content-queue-agent
+    directory_permissions: '0700'
+    fsync: true
+    timeout: 1s
+  health_check:
+    endpoint: 0.0.0.0:13133
+  noredirect: {}
+processors:
+  fabricguard/agent:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-b94f348e8d6890782b2af72c847dc77b
+      tenant_id: tenant-a
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: agent
+  fabricguard/ebpf-0:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-f2388b6876ba4e4a4571b9c45e94ff2a
+      tenant_id: tenant-a
+    host_digests: omitted
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: host.ebpf
+  fabricguard/ebpf-1:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-0dc28b6be19944633be7862f8ebe0def
+      tenant_id: tenant-a
+    host_digests: omitted
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: host.ebpf
+  fabricguard/ebpf-2:
+    capture_labels: pseudonymous
+    drop_unknown_classes: true
+    event_class_attribute: event_class
+    evidence_source_binding:
+      source_id: s-2fddc2ced86723b22eb99ba2f3dc5fe4
+      tenant_id: tenant-a
+    host_digests: omitted
+    identity_mode: pseudonymous
+    max_field_bytes: 8192
+    profile: production
+    source_kind: host.ebpf
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+receivers:
+  otlp/agent:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/agent
+        endpoint: 0.0.0.0:4317
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+      http:
+        auth:
+          authenticator: bearertokenauth/agent
+        endpoint: 0.0.0.0:4318
+        idle_timeout: 120s
+        max_request_body_size: 8388608
+        read_header_timeout: 5s
+        read_timeout: 30s
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/content-agent:
+    protocols:
+      http:
+        auth:
+          authenticator: bearertokenauth/agent
+        endpoint: 0.0.0.0:4319
+        idle_timeout: 120s
+        max_request_body_size: 67108864
+        read_header_timeout: 5s
+        read_timeout: 120s
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/ebpf-0:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/ebpf-0
+        endpoint: 0.0.0.0:4417
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/ebpf-1:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/ebpf-1
+        endpoint: 0.0.0.0:4418
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+  otlp/ebpf-2:
+    protocols:
+      grpc:
+        auth:
+          authenticator: bearertokenauth/ebpf-2
+        endpoint: 0.0.0.0:4419
+        keepalive:
+          enforcement_policy:
+            min_time: 10s
+            permit_without_stream: false
+        max_concurrent_streams: 64
+        max_recv_msg_size_mib: 8
+        tls:
+          cert_file: /etc/fabric/receiver-tls/tls.crt
+          client_ca_file: /etc/fabric/receiver-tls/client-ca.crt
+          key_file: /etc/fabric/receiver-tls/tls.key
+service:
+  extensions:
+  - health_check
+  - noredirect
+  - file_storage/fabric
+  - bearertokenauth/agent
+  - file_storage/fabric_content_agent
+  - fabricenvelope/fabric_content_agent
+  - bearertokenauth/ebpf-0
+  - bearertokenauth/ebpf-1
+  - bearertokenauth/ebpf-2
+  pipelines:
+    logs/agent:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/agent
+      receivers:
+      - otlp/agent
+    logs/content-agent:
+      exporters:
+      - fabriccontent/agent
+      processors:
+      - memory_limiter
+      receivers:
+      - otlp/content-agent
+    traces/agent:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/agent
+      receivers:
+      - otlp/agent
+    traces/ebpf-0:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/ebpf-0
+      receivers:
+      - otlp/ebpf-0
+    traces/ebpf-1:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/ebpf-1
+      receivers:
+      - otlp/ebpf-1
+    traces/ebpf-2:
+      exporters:
+      - otlp_http/fabric
+      processors:
+      - memory_limiter
+      - fabricguard/ebpf-2
+      receivers:
+      - otlp/ebpf-2
+  telemetry:
+    logs:
+      level: info

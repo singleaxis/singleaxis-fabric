@@ -1,0 +1,4 @@
+# 256 groups is the ceiling (spec 053 §6.1).
+otel-collector:
+  receiver:
+    maxSourceBindings: 257

@@ -1,0 +1,1137 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "ar1-negative-g-container-id-not-reported",
+  "rules": [
+    "A1",
+    "A4",
+    "H1",
+    "H3",
+    "H4"
+  ],
+  "description": "AR-1 production negative (g): step 8 without -d, so standard output is the container's output, not its id: no created id, no H5 link; the container's events are counted in sandbox_events_unlinked; corroboration unchanged.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 7,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active",
+      "remote.sandbox": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [
+      {
+        "source": "host.ebpf",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      }
+    ],
+    "exchanges": [
+      {
+        "exchange_id": "e5f73e06-42c6-4cc4-a959-80a24288004a",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_T1",
+            "name": "run_shell"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "ce3305bf-6a37-4af7-a698-7b1bbc8466e3",
+        "sequence": 4,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_T2",
+            "name": "fetch_url"
+          }
+        ],
+        "tool_results": [
+          {
+            "id": "call_T1",
+            "text": "Command output:\na.txt\nb.txt\nc.txt\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /data/a.txt\n\n(exit 0)"
+          }
+        ]
+      },
+      {
+        "exchange_id": "8361d4dc-0e9c-40fa-a4b8-9d602f2d7f5b",
+        "sequence": 7,
+        "start_ns": 1791331203000000000,
+        "end_ns": 1791331203900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_T3a",
+            "name": "run_shell"
+          },
+          {
+            "id": "call_T3b",
+            "name": "run_shell"
+          }
+        ],
+        "tool_results": [
+          {
+            "id": "call_T2",
+            "text": "{\"status\": \"ok\", \"items\": 3}"
+          }
+        ]
+      },
+      {
+        "exchange_id": "15d26d79-4542-4651-a5c8-224a0f156549",
+        "sequence": 12,
+        "start_ns": 1791331204500000000,
+        "end_ns": 1791331205400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_T4",
+            "name": "run_python"
+          }
+        ],
+        "tool_results": [
+          {
+            "id": "call_T3a",
+            "text": "Command output:\n1204 /data/a.txt\n\n(exit 0)"
+          },
+          {
+            "id": "call_T3b",
+            "text": "Command output:\n48K\t/data\ntotal 48K in 3 files\n\n(exit 0)"
+          }
+        ]
+      },
+      {
+        "exchange_id": "7cc11b0a-59a9-4988-a6ea-e82d971ec545",
+        "sequence": 15,
+        "start_ns": 1791331206000000000,
+        "end_ns": 1791331206900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_T4",
+            "text": "Command output:\nsum of squares: 385\n\n(exit 0)"
+          }
+        ]
+      },
+      {
+        "exchange_id": "0b4caf6c-6e0f-4c12-a5b4-50764bdc6155",
+        "sequence": 18,
+        "start_ns": 1791331207500000000,
+        "end_ns": 1791331208400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_T8",
+            "name": "run_container"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "583b97f3-728e-4355-af66-43ecb46702b0",
+        "sequence": 21,
+        "start_ns": 1791331209000000000,
+        "end_ns": 1791331209900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_T9",
+            "name": "run_remote"
+          }
+        ],
+        "tool_results": [
+          {
+            "id": "call_T8",
+            "text": "Command output:\nalpha from the container\nbeta from the container\n\n(exit 0)"
+          }
+        ]
+      },
+      {
+        "exchange_id": "1f55cb86-7665-4996-ad63-a3c1bb4bfb0e",
+        "sequence": 24,
+        "start_ns": 1791331210500000000,
+        "end_ns": 1791331211400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_T9",
+            "text": "Command output:\nhello from the sandbox\n\n(exit 0)"
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "6190b8d2-8e10-4848-add6-ff3dde21ef25",
+        "event_id": "5bab0e18-4a2e-4594-a44e-a3268268c46c",
+        "label": "exec sh -c 'ls /data && sha256sum /data/a.txt'",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
+        "pid": 41,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 60120000000,
+        "stdout": "a.txt\nb.txt\nc.txt\n9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /data/a.txt\n",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "459a216f-93cd-4272-a095-2d4cfc1ba56b",
+        "event_id": "037ab7fb-52ed-4e1d-a518-b6d757f05907",
+        "label": "exec sh -c 'curl -s http://fixture.test/'",
+        "sequence": 5,
+        "start_ns": 1791331202500000000,
+        "pid": 50,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 61620000000,
+        "stdout": "{\"status\": \"ok\", \"items\": 3}",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "15219472-16db-4349-a887-2dcaf8be9693",
+        "event_id": "8d61c4a2-de7f-40b8-ab0b-e7e8890c2645",
+        "label": "exec sh -c 'wc -l /data/a.txt' (pool thread)",
+        "sequence": 8,
+        "start_ns": 1791331204000000000,
+        "pid": 60,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 63120000000,
+        "stdout": "1204 /data/a.txt\n",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "0a2a0dd7-c04b-4096-acd7-334b95a80047",
+        "event_id": "3db8b1c5-bb09-489b-a260-a44b579412c2",
+        "label": "exec sh -c 'du -sh /data' (pool thread)",
+        "sequence": 10,
+        "start_ns": 1791331204002000000,
+        "pid": 61,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 63122000000,
+        "stdout": "48K\t/data\ntotal 48K in 3 files\n",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "7eae6532-dcf9-4cf3-ac11-b34a13885f76",
+        "event_id": "5b38050e-73dd-44d2-ae7c-dd6b5fbba6cd",
+        "label": "exec bwrap --unshare-pid --unshare-net --ro-bind / / python3 -I -c '...'",
+        "sequence": 13,
+        "start_ns": 1791331205500000000,
+        "pid": 70,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 64620000000,
+        "stdout": "sum of squares: 385\n",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "25620a62-c0ff-4635-adc9-f7b176aed8ce",
+        "event_id": "09ad4a8f-2b44-42fe-a84e-ab05b0f1387e",
+        "label": "exec uname -a (background thread)",
+        "sequence": 16,
+        "start_ns": 1791331207100000000,
+        "pid": 80,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 66220000000,
+        "stdout": "Linux build-host-7 6.8.0 x86_64 GNU/Linux\n",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "92580bc1-0c01-4b75-a466-5320ecd6945d",
+        "event_id": "1ce41881-cbba-425b-a6ea-02c3a4acad6c",
+        "label": "exec docker run --cgroup-parent fabric-sandboxes.slice alpine:3.20 sh -c 'echo alpha from the container; echo beta from the container'",
+        "sequence": 19,
+        "start_ns": 1791331208500000000,
+        "pid": 90,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 67620000000,
+        "stdout": "alpha from the container\nbeta from the container\n",
+        "pid_ns": "4026532481"
+      },
+      {
+        "attempt_uid": "97122a55-543e-4d09-a2f1-5c95bce7cc0b",
+        "event_id": "b68d3311-46e0-4b5e-a72e-638b7b546787",
+        "label": "remote e2b commands_run 'echo hello from the sandbox'",
+        "sequence": 22,
+        "start_ns": 1791331210000000000,
+        "stdout": "hello from the sandbox\n",
+        "capture_point": "remote.sandbox",
+        "sandbox_id": "sbx-7a6b9fbf6825a65c5bedc2538e85b5a7"
+      }
+    ],
+    "host_events": [
+      {
+        "event_id": "host-90f8a7a1837f1fc4e7b6e446fcc206c4",
+        "label": "exec-sh-1",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331201000600000,
+        "pid": 4121,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 41,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 60123217448
+      },
+      {
+        "event_id": "host-bd951ff71634c6e9dc08e6dd787e18f2",
+        "label": "exec-sh-2",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331202500600000,
+        "pid": 4130,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 50,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 61623217448
+      },
+      {
+        "event_id": "host-a50aef37677250ed2d489702f649bb62",
+        "label": "exec-curl",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331202502000000,
+        "pid": 4131,
+        "ppid": 4130,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 51,
+        "ns_ppid": 50,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 61622000000
+      },
+      {
+        "event_id": "host-5d70a7740969507b013fde2449c50fac",
+        "label": "connect-curl",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331202504000000,
+        "pid": 4131,
+        "ppid": 4130,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 51,
+        "ns_ppid": 50,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-757236b3429f3994c09d77b1127c1453",
+        "peer_port": 80
+      },
+      {
+        "event_id": "host-4cff3cd3c7dd105fab38631bb054ce57",
+        "label": "exec-sh-3a",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331204000600000,
+        "pid": 4140,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 60,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 63123217448
+      },
+      {
+        "event_id": "host-4744b25a4ed704411a69a5e9c5412167",
+        "label": "exec-sh-3b",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331204002600000,
+        "pid": 4141,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 61,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 63125217448
+      },
+      {
+        "event_id": "host-a54e04406618d79049a91b8c7b8f371c",
+        "label": "exec-bwrap",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331205500600000,
+        "pid": 4150,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 70,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 64623217448
+      },
+      {
+        "event_id": "host-beecd444ed15a2503a9d2f7255375b79",
+        "label": "exec-python",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331205503000000,
+        "pid": 4152,
+        "ppid": 4150,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 1,
+        "ns_ppid": 0,
+        "pid_ns": "4026532700",
+        "scope": "agent",
+        "process_start_ns": 64623000000
+      },
+      {
+        "event_id": "host-13c2e9d6077c6271193f12163d530653",
+        "label": "exec-uname",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331207100600000,
+        "pid": 4160,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 80,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 66223217448
+      },
+      {
+        "event_id": "host-f0a0dcebb4b9cab561983f9f6a02bfba",
+        "label": "connect-model",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331200010000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce",
+        "peer_port": 443
+      },
+      {
+        "event_id": "host-04cae56073f02c3f9fde6b271fe9ab4f",
+        "label": "connect-uncalled",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331207300000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-757236b3429f3994c09d77b1127c1453",
+        "peer_port": 80
+      },
+      {
+        "event_id": "host-fc652575588480be7ae912e13758fa7e",
+        "label": "exec-docker",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331208500600000,
+        "pid": 4170,
+        "ppid": 4100,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 90,
+        "ns_ppid": 7,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 67623217448
+      },
+      {
+        "event_id": "host-9e2416d4ad4a17a029909262b5c5fa34",
+        "label": "container-exec-sh",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331208800000000,
+        "pid": 7300,
+        "ppid": 7290,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 1,
+        "ns_ppid": 0,
+        "pid_ns": "4026532612",
+        "scope": "sandbox",
+        "sandbox_id": "sbx-06ffee5ded058199b347d1e8a9872086"
+      },
+      {
+        "event_id": "host-d3e3fd779f62fd8194a3e780ada9bf11",
+        "label": "container-exec-echo",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331208801000000,
+        "pid": 7301,
+        "ppid": 7300,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 2,
+        "ns_ppid": 1,
+        "pid_ns": "4026532612",
+        "scope": "sandbox",
+        "sandbox_id": "sbx-06ffee5ded058199b347d1e8a9872086"
+      },
+      {
+        "event_id": "host-889e92ccfa497a003ad1e1d58e65969d",
+        "label": "connect-provider-0",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331210000500000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-d32b2b28478ae8bbfd12508f9a081d1d",
+        "peer_port": 8443
+      },
+      {
+        "event_id": "host-5e43ec95e7e5ac9efed300a645e9d60f",
+        "label": "connect-provider-1",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331210050000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-d32b2b28478ae8bbfd12508f9a081d1d",
+        "peer_port": 8443
+      }
+    ],
+    "sandbox_peers": [
+      {
+        "peer_id": "hst-d32b2b28478ae8bbfd12508f9a081d1d",
+        "port": 8443
+      }
+    ]
+  },
+  "expected": {
+    "projection_links": [
+      {
+        "attempt_id": "6190b8d2-8e10-4848-add6-ff3dde21ef25",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-d175e229491c5759ed459eb3815adcf2"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-90f8a7a1837f1fc4e7b6e446fcc206c4"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "459a216f-93cd-4272-a095-2d4cfc1ba56b",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-c80779cba5e6970e9d56517676800a43"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-bd951ff71634c6e9dc08e6dd787e18f2"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "15219472-16db-4349-a887-2dcaf8be9693",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-cb576f6b311cdaf0ccab06baaba133f3"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-4cff3cd3c7dd105fab38631bb054ce57"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "0a2a0dd7-c04b-4096-acd7-334b95a80047",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-ff0c2d8d3239fff868b925df37270960"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-4744b25a4ed704411a69a5e9c5412167"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "7eae6532-dcf9-4cf3-ac11-b34a13885f76",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-7b1d85c74f9de1f2792a089ecc914b21"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-a54e04406618d79049a91b8c7b8f371c"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "25620a62-c0ff-4635-adc9-f7b176aed8ce",
+        "links": [
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-13c2e9d6077c6271193f12163d530653"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "92580bc1-0c01-4b75-a466-5320ecd6945d",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-c25d51ed51e47b424d02997eab779ecc"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          },
+          {
+            "type": "corroborated_by",
+            "target": {
+              "namespace": "event",
+              "id": "host-fc652575588480be7ae912e13758fa7e"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "attempt_id": "97122a55-543e-4d09-a2f1-5c95bce7cc0b",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-567e7b8ae503f926a7449dcadb5417ae"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "sensor_events": [
+      {
+        "event_id": "host-f0a0dcebb4b9cab561983f9f6a02bfba",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331200010000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-90f8a7a1837f1fc4e7b6e446fcc206c4",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4121,
+        "ppid": 4100,
+        "time_ns": 1791331201000600000,
+        "process_start_ns": 60123217448
+      },
+      {
+        "event_id": "host-bd951ff71634c6e9dc08e6dd787e18f2",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4130,
+        "ppid": 4100,
+        "time_ns": 1791331202500600000,
+        "process_start_ns": 61623217448
+      },
+      {
+        "event_id": "host-a50aef37677250ed2d489702f649bb62",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4131,
+        "ppid": 4130,
+        "time_ns": 1791331202502000000,
+        "process_start_ns": 61622000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "459a216f-93cd-4272-a095-2d4cfc1ba56b"
+            },
+            "provenance": "inferred",
+            "method": "process_lineage",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-5d70a7740969507b013fde2449c50fac",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4131,
+        "ppid": 4130,
+        "time_ns": 1791331202504000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "459a216f-93cd-4272-a095-2d4cfc1ba56b"
+            },
+            "provenance": "inferred",
+            "method": "process_lineage",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-4cff3cd3c7dd105fab38631bb054ce57",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4140,
+        "ppid": 4100,
+        "time_ns": 1791331204000600000,
+        "process_start_ns": 63123217448
+      },
+      {
+        "event_id": "host-4744b25a4ed704411a69a5e9c5412167",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4141,
+        "ppid": 4100,
+        "time_ns": 1791331204002600000,
+        "process_start_ns": 63125217448
+      },
+      {
+        "event_id": "host-a54e04406618d79049a91b8c7b8f371c",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4150,
+        "ppid": 4100,
+        "time_ns": 1791331205500600000,
+        "process_start_ns": 64623217448
+      },
+      {
+        "event_id": "host-beecd444ed15a2503a9d2f7255375b79",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4152,
+        "ppid": 4150,
+        "time_ns": 1791331205503000000,
+        "process_start_ns": 64623000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "attempt",
+              "id": "7eae6532-dcf9-4cf3-ac11-b34a13885f76"
+            },
+            "provenance": "inferred",
+            "method": "process_lineage",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-13c2e9d6077c6271193f12163d530653",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4160,
+        "ppid": 4100,
+        "time_ns": 1791331207100600000,
+        "process_start_ns": 66223217448
+      },
+      {
+        "event_id": "host-04cae56073f02c3f9fde6b271fe9ab4f",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331207300000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-fc652575588480be7ae912e13758fa7e",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "pid": 4170,
+        "ppid": 4100,
+        "time_ns": 1791331208500600000,
+        "process_start_ns": 67623217448
+      },
+      {
+        "event_id": "host-889e92ccfa497a003ad1e1d58e65969d",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331210000500000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-5e43ec95e7e5ac9efed300a645e9d60f",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331210050000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "partial",
+        "reasons": [
+          "unattributed_effect"
+        ]
+      },
+      "corroboration": {
+        "verdict": "partial",
+        "reasons": [
+          "unexplained_host_event"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "output_match": {
+          "resolved": 7,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "process_anchor": {
+          "resolved": 11,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "process_lineage": {
+          "resolved": 3,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "none": {
+          "resolved": 0,
+          "ambiguous": 0,
+          "unresolved": 1
+        }
+      },
+      "unattributed_effects": {
+        "count": 1,
+        "effects": [
+          {
+            "attempt_uid": "25620a62-c0ff-4635-adc9-f7b176aed8ce",
+            "event_id": "09ad4a8f-2b44-42fe-a84e-ab05b0f1387e"
+          }
+        ]
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "applied"
+      },
+      "unexplained_host_events": {
+        "count": 1,
+        "event_ids": [
+          "host-04cae56073f02c3f9fde6b271fe9ab4f"
+        ]
+      },
+      "sandbox_events_unlinked": {
+        "count": 2
+      },
+      "remote_sandbox_calls": {
+        "count": 0,
+        "event_ids": []
+      }
+    },
+    "trace": {
+      "effects": {
+        "6190b8d2-8e10-4848-add6-ff3dde21ef25": "A1",
+        "459a216f-93cd-4272-a095-2d4cfc1ba56b": "A1",
+        "15219472-16db-4349-a887-2dcaf8be9693": "A1",
+        "0a2a0dd7-c04b-4096-acd7-334b95a80047": "A1",
+        "7eae6532-dcf9-4cf3-ac11-b34a13885f76": "A1",
+        "25620a62-c0ff-4635-adc9-f7b176aed8ce": "A4",
+        "92580bc1-0c01-4b75-a466-5320ecd6945d": "A1",
+        "97122a55-543e-4d09-a2f1-5c95bce7cc0b": "A1"
+      },
+      "anchors": {
+        "6190b8d2-8e10-4848-add6-ff3dde21ef25": "H1",
+        "459a216f-93cd-4272-a095-2d4cfc1ba56b": "H1",
+        "15219472-16db-4349-a887-2dcaf8be9693": "H1",
+        "0a2a0dd7-c04b-4096-acd7-334b95a80047": "H1",
+        "7eae6532-dcf9-4cf3-ac11-b34a13885f76": "H1",
+        "25620a62-c0ff-4635-adc9-f7b176aed8ce": "H1",
+        "92580bc1-0c01-4b75-a466-5320ecd6945d": "H1"
+      },
+      "host_events": {
+        "host-90f8a7a1837f1fc4e7b6e446fcc206c4": "H1",
+        "host-bd951ff71634c6e9dc08e6dd787e18f2": "H1",
+        "host-4cff3cd3c7dd105fab38631bb054ce57": "H1",
+        "host-4744b25a4ed704411a69a5e9c5412167": "H1",
+        "host-a54e04406618d79049a91b8c7b8f371c": "H1",
+        "host-13c2e9d6077c6271193f12163d530653": "H1",
+        "host-fc652575588480be7ae912e13758fa7e": "H1",
+        "host-a50aef37677250ed2d489702f649bb62": "H3",
+        "host-5d70a7740969507b013fde2449c50fac": "H3",
+        "host-beecd444ed15a2503a9d2f7255375b79": "H3",
+        "host-f0a0dcebb4b9cab561983f9f6a02bfba": "H4",
+        "host-04cae56073f02c3f9fde6b271fe9ab4f": "H4-uncalled",
+        "host-9e2416d4ad4a17a029909262b5c5fa34": "sandbox-unlinked",
+        "host-d3e3fd779f62fd8194a3e780ada9bf11": "sandbox-unlinked",
+        "host-889e92ccfa497a003ad1e1d58e65969d": "H4-sandbox",
+        "host-5e43ec95e7e5ac9efed300a645e9d60f": "H4-sandbox"
+      },
+      "tool_calls": {
+        "p-d175e229491c5759ed459eb3815adcf2": "attributed",
+        "p-c80779cba5e6970e9d56517676800a43": "attributed",
+        "p-cb576f6b311cdaf0ccab06baaba133f3": "attributed",
+        "p-ff0c2d8d3239fff868b925df37270960": "attributed",
+        "p-7b1d85c74f9de1f2792a089ecc914b21": "attributed",
+        "p-c25d51ed51e47b424d02997eab779ecc": "attributed",
+        "p-567e7b8ae503f926a7449dcadb5417ae": "attributed"
+      },
+      "host_sources": {
+        "s-2c6c641009e36ee2e6587ef29bc3a782": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        }
+      }
+    }
+  }
+}

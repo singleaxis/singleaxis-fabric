@@ -1,0 +1,121 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "heartbeat-scope-late",
+  "description": "An agent pod's root was installed after a non-sandbox container cgroup existed in its slice: upstream loss scope_late with an unknown count (053 §6.2.4 revision 4, spec 056 §4.3); corroboration is partial(source_gap) for that window.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "host.ebpf",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "e23e3f0d1d110a22c2420658852e23d1",
+                  "spanId": "a21ea43b3fe991ef",
+                  "name": "fabric.capture_heartbeat",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331241000000000",
+                  "endTimeUnixNano": "1791331241000000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.heartbeat.kind",
+                      "value": {
+                        "stringValue": "periodic"
+                      }
+                    },
+                    {
+                      "key": "fabric.heartbeat.last_sequence",
+                      "value": {
+                        "intValue": "-1"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.manifest_seq",
+                      "value": {
+                        "intValue": "0"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "fba8b253-d5d2-490e-a3b3-100a6492622b"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.upstream_lost",
+                      "value": {
+                        "intValue": "-1"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.upstream_loss_reason",
+                      "value": {
+                        "stringValue": "scope_late"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "spans": [
+        {
+          "name": "fabric.capture_heartbeat",
+          "attributes": {
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.heartbeat.kind": "periodic",
+            "fabric.heartbeat.last_sequence": -1,
+            "fabric.capture.manifest_seq": 0,
+            "fabric.capture.point": "host.ebpf@0.11.0",
+            "fabric.event_id": "fba8b253-d5d2-490e-a3b3-100a6492622b",
+            "fabric.sensor.upstream_lost": -1,
+            "fabric.sensor.upstream_loss_reason": "scope_late",
+            "fabric.source.authenticated": true
+          }
+        }
+      ],
+      "stripped": {},
+      "dropped": 0
+    }
+  ]
+}

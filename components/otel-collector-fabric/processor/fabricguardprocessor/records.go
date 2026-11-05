@@ -21,7 +21,7 @@ var capturePointKinds = map[string]string{
 	"sdk.records": "R", "run.scope": "R", "mcp.wrapper": "R",
 	"mcp.client": "H", "exec.subprocess": "H", "exec.audit": "H",
 	"db.dbapi": "H", "http.nonmodel": "W", "file.audit": "H",
-	"remote.ssh_wrapper": "R", "ui.automation": "H", "rt.websocket": "W",
+	"remote.ssh_wrapper": "R", "remote.sandbox": "H", "ui.automation": "H", "rt.websocket": "W",
 	"reconstruct.parse": "P", "reconstruct.infer": "I", "host.ebpf": "S",
 	"host.auditd": "S", "feed.independent": "S", "delivery.receipts": "S",
 }
@@ -43,31 +43,52 @@ func recordConditionHolds(condition map[string][]string, point string) bool {
 // OTLP attribute order. This method also supports rule-A vector testing before
 // class discrimination (vectors deliberately include foreign marker keys).
 func (g *guard) applyRecordProfile(attrs pcommon.Map) {
-	point := ""
-	if value, ok := attrs.Get("fabric.capture.point"); ok && capturePointPattern.MatchString(value.Str()) {
-		point = value.Str()
-	}
+	point := recordPoint(attrs)
 	attrs.RemoveIf(func(key string, value pcommon.Value) bool {
-		valid, listed := recordKeyValidators[key]
-		keep := listed && placementAllowed(key, onRecord, "") &&
-			recordConditionHolds(recordKeyConditions[key], point) && recordMetadataShape(value)
-		if keep {
-			switch key {
-			case "fabric.capture.input":
-				keep = constStr("records")(value)
-			case "fabric.source_id":
-				keep = valid(value) && g.validSourceLabel(value)
-			case "fabric.run.id":
-				keep = g.validRunIDLabel(value) && (g.cfg.IdentityMode == identityModeClear || valid(value))
-			default:
-				keep = valid(value)
-			}
-		}
+		keep := g.recordKeyAdmitted(key, value, point)
 		if !keep {
 			g.stats.notAllowedRemoved.Add(1)
 		}
 		return !keep
 	})
+}
+
+// recordPoint is the record's capture point when well formed, else "".
+func recordPoint(attrs pcommon.Map) string {
+	if value, ok := attrs.Get("fabric.capture.point"); ok && capturePointPattern.MatchString(value.Str()) {
+		return value.Str()
+	}
+	return ""
+}
+
+// recordKeyAdmitted is rule A for one key of a record whose capture point is
+// point; host admission (spec 053 §6.2.7 step 6) applies it too.
+func (g *guard) recordKeyAdmitted(key string, value pcommon.Value, point string) bool {
+	valid, listed := recordKeyValidators[key]
+	if !listed || !placementAllowed(key, onRecord, "") ||
+		!recordConditionHolds(recordKeyConditions[key], point) || !recordMetadataShape(value) {
+		return false
+	}
+	switch key {
+	case "fabric.capture.input":
+		return constStr("records")(value)
+	case "fabric.source_id":
+		return valid(value) && g.validSourceLabel(value)
+	case "fabric.run.id":
+		return g.validRunIDLabel(value) && (g.cfg.IdentityMode == identityModeClear || valid(value))
+	default:
+		return valid(value)
+	}
+}
+
+// capturePointKind is the registry kind of a capture point value ("id@ver"
+// or a bare id); "" for an unknown point or a non-string value.
+func capturePointKind(value pcommon.Value) string {
+	if value.Type() != pcommon.ValueTypeStr {
+		return ""
+	}
+	id, _, _ := strings.Cut(value.Str(), "@")
+	return capturePointKinds[id]
 }
 
 // Rule A refuses floats, bytes and nested values instead of rewriting them.

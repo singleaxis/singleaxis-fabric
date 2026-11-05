@@ -158,7 +158,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 60123217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4121,
+        "ns_ppid": 4100
       },
       {
         "event_id": "host-8ecd71f8d3c27023833fb9e0e97f11dc",
@@ -170,7 +172,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 61623217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4130,
+        "ns_ppid": 4100
       },
       {
         "event_id": "host-edc3104ff4dc9760040e77973208398d",
@@ -182,7 +186,9 @@
         "ppid": 4130,
         "result": "success",
         "process_start_ns": 61625217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4131,
+        "ns_ppid": 4130
       },
       {
         "event_id": "host-dc00bb349255613c9a8787a95a7b4137",
@@ -194,7 +200,9 @@
         "ppid": 4130,
         "result": "success",
         "peer_id": "hst-757236b3429f3994c09d77b1127c1453",
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4131,
+        "ns_ppid": 4130
       },
       {
         "event_id": "host-c491feabebad7312d2d329b7a082b52b",
@@ -206,7 +214,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 63123217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4140,
+        "ns_ppid": 4100
       },
       {
         "event_id": "host-92abef8538c6ffb5a0da0ba11949ecdc",
@@ -218,7 +228,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 63125217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4141,
+        "ns_ppid": 4100
       },
       {
         "event_id": "host-489e266cc3b9536fb3e95e4ab99abbad",
@@ -230,7 +242,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 64623217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4150,
+        "ns_ppid": 4100
       },
       {
         "event_id": "host-d31405497f385efba010ca96808adbcf",
@@ -242,7 +256,9 @@
         "ppid": 4150,
         "result": "success",
         "process_start_ns": 64626217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4151,
+        "ns_ppid": 4150
       },
       {
         "event_id": "host-b0be6d7b7a26cfdb95358ed6d7aae0cd",
@@ -254,7 +270,9 @@
         "ppid": 4100,
         "result": "success",
         "process_start_ns": 66223217448,
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4160,
+        "ns_ppid": 4100
       },
       {
         "event_id": "host-0286a89344ec9b832b0a85a0be197d72",
@@ -266,7 +284,9 @@
         "ppid": 1,
         "result": "success",
         "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce",
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4100,
+        "ns_ppid": 1
       },
       {
         "event_id": "host-3982e9e3bd343a541f95ed2e246b3768",
@@ -278,7 +298,9 @@
         "ppid": 1,
         "result": "success",
         "peer_id": "hst-757236b3429f3994c09d77b1127c1453",
-        "pid_ns": "4026531836"
+        "pid_ns": "4026531836",
+        "ns_pid": 4100,
+        "ns_ppid": 1
       }
     ]
   },

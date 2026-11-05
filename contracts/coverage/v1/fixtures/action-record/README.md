@@ -1,4 +1,4 @@
-# Agent action reconstruction fixtures (spec 056, milestone M1)
+# Agent action reconstruction fixtures (spec 056, milestones M1 and M2)
 
 This directory holds the contract that the spec 056 work packages build
 against:
@@ -12,7 +12,8 @@ against:
 - **refused fixtures**: the expectation a wrong implementation would write,
   with the validator error that refuses it.
 
-Status: draft. No runtime emits or reads these documents yet. The hooks
+Status: draft. M1's fixtures are read by the v0.10.0 hooks and verifier; M2's (section 9)
+are the contract the M2 work packages build against. The hooks
 (WP6-02, WP6-03) must emit records shaped like the exec golden; the verifier
 (WP6-04 `reconstruct/_attribute.py`, WP6-05 `reconstruct/_host.py`) must turn
 each rule fixture's input into its expected output; the AR-1 harness
@@ -28,7 +29,8 @@ established, nothing more.
 |---|---|---|
 | `interface/exec-subprocess-records.json` | `fabric.action-interface-golden/v1`, kind `exec.subprocess` | The two records of one `subprocess.run(...)` call on the records input |
 | `interface/host-local-log-records.json` | same, kind `host.local_log` | Today's local-profile host records (eBPF emitter, auditd receiver) as a local Node exports them |
-| `interface/host-sensor-spans.json` | same, kind `host.sensor_span` | The spec 053 §6.2.3 host record shape (production ingress, M2) |
+| `interface/host-sensor-spans.json` | same, kind `host.sensor_span` | The spec 053 §6.2.3 host record shape (production ingress, M2); `production` (M2): the revision 4 eBPF shape |
+| `interface/remote-sandbox-records.json` | same, kind `remote.sandbox` | M2: the records of an E2B `commands_run` and a `run_code` attempt |
 | `rules/*.json` | `fabric.action-rule-fixture/v1` | One input and its expected output per rule, edge case and AR-1 variant |
 | `invalid/*.json` | `fabric.action-rule-fixture/v1` | A rule fixture with a wrong expectation; the manifest names the error code |
 
@@ -290,7 +292,7 @@ comes from `/proc/<pid>/stat` in ticks, a sensor's in nanoseconds.
 |---|---|---|
 | H1 | A successful exec event with the effect's pid and parent pid and a start time in the same tick as `process_start_ns` (both present) | effect `corroborated_by` → `event`, `process_anchor`, `certain`. A later exec of the same process (same pid, parent and start) is lineage at depth 0 |
 | H2 | No start time on one side; exactly one such exec event within 100 ms + both clock uncertainties of the effect's start, or several that form one exec chain (below) | `process_anchor`, `tentative`, on the match or the chain's first exec. Two or more that are not one chain: `ambiguous` with all; the effect counts as not anchored (`anchor_missing`) |
-| H3 | A host event whose parent-pid chain reaches an anchored child, same host and namespace, times not earlier than its parent's, start times non-decreasing, depth ≤ 16, ≤ 4096 events per anchor; connect and file events of a process in the chain | event `part_of` → `attempt` the effect, `process_lineage`, the anchor's confidence. An event past a bound is not linked, is counted in `attribution.lineage_truncated` and is unexplained |
+| H3 | A host event whose parent-pid chain reaches an anchored child, same host and namespace, times not earlier than its parent's, start times non-decreasing, depth ≤ 16, ≤ 4096 events per anchor; connect and file events of a process in the chain, and of an unseen pid whose parent is in the chain (a child forked without exec, which joins the chain one level down) | event `part_of` → `attempt` the effect, `process_lineage`, the anchor's confidence. An event past a bound is not linked, is counted in `attribution.lineage_truncated` and is unexplained |
 | H4 | A host event of the agent's own pid inside the run window | event `part_of` → `run`, `process_anchor`; `certain` only when the event carries the agent's start time and it matches, else `tentative`. A connect to a peer no exchange's endpoint resolves to is also unexplained |
 
 **Exec chain** (H2). A shell that execs its command in place (`bash -c
@@ -312,7 +314,7 @@ inside the run window is **unexplained**.
 |---|---|---|
 | `decisions` | never | the exchange verdict's own reasons (`exchange_reasons`) |
 | `actions` | no tool call in the run | `tool_result_missing` (a call with no later result, not declared outstanding), `exchange_gap` |
-| `effects` | no effect channel `active` (reason `channel_disabled`) | `sequence_gap`, `unattributed_effect`, `ambiguous_attribution` |
+| `effects` | no effect channel `active` (reason `channel_disabled`) | `sequence_gap`, `unattributed_effect`, `ambiguous_attribution`, `remote_sandbox`, `channel_disabled` (M2: `exec.subprocess` not active while another channel is, and a tool call it would have observed has no effect) |
 | `corroboration` | no host source (reason `not_configured`) | `source_gap`, `anchor_missing`, `unexplained_host_event` |
 
 A chain is `complete` without reasons; `partial` and `unverified` always
@@ -429,7 +431,130 @@ capture validator enforces it on reports).
 - Clear identity mode: `fabric.execution.host_id` admits only the `hst-`
   form, so a clear host label is dropped and no host join is possible. The
   053 §7 clear-mode alternative for host and sandbox ids is not added here.
-- The spec 053 §6.2.3 host keys are checked against a transcription, not
-  registry rows; 053 WP4-01 registers them.
+- The M1 `spans` of `host-sensor-spans.json` are checked against a
+  transcription of 053 §6.2.3 (`action_record.SENSOR_KEYS`); M2 registered the
+  keys (WP6-11), and the `production` section is checked against the registry
+  rows (rule A and the host placement).
 - `exec.audit` is not registered for the exec evidence type; its schema
   already holds `api: audit` and `audit_event` (053 §3.2).
+
+
+## 9. Milestone M2 (production profile, WP6-11)
+
+M2 keeps every M1 fixture and its expectations. The rules of `action_reference.py` are the
+M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with a
+`recorded` source model an agent in the init pid namespace, so their inputs gained
+`pid_ns` on effects and `ns_pid`/`ns_ppid` on recorded events equal to the init numbers).
+`scripts/contracts/action_record_m2.py` builds the M2 documents.
+
+### 9.1 New input fields
+
+| Field | Meaning | Where a reader finds it (spec 056 §7.3.3 (l)) |
+|---|---|---|
+| `host_sources[].source_id` | The host source's `s-` id: one export may hold several sources of one kind (one per node). Events name it too; without it a source is keyed by its kind (M1) | `fabric.source_id` of the host records and markers |
+| `host_sources[].pid_namespace` | Per source, never per export: `recorded` when every record of the source carries `fabric.sensor.pid_ns` (production eBPF), else `declared_same` (local profile, auditd) | the records; `--host-pid-namespace KIND=MODE` overrides it per kind |
+| `host_sources[].heartbeats` | `[{time_ns, upstream_lost, reason?}]` (M2). With it the source verifies when it is authenticated (`authenticated`, default true), has no `sequence_gaps`, has a heartbeat at or after the window end plus both clock margins, and no heartbeat of an interval overlapping the window reports upstream loss; without it `verified` decides (M1) | the source's periodic heartbeats (053 §6.2.4) |
+| `host_sources[].declared`, `.manifest_point_kinds` | `--host-source` named it (default true, as every M1 source is a declaration); the kinds of its manifest's capture-point rows | the CLI; the source's `fabric.capture_manifest` |
+| `agent.pid_ns` | The declared agent namespace (`--agent-pid-namespace`); absent: the value every effect's `pid_ns` agrees on, else none | §4.3 "The agent's namespace" |
+| `effects[].pid_ns`, `.created_sandbox_id` | `fabric.process.pid_ns`, `fabric.sandbox.created_id` | the exec records |
+| `effects[].capture_point`, `.sandbox_id` | `remote.sandbox` for a remote effect (no pid, its output is `remote.result`); its `fabric.execution.sandbox_id` | the remote.sandbox records |
+| `host_events[].source_id`, `.ns_pid`, `.ns_ppid`, `.pid_ns`, `.scope`, `.sandbox_id`, `.pod_id`, `.peer_port` | The production record's source, both pid numberings (`pid`/`ppid` stay the init numbers), the sensor scope, the keyed container and pod ids, the peer port | `fabric.source_id`, `fabric.sensor.*`, `fabric.execution.sandbox_id` |
+| `sandbox_peers` | `[{peer_id, port}]` (`--sandbox-peer ADDRESS[:PORT]`; `port` null: any port) | the CLI |
+| `effect_channels["remote.sandbox"]` | `active`, or `disabled` (the manifest row `remote.sandbox@<ver>:H:disabled:…:remote_sandbox`) | the manifest |
+
+### 9.2 The M2 rules as these fixtures pin them
+
+- **Anchors (H1, H2) per source mode.** Under `recorded` the effect's `pid` and
+  `parent_pid` are compared with the event's `ns_pid` and `ns_ppid`, and only when the
+  effect's own `pid_ns` equals the event's `pid_ns`; under `declared_same` with `pid` and
+  `ppid`. An effect without `pid_ns` never joins a recorded source (`anchor_missing`): no
+  fallback to init-namespace pids. Never across hosts.
+- **H4** compares the agent's pid with the event's `ns_pid` (recorded, and the agent's
+  namespace equals the event's) or `pid` (declared_same). With no agent namespace, H4
+  links nothing from a recorded source.
+- **H3** follows the init-namespace pair (`pid`, `ppid`) from the anchor event's `pid`, on
+  the same host, so lineage crosses a nested pid namespace. Exit evidence of an anchored
+  effect applies to its anchor's init pid.
+- **Scope.** A `scope: sandbox` event is read only by H5; when no H5 link names it, it is
+  counted in `attribution.sandbox_events_unlinked` (inside the run window), never listed
+  as unexplained.
+- **H5** (after H3, before H4): an event of any host source whose `sandbox_id` or `pod_id`
+  equals an effect's `created_sandbox_id`, inside the run window and not before the
+  effect's start, both widened by the agent's and that source's clock margins, at most
+  4096 per effect: `part_of` the attempt, method `sandbox_report`, provenance `reported`,
+  `certain`, `resolved`. Counted under the basis `sandbox_report`.
+- **Sandbox peers.** An H4 connect to a declared sandbox peer (port matched when given) is
+  `part_of` the run and never unexplained (trace `H4-sandbox`). While `remote.sandbox` is
+  not active it is listed in `attribution.remote_sandbox_calls`, `effects` gains the
+  reason `remote_sandbox` (after the M1 reasons, the §4.5 table order), and a tool call
+  with no effect whose window holds such a call is `effect_not_observed(channel_disabled)`.
+- **Remote effects** are attributed by A0-A4 exactly as exec effects (A1 reads their
+  `remote.result`); they carry no pid, so no H rule anchors them and they never count as
+  `anchor_missing`.
+- **Summary objects.** `sandbox_events_unlinked` is present when any input event carries a
+  `scope`, `remote_sandbox_calls` when the input declares `sandbox_peers`, so M1 reports
+  are unchanged. `trace.host_sources` (when sources carry a `source_id`) gives, per source,
+  why it is a host source (`host_record`, `manifest`, `declared`; §7.3.3 (l)) and whether it
+  verified: a host source never creates a `sources[]` entry.
+
+### 9.3 M2 fixture index
+
+| Fixture | Rules | What it pins |
+|---|---|---|
+| `h1-anchor-exact-production` | A1, H1 | The agent in its own pid namespace; H1 on `ns_pid`/`ns_ppid` and the start tick |
+| `edge-production-other-namespace` | A1 | The same namespace-local numbers in another `pid_ns`: no join |
+| `edge-nested-pid-namespace` | A1, H1, H3 | `bwrap --unshare-pid`: the inner processes reached on init pids |
+| `edge-start-tick-boundary` | A1, H1 | One ns below the next tick: certain; one tick above: no H1 |
+| `h5-sandbox-report` | A1, H1, H5 | `docker run -d`: the container's events `part_of` the effect |
+| `h5-pod-report` | A1, H1, H5 | `kubectl run … -o jsonpath`: matched by `pod_id` |
+| `h5-pod-report-other-node` | A1, H1, H5 | The pod on another node's source: H5 links it, H1-H4 never cross hosts |
+| `edge-mixed-namespace-modes` | A1, H1, H3, H4 | eBPF `recorded` and auditd `declared_same` in one input |
+| `edge-recorded-effect-without-pid-ns` | A1 | No `pid_ns` under `recorded`: `anchor_missing` |
+| `edge-thread-spawned-child` | A1, H1 | `ns_ppid` is the parent's tgid for a pool-thread child |
+| `edge-quiet-host-epoch` | A1, H1 | A source with a manifest and heartbeats only: complete |
+| `edge-declared-source-empty` | A1, H1 | A declared source that delivered nothing: `source_gap` |
+| `edge-sandbox-peer-port` | H4 | `--sandbox-peer ADDRESS:PORT` on a shared address |
+| `edge-scope-late` | A1, H1 | Upstream loss `scope_late` in the window: `source_gap` |
+| `edge-sandbox-unlinked` | A1, H1 | Unreported containers: counted, not unexplained |
+| `edge-sandbox-before-effect` | A1, H1, H5 | An event of the created id before the effect: not linked |
+| `remote-sandbox-output-match` | A1, H4 | A remote effect resolved by A1, no anchor |
+| `edge-remote-sandbox-off` | H4 | `remote.sandbox` disabled and a sandbox call: `effects` partial(`remote_sandbox`) |
+| `ar1-run-production` | A1, A4, H1, H3, H4, H5 | AR-1 production (§6.2), steps 1-9 |
+| `ar1-negative-f-remote-sandbox-off` | A1, A4, H1, H3, H4, H5 | Negative (f) |
+| `ar1-negative-g-container-id-not-reported` | A1, A4, H1, H3, H4 | Negative (g) |
+
+| Refused fixture | Error code | The mistake |
+|---|---|---|
+| `h5-sandbox-report-claims-inferred` | `coverage.action.link` | An H5 link relabelled inferred |
+| `h5-tentative` | `coverage.action.confidence` | An H5 link claims tentative |
+| `h1-across-pid-namespaces` | `coverage.action.namespace` | An anchor to an event of another pid namespace under `recorded` |
+| `sandbox-scope-listed-unexplained` | `coverage.action.scope` | Sandbox-scope events listed as unexplained |
+
+### 9.4 Interface goldens (M2 sections)
+
+`exec-subprocess-records.json` keeps its M1 records and gains `production` (AR-1 step 1
+with `fabric.process.pid_ns` and the agent's namespace-local pids) and `container_create`
+(`docker run -d …`, whose `end` record carries `fabric.sandbox.created_id`).
+`host-sensor-spans.json` keeps its M1 spans and gains `production`: the revision 4 eBPF
+shape (`ns_pid`, `ns_ppid`, `pid_ns`, `scope`, a sandbox-scope exec with its container id)
+and the M2 normalized events (`source_id`, both numberings, `scope`, `sandbox_id`,
+`pod_id`, `peer_port`). `remote-sandbox-records.json` holds two `remote.sandbox` attempts
+with their spool records, evidence (`fabric.sandbox.observation/v1`) and record digests.
+The M1 sections are unchanged, so the M1 hook and reader tests keep reading them.
+
+### 9.5 Decisions these fixtures make where spec 056 is silent or loose
+
+- **bwrap's own init.** `bwrap --unshare-pid` forks a pid-1 init that never execs and
+  forks the command, so a sensor that reports only execs, connects and opens sees the
+  command's parent as a process it never saw: H3 cannot reach it (H3 adds a fork-only
+  child from its own first connect or file event; the init makes none). `edge-nested-pid-namespace` models the inner
+  process as the launcher's direct child (as with `bwrap --unshare-pid --as-pid-1`); a live
+  AR-1 run needs that flag, or lineage stops at the namespace boundary.
+- **Reason order.** §6.2 (f) writes `partial(remote_sandbox, unattributed_effect)`; the
+  fixtures follow the §4.5 table order (`unattributed_effect`, then `remote_sandbox`).
+- **A sandbox call makes its tool call `channel_disabled`.** Without it, T9 of variant (f)
+  would be `none_in_window`, which §6.2 (f) rules out.
+- **A created id shared by two effects** links each matching event to every effect that
+  reported it (both reported it; no candidate is preferred).
+- **Heartbeat coverage** needs a heartbeat at or after the window end plus both margins;
+  a loss in any heartbeat of an interval overlapping the window is a `source_gap`.

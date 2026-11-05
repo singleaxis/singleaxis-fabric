@@ -11,13 +11,17 @@ released or installed independently.
 
 ## Profiles
 
-Two postures ship under `fabric/profiles/`:
+Three postures ship under `fabric/profiles/`:
 
 - [`shadow-dev`](./fabric/profiles/shadow-dev.yaml) — plaintext, no auth,
   for a local trial on trusted clusters.
 - [`shadow-production`](./fabric/profiles/shadow-production.yaml) —
   fail-closed: pinned image required, receiver TLS/mTLS enforced, strict
   NetworkPolicy peers, persistent fsync queue, unbounded retry.
+- [`shadow-production-host-ingress`](./fabric/profiles/shadow-production-host-ingress.yaml)
+  — layered on `shadow-production`: static dedicated ingress groups
+  (`receiver.sourceBindings[]`), one agent group and one `host.ebpf` group
+  per node, each with its own source, token and port.
 
 See [`../docs/deployment.md`](../docs/deployment.md) for the install path
 and [`../specs/027-recorder-v1.md`](../specs/027-recorder-v1.md) for the

@@ -43,6 +43,15 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 | `--evaluated-at RFC3339` | Since v0.10.0. The time run states and open-run deadlines are computed at (default: now). |
 | `--clock-uncertainty DURATION` | Since v0.10.0. Added to each segment's declared clock uncertainty when segments are ordered (`250ms`, `2s`; a bare number is seconds; default `0`). |
 | `--max-clock-uncertainty DURATION` | Since v0.10.0. The largest total clock uncertainty accepted before ordering is reported as `clock_uncertain` (default `300s`). |
+| `--host-records FILE` (repeatable) | Since v0.10.0. Local-profile host-sensor records (OTLP/JSON or sink JSONL log rows) for the host join ([agent action reconstruction](action-reconstruction.md)). Unreleased (spec 056 M2): optional when `--spans` holds production host records, which the verifier splits out of the export. |
+| `--host-label LABEL` | Since v0.10.0. The host of local records, as the agents' `FABRIC_HOST_LABEL` names it; taken only with `--host-records` (production records name their host). |
+| `--host-source KIND[=SOURCE_ID]` (repeatable) | Unreleased (M2). Declares a host sensor (`host.ebpf`, `host.auditd`), optionally one process by its `s-` id (`print-source-id`). A declared source with no records in the run window is a `source_gap`. |
+| `--host-pid-namespace KIND=MODE` (repeatable) | Unreleased (M2). `recorded` or `declared_same` for every source of a kind; default per source: `recorded` when every record carries `fabric.sensor.pid_ns`. |
+| `--agent-pid-namespace NS` | Unreleased (M2). The agent's pid-namespace inode when its effects do not agree on one. |
+| `--sandbox-peer ADDRESS[:PORT]` (repeatable) | Unreleased (M2). A remote sandbox provider (`[ADDRESS]:PORT` for IPv6): the agent's connections to it are H4 links, and while `remote.sandbox` is not active, `remote_sandbox_calls`. With a port, only that port. |
+| `--endpoint-peer ID=ADDRESS`, `--known-peer ADDRESS` (repeatable) | Since v0.10.0. Addresses of a model endpoint, or of Fabric's own delivery and infrastructure: the agent's connections to them are not unexplained. |
+| `--agent-pid PID` | Since v0.10.0. The agent's pid, for H4 when no effect names it. |
+| `--host-coverage-declared` | Since v0.10.0. Declares that local records cover the run; refused for production records, whose heartbeats prove coverage. |
 
 Diagnostics never echo an argument value, path, key or exception message.
 

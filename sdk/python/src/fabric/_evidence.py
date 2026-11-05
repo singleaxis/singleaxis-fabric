@@ -55,10 +55,12 @@ EVIDENCE_ENVELOPE_KEYS: Mapping[str, bool] = {
     "schema_version": True, "evidence_type": True, "items": True, "continuation": False,
     "refs": False,
 }  # fmt: skip
-# Every registered evidence type (P1 registers the test type; 053/056 the exec type).
+# Every registered evidence type (P1 registers the test type; 053/056 the exec type; 056 M2
+# the http and sandbox types).
 REGISTERED_EVIDENCE_TYPES: frozenset[str] = frozenset(
-    {"fabric.test.items/v1", "fabric.exec.observation/v1"}
-)
+    {"fabric.test.items/v1", "fabric.exec.observation/v1", "fabric.http.observation/v1",
+     "fabric.sandbox.observation/v1"}
+)  # fmt: skip
 # An ID property's clear-mode alternative (R8), admitted only under identity_mode clear.
 CLEAR_KEYWORD = "x-fabric-clear"
 _TEST_ITEMS_SCHEMA: Mapping[str, Any] = {
@@ -112,12 +114,60 @@ _EXEC_OBSERVATION_SCHEMA: Mapping[str, Any] = {
         "error_class": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
     },
 }  # fmt: skip
+_BODY_STATE = {"enum": ["complete", "partial", "early_close", "unconsumed", "not_retained",
+                        "not_exposed"]}  # fmt: skip
+_LABEL = {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"}
+# Spec 053 §3.2, §5.4 (registered by spec 056 WP6-11 for http.nonmodel).
+_HTTP_OBSERVATION_SCHEMA: Mapping[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.http.observation-v1.schema.json",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["rule_index", "scheme", "port", "redirect_index", "request_body",
+                 "response_body", "dialect"],
+    "properties": {
+        "rule_index": {"type": "integer", "minimum": 0, "maximum": 255},
+        "scheme": {"enum": ["http", "https"]},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "redirect_index": {"type": "integer", "minimum": 0, "maximum": 32},
+        "redirect_of": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+        },
+        "request_body": _BODY_STATE,
+        "response_body": _BODY_STATE,
+        "dialect": {"enum": ["none", "jsonrpc2", "qdrant_rest_v1"]},
+        "error_class": _LABEL,
+    },
+}  # fmt: skip
+# Spec 056 §4.4.1 (registered by spec 056 WP6-11 for remote.sandbox).
+_SANDBOX_OBSERVATION_SCHEMA: Mapping[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.sandbox.observation-v1.schema.json",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["provider", "call", "output_form"],
+    "properties": {
+        "provider": {"enum": ["e2b"]},
+        "call": {"enum": ["commands_run", "command_wait", "run_code"]},
+        "background": {"type": "boolean"},
+        "output_form": {"enum": ["text", "none"]},
+        "exit_code": {"type": "integer", "minimum": -1, "maximum": 255},
+        "result_count": {"type": "integer", "minimum": 0, "maximum": 1024},
+        "language": {"enum": ["python", "javascript", "typescript", "r", "java", "bash",
+                              "other"]},
+        "error_name": _LABEL,
+        "error_class": _LABEL,
+    },
+}  # fmt: skip
 #: The closed item schema of each registered type (its file under
 #: ``contracts/coverage/v1/evidence/``, annotations dropped). ``fabric.reconstruct``
 #: validates stored objects against the same dictionaries.
 EVIDENCE_ITEM_SCHEMAS: Mapping[str, Mapping[str, Any]] = MappingProxyType({
     "fabric.test.items/v1": _TEST_ITEMS_SCHEMA,
     "fabric.exec.observation/v1": _EXEC_OBSERVATION_SCHEMA,
+    "fabric.http.observation/v1": _HTTP_OBSERVATION_SCHEMA,
+    "fabric.sandbox.observation/v1": _SANDBOX_OBSERVATION_SCHEMA,
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------
 

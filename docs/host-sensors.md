@@ -98,6 +98,42 @@ mounts of BTF, tracefs, debugfs and cgroupfs.
 is a qualification template, not an install: its image digest and cgroup
 scope are deliberately unusable until you set them.
 
+## Production mode (spec 056 M2, unreleased)
+
+Built on the integration branch, not released. A production-profile Node
+admits a host sensor through a dedicated ingress group of its own: one
+`host.ebpf` (or `host.auditd`) group per sensor process, each binding one
+source id and one token on its own TLS listener, guarded by a
+`fabricguard/<group>` with `source_kind` set (spec 053 §6.1, §6.2.6). The
+records are spans with their own source identity, positions, heartbeats and
+a manifest, and carry the process start time and pid namespace, so the
+verifier links effects with rule H1 (`certain`).
+
+The emitter selects it with `EMIT_PRODUCTION=true` and then needs
+`EMIT_TENANT_ID`, `EMIT_SOURCE_LABEL`, `EMIT_HOST_LABEL` (the agents'
+`FABRIC_HOST_LABEL`), `EMIT_ID_KEY_FILE`, `EMIT_STATE_KEY_FILE` and
+`EMIT_STATE_DIR`. Scope is `EMIT_AGENT_CGROUP_ROOTS` (cgroup v2 directories
+whose descendants are scope `agent`; `EMIT_CGROUP_PATH` is refused) or, on
+Kubernetes, `EMIT_AGENT_POD_SELECTOR` with `EMIT_NODE_NAME`;
+`EMIT_SANDBOX_CGROUP_ROOTS` marks agent-started containers as scope
+`sandbox`. `EMIT_DEDUPE_WINDOW` must be `0`, and `EMIT_INSECURE=true` is
+refused to a non-loopback endpoint. `fabric-host-emitter print-source-id`
+prints the `s-` id to bind in the Node's group.
+
+- **Compose:** `docker-compose.host-ingress.yml` on the production overlay
+  (`make up-prod-groups`): the agent group and the `ebpf` group
+  (`FABRIC_EBPF_SOURCE_ID`, `FABRIC_EBPF_TOKEN_FILE`, gRPC 4417); the auditd
+  group and the agent's content path are further overlays.
+- **Kubernetes:** one group per node (spec 056 §7.3.3 (n)). Each node's
+  emitter uses the source label `$(NODE_NAME)/ebpf`, reads its token, state
+  key and group endpoint from a per-node hostPath directory
+  (`EMIT_ENDPOINT_FILE`), and shares only the id key through a Secret;
+  `deploy/kubernetes/host-bindings.py` generates the chart values. The 64
+  group default (256 at most) bounds the nodes one Node serves.
+
+[AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
+exercises this path.
+
 ## Limits in v0.8
 
 - **Not accepted by a production Node.** `fabric-gate` refuses any receiver

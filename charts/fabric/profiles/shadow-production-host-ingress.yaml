@@ -1,0 +1,69 @@
+# Production Node with static dedicated ingress groups (spec 053 §6.1, spec
+# 056 §7.3.3 (g), (n)). Layer it on shadow-production.yaml:
+#
+#   helm upgrade --install fabric charts/fabric -n fabric-system \
+#     --values charts/fabric/profiles/shadow-production.yaml \
+#     --values charts/fabric/profiles/shadow-production-host-ingress.yaml \
+#     --values <out>/source-bindings.yaml        # host-bindings.py output
+#
+# Every source the Node serves is one group: its own tenant/source binding,
+# bearer token, listener port(s) and fabricguard/<name> instance, so identity
+# is fixed by the ingress a batch arrived on, never by the payload. One agent
+# group and one host.ebpf group per cluster node: each node's eBPF emitter is
+# its own source (label <node>/ebpf) with its own token, provisioned on that
+# node only (deploy/kubernetes/host-emitter-daemonset.yaml). An auditd sensor
+# collector is a host.auditd group with an http port
+# (deploy/kubernetes/auditd-sensor-collector.yaml). The chart installs no
+# sensor: the privileged eBPF emitter and the sensor collector are
+# customer-deployed workloads (spec 056 OD-10).
+#
+# deploy/kubernetes/host-bindings.py --nodes FILE --tenant T --id-key-file F
+# --base-port P --out DIR writes the whole sourceBindings list in this shape
+# (the agent group first, then ebpf-<index> on port P + index) and the
+# per-node provisioning directories. Helm replaces a list wholesale, so the
+# generated file's list replaces the template below; fill in the agent
+# group's sourceId there. The render fails until every group has its
+# tenantId (equal to tenant.id) and sourceId.
+#
+# The operator also supplies everything shadow-production.yaml lists, except
+# the workloadAuthentication block, which ingress groups replace, and creates
+# the referenced token Secrets (each group's bytes distinct, written without
+# a trailing newline). The 64-group default (receiver.maxSourceBindings, at
+# most 256) bounds the nodes one Node serves; a larger cluster deploys one
+# Node per node pool. Adding a node is a regeneration and an upgrade.
+otel-collector:
+  receiver:
+    workloadAuthentication:
+      enabled: false
+    sourceBindings:
+      - name: agent
+        kind: agent
+        tenantId: ""        # tenant.id
+        sourceId: ""        # the agents' source id as it travels (s-<32 hex>)
+        tokenSecret:
+          name: fabric-ingress-agent
+          key: token
+        protocols:
+          grpc: 4317
+          http: 4318
+        # With otel-collector.content.enabled=true:
+        # content:
+        #   port: 4319
+      - name: ebpf-0
+        kind: host.ebpf
+        tenantId: ""        # tenant.id
+        sourceId: ""        # fabric-host-emitter print-source-id for <node>/ebpf
+        tokenSecret:
+          name: fabric-node-host-ingress
+          key: ebpf-0
+        protocols:
+          grpc: 4417
+        hostDigests: omitted
+        # Only the eBPF emitter pods reach a host group's port.
+        ingressFrom:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: fabric-system
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: fabric-host-emitter

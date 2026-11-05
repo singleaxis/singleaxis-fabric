@@ -1,0 +1,219 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "record-connect",
+  "description": "A connect record: peer family, port, and the peer address only as the hst- v2 pseudonym of its canonical text (vector peer-address-v1.json); never the clear address.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "host.ebpf",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "61cf9977cc589c30d661a9d1ad92ed0e",
+                  "spanId": "93a849fa98f0832b",
+                  "name": "fabric.sensor_event",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331201214000000",
+                  "endTimeUnixNano": "1791331201214000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.tenant_id",
+                      "value": {
+                        "stringValue": "tenant-a"
+                      }
+                    },
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.sequence",
+                      "value": {
+                        "intValue": "2"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "d01e01ae-ef8f-4182-aa22-22cd2e068ea7"
+                      }
+                    },
+                    {
+                      "key": "fabric.attempt.uid",
+                      "value": {
+                        "stringValue": "51a0ea51-30b2-4b15-a11b-f4e12bbb9d3f"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.input",
+                      "value": {
+                        "stringValue": "records"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.source",
+                      "value": {
+                        "stringValue": "observed"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.event_class",
+                      "value": {
+                        "stringValue": "connect"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.syscall",
+                      "value": {
+                        "stringValue": "connect"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.result",
+                      "value": {
+                        "stringValue": "success"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid",
+                      "value": {
+                        "intValue": "4122"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ppid",
+                      "value": {
+                        "intValue": "4121"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ns_pid",
+                      "value": {
+                        "intValue": "42"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.ns_ppid",
+                      "value": {
+                        "intValue": "41"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.pid_ns",
+                      "value": {
+                        "stringValue": "4026532481"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.peer_family",
+                      "value": {
+                        "stringValue": "ipv4"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.peer_port",
+                      "value": {
+                        "intValue": "443"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.cgroup_id",
+                      "value": {
+                        "stringValue": "9123"
+                      }
+                    },
+                    {
+                      "key": "fabric.sensor.scope",
+                      "value": {
+                        "stringValue": "agent"
+                      }
+                    },
+                    {
+                      "key": "fabric.network.host_id",
+                      "value": {
+                        "stringValue": "hst-757236b3429f3994c09d77b1127c1453"
+                      }
+                    },
+                    {
+                      "key": "fabric.execution.host_id",
+                      "value": {
+                        "stringValue": "hst-96164cc6e2bd169f1beee83173bb7293"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "spans": [
+        {
+          "name": "fabric.sensor_event",
+          "attributes": {
+            "fabric.tenant_id": "tenant-a",
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.source.sequence": 2,
+            "fabric.event_id": "d01e01ae-ef8f-4182-aa22-22cd2e068ea7",
+            "fabric.attempt.uid": "51a0ea51-30b2-4b15-a11b-f4e12bbb9d3f",
+            "fabric.capture.input": "records",
+            "fabric.capture.source": "observed",
+            "fabric.capture.point": "host.ebpf@0.11.0",
+            "fabric.sensor.event_class": "connect",
+            "fabric.sensor.syscall": "connect",
+            "fabric.sensor.result": "success",
+            "fabric.sensor.pid": 4122,
+            "fabric.sensor.ppid": 4121,
+            "fabric.sensor.ns_pid": 42,
+            "fabric.sensor.ns_ppid": 41,
+            "fabric.sensor.pid_ns": "4026532481",
+            "fabric.sensor.peer_family": "ipv4",
+            "fabric.sensor.peer_port": 443,
+            "fabric.sensor.cgroup_id": "9123",
+            "fabric.sensor.scope": "agent",
+            "fabric.network.host_id": "hst-757236b3429f3994c09d77b1127c1453",
+            "fabric.execution.host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+            "fabric.source.authenticated": true
+          }
+        }
+      ],
+      "stripped": {},
+      "dropped": 0
+    }
+  ]
+}

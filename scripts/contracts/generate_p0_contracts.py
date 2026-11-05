@@ -46,6 +46,8 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from contracts import action_record  # noqa: E402
+from contracts import host_records  # noqa: E402
+from contracts import ingress_groups  # noqa: E402
 from contracts import p1_reference as ref  # noqa: E402
 from contracts import validate_coverage_contracts as coverage  # noqa: E402
 
@@ -131,6 +133,23 @@ RUN_ID = (
 SEG_EX = "seg-4f1c2e3d5a6b7c8d9e0f1a2b3c4d5e6f"
 BR_EX = "br-0a1b2c3d4e5f60718293a4b5c6d7e8f9"
 INT32 = (-2147483648, 2147483647)
+DECIMAL_U64 = "^[0-9]{1,20}$"
+# The Node hash-key rule: a key ending in sha256 holds bare 64 hex (processor.go).
+BARE_SHA256 = "^[0-9a-f]{64}$"
+# Spec 053 §6.2.4 (revision 4 adds scope_late), in heartbeat order (spec 056 §7.3.3 (b)).
+UPSTREAM_LOSS_REASONS = (
+    "ring_buffer_full",
+    "socket_overflow",
+    "assembly_evicted",
+    "rate_limited",
+    "backlog_limit",
+    "source_rotation_gap",
+    "source_truncated",
+    "source_missing",
+    "restart",
+    "scope_late",
+    "unknown",
+)
 CHECK_RULE = (
     "check is the machine-readable form of validator: the closed admission fabricguard applies "
     "to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; "
@@ -394,7 +413,9 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         ),
         "fabric.manifest.runtime.name": schema_enum("runtime/name"),
         "fabric.manifest.runtime.version": string("^[0-9A-Za-z.+-]{1,64}$", "3.12.13"),
-        "fabric.manifest.sdk.language": enum(["python", "typescript"], "validator"),
+        "fabric.manifest.sdk.language": enum(
+            ["python", "typescript", "go"], "validator"
+        ),
         "fabric.manifest.sequence_unit": enum(["exchange", "record"], "validator"),
         "fabric.manifest.source_auth": enum(["bound", "unbound"], "validator"),
         "fabric.manifest.spool_encrypted": boolean,
@@ -436,6 +457,67 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.process.pid": integer(1),
         "fabric.process.signal": integer(1),
         "fabric.process.start_ns": integer(0),
+        # spec 056 §4.3, §7.3.3 (a) (M2): the agent's pid namespace and the created id
+        "fabric.process.pid_ns": string(DECIMAL_U64, "4026531836"),
+        "fabric.sandbox.created_id": pseudonym("sbx"),
+        # spec 053 §6.2.3 (revisions 3 and 4): host records only (capture-point kind S)
+        "fabric.sensor.event_class": enum(["exec", "connect", "file"], "validator"),
+        "fabric.sensor.syscall": enum(
+            [
+                "execve",
+                "execveat",
+                "connect",
+                "accept",
+                "bind",
+                "socket",
+                "openat",
+                "open",
+            ],
+            "validator",
+        ),
+        "fabric.sensor.result": enum(["success", "failed", "unknown"], "validator"),
+        "fabric.sensor.errno": enum(
+            [
+                "EPERM",
+                "ENOENT",
+                "EIO",
+                "EAGAIN",
+                "EACCES",
+                "EINVAL",
+                "ECONNREFUSED",
+                "ETIMEDOUT",
+                "EHOSTUNREACH",
+                "ENETUNREACH",
+                "other",
+            ],
+            "validator",
+        ),
+        "fabric.sensor.pid": integer(1),
+        "fabric.sensor.ppid": integer(0),
+        "fabric.sensor.ns_pid": integer(1),
+        "fabric.sensor.ns_ppid": integer(0),
+        "fabric.sensor.pid_ns": string(DECIMAL_U64, "4026531836"),
+        "fabric.sensor.process_start_ns": integer(0),
+        "fabric.sensor.boot_time_s": integer(0),
+        "fabric.sensor.cgroup_id": string(DECIMAL_U64, "9123"),
+        "fabric.sensor.scope": enum(["agent", "sandbox"], "validator"),
+        "fabric.sensor.pod_id": pseudonym("sbx"),
+        "fabric.sensor.audit_serial": string(DECIMAL_U64, "18446744073709551615"),
+        "fabric.sensor.incomplete": enum(
+            ["path", "args", "path_and_args"], "validator"
+        ),
+        "fabric.sensor.peer_family": enum(
+            ["ipv4", "ipv6", "unix", "other"], "validator"
+        ),
+        "fabric.sensor.peer_port": integer(0, 65535),
+        "fabric.sensor.exe_sha256": string(BARE_SHA256, "3f" * 32),
+        "fabric.sensor.argv_sha256": string(BARE_SHA256, "3f" * 32),
+        "fabric.sensor.path_sha256": string(BARE_SHA256, "3f" * 32),
+        # spec 053 §6.2.4: upstream loss on a host source's periodic heartbeat
+        "fabric.sensor.upstream_lost": integer(-1),
+        "fabric.sensor.upstream_loss_reason": enum(
+            list(UPSTREAM_LOSS_REASONS), "validator"
+        ),
         "fabric.remote.host_key_verified": boolean,
         "fabric.remote.target_id": pseudonym("hst"),
         "fabric.run.agent_policy_digest": digest,
@@ -577,6 +659,24 @@ def build_capture_checks() -> dict[str, dict[str, Any]]:
         "fabric.deployment_id": label,
         "fabric.release_id": label,
         "fabric.environment": label,
+        # spec 053 §6.2.3 (spec 056 M2): a host record's bound tenant
+        "fabric.tenant_id": string(OPAQUE, "tenant-a", "acme.prod"),
+        # spec 053 §5.4 (N43): http.nonmodel records (wire exchanges keep spec 047's check)
+        "http.request.method": {
+            "type": "enum",
+            "values": [
+                "GET",
+                "HEAD",
+                "POST",
+                "PUT",
+                "PATCH",
+                "DELETE",
+                "OPTIONS",
+                "other",
+            ],
+            "source": "validator",
+        },
+        "http.response.status_code": {"type": "int", "min": 100, "max": 599},
     }
 
 
@@ -603,7 +703,7 @@ def generate_registry(w: Writer) -> None:
             raise SystemExit(f"no check for {key}")
         if key in capture_checks:
             row["capture_check"] = capture_checks[key]
-    keys["registry_revision"] = 11
+    keys["registry_revision"] = 12
     ordered: dict[str, Any] = {}
     for name, value in keys.items():
         if name in {"check_rule", "capture_check_rule"}:
@@ -623,7 +723,7 @@ def generate_registry(w: Writer) -> None:
             row["confidence"] = fixed.group(1)
         else:
             raise ValueError(f"inference method {row['value']!r} states no confidence")
-    vocab["registry_revision"] = 10
+    vocab["registry_revision"] = 11
     w.json(COVERAGE / coverage.REGISTRY["vocab"], vocab)
 
 
@@ -3238,7 +3338,12 @@ def _category_vectors() -> dict[str, Any]:
             "processor.go): heartbeat and loss markers first, then tool keys, model keys, the "
             "ordered key table, then the name itself when it is a known Fabric name, else "
             "fabric.activity. Only attribute keys decide, never values. fabricguard's Go test "
-            "and the SDK's port read these cases."
+            "and the SDK's port read these cases. sensor_cases (spec 053 §6.2.3, §7; spec 056 "
+            "M2): the fabric.sensor_event branch, after the markers and before the tool keys: "
+            "a span carrying fabric.sensor.event_class is a host record. fabricguard reads them "
+            "(TestSensorEventCategory); the SDK emits no host record, and its port need not "
+            "carry the branch (an agent batch with a fabric.sensor.* key is refused, 053 "
+            "§6.2.7)."
         ),
         "cases": [
             {
@@ -3249,7 +3354,57 @@ def _category_vectors() -> dict[str, Any]:
             }
             for n, h, k in cases
         ],
+        "sensor_cases": [
+            {
+                "name": n,
+                "name_hint": h,
+                "attribute_keys": k,
+                "category": ref.span_category(h, k),
+            }
+            for n, h, k in SENSOR_CATEGORY_CASES
+        ],
     }
+
+
+# Spec 053 §6.2.3 (spec 056 M2): the fabric.sensor_event branch of the category function.
+SENSOR_CATEGORY_CASES: tuple[tuple[str, str, list[str]], ...] = (
+    (
+        "host record",
+        "fabric.activity",
+        ["fabric.sensor.event_class", "fabric.source_id", "fabric.capture.point"],
+    ),
+    (
+        "host record keeps the name whatever the hint",
+        "fabric.model_call",
+        ["fabric.sensor.event_class"],
+    ),
+    (
+        "sensor key beats tool and model keys",
+        "x",
+        ["fabric.tool.name", "fabric.wire.exchange_id", "fabric.sensor.event_class"],
+    ),
+    (
+        "sensor key beats the ordered table",
+        "x",
+        ["fabric.execution.status", "fabric.sensor.event_class"],
+    ),
+    (
+        "a heartbeat with upstream loss stays a heartbeat",
+        "x",
+        [
+            "fabric.heartbeat.last_sequence",
+            "fabric.sensor.upstream_lost",
+            "fabric.sensor.upstream_loss_reason",
+        ],
+    ),
+    (
+        "a loss marker stays a loss",
+        "x",
+        ["fabric.loss.reason", "fabric.sensor.event_class"],
+    ),
+    ("the name alone is not a host record", "fabric.sensor_event", []),
+    ("another sensor key alone does not decide", "x", ["fabric.sensor.pid"]),
+)
 
 
 def _records_span_vectors(
@@ -3375,6 +3530,162 @@ def _records_span_vectors(
         ),
     )
     case("process join keys only on exec.subprocess", dict(base, **process))
+    # Spec 056 M2 (WP6-11): the namespace and created-id keys of exec.subprocess, the
+    # remote.sandbox and http.nonmodel records, and host keys an agent record never keeps.
+    m2_exec = {
+        "fabric.process.pid_ns": "4026532481",
+        "fabric.sandbox.created_id": "sbx-" + "7a" * 16,
+    }
+    case(
+        "exec.subprocess record keeps its namespace and created id",
+        dict(
+            base,
+            **{
+                "fabric.capture.point": "exec.subprocess@0.11.0",
+                "fabric.capture.source": "observed",
+                "fabric.step.kind": "terminal",
+                **process,
+                **m2_exec,
+            },
+        ),
+    )
+    case("namespace and created id only on exec.subprocess", dict(base, **m2_exec))
+    case(
+        "S-scoped keys on an agent record are dropped",
+        dict(
+            base,
+            **{
+                "fabric.capture.point": "exec.subprocess@0.11.0",
+                "fabric.capture.source": "observed",
+                "fabric.step.kind": "terminal",
+                "fabric.process.pid": 4121,
+                "fabric.sensor.pid": 4121,
+                "fabric.sensor.ns_pid": 41,
+                "fabric.sensor.scope": "agent",
+                "fabric.tenant_id": "tenant-a",
+            },
+        ),
+    )
+    case(
+        "remote.sandbox record keys",
+        dict(
+            base,
+            **{
+                "fabric.capture.point": "remote.sandbox@2.62.0",
+                "fabric.capture.source": "observed",
+                "fabric.step.kind": "remote_exec",
+                "fabric.execution.sandbox_id": "sbx-" + "1f" * 16,
+                "fabric.process.parent_pid": 4100,
+            },
+        ),
+    )
+    http = {
+        "http.request.method": "GET",
+        "http.response.status_code": 404,
+        "fabric.network.host_id": "hst-" + "6b" * 16,
+    }
+    case(
+        "http.nonmodel record keys",
+        dict(
+            base,
+            **{
+                "fabric.capture.point": "http.nonmodel@0.11.0",
+                "fabric.capture.source": "observed",
+                "fabric.step.kind": "network",
+                **http,
+            },
+        ),
+    )
+    case("method and status only on http.nonmodel", dict(base, **http))
+    host_cases: list[dict[str, Any]] = []
+    placement = host_records.host_record_keys(reg)
+
+    def host_case(name: str, attrs: dict[str, Any]) -> None:
+        kept, dropped = host_records_span(reg, attrs)
+        host_cases.append(
+            {"name": name, "attributes": attrs, "admitted": kept, "dropped": dropped}
+        )
+
+    host = {
+        "fabric.tenant_id": "tenant-a",
+        "fabric.source_id": SOURCE,
+        "fabric.source.epoch": EPOCH,
+        "fabric.source.sequence": 7,
+        "fabric.event_id": uid("host-record-event"),
+        "fabric.attempt.uid": uid("host-record-attempt"),
+        "fabric.capture.input": "records",
+        "fabric.capture.source": "observed",
+        "fabric.capture.point": "host.ebpf@0.11.0",
+        "fabric.sensor.event_class": "exec",
+        "fabric.sensor.syscall": "execve",
+        "fabric.sensor.result": "success",
+        "fabric.sensor.pid": 4121,
+        "fabric.sensor.ppid": 4100,
+        "fabric.sensor.ns_pid": 41,
+        "fabric.sensor.ns_ppid": 7,
+        "fabric.sensor.pid_ns": "4026532481",
+        "fabric.sensor.process_start_ns": 60123217448,
+        "fabric.sensor.boot_time_s": 1791271080,
+        "fabric.sensor.cgroup_id": "9123",
+        "fabric.sensor.scope": "agent",
+        "fabric.execution.host_id": "hst-" + "5e" * 16,
+    }
+    host_case("eBPF host record keeps its host keys", host)
+    host_case(
+        "sandbox-scope record keeps its container and pod ids",
+        dict(
+            host,
+            **{
+                "fabric.sensor.scope": "sandbox",
+                "fabric.execution.sandbox_id": "sbx-" + "7a" * 16,
+                "fabric.sensor.pod_id": "sbx-" + "8b" * 16,
+            },
+        ),
+    )
+    host_case(
+        "auditd host record",
+        {
+            **{
+                k: v
+                for k, v in host.items()
+                if not k.startswith(("fabric.sensor.ns_", "fabric.sensor.pid_ns"))
+                and k
+                not in (
+                    "fabric.sensor.process_start_ns",
+                    "fabric.sensor.cgroup_id",
+                    "fabric.sensor.scope",
+                )
+            },
+            "fabric.capture.point": "host.auditd@0.11.0",
+            "fabric.sensor.audit_serial": "18446744073709551615",
+        },
+    )
+    host_case(
+        "agent keys on a host record are dropped",
+        dict(
+            host,
+            **{
+                "fabric.run.id": RUN,
+                "fabric.step.kind": "terminal",
+                "fabric.process.pid": 4121,
+                "fabric.process.pid_ns": "4026532481",
+                "fabric.actor.type": "agent",
+            },
+        ),
+    )
+    host_case(
+        "failing host values are dropped",
+        dict(
+            host,
+            **{
+                "fabric.sensor.scope": "pod",
+                "fabric.sensor.ns_pid": 0,
+                "fabric.sensor.pid_ns": "ns:[4026532481]",
+                "fabric.sensor.exe_sha256": "sha256:" + "3f" * 32,
+                "fabric.sensor.peer_port": 70000,
+            },
+        ),
+    )
     return {
         "schema_version": "fabric.records-span-vectors/v1",
         "rule": (
@@ -3390,7 +3701,34 @@ def _records_span_vectors(
         "keys": sorted(table),
         "conditions": coverage.record_conditions(reg),
         "cases": cases,
+        "host_rule": (
+            "Spec 053 §6.2.7 step 6 (spec 056 M2): a host group's fabricguard instance applies "
+            "rule A, then keeps only the host placement (host_placement: the 053 §6.2.3 keys; the "
+            "fabric.sensor.* rows and fabric.tenant_id are records keys only on a capture point "
+            "of kind S). host_cases are read by fabricguard (TestRecordsSpanVectors); the SDK "
+            "never emits a host record, and its rule A fails closed on a capture_point_kinds "
+            "condition. Digest keys are admitted here; step 7 strips them without the group's "
+            "permission."
+        ),
+        "host_placement": placement,
+        "host_cases": host_cases,
     }
+
+
+def host_records_span(
+    reg: dict[str, Any], attrs: Mapping[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Rule A, then the host placement (053 §6.2.7 step 6)."""
+    kept, dropped = ref.project_record_attributes(
+        attrs,
+        record_checks(reg),
+        coverage.check_value,
+        conditions=coverage.record_conditions(reg),
+        point_kinds=coverage.point_kinds(reg),
+    )
+    placement = set(host_records.host_record_keys(reg))
+    outside = sorted(k for k in kept if k not in placement)
+    return {k: v for k, v in kept.items() if k in placement}, sorted(dropped + outside)
 
 
 def _parity_vectors(reg: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
@@ -5113,13 +5451,21 @@ INVALID = {
 # Spec 056 (WP6-01): the exec evidence, interface, rule and report-chain refusals.
 INVALID[COVERAGE].update(action_record.INVALID_COVERAGE)
 INVALID[CAPTURE].update(action_record.INVALID_CAPTURE)
-VERSIONS = {COVERAGE: "1.2.0", CAPTURE: "1.5.0", CONTENT: "2.3.0"}
+# Spec 056 M2 (WP6-11): the refused host batches (spec 053 §6.2.7).
+INVALID[CAPTURE].update(host_records.INVALID_CAPTURE)
+# Host vectors outside a vectors/ directory (contracts/capture/v1/fixtures/host/).
+HOST_VECTORS = {
+    "fixtures/host/id-key-file-v1.json",
+    "fixtures/host/host-state-envelope-v1.json",
+    "fixtures/ingress-groups/index.json",
+}
+VERSIONS = {COVERAGE: "1.3.0", CAPTURE: "1.6.0", CONTENT: "2.3.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
     if rel in INVALID[family]:
         return "invalid", INVALID[family][rel]
-    if "/vectors/" in f"/{rel}" or "/projection/" in f"/{rel}":
+    if "/vectors/" in f"/{rel}" or "/projection/" in f"/{rel}" or rel in HOST_VECTORS:
         return "vectors", None
     if rel.startswith(("schema/", "evidence/")):
         return "schema", None
@@ -5184,6 +5530,8 @@ GO_NAMED = {
     OPAQUE: "coverageOpaqueIDPattern",
     OPERATOR_LABEL: "operatorLabelPattern",
     SOFTWARE_VERSION: "softwareVersionPattern",
+    DECIMAL_U64: "decimalU64Pattern",
+    BARE_SHA256: "sensorDigestPattern",
 }
 GO_BY_KEY = {
     "db.system.name": "dbSystemPattern",
@@ -5714,6 +6062,8 @@ def generate(root: Path, *, check: bool) -> list[str]:
     generate_p1_vectors(w)
     generate_goldens(w)
     action_record.generate(w)
+    host_records.generate(w)
+    ingress_groups.generate(w)
     generate_content(w)
     generate_pins(w)
     generate_go(w)

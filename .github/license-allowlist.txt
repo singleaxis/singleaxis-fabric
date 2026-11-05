@@ -15,6 +15,12 @@
 #   DENY       <substring>   Case-insensitive substring. Any dependency whose
 #                            (normalized) license string contains it HARD-FAILS,
 #                            even if some other token would otherwise allow it.
+#   DECLARE    <ecosystem> <name> <version> <SPDX-expression>
+#                            A reviewed license for one exact release whose
+#                            scanner metadata carries none (empty or UNKNOWN).
+#                            It is then classified like any other license and
+#                            never replaces a license the scanner reported. A
+#                            new version needs a new review.
 #
 # SPDX identifiers are matched after normalization (scripts/license_check.py
 # maps tool-specific spellings — e.g. "Apache Software License",
@@ -45,6 +51,15 @@ ALLOW BlueOak-1.0.0
 # which is compatible with shipping Apache-2.0 software. Allowed, but logged so
 # procurement is aware of the per-file source-availability obligation.
 ALLOW-LOG MPL-2.0
+
+# --- DECLARE: reviewed licenses of releases without license metadata --------
+# protobuf-py-ext (bufbuild/protobuf-py, the Rust extension of protobuf-py)
+# reaches the optional [hooks-sandbox-e2b] extra via e2b -> connectrpc ->
+# protobuf-py. Its 0.6.0 wheels and PyPI metadata carry no license field.
+# Reviewed 2026-11-04: packages/protobuf-py-ext/Cargo.toml declares
+# license = "Apache-2.0" and the repository LICENSE is Apache-2.0, as is
+# protobuf-py 0.6.0's own License-Expression.
+DECLARE python protobuf-py-ext 0.6.0 Apache-2.0
 
 # --- DENY: copyleft / restrictive / source-available (hard fail) ------------
 # Substring matches are intentional: they catch version-suffixed and

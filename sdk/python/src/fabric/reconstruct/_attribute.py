@@ -52,8 +52,10 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from fabric.reconstruct._evidence import EVIDENCE_TYPES, decode_evidence
 from fabric.reconstruct._inputs import pseudonym
 from fabric.reconstruct._report import (
+    LIST_MAX,
     Check,
     Gap,
     attribution_json,
@@ -91,12 +93,22 @@ __all__ = [
 
 #: Spec 056 §4.2 A1: the shortest output that can match a result by substring.
 MIN_MATCH_BYTES: Final = 16
-#: The effect capture points whose records are effects (spec 056 §2 "Effect").
+#: The effect capture points whose records are effects (spec 056 §2 "Effect"; M2 adds the
+#: remote sandbox calls of §4.4.1, attributed exactly as subprocesses).
 EXEC_POINT: Final = "exec.subprocess"
-EFFECT_POINTS: Final = frozenset({EXEC_POINT})
+REMOTE_SANDBOX_POINT: Final = "remote.sandbox"
+EFFECT_POINTS: Final = frozenset({EXEC_POINT, REMOTE_SANDBOX_POINT})
+#: The body role whose text A1 compares with the tool result, per effect capture point.
+OUTPUT_ROLES: Final = {EXEC_POINT: "terminal.stdout", REMOTE_SANDBOX_POINT: "remote.result"}
+# The evidence type a remote sandbox record carries (§7.3.3 (k)); the action view reads it.
+_SANDBOX_EVIDENCE: Final = {
+    name: EVIDENCE_TYPES[name] for name in ("fabric.sandbox.observation/v1",)
+}
 # Trailing whitespace A1 removes: ASCII only, so the rule is the same in every language.
 _TRAILING_WHITESPACE: Final = " \t\n\r\x0b\x0c"
 _NOT_OBSERVED_REASONS: Final = ("channel_disabled", "no_effect_channel", "none_in_window")
+# The M2 attribution summary objects the action view repeats (spec 056 §4.5).
+_M2_SUMMARY: Final = ("sandbox_events_unlinked", "remote_sandbox_calls")
 
 CallId = Callable[[str], str]
 
@@ -122,15 +134,20 @@ class HostJoin:
     ``links``: per effect attempt uid, its ``corroborated_by`` links (H1, H2; an ambiguous
     anchor is one link per candidate). ``sensor_events``: the run report's
     ``sensor_events`` (every host event a link names, time order, with the ``part_of``
-    links whose subject it is: H3 to an attempt, H4 to the run). ``counts``: decisions per
-    basis (``process_anchor``, ``process_lineage``) and state, as ``attribution.links``
-    counts them. ``unexplained``: unexplained host event ids in time order (the report
-    keeps the first 64); ``unexplained_count`` is their full count when ``unexplained``
-    holds only the first ones (``None``: ``len(unexplained)``). ``anchor_missing``: an
-    effect with a pid has no resolved anchor. ``source_gap``: a host source does not
-    verify for the whole run window. ``lineage_truncated``: events an H3 bound left
-    unlinked. ``trace_*``: which rule decided each anchor and host event (fixtures only,
-    never reported). ``_host.attribution_join`` builds one from a ``_host.HostJoin``, and
+    links whose subject it is: H3 and H5 to an attempt, H4 to the run). ``counts``:
+    decisions per basis (``process_anchor``, ``process_lineage``, ``sandbox_report``) and
+    state, as ``attribution.links`` counts them. ``unexplained``: unexplained host event
+    ids in time order (the report keeps the first 64); ``unexplained_count`` is their full
+    count when ``unexplained`` holds only the first ones (``None``: ``len(unexplained)``).
+    ``anchor_missing``: an effect with a pid has no resolved anchor. ``source_gap``: a
+    host source does not verify for the whole run window. ``lineage_truncated``: events an
+    H3 bound left unlinked. ``trace_*``: which rule decided each anchor and host event, and why each
+    source is a host source (fixtures only, never reported). M2: ``sandbox_events_unlinked``
+    counts sandbox-scope events no H5 link names (``None``: no event carries a scope);
+    ``remote_sandbox_calls`` are ``(event_id, time_ns, margin)`` of the agent's connections
+    to a declared sandbox peer while ``remote.sandbox`` is not active (``None``: no peer
+    declared); ``unauthenticated``: a host source lacks the Node's stamp in the production
+    profile. ``_host.attribution_join`` builds one from a ``_host.HostJoin``, and
     ``_host.host_joiner`` is the :data:`HostJoiner` for a real export."""
 
     links: Mapping[str, Sequence[Mapping[str, Any]]] = field(default_factory=dict)
@@ -143,6 +160,10 @@ class HostJoin:
     lineage_truncated: int = 0
     trace_anchors: Mapping[str, str] = field(default_factory=dict)
     trace_host_events: Mapping[str, str] = field(default_factory=dict)
+    trace_host_sources: Mapping[str, Mapping[str, Any]] | None = None
+    sandbox_events_unlinked: int | None = None
+    remote_sandbox_calls: Sequence[tuple[str, int, int]] | None = None
+    unauthenticated: bool = False
 
 
 #: Called once per annotated run with its normalized input; ``None`` when no host source
@@ -367,7 +388,7 @@ class Attribution:
     sensor_events: list[dict[str, Any]]
     chains: dict[str, dict[str, Any]]
     attribution: dict[str, Any]
-    trace: dict[str, dict[str, str]]
+    trace: dict[str, dict[str, Any]]
     calls: list[ToolCall] = field(default_factory=list)
     decisions: dict[str, Decision] = field(default_factory=dict)
 
@@ -389,6 +410,10 @@ def _effect_channels_active(inp: Mapping[str, Any]) -> bool:
     return any(state == "active" for state in (inp.get("effect_channels") or {}).values())
 
 
+def _exec_active(inp: Mapping[str, Any]) -> bool:
+    return (inp.get("effect_channels") or {}).get(EXEC_POINT) == "active"
+
+
 def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain reason
     inp: Mapping[str, Any], call_id: CallId = _same, host: HostJoin | None = None
 ) -> Attribution:
@@ -401,7 +426,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
     calls = tool_calls(inp, call_id)
     effects = sorted(inp.get("effects", ()), key=lambda e: e["sequence"])  # stable
     counts: dict[str, dict[str, int]] = {}
-    trace: dict[str, dict[str, str]] = {
+    trace: dict[str, dict[str, Any]] = {
         "effects": {},
         "anchors": {},
         "host_events": {},
@@ -430,27 +455,11 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         if decision.rule == "A4":
             unattributed.append(effect)
 
-    # §4.2 notes: a tool call with no attributed effect is not a gap; it is counted by why.
-    active = _effect_channels_active(inp)
-    in_process = set(inp.get("in_process_tools", ()))
-    not_observed_counts = dict.fromkeys(_NOT_OBSERVED_REASONS, 0)
-    for call in calls:
-        if call.id in attributed:
-            trace["tool_calls"][call.id] = "attributed"
-            continue
-        if not active:
-            reason = "channel_disabled"
-        elif call.name is not None and call.name in in_process:
-            reason = "no_effect_channel"
-        else:
-            reason = "none_in_window"
-        not_observed_counts[reason] += 1
-        trace["tool_calls"][call.id] = reason
-
     sensor_events: list[dict[str, Any]] = []
     unexplained: Sequence[str] = ()
     unexplained_count: int | None = None
     truncated = 0
+    remote_calls: Sequence[tuple[str, int, int]] = ()
     if host is not None:
         for uid, joined in host.links.items():
             links.setdefault(uid, []).extend(dict(link) for link in joined)
@@ -464,6 +473,40 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         truncated = host.lineage_truncated
         trace["anchors"].update(host.trace_anchors)
         trace["host_events"].update(host.trace_host_events)
+        if host.trace_host_sources is not None:
+            trace["host_sources"] = {k: dict(v) for k, v in host.trace_host_sources.items()}
+        remote_calls = tuple(host.remote_sandbox_calls or ())
+
+    # §4.2 notes: a tool call with no attributed effect is not a gap; it is counted by why.
+    # M2 (§4.4.1): a call in whose window the agent called a declared sandbox provider
+    # while remote.sandbox was not active had its effect on a disabled channel. Any other
+    # call's effect is a local one, on exec.subprocess: with that hook off the call is
+    # channel_disabled even while remote.sandbox is active (§6.2 variant (c)).
+    active = _effect_channels_active(inp)
+    exec_active = _exec_active(inp)
+    exec_disabled_calls = 0
+    in_process = set(inp.get("in_process_tools", ()))
+    not_observed_counts = dict.fromkeys(_NOT_OBSERVED_REASONS, 0)
+    margin = max(int(inp["agent"].get("clock_uncertainty_ns", 0) or 0), 0)
+    for call in calls:
+        if call.id in attributed:
+            trace["tool_calls"][call.id] = "attributed"
+            continue
+        sandboxed = any(
+            call.open_ns - margin - other <= at < call.close_ns + margin + other
+            for _, at, other in remote_calls
+        )
+        if sandboxed:
+            reason = "channel_disabled"
+        elif not exec_active:
+            reason = "channel_disabled"
+            exec_disabled_calls += 1
+        elif call.name is not None and call.name in in_process:
+            reason = "no_effect_channel"
+        else:
+            reason = "none_in_window"
+        not_observed_counts[reason] += 1
+        trace["tool_calls"][call.id] = reason
 
     chains = {
         "decisions": _decisions(inp),
@@ -475,6 +518,10 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
                     *inp.get("effect_record_gaps", ()),
                     *(["unattributed_effect"] if unattributed else []),
                     *(["ambiguous_attribution"] if ambiguous else []),
+                    *(["remote_sandbox"] if remote_calls else []),
+                    # Only remote.sandbox is active: a call it did not explain had its
+                    # effect on the disabled exec.subprocess channel.
+                    *(["channel_disabled"] if exec_disabled_calls else []),
                 ]
             )
             if active
@@ -483,13 +530,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
             )
         ),
         "corroboration": (
-            chain(
-                [
-                    *(["source_gap"] if host.source_gap else []),
-                    *(["anchor_missing"] if host.anchor_missing else []),
-                    *(["unexplained_host_event"] if unexplained else []),
-                ]
-            )
+            _corroboration(host, bool(unexplained))
             if host is not None
             else not_observed("not_configured")
         ),
@@ -517,6 +558,18 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         unexplained_count=unexplained_count,
         lineage_truncated=truncated,
     )
+    # M2 summary objects (§4.5): present when an event carries a sensor scope or sandbox
+    # peers are declared, so M1 reports are unchanged.
+    scoped = any("scope" in event for event in inp.get("host_events", ()))
+    unlinked = host.sandbox_events_unlinked if host is not None else None
+    if unlinked is not None or scoped:
+        summary["sandbox_events_unlinked"] = {"count": unlinked or 0}
+    declared_peers = host is not None and host.remote_sandbox_calls is not None
+    if declared_peers or "sandbox_peers" in inp:
+        summary["remote_sandbox_calls"] = {
+            "count": len(remote_calls),
+            "event_ids": [event_id for event_id, _, _ in remote_calls[:LIST_MAX]],
+        }
     return Attribution(
         projection_links=links,
         sensor_events=sensor_events,
@@ -526,6 +579,21 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         calls=calls,
         decisions=decisions,
     )
+
+
+def _corroboration(host: HostJoin, unexplained: bool) -> dict[str, Any]:
+    """``corroboration``: ``partial`` with its reasons; else, with a host source whose
+    records lack the Node's stamp in the production profile,
+    ``unverified(source_unauthenticated)`` (053 §6.2.10; partial beats unverified); else
+    ``complete``."""
+    reasons = [
+        *(["source_gap"] if host.source_gap else []),
+        *(["anchor_missing"] if host.anchor_missing else []),
+        *(["unexplained_host_event"] if unexplained else []),
+    ]
+    if not reasons and host.unauthenticated:
+        return {"verdict": "unverified", "reasons": ["source_unauthenticated"]}
+    return chain(reasons)
 
 
 def _decisions(inp: Mapping[str, Any]) -> dict[str, Any]:
@@ -708,6 +776,25 @@ class ActionReader:
         self.links: dict[str, list[dict[str, Any]]] = {}
         self.runs: list[ActionRun] = []
 
+    @property
+    def declared_host_sources(self) -> tuple[str, ...]:
+        """The source ids the host joiner declares (``--host-source KIND=SOURCE_ID``): host
+        sources by the §7.3.3 (l) rule even with nothing in the export."""
+        return tuple(getattr(self.host_joiner, "declared_ids", ()))
+
+    def add_host_evidence(self, evidence: Any, *, production: bool, trusted: bool) -> None:
+        """The host records and markers the verifier split out of the export (spec 056
+        §7.3.3 (l)), handed to a host joiner that reads them (``_host.HostPlan``); a plain
+        joiner callable has its own evidence, and without a joiner they are not joined."""
+        add = getattr(self.host_joiner, "add_evidence", None)
+        if add is not None:
+            add(evidence, production=production, trusted=trusted)
+
+    def _host_configured(self) -> bool:
+        if self.host_joiner is None:
+            return False
+        return bool(getattr(self.host_joiner, "configured", True))
+
     def annotate(
         self,
         report: dict[str, Any],
@@ -718,11 +805,12 @@ class ActionReader:
     ) -> None:
         """Annotate one run's report entry (``run`` is the verifier's ``_Run``)."""
         reader = _RunReader(self, report, run, bodies)
-        annotated = bool(reader.channels) or self.host_joiner is not None
+        annotated = bool(reader.channels) or self._host_configured()
         if not (self.every_run or annotated):
             return
         inp = reader.build(gaps, checks)
-        host = self.host_joiner(inp) if self.host_joiner is not None else None
+        joiner = self.host_joiner if self._host_configured() else None
+        host = joiner(inp) if joiner is not None else None
         result = attribute(inp, host=host)
         if self.keep_runs:
             self.runs.append(ActionRun(report["run_id"], _lean(inp), result))
@@ -985,11 +1073,17 @@ class _RunReader:
             )
             if value is not None:
                 effect[name] = value
-        host = next((v for r in records
-                     if isinstance(v := r.span.attributes.get("fabric.execution.host_id"), str)),
-                    None)  # fmt: skip
-        if host is not None:
-            effect["host_id"] = host
+        point = _point_id(start.span.attributes)
+        if point != EXEC_POINT:
+            effect["capture_point"] = point  # M2: a remote.sandbox effect (no pid)
+        for name, key in (("host_id", "fabric.execution.host_id"),
+                          ("pid_ns", "fabric.process.pid_ns"),
+                          ("created_sandbox_id", "fabric.sandbox.created_id"),
+                          ("sandbox_id", "fabric.execution.sandbox_id")):  # fmt: skip
+            found = next((v for r in records if isinstance(v := r.span.attributes.get(key), str)),
+                         None)  # fmt: skip
+            if found is not None:
+                effect[name] = found
         parent = next((v for r in records if isinstance(v := r.span.attributes.get(_A_PARENT), str)
                        and v), None)  # fmt: skip
         if parent is not None:
@@ -1008,19 +1102,66 @@ class _RunReader:
                       None)  # fmt: skip
         if exited is not None:
             effect["exit_observed_ns"] = exited
-        self._stdout(effect, records)
+        self._stdout(effect, records, OUTPUT_ROLES.get(str(point), "terminal.stdout"))
         if self.owner.keep_runs:
-            data = self._body(start, "terminal.argv")
-            label = argv_label(data) if data is not None else None
-            if label is not None:
-                effect["label"] = label
+            self._label(effect, start, records, point)
         return effect
 
-    def _stdout(self, effect: dict[str, Any], records: Sequence[Any]) -> None:
-        for record in reversed(records):
-            if not self._names(record, "terminal.stdout"):
+    def _label(
+        self, effect: dict[str, Any], start: Any, records: Sequence[Any], point: str | None
+    ) -> None:
+        """The action view's label: an exec's argv, a remote sandbox call's evidence."""
+        if point != EXEC_POINT:
+            self._sandbox_label(effect, records)
+            return
+        data = self._body(start, "terminal.argv")
+        label = argv_label(data) if data is not None else None
+        if label is not None:
+            effect["label"] = label
+
+    def _sandbox_label(self, effect: dict[str, Any], records: Sequence[Any]) -> None:
+        """A remote sandbox effect's view label (§4.6: ``remote e2b commands_run exit 0``)
+        from its records' ``fabric.sandbox.observation/v1`` evidence: provider and call of
+        the first record whose evidence decodes, the exit code of the last that has one. For
+        the view only: attribution never reads them."""
+        items = [item for record in records for item in self._sandbox_items(record)]
+        if not items:
+            return
+        effect["label"] = f"{items[0]['provider']} {items[0]['call']}"
+        codes = [item["exit_code"] for item in items if "exit_code" in item]
+        if codes and "exit_code" not in effect:
+            effect["exit_code"] = codes[-1]
+
+    def _sandbox_items(self, record: Any) -> list[dict[str, Any]]:
+        """The items of ``record``'s verified sandbox observation, when its type schema
+        accepts every item; else none."""
+        if self.verifier.reader is None:
+            return []
+        for object_id in _object_ids(record.span.attributes):
+            result = self.verifier.record_object(record, object_id)
+            descriptor = result.descriptor
+            if descriptor is None or descriptor.get("role") != "record.evidence":
                 continue
-            data = self._body(record, "terminal.stdout")
+            if result.verification != "verified":
+                continue
+            data = self.verifier.record_object(record, object_id, data=True).data
+            if data is None:
+                continue
+            decoded = decode_evidence(
+                bytes(data), evidence_types=_SANDBOX_EVIDENCE, provenance="observed",
+                capture_point=REMOTE_SANDBOX_POINT,
+            )  # fmt: skip
+            if decoded.status == "ok" and not decoded.item_errors:
+                return list(json.loads(bytes(data))["items"])
+        return []
+
+    def _stdout(self, effect: dict[str, Any], records: Sequence[Any], role: str) -> None:
+        """The last verified body of the output role A1 compares (``terminal.stdout``, or
+        ``remote.result`` for a remote sandbox call), as ``stdout``."""
+        for record in reversed(records):
+            if not self._names(record, role):
+                continue
+            data = self._body(record, role)
             if data is None:
                 return
             try:
@@ -1089,8 +1230,11 @@ def _link_text(link: Mapping[str, Any]) -> str:
 def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - one per row kind
     """The ``actions`` view of one run as data: a header (chain verdicts), one row per
     model call, tool result, effect and linked host event in time order, and the
-    unattributed effects, tool calls without an effect and unexplained host events. It is
-    a rendering of the report and the projection links; it adds no contract."""
+    unattributed effects, tool calls without an effect and unexplained host events. M2:
+    one ``sandbox`` row per effect groups the host events rule H5 linked to it (count,
+    first and last time, and each event); a remote sandbox effect's row names its capture
+    point and sandbox id. It is a rendering of the report and the projection links; it
+    adds no contract."""
     inp, result = run.input, run.result
     labels = {call.id: f"T{index}" for index, call in enumerate(result.calls, start=1)}
     by_raw = {call.raw_id: labels[call.id] for call in result.calls}
@@ -1117,7 +1261,8 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         uid = effect["attempt_uid"]
         row = {"kind": "effect", "attempt_uid": uid, "event_id": effect["event_id"],
                "sequence": effect["sequence"]}  # fmt: skip
-        for key in ("label", "pid", "exit_code", "signal"):
+        for key in ("label", "pid", "exit_code", "signal", "capture_point", "sandbox_id",
+                    "created_sandbox_id"):  # fmt: skip
             if key in effect:
                 row[key] = effect[key]
         decision = result.decisions.get(uid)
@@ -1137,7 +1282,24 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
                     {"event_id": link["target"]["id"], "link": _link_text(link)}
                 )
     unexplained = set(result.attribution["unexplained_host_events"]["event_ids"])
+    created = {e["attempt_uid"]: e.get("created_sandbox_id") for e in inp["effects"]}
+    sandboxes: dict[str, dict[str, Any]] = {}  # M2 (§4.6): H5 events grouped per effect
     for event in result.sensor_events:
+        reported = [link for link in event.get("links", ())
+                    if link.get("method") == "sandbox_report"]  # fmt: skip
+        if reported:
+            uid = reported[0]["target"]["id"]
+            group = sandboxes.setdefault(uid, {
+                "kind": "sandbox", "attempt_uid": uid, "sandbox_id": created.get(uid),
+                "count": 0, "first_ns": event["time_ns"], "last_ns": event["time_ns"],
+                "link": _link_text(reported[0]), "events": [],
+            })  # fmt: skip
+            group["count"] += 1
+            group["first_ns"] = min(group["first_ns"], event["time_ns"])
+            group["last_ns"] = max(group["last_ns"], event["time_ns"])
+            group["events"].append({k: event[k] for k in ("event_id", "source", "event_class",
+                                                          "pid", "time_ns")})  # fmt: skip
+            continue
         row = {"kind": "host", "event_id": event["event_id"], "source": event["source"],
                "event_class": event["event_class"], "pid": event["pid"]}  # fmt: skip
         part_of = [{"target": link["target"]["id"], "namespace": link["target"]["namespace"],
@@ -1154,6 +1316,8 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         if event["event_id"] in unexplained:
             row["unexplained"] = True
         events.append((event["time_ns"], 2, 0, row))
+    for group in sandboxes.values():
+        events.append((group["first_ns"], 3, 0, group))
     events.sort(key=lambda item: item[:3])
     rows = []
     numbers: dict[str, int] = {}
@@ -1163,6 +1327,8 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
             numbers[row["attempt_uid"]] = number
         rows.append(row)
     for row in rows:
+        if row["kind"] == "sandbox" and row["attempt_uid"] in numbers:
+            row["refs"] = [numbers[row["attempt_uid"]]]
         if row["kind"] == "host":
             refs = [numbers[a["attempt_uid"]] for a in row.get("anchors", ())
                     if a["attempt_uid"] in numbers]  # fmt: skip
@@ -1187,6 +1353,7 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         "unattributed_effects": unattributed,
         "tool_calls_without_effect": without,
         "unexplained_host_events": result.attribution["unexplained_host_events"],
+        **{key: result.attribution[key] for key in _M2_SUMMARY if key in result.attribution},
         "output_match": result.attribution["output_match"],
         "complete": all(c["verdict"] in ("complete", "not_observed")
                         for c in result.chains.values()),

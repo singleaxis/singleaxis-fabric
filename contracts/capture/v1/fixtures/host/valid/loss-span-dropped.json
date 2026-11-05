@@ -1,0 +1,114 @@
+{
+  "schema_version": "fabric.host-record-fixture/v1",
+  "name": "loss-span-dropped",
+  "description": "A loss marker: the Node refused three host records in part (partial success), the batch is kept encrypted and its positions are declared span_dropped (053 §6.2.3, §6.2.9). No segment.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "guard": {
+    "source_kind": "host.ebpf",
+    "profile": "production",
+    "tenant_id": "tenant-a",
+    "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+    "host_digests": "omitted"
+  },
+  "batches": [
+    {
+      "resourceSpans": [
+        {
+          "resource": {
+            "attributes": []
+          },
+          "scopeSpans": [
+            {
+              "scope": {
+                "name": "fabric.host-records"
+              },
+              "spans": [
+                {
+                  "traceId": "5eeae366b7d046bbb25bfb114baa3e29",
+                  "spanId": "df09bebdfbf67bc3",
+                  "name": "fabric.capture_loss",
+                  "kind": 1,
+                  "startTimeUnixNano": "1791331242000000000",
+                  "endTimeUnixNano": "1791331242000000000",
+                  "attributes": [
+                    {
+                      "key": "fabric.source_id",
+                      "value": {
+                        "stringValue": "s-2c6c641009e36ee2e6587ef29bc3a782"
+                      }
+                    },
+                    {
+                      "key": "fabric.source.epoch",
+                      "value": {
+                        "intValue": "6917529027641081857"
+                      }
+                    },
+                    {
+                      "key": "fabric.loss.reason",
+                      "value": {
+                        "stringValue": "span_dropped"
+                      }
+                    },
+                    {
+                      "key": "fabric.loss.count",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    },
+                    {
+                      "key": "fabric.loss.first_sequence",
+                      "value": {
+                        "intValue": "3"
+                      }
+                    },
+                    {
+                      "key": "fabric.loss.last_sequence",
+                      "value": {
+                        "intValue": "5"
+                      }
+                    },
+                    {
+                      "key": "fabric.capture.point",
+                      "value": {
+                        "stringValue": "host.ebpf@0.11.0"
+                      }
+                    },
+                    {
+                      "key": "fabric.event_id",
+                      "value": {
+                        "stringValue": "45f587c3-a62f-433e-aa8d-34792813ed71"
+                      }
+                    }
+                  ],
+                  "status": {}
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "expected": [
+    {
+      "spans": [
+        {
+          "name": "fabric.capture_loss",
+          "attributes": {
+            "fabric.source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+            "fabric.source.epoch": 6917529027641081857,
+            "fabric.loss.reason": "span_dropped",
+            "fabric.loss.count": 3,
+            "fabric.loss.first_sequence": 3,
+            "fabric.loss.last_sequence": 5,
+            "fabric.capture.point": "host.ebpf@0.11.0",
+            "fabric.event_id": "45f587c3-a62f-433e-aa8d-34792813ed71",
+            "fabric.source.authenticated": true
+          }
+        }
+      ],
+      "stripped": {},
+      "dropped": 0
+    }
+  ]
+}

@@ -14,6 +14,24 @@ spec:
     - Ingress
     - Egress
   ingress:
+    {{- if include "otel-collector.groupMode" . }}
+    # Ingress groups (spec 053 §6.1): each group's ports admit its own peers
+    # (sourceBindings[].ingressFrom, else networkPolicy.ingressFrom).
+    {{- range $i, $g := .Values.receiver.sourceBindings }}
+    - from:
+        {{- $peers := include "otel-collector.groupPeers" (dict "group" $g "root" $) | fromYamlArray }}
+        {{- if $peers }}
+        {{- toYaml $peers | nindent 8 }}
+        {{- else }}
+        - namespaceSelector: {}  # any namespace in the cluster
+        {{- end }}
+      ports:
+        {{- range $port := include "otel-collector.groupPortNumbers" $g | fromYamlArray }}
+        - protocol: TCP
+          port: {{ $port }}
+        {{- end }}
+    {{- end }}
+    {{- else }}
     # Allow OTLP/gRPC + OTLP/HTTP from agent pods inside the cluster.
     # Operators typically narrow this to specific tenant namespaces
     # by adding a namespaceSelector or podSelector here.
@@ -33,6 +51,7 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.ports.otlpContent }}
         {{- end }}
+    {{- end }}
     # The health extension is not opened by default: kubelet probes are node
     # traffic and are not governed by NetworkPolicy on most CNIs. Operators
     # whose monitoring stack scrapes the health port can opt in by naming the

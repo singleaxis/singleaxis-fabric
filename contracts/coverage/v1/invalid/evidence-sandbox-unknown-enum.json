@@ -1,0 +1,17 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "remote.sandbox",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.sandbox.observation/v1",
+    "items": [
+      {
+        "provider": "modal",
+        "call": "commands_run",
+        "output_form": "text",
+        "exit_code": 0
+      }
+    ]
+  }
+}

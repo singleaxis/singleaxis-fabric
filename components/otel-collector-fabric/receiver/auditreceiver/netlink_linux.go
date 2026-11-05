@@ -84,7 +84,7 @@ func openAuditNetlink(bufBytes int) (*auditConn, error) {
 func (c *auditConn) read(buf []byte) (int, error) {
 	n, _, flags, _, err := unix.Recvmsg(c.fd, buf, nil, 0)
 	if err == nil && flags&unix.MSG_TRUNC != 0 {
-		return 0, fmt.Errorf("truncated audit netlink datagram")
+		return 0, errNetlinkTruncated
 	}
 	return n, err
 }
@@ -179,6 +179,38 @@ func (c *auditConn) auditControlPID() (uint32, error) {
 		return 0, fmt.Errorf("short audit status")
 	}
 	return binary.NativeEndian.Uint32(data[12:16]), nil
+}
+
+// auditStatusLost reads the lost field of struct audit_status (offset 24).
+func auditStatusLost(data []byte) (uint32, error) {
+	if len(data) < 28 {
+		return 0, fmt.Errorf("short audit status")
+	}
+	return binary.NativeEndian.Uint32(data[24:28]), nil
+}
+
+// auditLostCounter reads the kernel's audit lost counter (AUDIT_GET, which
+// needs CAP_AUDIT_CONTROL) on a separate control socket with a bounded
+// receive time. The counter is kernel-wide: records the kernel dropped for
+// its backlog or rate limits, which no multicast listener received.
+func auditLostCounter() (uint32, error) {
+	fd, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_RAW|unix.SOCK_CLOEXEC, nlAudit)
+	if err != nil {
+		return 0, err
+	}
+	defer unix.Close(fd)
+	if err := unix.Bind(fd, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
+		return 0, err
+	}
+	if err := unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &unix.Timeval{Sec: 1}); err != nil {
+		return 0, err
+	}
+	c := &auditConn{fd: fd}
+	data, err := c.requestAudit(auditGet, nil, auditGet)
+	if err != nil {
+		return 0, err
+	}
+	return auditStatusLost(data)
 }
 
 // manageRules enables audit and installs always,exit rules for the enabled

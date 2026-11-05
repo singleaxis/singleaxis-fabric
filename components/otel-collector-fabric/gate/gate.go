@@ -23,6 +23,9 @@ type tokenFile struct {
 	extension string
 	path      string
 	dedicated bool
+	// group is the ingress group the token authenticates (053 §6.1); the
+	// supervisor keeps every group's bytes distinct after a rotation.
+	group string
 }
 
 // validateArgs resolves every --config source the collector would load,
@@ -54,6 +57,25 @@ func validateArgs(args []string) ([]tokenFile, error) {
 	if err := checkLiteralStructure(merged); err != nil {
 		return nil, err
 	}
+	// The sensor collector (056 §7.3.3 (f)) and a Node with ingress groups
+	// (053 §6.1) have their own rules; a configuration with neither is the
+	// legacy single binding, checked as before.
+	sensor, err := sensorProfile(merged)
+	if err != nil {
+		return nil, err
+	}
+	if sensor {
+		if err := checkSensorCollector(merged); err != nil {
+			return nil, err
+		}
+		return checkBearerTokenAuth(merged)
+	}
+	guards := groupGuards(merged)
+	if len(guards) > 0 {
+		if err := checkIngressGroups(merged, guards); err != nil {
+			return nil, err
+		}
+	}
 	if err := checkPipelines(merged); err != nil {
 		return nil, err
 	}
@@ -63,6 +85,12 @@ func validateArgs(args []string) ([]tokenFile, error) {
 	knownTokens, err := checkBearerTokenAuth(merged)
 	if err != nil {
 		return nil, err
+	}
+	if len(guards) > 0 {
+		if err := checkGroupCredentials(merged, guards, knownTokens); err != nil {
+			return nil, err
+		}
+		return knownTokens, nil
 	}
 	if err := checkDedicatedEvidenceIngress(merged, knownTokens); err != nil {
 		return nil, err
@@ -290,43 +318,54 @@ func declaredProduction(cfg map[string]any) (bool, error) {
 // an S3 backend without it).
 func checkProductionContent(cfg map[string]any, binding map[string]any) error {
 	exporters, _ := cfg["exporters"].(map[string]any)
-	extensions, _ := cfg["extensions"].(map[string]any)
-	service, _ := cfg["service"].(map[string]any)
-	active, _ := service["extensions"].([]any)
 	for _, id := range sortedKeys(exporters) {
 		if componentType(id) != "fabriccontent" {
 			continue
 		}
-		exporter, _ := exporters[id].(map[string]any)
-		own, _ := exporter["source_binding"].(map[string]any)
-		tenant, _ := own["tenant_id"].(string)
-		source, _ := own["source_id"].(string)
-		if own == nil || expandEnvRefs(tenant) != binding["tenant_id"] || expandEnvRefs(source) != binding["source_id"] {
-			return fmt.Errorf("exporter %q must carry fabricguard's source_binding in the production profile (spec 049 §7.9)", id)
-		}
-		if tenants := tenantList(exporter["allowed_tenants"]); len(tenants) != 1 || tenants[0] != binding["tenant_id"] || configTrue(exporter["allow_multiple_tenants"]) {
-			return fmt.Errorf("exporter %q must allow exactly the bound tenant in the production profile", id)
-		}
-		queue, _ := exporter["sending_queue"].(map[string]any)
-		storage, _ := queue["storage"].(string)
-		if componentType(storage) != "fabricenvelope" || (queue["enabled"] != nil && !configTrue(queue["enabled"])) {
-			return fmt.Errorf("exporter %q must queue content on a fabricenvelope storage extension in the production profile (encrypted at rest, spec 049 §7.8)", id)
-		}
-		envelope, _ := extensions[storage].(map[string]any)
-		if !onlyContains(active, storage) || envelope == nil {
-			return fmt.Errorf("extension %q (exporter %q's encrypted queue) is not configured and active", storage, id)
-		}
-		keyFile, _ := envelope["key_file"].(string)
-		if err := checkKeyFile(storage, keyFile); err != nil {
+		if err := checkProductionContentExporter(cfg, id, binding); err != nil {
 			return err
 		}
-		backend, _ := exporter["backend"].(string)
-		if backend == "file" {
-			file, _ := exporter["file"].(map[string]any)
-			key, _ := file["encryption_key_file"].(string)
-			if err := checkKeyFile(id, key); err != nil {
-				return err
-			}
+	}
+	return nil
+}
+
+// checkProductionContentExporter is checkProductionContent for one
+// fabriccontent exporter and the binding it must carry (the Node's, or its
+// ingress group's).
+func checkProductionContentExporter(cfg map[string]any, id string, binding map[string]any) error {
+	exporters, _ := cfg["exporters"].(map[string]any)
+	extensions, _ := cfg["extensions"].(map[string]any)
+	service, _ := cfg["service"].(map[string]any)
+	active, _ := service["extensions"].([]any)
+	exporter, _ := exporters[id].(map[string]any)
+	own, _ := exporter["source_binding"].(map[string]any)
+	tenant, _ := own["tenant_id"].(string)
+	source, _ := own["source_id"].(string)
+	if own == nil || expandEnvRefs(tenant) != binding["tenant_id"] || expandEnvRefs(source) != binding["source_id"] {
+		return fmt.Errorf("exporter %q must carry fabricguard's source_binding in the production profile (spec 049 §7.9)", id)
+	}
+	if tenants := tenantList(exporter["allowed_tenants"]); len(tenants) != 1 || tenants[0] != binding["tenant_id"] || configTrue(exporter["allow_multiple_tenants"]) {
+		return fmt.Errorf("exporter %q must allow exactly the bound tenant in the production profile", id)
+	}
+	queue, _ := exporter["sending_queue"].(map[string]any)
+	storage, _ := queue["storage"].(string)
+	if componentType(storage) != "fabricenvelope" || (queue["enabled"] != nil && !configTrue(queue["enabled"])) {
+		return fmt.Errorf("exporter %q must queue content on a fabricenvelope storage extension in the production profile (encrypted at rest, spec 049 §7.8)", id)
+	}
+	envelope, _ := extensions[storage].(map[string]any)
+	if !onlyContains(active, storage) || envelope == nil {
+		return fmt.Errorf("extension %q (exporter %q's encrypted queue) is not configured and active", storage, id)
+	}
+	keyFile, _ := envelope["key_file"].(string)
+	if err := checkKeyFile(storage, keyFile); err != nil {
+		return err
+	}
+	backend, _ := exporter["backend"].(string)
+	if backend == "file" {
+		file, _ := exporter["file"].(map[string]any)
+		key, _ := file["encryption_key_file"].(string)
+		if err := checkKeyFile(id, key); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -755,35 +794,48 @@ func checkContentPipeline(name string, pipeline map[string]any) error {
 // authenticates, every content receiver uses the same authenticator; when
 // any serves TLS, every content receiver serves TLS, with a minimum version
 // at least as high; when any requires client certificates (mTLS,
-// client_ca_file), every content receiver requires them too.
+// client_ca_file), every content receiver requires them too. On a Node with
+// ingress groups (053 §6.1) the telemetry receivers compared are the
+// content receiver's own group's (otlp/<group> for otlp/content-<group>):
+// each group has its own authenticator.
 func checkContentReceivers(cfg map[string]any) error {
 	receivers, _ := cfg["receivers"].(map[string]any)
 	ids := sortedKeys(receivers)
-	telemetryAuth := ""
-	telemetryTLS, telemetryMTLS, telemetryMinTLS := false, false, ""
+	grouped := len(groupGuards(cfg)) > 0
+	var telemetry []string
 	for _, id := range ids {
-		if componentType(id) != "otlp" || isContentReceiver(id) {
-			continue
-		}
-		for _, name := range []string{"grpc", "http"} {
-			if authenticator := protocolAuthenticator(receivers[id], name); authenticator != "" && telemetryAuth == "" {
-				telemetryAuth = authenticator
-			}
-			tls := protocolTLS(receivers[id], name)
-			if serverTLS(tls) {
-				telemetryTLS = true
-				if v := tlsMinVersion(tls); tlsVersionRank(v) > tlsVersionRank(telemetryMinTLS) {
-					telemetryMinTLS = v
-				}
-			}
-			if tlsString(tls, "client_ca_file") != "" {
-				telemetryMTLS = true
-			}
+		if componentType(id) == "otlp" && !isContentReceiver(id) {
+			telemetry = append(telemetry, id)
 		}
 	}
 	for _, id := range ids {
 		if !isContentReceiver(id) {
 			continue
+		}
+		peers := telemetry
+		if grouped {
+			_, name, _ := strings.Cut(id, "/")
+			group, _ := groupOf(name)
+			peers = []string{"otlp/" + group}
+		}
+		telemetryAuth := ""
+		telemetryTLS, telemetryMTLS, telemetryMinTLS := false, false, ""
+		for _, peer := range peers {
+			for _, name := range []string{"grpc", "http"} {
+				if authenticator := protocolAuthenticator(receivers[peer], name); authenticator != "" && telemetryAuth == "" {
+					telemetryAuth = authenticator
+				}
+				tls := protocolTLS(receivers[peer], name)
+				if serverTLS(tls) {
+					telemetryTLS = true
+					if v := tlsMinVersion(tls); tlsVersionRank(v) > tlsVersionRank(telemetryMinTLS) {
+						telemetryMinTLS = v
+					}
+				}
+				if tlsString(tls, "client_ca_file") != "" {
+					telemetryMTLS = true
+				}
+			}
 		}
 		receiver, _ := receivers[id].(map[string]any)
 		protocols, _ := receiver["protocols"].(map[string]any)

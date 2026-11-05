@@ -174,6 +174,26 @@ emitters).**
 python scripts/contracts/validate_capture_contracts.py
 ```
 
+## Version 1.6.0 (spec 056 milestone M2, production profile)
+
+- `run-reconstruction-v1`: an `actionLink` may carry the method `sandbox_report`
+  (rule H5), exactly with provenance `reported`, confidence `certain` and state
+  `resolved`; every other link stays `inferred`. `attribution.links` gains the basis
+  `sandbox_report`; optional `attribution.sandbox_events_unlinked` (`{count}`) and
+  `attribution.remote_sandbox_calls` (`{count, event_ids}`, at most 64). The validator
+  requires the `effects` reason `remote_sandbox` exactly when `remote_sandbox_calls` is
+  not empty. `sensor_events[]` is unchanged.
+- `fixtures/host/` (new): the spec 053 §6.2.3 host records and source markers as OTLP
+  batches with their spec 053 §6.2.7 admission, the refused batches, the id key file
+  vectors and the host-state envelope vectors ([its README](fixtures/host/README.md)).
+- `fixtures/ingress-groups/` (new): rendered Node and sensor-collector configurations
+  for fabric-gate's group rules, with the fixture token tree and an index that pins them
+  ([its README](fixtures/ingress-groups/README.md)).
+- New fixtures: the M2 spool records (`spool-record-exec-subprocess-{production,container-create}-*.json`,
+  `spool-record-remote-sandbox-{commands-run,run-code}-*.json`),
+  `valid/run-reconstruction-action-production.json` and three refusals.
+  Additive: 1.5.0 reports stay valid.
+
 ## Version 1.5.0 (spec 056, agent action reconstruction)
 
 - `run-reconstruction-v1`: `runs[]` gains three optional objects.

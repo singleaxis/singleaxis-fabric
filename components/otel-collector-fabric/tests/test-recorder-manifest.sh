@@ -56,11 +56,14 @@ fi
 
 # Local path references (`path:` keys and `replaces:` targets) may resolve
 # only to the in-repo component source trees (fabricguard, auditreceiver,
-# fabriccontent, noredirect, fabricenvelope).
+# fabriccontent, noredirect, fabricenvelope) and the host-records library
+# the audit receiver imports (../hostrecords: relative to the dist/ output,
+# because OCB copies a replaces: target that is not a component verbatim).
 actual_paths="$( { grep -E '(^|[[:space:]])path:[[:space:]]*\./' "${manifest}" | sed -E 's/^[[:space:]-]*path:[[:space:]]*//';
-                 grep -E '=>[[:space:]]*\./' "${manifest}" | sed -E 's/.*=>[[:space:]]*//'; } \
+                 grep -E '=>[[:space:]]*\.\.?/' "${manifest}" | sed -E 's/.*=>[[:space:]]*//'; } \
                | sed -E 's/[[:space:]]+$//' | sort -u )"
-expected_paths='./exporter/fabriccontentexporter
+expected_paths='../hostrecords
+./exporter/fabriccontentexporter
 ./extension/fabricenvelopeextension
 ./extension/noredirectextension
 ./processor/fabricguardprocessor

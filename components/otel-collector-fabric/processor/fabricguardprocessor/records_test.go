@@ -70,6 +70,11 @@ func TestRecordsSpanVectors(t *testing.T) {
 			Attributes, Admitted map[string]any
 			Dropped              []string
 		}
+		HostCases []struct {
+			Name                 string
+			Attributes, Admitted map[string]any
+			Dropped              []string
+		} `json:"host_cases"`
 	}
 	decodeJSON(t, vectorsDirectory+"records-span-v1.json", &vectors)
 	keys := make([]string, 0, len(recordKeyValidators))
@@ -106,6 +111,37 @@ func TestRecordsSpanVectors(t *testing.T) {
 			span := processOne(t, g, "fabric.tool_call", attrs.AsRaw())
 			if !reflect.DeepEqual(span.Attributes().AsRaw(), want) {
 				t.Fatalf("Node changed projected record: %v", span.Attributes().AsRaw())
+			}
+		})
+	}
+	// Spec 056 M2: host records on a host instance (053 §6.2.7 step 6): rule
+	// A, then the host placement. Digests are admitted here (the group permits
+	// them); step 7 is TestHostDigestsNeedBothPermissions.
+	if len(vectors.HostCases) == 0 {
+		t.Fatal("empty host records vectors")
+	}
+	for _, tc := range vectors.HostCases {
+		t.Run("host/"+tc.Name, func(t *testing.T) {
+			attrs := vectorRaw(t, tc.Attributes).(map[string]any)
+			cfg := createDefaultConfig()
+			cfg.Profile, cfg.HostDigests = profileProduction, hostDigestsPermitted
+			cfg.SourceKind = pointID(attrs["fabric.capture.point"].(string))
+			cfg.EvidenceSourceBinding = &EvidenceSourceBinding{TenantID: attrs["fabric.tenant_id"].(string), SourceID: attrs["fabric.source_id"].(string)}
+			if err := cfg.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			g := newTestGuard(t, cfg)
+			span := processOne(t, g, "fabric.sensor_event", attrs)
+			got := span.Attributes().AsRaw()
+			if got[sourceAuthenticatedKey] != true {
+				t.Fatal("host record not stamped")
+			}
+			delete(got, sourceAuthenticatedKey)
+			if want := vectorRaw(t, tc.Admitted); !reflect.DeepEqual(got, want) {
+				t.Fatalf("admitted=%v, want %v", got, want)
+			}
+			if n := g.stats.snapshot().HostKeyStripped; n != uint64(len(tc.Dropped)) {
+				t.Errorf("dropped=%d, want %d", n, len(tc.Dropped))
 			}
 		})
 	}
@@ -174,8 +210,10 @@ func TestRecordsAndLossKeyAdmission(t *testing.T) {
 			RawCapture *registryCheck `json:"capture_check"`
 			Placement  []string
 			// A conditional record placement (spec 050 rule A): exercised on a
-			// record of the first capture point it names.
-			CapturePoints []string `json:"capture_points"`
+			// record of the first capture point it names, or (spec 056 M2) of a
+			// host point for a key restricted to capture-point kind S.
+			CapturePoints     []string `json:"capture_points"`
+			CapturePointKinds []string `json:"capture_point_kinds"`
 		}
 	}
 	decodeJSON(t, coverageRegistry, &registry)
@@ -197,6 +235,8 @@ func TestRecordsAndLossKeyAdmission(t *testing.T) {
 						attrs = wireLossAttrs()
 					} else if len(row.CapturePoints) > 0 {
 						attrs["fabric.capture.point"] = row.CapturePoints[0] + "@0.9.0"
+					} else if slices.Contains(row.CapturePointKinds, "S") {
+						attrs["fabric.capture.point"] = "host.ebpf@0.9.0"
 					}
 					// Heartbeat discriminator changes the class; tested separately below.
 					if row.Key == "fabric.heartbeat.last_sequence" {

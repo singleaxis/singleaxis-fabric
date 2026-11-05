@@ -32,7 +32,9 @@ def _gate_arguments() -> list[str]:
     return shlex.split(command)[2:]
 
 
-@pytest.mark.parametrize("blocked_surface", ["fabric-gate", "host-emitter"])
+@pytest.mark.parametrize(
+    "blocked_surface", ["fabric-gate", "host-emitter", "hostrecords"]
+)
 def test_workflow_enforces_license_for_auxiliary_binaries(
     tmp_path: Path, blocked_surface: str
 ) -> None:
@@ -50,7 +52,15 @@ def test_workflow_enforces_license_for_auxiliary_binaries(
             )
     for name in ("npm-typescript.json", "npm-typescript-s3.json"):
         (raw / name).write_text(json.dumps({"fixture-npm@1": {"licenses": "MIT"}}))
-    for surface in ("fabric-node", "fabricctl", "fabric-gate", "host-emitter"):
+    go_surfaces = [
+        arguments[i + 1].split("=", 1)[0]
+        for i, arg in enumerate(arguments)
+        if arg == "--go"
+    ]
+    assert {"fabric-node", "fabricctl", "fabric-gate", "host-emitter"} <= set(
+        go_surfaces
+    )
+    for surface in go_surfaces:
         license_id = "GPL-3.0" if surface == blocked_surface else "MIT"
         (raw / f"go-{surface}.csv").write_text(
             f"example.invalid/{surface},https://example.invalid/license,{license_id}\n"
