@@ -14,6 +14,10 @@ of the AR-1 run, choosing the turn by the tool results the request feeds back:
    tool call is open (step 5); every other reply takes ``latency_ms``;
 5. T4's result: the final answer (step 7).
 
+The production script (spec 056 §6.2 "AR-1 production") inserts two turns before the
+answer: T4's result gets ``run_container`` (T8, step 8) and T8's result ``run_remote``
+(T9, step 9); T9's result gets the final answer.
+
 A request that does not feed back exactly the results the script expects gets HTTP 400,
 so a broken agent loop fails the run instead of drifting. Every request is counted with
 the tool-call ids it carried. The model never sees Fabric; it is a stand-in for a
@@ -37,12 +41,18 @@ T1, T2, T3A, T3B, T4 = (
     "call_ar1_t3b_run_shell",
     "call_ar1_t4_run_python",
 )
+T8, T9 = "call_ar1_t8_run_container", "call_ar1_t9_run_remote"
 FINAL_ANSWER = (
     "AR-1 complete: listed the data, fetched the fixture host, ran two commands and a "
     "sandboxed script."
 )
 # The run_python payload: deterministic output of at least 16 bytes (rule A1's floor).
 PYTHON_CODE = "print('sandbox result:', sum(range(10)), 'from run_python')"
+# Step 8's two commands in the container, and step 9's remote command (its output is the
+# fixture E2B service's script for it).
+CONTAINER_COMMANDS = "echo ar1 container step one; echo ar1 container step two"
+REMOTE_COMMAND = "python3 -c 'print(\"ar1 remote sandbox result 45\")'"
+REMOTE_OUTPUT = "ar1 remote sandbox result 45\n"
 
 
 @dataclass(frozen=True)
@@ -53,6 +63,7 @@ class Script:
     data_dir: str
     fixture_url: str
     sha_tool: str = "sha256sum"
+    production: bool = False
 
     @property
     def step1(self) -> str:
@@ -66,7 +77,7 @@ class Script:
     def step3b(self) -> str:
         return f"cat {self.data_dir}/c.txt | tr a-z A-Z"
 
-    def turn(self, fed: list[str]) -> tuple[dict[str, Any], str] | None:
+    def turn(self, fed: list[str]) -> tuple[dict[str, Any], str] | None:  # noqa: PLR0911
         """The assistant message and finish reason for a request whose tool messages
         carry the ``fed`` tool-call ids in order; ``None`` when the script has no turn
         for them."""
@@ -81,6 +92,16 @@ class Script:
             ), "tool_calls"
         if fed == [T1, T2, T3A, T3B]:
             return _calls(_call(T4, "run_python", {"code": PYTHON_CODE})), "tool_calls"
+        if self.production:
+            if fed == [T1, T2, T3A, T3B, T4]:
+                return _calls(
+                    _call(T8, "run_container", {"commands": CONTAINER_COMMANDS})
+                ), "tool_calls"
+            if fed == [T1, T2, T3A, T3B, T4, T8]:
+                return _calls(_call(T9, "run_remote", {"command": REMOTE_COMMAND})), "tool_calls"
+            if fed == [T1, T2, T3A, T3B, T4, T8, T9]:
+                return {"role": "assistant", "content": FINAL_ANSWER}, "stop"
+            return None
         if fed == [T1, T2, T3A, T3B, T4]:
             return {"role": "assistant", "content": FINAL_ANSWER}, "stop"
         return None

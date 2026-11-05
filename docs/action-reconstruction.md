@@ -11,6 +11,10 @@
 > [AR-1](../qualification/action-record/README.md), passes in CI in hermetic
 > mode (macOS and Linux) and in live mode on Linux with the eBPF sensor.
 > Python agents only; on the local profile every host anchor is `tentative`.
+> Milestone M2 (production profile, [below](#production-profile-m2)) is built
+> on the integration branch and unreleased: its AR-1 replay passes locally on
+> macOS and its live mode passed locally on Linux, but its CI jobs have not
+> run yet, so Fabric makes no production reconstruction claim until they do.
 
 For one run, Fabric can answer three questions: what the agent actually
 ran, which model decision caused each command, and what the operating
@@ -222,23 +226,65 @@ What this run shows: `uname -p` and `file -b` are started by Python's
 tool call explains them. `uname -a` is a background thread of the agent. Row 35 is
 the agent connecting to a host no model call reached.
 
+## Production profile (M2)
+
+Against a production-profile Node, a host sensor is a source of its own
+(spec 053 §6.1, §6.2): it reports to a dedicated ingress group with its own
+token and listener, its records carry positions, heartbeats, a manifest and
+the process start time and pid namespace, and the verifier reads them from
+the same export as the agent's records:
+
+```bash
+FABRIC_WIRE_ID_KEY=... python -m fabric.reconstruct actions export.jsonl \
+  --store-root STORE --tenant TENANT --trusted-source --profile production \
+  --host-source host.ebpf=s-<print-source-id> \
+  --sandbox-peer 127.0.0.2:PORT --endpoint-peer openai.default=ADDRESS
+```
+
+No `--host-records`, `--host-label` or `--host-coverage-declared`: the
+records name their source and host, and heartbeats prove coverage. A
+declared source with no records in the run window is a `source_gap`.
+
+What M2 adds to a run:
+
+- **Certain anchors.** Rule H1 joins an effect to its exec event on the
+  namespace-local pid, the parent pid and the start tick, so the link is
+  `process_anchor · certain`, also for an agent in its own pid namespace
+  (a pod) and for children spawned from a pool thread.
+- **Container sandboxes.** A `docker run -d` (or `kubectl run … -o
+  jsonpath={.metadata.uid}`) effect records the id the runtime printed as
+  `fabric.sandbox.created_id`; the container's events, which the sensor
+  scopes `sandbox` by their cgroup, are `part_of` that effect by rule H5
+  (`sandbox_report · certain`, provenance `reported`). Sandbox events no
+  reported id names are counted in `sandbox_events_unlinked`, never listed
+  as unexplained.
+- **Remote sandboxes.** The `remote.sandbox` hook records the E2B SDK's
+  `commands.run` and `run_code` calls as effects, attributed by A1 on
+  `remote.result`; the agent's connections to a `--sandbox-peer` are part of
+  the run. With the hook off and the provider declared, those connections
+  are listed in `remote_sandbox_calls` and bound `effects` with
+  `remote_sandbox`.
+
+[AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
+is the acceptance test: `run_ar1.py --profile production --mode replay` runs
+on macOS and Linux (the host side staged through the host-records library),
+`--mode live` on Linux with Docker on the systemd cgroup driver, the eBPF
+emitter in production mode and the agent in a container.
+
 ## What is not covered yet
 
-- **Remote sandboxes** (E2B, Modal, Daytona and similar). Host sensors
-  cannot see them, and the non-model HTTP channel and a provider dialect
-  that would decode them are planned for milestone M2 (spec 056 §4.4,
-  OD-3).
-- **Container sandboxes.** The `docker run` (or job submission) effect is
-  attributed like any subprocess, but the processes inside the container
-  are children of the container runtime, so lineage (H3) does not reach
-  them. Grouping them by a configured cgroup → sandbox label (spec 056
-  §4.4, `tentative`) is not built. The reported container id link is OD-4,
-  milestone M2.
-- **Production host ingress.** A production-profile Node refuses host
-  receivers. Host records with their own source identity, positions and
-  process start times (spec 053 §6.1, §6.2) are milestone M2. Until then,
-  host corroboration works against a local-profile Node only and every
-  anchor is `tentative`.
+- **Remote sandboxes other than E2B** (Modal, Daytona and similar). Host
+  sensors cannot see inside them; M2 observes only the pinned E2B SDK
+  (spec 056 §4.4.1, OD-3).
+- **Container sandboxes without a reported id.** On the local profile, or
+  when the create command prints no id (`docker run` without `-d`), the
+  processes inside the container are children of the container runtime, so
+  lineage (H3) does not reach them, and no H5 link exists: they are counted
+  in `sandbox_events_unlinked`. Grouping them by a configured cgroup →
+  sandbox label (spec 056 §4.4, `tentative`) is not built.
+- **Local-profile host ingress.** Against a local-profile Node, host records
+  carry no start time, so every anchor is `tentative` (H2); see
+  [production profile](#production-profile-m2) for `certain` anchors.
 - **Process exits from the host sensor.** No host sensor reports process
   exits, so the only evidence that a pid was freed is the hook's own exit
   record. A pid reused by a process the hook did not start, with the same

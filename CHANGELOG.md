@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **AR-1 production (spec 056 M2, WP6-10).** `run_ar1.py --profile
+  production` runs the acceptance scenario against a production-profile
+  Node, with step 8 (`docker run -d` under the sandboxes' slice, linked by
+  the reported container id) and step 9 (an E2B `commands.run`).
+  `--mode replay` (macOS and Linux) uses the native Node with static
+  ingress groups (agent, eBPF and a quiet second node), TLS, a token per
+  group, node-mode content and verified HTTPS delivery to an authenticated
+  sink, and stages the host side through the host-records library with the
+  test-only `hostrecords-replay` command; `--mode live` (Linux) uses the
+  Compose production Node, the eBPF emitter in production mode and the
+  agent in a container. Variants f (remote sandbox hook off), g (no
+  reported container id) and h (swapped group credentials) are new. New CI
+  jobs `production-replay`, `production-live` and `production-auditd` in
+  `action-record.yml`; the release-boundary tests now check that the wheel
+  installs no provider SDK, the chart has no privileged workload, nothing
+  shipped builds `hostrecords-replay`, and no artifact gains an evaluation
+  or enforcement component.
+
 ## [0.10.0] - 2026-11-04
 
 Fabric 0.10.0 can show what an agent actually did in a run, not only what

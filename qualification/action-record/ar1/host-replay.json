@@ -1,6 +1,30 @@
 {
   "schema": "fabric.ar1-host-replay/v1",
   "description": "What a local-profile eBPF emitter scoped to the AR-1 agent's cgroup reports for one AR-1 run, written as process trees. Hermetic mode binds it to the real run: an anchor process ('parent': 'agent') takes the pid and parent pid of the exec.subprocess effect whose full command line contains 'match'; every other process gets a synthetic pid; times are the effect's start time plus offset_us, or the fixture host's own observation of the connection. The record keys are those of components/host-emitter (emitter.go) as contracts/coverage/v1/fixtures/action-record/interface/host-local-log-records.json pins them: no process start time, so anchors are H2 (tentative). Modelled on dash, the Ubuntu /bin/sh: it forks each command of a pipeline and every command of a list but the last, which it execs in place, so step 1's sha256sum is a second exec of the anchor process (same pid and parent pid, no start time) and H2 reads the two as one exec chain (spec 056 §4.3). An event of the anchor process ('proc' of the anchor, no 'parent') is placed before the effect's observed exit (the end of its record with an exit code), as a real re-exec is. It does not model Fabric's own sender connections.",
+  "production": {
+    "description": "AR-1 production replay (spec 056 §6.2): what the production-mode eBPF emitter reports beyond the local trees, as hostrecords.Event lines staged by the library. 'effects' are tried before the local trees: step 8's docker CLI is anchored like any exec effect. 'container' is step 8's container (sandbox scope, its own pid namespace, the container id the fixture docker printed), started at the effect's start plus offset_us below the shim, never a child of the agent: H5 links it by the reported id. 'agent' adds the agent's connections to the remote sandbox provider at step 9's start (H4 with --sandbox-peer). 'quiet' is the second host group's node: a container nobody reported (sandbox_events_unlinked), with only the manifest and heartbeats otherwise.",
+    "agent_cgroup_id": 91234,
+    "sandbox_cgroup_id": 92345,
+    "quiet_cgroup_id": 93456,
+    "effects": [
+      {"step": "8", "match": "docker run ", "events": [
+        {"proc": "docker", "exe": "docker", "parent": "agent", "syscall": "execve", "offset_us": 300}
+      ]}
+    ],
+    "container": [
+      {"proc": "init", "parent": "shim", "syscall": "execve", "offset_us": 1500},
+      {"proc": "one", "parent": "init", "syscall": "execve", "offset_us": 1800},
+      {"proc": "two", "parent": "init", "syscall": "execve", "offset_us": 2100}
+    ],
+    "agent": [
+      {"syscall": "connect", "peer": "sandbox", "at": "remote_start", "offset_us": 500},
+      {"syscall": "connect", "peer": "sandbox", "at": "remote_start", "offset_us": 3000}
+    ],
+    "quiet": [
+      {"proc": "init", "parent": "shim", "syscall": "execve", "offset_us": 2000},
+      {"proc": "job", "parent": "init", "syscall": "execve", "offset_us": 2600}
+    ]
+  },
   "audit_source": "ebpf",
   "cgroup_id": 91234,
   "agent": [

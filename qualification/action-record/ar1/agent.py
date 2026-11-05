@@ -18,6 +18,19 @@ The loop calls the model until it answers, running each tool call it returns:
   (the harness probes it), else a ``python -I`` runner that starts the code in its own
   isolated child (step 4).
 
+Under ``AR1_PROFILE=production`` (spec 056 §6.2 "AR-1 production") two more tools exist,
+and step 4's bwrap also gets ``--unshare-pid --as-pid-1`` (the inner Python is pid 1 of a
+nested pid namespace; the ``python -I`` fallback stays possible here, the harness refuses
+it live):
+
+- ``run_container(commands)``: ``docker run -d --cgroup-parent fabric-sandboxes.slice
+  IMAGE sh -c COMMANDS`` with ``capture_output=True``, returning what docker printed (the
+  container id); ``AR1_CONTAINER_DETACH=0`` drops ``-d`` (variant g: the output, not the
+  id);
+- ``run_remote(command)``: the pinned ``e2b`` SDK's ``Sandbox.commands.run`` against the
+  provider ``E2B_API_URL`` names (the fixture service), with ``AR1_REMOTE_SECRET`` in the
+  command's ``envs`` (a privacy canary).
+
 Parallel tool calls of one response run concurrently on threads (step 3). With the
 fourth model request a background thread, not a tool, runs ``uname -a`` while that
 request is in flight (step 5; the fixture model holds that reply). Before the last
@@ -95,14 +108,42 @@ RUNNER = (
     "sys.stdout.write(r.stdout); sys.stderr.write(r.stderr); raise SystemExit(r.returncode)\n"
 )
 BACKGROUND_TURN = 4
-MAX_TURNS = 8
+MAX_TURNS = 10
+PRODUCTION_TOOLS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "run_container",
+            "description": "Run shell commands in a new container and return its id.",
+            "parameters": {
+                "type": "object",
+                "properties": {"commands": {"type": "string"}},
+                "required": ["commands"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_remote",
+            "description": "Run a command in a remote sandbox.",
+            "parameters": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"],
+            },
+        },
+    },
+]
+# The sandbox containers' cgroup parent (spec 056 §6.2: the operator's sandbox slice).
+SANDBOX_SLICE = "fabric-sandboxes.slice"
 
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
-def _bwrap_argv(code: str) -> list[str]:
+def _bwrap_argv(code: str, *, unshare_pid: bool = False) -> list[str]:
     return [
         "bwrap",
         "--ro-bind",
@@ -112,6 +153,10 @@ def _bwrap_argv(code: str) -> list[str]:
         "/dev",
         "--tmpfs",
         "/tmp",
+        # --as-pid-1: the code itself is pid 1 of the nested namespace. Without it bwrap's
+        # pid-1 reaper forks the code without an exec, which no sensor sees, so H3 could
+        # not chain the inner process to the launcher.
+        *(["--unshare-pid", "--as-pid-1"] if unshare_pid else []),
         "--unshare-net",
         "--die-with-parent",
         sys.executable,
@@ -135,6 +180,8 @@ class Agent:
         # The harness probes bwrap and names the sandbox: a probe here would be one more
         # subprocess in the run, which no tool call explains.
         self.sandbox = os.environ.get("AR1_SANDBOX", "python")
+        self.production = os.environ.get("AR1_PROFILE") == "production"
+        self.tools = TOOLS + PRODUCTION_TOOLS if self.production else TOOLS
         self.results: list[dict[str, Any]] = []
         self.background: dict[str, Any] = {}
         self.ping = ""
@@ -159,11 +206,31 @@ class Agent:
 
     def run_python(self, code: str) -> subprocess.CompletedProcess[str]:
         argv = (
-            _bwrap_argv(code)
+            _bwrap_argv(code, unshare_pid=self.production)
             if self.sandbox == "bwrap"
             else [sys.executable, "-I", "-S", "-c", RUNNER, code]
         )
         return subprocess.run(argv, capture_output=True, text=True, timeout=60)
+
+    def run_container(self, commands: str) -> subprocess.CompletedProcess[str]:
+        detach = ["-d"] if os.environ.get("AR1_CONTAINER_DETACH", "1") == "1" else []
+        image = os.environ.get("AR1_CONTAINER_IMAGE", "busybox")
+        argv = ["docker", "run", *detach, "--cgroup-parent", SANDBOX_SLICE]
+        return subprocess.run(
+            [*argv, image, "sh", "-c", commands], capture_output=True, text=True, timeout=120
+        )
+
+    def run_remote(self, command: str) -> subprocess.CompletedProcess[str]:
+        from e2b import Sandbox  # noqa: PLC0415 - only the production profile needs it
+
+        sandbox = Sandbox.create()
+        try:
+            done = sandbox.commands.run(
+                command, envs={"AR1_REMOTE_SECRET": os.environ.get("AR1_REMOTE_SECRET", "")}
+            )
+        finally:
+            sandbox.kill()
+        return subprocess.CompletedProcess(["run_remote"], done.exit_code, done.stdout, done.stderr)
 
     def call_tool(self, call: Any) -> dict[str, Any]:
         arguments = json.loads(call.function.arguments or "{}")
@@ -174,6 +241,10 @@ class Agent:
             done = self.fetch_url(str(arguments["url"]))
         elif name == "run_python":
             done = self.run_python(str(arguments["code"]))
+        elif name == "run_container" and self.production:
+            done = self.run_container(str(arguments["commands"]))
+        elif name == "run_remote" and self.production:
+            done = self.run_remote(str(arguments["command"]))
         else:
             raise SystemExit(f"unknown tool {name!r}")
         text = done.stdout if done.returncode == 0 else f"exit {done.returncode}\n{done.stderr}"
@@ -219,7 +290,7 @@ class Agent:
             response = self.client.chat.completions.create(
                 model="ar1-fixture-model",
                 messages=messages,  # type: ignore[arg-type]
-                tools=TOOLS,  # type: ignore[arg-type]
+                tools=self.tools,  # type: ignore[arg-type]
             )
             message = response.choices[0].message
             if not message.tool_calls:
