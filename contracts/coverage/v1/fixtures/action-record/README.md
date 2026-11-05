@@ -314,7 +314,7 @@ inside the run window is **unexplained**.
 |---|---|---|
 | `decisions` | never | the exchange verdict's own reasons (`exchange_reasons`) |
 | `actions` | no tool call in the run | `tool_result_missing` (a call with no later result, not declared outstanding), `exchange_gap` |
-| `effects` | no effect channel `active` (reason `channel_disabled`) | `sequence_gap`, `unattributed_effect`, `ambiguous_attribution` |
+| `effects` | no effect channel `active` (reason `channel_disabled`) | `sequence_gap`, `unattributed_effect`, `ambiguous_attribution`, `remote_sandbox`, `channel_disabled` (M2: `exec.subprocess` not active while another channel is, and a tool call it would have observed has no effect) |
 | `corroboration` | no host source (reason `not_configured`) | `source_gap`, `anchor_missing`, `unexplained_host_event` |
 
 A chain is `complete` without reasons; `partial` and `unverified` always

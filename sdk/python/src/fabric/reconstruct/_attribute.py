@@ -410,6 +410,10 @@ def _effect_channels_active(inp: Mapping[str, Any]) -> bool:
     return any(state == "active" for state in (inp.get("effect_channels") or {}).values())
 
 
+def _exec_active(inp: Mapping[str, Any]) -> bool:
+    return (inp.get("effect_channels") or {}).get(EXEC_POINT) == "active"
+
+
 def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain reason
     inp: Mapping[str, Any], call_id: CallId = _same, host: HostJoin | None = None
 ) -> Attribution:
@@ -475,8 +479,12 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
 
     # §4.2 notes: a tool call with no attributed effect is not a gap; it is counted by why.
     # M2 (§4.4.1): a call in whose window the agent called a declared sandbox provider
-    # while remote.sandbox was not active had its effect on a disabled channel.
+    # while remote.sandbox was not active had its effect on a disabled channel. Any other
+    # call's effect is a local one, on exec.subprocess: with that hook off the call is
+    # channel_disabled even while remote.sandbox is active (§6.2 variant (c)).
     active = _effect_channels_active(inp)
+    exec_active = _exec_active(inp)
+    exec_disabled_calls = 0
     in_process = set(inp.get("in_process_tools", ()))
     not_observed_counts = dict.fromkeys(_NOT_OBSERVED_REASONS, 0)
     margin = max(int(inp["agent"].get("clock_uncertainty_ns", 0) or 0), 0)
@@ -488,8 +496,11 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
             call.open_ns - margin - other <= at < call.close_ns + margin + other
             for _, at, other in remote_calls
         )
-        if not active or sandboxed:
+        if sandboxed:
             reason = "channel_disabled"
+        elif not exec_active:
+            reason = "channel_disabled"
+            exec_disabled_calls += 1
         elif call.name is not None and call.name in in_process:
             reason = "no_effect_channel"
         else:
@@ -508,6 +519,9 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
                     *(["unattributed_effect"] if unattributed else []),
                     *(["ambiguous_attribution"] if ambiguous else []),
                     *(["remote_sandbox"] if remote_calls else []),
+                    # Only remote.sandbox is active: a call it did not explain had its
+                    # effect on the disabled exec.subprocess channel.
+                    *(["channel_disabled"] if exec_disabled_calls else []),
                 ]
             )
             if active

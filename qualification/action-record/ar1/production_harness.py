@@ -720,14 +720,14 @@ class ProductionHarness:
         return []
 
     def variant_c(self) -> None:
-        """The hooks off (exec and remote sandbox, so no effect channel is active):
-        ``effects`` not_observed(channel_disabled), every tool call
-        ``effect_not_observed(channel_disabled)``. With only the exec hook off the remote
-        channel stays active and T1 to T6 would be ``none_in_window`` (§4.2)."""
+        """The exec hook off, remote sandbox on: every local tool call (T1 to T6)
+        ``effect_not_observed(channel_disabled)``; T7's remote effect still attributed, so
+        ``effects`` is partial(channel_disabled), not not_observed: one effect channel
+        stays enabled (§4.5)."""
         checks = self._new("c")
-        run = self.runs["c"] = self.agent_run("c", exec_hook=False, remote_sandbox=False)
+        run = self.runs["c"] = self.agent_run("c", exec_hook=False)
         checks.equal("agent exit code", run.agent.returncode, 0)
-        checks.equal("no effect records", run.steps, {})
+        checks.equal("only the remote effect recorded", sorted(run.steps.values()), ["9"])
         checks.check(
             "manifest: exec.subprocess disabled(hook_disabled)",
             "disabled:hook_disabled" in expect.manifest_reason(run.rows, "exec.subprocess"),
@@ -739,14 +739,14 @@ class ProductionHarness:
             return
         view = expect.only_view(document)
         checks.equal(
-            "effects not_observed(channel_disabled)",
+            "effects partial(channel_disabled)",
             view["chains"]["effects"],
-            {"verdict": "not_observed", "reasons": ["channel_disabled"]},
+            {"verdict": "partial", "reasons": ["channel_disabled"]},
         )
         checks.equal(
-            "every tool call effect_not_observed(channel_disabled)",
+            "every local tool call effect_not_observed(channel_disabled)",
             [(c["call"], c["reason"]) for c in view["tool_calls_without_effect"]],
-            [(f"T{n}", "channel_disabled") for n in range(1, 8)],
+            [(f"T{n}", "channel_disabled") for n in range(1, 7)],
         )
         for name in ("decisions", "actions"):
             checks.equal(f"{name} complete", view["chains"][name], {"verdict": "complete"})

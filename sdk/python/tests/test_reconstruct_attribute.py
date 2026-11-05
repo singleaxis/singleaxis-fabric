@@ -491,3 +491,30 @@ def test_action_rows_render_a_fixture_run() -> None:
     assert view["complete"] is False
     effects = [row for row in view["rows"] if row["kind"] == "effect"]
     assert all("rule" in row for row in effects)
+
+
+def test_exec_hook_off_with_remote_sandbox_on_is_channel_disabled() -> None:
+    # §6.2 variant (c) with only the exec hook off: the remote channel explains T9, but
+    # every local call's effect channel is disabled, never "looked, saw nothing".
+    fixture = load(ACTION / "rules" / "ar1-run-production.json")
+    inp = dict(fixture["input"])
+    inp["effect_channels"] = {"exec.subprocess": "disabled", "remote.sandbox": "active"}
+    inp["effects"] = [e for e in inp["effects"] if "capture_point" in e]
+    inp["host_sources"] = []
+    result = attribute(inp, call_id)
+    reasons = set(result.trace["tool_calls"].values())
+    assert reasons == {"attributed", "channel_disabled"}
+    assert list(result.trace["tool_calls"].values()).count("attributed") == 1
+    not_observed = result.attribution["effects_not_observed"]
+    assert not_observed == {
+        "channel_disabled": len(result.calls) - 1,
+        "no_effect_channel": 0,
+        "none_in_window": 0,
+    }
+    assert result.chains["effects"] == {"verdict": "partial", "reasons": ["channel_disabled"]}
+    # With both channels off the M1 verdict stands.
+    inp["effect_channels"] = {"exec.subprocess": "disabled", "remote.sandbox": "disabled"}
+    inp["effects"] = []
+    off = attribute(inp, call_id)
+    assert off.chains["effects"] == {"verdict": "not_observed", "reasons": ["channel_disabled"]}
+    assert set(off.trace["tool_calls"].values()) == {"channel_disabled"}

@@ -159,7 +159,7 @@ sdk/python/.venv/bin/python qualification/action-record/run_ar1.py \
 | base | steps 1 to 9 | Chains as in M1. Steps 1-4 and 8: A1 (step 2 may be A2); step 9: A1 on `remote.result`. Every exec effect `corroborated_by` its exec event: `process_anchor · certain` (H1) where the hook recorded `fabric.process.start_ns` and `pid_ns` (Linux), else `tentative` (H2). Step 8's container events: one `sandbox` row, `sandbox_report · certain`, `part_of` the effect with provenance `reported` in the report. The agent's model and provider connections: H4 `part_of` the run. Step 6: the only unexplained event. `sandbox_events_unlinked`: the quiet node's events (0 live). Neither host source in `sources[]`. |
 | a | base export without the host sources' spans, nothing declared | `corroboration` not_observed(`not_configured`); other chains unchanged |
 | b | step 1's `completed` exec record removed from the agent's encrypted spool before delivery (opened and resealed with the spool key) | as M1 (b) |
-| c | both hooks off | `effects` not_observed(`channel_disabled`); T1 to T7 `effect_not_observed(channel_disabled)` |
+| c | exec hook off, remote sandbox on | `effects` partial(`channel_disabled`): `remote.sandbox` stays enabled, so the chain is judged (spec 056 §4.5), not not_observed as with the M1 single channel; T1 to T6 `effect_not_observed(channel_disabled)`; T7's remote effect attributed |
 | d | subprocess output `metadata_only` | step 3 A3 `ambiguous`; steps 1, 2, 4 and 8 A2; step 9 stays A1 (`remote.result` is content), so `output_match` is `applied` |
 | e | capture off, then on | same answers and exit codes (step 8's output digest is not compared: each run prints a new container id); the latency gate |
 | f | `FABRIC_WIRE_REMOTE_SANDBOX` unset, `FABRIC_WIRE_SANDBOX_HOSTS` set | manifest `remote.sandbox` disabled(`remote_sandbox`); `effects` partial(`unattributed_effect`, `remote_sandbox`); T7 `effect_not_observed(channel_disabled)`; the provider connections in `remote_sandbox_calls`, not unexplained |
@@ -180,10 +180,12 @@ unless step 4 ran in bwrap.
 - **No `--host-label` for production records.** §6.2 lists it among the
   verifier's flags; the CLI takes it only with `--host-records` (local
   records), and production records name their host themselves.
-- **Variant (c) turns both hooks off.** With only the exec hook off, the
-  remote sandbox channel stays active, and the verifier then reads T1 to T6
-  as `none_in_window`, not `channel_disabled` (§4.2: a disabled channel is
-  declared only when no effect channel is active).
+- **Variant (c) gives `effects` partial(`channel_disabled`).** Only the
+  exec hook is off; `remote.sandbox` stays enabled and explains T7, so the
+  chain is judged (§4.5: `not_observed` only with no effect channel
+  enabled) and names the disabled channel. T1 to T6 are
+  `channel_disabled`: each tool call is judged against the channel that
+  would carry its effect.
 - **Variant (h) also reports `anchor_missing`.** §6.2 names `source_gap`
   only. No record of the declared source names the agent's host, so the
   effects there have nothing to anchor them; the verifier says so.
