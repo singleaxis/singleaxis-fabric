@@ -283,8 +283,10 @@ What M2 adds to a run:
 [AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
 is the acceptance test: `run_ar1.py --profile production --mode replay` runs
 on macOS and Linux (the host side staged through the host-records library),
-`--mode live` on Linux with Docker on the systemd cgroup driver, the eBPF
-emitter in production mode and the agent in a container.
+`--mode live` on Linux with Docker on the systemd cgroup driver (the
+harness's choice; the emitter also works with the `cgroupfs` driver, see
+[production setup](production-setup.md)), the eBPF emitter in production
+mode and the agent in a container.
 
 ## What is not covered yet
 

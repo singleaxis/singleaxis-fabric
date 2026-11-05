@@ -59,8 +59,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   clear labels) and the journal checks the tool spans by the `lbl-` labels
   that policy emits, naming them locally for the viewer; its honesty
   caveats are unchanged.
+- **A Node asked for content that it cannot store refuses to start.**
+  `FABRIC_CONTENT_BACKEND=file` with ingress groups (`make up-prod-groups`,
+  whose content path is S3 only) ran the Node telemetry-only without a word
+  when preflight was bypassed. The Compose production overlay now passes
+  `FABRIC_CONTENT_BACKEND` to the Node, and `fabric-gate` refuses a
+  configuration with no content exporter of that backend.
+- **Preflight passes on Docker Desktop.** `preflight-prod.sh` required each
+  secret to be readable by group 65532, which needs `sudo` on macOS and does
+  not apply there: Docker Desktop maps bind-mounted ownership to the
+  container user. It now detects Docker Desktop (`docker info`) and checks
+  that each secret is readable by you and closed to others;
+  `FABRIC_BIND_MOUNT_OWNERSHIP=mapped|native` overrides the detection.
+
+### Added
+
+- **[Production setup](docs/production-setup.md).** One copy-pasteable
+  recipe for an agent, a production Node with ingress groups and S3
+  content, and the eBPF emitter in production mode (`docker run` flags,
+  capabilities, mounts, `--pid=host`, `--cgroupns=host` and the cgroup
+  scope on either Docker cgroup driver), the agent's
+  `FABRIC_WIRE_HTTP_HOSTS` format and `network.*` policy roles, which
+  addresses `--endpoint-peer` and `--known-peer` need and why, a
+  destination behind a private CA, and what differs on Docker Desktop.
+  Linked from the README, the docs index, the quickstart and host sensors.
+- **`FABRIC_COMPOSE_EXTRA`** (`deploy/compose`): your own Compose override
+  files, appended last by `make up-prod` and `make up-prod-groups`, so a
+  site change such as trusting a private CA for the destination never edits
+  a shipped file.
+
 ### Changed
 
+- **AR-1 live's `systemd` requirement is the harness's, not the
+  emitter's.** The harness creates systemd slice units; the emitter also
+  scopes agents on the `cgroupfs` driver (`--cgroup-parent=/fabric-agents`),
+  as the v0.11.0 UAT ran. The harness message and the docs say so.
 - **The `actions` view lists non-model HTTP requests.** Requests the
   `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
   not attributed)`, and the footer counts them, so a request a tool made

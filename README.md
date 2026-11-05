@@ -14,6 +14,7 @@ verifiable record to storage you own.
 [Quickstart](docs/quickstart.md) ·
 [Architecture](docs/architecture.md) ·
 [Deployment](docs/deployment.md) ·
+[Production setup](docs/production-setup.md) ·
 [Privacy and security](docs/privacy-and-security.md) ·
 [Specs](specs/README.md) ·
 [All docs](docs/README.md)
@@ -76,7 +77,8 @@ is [spec 056](specs/056-agent-action-reconstruction.md).
   sources of their own, so a command can be tied to its exec event with
   certainty in production, and opt-in hooks also record containers the
   agent starts, E2B remote-sandbox commands and non-model HTTP calls
-  ([host sensors](docs/host-sensors.md)).
+  ([host sensors](docs/host-sensors.md); agent, Node and emitter end to end
+  in [production setup](docs/production-setup.md)).
 - **Fabric Node.** An OpenTelemetry Collector distribution with a
   default-deny export allowlist, source authentication, a configuration gate
   that refuses unsafe setups, and delivery to a file directory or S3 with

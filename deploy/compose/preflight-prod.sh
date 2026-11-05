@@ -110,6 +110,26 @@ case "${NODE_GID}" in
   ''|*[!0-9]*) bad "FABRIC_NODE_GID must be a numeric gid"; NODE_GID=65532 ;;
 esac
 
+# Docker Desktop (macOS, Windows, Docker Desktop for Linux) shares host files
+# into its VM with their ownership mapped to the container's user: the image's
+# uid reads any bind-mounted file the operator can read, and a host group
+# 65532 is neither needed nor possible without sudo. FABRIC_BIND_MOUNT_OWNERSHIP
+# =mapped|native overrides the detection (`docker info` names Docker Desktop).
+BIND_MOUNT_OWNERSHIP="$(envget FABRIC_BIND_MOUNT_OWNERSHIP)"
+case "${BIND_MOUNT_OWNERSHIP}" in
+  '')
+    if docker info --format '{{.OperatingSystem}}' 2>/dev/null | grep -q '^Docker Desktop'; then
+      BIND_MOUNT_OWNERSHIP=mapped
+    else
+      BIND_MOUNT_OWNERSHIP=native
+    fi ;;
+  mapped|native) ;;
+  *) bad "FABRIC_BIND_MOUNT_OWNERSHIP must be mapped (Docker Desktop) or native"; BIND_MOUNT_OWNERSHIP=native ;;
+esac
+if [ "${BIND_MOUNT_OWNERSHIP}" = mapped ]; then
+  ok "bind mounts: Docker Desktop maps file ownership to the container user; files need only be readable by you and closed to others"
+fi
+
 # file_meta PATH -> "uid gid mode" (GNU stat, then BSD stat).
 file_meta() {
   stat -c '%u %g %a' "$1" 2>/dev/null || stat -f '%u %g %Lp' "$1" 2>/dev/null
@@ -117,6 +137,10 @@ file_meta() {
 
 # node_access PATH BIT -> 0 when the node user gets BIT (4=r, 1=x) on PATH.
 node_access() {
+  if [ "${BIND_MOUNT_OWNERSHIP}" = mapped ]; then  # what the operator can read
+    if [ "$2" = 1 ]; then [ -x "$1" ]; else [ -r "$1" ]; fi
+    return
+  fi
   meta=$(file_meta "$1") || return 1
   # shellcheck disable=SC2086 # split "uid gid mode" into fields
   set -- ${meta} "$2"
@@ -140,6 +164,9 @@ other_bits() {
 # group reads it (so the container can use it); nobody else can.
 OPERATOR_UID="$(id -u 2>/dev/null || printf 'OPERATOR')"
 SECRET_FIX="chown ${OPERATOR_UID}:${NODE_GID} + chmod 0440 (operator-owned, group ${NODE_GID}, no access for others)"
+if [ "${BIND_MOUNT_OWNERSHIP}" = mapped ]; then
+  SECRET_FIX="chmod 0400 (yours; Docker Desktop maps ownership to the container user)"
+fi
 
 # check_node_secret LABEL PATH: readable by the node user, closed to others.
 # LABEL is fixed text naming the file; PATH is never printed.

@@ -70,6 +70,9 @@ func validateArgs(args []string) ([]tokenFile, error) {
 		}
 		return checkBearerTokenAuth(merged)
 	}
+	if err := checkRequestedContent(merged); err != nil {
+		return nil, err
+	}
 	guards := groupGuards(merged)
 	if len(guards) > 0 {
 		if err := checkIngressGroups(merged, guards); err != nil {
@@ -96,6 +99,36 @@ func validateArgs(args []string) ([]tokenFile, error) {
 		return nil, err
 	}
 	return knownTokens, nil
+}
+
+// checkRequestedContent refuses a Node whose operator asked for the content
+// path (FABRIC_CONTENT_BACKEND, which the Compose overlays pass into the
+// container) when the merged configuration has no fabriccontent exporter with
+// that backend: the Node would otherwise run telemetry only, silently. The
+// ingress-group profile has an S3 content exporter only, so
+// FABRIC_CONTENT_BACKEND=file with ingress groups is refused here even when
+// preflight was bypassed. Unset (the Helm chart, a telemetry-only Node) checks
+// nothing.
+func checkRequestedContent(cfg map[string]any) error {
+	want := strings.TrimSpace(os.Getenv("FABRIC_CONTENT_BACKEND"))
+	if want == "" {
+		return nil
+	}
+	if want != "s3" && want != "file" {
+		return fmt.Errorf("FABRIC_CONTENT_BACKEND must be s3 or file, or unset for a telemetry-only Node")
+	}
+	exporters, _ := cfg["exporters"].(map[string]any)
+	for _, id := range sortedKeys(exporters) {
+		if componentType(id) != "fabriccontent" {
+			continue
+		}
+		exporter, _ := exporters[id].(map[string]any)
+		backend, _ := exporter["backend"].(string)
+		if expandEnvRefs(backend) == want {
+			return nil
+		}
+	}
+	return fmt.Errorf("FABRIC_CONTENT_BACKEND=%s but no fabriccontent exporter with backend %s is configured, so the Node would record telemetry only; ingress groups support the s3 backend only (docker-compose.host-ingress-content.yml)", want, want)
 }
 
 // A bound source is supported only behind one authenticated OTLP ingress.

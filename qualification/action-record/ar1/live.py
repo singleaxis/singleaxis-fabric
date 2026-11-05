@@ -3,6 +3,9 @@
 """AR-1 production, live (spec 056 §6.2 "AR-1 production"): Linux only, with Docker on
 the ``systemd`` cgroup driver (cgroup v2), passwordless ``sudo`` and the eBPF emitter
 built for this kernel (``go generate ./... && go build`` in ``components/host-emitter``).
+The ``systemd`` driver is this harness's setup (its slices are systemd units), not the
+emitter's requirement: on the ``cgroupfs`` driver a ``--cgroup-parent=/fabric-agents``
+directory scopes the agent as well (docs/production-setup.md).
 
 Per variant:
 
@@ -114,7 +117,8 @@ def preflight(emitter: Path) -> None:
     driver = _run("docker", "info", "--format", "{{.CgroupDriver}}").stdout.strip()
     if driver != "systemd":
         raise LiveError(
-            f"AR-1 production live needs Docker's systemd cgroup driver, not {driver!r}"
+            f"the AR-1 live harness sets up systemd slices and needs Docker's systemd "
+            f"cgroup driver, not {driver!r} (the emitter itself also works on cgroupfs)"
         )
     if _sudo("true", check=False).returncode != 0:
         raise LiveError("AR-1 production live needs passwordless sudo")

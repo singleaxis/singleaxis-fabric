@@ -275,6 +275,57 @@ def test_preflight_accepts_group_readable_token_for_the_node_group(
     assert "ingress token file readable by container user" in result.stdout
 
 
+def test_preflight_accepts_an_operator_only_token_on_docker_desktop(
+    tmp_path: Path,
+) -> None:
+    """Docker Desktop maps bind-mounted ownership to the container user (v0.11.1 UAT):
+    the image's 65532 reads an operator-owned 0400 file, and a host group 65532 needs
+    sudo on macOS. Detected from ``docker info``, or forced with
+    FABRIC_BIND_MOUNT_OWNERSHIP; native ownership keeps the 65532 rule."""
+    if os.getuid() == 65532:  # pragma: no cover - only on a host running as 65532
+        pytest.skip("test user is the image user")
+    token_path = _token(tmp_path, 0o400)
+    forced = _preflight(tmp_path, token_path, 0o400, FABRIC_NODE_UID="", FABRIC_NODE_GID="",
+                        FABRIC_BIND_MOUNT_OWNERSHIP="mapped")  # fmt: skip
+    assert forced.returncode == 0, forced.stdout
+    assert "Docker Desktop maps file ownership to the container user" in forced.stdout
+    native = _preflight(tmp_path, token_path, 0o400, FABRIC_NODE_UID="", FABRIC_NODE_GID="",
+                        FABRIC_BIND_MOUNT_OWNERSHIP="native")  # fmt: skip
+    assert (
+        native.returncode == 1 and "not readable by the container user" in native.stdout
+    )
+    world = _preflight(
+        tmp_path, token_path, 0o444, FABRIC_BIND_MOUNT_OWNERSHIP="mapped"
+    )
+    assert world.returncode == 1 and "accessible to every host user" in world.stdout
+    bogus = _preflight(tmp_path, token_path, 0o400, FABRIC_BIND_MOUNT_OWNERSHIP="maybe")
+    assert (
+        bogus.returncode == 1 and "FABRIC_BIND_MOUNT_OWNERSHIP must be" in bogus.stdout
+    )
+    # Detection: `docker info` naming Docker Desktop selects the mapped rule.
+    env = _preflight_environment(tmp_path, token_path)
+    env.pop("FABRIC_NODE_UID")
+    env.pop("FABRIC_NODE_GID")
+    _write_executable(
+        tmp_path / "bin" / "docker",
+        """#!/bin/sh
+case "$1 $2" in
+  "version --format") printf '28.3.3\\n' ;;
+  "compose version") printf '2.24.0\\n' ;;
+  "info --format") printf 'Docker Desktop\\n' ;;
+  *) exit 1 ;;
+esac
+""",
+    )
+    token_path.chmod(0o400)
+    detected = subprocess.run(
+        ["sh", str(PREFLIGHT)], cwd=tmp_path, env=env, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, timeout=10,
+    )  # fmt: skip
+    assert detected.returncode == 0, detected.stdout
+    assert "Docker Desktop maps file ownership" in detected.stdout
+
+
 def test_preflight_rejects_world_readable_token(tmp_path: Path) -> None:
     token_path = _token(tmp_path, 0o600)
     result = _preflight(tmp_path, token_path, 0o644)

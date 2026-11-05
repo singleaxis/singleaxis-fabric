@@ -61,6 +61,12 @@ services:
       # travels (s-<32 hex> under the default pseudonymous labels).
       FABRIC_TENANT_ID: ${FABRIC_TENANT_ID:?set FABRIC_TENANT_ID in .env to the tenant id your agents send}
       FABRIC_SOURCE_ID: ${FABRIC_SOURCE_ID:?set FABRIC_SOURCE_ID in .env to the wire source id your agents send (spec 049 §7.9)}
+      # The content backend the operator asked for (s3, file, or empty for a
+      # telemetry-only Node). fabric-gate refuses to start when no content
+      # exporter of that backend is configured (FABRIC_CONTENT_BACKEND=file
+      # with ingress groups, or a content overlay left out), so the Node never
+      # runs telemetry-only by surprise.
+      FABRIC_CONTENT_BACKEND: ${FABRIC_CONTENT_BACKEND:-}
       # Egress private-CA bundle, only consulted if the ca_file line in
       # collector-production.yaml is uncommented. Must live under
       # /run/fabric-node/tls (the mounted FABRIC_INGRESS_TLS_DIR).
