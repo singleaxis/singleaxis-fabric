@@ -22,6 +22,10 @@ const (
 	envelopeSchema = "fabric.host-records/v1"
 	nonceBytes     = 12
 	stateKeyBytes  = 32
+	// maxSealBytes bounds one sealed state object, far above any staged batch
+	// and small enough that the envelope's length cannot overflow an int,
+	// even on a 32-bit build.
+	maxSealBytes = 1 << 30
 )
 
 // The state kinds a host sensor seals.
@@ -36,6 +40,7 @@ var (
 	errStateKey   = errors.New("hostrecords: the state key must be 32 bytes")
 	errStateKind  = errors.New("hostrecords: unknown state kind")
 	errStateOpen  = errors.New("hostrecords: sealed state failed authentication")
+	errStateSize  = errors.New("hostrecords: state object too large to seal")
 	errRandomness = errors.New("hostrecords: no randomness")
 )
 
@@ -82,6 +87,9 @@ func Seal(key []byte, kind string, plaintext []byte) ([]byte, error) {
 func sealWithNonce(key []byte, kind string, nonce, plaintext []byte) ([]byte, error) {
 	if !stateKind(kind) {
 		return nil, errStateKind
+	}
+	if len(plaintext) > maxSealBytes {
+		return nil, errStateSize
 	}
 	aead, err := newAEAD(key)
 	if err != nil {

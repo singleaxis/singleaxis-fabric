@@ -77,10 +77,14 @@ class Representation(StrEnum):
     TRUNCATED = "truncated"
 
 
+# One encoder for every call: ``json.dumps`` with options builds a new one each time.
+_CANONICAL = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
 def canonical_json(value: Any) -> str:
     """Spec-029 canonical JSON: UTF-8, sorted keys, no insignificant whitespace."""
 
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    return _CANONICAL.encode(value)
 
 
 def sha256_prefixed(data: bytes) -> str:

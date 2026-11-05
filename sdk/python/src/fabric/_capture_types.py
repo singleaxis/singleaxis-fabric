@@ -18,7 +18,7 @@ from __future__ import annotations
 import functools
 import os
 import re
-import uuid
+import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -438,9 +438,49 @@ _LEGACY_KINDS = frozenset({"periodic", "run_start", "run_end", "final"})
 _RUN_MARKERS = frozenset({"run_start", "run_end"})
 
 
+# Minted ids come from a per-thread pool of CSPRNG bytes: one ``os.urandom`` per
+# ``_ID_POOL`` ids instead of one per id. ``getrandom`` releases the GIL, and on a
+# recording caller's thread every release lets the capture worker run first (053 §4.4).
+_ID_POOL = 256
+_UUID4_KEEP = ~((0xF000 << 64) | (0xC000 << 48)) & ((1 << 128) - 1)
+_UUID4_SET = (0x4000 << 64) | (0x8000 << 48)
+
+
+class _IdBytes(threading.local):
+    data = b""
+    offset = 0
+
+
+_ID_BYTES = _IdBytes()
+
+
+def mint_uuid4() -> str:
+    """A dashed uuid4 (122 CSPRNG bits, as :func:`uuid.uuid4`) from the pool."""
+    pool = _ID_BYTES
+    data, offset = pool.data, pool.offset
+    if offset >= len(data):
+        data, offset = os.urandom(16 * _ID_POOL), 0
+        pool.data = data
+    pool.offset = offset + 16
+    # uuid.UUID(bytes=..., version=4) without the object: the version nibble set to 4
+    # and the variant bits to 10.
+    value = int.from_bytes(data[offset : offset + 16], "big") & _UUID4_KEEP | _UUID4_SET
+    text = f"{value:032x}"
+    return f"{text[:8]}-{text[8:12]}-{text[12:16]}-{text[16:20]}-{text[20:]}"
+
+
+def _drop_id_pool_in_child() -> None:
+    global _ID_BYTES  # noqa: PLW0603
+    _ID_BYTES = _IdBytes()  # a forked child never repeats its parent's pending ids
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_drop_id_pool_in_child)
+
+
 def new_event_id() -> str:
     """A dashed uuid4, minted once (R2: persisted, never re-derived)."""
-    return str(uuid.uuid4())
+    return mint_uuid4()
 
 
 @dataclass(frozen=True, slots=True)
@@ -563,11 +603,13 @@ def _check_text(value: object, what: str) -> None:
 @dataclass(frozen=True, slots=True)
 class RecordBody:
     """One body, held by reference until the worker's PROTECT. ``str`` data is encoded to
-    UTF-8 on the capture worker only; a mutable buffer (``bytearray``, ``memoryview``) is
-    misuse. Empty ``data`` is a captured zero-byte object, never a failure marker."""
+    UTF-8 on the capture worker only, and a tuple of exact ``bytes`` chunks (an observed
+    stream's piece) is joined there, so the caller never copies it; a mutable buffer
+    (``bytearray``, ``memoryview``) is misuse. Empty ``data`` is a captured zero-byte
+    object, never a failure marker."""
 
     role: str
-    data: bytes | str
+    data: bytes | str | tuple[bytes, ...]
     media_type: str
     boundary: str
     content_provenance: ContentProvenance = "caller_reported"
@@ -578,7 +620,11 @@ class RecordBody:
         _check_text(self.role, "body role")
         _check_text(self.media_type, "body media_type")
         _check_text(self.boundary, "body boundary")
-        if not isinstance(self.data, (bytes, str)):
+        data = self.data
+        if type(data) is tuple:
+            if not all(type(chunk) is bytes for chunk in data):
+                raise RecordsMisuseError("records API misuse: body chunks must be bytes")
+        elif not isinstance(data, (bytes, str)):
             raise RecordsMisuseError("records API misuse: body data must be bytes or str")
         if self.content_provenance not in CONTENT_PROVENANCES:
             raise RecordsMisuseError("records API misuse: unknown content_provenance")
@@ -591,8 +637,11 @@ class RecordBody:
     @property
     def inflight_charge(self) -> int:
         """Bytes charged to ``max_inflight_bytes`` until encoded: ``len * 4`` for ``str``
-        (the UTF-8 upper bound), else the length."""
-        return len(self.data) * 4 if isinstance(self.data, str) else len(self.data)
+        (the UTF-8 upper bound), else the length (of all chunks)."""
+        data = self.data
+        if type(data) is tuple:
+            return sum(map(len, data))
+        return len(data) * 4 if isinstance(data, str) else len(data)
 
 
 # reason -> the content-v2 descriptor status it implies, and its projection (§3.4, R5).

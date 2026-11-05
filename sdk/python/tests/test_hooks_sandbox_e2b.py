@@ -869,6 +869,7 @@ def test_installed_through_fabric_hooks_install(server: Any, tmp_path: Path) -> 
         assert installed.status()["capabilities"][POINT] == {"state": "active"}
         _sandbox_of(server).commands.run("echo through install")
         assert installed.status()["counters"][POINT]["starts"] == 1
-        assert installed.close()
+        closed = installed.close()
+        assert closed
     finally:
         wire.uninstall()

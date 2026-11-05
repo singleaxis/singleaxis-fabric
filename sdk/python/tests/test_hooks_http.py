@@ -538,6 +538,32 @@ def test_a_large_response_is_emitted_in_pieces(rig: Rig) -> None:
                for r in records for d, _ in r.bodies("network.response"))  # fmt: skip
 
 
+def test_pieces_are_chunk_tuples_cut_at_exact_boundaries() -> None:
+    """The caller never joins the window: a piece is the tuple of its chunks (the capture
+    worker joins it), whole pieces are exactly 256 KiB, and only a chunk across a boundary
+    is sliced; the rest stays in the window."""
+    emitted: list[tuple[bytes, ...]] = []
+
+    class Channel:
+        def piece(self, hop: object, data: tuple[bytes, ...]) -> None:
+            emitted.append(data)
+
+    hop = object.__new__(_http._Hop)
+    hop.channel = Channel()  # type: ignore[assignment]
+    small = [bytes([i]) * 70_000 for i in range(3)]
+    big = b"\xff" * (_http.PIECE_BYTES * 2 + 60_000)  # 794,288 bytes in all: 3 pieces
+    hop.window, hop.window_bytes = [*small, big], 3 * 70_000 + len(big)
+    hop._emit_pieces()
+    assert [type(piece) for piece in emitted] == [tuple, tuple, tuple]
+    assert [sum(map(len, piece)) for piece in emitted] == [_http.PIECE_BYTES] * 3
+    assert all(c is s for c, s in zip(emitted[0][:3], small, strict=True))  # by reference
+    stream = b"".join(small) + big
+    joined = b"".join(b"".join(piece) for piece in emitted)
+    assert joined == stream[: 3 * _http.PIECE_BYTES]
+    assert b"".join(hop.window) == stream[3 * _http.PIECE_BYTES :]
+    assert hop.window_bytes == len(stream) - 3 * _http.PIECE_BYTES
+
+
 def test_partial_consumption_and_early_close(rig: Rig) -> None:
     stream = Chunks([b"first ", b"second ", b"third"])
     with _client(lambda r: httpx.Response(200, stream=stream)) as client:
@@ -851,7 +877,8 @@ def test_through_the_installed_wire_tee(tmp_path: Path) -> None:
         assert hooks.install(http_hosts=("api.example.com",)) is handle  # same configuration
         with pytest.raises(ValueError):
             hooks.install(http_hosts=["other.example"])
-        assert handle.close() is True
+        closed = handle.close()
+        assert closed is True
         assert _routes.rules() == ()
         assert handle.status()["capabilities"][POINT] == {"state": "disabled",
                                                           "reason": "shutdown"}  # fmt: skip

@@ -145,3 +145,24 @@ scheduled all-branch scan on `main` reported seven matches, all test values:
 | `1464bf9…` `components/otel-collector-fabric/processor/fabricguardprocessor/decision_line_identity_test.go:219`, `:227` | The synthetic caller id `claim-4711-jane`, which the test asserts a pseudonymous Node drops. No access is granted. |
 
 As above, only exact commit/path/rule/line fingerprints are baselined.
+
+## Spec 056 M2 id-key-file vectors (2026-11-05)
+
+PR #219 added `contracts/capture/v1/fixtures/host/id-key-file-v1.json`, the
+public cross-language vectors for `hostrecords.ReadIDKeyFile` and
+`id_key_from_env`. Each accepted case stores the file bytes and the expected
+key bytes as base64, so the scan flags `key_base64` (rule `generic-api-key`)
+in the feature-branch commit `240fa33…` and in the squash merge `067de5a…`,
+lines 17, 25, 33, 49, 57 and 73. Decoded, the values are:
+
+| Line | Decoded test key and classification |
+| --- | --- |
+| 17, 25 | `fabric-test-id-key-not-a-secret`, the shared test key label classified above. |
+| 33 | `0123456789abcdef`, the 16-byte minimum-length vector. |
+| 49 | A Cyrillic phrase meaning "key for identifiers" plus `-fabric`, the UTF-8 multibyte vector. |
+| 57 | `fabric-test-id-key` preceded by one space, the no-trimming vector. |
+| 73 | `fabric-test` and `id-key-value` joined by a newline, the interior-newline vector. |
+
+All are published test vectors that a conformance test must reproduce; none
+is a deployment or service key. Only these exact commit/path/rule/line
+fingerprints are baselined.

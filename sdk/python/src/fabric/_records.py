@@ -64,6 +64,7 @@ from ._capture_types import (
     SpanIds,
     StepKind,
     fail_open,
+    mint_uuid4,
     misuse,
     resolve_status_inputs,
     strict,
@@ -253,6 +254,9 @@ def _admitted_value(value: Any) -> tuple[bool, Any]:
     array. Shapes and lengths are checked before anything is copied, and a nested element
     refuses the value without entering it (so a cyclic or huge value costs one bounded
     look). ``str`` subclasses become ``str``; tuples become lists."""
+    kind = type(value)
+    if kind is str or kind is int or kind is bool:  # the common case: kept as is
+        return True, value
     if isinstance(value, _SCALARS):
         return True, str.__str__(value) if isinstance(value, str) else value
     if not isinstance(value, (list, tuple)) or len(value) > MAX_ATTRIBUTE_ITEMS:
@@ -281,7 +285,8 @@ def project_attributes(
     for key, raw in attributes.items():
         # The key is admitted (its table row and placement) before its value is touched.
         check = checks.get(key) if isinstance(key, str) else None
-        if check is None or not _condition_holds(conditions.get(key), where):
+        condition = conditions.get(key) if check is not None else None
+        if check is None or (condition and not _condition_holds(condition, where)):
             dropped.append(str.__str__(key) if isinstance(key, str) else "<non-str key>")
             continue
         admissible, value = _admitted_value(raw)
@@ -394,7 +399,7 @@ def _event_id(value: object) -> str:
     """The record's ``fabric.event_id``: minted (dashed uuid4), or the explicit
     ``record_id`` normalised to dashed lowercase; anything else is misuse (minted)."""
     if value is None:
-        return str(uuid.uuid4())
+        return mint_uuid4()
     try:
         parsed = uuid.UUID(str(value))
     except (ValueError, TypeError, AttributeError):
@@ -556,7 +561,7 @@ class RecordsInput:
         if parent_attempt is not None:
             base["fabric.step.parent_id"] = self._map(parent_attempt, "parent_attempt")
         emitted = point if "@" in point else f"{point}@{self._point_version}"
-        uid = self._ids.mint(str(uuid.uuid4()))
+        uid = self._ids.mint(mint_uuid4())
         return Attempt(self, uid, kind, emitted, provenance, base)
 
     @fail_open("omit")
@@ -632,7 +637,7 @@ class RecordsInput:
         has_evidence = evidence is not None
         for body in bodies:
             if isinstance(body, RecordBody):
-                if type(body.data) not in (bytes, str):  # a mutable or foreign buffer
+                if type(body.data) not in (bytes, str, tuple):  # a mutable or foreign buffer
                     misuse("body data must be frozen bytes or str")
                     continue
                 if body.content_provenance == "protocol" and provenance != "observed":

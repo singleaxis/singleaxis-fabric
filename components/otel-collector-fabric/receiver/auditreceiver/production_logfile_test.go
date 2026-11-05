@@ -292,14 +292,23 @@ func TestRotationAndTruncationReasons(t *testing.T) {
 	waitUntil(t, "source_truncated", 5*time.Second, func() bool { return lossReasonSeen(sink, lossSourceTruncated) })
 	waitUntil(t, "rewritten generation read", 5*time.Second, func() bool { return len(sink.acceptedSpans(recordSpanName)) == 3 })
 
-	// The saved file renamed past its successor: source_rotation_gap.
+	// The saved file renamed past its successor: source_rotation_gap. The
+	// inventory follows auditd's numeric convention (a lower suffix is newer):
+	// the oldest generation moves from .1 to .4 first, else .1 would be the
+	// saved file's numeric successor and be read again.
+	if err := os.Rename(cfg.LogPath+".1", cfg.LogPath+".4"); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Rename(cfg.LogPath, cfg.LogPath+".3"); err != nil {
 		t.Fatal(err)
 	}
 	writeLog(t, cfg, deniedLines+"\n")
 	waitUntil(t, "source_rotation_gap", 5*time.Second, func() bool { return lossReasonSeen(sink, lossRotationGap) })
-	waitUntil(t, "record after the gap", 5*time.Second, func() bool { return len(sink.acceptedSpans(recordSpanName)) == 4 })
+	waitUntil(t, "record after the gap", 5*time.Second, func() bool { return len(sink.acceptedSpans(recordSpanName)) >= 4 })
 	shutdown(t, r)
+	if n := len(sink.acceptedSpans(recordSpanName)); n != 4 {
+		t.Fatalf("the gap's successor is the new file only: %d records, want 4", n)
+	}
 
 	// The saved source disappears while the sensor is stopped: source_missing.
 	// It is renamed away before the new file exists, so the new file cannot
@@ -308,7 +317,7 @@ func TestRotationAndTruncationReasons(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeLog(t, cfg, connectLines+"\n")
-	for _, name := range []string{cfg.LogPath + ".removed", cfg.LogPath + ".1", cfg.LogPath + ".3"} {
+	for _, name := range []string{cfg.LogPath + ".removed", cfg.LogPath + ".3", cfg.LogPath + ".4"} {
 		if err := os.Remove(name); err != nil {
 			t.Fatal(err)
 		}

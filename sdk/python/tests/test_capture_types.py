@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import threading
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -603,3 +605,60 @@ def test_vocabularies_match_the_registry() -> None:
     legacy_kinds = _key_enum("fabric.heartbeat.kind")
     assert legacy_kinds <= ct.MARKER_KINDS
     assert ct.MARKER_KINDS - legacy_kinds == {"manifest"}
+
+
+def test_minted_ids_are_uuid4_from_a_pooled_draw(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Minted ids are dashed RFC 4122 version-4 uuids, drawn ``_ID_POOL`` at a time (one
+    ``os.urandom`` call per pool: ``getrandom`` releases the GIL on the caller's thread)."""
+    draws: list[int] = []
+    real = os.urandom
+
+    def counted(size: int) -> bytes:
+        draws.append(size)
+        return real(size)
+
+    monkeypatch.setattr(os, "urandom", counted)
+    monkeypatch.setattr(ct, "_ID_BYTES", ct._IdBytes())
+    minted = [ct.mint_uuid4() for _ in range(ct._ID_POOL * 2 + 1)]
+    assert draws == [16 * ct._ID_POOL] * 3
+    assert len(set(minted)) == len(minted)
+    for text in minted:
+        parsed = uuid.UUID(text)
+        assert str(parsed) == text and parsed.version == 4 and parsed.variant == uuid.RFC_4122
+    assert ct.new_event_id() != ct.new_event_id()
+
+
+def test_minted_ids_differ_across_threads_and_forks() -> None:
+    """Each thread has its own pool, and a forked child drops the parent's pending ids."""
+    ct.mint_uuid4()  # the parent's pool now holds pending ids
+    seen: list[str] = []
+    threads = [threading.Thread(target=lambda: seen.extend(ct.mint_uuid4() for _ in range(64)))
+               for _ in range(4)]  # fmt: skip
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(set(seen)) == len(seen) == 256
+    if not hasattr(os, "fork"):
+        return
+    read, write = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # pragma: no cover - the child
+        os.close(read)
+        os.write(write, ct.mint_uuid4().encode())
+        os._exit(0)
+    os.close(write)
+    child = os.read(read, 64).decode()
+    os.close(read)
+    os.waitpid(pid, 0)
+    assert child != ct.mint_uuid4()
+
+
+def test_a_body_may_hold_exact_bytes_chunks() -> None:
+    """An observed stream's piece is a tuple of exact ``bytes`` chunks, joined on the
+    capture worker; it is charged by its total length, and any other element is misuse."""
+    body = RecordBody("network.response", (b"ab", b"", b"cde"), "text/plain", "network")
+    assert body.inflight_charge == 5
+    for chunks in ((b"a", bytearray(b"b")), (b"a", "b"), ([b"a"],)):
+        with pytest.raises(RecordsMisuseError):
+            RecordBody("network.response", chunks, "text/plain", "network")  # type: ignore[arg-type]

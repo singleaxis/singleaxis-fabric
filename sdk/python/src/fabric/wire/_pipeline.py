@@ -705,6 +705,8 @@ class CapturePipeline:
             return [self._record_withheld(base, role, mode, body.reason, status=body.status,
                                           observed=body.observed_byte_length)]  # fmt: skip
         data = body.data
+        if isinstance(data, tuple):  # an observed stream's piece: joined here, off the caller
+            data = b"".join(data)
         if isinstance(data, str):
             charged = len(data) * 4
             try:
