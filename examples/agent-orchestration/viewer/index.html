@@ -112,6 +112,7 @@ const isToolCall  = n => n.attributes['gen_ai.operation.name'] === 'execute_tool
 const nodeLabel = n => {
   const a = n.attributes;
   if (a['fabric.decision_id']) return 'decision';
+  if (n.tool_name) return n.tool_name;  // resolved locally by build_journal.py
   if (a['fabric.tool.name']) return a['fabric.tool.name'];
   if (a['fabric.step.id']) return a['fabric.step.id'];
   if (a['fabric.llm.request.model']) return a['fabric.llm.request.model'];

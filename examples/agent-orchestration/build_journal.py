@@ -239,10 +239,30 @@ def main() -> int:
         failures.append(f"expected 1 decision span, saw {kinds.get('decision', 0)}")
     if kinds.get("model_call", 0) != 2:
         failures.append(f"expected 2 model calls, saw {kinds.get('model_call', 0)}")
+    # Tool names are operator labels (049 §4.2): run.sh's identity policy emits each as
+    # its keyed ``lbl-`` label, so the export never carries the clear name. The journal
+    # matches the spans by the label the same policy computes, and names them locally.
+    from fabric._identity import IdentityPolicy
+
+    identity = IdentityPolicy.resolve(None, None, os.environ)
     expected_tools = {"read_file", "run_shell", "fetch_metrics", "write_report"}
-    missing_tools = expected_tools - tool_names
+    labels = {name: identity.label(name) for name in expected_tools}
+    if any(label is None for label in labels.values()):
+        failures.append(
+            "tool names are omitted without FABRIC_WIRE_ID_KEY: run the demo through run.sh"
+        )
+    missing_tools = sorted(
+        name for name, label in labels.items() if label not in tool_names
+    )
     if missing_tools:
-        failures.append(f"missing tool spans: {sorted(missing_tools)}")
+        failures.append(f"missing tool spans: {missing_tools}")
+    names_by_label = {
+        label: name for name, label in labels.items() if label is not None
+    }
+    for node in nodes:
+        emitted = node["attributes"].get("fabric.tool.name")
+        if emitted in names_by_label:
+            node["tool_name"] = names_by_label[emitted]
 
     if manifest["decision_id"] != decision_json["decision_id"]:
         failures.append("manifest decision_id mismatch")
@@ -316,6 +336,8 @@ def main() -> int:
             "coverage": manifest.get("coverage", {}),
             "items": manifest["items"],
         },
+        "tool_names": "resolved in this journal from the demo's per-run id key; the "
+        "exported spans carry only lbl- labels",
         "timeline": nodes,
         "host_events": host_events,
         "integrity": {

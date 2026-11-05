@@ -88,6 +88,15 @@ if ! curl -sf --max-time 1 "http://127.0.0.1:$HEALTH_PORT/" >/dev/null; then
   exit 1
 fi
 
+# The demo's identity policy (spec 049 §2.9, §4.2): ids and operator labels (tool
+# names) leave the agent as keyed pseudonyms under a fresh per-run demo id key, never
+# in clear (fabricguard drops clear operator labels). build_journal.py checks the tool
+# spans by the lbl- labels this key emits and names them locally for the viewer.
+export FABRIC_IDENTITY_MODE=pseudonymous
+unset FABRIC_WIRE_LABELS
+FABRIC_WIRE_ID_KEY="$("$PY" -c 'import secrets; print(secrets.token_hex(16))')"
+export FABRIC_WIRE_ID_KEY
+
 echo "==> agent run (local demo spool; sink is not durable storage)"
 FABRIC_OTLP_URL="http://127.0.0.1:$OTLP_PORT" FABRIC_DEMO_OUT="$RUN_OUT" \
   "$PY" agent.py | tee "$RUN_OUT/decision.json.tmp"

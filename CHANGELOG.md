@@ -52,6 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   enforce locks (several processes sharing such a spool can still declare
   each other's live epochs: use a named volume).
 
+- **The agent-orchestration demo passes as shipped.** `build_journal.py`
+  expected tool names in clear, but `run.sh` emitted them omitted (no id
+  key), and clear labels are dropped by fabricguard. `run.sh` now pins the
+  demo's identity policy (pseudonymous, a fresh per-run demo id key, no
+  clear labels) and the journal checks the tool spans by the `lbl-` labels
+  that policy emits, naming them locally for the viewer; its honesty
+  caveats are unchanged.
 ### Changed
 
 - **The `actions` view lists non-model HTTP requests.** Requests the
