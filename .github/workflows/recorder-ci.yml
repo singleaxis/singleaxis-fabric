@@ -107,11 +107,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           # aiohttp is a test-only driver for the aiohttp capture point; the
-          # SDK patches it only when the application already imports it.
-          python -m pip install -e . pytest pytest-cov jsonschema PyYAML httpx "openai>=3.26.1" "anthropic>=1.12.1" "aiohttp>=3.9" cryptography opentelemetry-exporter-otlp-proto-http build
+          # SDK patches it only when the application already imports it. The
+          # hooks-sandbox-e2b extra (the pinned E2B SDK) drives the remote.sandbox
+          # hook tests against the fixture E2B server (spec 056 WP6-09b).
+          python -m pip install -e '.[hooks-sandbox-e2b]' pytest pytest-cov jsonschema PyYAML httpx "openai>=3.26.1" "anthropic>=1.12.1" "aiohttp>=3.9" cryptography opentelemetry-exporter-otlp-proto-http build
       - name: Test with recorder coverage floor
         working-directory: sdk/python
         run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=85
+      - name: Fixture E2B service ledger (spec 056 WP6-09b)
+        run: python -m pytest qualification/remote-sandbox -q -p no:cacheprovider
       - name: Qualify wheel and sdist contents
         working-directory: sdk/python
         run: |

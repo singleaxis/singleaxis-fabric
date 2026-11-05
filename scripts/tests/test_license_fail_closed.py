@@ -162,3 +162,75 @@ def test_each_inventory_must_have_valid_nonempty_records(
     )
     assert result.returncode == 2, result.stdout + result.stderr
     assert "missing" in result.stderr
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        # The declared release without scanner metadata takes the declaration.
+        ({"Name": "declared-fixture", "Version": "1.0", "License": "UNKNOWN"}, 0),
+        ({"Name": "Declared-Fixture", "Version": "1.0", "License": ""}, 0),
+        # Another version is not reviewed.
+        ({"Name": "declared-fixture", "Version": "1.1", "License": "UNKNOWN"}, 1),
+        # A reported license is never replaced, so a denied one still fails.
+        ({"Name": "declared-fixture", "Version": "1.0", "License": "GPL-3.0"}, 1),
+        # A declaration is classified like any license: a denied one fails.
+        ({"Name": "denied-fixture", "Version": "1.0", "License": "UNKNOWN"}, 1),
+    ],
+)
+def test_declared_license_fills_only_missing_metadata(
+    tmp_path: Path, row: dict[str, str], expected: int
+) -> None:
+    policy = tmp_path / "policy.txt"
+    policy.write_text(
+        (ROOT / ".github/license-allowlist.txt").read_text()
+        + "\nDECLARE python declared-fixture 1.0 Apache-2.0\n"
+        + "DECLARE python denied-fixture 1.0 GPL-3.0\n"
+    )
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(json.dumps([row]))
+    report = tmp_path / "report.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/license_check.py"),
+            "--policy",
+            str(policy),
+            "--pip",
+            f"fixture={inventory}",
+            "--json",
+            str(report),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == expected, result.stdout + result.stderr
+    if expected == 0:
+        (dependency,) = json.loads(report.read_text())["dependencies"]
+        assert dependency["spdx"] == "Apache-2.0"
+        assert "declared in policy" in dependency["detail"]
+
+
+def test_malformed_declaration_is_a_policy_error(tmp_path: Path) -> None:
+    policy = tmp_path / "policy.txt"
+    policy.write_text("ALLOW MIT\nDECLARE python only-a-name\n")
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(
+        json.dumps([{"Name": "fixture", "Version": "1", "License": "MIT"}])
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/license_check.py"),
+            "--policy",
+            str(policy),
+            "--pip",
+            f"fixture={inventory}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "DECLARE" in result.stderr

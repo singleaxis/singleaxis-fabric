@@ -60,6 +60,15 @@ mcp = [
 signing = [
   "cryptography>=49",
 ]
+# Optional remote sandbox observation (spec 056 §4.4.1, capture point remote.sandbox).
+# `fabric.hooks` observes the E2B SDK's own call API only when the application already
+# uses it and asks for it (`remote_sandbox=("e2b",)`); other versions report
+# unsupported_version, so the pins are the qualified ones. Fabric never imports e2b on
+# the capture path otherwise.
+hooks-sandbox-e2b = [
+  "e2b==2.62.*",
+  "e2b-code-interpreter==2.11.*",
+]
 [dependency-groups]
 dev = [
   "pytest>=8.3",
@@ -85,6 +94,11 @@ dev = [
   # Drives the aiohttp capture point tests. Dev-only: capture patches aiohttp
   # only when the application already imports it.
   "aiohttp>=3.9",
+  # Drives the remote.sandbox hook tests against the fixture E2B server
+  # (qualification/remote-sandbox). Dev-only: the hook observes the SDK only when the
+  # application already uses it.
+  "e2b==2.62.*",
+  "e2b-code-interpreter==2.11.*",
 ]
 
 [project.urls]

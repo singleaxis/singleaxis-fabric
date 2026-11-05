@@ -126,13 +126,16 @@ class HookProducer:
 
     @fail_open(None)
     def begin(
-        self, point: HookPoint, kind: StepKind, *, parent_attempt: str | None = None
-    ) -> Attempt | None:
+        self, point: HookPoint, kind: StepKind, *, parent_attempt: str | None = None,
+        version: str | None = None,
+    ) -> Attempt | None:  # fmt: skip
         """Open an observed attempt of step ``kind`` at ``point`` (B1), or ``None``: the
         channel is off, the call is Fabric's own I/O (guard), an explicit producer owns this
         kind here (D2: counted ``deferred_to_explicit``; the projection reports the hook's
         fields ``not_captured(deferred_to_explicit)``), or the capture handle no longer
-        captures. ``parent_attempt`` is a reported parent attempt uid (056 A0)."""
+        captures. ``parent_attempt`` is a reported parent attempt uid (056 A0). ``version``
+        is the emitted point's version when it is not Fabric's own (``remote.sandbox``
+        names the observed provider SDK's: spec 056 §7.3.3 (k))."""
         found = self._switches.get(point)
         if found is None or not found.on:
             return None
@@ -143,8 +146,9 @@ class HookProducer:
             self._count(point, "deferred_to_explicit")
             return None
         attempt = self.records.begin(
-            kind, point, provenance="observed", parent_attempt=parent_attempt
-        )
+            kind, point if version is None else f"{point}@{version}", provenance="observed",
+            parent_attempt=parent_attempt,
+        )  # fmt: skip
         self._count(point, "attempts" if attempt is not None else "not_capturing")
         return attempt
 
