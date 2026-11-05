@@ -118,7 +118,7 @@ class SandboxConfig:
 def sandbox_config(providers: tuple[str, ...] = ("e2b",)) -> Any:
     fields = {f.name for f in dataclasses.fields(_config.HooksConfig)}
     if "remote_sandbox" in fields:
-        return _config.HooksConfig(remote_sandbox=providers)  # type: ignore[call-arg]
+        return _config.HooksConfig(remote_sandbox=providers)
     return SandboxConfig(remote_sandbox=providers)
 
 
@@ -865,7 +865,7 @@ def test_installed_through_fabric_hooks_install(server: Any, tmp_path: Path) -> 
     store = LocalFilesystemContentStore(root=str(tmp_path), tenant_id="tenant-a")
     wire.install(WireConfig(store=store, patch_httpx=False, patch_aiohttp=False))
     try:
-        installed = hooks.install(remote_sandbox=("e2b",))  # type: ignore[call-arg]
+        installed = hooks.install(remote_sandbox=("e2b",))
         assert installed.status()["capabilities"][POINT] == {"state": "active"}
         _sandbox_of(server).commands.run("echo through install")
         assert installed.status()["counters"][POINT]["starts"] == 1
