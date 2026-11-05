@@ -1599,7 +1599,24 @@ class _Proc:
     ppid: int | None
 
 
-def _lineage(
+def _forked_child(procs: Mapping[int, _Proc], event: HostEvent) -> _Proc | None:
+    """H3: a child forked without an exec (a subshell, a pid-1 reaper, a daemon's double
+    fork) has no exec event. Its first connect or file event, whose parent is in the
+    chain, puts it in the chain one level down, so its own events and its children's
+    execs are lineage too. ``None`` when the parent is not in the chain, or the event is
+    earlier than the parent or started before it."""
+    parent = procs.get(event.ppid) if event.ppid is not None else None
+    own = event.process_start_ns
+    if (
+        parent is None
+        or event.time_ns < parent.time
+        or (own is not None and parent.start is not None and own < parent.start)
+    ):
+        return None
+    return _Proc(parent.depth + 1, event.time_ns, own, event.ppid)
+
+
+def _lineage(  # noqa: PLR0912 - one branch per event kind and bound
     hosts: _Hosts, effect: ProcessEffect, anchor: HostEvent, claimed: set[str]
 ) -> tuple[list[HostEvent], list[HostEvent]]:
     """H3 for one anchored effect: the host events whose parent-pid chain reaches the
@@ -1611,7 +1628,10 @@ def _lineage(
     are left to H5. A later successful exec of a known process (same pid, parent and start
     tick: ``sh`` exec'ing ``curl``) stays at its depth; connect and file events of a
     process in the chain are linked at its depth when their start time, if both sides
-    carry one, is in its tick.
+    carry one, is in its tick. A connect or file event of an unknown pid whose parent is
+    in the chain is a child forked without an exec: it joins the chain one level down.
+    An exec whose parent forked without exec and produced no event of its own stays
+    unlinked: no event names that parent (no fork tracepoint in M2).
 
     Pid reuse: a successful exec of a known pid that is neither that process nor a child
     of one in the chain proves the pid now names another process, so the pid leaves the
@@ -1669,10 +1689,16 @@ def _lineage(
                 continue
         elif event.event_class == "exec":
             continue  # a failed exec started no process: not lineage, maybe unexplained
-        elif (
-            (proc := procs.get(event.pid)) is None
-            or event.time_ns < proc.time
-            or (own is not None and proc.start is not None and not same_tick(own, proc.start))
+        elif (proc := procs.get(event.pid)) is None:
+            forked = _forked_child(procs, event)
+            if forked is None:
+                continue
+            if forked.depth > LINEAGE_MAX_DEPTH:
+                truncated.append(event)
+                continue
+            procs[event.pid] = forked
+        elif event.time_ns < proc.time or (
+            own is not None and proc.start is not None and not same_tick(own, proc.start)
         ):
             continue
         if len(linked) >= LINEAGE_MAX_EVENTS:

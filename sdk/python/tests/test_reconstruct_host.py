@@ -299,9 +299,11 @@ def test_goldens_join_end_to_end() -> None:
     (anchor,) = join.links[effects[0].attempt_uid]
     assert (anchor["confidence"], anchor["state"]) == ("certain", "resolved")
     assert join.trace["anchors"] == {effects[0].attempt_uid: "H1"}
-    # The span golden holds curl's connect but not curl's exec: no chain reaches it.
-    assert join.corroboration.reasons() == ["unexplained_host_event"]
-    assert join.unexplained_event_ids == ("8a04cd80-c443-4356-a944-ff73fb0308bc",)
+    # The span golden holds curl's connect but not curl's exec: its parent is the
+    # anchored shell, so it is lineage (a child seen first by a non-exec event).
+    assert join.trace["host_events"]["8a04cd80-c443-4356-a944-ff73fb0308bc"] == "H3"
+    assert join.corroboration.reasons() == []
+    assert join.unexplained_event_ids == ()
 
 
 def test_production_goldens_normalize_and_join() -> None:
@@ -331,8 +333,10 @@ def test_production_goldens_normalize_and_join() -> None:
     (anchor,) = join.links[effects[0].attempt_uid]
     assert (anchor["confidence"], anchor["target"]["id"]) == ("certain", plain[0]["event_id"])
     by_id = {e["event_id"]: e for e in join.sensor_events}
-    # The golden holds curl's connect but not curl's exec: no chain reaches it.
-    assert join.unexplained_event_ids == (plain[1]["event_id"],)
+    # The golden holds curl's connect but not curl's exec: its parent is the anchored
+    # process, so it is lineage (a child seen first by a non-exec event).
+    assert join.trace["host_events"][plain[1]["event_id"]] == "H3"
+    assert join.unexplained_event_ids == ()
     (h5,) = by_id[plain[2]["event_id"]]["links"]
     assert (h5["method"], h5["provenance"], h5["confidence"]) == (
         "sandbox_report", "reported", "certain")  # fmt: skip
@@ -1121,3 +1125,25 @@ def test_an_observed_exit_ends_the_lineage_of_its_pid() -> None:
     assert events[anchor.event_id] == "H1"
     assert [events[e.event_id] for e in (child, late_child_connect)] == ["H3", "H3"]
     assert [events[e.event_id] for e in (reused, connect)] == ["unexplained"] * 2
+
+
+# ------------------------------------------------------------------ review fixes (WP6-10)
+def test_lineage_follows_a_child_forked_without_exec() -> None:
+    """A child that forks without exec (a subshell, a pid-1 reaper) has no exec event: its
+    own connect, whose parent is in the chain, links it one level down, and the exec of
+    its child is lineage too. A connect whose parent is outside the chain stays
+    unexplained, as does one that started before the chain's process."""
+    start = 1_000 * TICK_NS
+    effect = _effect(start=start)
+    at = effect.start_ns
+    anchor = _exec(1, 4121, 4100, at + MS, start)
+    forked = _exec(2, 4122, 4121, at + 2 * MS, start + TICK_NS, event_class="connect")
+    grandchild = _exec(3, 4123, 4122, at + 3 * MS, start + 2 * TICK_NS)
+    stranger = _exec(4, 4124, 55, at + 4 * MS, start + 2 * TICK_NS, event_class="connect")
+    older = _exec(5, 4125, 4121, at + 5 * MS, start - 10 * TICK_NS, event_class="file")
+    join = _join([effect], [anchor, forked, grandchild, stranger, older])
+    trace = join.trace["host_events"]
+    assert trace[anchor.event_id] == "H1"
+    assert [trace[e.event_id] for e in (forked, grandchild)] == ["H3", "H3"]
+    assert [trace[e.event_id] for e in (stranger, older)] == ["unexplained"] * 2
+    assert join.link_counts["process_lineage"]["resolved"] == 2

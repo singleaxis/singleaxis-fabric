@@ -203,10 +203,13 @@ unless step 4 ran in bwrap.
   in the agent's own store would not do: the production verifier marks
   objects the Node did not stamp `source_unauthenticated`.)
 - **Step 4 adds `--as-pid-1`.** Without it, bwrap's pid-1 reaper forks the
-  code without an exec; no sensor sees that process, so H3 cannot chain the
-  inner Python to the launcher, and its exec is listed unexplained (seen
-  live). With it the code is pid 1 of the nested namespace, a direct child
-  of the launcher, and H3 links it across the namespace boundary.
+  code without an exec. H3 links a fork-only child from its first connect or
+  file event, but the reaper makes none, so no event names the inner
+  Python's parent and its exec is listed unexplained (seen live). With the
+  flag the code is pid 1 of the nested namespace, a direct child of the
+  launcher, and H3 links it across the namespace boundary. Open with the
+  spec owner: plain `--unshare-pid` (§6.2 step 4) needs a fork event from
+  the sensor (`sched_process_fork`) or a spec change.
 - **The live agent runs as the harness's user**, not root: as root without
   `CAP_SYS_ADMIN`, bwrap makes no user namespace and cannot unshare anything.
 - **`hostrecords-replay` is built with `go build`** into the run directory

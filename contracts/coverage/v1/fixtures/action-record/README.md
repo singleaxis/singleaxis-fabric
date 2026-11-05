@@ -292,7 +292,7 @@ comes from `/proc/<pid>/stat` in ticks, a sensor's in nanoseconds.
 |---|---|---|
 | H1 | A successful exec event with the effect's pid and parent pid and a start time in the same tick as `process_start_ns` (both present) | effect `corroborated_by` → `event`, `process_anchor`, `certain`. A later exec of the same process (same pid, parent and start) is lineage at depth 0 |
 | H2 | No start time on one side; exactly one such exec event within 100 ms + both clock uncertainties of the effect's start, or several that form one exec chain (below) | `process_anchor`, `tentative`, on the match or the chain's first exec. Two or more that are not one chain: `ambiguous` with all; the effect counts as not anchored (`anchor_missing`) |
-| H3 | A host event whose parent-pid chain reaches an anchored child, same host and namespace, times not earlier than its parent's, start times non-decreasing, depth ≤ 16, ≤ 4096 events per anchor; connect and file events of a process in the chain | event `part_of` → `attempt` the effect, `process_lineage`, the anchor's confidence. An event past a bound is not linked, is counted in `attribution.lineage_truncated` and is unexplained |
+| H3 | A host event whose parent-pid chain reaches an anchored child, same host and namespace, times not earlier than its parent's, start times non-decreasing, depth ≤ 16, ≤ 4096 events per anchor; connect and file events of a process in the chain, and of an unseen pid whose parent is in the chain (a child forked without exec, which joins the chain one level down) | event `part_of` → `attempt` the effect, `process_lineage`, the anchor's confidence. An event past a bound is not linked, is counted in `attribution.lineage_truncated` and is unexplained |
 | H4 | A host event of the agent's own pid inside the run window | event `part_of` → `run`, `process_anchor`; `certain` only when the event carries the agent's start time and it matches, else `tentative`. A connect to a peer no exchange's endpoint resolves to is also unexplained |
 
 **Exec chain** (H2). A shell that execs its command in place (`bash -c
@@ -545,8 +545,9 @@ The M1 sections are unchanged, so the M1 hook and reader tests keep reading them
 ### 9.5 Decisions these fixtures make where spec 056 is silent or loose
 
 - **bwrap's own init.** `bwrap --unshare-pid` forks a pid-1 init that never execs and
-  forks the command, so a sensor that reports only execs sees the command's parent as a
-  process it never saw: H3 cannot reach it. `edge-nested-pid-namespace` models the inner
+  forks the command, so a sensor that reports only execs, connects and opens sees the
+  command's parent as a process it never saw: H3 cannot reach it (H3 adds a fork-only
+  child from its own first connect or file event; the init makes none). `edge-nested-pid-namespace` models the inner
   process as the launcher's direct child (as with `bwrap --unshare-pid --as-pid-1`); a live
   AR-1 run needs that flag, or lineage stops at the namespace boundary.
 - **Reason order.** §6.2 (f) writes `partial(remote_sandbox, unattributed_effect)`; the
