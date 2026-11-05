@@ -450,8 +450,18 @@ def bind_production(  # noqa: PLR0912, PLR0915 - one branch per template element
         bound.steps[effect.attempt_uid] = str(tree["step"])
         unshared = "--unshare-pid" in effect.command
         procs: dict[str, tuple[int, int, int, int]] = {}  # (pid, ppid, ns_pid, ns)
+        # One start time per process, from its first event (its exec): every later event
+        # of the process (a connect) carries the same ProcessStartNs, or the join reads
+        # it as another process with the same pid.
+        starts: dict[str, int | None] = {}
         for item in tree["events"]:
             name = item["proc"]
+            if name not in starts:
+                starts[name] = None
+                if effect.process_start_ns is not None:
+                    starts[name] = effect.process_start_ns + (
+                        0 if item["parent"] == "agent" else int(item.get("offset_us", 0)) * 1000
+                    )
             if name not in procs:
                 parent = item["parent"]
                 if parent == "agent":
@@ -470,13 +480,8 @@ def bind_production(  # noqa: PLR0912, PLR0915 - one branch per template element
                 at = queues[item["at"]].pop(0) + int(item.get("offset_us", 0)) * 1000
             if pid == effect.pid and effect.exit_ns is not None:
                 at = min(at, effect.exit_ns - 1000)
-            start = None
-            if effect.process_start_ns is not None:
-                start = effect.process_start_ns + (
-                    0 if pid == effect.pid else int(item.get("offset_us", 0)) * 1000
-                )
             index = writer.add(
-                at, item["syscall"], pid, ppid, ns=(ns_pid, ns_ppid, ns), start_ns=start,
+                at, item["syscall"], pid, ppid, ns=(ns_pid, ns_ppid, ns), start_ns=starts[name],
                 peer=peer,
             )  # fmt: skip
             if item.get("parent") == "agent":
