@@ -1027,6 +1027,14 @@ def format_actions(view: Mapping[str, Any]) -> str:
         elif row["kind"] == "effect":
             effect = f"{number}    effect     {_effect_text(row):<36} {_caused_text(row, why)}"
             lines.append(effect.rstrip())
+        elif row["kind"] == "http":
+            what = f"http {row.get('method', '?')}"
+            if "status" in row:
+                what += f" {row['status']}"
+            if "host_id" in row:
+                what += f" {_short(row['host_id'])}"
+            text = f"{number}    http       {what:<36} (recorded; not attributed)"
+            lines.append(text.rstrip())
         elif row["kind"] == "sandbox":
             sandbox = row.get("sandbox_id")
             what = (
@@ -1064,6 +1072,12 @@ def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list
     if without:
         details = ", ".join(f"{c['call']} {c['reason']}" for c in without[:16])
         lines.append(f"  tool calls without an effect: {len(without)}   ({details})")
+    http = view.get("http_requests_unattributed", 0)
+    if http:
+        lines.append(
+            f"  non-model HTTP: {http} request(s) recorded (http.nonmodel), not attributed to "
+            "a tool call; host connects to those hosts are not joined to them (known limitation)"
+        )
     unexplained = view["unexplained_host_events"]
     if unexplained["count"]:
         lines.append(f"  unexplained host events: {unexplained['count']}")

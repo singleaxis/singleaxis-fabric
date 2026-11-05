@@ -212,10 +212,25 @@ How to read it:
 - **`host` rows.** Indented under the effect they belong to (`← #7` is row
   7). `← run` marks an event of the agent process itself, and
   `unexplained` marks an event that no rule explains.
+- **`http` rows.** A non-model HTTP request the `http.nonmodel` hook
+  recorded (method, status, keyed host id), marked `(recorded; not
+  attributed)`: no rule links it to a tool call yet (see
+  [what is not covered yet](#what-is-not-covered-yet)).
 - **Footer.** The effects no tool call explains, the tool calls with no
   effect and why (`channel_disabled`, `no_effect_channel`,
-  `none_in_window`), the number of unexplained host events, and whether
-  output matching applied.
+  `none_in_window`), the non-model HTTP requests recorded but not
+  attributed, the number of unexplained host events, and whether output
+  matching applied.
+
+**A process that made no model call** (a tool worker the agent started, or
+an agent killed before its first model call) is a run of its own under its
+source fallback id `source:<source>:<epoch>`; select it with `--run`. Its
+effects are listed with `(no model call in this process)`, `decisions` is
+`not_observed` when its record verifies, and the footer says `model calls:
+none recorded in this run`. If the process ended without a final heartbeat
+(SIGKILL, a crash), `decisions` is `unverified(tail_unverified)` and the
+footer says `process end: no final heartbeat (killed or crashed)`: records
+after the last delivered one may be missing.
 
 The view never prints captured output. The exit code is that of the
 report: `0` only when the run is complete, `1` when it is `partial` or
@@ -290,11 +305,21 @@ emitter in production mode and the agent in a container.
   record. A pid reused by a process the hook did not start, with the same
   parent pid inside the 100 ms window, reads as one exec chain
   (`tentative`). Start times (M2) remove this case.
+- **Non-model HTTP is recorded, not attributed.** Calls through httpx to
+  hosts you list (`http_hosts=`, `FABRIC_WIRE_HTTP_HOSTS`, since v0.11.0)
+  are recorded and delivered, and the `actions` view lists each one as an
+  `http` row `(recorded; not attributed)`. They are not effects in spec
+  056: no rule links one to the tool call that made it, a tool call whose
+  only effect was an HTTP request reads `none_in_window`, and the agent's
+  host `connect` events to that host are not joined to the request, so they
+  stay `unexplained` unless you list the host's addresses with
+  `--known-peer`. Attributing them (by the same window and output-match
+  rules as subprocesses) and joining their connects needs a peer-address
+  rule the records do not support yet: host records carry keyed peer
+  addresses, the HTTP record a host name.
 - **Other channels.** File, database, MCP and SSH hooks (spec 053) are not
-  built, and neither is a TypeScript subprocess hook. Non-model HTTP calls
-  through httpx to hosts you list are recorded since v0.11.0
-  (`http_hosts=`, `FABRIC_WIRE_HTTP_HOSTS`). Tools that run inside the
-  agent process leave no effect. Declare them with `--in-process-tool`.
+  built, and neither is a TypeScript subprocess hook. Tools that run inside
+  the agent process leave no effect. Declare them with `--in-process-tool`.
 - **Host id not bound to the ingress group (M2).** A host group binds one
   source id and one token, but the `hst-` host id in a sensor's records is
   only format-checked, so a sensor holding one group's credentials can name

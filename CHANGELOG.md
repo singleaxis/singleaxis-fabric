@@ -41,6 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   package metadata. The host emitter's Dockerfile gains its own title and
   description labels.
 
+### Changed
+
+- **The `actions` view lists non-model HTTP requests.** Requests the
+  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
+  not attributed)`, and the footer counts them, so a request a tool made
+  never reads as missing.
+
+### Known limitations
+
+- **Non-model HTTP is not attributed to tool calls.** Spec 056 defines
+  effects as subprocesses and remote sandbox calls only: an `http.nonmodel`
+  request is recorded and delivered, but no rule links it to the tool call
+  that made it, and the agent's host `connect` events to that host are not
+  joined to it (they stay `unexplained` unless the host's addresses are
+  given with `--known-peer`). Joining them needs a peer-address rule that
+  today's records cannot support (host records carry keyed peer addresses,
+  the HTTP record a host name). See
+  [action reconstruction](docs/action-reconstruction.md#what-is-not-covered-yet).
+
 ## [0.11.0] - 2026-11-05
 
 Fabric 0.11.0 takes agent action reconstruction (spec 056 milestone M2,
