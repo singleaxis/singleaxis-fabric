@@ -160,7 +160,7 @@ lines 17, 25, 33, 49, 57 and 73. Decoded, the values are:
 | 17, 25 | `fabric-test-id-key-not-a-secret`, the shared test key label classified above. |
 | 33 | `0123456789abcdef`, the 16-byte minimum-length vector. |
 | 49 | A Cyrillic phrase meaning "key for identifiers" plus `-fabric`, the UTF-8 multibyte vector. |
-| 57 | ` fabric-test-id-key` with a leading space, the no-trimming vector. |
+| 57 | `fabric-test-id-key` preceded by one space, the no-trimming vector. |
 | 73 | `fabric-test` and `id-key-value` joined by a newline, the interior-newline vector. |
 
 All are published test vectors that a conformance test must reproduce; none
