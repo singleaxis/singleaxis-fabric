@@ -441,7 +441,22 @@ class LiveProductionHarness(ProductionHarness):
         sensor.stop()
         _wait(_settled(sink), 60, f"{run.name}: the host records")
         del linked
-        return ProductionTruth(agent_pid=run.agent_pid, exact=False, certain=True)
+        # The report lists no pid namespace or peer: shape checks read them from the
+        # host spans the sink holds, by event id.
+        attributes = {
+            str(r["attributes"]["fabric.event_id"]): r["attributes"]
+            for r in sink.rows()
+            if r.get("kind") == "span"
+            and "fabric.sensor.event_class" in r.get("attributes", {})
+            and "fabric.event_id" in r["attributes"]
+        }
+        return ProductionTruth(
+            agent_pid=run.agent_pid,
+            exact=False,
+            certain=True,
+            host_attributes=attributes,
+            uncalled_port=run.fixture_port,
+        )
 
     # -- live-only checks ---------------------------------------------------------------
 

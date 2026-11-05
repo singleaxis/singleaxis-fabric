@@ -26,7 +26,7 @@ H4 ``part_of`` the run: :func:`production_corroboration`.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -322,11 +322,39 @@ class ProductionTruth:
     unlinked_sandbox: Collection[str] = ()  # container events no reported id links (g)
     exact: bool = False
     certain: bool = False  # H1 (records carry start time and pid namespace) or H2
+    # Live: each host event's span attributes (pid namespace, peer port) and the uncalled
+    # fixture host's port, for the step 4 and step 6 shape checks.
+    host_attributes: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    uncalled_port: int | None = None
 
 
 def sandbox_rows(view: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     """The view's ``sandbox`` rows (rule H5): attempt uid -> the row (link, event ids)."""
     return {r["attempt_uid"]: r for r in view["rows"] if r["kind"] == "sandbox"}
+
+
+def _inner_namespace(
+    checks: Checks,
+    truth: ProductionTruth,
+    anchored: Sequence[tuple[str, str]],
+    part: Sequence[str],
+) -> None:
+    """§6.2 M2 row 4 (live): the inner Python is an exec ``part_of`` the launcher's
+    effect whose pid namespace differs from the launcher's (the agent's)."""
+    attributes = truth.host_attributes
+    outer = attributes.get(anchored[0][0], {}).get("fabric.sensor.pid_ns") if anchored else None
+    inner = [
+        e
+        for e in part
+        if attributes.get(e, {}).get("fabric.sensor.event_class") == "exec"
+        and attributes[e].get("fabric.sensor.pid_ns") not in (None, outer)
+    ]
+    checks.check(
+        "step 4: an exec in another pid namespace is lineage of the launcher",
+        outer is not None and bool(inner),
+        {"anchor_pid_ns": outer, "lineage": {e: attributes.get(e, {}).get(
+            "fabric.sensor.pid_ns") for e in part}},
+    )  # fmt: skip
 
 
 def reported_links(entry: Mapping[str, Any]) -> dict[str, list[tuple[str, str, str, str]]]:
@@ -390,6 +418,8 @@ def production_corroboration(  # noqa: PLR0912, PLR0915 - one block per link kin
         elif step in LINEAGE_STEPS:
             checks.check(f"step {step}: at least {LINEAGE_STEPS[step]} lineage events",
                          len(part) >= LINEAGE_STEPS[step], part)  # fmt: skip
+            if step == "4":
+                _inner_namespace(checks, truth, anchored, part)
         for event in part:
             texts = [p["link"] for p in hosts[event]["part_of"]]
             checks.equal(f"step {step}: lineage link {event[:13]}", texts, [lineage])
@@ -441,15 +471,22 @@ def production_corroboration(  # noqa: PLR0912, PLR0915 - one block per link kin
         # The view shows init-namespace pids; the agent's own (namespace) pid is not one of
         # them, so the agent process is recognised by its H4 link to the run.
         listed = [hosts.get(e, {}) for e in unexplained["event_ids"]]
+        ports = [
+            truth.host_attributes.get(e, {}).get("fabric.sensor.peer_port")
+            for e in unexplained["event_ids"]
+        ]
         checks.check(
-            "step 6: unexplained events are the agent's connections",
+            "step 6: unexplained events are the agent's connections to the fixture host",
             unexplained["count"] >= 1
+            and unexplained["count"] == len(unexplained["event_ids"])
+            and truth.uncalled_port is not None
+            and all(port == truth.uncalled_port for port in ports)
             and all(
                 h.get("event_class") == "connect"
                 and any(p["namespace"] == "run" for p in h.get("part_of", ()))
                 for h in listed
             ),
-            unexplained,
+            {"unexplained": unexplained, "peer_ports": ports, "fixture": truth.uncalled_port},
         )
         if sandbox_linked:
             checks.equal("sandbox_events_unlinked", unlinked, 0)

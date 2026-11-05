@@ -81,6 +81,7 @@ class ProdRun:
     truth: ProductionTruth | None = None
     model_host: str = "127.0.0.1"
     sandbox_peer: str = ""
+    fixture_port: int = 0  # the uncalled fixture host (step 6)
     agent_pid: int | None = None
     container_id: str = ""
     replay_codes: dict[str, int] = field(default_factory=dict)
@@ -215,7 +216,7 @@ class ProductionHarness:
             run = ProdRun(
                 name, directory, agent, [], sink.records, node.content_root,
                 model_host=model.host, sandbox_peer=sandbox_peer, container_id=container,
-                spool=config.workdir / "spool",
+                spool=config.workdir / "spool", fixture_port=host.port,
             )  # fmt: skip
             run.e2b_ledger = e2b.ledger_json()
             (directory / "e2b-ledger.json").write_text(json.dumps(run.e2b_ledger, indent=1))

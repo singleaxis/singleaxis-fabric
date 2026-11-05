@@ -18,14 +18,16 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 HERE = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(HERE))
 
-from ar1 import production, replay  # noqa: E402
+from ar1 import expect, production, replay  # noqa: E402
 from ar1.fixture_model import T4, T8, T9, Script  # noqa: E402
 from ar1.harness import Options  # noqa: E402
 from ar1.node import node_dist  # noqa: E402
@@ -125,6 +127,57 @@ def test_the_fixture_docker_never_holds_the_id(tmp_path: Path) -> None:
     assert not any(
         ("c" * 64).encode() in p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()
     )
+
+
+def _live_view(unexplained_ports: list[int]) -> tuple[dict[str, Any], expect.ProductionTruth]:
+    """A live-shaped view: step 4's effect anchored by the launcher's exec, its lineage
+    one exec; the unexplained events agent connects to the given ports."""
+    anchor, inner = "e-anchor", "e-inner"
+    run_link = [{"namespace": "run", "target": "r", "link": "x"}]
+    lineage = [{"namespace": "attempt", "target": "u4", "link": "process_lineage · certain"}]
+    connects = [f"e-connect-{n}" for n in range(len(unexplained_ports))]
+    view: dict[str, Any] = {
+        "rows": [
+            {"kind": "effect", "attempt_uid": "u4",
+             "corroborated_by": [{"event_id": anchor, "link": "process_anchor · certain"}]},
+            {"kind": "host", "event_id": inner, "event_class": "exec", "part_of": lineage},
+            *({"kind": "host", "event_id": e, "event_class": "connect", "part_of": run_link}
+              for e in connects),
+        ],
+        "unexplained_host_events": {"count": len(connects), "event_ids": connects},
+        "sandbox_events_unlinked": {"count": 0},
+    }  # fmt: skip
+    attributes: dict[str, dict[str, Any]] = {
+        anchor: {"fabric.sensor.event_class": "exec", "fabric.sensor.pid_ns": 4026531836},
+        inner: {"fabric.sensor.event_class": "exec", "fabric.sensor.pid_ns": 4026532999},
+        **{e: {"fabric.sensor.event_class": "connect", "fabric.sensor.peer_port": p}
+           for e, p in zip(connects, unexplained_ports, strict=True)},
+    }  # fmt: skip
+    truth = expect.ProductionTruth(agent_pid=7, certain=True, host_attributes=attributes,
+                                   uncalled_port=8443)  # fmt: skip
+    return view, truth
+
+
+def _live_failures(view: dict[str, Any], truth: expect.ProductionTruth) -> set[str]:
+    checks = expect.Checks("live")
+    expect.production_corroboration(checks, view, {"u4": "4"}, truth)
+    return {c.name for c in checks.failures()}
+
+
+def test_live_shape_checks_name_the_namespace_and_the_fixture_host() -> None:
+    """Live mode (``exact=False``): step 4 needs an exec in another pid namespace as the
+    launcher's lineage, and step 6 needs every unexplained event to be a connect to the
+    fixture host's port (review, WP6-10)."""
+    step4 = "step 4: an exec in another pid namespace is lineage of the launcher"
+    step6 = "step 6: unexplained events are the agent's connections to the fixture host"
+    view, truth = _live_view([8443])
+    assert not {step4, step6} & _live_failures(view, truth)
+    view, truth = _live_view([8443, 443])  # a model connection left unexplained
+    assert step6 in _live_failures(view, truth)
+    view, truth = _live_view([8443])
+    same = dict(truth.host_attributes)
+    same["e-inner"] = {**same["e-inner"], "fabric.sensor.pid_ns": 4026531836}
+    assert step4 in _live_failures(view, replace(truth, host_attributes=same))
 
 
 def test_ar1_production_replay(tmp_path: Path) -> None:
