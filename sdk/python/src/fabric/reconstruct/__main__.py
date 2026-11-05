@@ -14,10 +14,12 @@ reconstructed; ``2`` input, usage or internal error.
 person can read (spec 056 §4.6): each model call, the effects (subprocesses) it caused and
 the link that says so, the host events that corroborate them, and the chain verdicts;
 ``--json`` prints the same rows as JSON. It reads the same inputs and options as the
-report, adds no contract, and exits as the report does. ``--host-records FILE`` (both
-commands) adds a host sensor's records, read by ``_host.read_host_file``, and joins them to
-the effects through the process tree (spec 056 §4.3): the report gains the
-``corroboration`` chain and ``sensor_events``, the view its ``host`` rows.
+report, adds no contract, and exits as the report does. Host-sensor records, in the
+``--spans`` export itself (production host records, split out before verification, spec
+056 §7.3.3 (l)) or in ``--host-records FILE`` (both commands, read by
+``_host.read_host_file``), are joined to the effects through the process tree and the
+container ids the runtimes reported (spec 056 §4.3): the report gains the
+``corroboration`` chain and ``sensor_events``, the view its ``host`` and ``sandbox`` rows.
 
 Diagnostics are fixed text (spec 047 §9 "Diagnostics"): stderr never carries
 an argument value, a path, a key or an underlying exception's message, only
@@ -44,13 +46,13 @@ from urllib.parse import urlsplit
 
 from fabric._model_names import parse_model_allowlist
 from fabric._sequence import label_pseudonym, pseudonym_v2
-from fabric.reconstruct._attribute import ActionReader, ActionRun, HostJoiner, action_rows
+from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
 from fabric.reconstruct._graph import RunGraph
 from fabric.reconstruct._host import (
     HOST_SOURCES,
+    PID_NAMESPACE_BASES,
     HostEvidence,
-    HostSource,
-    host_joiner,
+    HostPlan,
     peer_id,
     read_host_file,
 )
@@ -82,6 +84,11 @@ _ENDPOINT_PEER_RE = re.compile(
 )
 # --known-peer ADDRESS: an address the agent process contacts for Fabric or infrastructure.
 _KNOWN_PEER_RE = re.compile(r"^[^\s=]{1,255}$")
+# --sandbox-peer [ADDRESS]:PORT (an IPv6 address with a port).
+_BRACKETED_PEER_RE = re.compile(r"^\[(?P<address>[^\]\s]{1,253})\](?::(?P<port>[0-9]{1,5}))?$")
+_SOURCE_ID_RE = re.compile(r"^s-[0-9a-f]{32}$")
+_PORT_MAX = 65_535
+_DECIMAL_RE = re.compile(r"^[0-9]{1,20}$")
 _PID_MAX = 1 << 22  # Linux pid_max upper bound
 # An endpoint id as capture spans carry it (wire/_attrs.py C35): kept as given.
 _EMITTED_ENDPOINT_RE = re.compile(r"^(?:[a-z][a-z0-9_]{0,31}\.default|lbl-[0-9a-f]{32})$")
@@ -319,9 +326,41 @@ def _host_options(parser: argparse.ArgumentParser) -> None:
         action="append",
         dest="host_sources",
         default=[],
-        choices=sorted(HOST_SOURCES),
-        help="declare a host sensor source (repeatable; default: each sensor kind that has a "
-        "record in --host-records); a declared source with no record is a source_gap",
+        metavar="KIND[=SOURCE_ID]",
+        help="declare a host sensor source (repeatable): host.ebpf or host.auditd, "
+        "optionally with the s- source id of one sensor process (print-source-id). Every "
+        "source whose records are in --host-records or --spans is a host source anyway; a "
+        "declared source with nothing in the run window is a source_gap",
+    )
+    parser.add_argument(
+        "--host-pid-namespace",
+        action="append",
+        dest="host_pid_namespaces",
+        default=[],
+        metavar="KIND=MODE",
+        help="the pid-namespace mode of every source of one sensor kind (repeatable; MODE "
+        "recorded or declared_same). Default per source: recorded when every record "
+        "carries fabric.sensor.pid_ns (production eBPF), else declared_same (local records, "
+        "auditd: the agent shares the sensor's pid numbering)",
+    )
+    parser.add_argument(
+        "--agent-pid-namespace",
+        dest="agent_pid_namespace",
+        metavar="NS",
+        help="the agent's pid namespace (the inode of its /proc/self/ns/pid, decimal) when "
+        "its effects do not agree on fabric.process.pid_ns: rule H4 compares a recorded "
+        "source's events with it",
+    )
+    parser.add_argument(
+        "--sandbox-peer",
+        action="append",
+        dest="sandbox_peers",
+        default=[],
+        metavar="ADDRESS[:PORT]",
+        help="the address of a remote sandbox provider the agent calls (repeatable; an IPv6 "
+        "address with a port as [ADDRESS]:PORT): the agent's connections to it are linked "
+        "by rule H4, never unexplained, and while remote.sandbox is not active they are "
+        "remote_sandbox_calls (spec 056 §4.4.1). With a port, only connections to that port",
     )
     parser.add_argument(
         "--endpoint-peer",
@@ -715,51 +754,51 @@ def _action_reader(
     )
 
 
-def _host_joiner(args: argparse.Namespace, key: bytes | None) -> HostJoiner | None:
-    """The host join of ``--host-records`` (spec 056 §4.3), or ``None`` without it.
-
-    The host id and peer ids are keyed ``hst-`` pseudonyms, so the id key is required. The
-    declared sources are ``--host-source``, else the sensor kinds the records hold; each is
-    on ``--host-label``'s host and reports pids in the agent's pid namespace (local
-    records name neither); whether it covered the run is derived from its records (spec
-    053 positions) or declared with ``--host-coverage-declared``. ``--agent-pid`` and the
-    host label give rule H4 the agent process when no effect names it."""
-    paths = [str(path) for path in args.host_records]
-    if not paths:
-        if (
-            args.host_label is not None
-            or args.host_sources
-            or args.endpoint_peers
-            or args.known_peers
-            or args.agent_pid is not None
-            or args.host_coverage_declared
-        ):
+def _host_declarations(args: argparse.Namespace) -> list[tuple[str, str | None]]:
+    """``--host-source KIND[=SOURCE_ID]``, checked without echoing a value."""
+    declared: list[tuple[str, str | None]] = []
+    for value in args.host_sources:
+        kind, sep, source_id = str(value).partition("=")
+        if kind not in HOST_SOURCES or (sep and not _SOURCE_ID_RE.fullmatch(source_id)):
             raise ReconstructInputError(
-                "--host-label, --host-source, --endpoint-peer, --known-peer, --agent-pid and "
-                "--host-coverage-declared need --host-records"
+                "--host-source takes host.ebpf or host.auditd, optionally =s-<32 hex>"
             )
-        return None
-    if key is None:
-        raise ReconstructInputError(
-            "--host-records needs the id key (the --id-key-env variable): host and peer ids "
-            "are keyed pseudonyms"
-        )
-    label = args.host_label
-    if label is None or not _HOST_LABEL_RE.fullmatch(label):
-        raise ReconstructInputError(
-            "--host-records needs --host-label: 1-128 letters, digits and ._:/-"
-        )
-    evidence = HostEvidence()
-    for index, path in enumerate(paths, start=1):
-        evidence.extend(read_host_file(path, id_key=key, label=f"--host-records #{index}"))
-    kinds = list(dict.fromkeys(args.host_sources)) or [
-        kind for kind in sorted(HOST_SOURCES) if evidence.has_records(kind)
-    ]
-    if not kinds:
-        raise ReconstructInputError(
-            "--host-records holds no host-sensor record; name the sensor with --host-source"
-        )
-    host_id = pseudonym_v2("hst", label, key)
+        declared.append((kind, source_id if sep else None))
+    return list(dict.fromkeys(declared))
+
+
+def _pid_namespace_modes(args: argparse.Namespace) -> dict[str, str]:
+    """``--host-pid-namespace KIND=MODE``; one mode per kind."""
+    modes: dict[str, str] = {}
+    for value in args.host_pid_namespaces:
+        kind, _, mode = str(value).partition("=")
+        if kind not in HOST_SOURCES or mode not in PID_NAMESPACE_BASES:
+            raise ReconstructInputError(
+                "--host-pid-namespace takes KIND=recorded or KIND=declared_same"
+            )
+        if modes.setdefault(kind, mode) != mode:
+            raise ReconstructInputError("--host-pid-namespace names one mode per kind")
+    return modes
+
+
+def _sandbox_peer(value: str, key: bytes | None) -> tuple[str, int | None]:
+    """``--sandbox-peer ADDRESS[:PORT]`` (``[ADDRESS]:PORT`` for IPv6) as ``(peer_id,
+    port)``; never echoes the value."""
+    bracketed = _BRACKETED_PEER_RE.fullmatch(value)
+    if bracketed is not None:
+        address, port = bracketed["address"], bracketed["port"]
+    elif value.count(":") == 1:
+        address, _, port = value.partition(":")
+    else:
+        address, port = value, None
+    found = peer_id(address, key) if _KNOWN_PEER_RE.fullmatch(value) else None
+    if found is None or (port is not None and not (port.isdigit() and 1 <= int(port) <= _PORT_MAX)):
+        raise ReconstructInputError("--sandbox-peer takes ADDRESS[:PORT] or [ADDRESS]:PORT")
+    return found, None if port is None else int(port)
+
+
+def _peers(args: argparse.Namespace, key: bytes | None) -> tuple[dict[str, list[str]], list[str]]:
+    """``--endpoint-peer`` (by emitted endpoint id) and ``--known-peer`` as peer ids."""
     peers: dict[str, list[str]] = {}
     for value in args.endpoint_peers:
         match = _ENDPOINT_PEER_RE.fullmatch(str(value))
@@ -777,16 +816,74 @@ def _host_joiner(args: argparse.Namespace, key: bytes | None) -> HostJoiner | No
         if found is None:
             raise ReconstructInputError("--known-peer takes an ADDRESS")
         known.append(found)
+    return peers, known
+
+
+def _host_joiner(args: argparse.Namespace, key: bytes | None) -> HostPlan:
+    """The host join (spec 056 §4.3, §7.3.3 (l)): ``--host-records`` files plus the host
+    records the export itself holds, which the verifier splits out of ``--spans``.
+
+    Host and peer ids are keyed ``hst-`` pseudonyms, so the id key is required to read
+    local records and to key ``--endpoint-peer``, ``--known-peer`` and ``--sandbox-peer``.
+    Local-profile records name neither their host nor their source: they are on
+    ``--host-label``'s host, in the agent's pid numbering unless ``--host-pid-namespace``
+    says otherwise, and their coverage of the run is declared with
+    ``--host-coverage-declared`` (refused for production records, which heartbeats
+    verify). Production records name their source, host and namespaces. ``--agent-pid``,
+    ``--agent-pid-namespace`` and the host label give rules H4 the agent process when no
+    effect names it. A host option used with no host record anywhere is refused."""
+    paths = [str(path) for path in args.host_records]
+    if not paths and (args.host_label is not None or args.host_coverage_declared):
+        raise ReconstructInputError("--host-label and --host-coverage-declared need --host-records")
+    declared = _host_declarations(args)
+    modes = _pid_namespace_modes(args)
+    namespace = args.agent_pid_namespace
+    if namespace is not None and not _DECIMAL_RE.fullmatch(str(namespace)):
+        raise ReconstructInputError("--agent-pid-namespace takes the namespace inode in decimal")
+    needs_key = paths or args.endpoint_peers or args.known_peers or args.sandbox_peers
+    if needs_key and key is None:
+        raise ReconstructInputError(
+            "--host-records, --endpoint-peer, --known-peer and --sandbox-peer need the id key "
+            "(the --id-key-env variable): host and peer ids are keyed pseudonyms"
+        )
+    evidence: HostEvidence | None = None
+    host_id: str | None = None
+    if paths:
+        evidence = HostEvidence()
+        for index, path in enumerate(paths, start=1):
+            evidence.extend(read_host_file(path, id_key=key, label=f"--host-records #{index}"))
+        if not evidence.keys() and not declared:
+            raise ReconstructInputError(
+                "--host-records holds no host-sensor record; name the sensor with --host-source"
+            )
+        label = args.host_label
+        local = any(evidence.has_local_records(kind) for kind in HOST_SOURCES)
+        if (local or label is not None) and (label is None or not _HOST_LABEL_RE.fullmatch(label)):
+            raise ReconstructInputError(
+                "--host-records needs --host-label: 1-128 letters, digits and ._:/-"
+            )
+        host_id = None if label is None else pseudonym_v2("hst", label, key)
+    peers, known = _peers(args, key)
+    sandboxes = [_sandbox_peer(str(value), key) for value in args.sandbox_peers]
     if args.agent_pid is not None and not 1 <= args.agent_pid < _PID_MAX:
         raise ReconstructInputError(f"--agent-pid takes a pid of 1-{_PID_MAX - 1}")
-    verified = True if args.host_coverage_declared else None
-    return host_joiner(
-        evidence,
-        [HostSource(kind, host_id, verified=verified) for kind in kinds],
+    options = bool(
+        declared or modes or namespace is not None or peers or known or sandboxes
+        or args.agent_pid is not None
+    )  # fmt: skip
+    return HostPlan(
+        local=evidence,
+        local_host_id=host_id,
+        local_verified=True if args.host_coverage_declared else None,
+        declared=declared,
+        pid_namespace=modes,
         agent_pid=args.agent_pid,
         agent_host_id=host_id,
+        agent_pid_ns=None if namespace is None else str(namespace),
         endpoint_peers=peers,
         known_peers=known,
+        sandbox_peers=sandboxes or None,
+        options_given=options and not paths,
     )
 
 
@@ -846,8 +943,19 @@ def _chain_text(chain: Mapping[str, Any]) -> str:
     return f"{chain['verdict']}({','.join(reasons)})" if reasons else str(chain["verdict"])
 
 
+def _short(value: str) -> str:
+    return value[:8] + "…"
+
+
 def _effect_text(row: Mapping[str, Any]) -> str:
-    what = f"exec {row['label']}" if "label" in row else f"exec pid {row.get('pid', '?')}"
+    if row.get("capture_point") == "remote.sandbox":
+        sandbox = row.get("sandbox_id")
+        named = _short(sandbox) if isinstance(sandbox, str) else "sandbox"
+        what = f"remote {row.get('label', named)}"
+    elif "label" in row:
+        what = f"exec {row['label']}"
+    else:
+        what = f"exec pid {row.get('pid', '?')}"
     if "exit_code" in row:
         what += f" exit {row['exit_code']}"
     elif "signal" in row:
@@ -906,6 +1014,13 @@ def format_actions(view: Mapping[str, Any]) -> str:
         elif row["kind"] == "effect":
             effect = f"{number}    effect     {_effect_text(row):<36} {_caused_text(row)}"
             lines.append(effect.rstrip())
+        elif row["kind"] == "sandbox":
+            sandbox = row.get("sandbox_id")
+            what = (
+                f"{_short(sandbox) if isinstance(sandbox, str) else '-'} {row['count']} host events"
+            )
+            refs = ",".join(f"#{n}" for n in row.get("refs", ()))
+            lines.append(f"{number}      sandbox  {what:<34} ← {refs}  {row['link']}".rstrip())
         else:
             what, tail = _host_text(row)
             lines.append(f"{number}      host     {what:<34} {tail}".rstrip())
@@ -923,6 +1038,12 @@ def format_actions(view: Mapping[str, Any]) -> str:
     unexplained = view["unexplained_host_events"]
     if unexplained["count"]:
         lines.append(f"  unexplained host events: {unexplained['count']}")
+    unlinked = view.get("sandbox_events_unlinked", {}).get("count")
+    if unlinked:
+        lines.append(f"  sandbox-scope host events no effect reported: {unlinked}")
+    calls = view.get("remote_sandbox_calls", {}).get("count")
+    if calls:
+        lines.append(f"  remote sandbox calls while remote.sandbox was not active: {calls}")
     match = view["output_match"]
     reason = f" ({match['reason']})" if "reason" in match else ""
     lines.append(f"  output match: {match['state']}{reason}")

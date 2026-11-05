@@ -45,6 +45,7 @@ from fabric.reconstruct._host import (
     merge_link_counts,
     normalize_local_record,
     peer_id,
+    peer_text,
     process_effects,
     read_host_file,
     same_tick,
@@ -63,7 +64,7 @@ MS = 1_000_000
 WINDOW = (T0, T0 + 60_000 * MS)
 AGENT = AgentProcess(pid=4100, host_id=HOST, clock_uncertainty_ns=1 * MS)
 EBPF = HostSource("host.ebpf", HOST, "declared_same", 2 * MS, verified=True)
-HOST_PARTS = ("process_anchor", "process_lineage")
+HOST_PARTS = ("process_anchor", "process_lineage", "sandbox_report")
 
 
 def _json(path: Path) -> Any:
@@ -177,21 +178,23 @@ def test_local_profile_anchors_are_tentative_and_053_anchors_certain() -> None:
 
 
 # ------------------------------------------------------------------ interface goldens
+_PLAIN = (
+    "event_id",
+    "source",
+    "event_class",
+    "time_ns",
+    "pid",
+    "ppid",
+    "process_start_ns",
+    "pid_ns",
+    "host_id",
+    "peer_id",
+    "result",
+)
+
+
 def _plain(event: HostEvent) -> dict[str, Any]:
-    names = (
-        "event_id",
-        "source",
-        "event_class",
-        "time_ns",
-        "pid",
-        "ppid",
-        "process_start_ns",
-        "pid_ns",
-        "host_id",
-        "peer_id",
-        "result",
-    )
-    return {n: getattr(event, n) for n in names if getattr(event, n) is not None}
+    return {n: getattr(event, n) for n in _PLAIN if getattr(event, n) is not None}
 
 
 def _span(row: Mapping[str, Any]) -> SpanRecord:
@@ -286,10 +289,12 @@ def test_goldens_join_end_to_end() -> None:
     spans = host_evidence_from_spans(
         [_span(r) for r in _json(ACTION / "interface/host-sensor-spans.json")["spans"]]
     )
-    recorded = HostSource("host.ebpf", HOST, "recorded", verified=True)
-    agent = AgentProcess(4100, HOST, 1 * MS, pid_ns="4026531836")
+    # The M1 span golden carries init-namespace pids only (no ns_pid): the agent shares
+    # them (declared_same). Under recorded nothing would join (M2: no fallback).
+    declared = HostSource("host.ebpf", HOST, "declared_same", verified=True)
+    agent = AgentProcess(4100, HOST, 1 * MS)
     join = join_host_events(
-        effects, spans, agent=agent, sources=[recorded], run_id=RUN, window=WINDOW
+        effects, spans, agent=agent, sources=[declared], run_id=RUN, window=WINDOW
     )
     (anchor,) = join.links[effects[0].attempt_uid]
     assert (anchor["confidence"], anchor["state"]) == ("certain", "resolved")
@@ -297,6 +302,53 @@ def test_goldens_join_end_to_end() -> None:
     # The span golden holds curl's connect but not curl's exec: no chain reaches it.
     assert join.corroboration.reasons() == ["unexplained_host_event"]
     assert join.unexplained_event_ids == ("8a04cd80-c443-4356-a944-ff73fb0308bc",)
+
+
+def test_production_goldens_normalize_and_join() -> None:
+    """M2 goldens: the revision 4 eBPF spans normalize with both pid numberings, the scope
+    and the container id; the production exec record anchors on ns_pid/ns_ppid (H1,
+    certain), and the container-create effect's created id links the sandbox-scope exec
+    (H5, reported, certain)."""
+    golden = _json(ACTION / "interface/host-sensor-spans.json")["production"]
+    evidence = host_evidence_from_spans([_span(r) for r in golden["spans"]])
+    names = (*_PLAIN, "source_id", "ns_pid", "ns_ppid", "scope", "sandbox_id", "pod_id",
+             "peer_port")  # fmt: skip
+    plain = [
+        {n: getattr(e, n) for n in names if getattr(e, n) is not None} for e in evidence.events
+    ]
+    assert plain == golden["normalized"]
+    records = _json(ACTION / "interface/exec-subprocess-records.json")
+    spans = [_span(r["span"]) for part in ("production", "container_create")
+             for r in records[part]["records"]]  # fmt: skip
+    effects = process_effects(spans)
+    assert [e.pid_ns for e in effects] == ["4026532481", "4026532481"]
+    assert effects[1].created_sandbox_id == "sbx-06ffee5ded058199b347d1e8a9872086"
+    source = HostSource("host.ebpf", None, "recorded", 2 * MS, verified=True,
+                        source_id=golden["normalized"][0]["source_id"])  # fmt: skip
+    agent = AgentProcess(7, HOST, 1 * MS, pid_ns="4026532481")
+    join = join_host_events(effects, evidence, agent=agent, sources=[source], run_id=RUN,
+                            window=WINDOW)  # fmt: skip
+    (anchor,) = join.links[effects[0].attempt_uid]
+    assert (anchor["confidence"], anchor["target"]["id"]) == ("certain", plain[0]["event_id"])
+    by_id = {e["event_id"]: e for e in join.sensor_events}
+    # The golden holds curl's connect but not curl's exec: no chain reaches it.
+    assert join.unexplained_event_ids == (plain[1]["event_id"],)
+    (h5,) = by_id[plain[2]["event_id"]]["links"]
+    assert (h5["method"], h5["provenance"], h5["confidence"]) == (
+        "sandbox_report", "reported", "certain")  # fmt: skip
+    assert join.link_counts["sandbox_report"] == {"resolved": 1, "ambiguous": 0, "unresolved": 0}
+    # The docker CLI effect (pid 90) has no exec event in the golden: not anchored.
+    assert join.trace["anchors"][effects[1].attempt_uid] == "anchor_missing"
+
+
+def test_peer_text_vectors() -> None:
+    """``peer_text`` and ``peer_id`` equal ``peer-address-v1.json`` (the Go library's
+    ``hostrecords.PeerText`` pins the same vector)."""
+    vectors = _json(REPO_ROOT / "contracts/coverage/v1/fixtures/vectors/peer-address-v1.json")
+    key = vectors["key"].encode()
+    for case in vectors["cases"]:
+        assert peer_text(case["input"]) == case["text"], case["name"]
+        assert peer_id(case["input"], key) == case["host_id"], case["name"]
 
 
 # ------------------------------------------------------------------ the reader
