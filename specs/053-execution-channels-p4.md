@@ -15,7 +15,9 @@ related: ["030", "031", "041", "043", "047", "048", "054", "055"]
 decision OD-1) moves the hooks foundation, the `exec.subprocess` channel and
 the host-sensor production ingress of this spec ahead of P2 and P3. The
 first two are built for 056 milestone M1 and released in v0.10.0; the
-host ingress is 056 milestone M2. The rest of this spec is not built. Codes
+host ingress, the production host sensors and the non-model HTTP hook
+(§5.4 without dialects) are built for 056 milestone M2 and released in
+v0.11.0. The rest of this spec is not built. Codes
 in parentheses such as (R8) or (R11) name the cross-spec revision decisions
 that a rule applies, and "decision n" means row n of 049 §9; the
 [glossary](../docs/glossary.md) lists both.

@@ -70,8 +70,9 @@ refuse HTTP redirects (048). Both built.
 **Host sensor.** An optional Linux component that records process starts,
 network connections and file opens as metadata: the auditd receiver
 (capture point `host.auditd`, [030]) and the eBPF host emitter
-(`host.ebpf`, [031]). Corroboration only. Built for the local profile; a
-production ingress is specified in [053] §6.2 and not built.
+(`host.ebpf`, [031]). Corroboration only. Built for the local profile
+(v0.8.0); production mode, through a production Node's host ingress groups
+([053] §6.2), released in v0.11.0.
 [Host sensors](host-sensors.md).
 
 **Node mode, local file mode, direct mode.** How an agent delivers. Node
@@ -488,7 +489,8 @@ for the local profile: the contracts and rule fixtures
 the hooks, the subprocess hook, attribution, chain verdicts, the `actions`
 view, the host join and its `--host-records` option (WP6-01 to WP6-06).
 The AR-1 acceptance test passes in CI in hermetic mode and in live mode
-(Linux, eBPF). Milestone M2 is not built. See
+(Linux, eBPF). Milestone M2, the production profile, is released in
+v0.11.0, and AR-1 production passes in CI. See
 [agent action reconstruction](action-reconstruction.md).
 
 **The four chains.** *Decisions*: what the model saw and returned (wire
@@ -559,7 +561,7 @@ is not run live in CI.
 | P1-A | Mixed explicit and wire capture, passivity harness ([050] wave 4) | Not built |
 | P2 | Run context and lifecycle reporting ([051]) | Not built |
 | P3 | Decision and effect records, record-only ([052]) | Not built |
-| P4 | Opt-in hooks and production host sensors ([053]) | Not built, except the part moved into [056] M1 (v0.10.0) |
+| P4 | Opt-in hooks and production host sensors ([053]) | Not built, except the parts moved into [056] M1 (v0.10.0) and M2 (v0.11.0) |
 | P5 | Realtime, media, batch, files, UI automation ([054]) | Not built |
 | TS-0, TS-1, TS-2 | TypeScript identity parity, wire capture, reporting APIs ([055]) | Not built |
 

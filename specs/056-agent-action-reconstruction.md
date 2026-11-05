@@ -125,8 +125,11 @@ The table is the state this spec started from. Milestone M1 (WP6-01 to
 WP6-07) is built and released in v0.10.0: the hooks foundation, the
 `exec.subprocess` hook, the effect ↔ tool call link (§4.2) and the
 process-tree join for local-profile host records (§4.3). AR-1 (§6.2) passes
-in CI in hermetic mode and in live mode (Linux, eBPF). Milestone M2 is not
-built; §7.3 is its build plan.
+in CI in hermetic mode and in live mode (Linux, eBPF). Milestone M2 (§7.3,
+the production profile) is built and released in v0.11.0: AR-1 production
+passes in CI (`production-replay` on macOS and Linux, `production-live` and
+`production-auditd` on Linux), which was this spec's condition for
+changing the status.
 
 What M2 starts from, checked against the v0.10.0 code:
 

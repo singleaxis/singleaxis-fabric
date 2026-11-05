@@ -8,8 +8,153 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-05
+
+Fabric 0.11.0 takes agent action reconstruction (spec 056 milestone M2,
+the production profile) from a local test Node to production. A host
+sensor, the eBPF emitter or the auditd receiver, can now report to a
+production-profile Node as an authenticated source of its own, through a
+dedicated ingress group with its own token and listener. Its records carry
+positions, heartbeats, a manifest, the process start time and the pid
+namespace, so the verifier can tie a command the agent ran to the
+operating system's exec event with certainty (rule H1), also when the agent
+runs in a container or a Kubernetes pod. Containers the agent starts are
+linked by the id the container runtime printed (rule H5), a new hook
+records commands sent to an E2B remote sandbox, and another records
+non-model HTTP calls to hosts you list. The AR-1 acceptance test passes in
+CI against a production Node: replayed on macOS and Linux
+(`production-replay`), live on Linux with the eBPF emitter in production
+mode (`production-live`), and with the auditd sensor collector on a fixture
+audit log (`production-auditd`). Every new hook and sensor mode is opt-in;
+agents and Nodes that set none of the new options behave as in 0.10.
+Fabric stays a passive recorder: hooks and sensors observe and never
+approve, block, delay or change what the agent does.
+
 ### Added
 
+- **Host-records library (Go, spec 056 M2, WP4-07a).** New module
+  `components/otel-collector-fabric/hostrecords`, shared by both production
+  sensors: label and v2 pseudonyms, the id key file reader
+  (`ReadIDKeyFile`), peer address text, container and pod ids from cgroup
+  names, and an AES-256-GCM encrypted staging area. Every host record and
+  marker is sealed there with its positions and ids before it is first
+  sent, and replayed after a restart with the same ids; heartbeats carry
+  one upstream-loss span per reason (unknown loss stays unknown), and
+  manifest and final markers close each epoch. The test-only
+  `hostrecords-replay` command is built by no image or release.
+- **eBPF emitter production mode (WP4-07c).** `EMIT_PRODUCTION=true` exports
+  host records as OTLP/gRPC traces through the host-records library, with
+  an encrypted spool. Events carry the group leader's start time, the
+  namespace-local pid and parent pid and the pid-namespace inode. Scope is
+  a set of cgroup roots: static agent and sandbox roots
+  (`EMIT_AGENT_CGROUP_ROOTS`, `EMIT_SANDBOX_CGROUP_ROOTS`, at most 8 each)
+  or, on Kubernetes, the pods of `EMIT_AGENT_POD_SELECTOR` on the emitter's
+  node (at most 64; a root installed after its pod started is `scope_late`
+  upstream loss). Sandbox-scope events carry the container or pod id read
+  from the cgroup names. Ring-buffer and rate-limit drops are upstream
+  loss; a batch the Node refuses is quarantined as `span_dropped`. New
+  `EMIT_ENDPOINT_FILE` and `fabric-host-emitter print-source-id`.
+  Production mode requires tenant, source and host labels and id and state
+  key files, refuses `EMIT_CGROUP_PATH` and deduplication, and refuses
+  `EMIT_INSECURE=true` to a non-loopback endpoint. Local mode is unchanged.
+- **auditd receiver production mode (WP4-07b).** `mode: production` makes the
+  audit receiver one host source inside a customer-deployed sensor
+  collector (it never runs inside a Node), emitting host records and
+  markers through the host-records library. The logfile cursor advances
+  only after every staged batch is acknowledged; rotation gaps, truncation,
+  netlink socket overflow, rate limiting and the kernel's lost counter are
+  upstream loss. Local mode is unchanged.
+- **Authenticated per-source host ingress groups (gate and fabricguard,
+  WP4-08a, WP4-08b).** A production Node can serve several sources, each
+  through a static ingress group with its own bearer token file,
+  listener(s) and `fabricguard/<group>` instance, so a batch's source is
+  fixed by the ingress it arrived on. `fabric-gate` checks spec 053 §6.1
+  rules 1–10 and §6.2.6 rules 1–5 over the merged configuration: group
+  names; 64 groups by default, 256 at most (`FABRIC_GATE_MAX_GROUPS`);
+  credentials that differ byte for byte, at start and after every rotation;
+  no cross-wired receivers, guards or content exporters; TLS unless
+  loopback; host groups on a traces pipeline only; no audit receiver in a
+  Node. A sensor-collector profile covers the auditd collector.
+  fabricguard gains `source_kind` (`agent`, `host.auditd`, `host.ebpf`) and
+  `host_digests`: a host instance admits only host records and its own
+  source's markers that match its binding, removes any supplied
+  authentication stamp, strips keys outside the host placement and stamps
+  what it admits; an agent instance refuses any `fabric.sensor.*` key or
+  sensor capture point. The legacy single binding is unchanged; mixing it
+  with groups is refused.
+- **Per-node bindings in the chart, Compose and Kubernetes (WP4-09).** Chart
+  values `otel-collector.receiver.sourceBindings[]` render one group per
+  source (token mounts, Service ports, NetworkPolicy peers) and the profile
+  `profiles/shadow-production-host-ingress.yaml`; the chart packages no
+  sensor workload. Compose: `docker-compose.host-ingress*.yml` (agent group,
+  eBPF group on gRPC 4417, auditd group on OTLP/HTTP 4428),
+  `docker-compose.sensor-auditd.yml`, `make up-prod-groups`,
+  `make up-sensor-auditd`, `preflight-prod.sh --groups` and
+  `qualify-sensor-auditd.sh`. Kubernetes: a production eBPF DaemonSet with
+  per-node hostPath provisioning and source label `$(NODE_NAME)/ebpf`, an
+  auditd sensor-collector example, and `deploy/kubernetes/host-bindings.py`,
+  which generates one group per node.
+- **Exec record for production and containers (Python, WP6-08).** The
+  `exec.subprocess` hook adds `fabric.process.start_ns`, read on the calling
+  thread right after the child starts, so a child that exits at once keeps
+  it (Linux, `SC_CLK_TCK` 100 only); `fabric.process.pid_ns`; and
+  `fabric.sandbox.created_id`, the pseudonym of the container or pod id
+  printed by `docker`/`podman`/`nerdctl run -d` or `create`, or by
+  `kubectl run`/`create`/`apply` with `-o jsonpath={.metadata.uid}` or
+  `-o json`. Output is parsed on the capture worker; no id is recorded
+  under `omit` or without an id key.
+- **Non-model HTTP channel (Python, WP6-09a).** Opt-in capture point
+  `http.nonmodel` on the records input for httpx requests to hosts you list
+  (`fabric.hooks.install(http_hosts=…)` or `FABRIC_WIRE_HTTP_HOSTS`): exact
+  canonical host match (never a substring), one attempt per redirect hop,
+  responses in 256 KiB pieces, early close and cancellation as end records,
+  no header recorded. A route table (`wire/_routes.py`) decides each
+  request once; with no rule registered, model routing is unchanged.
+- **E2B remote-sandbox hook (Python, WP6-09b, optional extra
+  `hooks-sandbox-e2b`).** Capture point `remote.sandbox` records the
+  `commands.run` and `run_code` calls of the pinned E2B SDK (`e2b` 2.62.x,
+  `e2b-code-interpreter` 2.11.x; sync and async; a background run ends at
+  its `wait`) as effects with their results. Turn it on with
+  `install(remote_sandbox=("e2b",))` or `FABRIC_WIRE_REMOTE_SANDBOX=e2b`;
+  `sandbox_hosts=` / `FABRIC_WIRE_SANDBOX_HOSTS` declares provider hosts.
+  Other SDK versions are refused at install (`unsupported_version`).
+  Callbacks are never wrapped or called, the hook never calls the provider,
+  and API keys and environment values are never stored. Install with
+  `pip install "singleaxis-fabric[hooks-sandbox-e2b]"`; the default wheel
+  installs no provider SDK.
+- **Production-profile reconstruction (WP6-12).** `python -m
+  fabric.reconstruct actions --profile production` reads host records from
+  the same Node export as the agent's (`--host-records` is optional), keeps
+  each host source's records and markers out of the agent's sources,
+  segments and seals, and verifies each host source by its positions,
+  heartbeats (a tail without heartbeats is `source_gap`), upstream loss
+  and the Node's authentication stamp (`unverified(source_unauthenticated)`
+  without it). Rule H1 joins an effect to its exec event on the
+  namespace-local pid, the parent pid and the start tick
+  (`process_anchor · certain`), also for an agent in its own pid namespace
+  and for children spawned from a pool thread; each host source is joined
+  in its own pid-namespace mode. Rule H5 links a container's sandbox-scope
+  events, on any host source, to the effect that printed its id
+  (`sandbox_report · certain`); sandbox events no reported id names are
+  counted in `sandbox_events_unlinked`. `remote.sandbox` effects are
+  attributed to tool calls (A1), and connections to a declared sandbox
+  provider while that hook is off are listed in `remote_sandbox_calls`
+  (effects reason `remote_sandbox`). The action view gains sandbox rows.
+  New options `--host-source`, `--host-pid-namespace`,
+  `--agent-pid-namespace` and `--sandbox-peer`; `--host-coverage-declared`
+  is refused for production records.
+- **Contracts (WP6-11).** coverage/v1 1.3.0 and capture/v1 1.6.0: registry
+  rows for the host-record keys (namespace pids, pid namespace, scope, pod
+  id), upstream loss on heartbeats (with `scope_late`), the new
+  `exec.subprocess` keys and the `http.nonmodel` keys; the `remote.sandbox`
+  capture point; the `fabric.http.observation/v1` and
+  `fabric.sandbox.observation/v1` evidence types; the `sandbox_report`
+  inference method; vectors `peer-address-v1`, `sandbox-id-v1`,
+  `id-key-file-v1` and the host-state envelope; host-record fixtures with
+  the Node admission reference; ingress-group configuration goldens; the
+  M2 rule fixtures and reference rules. The connect manifests of the eBPF
+  emitter, the auditd connector and the Python SDK describe the production
+  modes.
 - **AR-1 production (spec 056 M2, WP6-10).** `run_ar1.py --profile
   production` runs the acceptance scenario against a production-profile
   Node, with step 8 (`docker run -d` under the sandboxes' slice, linked by
@@ -27,6 +172,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   installs no provider SDK, the chart has no privileged workload, nothing
   shipped builds `hostrecords-replay`, and no artifact gains an evaluation
   or enforcement component.
+
+### Changed
+
+- **Reconstruction rules.** H3 now follows a child that forks without exec
+  (a subshell, a reaper, a double fork) from its first connect or file
+  event, bounded and start-time checked like an exec child. Each tool call
+  is judged by its own effect channel: with `exec.subprocess` off and
+  `remote.sandbox` on, a call outside a sandbox-provider window is
+  `channel_disabled`, not `none_in_window`.
+- **Host-emitter image** is built from the `components/` context, so it
+  links the host-records library; the replay command and tests never enter
+  the image.
+
+### Fixed
+
+These were found before release, in the M2 review and in its first CI runs
+on main.
+
+- **eBPF emitter shutdown.** On SIGTERM, production mode staged only its
+  in-memory batch, so up to 4096 queued events and whatever the BPF ring
+  still held were dropped with no loss recorded, and the final marker
+  sealed an epoch that verified complete. Shutdown now detaches the
+  programs and stages the queue and the ring to the end before the final
+  marker; if the ring cannot be drained within 5 s, the epoch first
+  declares unknown upstream loss.
+- **Hook latency.** On GitHub runners the subprocess hook's start overhead
+  (P4-EXEC, 50 µs budget) and the HTTP hook's per-chunk overhead (P4-HTTP)
+  exceeded their budgets. The exec hook now reads `/proc/<pid>/stat`
+  through libc without releasing the GIL and mints ids from a per-thread
+  pool of random bytes; the HTTP hook joins streamed response pieces on the
+  capture worker instead of the caller's thread. The records are the same.
+- **`host-bindings.py`** builds the lines it prints apart from the data that
+  holds keyed source ids, so nothing derived from a token or the id key
+  can reach standard output.
+- **Host-records library** refuses a plaintext above 1 GiB before sealing,
+  so the envelope length cannot overflow.
+- **Tests and qualification.** The auditd rotation-gap test used the wrong
+  log-numbering convention and was flaky under `-race`; the AR-1 production
+  replay gave each event of one process its own start time, so on Linux a
+  connect read as another process. Synthetic id-key-file test vectors are
+  baselined in gitleaks.
+
+### Known limitations
+
+- **The host id is not bound to the ingress group yet.** A host group binds
+  one source id and one token, but the `hst-` host id in a sensor's records
+  is only format-checked, so a sensor holding one group's credentials can
+  name another host.
+- **bwrap's default pid-1 reaper breaks lineage.** No host sensor reports
+  forks, so an exec whose parent only forked and produced no event of its
+  own (bwrap `--unshare-pid` without `--as-pid-1`) is listed unexplained.
+  Run bwrap with `--as-pid-1`, as AR-1 does.
+- **The pod-selector scope needs cluster-wide pod read.**
+  `EMIT_AGENT_POD_SELECTOR` uses a ClusterRole with `get`, `list` and
+  `watch` on pods. RBAC cannot limit that to one node, so every node's
+  emitter can read every pod object, inline environment values included.
+  Use static cgroup roots or a dedicated node pool where that is not
+  acceptable.
+- Remote sandboxes other than E2B, and file, database, MCP and SSH hooks,
+  are not built.
 
 ## [0.10.0] - 2026-11-04
 
@@ -2514,7 +2719,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.8.0...v0.9.0

@@ -6,7 +6,7 @@ Fabric OSS is a customer-controlled, passive recorder for AI systems:
 CAPTURE -> PROTECT -> DELIVER
 ```
 
-These pages describe the current release, v0.10.0, and any work on main
+These pages describe the current release, v0.11.0, and any work on main
 not yet in a release; each page says which. A capability that is not described here is not built; see
 [limitations and roadmap](limitations-and-roadmap.md). Superseded pages are
 deleted rather than archived (unlike superseded specs); their history lives
@@ -23,10 +23,10 @@ in git.
 | [Operations](operations/README.md) | Spool, queues, health, metrics, troubleshooting, upgrades; [recovery runbook](operations/dr.md) |
 | [Reconstruct and verdicts](reconstruct.md) | The offline verifier, gaps and verdicts |
 | [The P1 run record](run-record.md) | Shared allocator, records input, segments, seals, manifests, step projection (v0.10.0) |
-| [Agent action reconstruction](action-reconstruction.md) | The subprocess hook, a host sensor, effects linked to tool calls and host events, `python -m fabric.reconstruct actions`, what is not covered yet (v0.10.0) |
+| [Agent action reconstruction](action-reconstruction.md) | The subprocess hook, a host sensor, effects linked to tool calls and host events, `python -m fabric.reconstruct actions`, the production profile, what is not covered yet (v0.10.0, v0.11.0) |
 | [Explicit APIs](explicit-apis.md) | `decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters (Python and TypeScript) |
 | [Qualified-run mode](qualified-run-mode.md) | Opt-in receipt- and witness-backed verification |
-| [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter |
+| [Host sensors](host-sensors.md) | auditd receiver and eBPF host emitter, local and production mode |
 | [Limitations and roadmap](limitations-and-roadmap.md) | What is not captured, known defects, the roadmap |
 
 ## Reference
@@ -59,8 +59,8 @@ in git.
     [054](../specs/054-specialised-runtimes-p5.md) (P5) and
     [055](../specs/055-typescript-wire-capture.md) (TS-1, TypeScript wire
     capture). All are drafts. Waves 0–2 of 050 (P1) and the parts of 053
-    that 056 milestone M1 needs are released in v0.10.0; the rest is not
-    built ([map](#map)).
+    that 056 milestone M1 needs are released in v0.10.0, and the parts 056
+    milestone M2 needs in v0.11.0; the rest is not built ([map](#map)).
 
 ## Map
 
@@ -75,8 +75,8 @@ it. That needs four chains of evidence:
 |---|---|---|---|
 | Decisions | What did the model see and return? | Wire capture of model calls | Released (v0.8.0) |
 | Actions | Which tools did the model ask for, with which arguments, and what result did the agent feed back? | Parsed offline from the captured model bodies | Pairing by id released (v0.8.0); per-chain verdict released (v0.10.0, 056 WP6-04) |
-| Effects | What did the agent's process actually run? | Opt-in subprocess hook | Hook and attribution to tool calls released (v0.10.0, 056 WP6-03, WP6-04) |
-| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors released for the local profile; the join to effects released (v0.10.0, 056 WP6-05), read with `python -m fabric.reconstruct actions --host-records` ([agent action reconstruction](action-reconstruction.md)); local-profile anchors are `tentative` |
+| Effects | What did the agent's process actually run? | Opt-in hooks: subprocesses, E2B remote sandboxes, non-model HTTP | Subprocess hook and attribution to tool calls released (v0.10.0, 056 WP6-03, WP6-04); container ids, the E2B and non-model HTTP hooks released (v0.11.0, 056 M2) |
+| Corroboration | What did the operating system see? | Host sensors (auditd, eBPF) | Sensors released for the local profile; the join to effects released (v0.10.0, 056 WP6-05), read with `python -m fabric.reconstruct actions --host-records` ([agent action reconstruction](action-reconstruction.md)); local-profile anchors are `tentative`. Production host ingress and `certain` anchors released (v0.11.0, 056 M2) |
 
 ### Where things stand
 
@@ -84,8 +84,9 @@ it. That needs four chains of evidence:
 |---|---|
 | **Released (v0.8.0, unchanged in v0.9.x)** | Python wire capture (httpx, httpx2, aiohttp); the PROTECT stage, production profile gate, encryption at rest and source authentication (049 phases P0 and P0-A); the agent spool and sender; the Fabric Node; `fabric.reconstruct` with integrity verdicts; the explicit APIs in Python and TypeScript; qualified-run mode; host sensors in the local profile; Helm chart and Compose files. |
 | **Released (v0.10.0)** | Most of 049 phase P1 ([spec 050](../specs/050-run-structure-and-records-p1.md)): one allocator for both inputs, the records input, random epochs with registration, segments, seals, resume tokens, capture manifests, the segment graph and the step projection. See [the P1 run record](run-record.md). Also spec 056 milestone M1: the contracts and rule fixtures (WP6-01), the hooks foundation and `exec.subprocess` hook (WP6-02, WP6-03), effect-to-tool-call attribution, chain verdicts and the `actions` view (WP6-04), the process-tree join of host events and the `--host-records` option (WP6-05, WP6-06), and the AR-1 harness (WP6-06). See [agent action reconstruction](action-reconstruction.md). |
-| **Acceptance** | Spec 056 milestone M1: [AR-1](../qualification/action-record/README.md) passes in CI in hermetic mode (real agent, hook, Node and verifier; recorded host-sensor events) on macOS and Linux, and in live mode with the real eBPF sensor on Linux. |
-| **Specified only** | 050 P1-A and the `decision()` move onto the records input; specs [051](../specs/051-context-and-lifecycle-p2.md) (P2), [052](../specs/052-decisions-and-effects-p3.md) (P3), [053](../specs/053-execution-channels-p4.md) (P4, except the part 056 moves forward), [054](../specs/054-specialised-runtimes-p5.md) (P5), [055](../specs/055-typescript-wire-capture.md) (TypeScript wire capture); spec 056 milestone M2. |
+| **Released (v0.11.0)** | Spec 056 milestone M2, the production profile: the M2 contracts (WP6-11); the host-records library (WP4-07a); auditd and eBPF production modes (WP4-07b, WP4-07c); per-source ingress groups in `fabric-gate` and fabricguard host admission (WP4-08a, WP4-08b); chart, Compose and Kubernetes per-node bindings (WP4-09); start time, pid namespace and container ids on exec records (WP6-08); the non-model HTTP hook (WP6-09a) and the E2B remote-sandbox hook (WP6-09b); production-profile reconstruction (WP6-12); AR-1 production (WP6-10). See [agent action reconstruction](action-reconstruction.md#production-profile-m2) and [host sensors](host-sensors.md#production-mode). |
+| **Acceptance** | Spec 056 milestone M1: [AR-1](../qualification/action-record/README.md) passes in CI in hermetic mode (real agent, hook, Node and verifier; recorded host-sensor events) on macOS and Linux, and in live mode with the real eBPF sensor on Linux. Milestone M2: AR-1 production passes in CI against a production-profile Node, in replay on macOS and Linux, live on Linux with the eBPF emitter in production mode, and with the auditd sensor collector. |
+| **Specified only** | 050 P1-A and the `decision()` move onto the records input; specs [051](../specs/051-context-and-lifecycle-p2.md) (P2), [052](../specs/052-decisions-and-effects-p3.md) (P3), [053](../specs/053-execution-channels-p4.md) (P4, except the part 056 moves forward), [054](../specs/054-specialised-runtimes-p5.md) (P5), [055](../specs/055-typescript-wire-capture.md) (TypeScript wire capture). |
 
 [specs/README.md](../specs/README.md) gives the status of every spec, and
 [limitations and roadmap](limitations-and-roadmap.md) what the release does
@@ -96,17 +97,17 @@ not do.
 | Path | What it is | State |
 |---|---|---|
 | [`sdk/python/src/fabric/wire/`](../sdk/python/src/fabric/wire/) | Wire capture: transport tees (`_transport.py`, `_aiohttp.py`), endpoint matching (`_match.py`), the capture worker (`_pipeline.py`), PROTECT (`_protect.py`), the production gate (`_policy.py`), spool and sender (`_spool.py`, `_sender.py`), `install()`, `run()`, resume tokens (`__init__.py`) | Released (v0.8.0); P1 additions released (v0.10.0) |
-| [`sdk/python/src/fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/) | The offline verifier: span readers (`_inputs.py`), integrity (`_verify.py`, `_report.py`), tool-call and conversation stitching (`_stitch.py`), segment graph (`_graph.py`), step projection (`_project.py`, `_fields_model.py`); effect attribution, chain verdicts and the `actions` view (`_attribute.py`); host-sensor reader and process join (`_host.py`) | Released (v0.8.0); graph, projection, attribution and host join released (v0.10.0) |
+| [`sdk/python/src/fabric/reconstruct/`](../sdk/python/src/fabric/reconstruct/) | The offline verifier: span readers (`_inputs.py`), integrity (`_verify.py`, `_report.py`), tool-call and conversation stitching (`_stitch.py`), segment graph (`_graph.py`), step projection (`_project.py`, `_fields_model.py`); effect attribution, chain verdicts and the `actions` view (`_attribute.py`); host-sensor reader and process join (`_host.py`) | Released (v0.8.0); graph, projection, attribution and host join released (v0.10.0); production profile released (v0.11.0) |
 | [`sdk/python/src/fabric/`](../sdk/python/src/fabric/) (top level) | Shared allocator and pseudonyms (`_sequence.py`, `_identity.py`), content roles (`_roles.py`), records input (`_records.py`), segments (`_segments.py`), seals (`_seal.py`), manifests (`_manifest.py`); explicit APIs (`decision.py`, `call_recorder.py`, `byte_evidence.py`, `adapters/`); qualified-run mode (`qualified_run.py`, `receipt_sets.py`, `independent_feed.py`) | Explicit APIs released (v0.8.0); P1 modules released (v0.10.0) |
-| [`sdk/python/src/fabric/hooks/`](../sdk/python/src/fabric/hooks/) | Opt-in hooks: install, status, disable and close, patch ownership and the records-input producer (`__init__.py`, `_config.py`, `_patches.py`, `_guard.py`, `_producer.py`); the `exec.subprocess` observer (`_exec.py`) | Released (v0.10.0, 056 WP6-02, WP6-03) |
+| [`sdk/python/src/fabric/hooks/`](../sdk/python/src/fabric/hooks/) | Opt-in hooks: install, status, disable and close, patch ownership and the records-input producer (`__init__.py`, `_config.py`, `_patches.py`, `_guard.py`, `_producer.py`); the `exec.subprocess` observer (`_exec.py`) | Released (v0.10.0, 056 WP6-02, WP6-03); HTTP and E2B hooks released (v0.11.0, 056 M2) |
 | [`sdk/typescript/src/`](../sdk/typescript/src/) | TypeScript SDK: explicit APIs only (`decision.ts`, `byte-evidence.ts`, `identity.ts`, ...) | Released (v0.8.0); no wire capture |
-| [`components/otel-collector-fabric/`](../components/otel-collector-fabric/) | The Fabric Node: `gate/` (`fabric-gate`), `processor/fabricguardprocessor/`, `exporter/fabriccontentexporter/`, `extension/` (`fabricenvelope`, `noredirect`), `receiver/auditreceiver/` (auditd host sensor) | Released (v0.8.0); records class released (v0.10.0) |
-| [`components/host-emitter/`](../components/host-emitter/) | eBPF host sensor (Go and a CO-RE BPF program in `bpf/`) | Released (v0.8.0), local profile only |
+| [`components/otel-collector-fabric/`](../components/otel-collector-fabric/) | The Fabric Node: `gate/` (`fabric-gate`), `processor/fabricguardprocessor/`, `exporter/fabriccontentexporter/`, `extension/` (`fabricenvelope`, `noredirect`), `receiver/auditreceiver/` (auditd host sensor) | Released (v0.8.0); records class released (v0.10.0); ingress groups, host admission, auditd production mode and the host-records library released (v0.11.0) |
+| [`components/host-emitter/`](../components/host-emitter/) | eBPF host sensor (Go and a CO-RE BPF program in `bpf/`) | Released (v0.8.0); production mode released (v0.11.0) |
 | [`contracts/`](../contracts/) | Versioned JSON schemas, registries and fixtures; [`coverage/v1/registry/`](../contracts/coverage/v1/registry/) is the source of truth for field ids, capture points, content roles and vocabularies | Published or draft (see [Public contracts](#public-contracts)) |
 | [`scripts/contracts/`](../scripts/contracts/) | Contract validators and reference implementations (`p1_reference.py`, `action_reference.py`) | Built |
 | [`scripts/tests/`](../scripts/tests/) | Repository tests: contracts, release boundary, Compose and Node end-to-end | Built |
-| [`qualification/action-record/`](../qualification/action-record/README.md) | AR-1, the spec 056 acceptance scenario (hermetic and live) | Built; passes in CI (hermetic on macOS and Linux, live on Linux with eBPF) |
-| [`charts/fabric/`](../charts/fabric/), [`deploy/`](../deploy/README.md) | Helm chart for the Node; Compose files, auditd rules, a host-emitter DaemonSet | Released (v0.8.0) |
+| [`qualification/action-record/`](../qualification/action-record/README.md) | AR-1, the spec 056 acceptance scenario (hermetic and live) | Built; passes in CI (hermetic on macOS and Linux, live on Linux with eBPF; production replay, live and auditd since v0.11.0) |
+| [`charts/fabric/`](../charts/fabric/), [`deploy/`](../deploy/README.md) | Helm chart for the Node; Compose files, auditd rules, a host-emitter DaemonSet | Released (v0.8.0); host ingress groups, production DaemonSet and sensor collector released (v0.11.0) |
 | [`tools/fabricctl/`](../tools/fabricctl/README.md) | Local recorder configuration CLI | Released (v0.8.0) |
 | [`examples/`](../examples/README.md) | Runnable examples; start with `wire-capture/` | Built |
 | [`specs/`](../specs/README.md) | Design of record | See its index |
