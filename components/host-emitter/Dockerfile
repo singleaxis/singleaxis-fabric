@@ -50,4 +50,9 @@ RUN chmod +x bpf/gen.sh \
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
 COPY --from=builder /out/fabric-host-emitter /fabric-host-emitter
 USER nonroot
+# Title and description equal scripts/release/release-policy.json `image_metadata`
+# (scripts/release/check_image_metadata.py).
+LABEL org.opencontainers.image.source="https://github.com/singleaxis/singleaxis-fabric" \
+      org.opencontainers.image.title="SingleAxis Fabric host emitter" \
+      org.opencontainers.image.description="SingleAxis Fabric eBPF host sensor: records process starts and connections for the recorder (capture, protect, deliver)"
 ENTRYPOINT ["/fabric-host-emitter"]

@@ -257,9 +257,12 @@ def test_no_image_or_release_builds_the_replay_command() -> None:
     ).is_dir()
 
 
-_EVALUATION = re.compile(
-    r"(?i)(evaluat|judge|enforc|red[-_]?team|verdict_engine|guardrail)"
-)
+# One deny-list for every boundary scan: the release policy's, which the image metadata
+# check (scripts/release/check_image_metadata.py) and release qualification also use.
+_POLICY_TERMS = json.loads(
+    (ROOT / "scripts/release/release-policy.json").read_text(encoding="utf-8")
+)["forbidden_capability_terms"]["patterns"]
+_EVALUATION = re.compile("(?i)(" + "|".join(f"(?:{p})" for p in _POLICY_TERMS) + ")")
 
 
 def test_no_artifact_gains_an_evaluator_policy_or_enforcement_component() -> None:

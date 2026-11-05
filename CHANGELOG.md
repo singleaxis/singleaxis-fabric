@@ -25,6 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `fabric.run-reconstruction/v1` allows `chains.decisions` to be
   `not_observed` (without reasons) only for a run with no captured
   exchange; the validator refuses it for a run with one.
+- **Release images no longer carry the repository description.** The
+  0.11.0 `fabric-otelcol` and `fabric-host-emitter` images were labelled
+  with the GitHub repository's description and name, which advertised
+  capabilities Fabric does not ship. The release workflow now sets
+  `org.opencontainers.image.title` and `.description` from
+  `scripts/release/release-policy.json` (`image_metadata`) on the image
+  labels and on the manifest and index annotations, and
+  `scripts/release/check_image_metadata.py` refuses any other value, or any
+  label or annotation naming an evaluation, judge, guardrail, escalation,
+  red-team or enforcement capability, in release qualification (Dockerfile
+  labels), on the metadata-action output before the build, and on the
+  pushed image before it is signed. Release qualification applies the same
+  deny-list (`forbidden_capability_terms`) to the wheel, sdist and Helm
+  package metadata. The host emitter's Dockerfile gains its own title and
+  description labels.
 
 ## [0.11.0] - 2026-11-05
 

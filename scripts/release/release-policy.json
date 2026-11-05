@@ -236,5 +236,27 @@
   "images": [
     "fabric-otelcol",
     "fabric-host-emitter"
-  ]
+  ],
+  "image_metadata": {
+    "fabric-otelcol": {
+      "title": "SingleAxis Fabric Node",
+      "description": "SingleAxis Fabric OTel Collector recorder distribution (capture, protect, deliver)"
+    },
+    "fabric-host-emitter": {
+      "title": "SingleAxis Fabric host emitter",
+      "description": "SingleAxis Fabric eBPF host sensor: records process starts and connections for the recorder (capture, protect, deliver)"
+    }
+  },
+  "forbidden_capability_terms": {
+    "comment": "AGENTS.md: no release artifact advertises capabilities outside Capture -> Protect -> Deliver. Case-insensitive regular expressions matched against image labels and annotations and packaged metadata fields (descriptions, titles, keywords, summaries).",
+    "patterns": [
+      "evaluat",
+      "judge",
+      "enforc",
+      "red[-_ ]?team",
+      "verdict_engine",
+      "guardrail",
+      "escalat"
+    ]
+  }
 }
