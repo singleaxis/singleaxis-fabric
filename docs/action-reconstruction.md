@@ -1,8 +1,8 @@
 # Agent action reconstruction
 
-> **Status:** released in v0.10.0
-> ([spec 056](../specs/056-agent-action-reconstruction.md)
-> milestone M1, local profile). Implementation:
+> **Status:** released: milestone M1 (local profile) in v0.10.0, milestone
+> M2 (production profile, [below](#production-profile-m2)) in v0.11.0
+> ([spec 056](../specs/056-agent-action-reconstruction.md)). Implementation:
 > [`fabric/hooks/`](../sdk/python/src/fabric/hooks/) (the `exec.subprocess`
 > hook), [`reconstruct/_attribute.py`](../sdk/python/src/fabric/reconstruct/_attribute.py)
 > (attribution, chain verdicts, the `actions` view) and
@@ -11,10 +11,10 @@
 > [AR-1](../qualification/action-record/README.md), passes in CI in hermetic
 > mode (macOS and Linux) and in live mode on Linux with the eBPF sensor.
 > Python agents only; on the local profile every host anchor is `tentative`.
-> Milestone M2 (production profile, [below](#production-profile-m2)) is built
-> on the integration branch and unreleased: its AR-1 replay passes locally on
-> macOS and its live mode passed locally on Linux, but its CI jobs have not
-> run yet, so Fabric makes no production reconstruction claim until they do.
+> AR-1 production passes in CI against a production-profile Node: replay on
+> macOS and Linux, live on Linux with the eBPF emitter in production mode,
+> and the auditd sensor collector on a fixture audit log. Known limits:
+> [what is not covered yet](#what-is-not-covered-yet).
 
 For one run, Fabric can answer three questions: what the agent actually
 ran, which model decision caused each command, and what the operating
@@ -228,11 +228,11 @@ the agent connecting to a host no model call reached.
 
 ## Production profile (M2)
 
-Against a production-profile Node, a host sensor is a source of its own
-(spec 053 §6.1, §6.2): it reports to a dedicated ingress group with its own
-token and listener, its records carry positions, heartbeats, a manifest and
-the process start time and pid namespace, and the verifier reads them from
-the same export as the agent's records:
+Released in v0.11.0. Against a production-profile Node, a host sensor is a
+source of its own (spec 053 §6.1, §6.2): it reports to a dedicated ingress
+group with its own token and listener, its records carry positions,
+heartbeats, a manifest and the process start time and pid namespace, and
+the verifier reads them from the same export as the agent's records:
 
 ```bash
 FABRIC_WIRE_ID_KEY=... python -m fabric.reconstruct actions export.jsonl \
@@ -290,10 +290,25 @@ emitter in production mode and the agent in a container.
   record. A pid reused by a process the hook did not start, with the same
   parent pid inside the 100 ms window, reads as one exec chain
   (`tentative`). Start times (M2) remove this case.
-- **Other channels.** File, database, non-model HTTP, MCP and SSH hooks
-  (spec 053) are not built, and neither is a TypeScript subprocess hook.
-  Tools that run inside the agent process leave no effect. Declare them
-  with `--in-process-tool`.
+- **Other channels.** File, database, MCP and SSH hooks (spec 053) are not
+  built, and neither is a TypeScript subprocess hook. Non-model HTTP calls
+  through httpx to hosts you list are recorded since v0.11.0
+  (`http_hosts=`, `FABRIC_WIRE_HTTP_HOSTS`). Tools that run inside the
+  agent process leave no effect. Declare them with `--in-process-tool`.
+- **Host id not bound to the ingress group (M2).** A host group binds one
+  source id and one token, but the `hst-` host id in a sensor's records is
+  only format-checked, so a sensor holding one group's credentials can name
+  another host.
+- **Fork-only parents (M2).** No host sensor reports forks, so an exec whose
+  parent only forked and produced no event of its own is listed
+  unexplained. bwrap's default pid-1 reaper is such a parent: run
+  `bwrap --unshare-pid` with `--as-pid-1`, as AR-1 does.
+- **Pod-selector scope reads pods cluster-wide (M2).**
+  `EMIT_AGENT_POD_SELECTOR` needs a ClusterRole with `get`, `list` and
+  `watch` on pods; RBAC cannot limit it to one node, so every node's emitter
+  can read every pod object, inline environment values included. Use
+  static cgroup roots or a dedicated node pool where that is not
+  acceptable ([host sensors](host-sensors.md#production-mode)).
 - **Reported links from the hook.** Inside an explicit records-mode tool
   call (`CallRecorder`, kind `tool`), the hook names that call's attempt
   as the effect's parent, and A0 links the effect `caused_by` that attempt

@@ -2,7 +2,7 @@
   "schema_version": "singleaxis.fabric.connect-capability/v1",
   "connector_id": "singleaxis.fabric.python-byte-boundary",
   "display_name": "SingleAxis Python Byte Boundary Test Adapter",
-  "release": {"version": "0.10.0", "maturity": "experimental", "distribution": "python-package"},
+  "release": {"version": "0.11.0", "maturity": "experimental", "distribution": "python-package"},
   "implementation": {"kind": "framework_adapter", "deployment_modes": ["application"]},
   "compatibility": {
     "activity_contract": null,

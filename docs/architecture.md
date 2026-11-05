@@ -6,7 +6,8 @@
 > [`components/otel-collector-fabric/`](../components/otel-collector-fabric/),
 > [`components/host-emitter/`](../components/host-emitter/). The v0.10.0
 > additions are in [the P1 run record](run-record.md) and
-> [agent action reconstruction](action-reconstruction.md).
+> [agent action reconstruction](action-reconstruction.md); the v0.11.0
+> production profile in [host sensors](host-sensors.md#production-mode).
 
 Fabric is a passive recorder for AI systems that runs entirely in your
 infrastructure:

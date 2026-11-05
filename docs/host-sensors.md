@@ -1,11 +1,14 @@
 # Host sensors
 
-> **Status:** describes built code, released in v0.8.0, for the local
-> profile only. Implementation:
-> [`auditreceiver/`](../components/otel-collector-fabric/receiver/auditreceiver/)
-> and [`components/host-emitter/`](../components/host-emitter/). A
-> production ingress ([spec 053](../specs/053-execution-channels-p4.md)
-> §6.2) is specified, not built. The join of host events to agent effects
+> **Status:** describes built code. Local mode is released in v0.8.0;
+> [production mode](#production-mode) (a production Node's host ingress,
+> [spec 053](../specs/053-execution-channels-p4.md) §6.2, built for spec 056
+> milestone M2) is released in v0.11.0. Implementation:
+> [`auditreceiver/`](../components/otel-collector-fabric/receiver/auditreceiver/),
+> [`components/host-emitter/`](../components/host-emitter/) and the
+> host-records library
+> [`hostrecords/`](../components/otel-collector-fabric/hostrecords/). The
+> join of host events to agent effects
 > ([spec 056](../specs/056-agent-action-reconstruction.md) §4.3) is released
 > in v0.10.0, for the local profile
 > ([`reconstruct/_host.py`](../sdk/python/src/fabric/reconstruct/_host.py))
@@ -98,9 +101,9 @@ mounts of BTF, tracefs, debugfs and cgroupfs.
 is a qualification template, not an install: its image digest and cgroup
 scope are deliberately unusable until you set them.
 
-## Production mode (spec 056 M2, unreleased)
+## Production mode
 
-Built on the integration branch, not released. A production-profile Node
+Released in v0.11.0 (spec 056 milestone M2). A production-profile Node
 admits a host sensor through a dedicated ingress group of its own: one
 `host.ebpf` (or `host.auditd`) group per sensor process, each binding one
 source id and one token on its own TLS listener, guarded by a
@@ -120,6 +123,14 @@ Kubernetes, `EMIT_AGENT_POD_SELECTOR` with `EMIT_NODE_NAME`;
 refused to a non-loopback endpoint. `fabric-host-emitter print-source-id`
 prints the `s-` id to bind in the Node's group.
 
+The auditd receiver selects it with `mode: production`. It then runs in a
+sensor collector you deploy next to the audit log (never inside a Node),
+with tenant, source and host labels, id and state key files and a state
+directory, and exports over OTLP/HTTP (TLS unless loopback) to its own `host.auditd`
+group; `fabric-gate` checks the collector against its sensor-collector
+profile. Its logfile cursor advances only after the Node acknowledges every
+staged batch.
+
 - **Compose:** `docker-compose.host-ingress.yml` on the production overlay
   (`make up-prod-groups`): the agent group and the `ebpf` group
   (`FABRIC_EBPF_SOURCE_ID`, `FABRIC_EBPF_TOKEN_FILE`, gRPC 4417); the auditd
@@ -132,21 +143,38 @@ prints the `s-` id to bind in the Node's group.
   group default (256 at most) bounds the nodes one Node serves.
 
 [AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
-exercises this path.
+exercises this path in CI.
 
-## Limits in v0.8
+Known limits of production mode:
 
-- **Not accepted by a production Node.** `fabric-gate` refuses any receiver
-  other than `otlp` and `otlp/content` in the production profile, so the
-  `audit` receiver cannot run there; and a source-bound `fabricguard` logs
-  pipeline accepts only `event_class=evidence` records, so audit records
-  sent by the emitter are refused. In v0.8 host sensors are a
-  local-profile feature: run them against a separate, local-profile Node.
-  A production ingress for host sensors (its own source binding, source id
-  and epoch) is specified in
-  [spec 053](../specs/053-execution-channels-p4.md) §6.2 and not built.
-- **Not in the Helm chart or Compose.** There are no chart values or Compose
-  overlays for either sensor.
+- **The host id is not bound to the ingress group yet.** A group binds one
+  source id and one token, but the `hst-` host id in a sensor's records is
+  only format-checked, so a sensor holding one group's credentials can
+  name another host.
+- **The pod-selector scope needs cluster-wide pod read.** The DaemonSet's
+  ClusterRole grants `get`, `list` and `watch` on pods; RBAC cannot limit
+  that to one node, so every node's emitter can read every pod object,
+  inline environment values included, although it uses only its own node's
+  pod uids and labels. Use static cgroup roots or a dedicated node pool
+  where that is not acceptable.
+- **No fork events.** An exec whose parent only forked and produced no event
+  of its own (bwrap's default pid-1 reaper) is listed unexplained; run
+  bwrap with `--as-pid-1`.
+- **One group per node.** A Node serves 64 groups by default and 256 at
+  most; a larger cluster deploys one Node per node pool.
+
+## Limits of local mode (since v0.8)
+
+- **Not accepted by a production Node.** Local-mode records (logs) are
+  refused by a production Node: `fabric-gate` never runs the `audit`
+  receiver inside a Node, and a source-bound `fabricguard` admits host
+  records only from a host ingress group. Run local mode against a
+  separate, local-profile Node, or use [production mode](#production-mode)
+  (v0.11.0).
+- **No sensor workload in the Helm chart.** The chart configures a Node's
+  host ingress groups but deploys no sensor; the sensors run from the
+  DaemonSet and sensor-collector examples in `deploy/kubernetes/` or the
+  Compose overlays.
 - **No run identity.** Host records carry no `fabric.run.*` or source-epoch
   identity that `fabric.reconstruct` reads; reconstruct ignores them in
   `--spans`. Joining host events to the agent's subprocess effects through

@@ -6,10 +6,10 @@
 > written but not run live in CI. See
 > [docs/action-reconstruction.md](../../docs/action-reconstruction.md) for the
 > feature itself. [AR-1 production](#ar-1-production-m2) (milestone M2,
-> WP6-10) is unreleased: its replay passes locally on macOS, and live mode
-> passed every variant locally in an Ubuntu 24.04 container with systemd and
-> its own Docker daemon on Docker Desktop's 6.12 kernel. Its CI jobs
-> (`production-replay`, `production-live`, `production-auditd`) have not run.
+> WP6-10) is the harness for code released in v0.11.0; its CI jobs pass:
+> `production-replay` (macOS and Linux), `production-live` (Linux, eBPF
+> emitter in production mode, every variant) and `production-auditd`
+> (Linux, the auditd sensor collector on a fixture audit log).
 
 AR-1 is the end-to-end test of
 [spec 056 §6.2](../../specs/056-agent-action-reconstruction.md#62-ar-1-the-acceptance-scenario).
