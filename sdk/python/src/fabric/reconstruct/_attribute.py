@@ -908,6 +908,11 @@ class _RunReader:
         record_positions = {(r.source_id, r.source_epoch, r.source_sequence) for r in self.records}
         decision_gaps = [g for g in gaps if not _record_gap(g, record_positions)]
         decisions = decisions_chain(decision_gaps, checks)
+        if not exchanges and decisions["verdict"] == "complete":
+            # An effects-only process (a tool worker) whose epoch verifies made no model
+            # call: its decisions were not observed, never ``complete`` (§4.5). A gap keeps
+            # its partial or unverified verdict: a lost position may have been a model call.
+            decisions = not_observed()
         inp: dict[str, Any] = {
             "run": {
                 "run_id": self.report["run_id"],

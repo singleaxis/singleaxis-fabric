@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Processes with no model call no longer vanish from a reconstruction
+  (spec 056 revision 6).** A Fabric-ON process whose effects were captured
+  and delivered but which made no model call (a tool-worker process, or an
+  agent killed before its first call) used to get no run, no gap and no
+  verdict, and `--run source:<id>:<epoch>` reported "no runs
+  reconstructed". Every such epoch is now a run of its own: its effects
+  are listed, none attributed to a decision (`effects:
+  partial(unattributed_effect)`), its `decisions` chain is `not_observed`
+  when its record verifies, and a process that ended without a final
+  heartbeat (SIGKILL, crash) is `tail_unverified(no_final_heartbeat)`, with
+  `decisions: unverified`. The `actions` view says so in words. Runs that
+  made model calls are reported exactly as before. Contract change:
+  `fabric.run-reconstruction/v1` allows `chains.decisions` to be
+  `not_observed` (without reasons) only for a run with no captured
+  exchange; the validator refuses it for a run with one.
+
 ## [0.11.0] - 2026-11-05
 
 Fabric 0.11.0 takes agent action reconstruction (spec 056 milestone M2,

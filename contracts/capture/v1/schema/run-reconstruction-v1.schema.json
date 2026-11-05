@@ -418,12 +418,12 @@
           "items": {"$ref": "#/$defs/attempt"}
         },
         "chains": {
-          "description": "Spec 056 §4.5: one verdict per evidence chain. decisions is the exchange-only verdict and is never not_observed; actions, effects and corroboration are not_observed when the run has no tool calls, no enabled effect channel or no host source. The run verdict is never complete while a chain is partial or unverified.",
+          "description": "Spec 056 §4.5: one verdict per evidence chain. decisions is the exchange-only verdict; it is not_observed, without reasons, only for a run with no captured exchange whose record verifies (an effects-only process, such as a tool worker), never for a run with an exchange. actions, effects and corroboration are not_observed when the run has no tool calls, no enabled effect channel or no host source. The run verdict is never complete while a chain is partial or unverified.",
           "type": "object",
           "additionalProperties": false,
           "required": ["decisions", "actions", "effects", "corroboration"],
           "properties": {
-            "decisions": {"allOf": [{"$ref": "#/$defs/chainVerdict"}, {"properties": {"verdict": {"not": {"const": "not_observed"}}}}]},
+            "decisions": {"allOf": [{"$ref": "#/$defs/chainVerdict"}, {"if": {"properties": {"verdict": {"const": "not_observed"}}, "required": ["verdict"]}, "then": {"not": {"required": ["reasons"]}}}]},
             "actions": {"$ref": "#/$defs/chainVerdict"},
             "effects": {"$ref": "#/$defs/chainVerdict"},
             "corroboration": {"$ref": "#/$defs/chainVerdict"}

@@ -933,8 +933,17 @@ def actions_main(argv: Sequence[str]) -> int:
 
 def _view(run: ActionRun, document: Mapping[str, Any]) -> dict[str, Any]:
     view = action_rows(run)
-    verdicts = {entry["run_id"]: entry["verdict"] for entry in document["runs"]}
-    view["verdict"] = verdicts.get(run.run_id)
+    entry = next((e for e in document["runs"] if e["run_id"] == run.run_id), None)
+    view["verdict"] = entry["verdict"] if entry is not None else None
+    # An epoch that ended without a clean close (killed, crashed): said in words, so an
+    # effects-only process's truncated record never reads as a short but complete one.
+    view["unproven_ends"] = sorted(
+        {
+            str(gap["reason"])
+            for gap in (entry or {}).get("gaps", ())
+            if gap["gap_type"] == "tail_unverified" and gap.get("reason")
+        }
+    )
     return view
 
 
@@ -963,10 +972,10 @@ def _effect_text(row: Mapping[str, Any]) -> str:
     return what
 
 
-def _caused_text(row: Mapping[str, Any]) -> str:
+def _caused_text(row: Mapping[str, Any], why: str = "no open tool call") -> str:
     links = row.get("caused_by") or []
     if not links:
-        return "(no open tool call)" if row.get("rule") == "A4" else ""
+        return f"({why})" if row.get("rule") == "A4" else ""
     targets = "|".join(
         link["target"] if link["namespace"] == "call" else f"attempt {link['target'][:8]}…"
         for link in links
@@ -999,6 +1008,10 @@ def format_actions(view: Mapping[str, Any]) -> str:
         + "  ".join(f"{name}: {_chain_text(chains[name])}" for name in chains)
         + (f"  verdict: {view['verdict']}" if view.get("verdict") else "")
     ]
+    # A process that made no model call (a tool worker, or one killed before its first
+    # call): its effects are shown, and no decision can explain them.
+    no_model = not any(row["kind"] == "model_call" for row in view["rows"])
+    why = "no model call in this process" if no_model else "no open tool call"
     for row in view["rows"]:
         number = f"{row['n']:>3}"
         if row["kind"] == "model_call":
@@ -1012,7 +1025,7 @@ def format_actions(view: Mapping[str, Any]) -> str:
                 )
             lines.append(text)
         elif row["kind"] == "effect":
-            effect = f"{number}    effect     {_effect_text(row):<36} {_caused_text(row)}"
+            effect = f"{number}    effect     {_effect_text(row):<36} {_caused_text(row, why)}"
             lines.append(effect.rstrip())
         elif row["kind"] == "sandbox":
             sandbox = row.get("sandbox_id")
@@ -1024,13 +1037,29 @@ def format_actions(view: Mapping[str, Any]) -> str:
         else:
             what, tail = _host_text(row)
             lines.append(f"{number}      host     {what:<34} {tail}".rstrip())
+    lines += _summary_lines(view, why, no_model=no_model)
+    return "\n".join(lines) + "\n"
+
+
+def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list[str]:
+    """The action view's closing lines: the effects no tool call explains, the tool calls
+    without an effect, a run without a model call or a clean end, the unexplained and
+    unlinked host events, and whether output matching applied."""
+    lines: list[str] = []
     unattributed = view["unattributed_effects"]
     if unattributed:
         details = "; ".join(
-            f"exec {e.get('label', e['attempt_uid'])}, seq {e['sequence']}: no open tool call"
+            f"exec {e.get('label', e['attempt_uid'])}, seq {e['sequence']}: {why}"
             for e in unattributed[:8]
         )
         lines.append(f"  unattributed effects: {len(unattributed)}   ({details})")
+    if no_model:
+        lines.append("  model calls: none recorded in this run (decisions not observed)")
+    if "no_final_heartbeat" in view.get("unproven_ends", ()):
+        lines.append(
+            "  process end: no final heartbeat (killed or crashed); "
+            "records after the last delivered one may be missing"
+        )
     without = view["tool_calls_without_effect"]
     if without:
         details = ", ".join(f"{c['call']} {c['reason']}" for c in without[:16])
@@ -1047,7 +1076,7 @@ def format_actions(view: Mapping[str, Any]) -> str:
     match = view["output_match"]
     reason = f" ({match['reason']})" if "reason" in match else ""
     lines.append(f"  output match: {match['state']}{reason}")
-    return "\n".join(lines) + "\n"
+    return lines
 
 
 if __name__ == "__main__":
