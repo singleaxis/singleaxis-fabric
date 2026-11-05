@@ -238,6 +238,9 @@ def generate(
     _mkdir(out / "node-secret")
     _mkdir(out / "nodes")
     groups: list[tuple[str, str, int]] = []
+    # What main() prints: built apart from groups (which carries keyed source
+    # ids) so that nothing derived from a token or the id key reaches stdout.
+    written: list[tuple[str, str, int]] = []
     tokens: set[str] = set()
     for index, (node, port) in enumerate(zip(nodes, ports, strict=True)):
         name = f"ebpf-{index}"
@@ -252,13 +255,12 @@ def generate(
         _write(directory / "endpoint", f"{service}:{port}\n".encode())
         _write(out / "node-secret" / name, token.encode())
         groups.append((name, label_pseudonym("s-", f"{node}/ebpf", key), port))
+        written.append((name, node, port))
     _write(
         out / "source-bindings.yaml",
         values_fragment(tenant, groups, namespace).encode(),
     )
-    return [
-        (name, node, port) for (name, _, port), node in zip(groups, nodes, strict=True)
-    ]
+    return written
 
 
 def main(argv: list[str] | None = None) -> int:
