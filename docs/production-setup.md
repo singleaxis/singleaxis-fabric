@@ -225,7 +225,8 @@ HTTP and is refused in production.
 
 > **Test only.** This is a single SeaweedFS container with a test
 > certificate and static keys, for trying the production Node without a
-> cloud bucket. Never use it for real content.
+> cloud bucket. Never use it for real content. While `FABRIC_COMPOSE_EXTRA`
+> names it, preflight prints a warning saying so on every run.
 
 Preflight refuses a plain-HTTP content endpoint, so the local trial's
 `make up-s3-local` store cannot stand in. The shipped overlay

@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   outside the run: neither linked nor listed as unexplained. On the
   acceptance export, no host event appears in more than one run. Three new
   rule fixtures pin the rule.
+- **Preflight warns when the test-only S3 store is enabled.**
+  `preflight-prod.sh` now prints a warning on every run whose
+  `FABRIC_COMPOSE_EXTRA` (environment or `.env`) names
+  `docker-compose.content-s3-local-tls.yml`, saying it is a test-only store
+  that must never hold real content. It is a warning, not a failure, so the
+  [production setup](docs/production-setup.md) test recipe still runs.
 
 ## [0.11.1] - 2026-11-06
 

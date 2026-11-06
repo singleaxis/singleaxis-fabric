@@ -848,6 +848,21 @@ elif [ -n "${FABRIC_CONTENT_BACKEND:-}" ]; then
   bad "FABRIC_CONTENT_BACKEND is set but no fabriccontent exporter is configured"
 fi
 
+# --- site overlays (FABRIC_COMPOSE_EXTRA) -------------------------------------
+# The shipped test-only S3 store must never hold real content, so say so on every
+# run that enables it (a warning, not a failure: docs/production-setup.md uses it to
+# try the production Node). Only the fixed file name is printed, after it matched.
+FABRIC_COMPOSE_EXTRA="$(envget FABRIC_COMPOSE_EXTRA)"
+test_store=0
+set -f  # the list is split on whitespace; never glob-expand it
+for extra in ${FABRIC_COMPOSE_EXTRA}; do
+  [ "${extra##*/}" = docker-compose.content-s3-local-tls.yml ] && test_store=1
+done
+set +f
+if [ "${test_store}" -eq 1 ]; then
+  warn "FABRIC_COMPOSE_EXTRA enables docker-compose.content-s3-local-tls.yml, a TEST-ONLY local S3 store (one container, no replication, a test certificate, static keys): never use it for real content; for production remove it from FABRIC_COMPOSE_EXTRA and point FABRIC_CONTENT_S3_* at your own bucket"
+fi
+
 # --- optional reachability probe (warn-only: destination may not exist yet) ---
 # Only a validated endpoint is probed, and nc receives its host and port only.
 if [ "${export_endpoint_ok}" -eq 1 ]; then
