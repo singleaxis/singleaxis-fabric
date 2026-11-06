@@ -119,17 +119,27 @@ def candidates(
     calls: Sequence[Mapping[str, Any]],
 ) -> list[Mapping[str, Any]]:
     """§4.2 conditions 1-3: same segment and epoch, later in sequence, start inside the
-    window widened by the epoch's declared clock uncertainty (so an effect inside the
-    margin of a boundary is a candidate of both sides)."""
+    window. One epoch is one process on one clock (spec 056 revision 8): the window opens
+    exactly at the issuing exchange's end, and its close is widened by the epoch's
+    declared clock uncertainty only when it is another epoch's exchange or the run
+    window's end (an effect inside that margin is a candidate of both sides)."""
     margin = inp["agent"]["clock_uncertainty_ns"]
     where = _position(inp, effect)
-    return [
-        call
-        for call in calls
-        if _position(inp, call["issued"]) == where
-        and effect["sequence"] > call["issued"]["sequence"]
-        and call["open"] - margin <= effect["start_ns"] < call["close"] + margin
-    ]
+    found = []
+    for call in calls:
+        if _position(inp, call["issued"]) != where:
+            continue
+        if effect["sequence"] <= call["issued"]["sequence"]:
+            continue
+        fed = call["fed"]
+        same_close = fed is not None and _position(inp, fed) == where
+        if (
+            call["open"]
+            <= effect["start_ns"]
+            < call["close"] + (0 if same_close else margin)
+        ):
+            found.append(call)
+    return found
 
 
 def output_matches(

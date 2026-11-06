@@ -1078,8 +1078,11 @@ def test_056_rule_fixtures_pin_the_rule_that_decides() -> None:
     assert list(trace("edge-agent-uncalled-host")["host_events"].values()) == [
         "H4", "H4-uncalled"
     ]  # fmt: skip
-    margin = _rule("edge-clock-margin-boundary")["expected"]["projection_links"][0]
-    assert [link["state"] for link in margin["links"]] == ["ambiguous", "ambiguous"]
+    # Spec 056 rev 8 (0.11.2, B4): both boundaries are on the effect's own epoch, so the
+    # clock margin does not widen them; the effect between them is in neither window.
+    margin = _rule("edge-clock-margin-boundary")["expected"]
+    assert margin["projection_links"] == []
+    assert list(margin["trace"]["effects"].values()) == ["A4"]
 
 
 def test_056_ar1_expectation_is_the_spec_table() -> None:

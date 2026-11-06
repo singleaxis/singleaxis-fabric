@@ -1124,7 +1124,8 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         )
     )
 
-    # Edge: an effect within the clock margin of a window boundary.
+    # Edge: an effect between two window boundaries of one process (one clock, no
+    # margin; spec 056 revision 8, 0.11.1 acceptance B4).
     s = Scenario("edge-clock-margin-boundary")
     s.exchange(0, 900, calls=[("call_M1", "run_shell")])
     s.exchange(
@@ -1134,8 +1135,8 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
     s.exchange(3000, 3900, results=[("call_M2", "done")])
     put(
         s.fixture(
-            ["A3"],
-            "call_M1's window closes at 1500 ms and call_M2's opens at 1500.5 ms; an effect at 1500.2 ms is inside the 1 ms margin of both boundaries, so it is a candidate of both sides and, without captured output, ambiguous.",
+            ["A4"],
+            "call_M1's window closes at 1500 ms and call_M2's opens at 1500.5 ms, both on the effect's own epoch: one process, one clock, so the declared 1 ms clock uncertainty does not widen them (spec 056 revision 8). An effect at 1500.2 ms is in neither window, so A4 lists it as unattributed; before revision 8 it was a candidate of both sides.",
         )
     )
 

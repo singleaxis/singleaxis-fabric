@@ -559,3 +559,40 @@ def test_unexplained_exec_events_get_timeline_rows() -> None:
     assert sum(" ppid " in line for line in host_rows) >= len(unlisted)
     assert f"unexplained host events: {len(ids)}" in text
     json.dumps(view)  # the --json view stays serialisable
+
+
+def _margin_input(effect_ms: float, *, margin_ns: int) -> dict[str, Any]:
+    inp: dict[str, Any] = copy.deepcopy(
+        dict(load(ACTION / "rules" / "edge-clock-margin-boundary.json")["input"])
+    )
+    inp["agent"]["clock_uncertainty_ns"] = margin_ns
+    base = inp["exchanges"][0]["start_ns"]
+    inp["effects"][0]["start_ns"] = base + int(effect_ms * 1_000_000)
+    return inp
+
+
+def test_one_process_needs_no_clock_margin() -> None:
+    """0.11.1 acceptance B4 (smoke1): with the default 1 s FABRIC_CLOCK_UNCERTAINTY_MS, an
+    effect 100 ms after call M2 opened, and after M1's result was fed back in the same
+    process, read ``M1|M2`` ambiguous. Exchange and effect records of one epoch share one
+    clock: the margin no longer widens those boundaries, so it is M2 alone (A2)."""
+    inp = _margin_input(1600, margin_ns=1_000_000_000)
+    uid = inp["effects"][0]["attempt_uid"]
+    decision = attribute(inp, call_id).decisions[uid]
+    assert decision.rule == "A2"
+    assert [link["target"]["id"] for link in decision.links] == [call_id("call_M2")]
+
+
+def test_a_close_on_another_epoch_keeps_the_margin() -> None:
+    """Across processes the margin stays: M1's result fed back by another epoch's exchange
+    (a resumed run) closes M1's window on another clock, so an effect inside the margin
+    after that close is still M1's candidate."""
+    inp = _margin_input(1500.6, margin_ns=1_000_000)
+    other = dict(inp["agent"], source_epoch=inp["agent"]["source_epoch"] + 1)
+    inp["exchanges"][1] = dict(inp["exchanges"][1], source_epoch=other["source_epoch"],
+                               tool_calls=[])  # fmt: skip
+    uid = inp["effects"][0]["attempt_uid"]
+    decision = attribute(inp, call_id).decisions[uid]
+    assert [link["target"]["id"] for link in decision.links] == [call_id("call_M1")]
+    inp["exchanges"][1].pop("source_epoch")  # same epoch: exact close, no candidate
+    assert attribute(inp, call_id).decisions[uid].rule == "A4"

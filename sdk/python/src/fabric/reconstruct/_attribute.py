@@ -12,9 +12,11 @@ item for T's id. The window opens at the end of ``X_i``'s span and closes at the
 ``X_j``'s span, or at the end of the run window when no ``X_j`` was captured.
 
 **Candidates of an effect E**: the tool calls issued on E's segment and epoch, earlier in
-sequence than E, whose window (widened on both sides by the epoch's declared clock
-uncertainty) holds E's start time. An effect inside the margin of a boundary is a
-candidate of both sides.
+sequence than E, whose window holds E's start time. The issuing exchange and E share one
+process and one clock, so the window opens exactly at its end; the close is widened by the
+epoch's declared clock uncertainty only when it is another epoch's exchange (a resumed
+run) or the run window's end. An effect inside such a margin is a candidate of both
+sides. Host events keep both clocks' uncertainties (``_host.py``).
 
 **Rules**, first that applies wins (:func:`attribute_effect`):
 
@@ -271,13 +273,17 @@ def candidates(
     margin = _margin(inp, effect)
     where = _position(inp, effect)
     start = int(effect["start_ns"])
-    return [
-        call
-        for call in calls
-        if _position(inp, call.issued) == where
-        and effect["sequence"] > call.issued["sequence"]
-        and call.open_ns - margin <= start < call.close_ns + margin
-    ]
+    found = []
+    for call in calls:
+        if _position(inp, call.issued) != where or effect["sequence"] <= call.issued["sequence"]:
+            continue
+        # One process, one clock (0.11.2, spec 056 rev 8): the issuing exchange is on the
+        # effect's epoch, so its end needs no margin; the close needs one only when it is
+        # another epoch's exchange or the run window's end.
+        same_close = call.fed is not None and _position(inp, call.fed) == where
+        if call.open_ns <= start < call.close_ns + (0 if same_close else margin):
+            found.append(call)
+    return found
 
 
 def output_matches(

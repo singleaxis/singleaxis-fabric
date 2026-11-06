@@ -2,9 +2,9 @@
   "schema_version": "fabric.action-rule-fixture/v1",
   "name": "edge-clock-margin-boundary",
   "rules": [
-    "A3"
+    "A4"
   ],
-  "description": "call_M1's window closes at 1500 ms and call_M2's opens at 1500.5 ms; an effect at 1500.2 ms is inside the 1 ms margin of both boundaries, so it is a candidate of both sides and, without captured output, ambiguous.",
+  "description": "call_M1's window closes at 1500 ms and call_M2's opens at 1500.5 ms, both on the effect's own epoch: one process, one clock, so the declared 1 ms clock uncertainty does not widen them (spec 056 revision 8). An effect at 1500.2 ms is in neither window, so A4 lists it as unattributed; before revision 8 it was a candidate of both sides.",
   "key": "fabric-test-id-key-not-a-secret",
   "input": {
     "run": {
@@ -94,43 +94,7 @@
     "host_events": []
   },
   "expected": {
-    "projection_links": [
-      {
-        "attempt_id": "0757c015-7027-44be-a2cf-df579e9b5ebb",
-        "links": [
-          {
-            "type": "caused_by",
-            "target": {
-              "namespace": "call",
-              "id": "p-1ee63db4756cb80e2426c6b598f4f403"
-            },
-            "provenance": "inferred",
-            "method": "sequence_bracket",
-            "confidence": "tentative",
-            "state": "ambiguous",
-            "candidates": [
-              "p-1ee63db4756cb80e2426c6b598f4f403",
-              "p-5fcc76e5e803acd297bfed7f514ddaae"
-            ]
-          },
-          {
-            "type": "caused_by",
-            "target": {
-              "namespace": "call",
-              "id": "p-5fcc76e5e803acd297bfed7f514ddaae"
-            },
-            "provenance": "inferred",
-            "method": "sequence_bracket",
-            "confidence": "tentative",
-            "state": "ambiguous",
-            "candidates": [
-              "p-1ee63db4756cb80e2426c6b598f4f403",
-              "p-5fcc76e5e803acd297bfed7f514ddaae"
-            ]
-          }
-        ]
-      }
-    ],
+    "projection_links": [],
     "sensor_events": [],
     "chains": {
       "decisions": {
@@ -142,7 +106,7 @@
       "effects": {
         "verdict": "partial",
         "reasons": [
-          "ambiguous_attribution"
+          "unattributed_effect"
         ]
       },
       "corroboration": {
@@ -154,20 +118,25 @@
     },
     "attribution": {
       "links": {
-        "sequence_bracket": {
+        "none": {
           "resolved": 0,
-          "ambiguous": 1,
-          "unresolved": 0
+          "ambiguous": 0,
+          "unresolved": 1
         }
       },
       "unattributed_effects": {
-        "count": 0,
-        "effects": []
+        "count": 1,
+        "effects": [
+          {
+            "attempt_uid": "0757c015-7027-44be-a2cf-df579e9b5ebb",
+            "event_id": "0d6bf478-ecb6-4ec3-a2df-0b99bffd0b5d"
+          }
+        ]
       },
       "effects_not_observed": {
         "channel_disabled": 0,
         "no_effect_channel": 0,
-        "none_in_window": 0
+        "none_in_window": 2
       },
       "output_match": {
         "state": "not_applicable",
@@ -180,13 +149,13 @@
     },
     "trace": {
       "effects": {
-        "0757c015-7027-44be-a2cf-df579e9b5ebb": "A3"
+        "0757c015-7027-44be-a2cf-df579e9b5ebb": "A4"
       },
       "anchors": {},
       "host_events": {},
       "tool_calls": {
-        "p-1ee63db4756cb80e2426c6b598f4f403": "attributed",
-        "p-5fcc76e5e803acd297bfed7f514ddaae": "attributed"
+        "p-1ee63db4756cb80e2426c6b598f4f403": "none_in_window",
+        "p-5fcc76e5e803acd297bfed7f514ddaae": "none_in_window"
       }
     }
   }

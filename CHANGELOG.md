@@ -88,6 +88,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   off) were only counted and id-listed. Each now has a timeline row with
   pid, parent pid and time, in the text and `--json` views. The run report
   is unchanged.
+- **No clock margin inside one process (B4).** A tool-call window opened
+  or closed by an exchange of the effect's own epoch is no longer widened by
+  `FABRIC_CLOCK_UNCERTAINTY_MS` (default 1 s): the wire and exec records of
+  one process share one clock. The margin still applies to a close on
+  another epoch, the segment end and every host-event comparison. An effect
+  that started after its call visibly closed no longer reads ambiguous
+  (smoke1: `docker inspect` was `T1|T2`). Spec 056 revision 8; the
+  `edge-clock-margin-boundary` rule fixture now expects `A4` (no window),
+  and no other fixture changes.
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
