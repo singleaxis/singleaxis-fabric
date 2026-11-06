@@ -31,7 +31,13 @@ effects through the process tree:
   spec 050 §3.2, which an export does not carry: the operator declares it, else the
   parent pid every effect agrees on) inside the run window widened by both clock
   margins: ``part_of`` the run, ``process_anchor``; ``certain`` only when the event's
-  start time matches the agent's.
+  start time matches the agent's. The pids alone do not name the agent: the kernel reuses
+  a freed pid namespace's inode number, so back-to-back containers report the same
+  ``pid_ns`` and ``ns_pid``. An event whose identity contradicts the agent's (its start
+  tick differs from the agent's known one; under ``recorded`` its init-namespace pid is
+  not the parent the run's ``certain`` anchors name; or it started after one of the
+  agent's own children) is another process, which cannot have lived at the same time as
+  the agent, so it lies outside the run: not linked and not unexplained.
 
 - **H5 sandbox report** (M2). A host event of any host source whose container or pod id
   (``fabric.execution.sandbox_id``, ``fabric.sensor.pod_id``) equals the id a container
@@ -1529,6 +1535,50 @@ def _sandbox(event: HostEvent) -> bool:
     return event.scope == "sandbox"
 
 
+@dataclass(frozen=True, slots=True)
+class _AgentIdentity:
+    """What a run's own records prove about its agent process beyond its pid (spec 056
+    §4.3 "Agent identity"). ``init_pids``: the agent's init-namespace pid, as the ``ppid``
+    of each ``certain`` anchor from a ``recorded`` source whose effect is the agent's child
+    (H1 compared the anchor's ``ns_ppid`` with the agent's pid in its namespace).
+    ``child_tick``: the earliest start tick of the agent's children; the agent started no
+    later than any of them."""
+
+    init_pids: frozenset[int] = frozenset()
+    child_tick: int | None = None
+
+
+def _agent_identity(
+    hosts: _Hosts,
+    anchors: Sequence[tuple[ProcessEffect, HostEvent, str]],
+    effects: Sequence[ProcessEffect],
+) -> _AgentIdentity:
+    agent = hosts.agent
+
+    def child(effect: ProcessEffect) -> bool:
+        return (
+            effect.pid is not None
+            and effect.parent_pid == agent.pid
+            and effect.host_id == agent.host_id
+            and (agent.pid_ns is None or effect.pid_ns in (None, agent.pid_ns))
+        )
+
+    init_pids = frozenset(
+        anchor.ppid
+        for effect, anchor, confidence in anchors
+        if confidence == "certain"
+        and anchor.ppid is not None
+        and child(effect)
+        and hosts.source(anchor).pid_namespace == "recorded"
+    )
+    ticks = [
+        e.process_start_ns // TICK_NS
+        for e in effects
+        if e.process_start_ns is not None and child(e)
+    ]
+    return _AgentIdentity(init_pids, min(ticks) if ticks else None)
+
+
 def _anchor(hosts: _Hosts, effect: ProcessEffect) -> tuple[str, list[HostEvent], str | None]:
     """H1/H2 for one effect with a pid: the rule, the matching exec events (one anchor, or
     every candidate of an ambiguous one) and the anchor confidence.
@@ -1751,6 +1801,31 @@ class _Join:
         self.unexplained: list[HostEvent] = []
         self.remote_calls: list[HostEvent] = []
         self.sandbox_unlinked = 0
+        self.identity = _AgentIdentity()
+
+    def other_process(self, event: HostEvent) -> bool:
+        """Whether an event that H4's pid comparison matched is provably another process
+        (spec 056 §4.3 "Agent identity"): its start tick differs from the agent's known
+        one; else, under ``recorded``, its init-namespace pid is not the one the run's
+        certain anchors name; else it started in a later tick than one of the agent's
+        children. Two processes with the agent's pid in the agent's numbering (and, under
+        ``recorded``, its namespace number) never live at the same time, so such an event
+        lies outside the agent's life, and so outside the run."""
+        agent, own = self.hosts.agent, event.process_start_ns
+        if agent.process_start_ns is not None and own is not None:
+            return not same_tick(agent.process_start_ns, own)
+        identity = self.identity
+        if (
+            identity.init_pids
+            and self.hosts.source(event).pid_namespace == "recorded"
+            and event.pid not in identity.init_pids
+        ):
+            return True
+        return (
+            own is not None
+            and identity.child_tick is not None
+            and (own // TICK_NS > identity.child_tick)
+        )
 
     def entry(self, event: HostEvent) -> dict[str, Any]:
         """The event's ``sensor_events`` entry, listed once."""
@@ -1871,6 +1946,10 @@ class _Join:
             if _sandbox(event):
                 self.sandbox_unlinked += 1
                 self.trace["host_events"][event.event_id] = "sandbox-unlinked"
+            elif self.hosts.agent_match(event) and self.other_process(event):
+                # Another process with the agent's pids (a reused pid namespace number, a
+                # reused pid): outside the agent's life, so outside the run.
+                self.trace["host_events"][event.event_id] = "H4-other-process"
             elif self.hosts.agent_match(event):
                 start, own = agent.process_start_ns, event.process_start_ns
                 certain = start is not None and own is not None and same_tick(start, own)
@@ -1968,6 +2047,7 @@ def join_host_events(
                 join.anchor(effect)
         join.lineage()
         join.sandbox_report(ordered)
+    join.identity = _agent_identity(hosts, join.anchors, ordered)
     join.rest(run_id, called_peers, sandbox_peers or (), remote_sandbox_active)
     sensor_events = sorted(join.listed.values(), key=lambda e: (e["time_ns"], e["event_id"]))
     margin = agent.clock_uncertainty_ns

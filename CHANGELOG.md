@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A container's agent process is no longer linked into the previous
+  container's run (spec 056 revision 7).** When agent containers start back
+  to back, the kernel reuses the pid namespace's number, so the next agent
+  has the same `pid_ns` and `ns_pid` as the last one, and its first events
+  fell inside the previous run's window widened by the clock margin. Rule
+  H4 compared only those numbers, so the next agent's exec was also
+  `part_of` the previous run (`process_anchor · tentative`; 4 of 16 runs in
+  the 0.11.1 acceptance run). H4 now also checks the process's identity:
+  an event whose start tick differs from the agent's known start, whose
+  init-namespace pid is not the parent the run's certain anchors name, or
+  that started after one of the agent's own children is another process,
+  outside the run: neither linked nor listed as unexplained. On the
+  acceptance export, no host event appears in more than one run. Three new
+  rule fixtures pin the rule.
+
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent

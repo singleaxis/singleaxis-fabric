@@ -303,6 +303,72 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         "agent's own connect is not recognised, so it is unexplained. Each source joins by "
         "its own mode.")  # fmt: skip
 
+    # §4.3 "Agent identity": back-to-back containers reuse a pid namespace's number, so
+    # the next (and the previous) container's first process has the agent's pid_ns and
+    # ns_pid. The run window ends at 60 s; both clock margins add 3 ms.
+    s = Scenario("edge-pid-namespace-reuse")
+    s.host_source()
+    s.exchange(0, 900, calls=[("call_NR", "run_shell")])
+    s.effect("exec sh -c 'ls /data'", 1000, stdout=m1.LS_OUTPUT, pid=41,
+             process_start_ns=START)  # fmt: skip
+    s.host("exec-sh", "exec", 1000.3, 4121, AGENT_INIT_PID, ns=s.agent_ns(41),
+           process_start_ns=START + 3_217_448)  # fmt: skip
+    s.host("previous-container-connect", "connect", -1, 3900, 3880,
+           ns=(AGENT_PID, 0, AGENT_PID_NS), peer_id=m1.FIXTURE_PEER, peer_port=80,
+           process_start_ns=m1.AGENT_START_NS - 30_000 * MS)  # fmt: skip
+    s.host("connect-model", "connect", 10, AGENT_INIT_PID, 1, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           peer_id=m1.MODEL_PEER, peer_port=443, process_start_ns=m1.AGENT_START_NS)  # fmt: skip
+    s.exchange(1500, 2400, results=[("call_NR", _result(m1.LS_OUTPUT))])
+    s.host("next-container-exec", "exec", 60_001, 4300, 4290, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           process_start_ns=START + 59_500 * MS)  # fmt: skip
+    s.host("next-container-connect", "connect", 60_002, 4300, 4290,
+           ns=(AGENT_PID, 0, AGENT_PID_NS), peer_id=m1.FIXTURE_PEER, peer_port=80,
+           process_start_ns=START + 59_500 * MS)  # fmt: skip
+    put(s, ["A1", "H1", "H4"],
+        "Back-to-back containers: the kernel gave the next container's pid namespace the "
+        "number the agent's had, so its first process (1 ms after the run, inside the 3 ms "
+        "of both clock margins) and the previous container's last connection (1 ms before "
+        "it) carry the agent's pid_ns and ns_pid. The certain anchor names the agent's "
+        "init-namespace pid (its ppid, 4100); their init pids (4300, 3900) differ, so they "
+        "are other processes, which cannot have lived while the agent did: not part_of the "
+        "run and not unexplained (trace H4-other-process). The agent's own connection is "
+        "H4.")  # fmt: skip
+
+    s = Scenario("edge-agent-started-after-child")
+    s.host_source()
+    s.exchange(0, 900, calls=[("call_SC", "run_shell")])
+    s.effect("exec sh -c 'ls /data' (its exec event lost)", 1000, stdout=m1.LS_OUTPUT,
+             pid=41, process_start_ns=START)  # fmt: skip
+    s.host("connect-model", "connect", 10, AGENT_INIT_PID, 1, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           peer_id=m1.MODEL_PEER, peer_port=443, process_start_ns=m1.AGENT_START_NS)  # fmt: skip
+    s.exchange(1500, 2400, results=[("call_SC", _result(m1.LS_OUTPUT))])
+    s.host("next-container-exec", "exec", 60_001, 4300, 4290, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           process_start_ns=START + TICK)  # fmt: skip
+    put(s, ["A1", "H4"],
+        "No anchor names the agent's init pid (the effect's exec event was lost: "
+        "anchor_missing), but the effect carries its start time. A process with the agent's "
+        "pid_ns and ns_pid that started a tick after the agent's child cannot be the agent "
+        "(a parent starts before its child): another process, outside the run, not "
+        "unexplained. The agent's own connection, started earlier, is H4.")  # fmt: skip
+
+    s = Scenario("edge-agent-start-differs")
+    s.host_source()
+    s.input["agent"]["pid_ns"] = AGENT_PID_NS  # no effect: declared
+    s.input["agent"]["process_start_ns"] = m1.AGENT_START_NS
+    s.exchange(0, 900)
+    s.host("connect-model", "connect", 10, AGENT_INIT_PID, 1, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           peer_id=m1.MODEL_PEER, peer_port=443,
+           process_start_ns=m1.AGENT_START_NS + 4 * MS)  # fmt: skip
+    s.host("connect-model-no-start", "connect", 20, AGENT_INIT_PID, 1,
+           ns=(AGENT_PID, 0, AGENT_PID_NS), peer_id=m1.MODEL_PEER, peer_port=443)  # fmt: skip
+    s.host("next-container-exec", "exec", 60_001, 4300, 4290, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           process_start_ns=m1.AGENT_START_NS + 60_000 * MS)  # fmt: skip
+    put(s, ["H4"],
+        "The agent's start time is known (its epoch registration): an event with the "
+        "agent's pid_ns and ns_pid in the same tick is H4 certain, one without a start time "
+        "H4 tentative, and one whose start tick differs is another process: outside the "
+        "run, neither linked nor unexplained.")  # fmt: skip
+
     s = Scenario("edge-recorded-effect-without-pid-ns")
     s.host_source()
     s.exchange(0, 900, calls=[("call_NN", "run_shell")])

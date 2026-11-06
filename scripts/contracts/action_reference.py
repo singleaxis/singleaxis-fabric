@@ -411,6 +411,37 @@ class _Hosts:
         margin = self.margin(event)
         return bool(first - margin <= event["time_ns"] <= last + margin)
 
+    def agent_child(self, effect: Mapping[str, Any]) -> bool:
+        """An effect whose process is the agent's own child (its parent pid is the agent's,
+        on the agent's host, in the agent's namespace when both name one)."""
+        mine = effect.get("pid_ns")
+        return (
+            effect.get("pid") is not None
+            and effect.get("parent_pid") == self.agent["pid"]
+            and effect.get("host_id") == self.agent.get("host_id")
+            and (self.agent_ns is None or mine is None or mine == self.agent_ns)
+        )
+
+
+def other_process(
+    hosts: _Hosts,
+    event: Mapping[str, Any],
+    init_pids: set[int],
+    child_tick: int | None,
+) -> bool:
+    """§4.3 "Agent identity": whether an event H4's pid comparison matched is provably
+    another process. Its start tick differs from the agent's known one; else, under
+    ``recorded``, its init-namespace pid is not one the run's certain anchors name as their
+    parent (``init_pids``); else it started in a later tick than the agent's earliest child
+    (``child_tick``). Two processes with the agent's pids never live at the same time, so
+    such an event lies outside the agent's life and so outside the run."""
+    start, own = hosts.agent.get("process_start_ns"), event.get("process_start_ns")
+    if start is not None and own is not None:
+        return not same_tick(start, own)
+    if init_pids and hosts.mode(event) == "recorded" and event["pid"] not in init_pids:
+        return True
+    return own is not None and child_tick is not None and own // TICK_NS > child_tick
+
 
 def anchor_effect(
     hosts: _Hosts, effect: Mapping[str, Any]
@@ -763,6 +794,21 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             trace["host_events"][event["event_id"]] = "H5"
 
     agent = inp["agent"]
+    # §4.3 "Agent identity": what the run's own records prove about the agent process.
+    init_pids = {
+        anchor["ppid"]
+        for effect, anchor, confidence in anchors
+        if confidence == "certain"
+        and anchor.get("ppid") is not None
+        and hosts.agent_child(effect)
+        and hosts.mode(anchor) == "recorded"
+    }
+    child_ticks = [
+        e["process_start_ns"] // TICK_NS
+        for e in effects
+        if e.get("process_start_ns") is not None and hosts.agent_child(e)
+    ]
+    child_tick = min(child_ticks) if child_ticks else None
     called = {
         peer
         for exchange in inp["exchanges"]
@@ -781,6 +827,13 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
         if hosts.sandbox(event):
             sandbox_unlinked += 1
             trace["host_events"][event["event_id"]] = "sandbox-unlinked"
+            continue
+        if hosts.agent_match(event) and other_process(
+            hosts, event, init_pids, child_tick
+        ):
+            # Another process with the agent's pids (a reused pid namespace number or
+            # pid): outside the agent's life, so outside the run.
+            trace["host_events"][event["event_id"]] = "H4-other-process"
             continue
         if hosts.agent_match(event):
             start, own = agent.get("process_start_ns"), event.get("process_start_ns")
@@ -999,6 +1052,7 @@ __all__ = [
     "attribute_effect",
     "candidates",
     "lineage",
+    "other_process",
     "output_matches",
     "reconstruct",
     "same_tick",
