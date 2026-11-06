@@ -228,6 +228,23 @@ def test_dependabot_covers_composite_actions_and_compose() -> None:
     assert "/deploy/compose" in covered["docker-compose"]
 
 
+def test_dependabot_moves_lockstep_dependencies_together() -> None:
+    # codeql-action refuses mixed versions across init/autobuild/analyze, and
+    # the Collector modules are built together by OCB, so each family must
+    # arrive as one grouped PR. Every entry keeps a version-update cooldown.
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    entries = {entry["package-ecosystem"]: entry for entry in config["updates"]}
+    actions = entries["github-actions"]["groups"]["codeql-action"]["patterns"]
+    assert "github/codeql-action*" in actions
+    go = entries["gomod"]
+    assert (
+        "go.opentelemetry.io/collector*" in go["groups"]["otel-collector"]["patterns"]
+    )
+    live_go = set().union(*(_tracked(n) for n in ECOSYSTEM_MANIFESTS["gomod"]))
+    assert live_go <= set(go["directories"])
+    assert all(entry["cooldown"]["default-days"] >= 3 for entry in config["updates"])
+
+
 def test_license_scan_project_tracks_the_sdk_peer_range() -> None:
     sdk = json.loads((ROOT / "sdk/typescript/package.json").read_text())
     scan_dir = ROOT / "scripts/license/s3-peer"
