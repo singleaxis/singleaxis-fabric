@@ -1,0 +1,181 @@
+# TEST ONLY: a local S3-compatible content store served over TLS, for trying
+# the production Node (`make up-prod` or `make up-prod-groups` with
+# FABRIC_CONTENT_BACKEND=s3) without a cloud bucket. It is not a production
+# object store: one container, no replication, a test certificate, static keys.
+#
+# Preflight refuses a plain-http content endpoint, so the local trial's
+# docker-compose.s3-local.yml cannot stand in for production. This overlay
+# serves the same SeaweedFS S3 gateway over HTTPS with a certificate you sign
+# with your own test CA; the Node trusts that CA through AWS_CA_BUNDLE and
+# reads its keys from a credentials file mounted as a Compose secret
+# (AWS_SHARED_CREDENTIALS_FILE). Nothing in the production checks changes:
+# preflight still validates FABRIC_CONTENT_S3_ENDPOINT (https), the bucket,
+# the region and SSE from .env. docs/production-setup.md has the recipe.
+#
+# Add it through FABRIC_COMPOSE_EXTRA (appended last by `make up-prod` and
+# `make up-prod-groups`), with in .env:
+#   FABRIC_COMPOSE_EXTRA=docker-compose.content-s3-local-tls.yml
+#   FABRIC_CONTENT_S3_ENDPOINT=https://s3-local-tls:8333
+#   FABRIC_CONTENT_S3_PATH_STYLE=true
+#   FABRIC_CONTENT_S3_SSE=AES256
+#   FABRIC_S3_LOCAL_TLS_DIR=<dir with server.crt, server.key and ca.crt>
+#   FABRIC_S3_LOCAL_TLS_ROOT_CREDENTIALS_FILE=<admin keys: bucket set-up only>
+#   FABRIC_S3_LOCAL_TLS_NODE_CREDENTIALS_FILE=<the Node's writer keys>
+#   FABRIC_S3_LOCAL_TLS_READER_CREDENTIALS_FILE=<read-only keys for fabric.reconstruct>
+#   FABRIC_S3_LOCAL_TLS_KEK_FILE=<64 hex: the store's SSE-S3 key-encryption key>
+# Each credentials file is an AWS shared credentials file with a [default]
+# profile (aws_access_key_id, aws_secret_access_key). The store's certificate
+# must name s3-local-tls (the Node's view) and 127.0.0.1 (the reader's), and
+# be signed by the CA in FABRIC_INGRESS_TLS_DIR/ca.crt, which the Node trusts
+# for S3. Without the key-encryption key SeaweedFS disables SSE-S3 and
+# refuses every encrypted write (HTTP 500). Keys never go in .env or in a
+# container's environment.
+#
+# Identities: the admin keys create the bucket (default SSE-S3, a policy
+# denying deletes); the Node writer may read and write the content prefix;
+# the reader may only read it. Only the S3 port is published, on 127.0.0.1.
+
+x-s3-local-tls-image: &s3-local-tls-image
+  # The same pinned image as docker-compose.s3-local.yml.
+  image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+
+x-s3-local-tls-bucket: &s3-local-tls-bucket
+  BUCKET: ${FABRIC_CONTENT_S3_BUCKET:?set FABRIC_CONTENT_S3_BUCKET in .env}
+  PREFIX: ${FABRIC_CONTENT_S3_PREFIX:-fabric/content/}
+
+secrets:
+  fabric_s3_local_tls_root_credentials:
+    file: ${FABRIC_S3_LOCAL_TLS_ROOT_CREDENTIALS_FILE:?set FABRIC_S3_LOCAL_TLS_ROOT_CREDENTIALS_FILE in .env (test store admin keys)}
+  fabric_s3_local_tls_node_credentials:
+    file: ${FABRIC_S3_LOCAL_TLS_NODE_CREDENTIALS_FILE:?set FABRIC_S3_LOCAL_TLS_NODE_CREDENTIALS_FILE in .env (the Node's writer keys)}
+  fabric_s3_local_tls_reader_credentials:
+    file: ${FABRIC_S3_LOCAL_TLS_READER_CREDENTIALS_FILE:?set FABRIC_S3_LOCAL_TLS_READER_CREDENTIALS_FILE in .env (read-only keys)}
+  fabric_s3_local_tls_kek:
+    file: ${FABRIC_S3_LOCAL_TLS_KEK_FILE:?set FABRIC_S3_LOCAL_TLS_KEK_FILE in .env (64 hex, the store's SSE-S3 key-encryption key)}
+
+volumes:
+  s3-local-tls-data:
+
+services:
+  s3-local-tls:
+    <<: *s3-local-tls-image
+    entrypoint: ["/bin/sh", "-ec"]
+    environment:
+      <<: *s3-local-tls-bucket
+    secrets:
+      - fabric_s3_local_tls_root_credentials
+      - fabric_s3_local_tls_node_credentials
+      - fabric_s3_local_tls_reader_credentials
+      - fabric_s3_local_tls_kek
+    command:
+      - |
+        umask 077
+        # Runs as root before the image's entrypoint drops to the seaweed
+        # user: copy the key material that user needs into /tmp, so the
+        # bind-mounted files can stay closed to everyone else on the host.
+        key() { sed -n "s/^[[:space:]]*$$1[[:space:]]*=[[:space:]]*//p" "$$2" | head -n 1 | tr -d '\r'; }
+        ids=/run/secrets/fabric_s3_local_tls
+        for role in root node reader; do
+          for field in aws_access_key_id aws_secret_access_key; do
+            value="$$(key "$$field" "$${ids}_$${role}_credentials")"
+            case "$$value" in ''|*'"'*|*'\'*) echo "s3-local-tls: $$role credentials file needs [default] $$field without quotes or backslashes"; exit 1 ;; esac
+          done
+        done
+        # SSE-S3 key-encryption key from its secret, exported to the store
+        # process only (the image's entrypoint keeps the environment).
+        WEED_S3_SSE_KEK="$$(tr -d ' \r\n' < /run/secrets/fabric_s3_local_tls_kek)"
+        case "$$WEED_S3_SSE_KEK" in
+          *[!0-9a-f]*|'') echo "s3-local-tls: the KEK file must hold 64 lowercase hex characters"; exit 1 ;;
+        esac
+        [ "$${#WEED_S3_SSE_KEK}" -eq 64 ] || { echo "s3-local-tls: the KEK file must hold 64 lowercase hex characters"; exit 1; }
+        export WEED_S3_SSE_KEK
+        rm -f /tmp/fabric-s3-identities.json /tmp/s3-tls.crt /tmp/s3-tls.key
+        printf '{"identities":[{"name":"fabric-test-root","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Admin","Read","List","Write","Tagging"]},{"name":"fabric-node-writer","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read:%s/%s*","Write:%s/%s*"]},{"name":"fabric-reader","credentials":[{"accessKey":"%s","secretKey":"%s"}],"actions":["Read:%s/%s*"]}]}\n' \
+          "$$(key aws_access_key_id "$${ids}_root_credentials")" "$$(key aws_secret_access_key "$${ids}_root_credentials")" \
+          "$$(key aws_access_key_id "$${ids}_node_credentials")" "$$(key aws_secret_access_key "$${ids}_node_credentials")" \
+          "$$BUCKET" "$$PREFIX" "$$BUCKET" "$$PREFIX" \
+          "$$(key aws_access_key_id "$${ids}_reader_credentials")" "$$(key aws_secret_access_key "$${ids}_reader_credentials")" \
+          "$$BUCKET" "$$PREFIX" > /tmp/fabric-s3-identities.json
+        cp /s3tls/server.crt /tmp/s3-tls.crt
+        cp /s3tls/server.key /tmp/s3-tls.key
+        chown seaweed:seaweed /tmp/fabric-s3-identities.json /tmp/s3-tls.crt /tmp/s3-tls.key
+        # Internals stay on the container's loopback; only the S3 gateway
+        # listens beyond it, and only over TLS.
+        exec /entrypoint.sh server -ip=127.0.0.1 -ip.bind=127.0.0.1 \
+          -s3 -s3.ip.bind=0.0.0.0 -s3.port=8333 -s3.iam=false \
+          -s3.port.iceberg=0 -s3.port.lance=0 \
+          -s3.cert.file=/tmp/s3-tls.crt -s3.key.file=/tmp/s3-tls.key \
+          -s3.config=/tmp/fabric-s3-identities.json -master.telemetry=false \
+          -master.volumeSizeLimitMB=64 -volume.max=64
+    volumes:
+      - s3-local-tls-data:/data
+      - ${FABRIC_S3_LOCAL_TLS_DIR:?set FABRIC_S3_LOCAL_TLS_DIR in .env (the test store's server.crt, server.key and ca.crt)}:/s3tls:ro
+    ports:
+      - "127.0.0.1:${FABRIC_S3_LOCAL_TLS_PORT:-9000}:8333"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--cacert", "/s3tls/ca.crt", "https://localhost:8333/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+    networks: [fabric-node]
+
+  # One-shot: the bucket with default SSE-S3 and a no-delete bucket policy.
+  s3-local-tls-init:
+    <<: *s3-local-tls-image
+    depends_on:
+      s3-local-tls:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    environment:
+      <<: *s3-local-tls-bucket
+    secrets:
+      - fabric_s3_local_tls_root_credentials
+    # The image declares VOLUME /data; a tmpfs there keeps this one-shot job
+    # from leaving an anonymous volume behind on every start.
+    tmpfs: [/data]
+    volumes:
+      - ${FABRIC_S3_LOCAL_TLS_DIR:?set FABRIC_S3_LOCAL_TLS_DIR in .env}:/s3tls:ro
+    command:
+      - |
+        umask 077
+        key() { sed -n "s/^[[:space:]]*$$1[[:space:]]*=[[:space:]]*//p" /run/secrets/fabric_s3_local_tls_root_credentials | head -n 1 | tr -d '\r'; }
+        # Admin keys go to curl through a config file, never its command line.
+        printf 'user = "%s:%s"\n' "$$(key aws_access_key_id)" "$$(key aws_secret_access_key)" > /tmp/init.curlrc
+        s3() {
+          curl -sS --cacert /s3tls/ca.crt -K /tmp/init.curlrc --aws-sigv4 "aws:amz:us-east-1:s3" \
+            -o /tmp/init.out -w '%{http_code}' "$$@"
+        }
+        fail() { echo "s3-local-tls-init: $$1 (HTTP $$code)"; cat /tmp/init.out; exit 1; }
+        url="https://s3-local-tls:8333/$$BUCKET"
+        tries=0
+        until code="$$(s3 -X PUT "$$url")" \
+          && { [ "$$code" = 200 ] || grep -q BucketAlreadyOwnedByYou /tmp/init.out; }; do
+          tries=$$((tries + 1))
+          [ "$$tries" -lt 30 ] || fail "bucket not created"
+          sleep 1
+        done
+        code="$$(s3 -X PUT "$$url?encryption" -H 'Content-Type: application/xml' --data-binary \
+          '<ServerSideEncryptionConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Rule><ApplyServerSideEncryptionByDefault><SSEAlgorithm>AES256</SSEAlgorithm></ApplyServerSideEncryptionByDefault></Rule></ServerSideEncryptionConfiguration>')"
+        [ "$$code" = 200 ] || fail "default encryption not set"
+        code="$$(s3 "$$url?encryption")"
+        { [ "$$code" = 200 ] && grep -q AES256 /tmp/init.out; } || fail "default encryption not reported"
+        code="$$(s3 -X PUT "$$url?policy" -H 'Content-Type: application/json' --data-binary \
+          "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"FabricNoDelete\",\"Effect\":\"Deny\",\"Principal\":\"*\",\"Action\":[\"s3:DeleteObject\",\"s3:DeleteObjectVersion\"],\"Resource\":[\"arn:aws:s3:::$$BUCKET/*\"]}]}")"
+        case "$$code" in 200|204) ;; *) fail "bucket policy not set" ;; esac
+        echo "s3-local-tls-init: bucket ready over TLS (default SSE-S3, no-delete policy)"
+    restart: "no"
+    networks: [fabric-node]
+
+  fabric-node:
+    environment:
+      # The AWS default chain reads the writer keys from the mounted secret
+      # and trusts the test CA for S3 only (the export keeps its own trust).
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/fabric_s3_local_tls_node_credentials
+      AWS_CA_BUNDLE: /run/fabric-node/tls/ca.crt
+      AWS_EC2_METADATA_DISABLED: "true"
+    secrets:
+      - fabric_s3_local_tls_node_credentials
+    depends_on:
+      s3-local-tls-init:
+        condition: service_completed_successfully

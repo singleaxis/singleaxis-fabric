@@ -107,6 +107,22 @@ and delivery of model calls behave as in 0.11.0.
   addresses `--endpoint-peer` and `--known-peer` need and why, a
   destination behind a private CA, and what differs on Docker Desktop.
   Linked from the README, the docs index, the quickstart and host sensors.
+  Corrected after a second acceptance run followed it literally: the
+  Compose network is `fabric-node-production_fabric-node`; the reader
+  commands are given per backend (`--content-key-file` only with
+  `--store-root`) with the S3-compatible settings (`--s3-endpoint-url`,
+  `--s3-path-style`, `--s3-region`, read-only reader credentials,
+  `AWS_CA_BUNDLE`), and the page states that S3 objects are protected by
+  the bucket's server-side encryption, not sealed by Fabric, so read access
+  to the prefix is read access to retained content; certificates are
+  signed with a random serial so `tls/` holds only what the Node mounts;
+  and a test-only TLS S3 store
+  (`deploy/compose/docker-compose.content-s3-local-tls.yml`, added through
+  `FABRIC_COMPOSE_EXTRA`) lets the recipe run without a cloud bucket and
+  pass preflight unchanged. `scripts/tests/test_production_setup_doc.py`
+  checks the page's network, container and volume names, reader commands,
+  `make` targets, `.env` variables and certificate commands against the
+  shipped files.
 - **AR-1 live's `systemd` requirement is the harness's, not the
   emitter's.** The harness creates systemd slice units; the emitter also
   scopes agents on the `cgroupfs` driver (`--cgroup-parent=/fabric-agents`),
