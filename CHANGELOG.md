@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `docker-compose.content-s3-local-tls.yml`, saying it is a test-only store
   that must never hold real content. It is a warning, not a failure, so the
   [production setup](docs/production-setup.md) test recipe still runs.
+- **A flaky SDK test.** `test_wire_spool.py::test_node_mode_delivers_content_then_span_and_empties_the_spool`
+  read `spool_bytes` right after `flush()`. `flush()` returns once its
+  records are delivered, but the spool releases a delivered record's bytes
+  from its count only after the directory fsync that follows the unlink, so
+  the count could briefly still include it. The test now waits for the count
+  to reach zero. Delivery itself is unchanged.
 
 ## [0.11.1] - 2026-11-06
 
