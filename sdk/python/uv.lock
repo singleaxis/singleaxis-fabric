@@ -2458,6 +2458,7 @@ ci = [
     { name = "build" },
     { name = "editables" },
     { name = "hatchling" },
+    { name = "pyyaml" },
 ]
 dev = [
     { name = "aiohttp" },
@@ -2504,6 +2505,7 @@ ci = [
     { name = "build", specifier = ">=1.2.2" },
     { name = "editables", specifier = ">=0.5" },
     { name = "hatchling", specifier = ">=1.25.0" },
+    { name = "pyyaml", specifier = ">=6.0.2,<7.0" },
 ]
 dev = [
     { name = "aiohttp", specifier = ">=3.9" },

@@ -111,6 +111,8 @@ ci = [
   "hatchling>=1.25.0",
   # hatchling's build_editable requirement (pip install --no-build-isolation -e).
   "editables>=0.5",
+  # The release qualification reads workflow YAML (scripts/release/check_ghcr_packages.py).
+  "PyYAML>=6.0.2,<7.0",
 ]
 # The license inventory tool (recorder-license.yml, scripts/license_scan.sh).
 license = [

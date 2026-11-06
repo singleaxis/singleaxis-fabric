@@ -140,8 +140,8 @@ jobs:
       - name: Qualify the GHCR packages the workflows publish
         # release-policy.json `ghcr_packages` is the complete list; anything else on
         # GHCR is stale (docs/verify-release.md). Fails before anything is published.
+        # PyYAML comes from the locked `ci` group installed above.
         run: |
-          python -m pip install PyYAML==6.0.2
           python scripts/release/check_ghcr_packages.py \
             --policy scripts/release/release-policy.json --repo-root .
       - name: Qualify release image titles, descriptions and Dockerfile labels
