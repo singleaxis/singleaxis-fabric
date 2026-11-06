@@ -56,6 +56,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - New Compose e2e tests cover a 403 window (everything is delivered after
     recovery) and a permanent 400 (the run is reported lost).
 
+- **The reader no longer reports stored S3 objects as missing after one
+  failed read.** `python -m fabric.reconstruct` read each object once. In the
+  reliability run, 30 objects that were in S3 came back
+  `missing(read_error)` and the run read `partial(missing_object)`. botocore
+  retries the GetObject call, but not a body that stops streaming. Reads now
+  retry transient failures (throttling, 5xx, a reset connection, a timeout, a
+  streaming error, including wrapped ones) up to 5 times with about 3 s of
+  backoff in all. An absent object (`NoSuchKey`, 404) is still `missing`
+  (`absent`). A reader the store refuses (AccessDenied, ExpiredToken,
+  InvalidAccessKeyId, SignatureDoesNotMatch, a local permission error) is a
+  setup error with exit 2 and fixed text, not a `missing_object` gap; before,
+  an AccessDenied object read as `missing(read_error)`. Unit tests use a fake
+  S3 client.
+
 - **A container's agent process is no longer linked into the previous
   container's run (spec 056 revision 7).** When agent containers start back
   to back, the kernel reuses the pid namespace's number, so the next agent

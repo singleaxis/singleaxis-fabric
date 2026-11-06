@@ -92,6 +92,7 @@ from ._inputs import (
     RecordObs,
     SpanRecord,
 )
+from ._objects import StoreAccessError
 from ._report import format_datetime
 
 if TYPE_CHECKING:
@@ -1730,7 +1731,7 @@ class _RecordBodies:
         store = self.verifier.store
         try:
             descriptor = store.read_descriptor(store.evidence_ref_for(result.object_id))
-        except ImportError:
+        except (ImportError, StoreAccessError):
             raise
         except Exception:
             return
