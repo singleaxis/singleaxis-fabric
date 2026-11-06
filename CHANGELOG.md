@@ -163,6 +163,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Known limitations
 
+- **Model-call latency while a backlog replays.** In the 0.11.1 reliability
+  run, a few model calls stalled for 0.5 to 3.5 s (4 of 2,400 calls in S3 and
+  11 of 3,280 in S4, worst 3.53 s), all in the process that was replaying a
+  backlog. The median did not change. No path on the model-call thread
+  waits on the replay. The call allocates a position and puts the exchange on
+  a non-blocking queue. Spool I/O, decryption, span rebuilding and export run
+  on the capture worker and spool sender threads, and neither holds a lock
+  the call path needs during I/O. The stalls did not recur in the
+  re-run on this branch, which had a stack watchdog that dumps every thread
+  of a call over 400 ms:
+  - S3 replay windows: p50 5.7 ms, p95 37 ms, max 170 ms, against 4.1, 34
+    and 57 ms before the faults.
+  - S4 replay windows: p50 3.1 ms, p95 27 ms, max 117 ms, against 5.1, 24
+    and 67 ms.
+  - Locally, a 4,000-record node-mode replay with every core saturated:
+    p95 24 ms and max 109 ms, against 20 and 109 ms with capture off.
+
+  The remaining explanation is CPU and GIL contention from the replay thread
+  on a host whose CPU is already saturated. In the chaos run, Docker
+  Desktop's few vCPUs also ran the Node, S3, the sink and the emitter. This
+  is not fixed. Throttling replay would trade delivery time for latency, and
+  nothing measured here justifies that.
+
 - **Node delivery policy edges.** A destination that answers 2xx with an
   OTLP `partial_success` still loses the items it rejected (the upstream
   exporter logs the count; it does not say which items, so no loss record is

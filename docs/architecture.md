@@ -21,8 +21,11 @@ process and before it reaches disk, and delivers it to a store and an OTLP
 destination you choose. It never blocks or alters the monitored system:
 results and exceptions are unchanged, protection and export I/O stay off the
 monitored call path, and instrumentation adds a small, measured overhead
-(about 0.2 ms per call in our tests) plus a bounded drain at shutdown. It
-does not evaluate, judge, score or control the system.
+(about 0.2 ms per call in our tests) plus a bounded drain at shutdown. While
+a process replays a large spool backlog, its replay thread competes for CPU,
+so on a CPU-saturated host a few calls can be slower (see the CHANGELOG's
+known limitations for the measurements). It does not evaluate, judge, score
+or control the system.
 
 ## Components
 
