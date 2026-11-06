@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `actions --json` lists every one. It is omitted with `--run` and bounds
   no run verdict. Capture contract 1.7.0 (additive); spec 056 §4.3 "Host
   events in no run".
+- **A transcript manifest no longer shows a failed item as pending.** With
+  `durability="inline"`, two inline workers can write two revisions of one
+  manifest at once: decision close's (the item still pending, its object
+  write past the 50 ms deadline) and the settlement's (the item failed or
+  stored). If the older write landed last, the destination kept the stale
+  `pending` revision, and `flush()` still reported nothing pending. The
+  writer now orders writes per manifest and skips a revision older than
+  the one already written. The flaky
+  `test_runtime_manifests_validate_against_contract` was a separate test
+  timing issue: an inline manifest write past the deadline finishes in the
+  background, so the test now waits on `flush()` instead of `close()`.
+  Both cases have deterministic tests.
 - **Preflight warns when the test-only S3 store is enabled.**
   `preflight-prod.sh` now prints a warning on every run whose
   `FABRIC_COMPOSE_EXTRA` (environment or `.env`) names
