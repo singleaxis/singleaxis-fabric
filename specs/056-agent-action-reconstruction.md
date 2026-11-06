@@ -18,7 +18,8 @@ related: ["030", "031", "047", "048", "054", "055"]
 > every host-event comparison (two clocks). Before, the default 1 s margin
 > made an effect that started after its call visibly closed ambiguous
 > (0.11.1 acceptance B4). The `actions` view also renders unexplained host events no
-> link names as rows (§4.6).
+> link names as rows (§4.6), and an unsupported `FABRIC_WIRE_REMOTE_SANDBOX`
+> provider disables only `remote.sandbox` (§7.3.3).
 >
 > **Revision 7** (2026-11-06, v0.11.2): H4 checks the agent's process
 > identity, not only its pids. The kernel reuses a freed pid namespace's
@@ -1302,7 +1303,12 @@ fabric.hooks.install(
 ```
 
 Environment: `FABRIC_WIRE_HTTP_HOSTS` and `FABRIC_WIRE_SANDBOX_HOSTS`
-(JSON arrays of strings), `FABRIC_WIRE_REMOTE_SANDBOX` (comma-separated).
+(JSON arrays of strings), `FABRIC_WIRE_REMOTE_SANDBOX` (comma-separated;
+revision 8: a provider this build does not have, such as `modal`, is
+dropped with one warning and disables only `remote.sandbox`, which
+`status()` reports as `disabled(unsupported_provider)`; the manifest keeps
+`disabled(hook_disabled)` or `disabled(remote_sandbox)`, and every other
+hook and capture run).
 `CHANNELS` gains `http.nonmodel` (module `fabric.hooks._http`) and
 `remote.sandbox` (module `fabric.hooks._sandbox`, which dispatches to
 `_sandbox_e2b`). `HooksConfig.requested(point)` covers both. When

@@ -358,8 +358,11 @@ def test_environment_configuration_never_raises(env: dict[str, str], expected: o
         ({"FABRIC_WIRE_HTTP_HOSTS": '["*.example.com"]'}, "invalid"),
         ({"FABRIC_WIRE_HTTP_HOSTS": '["a.example", "A.example"]'}, "invalid"),
         ({"FABRIC_WIRE_HTTP_HOSTS": "[" * 100_000}, "invalid"),
-        ({"FABRIC_WIRE_REMOTE_SANDBOX": "e2b,modal"}, "invalid"),
-        ({"FABRIC_WIRE_REMOTE_SANDBOX": "e2b,,e2b"}, "invalid"),
+        # 0.11.2 (B5): an unsupported provider is dropped, never every hook disabled
+        ({"FABRIC_WIRE_REMOTE_SANDBOX": "e2b,modal"}, {"remote_sandbox": ("e2b",),
+                                                       "unsupported": True}),
+        ({"FABRIC_WIRE_REMOTE_SANDBOX": "modal"}, {"unsupported": True}),
+        ({"FABRIC_WIRE_REMOTE_SANDBOX": "e2b,,e2b"}, {"remote_sandbox": ("e2b",)}),
         ({"FABRIC_WIRE_SANDBOX_HOSTS": "api.e2b.app"}, "invalid"),
     ],
 )  # fmt: skip
@@ -373,6 +376,7 @@ def test_m2_environment_configuration_never_raises(env: dict[str, str], expected
     assert tuple(r.text for r in config.http_hosts) == expected.get("http_hosts", ())
     assert config.remote_sandbox == expected.get("remote_sandbox", ())
     assert tuple(r.text for r in config.sandbox_hosts) == expected.get("sandbox_hosts", ())
+    assert config.remote_sandbox_unsupported == expected.get("unsupported", False)
 
 
 def test_requested_covers_every_channel() -> None:
@@ -404,8 +408,7 @@ def test_environment_activation_with_a_malformed_value_disables_every_hook(
 
 @pytest.mark.parametrize(
     "env",
-    [{"FABRIC_WIRE_HTTP_HOSTS": "not json"}, {"FABRIC_WIRE_REMOTE_SANDBOX": "modal"},
-     {"FABRIC_WIRE_SANDBOX_HOSTS": '["a b"]'}],
+    [{"FABRIC_WIRE_HTTP_HOSTS": "not json"}, {"FABRIC_WIRE_SANDBOX_HOSTS": '["a b"]'}],
 )  # fmt: skip
 def test_a_malformed_m2_switch_disables_every_hook(
     env: dict[str, str], fake: FakeModule, tmp_path: Path, caplog: pytest.LogCaptureFixture
@@ -417,6 +420,30 @@ def test_a_malformed_m2_switch_disables_every_hook(
     assert fake.installed == [] and hooks.current_handle() is None
     assert len([r for r in caplog.records if r.name == "fabric.hooks"]) == 1
     assert not any(value in caplog.text for value in env.values())
+
+
+@pytest.mark.parametrize("value", ["modal", "Modal, daytona"])
+def test_an_unsupported_sandbox_provider_disables_only_remote_sandbox(
+    value: str, fake: FakeModule, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """0.11.1 acceptance B5: ``FABRIC_WIRE_REMOTE_SANDBOX=modal`` disabled every hook as
+    ``invalid_configuration``. Only ``remote.sandbox`` stays off now, reported as
+    ``disabled(unsupported_provider)``; the exec hook and capture run."""
+    _capture(tmp_path)
+    with caplog.at_level(logging.WARNING, logger="fabric.hooks"):
+        handle = hooks.install_from_env(
+            {"FABRIC_WIRE_EXEC": "1", "FABRIC_WIRE_REMOTE_SANDBOX": value}
+        )
+    assert handle is not None
+    status = handle.status()
+    assert status["state"] == "active"
+    off = {"state": "disabled", "reason": "unsupported_provider"}
+    assert status["capabilities"]["remote.sandbox"] == off
+    assert status["capabilities"][POINT]["state"] == "active"
+    assert fake.installed and hooks.current_handle() is handle
+    warnings = [r for r in caplog.records if r.name == "fabric.hooks"]
+    assert len(warnings) == 1 and "unsupported_provider" in warnings[0].getMessage()
+    handle.close(timeout_s=2.0)
 
 
 def test_environment_activation_absent_or_off_installs_nothing(fake: FakeModule) -> None:

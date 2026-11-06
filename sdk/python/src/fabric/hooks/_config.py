@@ -7,7 +7,10 @@ Two ways in, with different error rules:
 - :func:`config_from_args` (``fabric.hooks.install(...)``) is configuration: a malformed
   argument raises ``ValueError`` with fixed text, as ``fabric.wire.install()`` does.
 - :func:`config_from_env` (``FABRIC_WIRE_EXEC=1`` and friends) never raises: a malformed
-  value disables every hook and is reported as ``invalid_configuration``.
+  value disables every hook and is reported as ``invalid_configuration``. A
+  ``FABRIC_WIRE_REMOTE_SANDBOX`` provider this build does not have (``modal``) is not
+  malformed: it disables only ``remote.sandbox``, which ``status()`` reports as
+  ``disabled(unsupported_provider)`` (0.11.2); every other hook and capture run.
 
 Absent means disabled. This build registers three channels: ``exec.subprocess``
 (``FABRIC_WIRE_EXEC``), ``http.nonmodel`` (``FABRIC_WIRE_HTTP_HOSTS``, a JSON array of
@@ -224,6 +227,8 @@ class HooksConfig:
     http_hosts: tuple[HostRule, ...] = ()
     remote_sandbox: tuple[str, ...] = ()
     sandbox_hosts: tuple[HostRule, ...] = ()
+    # FABRIC_WIRE_REMOTE_SANDBOX named a provider this build does not have (env only).
+    remote_sandbox_unsupported: bool = False
 
     def requested(self, point: str) -> bool:
         """Whether the channel at capture point ``point`` was asked for."""
@@ -298,11 +303,15 @@ def _json_hosts(environ: Mapping[str, str], name: str) -> tuple[HostRule, ...]:
     return _hosts(value, name)
 
 
-def _env_providers(environ: Mapping[str, str]) -> tuple[str, ...]:
+def _env_providers(environ: Mapping[str, str]) -> tuple[tuple[str, ...], bool]:
+    """The supported providers named, and whether any other name was (an unsupported
+    provider disables ``remote.sandbox`` only; never every hook)."""
     text = (environ.get(REMOTE_SANDBOX_ENV) or "").strip()
     if not text:
-        return ()
-    return _providers([part.strip() for part in text.split(",")])
+        return (), False
+    names = [part.strip().lower() for part in text.split(",") if part.strip()]
+    supported = tuple(dict.fromkeys(n for n in names if n in SANDBOX_PROVIDERS))
+    return supported, len(supported) != len(set(names))
 
 
 def config_from_env(
@@ -314,11 +323,13 @@ def config_from_env(
     not_in_build = tuple(name for name in NOT_IN_BUILD_ENV if (environ.get(name) or "").strip())
     try:
         label = (environ.get(HOST_LABEL_ENV) or "").strip() or None
+        providers, unsupported = _env_providers(environ)
         config = HooksConfig(
             exec=_flag(environ, EXEC_ENV), host_label=_label(label),
             http_hosts=_json_hosts(environ, HTTP_HOSTS_ENV),
-            remote_sandbox=_env_providers(environ),
+            remote_sandbox=providers,
             sandbox_hosts=_json_hosts(environ, SANDBOX_HOSTS_ENV),
+            remote_sandbox_unsupported=unsupported,
         )  # fmt: skip
         return config, not_in_build
     except Exception:

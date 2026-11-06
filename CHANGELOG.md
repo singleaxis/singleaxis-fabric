@@ -97,6 +97,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (smoke1: `docker inspect` was `T1|T2`). Spec 056 revision 8; the
   `edge-clock-margin-boundary` rule fixture now expects `A4` (no window),
   and no other fixture changes.
+- **An unsupported sandbox provider no longer disables every hook (B5).**
+  `FABRIC_WIRE_REMOTE_SANDBOX=modal` (any provider other than `e2b`) was
+  treated as malformed, so the exec and HTTP hooks were off too. The
+  provider is now dropped with one warning; only `remote.sandbox` stays off,
+  and `fabric.hooks` `status()` reports it as
+  `disabled(unsupported_provider)`. Supported providers in the same list
+  (`e2b,modal`) are enabled.
+
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
