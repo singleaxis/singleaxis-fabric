@@ -168,6 +168,9 @@ class HostJoin:
     sandbox_events_unlinked: int | None = None
     remote_sandbox_calls: Sequence[tuple[str, int, int]] | None = None
     unauthenticated: bool = False
+    # Row data (ids, pids, times) of unexplained events ``sensor_events`` does not list:
+    # the actions view shows them; the report does not carry them.
+    unexplained_events: Sequence[Mapping[str, Any]] = ()
 
 
 #: Called once per annotated run with its normalized input; ``None`` when no host source
@@ -395,6 +398,8 @@ class Attribution:
     trace: dict[str, dict[str, Any]]
     calls: list[ToolCall] = field(default_factory=list)
     decisions: dict[str, Decision] = field(default_factory=dict)
+    # Unexplained host events no ``sensor_events`` entry lists (actions view only).
+    unexplained_events: list[dict[str, Any]] = field(default_factory=list)
 
     def expected(self) -> dict[str, Any]:
         """The rule fixture ``expected`` shape of this result."""
@@ -460,6 +465,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
             unattributed.append(effect)
 
     sensor_events: list[dict[str, Any]] = []
+    unexplained_events: list[dict[str, Any]] = []
     unexplained: Sequence[str] = ()
     unexplained_count: int | None = None
     truncated = 0
@@ -472,6 +478,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
             for state, number in by_state.items():
                 merged[state] = merged.get(state, 0) + int(number)
         sensor_events = [dict(event) for event in host.sensor_events]
+        unexplained_events = [dict(event) for event in host.unexplained_events]
         unexplained = list(host.unexplained)
         unexplained_count = host.unexplained_count
         truncated = host.lineage_truncated
@@ -582,6 +589,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         trace=trace,
         calls=calls,
         decisions=decisions,
+        unexplained_events=unexplained_events,
     )
 
 
@@ -1420,6 +1428,20 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
             row["anchors"] = anchors
         if event["event_id"] in unexplained:
             row["unexplained"] = True
+        events.append((event["time_ns"], 2, 0, row))
+    # Unexplained events no link names (an os.system child, a process Fabric does not
+    # hook): a row each, at their time, with pid, parent pid and time (host records carry
+    # no argv), so a reader sees what ran, not only a count.
+    listed = {event["event_id"] for event in result.sensor_events}
+    for event in result.unexplained_events:
+        if event["event_id"] in listed:
+            continue
+        row = {"kind": "host", "event_id": event["event_id"], "source": event["source"],
+               "event_class": event["event_class"], "pid": event["pid"],
+               "time_ns": event["time_ns"], "unexplained": True}  # fmt: skip
+        for key in ("ppid", "syscall"):
+            if key in event:
+                row[key] = event[key]
         events.append((event["time_ns"], 2, 0, row))
     for group in sandboxes.values():
         events.append((group["first_ns"], 3, 0, group))

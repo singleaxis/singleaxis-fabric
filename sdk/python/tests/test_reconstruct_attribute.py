@@ -18,6 +18,7 @@ import copy
 import importlib.util
 import json
 import random
+import re
 import sys
 import types
 from collections.abc import Mapping
@@ -518,3 +519,43 @@ def test_exec_hook_off_with_remote_sandbox_on_is_channel_disabled() -> None:
     off = attribute(inp, call_id)
     assert off.chains["effects"] == {"verdict": "not_observed", "reasons": ["channel_disabled"]}
     assert set(off.trace["tool_calls"].values()) == {"channel_disabled"}
+
+
+def test_unexplained_exec_events_get_timeline_rows() -> None:
+    """0.11.1 acceptance B3: unexplained host exec events no link names (the exec hook
+    is off, or an ``os.system`` child Fabric does not hook) were counted and id-listed
+    but had no row. Each now has one, at its time, with pid, parent pid and time, in the
+    JSON and the text view; the report itself is unchanged."""
+    from fabric.reconstruct.__main__ import format_actions  # noqa: PLC0415
+    from fabric.reconstruct._host import attribution_join, join_normalized  # noqa: PLC0415
+
+    fixture = load(ACTION / "rules" / "ar1-negative-c-hook-disabled.json")
+    inp = fixture["input"]
+    result = attribute(inp, call_id, attribution_join(join_normalized(inp)))
+    assert result.expected()["sensor_events"] == fixture["expected"]["sensor_events"]
+    ids = fixture["expected"]["attribution"]["unexplained_host_events"]["event_ids"]
+    listed = {event["event_id"] for event in result.sensor_events}
+    unlisted = [event_id for event_id in ids if event_id not in listed]
+    assert len(unlisted) == 9  # the case the acceptance run met
+    view = action_rows(ActionRun("r-x", inp, result))
+    rows = {row.get("event_id"): row for row in view["rows"] if row["kind"] == "host"}
+    events = {event["event_id"]: event for event in inp["host_events"]}
+    for event_id in ids:
+        row = rows[event_id]
+        assert row["unexplained"] is True and row["pid"] == events[event_id]["pid"]
+    for event_id in unlisted:
+        row, event = rows[event_id], events[event_id]
+        assert row["time_ns"] == event["time_ns"]
+        assert row.get("ppid") == event.get("ppid")
+        assert set(row) <= {"kind", "event_id", "source", "event_class", "pid", "ppid",
+                            "time_ns", "syscall", "unexplained", "n"}  # fmt: skip
+    # in time order on the timeline: each unlisted row sits between its neighbours
+    timed = [(row["n"], row["time_ns"]) for row in view["rows"] if "time_ns" in row]
+    assert [t for _, t in sorted(timed)] == sorted(t for _, t in timed)
+    text = format_actions(view)
+    host_rows = [line for line in text.splitlines()
+                 if re.match(r"^\s*\d+\s+host\s.*unexplained$", line)]  # fmt: skip
+    assert len(host_rows) == len(ids)
+    assert sum(" ppid " in line for line in host_rows) >= len(unlisted)
+    assert f"unexplained host events: {len(ids)}" in text
+    json.dumps(view)  # the --json view stays serialisable

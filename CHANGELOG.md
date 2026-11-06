@@ -83,6 +83,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `clock.uncertainty_ns` = 2 ms + the largest step. The host-records library
   gains `Source.WidenClockUncertainty`. `fabric.sensor.boot_time_s` follows
   the step too.
+- **`actions` shows unexplained host exec events as rows (B3).** Unexplained
+  events no rule links (an `os.system` child, an exec while the exec hook is
+  off) were only counted and id-listed. Each now has a timeline row with
+  pid, parent pid and time, in the text and `--json` views. The run report
+  is unchanged.
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
