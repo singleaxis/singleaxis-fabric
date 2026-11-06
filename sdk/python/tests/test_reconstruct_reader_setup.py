@@ -191,8 +191,8 @@ def test_transient_read_errors_are_retried_before_an_object_is_missing(
 
     monkeypatch.setattr(client, "get_object", flaky)
     out = tmp_path / "report.json"
-    code = main(_s3_argv(capture.write(), out))
-    assert code == 0
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 0
     run = only_run(json.loads(out.read_text()))
     assert run["verdict"] != "partial" and not [g for g in run["gaps"] if g["effect"] == "partial"]
     assert failures and all(n == 3 for n in failures.values())
@@ -218,8 +218,8 @@ def test_a_persistently_failing_read_is_a_read_error_after_bounded_retries(
 
     monkeypatch.setattr(client, "get_object", down)
     out = tmp_path / "report.json"
-    code = main(_s3_argv(capture.write(), out))
-    assert code == 1
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 1
     run = only_run(json.loads(out.read_text()))
     assert [(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"] == [
         ("missing_object", "read_error")
@@ -236,8 +236,8 @@ def test_an_absent_object_is_still_missing_and_not_retried_beyond_the_wait(
     victim = next(key for key in list(client.objects) if "/meta/" not in key[1])
     del client.objects[victim]
     out = tmp_path / "report.json"
-    code = main(_s3_argv(capture.write(), out))
-    assert code == 1
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 1
     run = only_run(json.loads(out.read_text()))
     assert [(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"] == [
         ("missing_object", "absent")
@@ -267,8 +267,8 @@ def test_a_refused_reader_is_a_setup_error_not_missing_objects(
 
     monkeypatch.setattr(client, "get_object", denied)
     out = tmp_path / "report.json"
-    code = main(_s3_argv(capture.write(), out))
-    assert code == 2
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 2
     err = capsys.readouterr().err
     assert "refused access" in err and "missing_object" not in err
     assert BUCKET not in err and victim not in err
@@ -373,8 +373,8 @@ def test_an_empty_span_directory_is_a_usage_error(
 ) -> None:
     empty = tmp_path / "secret-dir"
     empty.mkdir()
-    code = main(["--spans", str(empty)])
-    assert code == 2
+    rc = main(["--spans", str(empty)])
+    assert rc == 2
     err = capsys.readouterr().err
     assert "no *.otlp files" in err
     assert "secret-dir" not in err
@@ -385,8 +385,8 @@ def test_a_corrupt_otlp_file_is_a_usage_error_without_echo(
 ) -> None:
     bad = tmp_path / "secret-name.otlp"
     bad.write_bytes(b"\xff\xff\xff\xff not protobuf SECRET")
-    code = main(["--spans", str(bad)])
-    assert code == 2
+    rc = main(["--spans", str(bad)])
+    assert rc == 2
     err = capsys.readouterr().err
     assert "not an OTLP protobuf trace export" in err
     assert "SECRET" not in err and "secret-name" not in err
