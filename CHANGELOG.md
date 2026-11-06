@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- **Patched dependencies.** Python: `mcp` 1.29.0 → 2.3.0 in the SDK lock and
+  the optional `mcp` extra's floor raised to `mcp>=1.30,!=2.0.*,!=2.1.*`
+  (GHSA-5h93-6whr-6q8j, GHSA-84m7-p3x7-pcfv, GHSA-rwrf-2pqf-9j8j,
+  GHSA-w4fh-qvv9-3v23); OpenTelemetry 1.41.0 → 1.45.2 in the SDK and
+  reference-agent locks (GHSA-xcq7-p3pf-p88h). The SDK's
+  `opentelemetry-*>=1.41` floors are unchanged. Go:
+  `go.opentelemetry.io/otel/sdk` v1.44.0 → v1.46.0 in the content exporter,
+  envelope and no-redirect extension modules (GHSA-8wmf-6v46-5gfg). The
+  built Collector already resolved v1.46.0; Collector core is unchanged.
+  TypeScript SDK (development dependencies only): vitest 4.1.12, vite 8.3.6,
+  source-map-js 1.2.2 and minimatch 11.0.5 under typescript-eslint.
+- **Pinned supply chain.** Every GitHub Actions `uses:` is pinned to a full
+  commit SHA with a `# vX.Y.Z` comment. `docker/login-action` v4.8.0,
+  `actions/download-artifact` v8.0.2, `docker/setup-buildx-action` v4.4.1
+  and `dorny/paths-filter` v4.0.3 are drop-in upgrades. CI and release jobs
+  now install Python packages from `sdk/python/uv.lock` with
+  `pip --require-hashes` (`scripts/ci/install-python-locked.sh`) and build
+  with the locked hatchling. The license inventory runs a lockfile-pinned
+  scanner (`scripts/license/s3-peer`) instead of `npx --yes`. The example
+  redaction service's base image is pinned by digest. Dependabot now covers
+  every live manifest (all Go modules, the TypeScript SDK, uv locks,
+  Dockerfiles, Compose) with a 7-day cooldown for version updates.
+  `scripts/tests/test_supply_chain_pins.py` keeps all of this from
+  regressing.
+- `deploy/kubernetes/host-bindings.py`: the Secret-name constant is renamed
+  so the name is not mistaken for secret material (CodeQL
+  `py/clear-text-logging-sensitive-data` false positive). Its output is
+  unchanged.
+
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
