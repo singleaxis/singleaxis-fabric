@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-06
+
+Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
+found. A process that made no model call now gets a run of its own in a
+reconstruction instead of disappearing from it, the release images carry
+an accurate description, the production Compose setup refuses a content
+backend it cannot serve, and preflight passes on Docker Desktop. A new
+[production setup](docs/production-setup.md) page gives one tested recipe
+for an agent, a production Node and the eBPF emitter.
+
+A fault-injection run then found that a destination answering 403 made the
+Node drop data it had already acknowledged, with no gap in the record.
+0.11.1 retries credential and availability failures without dropping
+anything, and when a destination refuses the bytes themselves (400, 409,
+413, 422) the Node writes a durable `destination_rejected` loss record
+before giving up (capture contract 1.8.0). Re-run under a 503/403/slow
+destination, a permanent 400, agent kills, a Node SIGKILL, partitions and
+destination outages, every record was delivered or reported lost, with
+none silently missing. The release also adds `python -m fabric.wire drain`
+for spools with no agent running, retries transient store reads in the
+verifier, and keeps Fabric's own warnings off the agent's stderr.
+
 ### Added
 
 - **The release names every GHCR package it publishes.** Legacy images
@@ -21,6 +43,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   publishes nothing it recognizes, or a listed package that no workflow
   publishes. `docs/verify-release.md` lists what a release publishes;
   anything else on GHCR is stale.
+
+### Changed
+
+- **Contract: `fabric.run-reconstruction/v1` (spec 056 revision 6).**
+  `chains.decisions` may be `not_observed` (without reasons) only for a run
+  with no captured model call (no exchange); the validator refuses it for a
+  run with one. A consumer that assumed every run has at least one exchange
+  should expect runs that list only effects.
+- **The `actions` view lists non-model HTTP requests.** Requests the
+  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
+  not attributed)`, and the footer counts them, so a request a tool made
+  never reads as missing.
+- **`FABRIC_COMPOSE_EXTRA`** (`deploy/compose`): your own Compose override
+  files, appended last by `make up-prod` and `make up-prod-groups`, so a
+  site change such as trusting a private CA for the destination never edits
+  a shipped file.
 
 ### Fixed
 
@@ -161,54 +199,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   the count could briefly still include it. The test now waits for the count
   to reach zero. Delivery itself is unchanged.
 
-### Known limitations
-
-- **Model-call latency while a backlog replays.** In the 0.11.1 reliability
-  run, a few model calls stalled for 0.5 to 3.5 s (4 of 2,400 calls in S3 and
-  11 of 3,280 in S4, worst 3.53 s), all in the process that was replaying a
-  backlog. The median did not change. No path on the model-call thread
-  waits on the replay. The call allocates a position and puts the exchange on
-  a non-blocking queue. Spool I/O, decryption, span rebuilding and export run
-  on the capture worker and spool sender threads, and neither holds a lock
-  the call path needs during I/O. The stalls did not recur in the
-  re-run on this branch, which had a stack watchdog that dumps every thread
-  of a call over 400 ms:
-  - S3 replay windows: p50 5.7 ms, p95 37 ms, max 170 ms, against 4.1, 34
-    and 57 ms before the faults.
-  - S4 replay windows: p50 3.1 ms, p95 27 ms, max 117 ms, against 5.1, 24
-    and 67 ms.
-  - Locally, a 4,000-record node-mode replay with every core saturated:
-    p95 24 ms and max 109 ms, against 20 and 109 ms with capture off.
-
-  The remaining explanation is CPU and GIL contention from the replay thread
-  on a host whose CPU is already saturated. In the chaos run, Docker
-  Desktop's few vCPUs also ran the Node, S3, the sink and the emitter. This
-  is not fixed. Throttling replay would trade delivery time for latency, and
-  nothing measured here justifies that.
-
-- **Node delivery policy edges.** A destination that answers 2xx with an
-  OTLP `partial_success` still loses the items it rejected (the upstream
-  exporter logs the count; it does not say which items, so no loss record is
-  written). Loss records are delivered with the exporter's most recent
-  request headers (static headers and bearer tokens). Request-signing
-  authentication leaves them pending, and the pending metric says so. Markers
-  and heartbeats in a permanently rejected batch get no loss record of their
-  own. The verifier still detects their absence as `tail_unverified`, an
-  unclosed run or an unsealed segment.
-
-## [0.11.1] - 2026-11-06
-
-Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
-found. A process that made no model call now gets a run of its own in a
-reconstruction instead of disappearing from it, the release images carry
-an accurate description, the production Compose setup refuses a content
-backend it cannot serve, and preflight passes on Docker Desktop. A new
-[production setup](docs/production-setup.md) page gives one tested recipe
-for an agent, a production Node and the eBPF emitter. Capture, protection
-and delivery of model calls behave as in 0.11.0.
-
-### Fixed
-
 - **Processes with no model call no longer vanish from a reconstruction
   (spec 056 revision 6).** A process recording with Fabric on whose effects
   were captured and delivered but which made no model call (a tool-worker
@@ -268,22 +258,6 @@ and delivery of model calls behave as in 0.11.0.
   policy emits, naming them locally for the viewer; its honesty caveats are
   unchanged.
 
-### Changed
-
-- **Contract: `fabric.run-reconstruction/v1` (spec 056 revision 6).**
-  `chains.decisions` may be `not_observed` (without reasons) only for a run
-  with no captured model call (no exchange); the validator refuses it for a
-  run with one. A consumer that assumed every run has at least one exchange
-  should expect runs that list only effects.
-- **The `actions` view lists non-model HTTP requests.** Requests the
-  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
-  not attributed)`, and the footer counts them, so a request a tool made
-  never reads as missing.
-- **`FABRIC_COMPOSE_EXTRA`** (`deploy/compose`): your own Compose override
-  files, appended last by `make up-prod` and `make up-prod-groups`, so a
-  site change such as trusting a private CA for the destination never edits
-  a shipped file.
-
 ### Documentation
 
 - **[Production setup](docs/production-setup.md)** (new). One
@@ -339,6 +313,39 @@ and delivery of model calls behave as in 0.11.0.
   spool on a filesystem that does not enforce locks (a Docker Desktop bind
   mount) can still declare each other's live epochs orphaned; use a named
   volume.
+
+- **Model-call latency while a backlog replays.** In the 0.11.1 reliability
+  run, a few model calls stalled for 0.5 to 3.5 s (4 of 2,400 calls in S3 and
+  11 of 3,280 in S4, worst 3.53 s), all in the process that was replaying a
+  backlog. The median did not change. No path on the model-call thread
+  waits on the replay. The call allocates a position and puts the exchange on
+  a non-blocking queue. Spool I/O, decryption, span rebuilding and export run
+  on the capture worker and spool sender threads, and neither holds a lock
+  the call path needs during I/O. The stalls did not recur in the
+  re-run on this branch, which had a stack watchdog that dumps every thread
+  of a call over 400 ms:
+  - S3 replay windows: p50 5.7 ms, p95 37 ms, max 170 ms, against 4.1, 34
+    and 57 ms before the faults.
+  - S4 replay windows: p50 3.1 ms, p95 27 ms, max 117 ms, against 5.1, 24
+    and 67 ms.
+  - Locally, a 4,000-record node-mode replay with every core saturated:
+    p95 24 ms and max 109 ms, against 20 and 109 ms with capture off.
+
+  The remaining explanation is CPU and GIL contention from the replay thread
+  on a host whose CPU is already saturated. In the chaos run, Docker
+  Desktop's few vCPUs also ran the Node, S3, the sink and the emitter. This
+  is not fixed. Throttling replay would trade delivery time for latency, and
+  nothing measured here justifies that.
+
+- **Node delivery policy edges.** A destination that answers 2xx with an
+  OTLP `partial_success` still loses the items it rejected (the upstream
+  exporter logs the count; it does not say which items, so no loss record is
+  written). Loss records are delivered with the exporter's most recent
+  request headers (static headers and bearer tokens). Request-signing
+  authentication leaves them pending, and the pending metric says so. Markers
+  and heartbeats in a permanently rejected batch get no loss record of their
+  own. The verifier still detects their absence as `tail_unverified`, an
+  unclosed run or an unsealed segment.
 
 ## [0.11.0] - 2026-11-05
 
