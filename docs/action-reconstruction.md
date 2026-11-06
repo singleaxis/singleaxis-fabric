@@ -224,7 +224,7 @@ How to read it:
 - **`session` footer.** After the last run, the host events no run lists
   or counts, by reason: `other_process` (a process with a run's agent pids
   that is not that run's agent, such as a later container that reuses the
-  pid namespace number), `out_of_scope` (in a run's window, outside the
+  pid namespace number, and that process's children), `out_of_scope` (in a run's window, outside the
   agent's scope) and `no_run` (in no run's window). Captured host activity
   is never dropped: `--json` lists every one, and the report's top-level
   `unattributed_host_events` gives the count per reason and the first 64.

@@ -1666,7 +1666,7 @@ def _forked_child(procs: Mapping[int, _Proc], event: HostEvent) -> _Proc | None:
     return _Proc(parent.depth + 1, event.time_ns, own, event.ppid)
 
 
-def _lineage(  # noqa: PLR0912 - one branch per event kind and bound
+def _lineage(
     hosts: _Hosts, effect: ProcessEffect, anchor: HostEvent, claimed: set[str]
 ) -> tuple[list[HostEvent], list[HostEvent]]:
     """H3 for one anchored effect: the host events whose parent-pid chain reaches the
@@ -1691,22 +1691,29 @@ def _lineage(  # noqa: PLR0912 - one branch per event kind and bound
     start = effect.process_start_ns
     if start is None:
         start = anchor.process_start_ns
-    procs = {anchor.pid: _Proc(0, anchor.time_ns, start, anchor.ppid)}
+    return _walk(hosts, effect.host_id, anchor, start, claimed)
+
+
+def _walk(  # noqa: PLR0912 - one branch per event kind and bound
+    hosts: _Hosts, host_id: str | None, root: HostEvent, start: int | None, claimed: set[str]
+) -> tuple[list[HostEvent], list[HostEvent]]:
+    """The process-tree walk of :func:`_lineage` from ``root`` (depth 0, start time
+    ``start``) on ``host_id``: H3 from an anchor, and H4's walk from another process with
+    the agent's pids (:meth:`_Join.other_lineage`)."""
+    procs = {root.pid: _Proc(0, root.time_ns, start, root.ppid)}
     linked: list[HostEvent] = []
     truncated: list[HostEvent] = []
     for event in hosts.events:
         if (
             event.event_id in claimed
-            or event.time_ns < anchor.time_ns
+            or event.time_ns < root.time_ns
             or _sandbox(event)
-            or not hosts.same_host(event, effect.host_id)
+            or not hosts.same_host(event, host_id)
         ):
             continue
         own = event.process_start_ns
         held = procs.get(event.pid)
-        if held is not None and hosts.exited_init(
-            effect.host_id, event.pid, held.time, event.time_ns
-        ):
+        if held is not None and hosts.exited_init(host_id, event.pid, held.time, event.time_ns):
             del procs[event.pid]  # the pid was freed: whatever holds it now is another
         if event.event_class == "exec" and event.result == "success":
             known = procs.get(event.pid)
@@ -1802,6 +1809,7 @@ class _Join:
         self.remote_calls: list[HostEvent] = []
         self.sandbox_unlinked = 0
         self.identity = _AgentIdentity()
+        self.other: dict[str, str] = {}
 
     def other_process(self, event: HostEvent) -> bool:
         """Whether an event that H4's pid comparison matched is provably another process
@@ -1826,6 +1834,60 @@ class _Join:
             and identity.child_tick is not None
             and (own // TICK_NS > identity.child_tick)
         )
+
+    def descendants_follow(self, event: HostEvent) -> bool:
+        """Whether the children of another process with the agent's pids are its own and
+        never the agent's (spec 056 §4.3 "Agent identity"): under ``recorded`` its
+        init-namespace pid is not the one the run's certain anchors name; else it started
+        in a later tick than the agent (its known start, else its earliest child), so the
+        agent was gone before its pid could name this process. An earlier process whose
+        init pid may be the agent's (``declared_same``, or no certain anchor) leaves a
+        child's parent pid open: by then it may name the agent."""
+        identity, own = self.identity, event.process_start_ns
+        if (
+            identity.init_pids
+            and self.hosts.source(event).pid_namespace == "recorded"
+            and event.pid not in identity.init_pids
+        ):
+            return True
+        if own is None:
+            return False
+        start = self.hosts.agent.process_start_ns
+        if start is not None:
+            return own // TICK_NS > start // TICK_NS
+        return identity.child_tick is not None and own // TICK_NS > identity.child_tick
+
+    def other_lineage(self) -> None:
+        """H4's other processes (:meth:`other_process`), at any time, and the events of
+        their descendants by the H3 walk (same host, parent-pid chain, start ticks, depth
+        and event bounds) when :meth:`descendants_follow`: another process's children are
+        not the agent's, so they are outside the run too (trace ``H4-other-lineage``).
+        Identity decides, never the time window; an event with the agent's pids that is
+        not another process is left to H4."""
+        hosts = self.hosts
+        roots = [
+            e
+            for e in hosts.events
+            if e.event_id not in self.claimed
+            and not _sandbox(e)
+            and hosts.agent_match(e)
+            and self.other_process(e)
+        ]
+        for root in roots:
+            self.other[root.event_id] = "H4-other-process"
+        walked: set[tuple[str | None, int, int]] = set()
+        for root in roots:
+            if not self.descendants_follow(root):
+                continue
+            own, host_id = root.process_start_ns, hosts.host_of(root)
+            if own is not None:  # one walk per process: pid and start tick name it
+                if (host_id, root.pid, own // TICK_NS) in walked:
+                    continue
+                walked.add((host_id, root.pid, own // TICK_NS))
+            linked, _ = _walk(hosts, host_id, root, own, self.claimed)
+            for event in linked:
+                if event.event_id not in self.other and not hosts.agent_match(event):
+                    self.other[event.event_id] = "H4-other-lineage"
 
     def entry(self, event: HostEvent) -> dict[str, Any]:
         """The event's ``sensor_events`` entry, listed once."""
@@ -1937,6 +1999,7 @@ class _Join:
         (§4.4.1)."""
         agent = self.hosts.agent
         truncated = {e.event_id for e in self.truncated}
+        self.other_lineage()
         for event in self.hosts.events:
             if event.event_id in self.claimed:
                 continue
@@ -1946,10 +2009,11 @@ class _Join:
             if _sandbox(event):
                 self.sandbox_unlinked += 1
                 self.trace["host_events"][event.event_id] = "sandbox-unlinked"
-            elif self.hosts.agent_match(event) and self.other_process(event):
+            elif event.event_id in self.other:
                 # Another process with the agent's pids (a reused pid namespace number, a
-                # reused pid): outside the agent's life, so outside the run.
-                self.trace["host_events"][event.event_id] = "H4-other-process"
+                # reused pid), or its descendant: outside the agent's life, so outside
+                # the run.
+                self.trace["host_events"][event.event_id] = self.other[event.event_id]
             elif self.hosts.agent_match(event):
                 start, own = agent.process_start_ns, event.process_start_ns
                 certain = start is not None and own is not None and same_tick(start, own)

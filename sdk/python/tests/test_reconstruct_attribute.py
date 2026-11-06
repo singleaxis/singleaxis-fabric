@@ -151,7 +151,7 @@ def test_every_rule_fixture_named_by_the_task_is_present() -> None:
             "edge-clock-margin-boundary", "edge-background-thread", "ar1-run",
             "ar1-negative-d-metadata-only", "edge-exec-in-place", "edge-pid-reuse",
             "edge-same-pid-other-parent"} <= names  # fmt: skip
-    assert len(RULE_FIXTURES) == 50  # 26 M1 + 21 M2 (WP6-11) + 3 agent identity (v0.11.2)
+    assert len(RULE_FIXTURES) == 51  # 26 M1 + 21 M2 (WP6-11) + 4 agent identity (v0.11.2)
 
 
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)

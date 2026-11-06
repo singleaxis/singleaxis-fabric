@@ -369,6 +369,40 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         "H4 tentative, and one whose start tick differs is another process: outside the "
         "run, neither linked nor unexplained.")  # fmt: skip
 
+    # §4.3 "Agent identity": the next container's agent (another process with the
+    # agent's pids) forks children while the run's window is still open. Its children are
+    # its own, never the agent's: identity moves them out of the run, never time alone.
+    s = Scenario("edge-other-process-children")
+    s.host_source()
+    s.exchange(0, 900, calls=[("call_OC", "run_shell")])
+    s.effect("exec sh -c 'ls /data'", 1000, stdout=m1.LS_OUTPUT, pid=41,
+             process_start_ns=START)  # fmt: skip
+    s.host("exec-sh", "exec", 1000.3, 4121, AGENT_INIT_PID, ns=s.agent_ns(41),
+           process_start_ns=START + 3_217_448)  # fmt: skip
+    s.host("connect-model", "connect", 10, AGENT_INIT_PID, 1, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           peer_id=m1.MODEL_PEER, peer_port=443, process_start_ns=m1.AGENT_START_NS)  # fmt: skip
+    s.exchange(1500, 2400, results=[("call_OC", _result(m1.LS_OUTPUT))])
+    s.host("next-container-exec", "exec", 59_000, 4300, 4290, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           process_start_ns=START + 58_000 * MS)  # fmt: skip
+    s.host("next-child-exec", "exec", 59_100, 4310, 4300, ns=(9, AGENT_PID, AGENT_PID_NS),
+           process_start_ns=START + 58_100 * MS)  # fmt: skip
+    s.host("next-child-connect", "connect", 59_150, 4310, 4300,
+           ns=(9, AGENT_PID, AGENT_PID_NS), peer_id=m1.FIXTURE_PEER, peer_port=80,
+           process_start_ns=START + 58_100 * MS)  # fmt: skip
+    s.host("next-grandchild-exec", "exec", 59_200, 4311, 4310, ns=(10, 9, AGENT_PID_NS),
+           process_start_ns=START + 58_200 * MS)  # fmt: skip
+    s.host("unrelated-exec", "exec", 59_300, 4400, 4390, ns=(12, 11, AGENT_PID_NS),
+           process_start_ns=START + 58_300 * MS)  # fmt: skip
+    put(s, ["A1", "H1", "H4"],
+        "Back-to-back containers whose second agent (init pid 4300, the agent's pid_ns and "
+        "ns_pid) forks children inside the run's window. The certain anchor names the "
+        "agent's init pid (4100), so 4300 is another process (H4-other-process), and its "
+        "children are its own: the child's exec and connect and the grandchild's exec "
+        "follow its parent-pid chain by the H3 walk and are outside the run too "
+        "(H4-other-lineage), neither linked nor unexplained. A process in the window whose "
+        "parent chain reaches no other process stays unexplained: time alone moves "
+        "nothing out of a run.")  # fmt: skip
+
     s = Scenario("edge-recorded-effect-without-pid-ns")
     s.host_source()
     s.exchange(0, 900, calls=[("call_NN", "run_shell")])

@@ -15,7 +15,7 @@ related: ["030", "031", "047", "048", "054", "055"]
 > identity, not only its pids. The kernel reuses a freed pid namespace's
 > number, so back-to-back containers report the same `pid_ns` and `ns_pid`;
 > an event whose identity contradicts the agent's is another process,
-> outside the run (§4.3 "Agent identity"). A host event no run lists or
+> outside the run, and so are its descendants (§4.3 "Agent identity"). A host event no run lists or
 > counts is listed once at report level, with its reason, never dropped
 > (§4.3 "Host events in no run").
 >
@@ -285,8 +285,8 @@ silently. A host event of a host source that no run lists (linked, or
 unexplained) or counts (`sandbox_events_unlinked`) is listed once in the
 report's top-level `unattributed_host_events` (count, count per reason,
 plus the first 64 events in time order), with its reason: `other_process`
-(inside a run's window with the agent's pids, but another process: "Agent
-identity" below), `out_of_scope` (inside a run's window, outside the
+(inside a run's window with the agent's pids but another process, or a
+descendant of one: "Agent identity" below), `out_of_scope` (inside a run's window, outside the
 agent's scope) or `no_run` (inside no run's window, both clock margins
 applied; every event when no run was reconstructed). It is computed over
 every run, so a report limited to some runs (`--run`) omits it, and it
@@ -401,9 +401,21 @@ The rules use them so:
   (a parent starts before its child). Two processes with the agent's pids
   never live at the same time, so such an event lies outside the agent's
   life and outside the run: it is neither linked nor listed as unexplained
-  (trace `H4-other-process`). Unless another run lists it, it is listed as
-  a host event in no run with reason `other_process` (above). The cgroup id is not an identity check: a
-  process can change cgroup, and the anchors' init pid is the stronger key.
+  (trace `H4-other-process`). Its descendants are its own, not the
+  agent's: an event whose parent-pid chain reaches such a process, by the
+  H3 walk from that process (same host, init-namespace pids, start ticks,
+  depth 16 and 4096 events), is outside the run too (trace
+  `H4-other-lineage`), whatever its time. The walk starts only from a
+  process whose pid cannot name the agent when a child is seen: from a
+  `recorded` source, its `pid` is not the anchors' init pid; else it
+  started in a later tick than the agent (its known start, else its
+  earliest child). An earlier process that may share the agent's init pid
+  (`declared_same`, or no `certain` anchor) has no descendants this way.
+  Identity moves an event out of a run, never its time alone. Unless
+  another run lists them, these events are listed as host events in no
+  run with reason `other_process` (above). The cgroup id is not an
+  identity check: a process can change cgroup, and the anchors' init pid
+  is the stronger key.
 - Different namespaces never join. Under `recorded`, an effect without
   `fabric.process.pid_ns` (an agent off Linux, or a failed read) or an agent
   without a namespace never joins: the effect is `anchor_missing`. The

@@ -125,7 +125,7 @@
       "items": {"$ref": "#/$defs/scopeVerdict"}
     },
     "unattributed_host_events": {
-      "description": "Spec 056 §4.3 'Host events in no run': every host event of a host source that no run lists (sensor_events, unexplained_host_events) or counts (sandbox_events_unlinked), so captured host activity is never dropped silently. Present when a host source is configured and every run was reconstructed (absent with --run). reasons: other_process (inside a run's window with the agent's pids, but another process: H4 agent identity), out_of_scope (inside a run's window, outside the agent's scope), no_run (inside no run's window, both clock margins applied). events lists the first 64 in time order; count is exact. It bounds no run verdict.",
+      "description": "Spec 056 §4.3 'Host events in no run': every host event of a host source that no run lists (sensor_events, unexplained_host_events) or counts (sandbox_events_unlinked), so captured host activity is never dropped silently. Present when a host source is configured and every run was reconstructed (absent with --run). reasons: other_process (inside a run's window with the agent's pids but another process, or its descendant: H4 agent identity), out_of_scope (inside a run's window, outside the agent's scope), no_run (inside no run's window, both clock margins applied). events lists the first 64 in time order; count is exact. It bounds no run verdict.",
       "type": "object",
       "additionalProperties": false,
       "required": ["count", "reasons", "events"],

@@ -850,13 +850,14 @@ class ActionReader:
     def _note_host_events(self, traced: Mapping[str, str]) -> None:
         """One run's host join (its rule per event id): an event it links, lists as
         unexplained or counts is in a run; ``H4-other-process`` is another process with
-        the agent's pids; an event of its sources it did not trace lay in its window
-        outside the agent's scope; ``outside_run`` says nothing."""
+        the agent's pids and ``H4-other-lineage`` its descendant; an event of its sources
+        it did not trace lay in its window outside the agent's scope; ``outside_run``
+        says nothing."""
         for event in self._host_events():
             rule = traced.get(event.event_id)
             if rule is None:
                 self._host_out_of_scope.add(event.event_id)
-            elif rule == "H4-other-process":
+            elif rule in ("H4-other-process", "H4-other-lineage"):
                 self._host_other_process.add(event.event_id)
             elif rule != "outside_run":
                 self._host_in_run.add(event.event_id)
@@ -865,10 +866,10 @@ class ActionReader:
         """Spec 056 §4.3 "Host events in no run", once every run is annotated: each host
         event no run lists (linked or unexplained) or counts (sandbox-scope, unlinked),
         in time order, with its reason: ``other_process`` (inside a run's window with the
-        agent's pids, but another process), ``out_of_scope`` (inside a run's window,
-        outside the agent's scope) or ``no_run`` (inside no run's window, the clock
-        margins applied; every event when no run was reconstructed). ``None`` without a
-        host source. Captured activity is never dropped silently."""
+        agent's pids but another process, or its descendant), ``out_of_scope`` (inside a
+        run's window, outside the agent's scope) or ``no_run`` (inside no run's window,
+        the clock margins applied; every event when no run was reconstructed). ``None``
+        without a host source. Captured activity is never dropped silently."""
         if not self._host_configured():
             return None
         out: list[dict[str, Any]] = []

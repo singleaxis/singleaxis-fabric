@@ -38,6 +38,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   outside the run: neither linked nor listed as unexplained. On the
   acceptance export, no host event appears in more than one run. Three new
   rule fixtures pin the rule.
+- **That other container's child processes leave the run too.** Its agent
+  forked children inside the previous run's window. They don't carry the
+  agent's pids, so the run listed them as unexplained: 7 execs (3 children,
+  4 grandchildren) in each of 3 runs on the 0.11.1 acceptance export. H4
+  now follows an other process's descendants along the recorded parent-pid
+  chain (the H3 walk: same host, init-namespace pids, start ticks) and moves
+  them out of the run with it (trace `H4-other-lineage`). They are then
+  listed in `unattributed_host_events` with reason `other_process`. The
+  walk starts only where identity proves the parent pid can't name the
+  agent: its init pid differs from the one the anchors name, or it started
+  after the agent. Time alone never moves an event out of a run. New rule
+  fixture `edge-other-process-children`.
 - **Captured host activity that belongs to no run is listed, not dropped.**
   A host event that no run linked, listed as unexplained or counted was
   silently missing from the report: an event outside every run's window
