@@ -53,6 +53,10 @@ Authorization: Bearer <token>   (only when a token file is configured)
 - The body is exactly one object's bytes: a whole exchange side, the skeleton of a
   split side, one extracted part, or one records-producer buffer. It is never larger
   than the recorder's object cap (`max_body_bytes` / `payload_max_bytes`).
+- The body is always plaintext, never content-encoded. A side captured with a
+  `Content-Encoding` (a gzip model response, stacked codings) is decoded first; a
+  body the recorder cannot decode is withheld (`not_captured(protection_failed)`)
+  and never sent (since 0.11.2).
 - `X-Fabric-Transformation` and `X-Fabric-Transformation-Version` are the configured
   transformation identity, opaque ids matching `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`.
   They are recorded on every stored object as `transformation_id` and

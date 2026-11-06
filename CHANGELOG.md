@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Redaction now runs over the decoded body (0.11.1 acceptance B1, high).**
+  Under `redact`, `masked_only`, `tokenize` and the review copy of
+  `original_plus_masked`, the wire PROTECT stage handed content-encoded
+  bytes (a gzip model response) to the redaction service unchanged and
+  labelled the result `redacted`; the stored object kept every secret.
+  PROTECT now undoes the `Content-Encoding` first (gzip, x-gzip, deflate,
+  stacked codings; `br` and `zstd` when their module is present), bounded
+  by `max_body_bytes`, and the transformed object records
+  `content_encoding: identity`. A body Fabric cannot decode (unknown or
+  unsupported coding, corrupt or truncated stream) is withheld as
+  `not_captured(protection_failed)` and counted in the new
+  `WireStats.protection_undecodable`; a decoded body over the bound is
+  `not_captured(body_cap)`. Retained originals still store the wire bytes.
+  The HTTP channel no longer records a request body sent with a
+  `Content-Encoding` (as already for responses). The Fabric Node now
+  refuses a `redacted` object whose `content_encoding` is neither
+  `identity` nor `base64`, so a 0.11.1 agent cannot store a mislabelled
+  object through a 0.11.2 Node. Spec 049 revision 6.5 records the rule.
+  Customers who ran `redact`/`masked_only` against a provider that
+  compresses responses should treat `model.exchange.response` objects
+  with `content_encoding` other than `identity` as unredacted.
 - **Patched dependencies.** Python: `mcp` 1.29.0 → 2.3.0 in the SDK lock and
   the optional `mcp` extra's floor raised to `mcp>=1.30,!=2.0.*,!=2.1.*`
   (GHSA-5h93-6whr-6q8j, GHSA-84m7-p3x7-pcfv, GHSA-rwrf-2pqf-9j8j,

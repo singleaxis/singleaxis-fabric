@@ -192,6 +192,10 @@ class WireStats:
     redaction_timeouts: int = 0
     redaction_saturated: int = 0
     redaction_failures: int = 0
+    # Sides whose Content-Encoding could not be undone (unknown, unsupported or corrupt)
+    # under a transforming mode: each withheld its content (protection_failed), never
+    # handing encoded bytes to a transformation.
+    protection_undecodable: int = 0
     # Model calls sent through a client wire capture does not tee (requests, urllib3): each
     # is an ``uninstrumented_client`` loss (agent matrix D4).
     uninstrumented_calls: int = 0

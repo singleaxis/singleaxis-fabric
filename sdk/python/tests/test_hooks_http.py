@@ -728,6 +728,21 @@ def test_an_encoded_response_is_not_recorded(rig: Rig) -> None:
     assert rig.counters()["encoded_not_retained"] == 1
 
 
+def test_an_encoded_request_body_is_not_recorded(rig: Rig) -> None:
+    """A request body sent with a Content-Encoding is never recorded: the records input
+    has no encoding field, so a transformation would otherwise see encoded bytes."""
+    payload = gzip.compress(b'{"query": "plain-canary-0123"}')
+    with _client(_json_handler) as client:
+        client.post("https://api.example.com/v1/query", content=payload,
+                    headers={"content-type": "application/json",
+                             "content-encoding": "gzip"})  # fmt: skip
+    (end,) = rig.only()
+    assert end.request_json()["body"] == {"form": "not_exposed"}
+    assert end.item["request_body"] == "not_exposed"
+    assert [d for d, _ in end.bodies("network.request") if d.get("stream_id")] == []
+    assert rig.counters()["encoded_not_retained"] == 1
+
+
 def test_the_body_cap_bounds_every_piece_together(rig: Rig) -> None:
     rig.channel.max_body_bytes = 10
     chunks = [b"12345", b"67890", b"x"]

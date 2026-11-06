@@ -50,7 +50,10 @@ decisions 21–25: a customer-run redaction service, caller ids always
 mapped, host sensors and multi-source binding deferred to P4, content
 validated after the Node acknowledges it, the `with Pool()` limit),
 corrects the capture-queue default, re-verifies section 2.1 against the
-v0.8 code and marks P0 and P0-A built (rows R64-*).
+v0.8 code and marks P0 and P0-A built (rows R64-*). Revision 6.5 (0.11.2)
+adds one rule to section 7.5: a transformation runs over the decoded
+plaintext, and a side whose `Content-Encoding` cannot be undone is
+withheld; it fixes a 0.11.1 defect, not the design.
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -2548,6 +2551,20 @@ Rules: the original-body digest is computed only when the mode is
 privacy mode of `model.exchange.part` in the policy, and when that role is
 absent from a configured policy the part is `omit` while the skeleton
 follows its own role (precedence, section 2.7).
+
+Encoded sides (revision 6.5): `redact`, `masked_only`, `tokenize` and the
+review copy of `original_plus_masked` transform the **decoded** body. A side
+whose `content_encoding` is not `identity` is decoded first (every coding
+of the token list, last applied first; bounded by `max_body_bytes`), and
+the transformed object records `content_encoding: identity`, since it
+describes the stored bytes. A coding Fabric cannot undo (unknown,
+unsupported such as `br` without its module, corrupt or truncated) withholds
+the side as `not_captured(protection_failed)`; a decoded body over the bound
+is `not_captured(body_cap)`; under `original_plus_masked` either withholds
+both objects. Encoded bytes never reach a transformation, and a status of
+`redacted` is claimed only for a transformation of the plaintext. A retained
+original stays the wire bytes (047 §7). The Node refuses a `redacted`
+representation whose `content_encoding` is neither `identity` nor `base64`.
 
 ### 7.6 Privacy rules on every path
 

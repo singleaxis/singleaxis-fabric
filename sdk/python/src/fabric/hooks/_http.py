@@ -40,6 +40,8 @@ and the response. Otherwise:
   256 KiB (053 §3.1): a body that fits one piece rides the ``end`` record. A response with
   a ``Content-Encoding`` other than ``identity`` is not recorded (``not_exposed``): the
   records input has no encoding field, and Fabric never decodes on the caller's thread.
+  A request body sent with a ``Content-Encoding`` other than ``identity`` is not recorded
+  either (``{"form": "not_exposed"}``), so a transformation never sees encoded bytes.
 - Raw request and response headers are never recorded. Fabric reads only a response's
   ``Content-Type`` (the body's media type), ``Content-Encoding`` and, for a 3xx,
   ``Location`` (to link the next hop).
@@ -520,6 +522,13 @@ class HttpChannel:
         if self.producer.mode(REQUEST_ROLE) != "omit":
             content = _own(request).get("_content")
             hop.content = content if type(content) is bytes else None
+            if hop.content is not None and content_encoding_of(
+                _header(request, "content-encoding")
+            ) != "identity":  # fmt: skip
+                # encoded request bytes are never recorded (as a response): the records
+                # input has no encoding field, and PROTECT must see the plaintext
+                self._count("encoded_not_retained")
+                hop.content = None
             target = url.raw_path
             hop.target = target.decode("latin-1") if type(target) is bytes else ""
             if hop.content:
