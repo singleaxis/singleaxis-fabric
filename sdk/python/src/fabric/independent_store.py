@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import re
 import stat
-from contextlib import ExitStack
 from pathlib import Path
 
 from ._descriptors import open_descriptor
@@ -80,42 +79,54 @@ class LocalIndependentFeedResolver:
 
     def _read(self, identifier: str, limit: int) -> bytes:
         flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
-        with ExitStack() as opened:
-            fd = opened.enter_context(open_descriptor(self._root.anchor, flags))
+        # One directory descriptor is held at a time: each component opens
+        # beneath the last, which is then closed explicitly.
+        fd = os.open(self._root.anchor, flags)
+        try:
             for index, component in enumerate(
                 (*self._root.parts[1:], self.tenant_id, self.issuer_id)
             ):
-                fd = opened.enter_context(open_descriptor(component, flags, dir_fd=fd))
+                parent = fd
+                fd = os.open(component, flags, dir_fd=parent)
+                os.close(parent)
                 # Public ancestors such as /private/tmp are not owned stores.
                 # The configured root and both namespace directories are.
                 if index >= len(self._root.parts) - 2:
                     _private(os.fstat(fd), directory=True)
-            object_fd = opened.enter_context(
-                open_descriptor(identifier, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
-            )
-            before = os.fstat(object_fd)
-            _private(before, directory=False)
-            if before.st_size > limit:
-                raise ValueError("witness exceeds limit")
-            chunks: list[bytes] = []
-            remaining = limit + 1
-            while remaining:
-                chunk = os.read(object_fd, min(remaining, 65536))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            after = os.fstat(object_fd)
-            _private(after, directory=False)
-            if remaining == 0 or (
-                before.st_dev,
-                before.st_ino,
-                before.st_size,
-                before.st_mtime_ns,
-                before.st_ctime_ns,
-            ) != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
-                raise ValueError("witness changed while reading")
-            data = b"".join(chunks)
-            if len(data) != after.st_size:
-                raise ValueError("witness length changed")
-            return data
+            with open_descriptor(
+                identifier, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd
+            ) as object_fd:
+                before = os.fstat(object_fd)
+                _private(before, directory=False)
+                if before.st_size > limit:
+                    raise ValueError("witness exceeds limit")
+                chunks: list[bytes] = []
+                remaining = limit + 1
+                while remaining:
+                    chunk = os.read(object_fd, min(remaining, 65536))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                after = os.fstat(object_fd)
+                _private(after, directory=False)
+                if remaining == 0 or (
+                    before.st_dev,
+                    before.st_ino,
+                    before.st_size,
+                    before.st_mtime_ns,
+                    before.st_ctime_ns,
+                ) != (
+                    after.st_dev,
+                    after.st_ino,
+                    after.st_size,
+                    after.st_mtime_ns,
+                    after.st_ctime_ns,
+                ):
+                    raise ValueError("witness changed while reading")
+                data = b"".join(chunks)
+                if len(data) != after.st_size:
+                    raise ValueError("witness length changed")
+                return data
+        finally:
+            os.close(fd)

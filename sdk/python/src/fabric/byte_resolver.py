@@ -14,12 +14,10 @@ import json
 import os
 import re
 import stat
-from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ._descriptors import open_descriptor
 from .byte_evidence import _BOUNDARIES, _ROLES
 from .content_store.base import check_safe_identifier
 from .content_store.local import LocalFilesystemContentStore, node_shard
@@ -98,6 +96,46 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _open_sharded_or_flat(
+    flat: int,
+    shard: tuple[str, ...],
+    name: str,
+    directory_flags: int,
+    file_flags: int,
+) -> int:
+    """Open ``name`` in the Fabric Node's shard beneath ``flat``, else in ``flat``.
+
+    The Node's two-level shard is tried first, then the flat name (this SDK's
+    writer, and Nodes before sharding) in the same pinned parent. A missing
+    shard level or a name missing from the shard falls back to ``flat``; any
+    other error propagates. The caller owns, and must close, the result.
+    """
+    directory: int | None = None
+    try:
+        try:
+            for component in shard:
+                parent = directory
+                directory = os.open(
+                    component, directory_flags, dir_fd=flat if parent is None else parent
+                )
+                if parent is not None:
+                    os.close(parent)
+        except FileNotFoundError:
+            if directory is not None:
+                parent = directory
+                directory = None
+                os.close(parent)
+        if directory is not None:
+            try:
+                return os.open(name, file_flags, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+        return os.open(name, file_flags, dir_fd=flat)
+    finally:
+        if directory is not None:
+            os.close(directory)
+
+
 class ByteEvidenceResolver:
     """Resolve exact originals or masked review bytes from an approved local store.
 
@@ -151,56 +189,44 @@ class ByteEvidenceResolver:
             raise OSError("safe local resolution unavailable")
         directory_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_DIRECTORY
         file_flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK
-        with ExitStack() as opened:
-            descriptors = [
-                opened.enter_context(open_descriptor(self._root.anchor, directory_flags))
-            ]
+        # One directory descriptor is held at a time: each component opens
+        # beneath the last, which is then closed. Every descriptor is closed
+        # explicitly on every path, including failures.
+        flat = os.open(self._root.anchor, directory_flags)
+        try:
             for component in (
                 *self._root.parts[1:],
                 self.tenant_id,
                 "evidence",
                 *(("meta",) if metadata else ()),
             ):
-                descriptors.append(
-                    opened.enter_context(
-                        open_descriptor(component, directory_flags, dir_fd=descriptors[-1])
-                    )
-                )
+                parent = flat
+                flat = os.open(component, directory_flags, dir_fd=parent)
+                os.close(parent)
             name = f"{object_id}.json" if metadata else object_id
-            # The Fabric Node's two-level shard first, then the flat name (this
-            # SDK's writer, and Nodes before sharding) in the same pinned parent.
-            flat = directory = descriptors[-1]
-            for component in node_shard(object_id):
-                try:
-                    directory = opened.enter_context(
-                        open_descriptor(component, directory_flags, dir_fd=directory)
-                    )
-                except FileNotFoundError:
-                    directory = flat
-                    break
+            descriptor = _open_sharded_or_flat(
+                flat, node_shard(object_id), name, directory_flags, file_flags
+            )
             try:
-                descriptor = opened.enter_context(
-                    open_descriptor(name, file_flags, dir_fd=directory)
-                )
-            except FileNotFoundError:
-                if directory == flat:
-                    raise
-                descriptor = opened.enter_context(open_descriptor(name, file_flags, dir_fd=flat))
-            info = os.fstat(descriptor)
-            limit = _MAX_DESCRIPTOR_BYTES if metadata else self.max_object_bytes
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
-                raise ValueError("unsafe or oversized content object")
-            chunks = []
-            remaining = limit + 1
-            while remaining:
-                chunk = os.read(descriptor, min(remaining, 65536))
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            if remaining == 0:
-                raise ValueError("oversized content object")
-            return b"".join(chunks)
+                info = os.fstat(descriptor)
+                limit = _MAX_DESCRIPTOR_BYTES if metadata else self.max_object_bytes
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_size > limit:
+                    raise ValueError("unsafe or oversized content object")
+                chunks = []
+                remaining = limit + 1
+                while remaining:
+                    chunk = os.read(descriptor, min(remaining, 65536))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    remaining -= len(chunk)
+                if remaining == 0:
+                    raise ValueError("oversized content object")
+                return b"".join(chunks)
+            finally:
+                os.close(descriptor)
+        finally:
+            os.close(flat)
 
     def read_descriptor(self, object_id: str) -> dict[str, Any]:
         """Read a bounded sidecar by approved object ID; never return arbitrary content."""
