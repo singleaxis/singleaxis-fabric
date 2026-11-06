@@ -63,7 +63,12 @@ from fabric.reconstruct._project import (
     ProjectionCollector,
     build_projection,
 )
-from fabric.reconstruct._report import COMPLETE, COMPLETE_VERDICTS, EXIT_RUN_STATES
+from fabric.reconstruct._report import (
+    COMPLETE,
+    COMPLETE_VERDICTS,
+    EXIT_RUN_STATES,
+    unattributed_host_json,
+)
 from fabric.reconstruct._verify import reconstruct
 
 EXIT_COMPLETE = 0
@@ -729,6 +734,9 @@ def report_main(argv: Sequence[str]) -> int:
                 f"({run['counts']['exchanges']} exchanges, {len(run['gaps'])} gaps)",
                 file=sys.stderr,
             )
+        outside = document.get("unattributed_host_events")
+        if outside and outside["count"]:
+            print(_unattributed_host_text(outside), file=sys.stderr)
     else:
         for chunk in _report_chunks(document):
             sys.stdout.write(chunk)
@@ -921,11 +929,21 @@ def actions_main(argv: Sequence[str]) -> int:
         _fail(f"internal error ({type(exc).__name__})")
         return EXIT_USAGE
     views = [_view(run, document) for run in reader.runs]
+    # Spec 056 §4.3: host events no run lists or counts, every one (the report keeps 64).
+    outside = reader.unattributed_host_events() if "unattributed_host_events" in document else None
     if args.json:
-        for chunk in _report_chunks({"schema": "fabric.reconstruct.actions/v0", "runs": views}):
+        out: dict[str, Any] = {"schema": "fabric.reconstruct.actions/v0", "runs": views}
+        if outside is not None:
+            out["unattributed_host_events"] = {
+                **unattributed_host_json(outside),
+                "events": outside,
+            }
+        for chunk in _report_chunks(out):
             sys.stdout.write(chunk)
     else:
         sys.stdout.write("\n".join(format_actions(view) for view in views))
+        if outside:
+            sys.stdout.write(("\n" if views else "") + format_unattributed_host(outside))
     if not document["runs"]:
         _fail("no runs reconstructed")
     return _exit_code(document)
@@ -1091,6 +1109,31 @@ def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list
     reason = f" ({match['reason']})" if "reason" in match else ""
     lines.append(f"  output match: {match['state']}{reason}")
     return lines
+
+
+_UNATTRIBUTED_HOST_WHY = {
+    "other_process": "another process with a run's agent pids",
+    "out_of_scope": "in a run's window, outside the agent's scope",
+    "no_run": "inside no run's window",
+}
+
+
+def _unattributed_host_text(summary: Mapping[str, Any]) -> str:
+    reasons = ", ".join(f"{reason} {n}" for reason, n in summary["reasons"].items() if n)
+    return f"host events in no run: {summary['count']}   ({reasons})"
+
+
+def format_unattributed_host(events: Sequence[Mapping[str, Any]]) -> str:
+    """The view's closing session footer (spec 056 §4.3 "Host events in no run"): the
+    count of captured host events no run lists or counts, by reason, so none is silently
+    missing; ``--json`` lists every one."""
+    summary = unattributed_host_json(events)
+    legend = "; ".join(
+        f"{reason}: {_UNATTRIBUTED_HOST_WHY[reason]}"
+        for reason, n in summary["reasons"].items()
+        if n
+    )
+    return f"session\n  {_unattributed_host_text(summary)}\n  ({legend})\n"
 
 
 if __name__ == "__main__":

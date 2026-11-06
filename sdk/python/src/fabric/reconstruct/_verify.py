@@ -69,6 +69,7 @@ from fabric.reconstruct._report import (
     gap_counts,
     run_verdict,
     sort_gaps,
+    unattributed_host_json,
     verdict_for,
 )
 from fabric.reconstruct._stitch import WireApi, continuation_digests, extract_stitch_keys
@@ -555,6 +556,11 @@ def reconstruct_with_graphs(
         "runs": runs,
         "scopes": scopes,
     }
+    # Spec 056 §4.3 "Host events in no run": captured host activity no run lists or counts
+    # stays visible. Only over every run: with --run the other runs were not joined.
+    unattributed = verifier.actions.unattributed_host_events() if wanted is None else None
+    if unattributed is not None:
+        document["unattributed_host_events"] = unattributed_host_json(unattributed)
     return document, graphs
 
 

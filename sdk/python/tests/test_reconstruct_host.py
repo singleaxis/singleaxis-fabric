@@ -24,6 +24,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from fabric.reconstruct import ReconstructInputError, SpanRecord
+from fabric.reconstruct._attribute import ActionReader
 from fabric.reconstruct._host import (
     H2_WINDOW_NS,
     LINEAGE_MAX_EVENTS,
@@ -840,6 +841,28 @@ def test_back_to_back_containers_with_a_reused_pid_namespace() -> None:
     # Without the identity rule only the namespace number and ns_pid would be compared:
     # the second agent's exec matches them.
     assert (nxt[1][0].pid_ns, nxt[1][0].ns_pid) == (agent.pid_ns, agent.pid)
+
+    # When the second container has no run of its own (spec 056 §4.3 "Host events in no
+    # run"): its events are in no run, and listed at report level, never dropped.
+    class Plan:  # the CLI joiner's shape (_host.HostPlan): its evidence, configured
+        configured = True
+
+        def __init__(self) -> None:
+            self.evidence = evidence
+
+    reader = ActionReader(host_joiner=Plan())  # type: ignore[arg-type]
+    reader._note_host_events(join.trace["host_events"])  # the first run, joined
+    in_run = {e["event_id"] for e in join.sensor_events} | set(join.unexplained_event_ids)
+    outside = reader.unattributed_host_events()
+    assert outside is not None
+    reasons = {e["event_id"]: e["reason"] for e in outside}
+    assert reasons == {
+        nxt[1][0].event_id: "other_process",  # the second agent's exec, inside the margin
+        nxt[1][1].event_id: "no_run",  # its child and file event, after the margin
+        nxt[1][2].event_id: "no_run",
+    }
+    assert in_run.isdisjoint(reasons)
+    assert in_run | set(reasons) == {e.event_id for e in [*first[1], *nxt[1]]}
 
 
 def test_h4_identity_from_start_times() -> None:

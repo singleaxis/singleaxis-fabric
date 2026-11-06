@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   outside the run: neither linked nor listed as unexplained. On the
   acceptance export, no host event appears in more than one run. Three new
   rule fixtures pin the rule.
+- **Captured host activity that belongs to no run is listed, not dropped.**
+  A host event that no run linked, listed as unexplained or counted was
+  silently missing from the report: an event outside every run's window
+  (65 of 471 on the 0.11.1 acceptance export), and, after the H4 identity
+  fix above, a later container's events with a run's agent pids (9). The
+  report now has a top-level `unattributed_host_events` (count per reason
+  `other_process`, `out_of_scope` or `no_run`, and the first 64 events), the
+  `actions` view ends with a `session` footer of those counts, and
+  `actions --json` lists every one. It is omitted with `--run` and bounds
+  no run verdict. Capture contract 1.7.0 (additive); spec 056 §4.3 "Host
+  events in no run".
 - **Preflight warns when the test-only S3 store is enabled.**
   `preflight-prod.sh` now prints a warning on every run whose
   `FABRIC_COMPOSE_EXTRA` (environment or `.env`) names

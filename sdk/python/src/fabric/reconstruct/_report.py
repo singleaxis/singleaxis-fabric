@@ -281,3 +281,23 @@ def attribution_json(
     if lineage_truncated:
         out["lineage_truncated"] = lineage_truncated
     return out
+
+
+#: Why a host event is in no run (spec 056 §4.3 "Host events in no run"), in report order.
+UNATTRIBUTED_HOST_REASONS: Final = ("other_process", "out_of_scope", "no_run")
+
+
+def unattributed_host_json(events: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The report's ``unattributed_host_events`` object: every host event of a host source
+    that no run lists or counts, by reason (:data:`UNATTRIBUTED_HOST_REASONS`), and the
+    first :data:`LIST_MAX` in time order. ``events`` are ``{event_id, source,
+    event_class, pid, time_ns, reason}`` in time order; the count is exact."""
+
+    return {
+        "count": len(events),
+        "reasons": {
+            reason: sum(1 for e in events if e["reason"] == reason)
+            for reason in UNATTRIBUTED_HOST_REASONS
+        },
+        "events": [dict(e) for e in events[:LIST_MAX]],
+    }

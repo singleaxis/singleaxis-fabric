@@ -41,7 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contracts import p1_reference as ref  # noqa: E402
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.6.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.7.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -742,8 +742,51 @@ def _expected_verdict(
     return _COMPLETE
 
 
+def _validate_unattributed_host(document: Mapping[str, Any]) -> None:
+    """Spec 056 §4.3 "Host events in no run": the reasons add up to the exact count, the
+    list holds the first ``min(count, 64)`` in time order, once each, and no listed event
+    is one a run lists (``sensor_events``, ``unexplained_host_events``)."""
+    block = document.get("unattributed_host_events")
+    if block is None:
+        return
+    path = "$.unattributed_host_events"
+    events = block["events"]
+    ids = [e["event_id"] for e in events]
+    in_runs = {
+        event_id
+        for run in document["runs"]
+        for event_id in (
+            *(e["event_id"] for e in run.get("sensor_events", ())),
+            *run.get("attribution", {})
+            .get("unexplained_host_events", {})
+            .get("event_ids", ()),
+        )
+    }
+    order = [(e["time_ns"], e["event_id"]) for e in events]
+    listed = {r: sum(1 for e in events if e["reason"] == r) for r in block["reasons"]}
+    if (
+        sum(block["reasons"].values()) != block["count"]
+        or len(events) != min(block["count"], 64)
+        or any(listed[r] > n for r, n in block["reasons"].items())
+        or order != sorted(order)
+        or len(set(ids)) != len(ids)
+    ):
+        raise CaptureContractError(
+            "capture.reconstruction.unattributed_host",
+            path,
+            "reasons add up to count; events are the first min(count, 64) in time order",
+        )
+    if in_runs & set(ids):
+        raise CaptureContractError(
+            "capture.reconstruction.unattributed_host",
+            f"{path}.events",
+            "a host event a run lists is not in no run",
+        )
+
+
 def _validate_reconstruction(document: Mapping[str, Any]) -> None:
     sources = _validate_sources(document)
+    _validate_unattributed_host(document)
     for run_index, run in enumerate(document["runs"]):
         path = f"$.runs[{run_index}]"
         checks = set(run["checks"].values())

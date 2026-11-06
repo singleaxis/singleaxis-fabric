@@ -5459,7 +5459,7 @@ HOST_VECTORS = {
     "fixtures/host/host-state-envelope-v1.json",
     "fixtures/ingress-groups/index.json",
 }
-VERSIONS = {COVERAGE: "1.3.0", CAPTURE: "1.6.0", CONTENT: "2.3.0"}
+VERSIONS = {COVERAGE: "1.3.0", CAPTURE: "1.7.0", CONTENT: "2.3.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:

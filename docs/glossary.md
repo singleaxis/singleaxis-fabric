@@ -539,7 +539,10 @@ with H1–H4 where the process tree is known.
 explains, and host events no rule links (including connections by the agent
 process to hosts no model call used). They are listed in the report's
 `attribution` object: a gap between the record and what the operating system
-saw, recorded without a judgement. [056] §4.3, §4.5.
+saw, recorded without a judgement. Host events that no run lists at all
+(another process with a run's agent pids, or activity in no run's window)
+are listed once in the report's top-level `unattributed_host_events`, with
+the reason. [056] §4.3, §4.5.
 
 **AR-1.** The end-to-end acceptance scenario of [056] §6.2. Fabric does not
 claim agent action reconstruction until AR-1 passes in CI on the

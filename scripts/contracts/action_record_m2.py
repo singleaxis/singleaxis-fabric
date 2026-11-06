@@ -1218,6 +1218,36 @@ def report_fixtures(
 
     variant("run-reconstruction-remote-sandbox-call-not-a-reason", "capture.reconstruction.chains",
             calls_without_reason)  # fmt: skip
+
+    # Spec 056 §4.3 "Host events in no run" (1.7.0): a later container's agent process
+    # with the run's agent pids (another process, H4 agent identity) and an exec after
+    # the run window are listed at report level, never dropped.
+    last = max(e["time_ns"] for e in run["sensor_events"])
+    pid = run["sensor_events"][0]["pid"]
+    no_run = copy.deepcopy(report)
+    no_run["unattributed_host_events"] = {
+        "count": 2,
+        "reasons": {"other_process": 1, "out_of_scope": 0, "no_run": 1},
+        "events": [
+            {"event_id": "6f1c2e4a-5b3d-4e7f-8a9b-0c1d2e3f4a01", "source": "host.ebpf",
+             "event_class": "connect", "pid": pid + 700, "time_ns": last + 1_000_000,
+             "reason": "other_process"},
+            {"event_id": "6f1c2e4a-5b3d-4e7f-8a9b-0c1d2e3f4a02", "source": "host.ebpf",
+             "event_class": "exec", "pid": pid + 900, "time_ns": last + 60_000_000_000,
+             "reason": "no_run"},
+        ],
+    }  # fmt: skip
+    out["fixtures/valid/run-reconstruction-host-events-in-no-run.json"] = (no_run, None)
+    twice = copy.deepcopy(no_run)
+    twice["unattributed_host_events"]["events"][0]["event_id"] = run["sensor_events"][
+        0
+    ]["event_id"]
+    out[
+        "fixtures/invalid/run-reconstruction-host-event-in-a-run-and-in-no-run.json"
+    ] = (
+        twice,
+        "capture.reconstruction.unattributed_host",
+    )
     return out
 
 
@@ -1238,6 +1268,10 @@ def _register_invalid() -> None:
         (
             "run-reconstruction-remote-sandbox-call-not-a-reason",
             "capture.reconstruction.chains",
+        ),
+        (
+            "run-reconstruction-host-event-in-a-run-and-in-no-run",
+            "capture.reconstruction.unattributed_host",
         ),
     ):
         m1.INVALID_CAPTURE[f"fixtures/invalid/{name}.json"] = code

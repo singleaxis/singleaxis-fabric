@@ -174,6 +174,19 @@ emitters).**
 python scripts/contracts/validate_capture_contracts.py
 ```
 
+## Version 1.7.0 (spec 056 revision 7, host events in no run)
+
+- `run-reconstruction-v1`: optional top-level `unattributed_host_events`
+  (`{count, reasons: {other_process, out_of_scope, no_run}, events}`, at most 64
+  events in time order): every host event of a host source that no run lists or
+  counts, so captured host activity is never dropped silently (spec 056 §4.3 "Host
+  events in no run"). The validator requires the reasons to add up to the count, the
+  first `min(count, 64)` events in time order, and no listed event that a run lists
+  (`capture.reconstruction.unattributed_host`). New fixtures
+  `valid/run-reconstruction-host-events-in-no-run.json` and
+  `invalid/run-reconstruction-host-event-in-a-run-and-in-no-run.json`. Additive: 1.6.0
+  reports stay valid.
+
 ## Version 1.6.0 (spec 056 milestone M2, production profile)
 
 - `run-reconstruction-v1`: an `actionLink` may carry the method `sandbox_report`

@@ -15,7 +15,9 @@ related: ["030", "031", "047", "048", "054", "055"]
 > identity, not only its pids. The kernel reuses a freed pid namespace's
 > number, so back-to-back containers report the same `pid_ns` and `ns_pid`;
 > an event whose identity contradicts the agent's is another process,
-> outside the run (§4.3 "Agent identity").
+> outside the run (§4.3 "Agent identity"). A host event no run lists or
+> counts is listed once at report level, with its reason, never dropped
+> (§4.3 "Host events in no run").
 >
 > **Revision 6** (2026-11-05, v0.11.1): a process that made no model call (a
 > tool worker, or one killed before its first call) is a run of its own,
@@ -278,6 +280,19 @@ H4 events that connect to a host the run's exchanges did not call are
 listed there too. These lists are the main compliance signal: the operating
 system saw the agent do something the agent's own record does not explain.
 
+**Host events in no run.** Captured host activity is never dropped
+silently. A host event of a host source that no run lists (linked, or
+unexplained) or counts (`sandbox_events_unlinked`) is listed once in the
+report's top-level `unattributed_host_events` (count, count per reason,
+plus the first 64 events in time order), with its reason: `other_process`
+(inside a run's window with the agent's pids, but another process: "Agent
+identity" below), `out_of_scope` (inside a run's window, outside the
+agent's scope) or `no_run` (inside no run's window, both clock margins
+applied; every event when no run was reconstructed). It is computed over
+every run, so a report limited to some runs (`--run`) omits it, and it
+bounds no run verdict: the events belong to no run. The `actions` view
+ends with their count per reason and lists every one with `--json`.
+
 **Exec chains.** A shell that execs its command in place (`bash -c "cmd"`,
 or `dash` for the last command of `sh -c "a && b"`) keeps its pid and
 parent pid, so the sensor reports two successful exec events for one
@@ -386,7 +401,8 @@ The rules use them so:
   (a parent starts before its child). Two processes with the agent's pids
   never live at the same time, so such an event lies outside the agent's
   life and outside the run: it is neither linked nor listed as unexplained
-  (trace `H4-other-process`). The cgroup id is not an identity check: a
+  (trace `H4-other-process`). Unless another run lists it, it is listed as
+  a host event in no run with reason `other_process` (above). The cgroup id is not an identity check: a
   process can change cgroup, and the anchors' init pid is the stronger key.
 - Different namespaces never join. Under `recorded`, an effect without
   `fabric.process.pid_ns` (an agent off Linux, or a failed read) or an agent
