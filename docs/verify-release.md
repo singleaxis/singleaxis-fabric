@@ -40,6 +40,30 @@ Artifact qualification then checks:
 The policy is machine-readable in
 [`scripts/release/release-policy.json`](../scripts/release/release-policy.json).
 
+## What a release publishes
+
+A release publishes exactly these GHCR packages (`ghcr_packages` in the
+release policy), each signed with Sigstore:
+
+| Package | What it is |
+|---|---|
+| `ghcr.io/<owner>/fabric-otelcol` | Fabric Node image (OTel Collector recorder distribution) |
+| `ghcr.io/<owner>/fabric-host-emitter` | eBPF host sensor image |
+| `ghcr.io/<owner>/charts/fabric` | Helm chart (OCI) |
+
+Outside GHCR, a release publishes the Python SDK `singleaxis-fabric` to
+PyPI, the TypeScript SDK `@singleaxis/fabric` to npm, and the contracts
+archive, `fabricctl` binaries and checksum files on the GitHub release.
+
+The release qualification job runs
+[`scripts/release/check_ghcr_packages.py`](../scripts/release/check_ghcr_packages.py)
+before anything is published. It reads every workflow and fails if any
+workflow pushes a package outside that list, pushes in a way it cannot name,
+or if the list names a package that no workflow publishes. Any other package
+under the organization on GHCR (for example `fabric-redteam-runner` or
+`fabric-presidio-sidecar`) was not published by a current release. It is
+stale: do not deploy it, and maintainers should delete it.
+
 ## Verify downloaded files
 
 Download artifacts and their manifests into an empty directory. Verify the

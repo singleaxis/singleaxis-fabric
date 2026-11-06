@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **The release names every GHCR package it publishes.** Legacy images
+  (`fabric-redteam-runner`, `fabric-presidio-sidecar`, ...) stayed on GHCR
+  after their sources were removed, and nothing said which packages are
+  current. `release-policy.json` now lists them in `ghcr_packages`
+  (`fabric-otelcol`, `fabric-host-emitter`, `charts/fabric`), and the
+  release qualification runs `scripts/release/check_ghcr_packages.py`
+  before anything is published. It reads every workflow and fails on a push
+  outside the list, a push it cannot name, a `packages: write` job that
+  publishes nothing it recognizes, or a listed package that no workflow
+  publishes. `docs/verify-release.md` lists what a release publishes;
+  anything else on GHCR is stale.
+
 ### Fixed
 
 - **A container's agent process is no longer linked into the previous

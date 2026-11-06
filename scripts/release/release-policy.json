@@ -237,6 +237,11 @@
     "fabric-otelcol",
     "fabric-host-emitter"
   ],
+  "ghcr_packages": [
+    "fabric-otelcol",
+    "fabric-host-emitter",
+    "charts/fabric"
+  ],
   "image_metadata": {
     "fabric-otelcol": {
       "title": "SingleAxis Fabric Node",
