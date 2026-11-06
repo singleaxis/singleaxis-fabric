@@ -174,6 +174,17 @@ emitters).**
 python scripts/contracts/validate_capture_contracts.py
 ```
 
+## Version 1.8.0 (Node delivery policy, destination_rejected)
+
+- `loss-record-v1` and `run-reconstruction-v1`: loss reason `destination_rejected`.
+  The Fabric Node writes it, never a source (fabricguard strips it from a source's
+  loss record): the customer destination permanently refused (HTTP 400, 409, 413 or
+  422) a batch the Node had acknowledged, and the Node recorded every source position
+  in that batch before releasing it. Credential and availability failures (401, 403,
+  404, 5xx, ...) are retried and never produce it. New fixture
+  `valid/loss-record-destination-rejected.json`. Additive: 1.7.0 records and reports
+  stay valid.
+
 ## Version 1.7.0 (spec 056 revision 7, host events in no run)
 
 - `run-reconstruction-v1`: optional top-level `unattributed_host_events`

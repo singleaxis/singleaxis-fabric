@@ -406,6 +406,14 @@ class Sink:
                 time.sleep(0.2)
         raise AssertionError("sink never became ready")
 
+    def fault(self, status: int | None) -> None:
+        """Answer every export with ``status`` (``None``: accept again)."""
+        path = self.directory / "fault"
+        if status is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.write_text(str(status), "ascii")
+
     def stop(self) -> None:
         if self.process is not None and self.process.poll() is None:
             self.process.terminate()

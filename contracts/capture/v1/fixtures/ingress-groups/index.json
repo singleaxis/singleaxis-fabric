@@ -27,112 +27,112 @@
   "configs": [
     {
       "path": "invalid/group-name-content-prefix.yaml",
-      "sha256": "d5645b588192ee83d6d85a666b70d667322df1755ccbdd8e7403b6aea31ece51",
+      "sha256": "dd465c7683e9731b5e3d1957cdbb53a4893253c89072b0a3f47f127680af83d1",
       "expectation": "invalid",
       "rule": "name",
       "error": "an ingress group name matches ^[a-z][a-z0-9-]{0,31}$ and does not start with content (053 §6.1)"
     },
     {
       "path": "invalid/h1-host-logs-pipeline.yaml",
-      "sha256": "11d09e7a757155b883b831c8d50c23e734f9a2d685749a8cfdd58951bbfc90b0",
+      "sha256": "7a6ad3848ae283fa62f1176555f325ee8353b181ad31beda630baa3521a5c151",
       "expectation": "invalid",
       "rule": "h1",
       "error": "a host group has only its traces pipeline (053 §6.2.6 rule 1)"
     },
     {
       "path": "invalid/h2-host-content-receiver.yaml",
-      "sha256": "1bfc1bbc608eddb2ea21fad2fa13612fa5eb7fc9cb26b48f3f2620a75287fda2",
+      "sha256": "08ee77919237d0ff61c01d50122415f4bf7d7b4ea690bc55725998fa23e13245",
       "expectation": "invalid",
       "rule": "h2",
       "error": "a host group has no content receiver and no fabriccontent exporter (053 §6.2.6 rule 2)"
     },
     {
       "path": "invalid/h3-guard-without-source-kind.yaml",
-      "sha256": "ebfdf7b9e6e31799bcfcad93fbd145a25eaac2f6571729873e5519f51364cd95",
+      "sha256": "b95266ad3db6bb3e9fd7701cb0883de1304d1d0786c10ad95c2b1d2243ff1cbf",
       "expectation": "invalid",
       "rule": "h3",
       "error": "fabricguard/<group> sets profile production, source_kind and the group's evidence_source_binding (053 §6.2.6 rule 3)"
     },
     {
       "path": "invalid/h4-audit-receiver-in-node.yaml",
-      "sha256": "e6de4e07ccb5b673f32b86422aa1cffa347d5809198d0f6aa1637e42e10ecd46",
+      "sha256": "14d06f04ec29d533ad35001904aadc3eea16ab96f7a76f4d8517684c5ecb7586",
       "expectation": "invalid",
       "rule": "h4",
       "error": "the audit receiver never runs in a production Node pipeline (053 §6.2.6 rule 4)"
     },
     {
       "path": "invalid/h5-auditd-ebpf-share-a-listener.yaml",
-      "sha256": "50bc8f721e98becc22310407b8dacea9ae495067535d41545a623b50c286869e",
+      "sha256": "3e3ec493c5af6462b9562558addd994214e50bd9366f5c21a08b8a7b5bfaa5a7",
       "expectation": "invalid",
       "rule": "h5",
       "error": "no two group listeners share an address; auditd and eBPF groups have their own (053 §6.1, §6.2.6 rule 5)"
     },
     {
       "path": "invalid/mixing-legacy-and-groups.yaml",
-      "sha256": "fae1c84d7979bfd6021eac078f9b740bf7ed343aff150e51cb78d29d2a9962d7",
+      "sha256": "436ab0d0b4e242789ca53dba66c9c93752d549948fcd40cc2bb268f11b670b38",
       "expectation": "invalid",
       "rule": "mixing",
       "error": "a configuration has the legacy single binding or only fabricguard/<group> instances, never both (053 §6.1)"
     },
     {
       "path": "invalid/r1-shared-authenticator.yaml",
-      "sha256": "008a08c5d7a314c709f6df10a79846f7e3dfd4f97e7481e22456a9c7f5655a6c",
+      "sha256": "04815c6b1145a3a7f46b9351d942fe0c8a8f4af4967334dcd983ea39862878a1",
       "expectation": "invalid",
       "rule": "r1",
       "error": "each group has exactly one bearertokenauth/<group>, used only by that group's receivers (053 §6.1 rule 1)"
     },
     {
       "path": "invalid/r2-cross-wired-receiver.yaml",
-      "sha256": "2e117da2d3bf04c04b4e254da474ae0c6d785809e909ed81e1a93131eb595563",
+      "sha256": "6645c6144446baad13859cf98455c1b9501631cf5bc8621f530d1ba688451350",
       "expectation": "invalid",
       "rule": "r2",
       "error": "a group pipeline uses only its own receiver, guard and content exporter; no unbound receiver (053 §6.1 rule 2)"
     },
     {
       "path": "invalid/r3-mutating-processor-after-guard.yaml",
-      "sha256": "20b3281bbb77e33cab09adf09d0176337950094d0f8367848328e26b399070fa",
+      "sha256": "43b030234dd5f76e1a25e1c8f51d79f3d08b8825a7e67ef4932554db7e655b45",
       "expectation": "invalid",
       "rule": "r3",
       "error": "no processor after fabricguard/<group> but batch (053 §6.1 rule 3)"
     },
     {
       "path": "invalid/r4-content-binding-differs.yaml",
-      "sha256": "e6b993c7d66d1b0020fe238fca1ffa9ccfd809340ce4a1e0a20654b8c6315bce",
+      "sha256": "c62fff03f658e7801598102669170181ed5e648f21615f3278729019874abd1f",
       "expectation": "invalid",
       "rule": "r4",
       "error": "fabricguard/<group> and fabriccontent/<group> carry the group's tenant and source; allowed_tenants is exactly that tenant (053 §6.1 rule 4)"
     },
     {
       "path": "invalid/r5-equal-credentials.yaml",
-      "sha256": "0339f3439f94e450b13f02a5e75e21df3107ee487aa04eda77899354df634d68",
+      "sha256": "e4e7636087bb10a23cf20069c76ff598a14e69fd8caf3751402ee1b318769175",
       "expectation": "invalid",
       "rule": "r5",
       "error": "group credentials differ byte for byte (053 §6.1 rule 5)"
     },
     {
       "path": "invalid/r6-inline-token.yaml",
-      "sha256": "9434affe09511aa3e2bd702817777d39e14c2e150529f361015bcde7d695bf75",
+      "sha256": "5c7fc4eb7096ca0862938b1a537eef27ee8ab169e18716c53dea2dd70b536fa8",
       "expectation": "invalid",
       "rule": "r6",
       "error": "a group credential is one watched token file with require_single_token: true (053 §6.1 rule 6)"
     },
     {
       "path": "invalid/r7-one-source-two-groups.yaml",
-      "sha256": "83b828e0a57486f17a79296bca17c42660f77ae99a02d5a3b73005e5ee135ac7",
+      "sha256": "7c27fd0aeba80848a52dc51e558da57e8448a0a85fb362c6e31fefa5704f39c1",
       "expectation": "invalid",
       "rule": "r7",
       "error": "no two groups bind one (tenant, source) (053 §6.1 rule 7)"
     },
     {
       "path": "invalid/r8-plaintext-group-listener.yaml",
-      "sha256": "44174ba8f2f6325e0ea7484fc7da2d87e0cd85afe46a0b8e8490d9d7b0b931cb",
+      "sha256": "d7095eb3ce6d23aaa5edf72c7969882b4cef6b77a22bad1c220cf7be0ecb7e38",
       "expectation": "invalid",
       "rule": "r8",
       "error": "a group listener uses TLS unless it is loopback (053 §6.1 rule 8)"
     },
     {
       "path": "invalid/r9-shared-content-queue.yaml",
-      "sha256": "fe27eae56249c809eaf0a294a12218f399108afafb8beeee9a8afd5f8ffa8806",
+      "sha256": "aca360ab828d05b8dad8f54c32a6fe093b4392d6ec7d568d3e0fdc7377dec7c5",
       "expectation": "invalid",
       "rule": "r9",
       "error": "each fabriccontent/<group> has its own binding and encrypted queue (053 §6.1 rule 9)"
@@ -153,21 +153,21 @@
     },
     {
       "path": "valid/agent-ebpf-auditd.yaml",
-      "sha256": "ae35160141542e566300ad202abe121146bd5f81c126efeb08c8954f4f283660",
+      "sha256": "64d25ce063f6c63be8a5412d7ce95cf14a3c1daa2362c6eaf23f4831c48220fc",
       "expectation": "valid",
       "rule": null,
       "error": null
     },
     {
       "path": "valid/agent-ebpf-three-nodes.yaml",
-      "sha256": "d7ae252c5ed2347d3bc69e49d4cf15ad5852c8492ef2b4093510395513f8c364",
+      "sha256": "e25368eb868afc050bd47894226a02a310ff730975eb2703253346f4755efc7a",
       "expectation": "valid",
       "rule": null,
       "error": null
     },
     {
       "path": "valid/legacy-single-binding.yaml",
-      "sha256": "1383625c59e708f77a32c165a14480e75f90e2d0dd7744bbdda34b7b603dc074",
+      "sha256": "b32f8b470c54aa1b3f9af866b4b142d7e829097ae4c4cb572a3a8b46ad93cebc",
       "expectation": "valid",
       "rule": null,
       "error": null

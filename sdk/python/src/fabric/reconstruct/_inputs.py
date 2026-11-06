@@ -77,6 +77,9 @@ LOSS_REASONS = frozenset(
         "span_dropped",
         "uninstrumented_client",
         "disk_full",
+        # Written by the Fabric Node when the destination permanently refused a batch it
+        # had acknowledged (capture/v1 1.8.0); fabricguard never admits it from a source.
+        "destination_rejected",
     }
 )
 HeartbeatKind = Literal["periodic", "run_start", "run_end", "final", "segment_seal"]

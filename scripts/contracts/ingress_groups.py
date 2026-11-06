@@ -404,7 +404,7 @@ def node_config(groups: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     }  # fmt: skip
     extensions: dict[str, Any] = {
         "health_check": {"endpoint": "0.0.0.0:13133"},
-        "noredirect": {},
+        "noredirect": {"loss_outbox": {"directory": "/var/lib/otelcol-fabric/storage/loss-outbox"}},
         "file_storage/fabric": {"directory": "/var/lib/otelcol-fabric/storage", "timeout": "1s",
                                 "create_directory": True, "fsync": True},
     }  # fmt: skip
@@ -502,7 +502,7 @@ def legacy_config() -> dict[str, Any]:
             "health_check": {"endpoint": "0.0.0.0:13133"},
             "bearertokenauth/workload": {"filename": "/etc/fabric/workload-auth/token",
                                          "require_single_token": True},
-            "noredirect": {},
+            "noredirect": {"loss_outbox": {"directory": "/var/lib/otelcol-fabric/storage/loss-outbox"}},
             "file_storage/fabric": {"directory": "/var/lib/otelcol-fabric/storage", "timeout": "1s",
                                     "create_directory": True, "fsync": True},
         },

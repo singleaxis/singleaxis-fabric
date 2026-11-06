@@ -118,11 +118,22 @@ data:
         require_single_token: true
       {{- end }}
       {{- if .Values.exporter.endpoint }}
-      # Spec 048 H1: refuse HTTP redirects on the OTLP/HTTP exporter. Any 3xx
-      # from the destination is a retryable failure; the batch and its
-      # Authorization header are never re-sent to another location.
-      # fabric-gate refuses an otlp_http exporter without this middleware.
+      # Destination response policy (fabric-gate refuses an otlp_http
+      # exporter without this middleware). Spec 048 H1: any 3xx is a
+      # retryable failure; the batch and its Authorization header are never
+      # re-sent to another location. 401, 403, 404, 5xx and every other
+      # credential, availability or configuration failure is retried, never
+      # dropped. A permanent rejection (400, 409, 413, 422) is released only
+      # after its destination_rejected loss record is in the loss outbox on
+      # the queue volume; without persistence there is no outbox and such a
+      # batch is retried instead.
+      {{- if .Values.exporter.sendingQueue.persistence.enabled }}
+      noredirect:
+        loss_outbox:
+          directory: {{ printf "%s/loss-outbox" .Values.exporter.sendingQueue.persistence.directory | quote }}
+      {{- else }}
       noredirect: {}
+      {{- end }}
       {{- end }}
       {{- if .Values.exporter.sendingQueue.persistence.enabled }}
       file_storage/fabric:

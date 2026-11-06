@@ -24,6 +24,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A destination 403 no longer drops data the Node had acknowledged.** The
+  pinned upstream OTLP/HTTP exporter retries only 429, 502, 503 and 504.
+  Every other status, including 401, 403, 404 and 500, was a permanent
+  error, and the queue dropped the batch ("Exporting failed. Dropping
+  data."). In the 0.11.1 reliability run, a 40-second 403 removed 30 whole
+  agent runs, and nothing reported the gap. The Node's `noredirect` client
+  middleware, which fabric-gate already requires on every OTLP/HTTP exporter,
+  is now the destination response policy:
+  - Credential, availability and configuration failures (401, 403, 404,
+    405, 407, 408, 410, 5xx, any status not listed here) are retried with
+    backoff and never dropped. A full queue back-pressures the agent spools.
+  - A permanent rejection (400, 409, 413, 422) is released only after a
+    `destination_rejected` loss record for each source position in the batch
+    is fsynced to a loss outbox on the queue volume (`loss_outbox.directory`,
+    set in every shipped Node config and in the Helm chart when persistence is
+    on). The outbox delivers these records once the destination accepts again,
+    and `fabric.reconstruct` reports the affected runs as `partial` with a
+    `loss` gap, including an epoch whose every record was rejected. Without an
+    outbox, or when a loss cannot be recorded, the batch is retried instead.
+  - New metrics: `fabric_delivery_held_responses`,
+    `fabric_delivery_rejected_batches`, `fabric_delivery_lost_positions`,
+    `fabric_delivery_loss_records_pending` (also logged while above 0) and
+    `fabric_delivery_loss_records_delivered`.
+  - Capture contract 1.8.0 (additive) adds the loss reason
+    `destination_rejected`. Only the Node writes it: fabricguard strips it
+    from a source's loss record.
+  - The content exporter already retried every S3 failure except
+    PreconditionFailed; new tests pin that for AccessDenied, ExpiredToken,
+    InvalidAccessKeyId, SignatureDoesNotMatch and NoSuchBucket.
+  - New Compose e2e tests cover a 403 window (everything is delivered after
+    recovery) and a permanent 400 (the run is reported lost).
+
 - **A container's agent process is no longer linked into the previous
   container's run (spec 056 revision 7).** When agent containers start back
   to back, the kernel reuses the pid namespace's number, so the next agent
@@ -85,6 +117,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   from its count only after the directory fsync that follows the unlink, so
   the count could briefly still include it. The test now waits for the count
   to reach zero. Delivery itself is unchanged.
+
+### Known limitations
+
+- **Node delivery policy edges.** A destination that answers 2xx with an
+  OTLP `partial_success` still loses the items it rejected (the upstream
+  exporter logs the count; it does not say which items, so no loss record is
+  written). Loss records are delivered with the exporter's most recent
+  request headers (static headers and bearer tokens). Request-signing
+  authentication leaves them pending, and the pending metric says so. Markers
+  and heartbeats in a permanently rejected batch get no loss record of their
+  own. The verifier still detects their absence as `tail_unverified`, an
+  unclosed run or an unsealed segment.
 
 ## [0.11.1] - 2026-11-06
 

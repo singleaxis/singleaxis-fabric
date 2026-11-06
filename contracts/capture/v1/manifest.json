@@ -1,12 +1,12 @@
 {
   "contract": "singleaxis.fabric.capture",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "b8ce9af20eb9499b418698792e67fa9447b1f1d57369ff28af24e15aa3fb178b", "expectation": "schema", "expected_error": null},
     {"path": "schema/llm-exchange-v1.schema.json", "sha256": "93c96c072b2239d094b5574035476ee9888a7b62d90c6df9dc4c13ea081dec74", "expectation": "schema", "expected_error": null},
-    {"path": "schema/loss-record-v1.schema.json", "sha256": "f3e515b76ae7706fec552aadb4ebed914c2b358c450053fc85d81017e13c293c", "expectation": "schema", "expected_error": null},
-    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "0ca025172c7ee032605caf9faaa85173aaac6fed9784479501a1ec88f9d1b636", "expectation": "schema", "expected_error": null},
+    {"path": "schema/loss-record-v1.schema.json", "sha256": "4a9f58dae5ba25c2a5e4f81ebed2544678834fd91d8ff340fb621e1a96a74bce", "expectation": "schema", "expected_error": null},
+    {"path": "schema/run-reconstruction-v1.schema.json", "sha256": "981c7bacfff55c4378eaeef907c5232fa56a148313015bf1f5da44d9f0e31175", "expectation": "schema", "expected_error": null},
     {"path": "schema/spool-record-v1.schema.json", "sha256": "55087c488bc8acb2c3e6a0a39bba37abdbd7be0263371a7eb529cc64d27b9658", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-request.json", "sha256": "aca0284cba0d0b41d9fa98200400ac46711878fda2bc9f69e1e74b2eb67a19cd", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/content-log-record-truncated.json", "sha256": "a105468714387effbd1ee6609103885f2d52f9cd93c0af54b01f63de45adaae8", "expectation": "valid", "expected_error": null},
@@ -155,9 +155,10 @@
     {"path": "fixtures/valid/spool-record-remote-sandbox-commands-run-start.json", "sha256": "b053c43fa0f8a483ab56a72e829e32867f8d5a06c90b9a634f55b2fa16dc2078", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-remote-sandbox-run-code-end.json", "sha256": "e772da9b9f8d4ae0f3f48b26dbc0c2be339d65cd028317dd976bd282b5a2066e", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/spool-record-remote-sandbox-run-code-start.json", "sha256": "21bfd8f576c5a52f1806e4b32acdfc4191dbfe2c55d7a5c5a56f8e5e27547098", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/ingress-groups/index.json", "sha256": "5057bae62eb7f0234250da3cf3e48af827d123d55eee0fa47119ff4c328d643e", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/ingress-groups/index.json", "sha256": "801ac1926b18f60740df45f7f7778bfe7dc89170f085f018c2d024e433ff8288", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/host/valid/manifest-zero.json", "sha256": "fd3368ba43f82d4171a66349b38b431626cc699ba8c35f5466a7bff13741fb8e", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/invalid/run-reconstruction-host-event-in-a-run-and-in-no-run.json", "sha256": "a0c334263d3487605889660a1e1f1f90ae8065bbe5000bc6a13fb8671297f09f", "expectation": "invalid", "expected_error": "capture.reconstruction.unattributed_host"},
-    {"path": "fixtures/valid/run-reconstruction-host-events-in-no-run.json", "sha256": "c9ad15d042d7f5c5620b92a5e41b41d241d4412e5c6afef1c6840e941d61a096", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/valid/run-reconstruction-host-events-in-no-run.json", "sha256": "c9ad15d042d7f5c5620b92a5e41b41d241d4412e5c6afef1c6840e941d61a096", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/loss-record-destination-rejected.json", "sha256": "a5efa97b709cfe42bc088977bd8f1db716f2cb73639ede62083e53bd9415ec7f", "expectation": "valid", "expected_error": null}
   ]
 }

@@ -30,8 +30,9 @@ type fakeS3 struct {
 	headers       map[string]http.Header
 	puts          int
 	unconditional int
-	noConditional bool // respond 501 NotImplemented to conditional writes
-	failStatus    int  // respond with this status to every PUT
+	noConditional bool   // respond 501 NotImplemented to conditional writes
+	failStatus    int    // respond with this status to every PUT
+	failCode      string // S3 error code of failStatus (default ServiceUnavailable)
 }
 
 func newFakeS3() *fakeS3 {
@@ -49,7 +50,11 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			f.unconditional++
 		}
 		if f.failStatus != 0 {
-			s3Error(w, f.failStatus, "ServiceUnavailable")
+			code := f.failCode
+			if code == "" {
+				code = "ServiceUnavailable"
+			}
+			s3Error(w, f.failStatus, code)
 			return
 		}
 		if f.noConditional {
@@ -248,6 +253,17 @@ func TestS3BackendFailuresAreRetryable(t *testing.T) {
 	for name, configure := range map[string]func(*fakeS3){
 		"conditional writes unsupported": func(f *fakeS3) { f.noConditional = true },
 		"service unavailable":            func(f *fakeS3) { f.failStatus = http.StatusServiceUnavailable },
+		// Credential and authorization failures (an expired session, a
+		// rotated key, a bucket policy change) are fixed by the operator;
+		// the record must stay queued, never be dropped (reliability run
+		// S6a, the content leg of the destination-403 defect).
+		"access denied":            func(f *fakeS3) { f.failStatus, f.failCode = http.StatusForbidden, "AccessDenied" },
+		"expired token (400)":      func(f *fakeS3) { f.failStatus, f.failCode = http.StatusBadRequest, "ExpiredToken" },
+		"expired token (403)":      func(f *fakeS3) { f.failStatus, f.failCode = http.StatusForbidden, "ExpiredToken" },
+		"invalid access key":       func(f *fakeS3) { f.failStatus, f.failCode = http.StatusForbidden, "InvalidAccessKeyId" },
+		"signature does not match": func(f *fakeS3) { f.failStatus, f.failCode = http.StatusForbidden, "SignatureDoesNotMatch" },
+		"no such bucket":           func(f *fakeS3) { f.failStatus, f.failCode = http.StatusNotFound, "NoSuchBucket" },
+		"internal error":           func(f *fakeS3) { f.failStatus, f.failCode = http.StatusInternalServerError, "InternalError" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			fake := newFakeS3()

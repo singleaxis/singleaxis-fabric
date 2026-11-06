@@ -9,9 +9,13 @@ extensions:
     directory: /var/lib/otelcol-fabric/storage
     create_directory: true
     fsync: true
-  # Refuses every redirect on the OTLP/HTTP exporter (fabric-gate requires
-  # it): a 3xx is a retryable failure, never a re-send elsewhere.
-  noredirect: {}
+  # Destination response policy (fabric-gate requires it on the OTLP/HTTP
+  # exporter): a 3xx, 401, 403, 404 or 5xx is retried, never a re-send
+  # elsewhere and never a drop; a permanent rejection (400, 409, 413, 422)
+  # is released only after its loss record is in the loss outbox.
+  noredirect:
+    loss_outbox:
+      directory: /var/lib/otelcol-fabric/storage/loss-outbox
 
 receivers:
   otlp:

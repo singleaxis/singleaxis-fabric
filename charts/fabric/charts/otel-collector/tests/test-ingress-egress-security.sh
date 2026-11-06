@@ -145,7 +145,7 @@ expect_noredirect() {
       next
     }
     section == "exporters" && name != "" && /^          - id: noredirect$/ { mw = 1 }
-    section == "extensions" && /^      noredirect: \{\}$/ { defined = 1 }
+    section == "extensions" && /^      noredirect:( \{\})?$/ { defined = 1 }
     section == "service" && /^        - noredirect$/ { enabled = 1 }
     END {
       if (name != "" && !mw) bad = bad " " name
@@ -256,6 +256,11 @@ expect_contains "production profile renders explicit egress peer" "${production_
 expect_contains "production profile retains explicit image pull policy" "${production_render}" "imagePullPolicy: Always"
 expect_noredirect "production exporter lists the noredirect middleware" \
   "$(helm template ci "${umbrella_dir}" "${production_args[@]}" --show-only charts/otel-collector/templates/configmap.yaml)"
+# Reliability run S6a: a permanent rejection is released only after its loss
+# record is on the queue volume, so production configures the loss outbox there.
+expect_contains "production exporter keeps a loss outbox on the queue volume" \
+  "$(helm template ci "${umbrella_dir}" "${production_args[@]}" --show-only charts/otel-collector/templates/configmap.yaml)" \
+  'directory: "/var/lib/otelcol-fabric/storage/loss-outbox"'
 
 expect_fail "production receiver TLS cannot be disabled" "requires receiver TLS and client-certificate verification" \
   "${umbrella_dir}" "${production_args[@]}" \

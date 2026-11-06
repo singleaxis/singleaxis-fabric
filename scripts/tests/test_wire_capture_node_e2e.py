@@ -41,7 +41,13 @@ and proves, against the running stack:
 - spans accepted while the destination is down survive a Node restart in
   the persistent queue and arrive afterwards, still reconstructing cleanly;
 - a wrong ingress token is rejected on the telemetry and content ports, the
-  agent is unaffected and keeps its undelivered records on disk.
+  agent is unaffected and keeps its undelivered records on disk;
+- a destination answering 403 for a while (an expired or revoked egress
+  credential) loses nothing: the Node holds every acknowledged batch and
+  delivers it once the destination accepts again (reliability run S6a);
+- a destination that permanently rejects batches (400) gets, for every
+  position they carried, a ``destination_rejected`` loss record from the
+  Node, so the affected runs reconstruct as lost, never silently absent.
 
 Opt-in by environment: the module skips when Docker Compose is unavailable.
 ``FABRIC_NODE_IMAGE`` reuses a prebuilt Node image instead of building one.
@@ -387,6 +393,17 @@ class Stack:
             and f'exporter="{exporter}"' in line
         ]
         return max(sizes, default=0.0)
+
+    def metric_total(self, name: str) -> float:
+        """The sum of every sample of one Node metric (0 when absent)."""
+        url = f"http://127.0.0.1:{self.ports['metrics']}/metrics"
+        with urllib.request.urlopen(url, timeout=5) as response:
+            text = response.read().decode()
+        return sum(
+            float(line.rsplit(" ", 1)[1])
+            for line in text.splitlines()
+            if line.startswith((name + "{", name + " "))
+        )
 
     # -- sink ----------------------------------------------------------------
 
@@ -971,3 +988,108 @@ def test_wrong_ingress_token_is_rejected_and_agent_is_unaffected(stack: Stack) -
 
     code, report = stack.reconstruct(barrier.store)
     _assert_complete(report, code, set())
+
+
+def test_destination_403_window_loses_nothing(stack: Stack) -> None:
+    """Reliability run S6a: on a destination 403 the Node used to drop batches it had
+    acknowledged ("Exporting failed. Dropping data."), removing whole runs without a
+    gap. A credential failure is now held: every record arrives after recovery."""
+    held_before = stack.metric_total("fabric_delivery_held_responses_total")
+    failed_before = stack.metric_total("otelcol_exporter_send_failed_spans_total")
+    stack.sink.fault(403)
+    try:
+        runs = [stack.run_agent(f"wire-e2e-forbidden-{i}") for i in range(3)]
+        # The Node acknowledged everything (every spool drained) and holds it.
+        wait_until(
+            lambda: stack.queue_size() >= 1 and not any(spool_records(r.spool) for r in runs),
+            90,
+            lambda: f"queued={stack.queue_size()}",
+        )  # fmt: skip
+        wait_until(
+            lambda: stack.metric_total("fabric_delivery_held_responses_total") > held_before,
+            60, lambda: "no held destination response was counted",
+        )  # fmt: skip
+        assert all(not stack.spans_of(r.service) for r in runs)
+    finally:
+        stack.sink.fault(None)
+    exchanges: set[str] = set()
+    for run in runs:
+        spans = _delivered(stack, run, timeout_s=180)
+        exchanges.add(
+            _assert_capture_spans(spans, run)[0]["attributes"]["fabric.run.id"]
+        )
+    # The S6a symptom: "Exporting failed. Dropping data." for a 403 response. (A
+    # restart's "interrupted due to shutdown" line is not a drop: the persistent
+    # queue keeps that batch, as the outage test above proves.)
+    drops = [
+        line for line in stack.node_logs().splitlines()
+        if "Dropping data" in line and "Status Code 403" in line
+    ]  # fmt: skip
+    assert not drops, drops[:2]
+    assert (
+        stack.metric_total("otelcol_exporter_send_failed_spans_total") == failed_before
+    )
+    _assert_no_leak(stack)
+    code, report = stack.reconstruct(runs[-1].store)
+    _assert_complete(report, code, exchanges)
+
+
+def test_permanent_rejection_is_reported_lost_never_silent(stack: Stack) -> None:
+    """A destination that refuses batches outright (400) cannot be retried forever; the
+    Node releases them only after writing a destination_rejected loss record for every
+    position they carried, and delivers that record once the destination accepts again.
+    The affected run reconstructs as lost: never complete, never absent.
+
+    Last in the module: the sink keeps the lost run, so later full-sink checks would
+    (rightly) not be complete."""
+    stack.sink.fault(400)
+    try:
+        lost = stack.run_agent("wire-e2e-rejected")
+        wait_until(
+            lambda: stack.metric_total("fabric_delivery_rejected_batches_total") >= 1
+            and not spool_records(lost.spool)
+            and stack.queue_size() == 0,
+            120,
+            lambda: f"queued={stack.queue_size()} spool={spool_records(lost.spool)}\n"
+            f"{stack.node_logs()[-3000:]}",
+        )  # fmt: skip
+        assert stack.metric_total("fabric_delivery_loss_records_pending") >= 1
+    finally:
+        stack.sink.fault(None)
+    # The next accepted export carries the Node's current credentials; the
+    # outbox delivers the loss records right after it.
+    barrier = stack.run_agent("wire-e2e-after-rejection")
+    _delivered(stack, barrier, timeout_s=180)
+    wait_until(
+        lambda: stack.metric_total("fabric_delivery_loss_records_pending") == 0, 120,
+        lambda: f"loss records still pending\n{stack.node_logs()[-3000:]}",
+    )  # fmt: skip
+    assert not [
+        s for s in stack.spans_of(lost.service) if s["name"] == "fabric.model_call"
+    ]
+    losses = [
+        s for s in stack.sink.rows()
+        if s.get("name") == "fabric.capture_loss"
+        and s["attributes"].get("fabric.loss.reason") == "destination_rejected"
+    ]  # fmt: skip
+    assert losses, "no destination_rejected loss record reached the destination"
+    assert all(
+        s["attributes"].get("fabric.source.authenticated") is True for s in losses
+    )
+    positions = sum(s["attributes"]["fabric.loss.count"] for s in losses)
+    assert positions >= lost.model_requests, (positions, lost.model_requests)
+
+    code, report = stack.reconstruct(barrier.store)
+    assert code != 0, "a report with a lost run must not exit complete"
+    lost_runs = [
+        run for run in report["runs"]
+        if any(g["gap_type"] == "loss" and g.get("reason") == "destination_rejected"
+               for g in run["gaps"])
+    ]  # fmt: skip
+    assert lost_runs, [(r["run_id"], r["verdict"]) for r in report["runs"]]
+    assert all(run["verdict"] != "complete_for_declared_scope" for run in lost_runs)
+    # The rejected batches named only the lost run: every other run is complete.
+    others = [run for run in report["runs"] if run not in lost_runs]
+    assert others and all(
+        run["verdict"] == "complete_for_declared_scope" for run in others
+    )
