@@ -38,6 +38,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   so the name is not mistaken for secret material (CodeQL
   `py/clear-text-logging-sensitive-data` false positive). Its output is
   unchanged.
+- **Scanner backlog.** The byte resolver, native-witness store and governed
+  store now walk store paths holding one directory descriptor at a time and
+  close each one explicitly on every path, which CodeQL `py/file-not-closed`
+  can see (the previous `ExitStack` already released them). Reads are
+  unchanged. Dependabot groups the `github/codeql-action` sub-actions, which
+  fail when their versions differ.
 
 ## [0.11.1] - 2026-11-06
 
