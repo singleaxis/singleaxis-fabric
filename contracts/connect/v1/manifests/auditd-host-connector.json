@@ -3,7 +3,7 @@
   "connector_id": "singleaxis.fabric.auditd-host-connector",
   "display_name": "SingleAxis Fabric auditd Host Connector",
   "release": {
-    "version": "0.11.0",
+    "version": "0.11.1",
     "maturity": "beta",
     "distribution": "container"
   },

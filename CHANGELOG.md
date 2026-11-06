@@ -8,57 +8,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-06
+
+Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent
+found. A process that made no model call now gets a run of its own in a
+reconstruction instead of disappearing from it, the release images carry
+an accurate description, the production Compose setup refuses a content
+backend it cannot serve, and preflight passes on Docker Desktop. A new
+[production setup](docs/production-setup.md) page gives one tested recipe
+for an agent, a production Node and the eBPF emitter. Capture, protection
+and delivery of model calls behave as in 0.11.0.
+
 ### Fixed
 
 - **Processes with no model call no longer vanish from a reconstruction
-  (spec 056 revision 6).** A Fabric-ON process whose effects were captured
-  and delivered but which made no model call (a tool-worker process, or an
-  agent killed before its first call) used to get no run, no gap and no
-  verdict, and `--run source:<id>:<epoch>` reported "no runs
-  reconstructed". Every such epoch is now a run of its own: its effects
-  are listed, none attributed to a decision (`effects:
+  (spec 056 revision 6).** A process recording with Fabric on whose effects
+  were captured and delivered but which made no model call (a tool-worker
+  process, or an agent killed before its first call) used to get no run,
+  no gap and no verdict, and `--run source:<id>:<epoch>` reported "no runs
+  reconstructed". Every such source epoch is now a run of its own: its
+  effects are listed, none attributed to a decision (`effects:
   partial(unattributed_effect)`), its `decisions` chain is `not_observed`
   when its record verifies, and a process that ended without a final
   heartbeat (SIGKILL, crash) is `tail_unverified(no_final_heartbeat)`, with
   `decisions: unverified`. The `actions` view says so in words. Runs that
-  made model calls are reported exactly as before. Contract change:
-  `fabric.run-reconstruction/v1` allows `chains.decisions` to be
-  `not_observed` (without reasons) only for a run with no captured
-  exchange; the validator refuses it for a run with one.
-- **Release images no longer carry the repository description.** The
-  0.11.0 `fabric-otelcol` and `fabric-host-emitter` images were labelled
-  with the GitHub repository's description and name, which advertised
-  capabilities Fabric does not ship. The release workflow now sets
-  `org.opencontainers.image.title` and `.description` from
-  `scripts/release/release-policy.json` (`image_metadata`) on the image
-  labels and on the manifest and index annotations, and
-  `scripts/release/check_image_metadata.py` refuses any other value, or any
-  label or annotation naming an evaluation, judge, guardrail, escalation,
-  red-team or enforcement capability, in release qualification (Dockerfile
-  labels), on the metadata-action output before the build, and on the
-  pushed image before it is signed. Release qualification applies the same
-  deny-list (`forbidden_capability_terms`) to the wheel, sdist and Helm
-  package metadata. The host emitter's Dockerfile gains its own title and
+  made model calls are reported exactly as before. The contract change is
+  listed under Changed below.
+- **Release images carry an accurate description.** The published 0.11.0
+  `fabric-otelcol` and `fabric-host-emitter` images were labelled with the
+  GitHub repository's description and name, which advertised capabilities
+  Fabric does not ship (evaluation, guardrails and similar). Only the
+  title and description labels were wrong, not what the images contain.
+  From 0.11.1 the release workflow sets `org.opencontainers.image.title` and
+  `.description` from `scripts/release/release-policy.json`
+  (`image_metadata`) on the image labels and on the manifest and index
+  annotations, and `scripts/release/check_image_metadata.py` refuses any
+  other value, or any label or annotation naming an evaluation, judge,
+  guardrail, escalation, red-team or enforcement capability. The check runs
+  in release qualification (Dockerfile labels), on the metadata-action
+  output before the build, and on the pushed image before it is signed.
+  Release qualification applies the same deny-list
+  (`forbidden_capability_terms`) to the wheel, sdist and Helm package
+  metadata. The host emitter's Dockerfile gains its own title and
   description labels.
-
-- **A cleanly closed process no longer leaves `spool/.epochs/<epoch>.orphan`.**
-  On a filesystem that does not enforce `flock` between two open files (a
-  Docker Desktop bind mount from macOS), the agent's own drainer took its
-  live epoch registration's lock in its periodic scan and declared that
-  epoch an orphan; the writer then set `final` in the renamed file and could
-  not remove it. The scan now never declares a registration its own process
-  holds, a finished writer removes its file under either name, and
-  `fabric.wire.install()` warns once when the spool's filesystem does not
-  enforce locks (several processes sharing such a spool can still declare
-  each other's live epochs: use a named volume).
-
-- **The agent-orchestration demo passes as shipped.** `build_journal.py`
-  expected tool names in clear, but `run.sh` emitted them omitted (no id
-  key), and clear labels are dropped by fabricguard. `run.sh` now pins the
-  demo's identity policy (pseudonymous, a fresh per-run demo id key, no
-  clear labels) and the journal checks the tool spans by the `lbl-` labels
-  that policy emits, naming them locally for the viewer; its honesty
-  caveats are unchanged.
+- **A cleanly closed process no longer leaves
+  `spool/.epochs/<epoch>.orphan`.** On a filesystem that does not enforce
+  `flock` between two open files (a Docker Desktop bind mount from macOS),
+  the agent's own drainer took its live epoch registration's lock in its
+  periodic scan and declared that epoch an orphan; the writer then set
+  `final` in the renamed file and could not remove it. The scan now never
+  declares a registration its own process holds, a finished writer removes
+  its file under either name, and `fabric.wire.install()` warns once when
+  the spool's filesystem does not enforce locks.
 - **A Node asked for content that it cannot store refuses to start.**
   `FABRIC_CONTENT_BACKEND=file` with ingress groups (`make up-prod-groups`,
   whose content path is S3 only) ran the Node telemetry-only without a word
@@ -71,33 +72,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   container user. It now detects Docker Desktop (`docker info`) and checks
   that each secret is readable by you and closed to others;
   `FABRIC_BIND_MOUNT_OWNERSHIP=mapped|native` overrides the detection.
+- **The agent-orchestration demo passes as shipped.** `build_journal.py`
+  expected tool names in clear, but `run.sh` emitted them omitted (no id
+  key), and fabricguard drops clear labels. `run.sh` now pins the demo's
+  identity policy (pseudonymous, a fresh per-run demo id key, no clear
+  labels) and the journal checks the tool spans by the `lbl-` labels that
+  policy emits, naming them locally for the viewer; its honesty caveats are
+  unchanged.
 
-### Added
+### Changed
 
-- **[Production setup](docs/production-setup.md).** One copy-pasteable
-  recipe for an agent, a production Node with ingress groups and S3
-  content, and the eBPF emitter in production mode (`docker run` flags,
-  capabilities, mounts, `--pid=host`, `--cgroupns=host` and the cgroup
-  scope on either Docker cgroup driver), the agent's
-  `FABRIC_WIRE_HTTP_HOSTS` format and `network.*` policy roles, which
-  addresses `--endpoint-peer` and `--known-peer` need and why, a
-  destination behind a private CA, and what differs on Docker Desktop.
-  Linked from the README, the docs index, the quickstart and host sensors.
+- **Contract: `fabric.run-reconstruction/v1` (spec 056 revision 6).**
+  `chains.decisions` may be `not_observed` (without reasons) only for a run
+  with no captured model call (no exchange); the validator refuses it for a
+  run with one. A consumer that assumed every run has at least one exchange
+  should expect runs that list only effects.
+- **The `actions` view lists non-model HTTP requests.** Requests the
+  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
+  not attributed)`, and the footer counts them, so a request a tool made
+  never reads as missing.
 - **`FABRIC_COMPOSE_EXTRA`** (`deploy/compose`): your own Compose override
   files, appended last by `make up-prod` and `make up-prod-groups`, so a
   site change such as trusting a private CA for the destination never edits
   a shipped file.
 
-### Changed
+### Documentation
 
+- **[Production setup](docs/production-setup.md)** (new). One
+  copy-pasteable recipe for an agent, a production Node with ingress groups
+  and S3 content, and the eBPF emitter in production mode (`docker run`
+  flags, capabilities, mounts, `--pid=host`, `--cgroupns=host` and the
+  cgroup scope on either Docker cgroup driver), the agent's
+  `FABRIC_WIRE_HTTP_HOSTS` format and `network.*` policy roles, which
+  addresses `--endpoint-peer` and `--known-peer` need and why, a
+  destination behind a private CA, and what differs on Docker Desktop.
+  Linked from the README, the docs index, the quickstart and host sensors.
 - **AR-1 live's `systemd` requirement is the harness's, not the
   emitter's.** The harness creates systemd slice units; the emitter also
   scopes agents on the `cgroupfs` driver (`--cgroup-parent=/fabric-agents`),
-  as the v0.11.0 UAT ran. The harness message and the docs say so.
-- **The `actions` view lists non-model HTTP requests.** Requests the
-  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
-  not attributed)`, and the footer counts them, so a request a tool made
-  never reads as missing.
+  as the 0.11.0 acceptance run did. The harness message and the docs say
+  so.
 
 ### Known limitations
 
@@ -113,10 +127,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Spool disk latency.** No spool `fsync` runs on the monitored call's
   thread (now pinned by a test), but the capture worker's `fsync`s compete
   for the disk: on a slow-`fsync` mount shared with the agent's own files,
-  the UAT measured 20–270 ms added per subprocess and 9–22 ms on an
-  unobserved file write (2–10 ms per subprocess on a local disk). Put the
-  spool on a local disk or named volume
+  the acceptance run measured 20–270 ms added per subprocess and 9–22 ms on
+  an unobserved file write (2–10 ms per subprocess on a local disk). Put
+  the spool on a local disk or named volume
   ([deployment](docs/deployment.md#what-the-agent-needs), "Spool disk").
+- **Spools on filesystems without `flock`.** Several processes sharing a
+  spool on a filesystem that does not enforce locks (a Docker Desktop bind
+  mount) can still declare each other's live epochs orphaned; use a named
+  volume.
 
 ## [0.11.0] - 2026-11-05
 
@@ -2829,7 +2847,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.0...v0.9.1

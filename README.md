@@ -216,7 +216,7 @@ artifact tests keep such code out of every package and image
 
 ## Status and support
 
-v0.11.0 is the current stable release. It is tested in CI, including the
+v0.11.1 is the current stable release. It is tested in CI, including the
 production profile through a real Node. Before v0.8.0 it was also run
 against 18 agent frameworks and patterns (OpenAI Agents SDK, LangGraph,
 LlamaIndex, PydanticAI, smolagents, AutoGen, AG2, CrewAI, DSPy and others)
