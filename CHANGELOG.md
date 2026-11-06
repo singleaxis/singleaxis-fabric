@@ -41,6 +41,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   running": one-shot step, Kubernetes native sidecar, preStop) show how to
   run it.
 
+- **Fabric's exporter warnings no longer appear on the agent's stderr.**
+  While the Node was down, the capture exporter's "Transient error
+  ConnectionError encountered while exporting span batch, retrying" warnings
+  reached the agent's root logger and, with no logging configured, Python's
+  last-resort stderr handler. An agent's output therefore differed with
+  capture on and off (107 lines in the reliability run). Records emitted
+  inside a Fabric export, which the SDK already sanitized, now go only to the
+  non-propagating `fabric.otel` logger. Opt in by adding a handler to it or
+  by setting `FABRIC_OTEL_DIAGNOSTICS=stderr`. The host's own OpenTelemetry
+  exporters log exactly as before. A live test runs an agent through a Node
+  outage with capture on and off and compares its stderr byte for byte.
+
 - **A destination 403 no longer drops data the Node had acknowledged.** The
   pinned upstream OTLP/HTTP exporter retries only 429, 502, 503 and 504.
   Every other status, including 401, 403, 404 and 500, was a permanent

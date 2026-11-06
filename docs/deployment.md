@@ -214,6 +214,15 @@ port. [`examples/redaction-service/`](../examples/redaction-service/README.md)
 has a Dockerfile and Compose and Kubernetes sidecar snippets for its
 reference service; replace its sample rules with your own detection.
 
+**The agent's own output.** Capture does not change what the agent writes to
+stdout or stderr. When the Node is down, Fabric's exporter still logs its
+retries ("Transient error ... retrying"), but only to the non-propagating
+`fabric.otel` logger. They never reach the agent's root logger or Python's
+last-resort stderr handler, and the agent's own OpenTelemetry exporters log
+as before. To see them, attach a handler to `fabric.otel` or set
+`FABRIC_OTEL_DIAGNOSTICS=stderr`. They are sanitized: status codes and class
+names only, never an endpoint or a header.
+
 ### Compose production overlay
 
 For one VM. `make up-prod` runs `preflight-prod.sh` first and refuses to

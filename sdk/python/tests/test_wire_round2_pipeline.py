@@ -435,11 +435,26 @@ def test_fabric_exports_log_codes_and_classes_only(caplog: pytest.LogCaptureFixt
     provider, memory = _memory_provider()
     provider.get_tracer("t").start_span("s").end()
     spans = memory.get_finished_spans()
-    with caplog.at_level(logging.WARNING):
-        result = guarded_exporter(exporter()).export(spans)
+    # Fabric's own export diagnostics go to the opt-in fabric.otel logger only (never the
+    # host's root logger, reliability-run bug 4): read them there.
+    otel = logging.getLogger("fabric.otel")
+    otel.addHandler(caplog.handler)
+    try:
+        with caplog.at_level(logging.WARNING):
+            result = guarded_exporter(exporter()).export(spans)
+    finally:
+        otel.removeHandler(caplog.handler)
     assert result is SpanExportResult.FAILURE
     assert "sk-log-secret" not in caplog.text
     assert "InvalidURL" in caplog.text  # still diagnosable
+    assert {r.name for r in caplog.records} <= {
+        "fabric",
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+    }
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):  # without the opt-in, the host sees none of it
+        guarded_exporter(exporter()).export(spans)
+    assert "InvalidURL" not in caplog.text
     caplog.clear()
     with caplog.at_level(logging.WARNING):  # the host's own exporter logs exactly as before
         exporter().export(spans)
