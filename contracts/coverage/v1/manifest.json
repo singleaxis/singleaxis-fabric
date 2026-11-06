@@ -214,6 +214,10 @@
     {"path": "valid/evidence-sandbox-run-code-python.json", "sha256": "d3007ab7f58c4c04b2a446be411e5b3888f5b9f05dbfd8a753d3e9e6cf67cb94", "expectation": "valid", "expected_error": null},
     {"path": "valid/evidence-sandbox-run-code-r.json", "sha256": "c969448ebb1d397ec22020243b1163d1415a169d1dca0c0b58cd2d8233e5acd2", "expectation": "valid", "expected_error": null},
     {"path": "valid/evidence-sandbox-run-code-typescript.json", "sha256": "c2d98ac79a46a96d3c3106ace6977bbef23bb372fe2a0f00f77df0c22b198b3d", "expectation": "valid", "expected_error": null},
-    {"path": "valid/evidence-sandbox-transport-error.json", "sha256": "1d0723901415fa3c78c68f688dc9428fbe838f45417deef89f0c0fa1e2af0b5c", "expectation": "valid", "expected_error": null}
+    {"path": "valid/evidence-sandbox-transport-error.json", "sha256": "1d0723901415fa3c78c68f688dc9428fbe838f45417deef89f0c0fa1e2af0b5c", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-agent-start-differs.json", "sha256": "9d475eecfa6c51fc923eca65f55c06fe13ce2f23efd70a636c2033eb51390ca4", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-agent-started-after-child.json", "sha256": "062d93dc83dfacd146ed02c08cbdcfd3c5a0c57ce357bae2f4e13edfb3210658", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-pid-namespace-reuse.json", "sha256": "6f5c20cf1855b9c7ead2b9130717c4c2ece9cc7c02042309a425d7acf742fe1b", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-other-process-children.json", "sha256": "c414e69959c1f3dd8f8277838676a10894e3b7f538a99d83fc443bfb9cbf440a", "expectation": "valid", "expected_error": null}
   ]
 }

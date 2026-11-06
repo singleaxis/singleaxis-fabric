@@ -229,8 +229,12 @@ def test_node_mode_delivers_content_then_span_and_empties_the_spool(
     assert "run_start" in kinds and "run_end" in kinds and "periodic" in kinds
     scoped = [b for b in beats if b["fabric.heartbeat.kind"] in ("run_start", "run_end")]
     assert {b["fabric.run.scope_id"] for b in scoped} == {span["fabric.run.scope_id"]}
+    # flush() returns once its records are delivered. The drainer then unlinks each one and
+    # releases its bytes from the spool's ledger only after the directory fsync, so
+    # spool_bytes can still count a delivered, already unlinked record for a moment.
+    assert wait_for(lambda: handle.stats().spool_bytes == 0), handle.stats()
     stats = handle.stats()
-    assert stats.delivered >= 3 and stats.spooled >= 3 and stats.spool_bytes == 0
+    assert stats.delivered >= 3 and stats.spooled >= 3
     closed = handle.close(5.0)
     assert closed
     beats = node.named("fabric.capture_heartbeat")

@@ -66,7 +66,9 @@ class Capture(logging.Handler):
 @pytest.fixture
 def captured(monkeypatch: pytest.MonkeyPatch) -> Iterator[Capture]:
     handler = Capture()
-    names = ("fabric", "opentelemetry", "urllib3")
+    # fabric.otel: Fabric's own exporter diagnostics, rerouted there (never the host's
+    # opentelemetry/urllib3 handlers); attaching a handler is the operator's opt-in.
+    names = ("fabric", "fabric.otel", "opentelemetry", "urllib3")
     saved = {name: (logging.getLogger(name).level, logging.getLogger(name).propagate)
              for name in names}  # fmt: skip
     for name in names:
@@ -204,6 +206,35 @@ def test_guarded_export_sanitizes_exporter_logs(captured: Any) -> None:
     provider.get_tracer("t").start_span("s").end()
     assert any(r.name.startswith(("opentelemetry", "urllib3")) for r in captured.records)
     assert captured.leaks() == []
+
+
+def test_fabric_exporter_diagnostics_never_reach_the_hosts_handlers() -> None:
+    """Reliability run: the capture exporter's retry warnings appeared on the agent's own
+    stderr during Node outages. Inside a Fabric export they go to fabric.otel only; the
+    host's own OpenTelemetry exporter logs as before."""
+    from fabric._export_diagnostics import sanitized_export_diagnostics  # noqa: PLC0415
+
+    host, ours = Capture(), Capture()
+    exporter_logger = logging.getLogger("opentelemetry.exporter.otlp.proto.http.trace_exporter")
+    root, otel = logging.getLogger(), logging.getLogger("fabric.otel")
+    root.addHandler(host)
+    otel.addHandler(ours)
+    level = exporter_logger.level
+    exporter_logger.setLevel(logging.DEBUG)
+    try:
+        with sanitized_export_diagnostics():
+            exporter_logger.warning("Transient error %s encountered, retrying in %ss.",
+                                    ConnectionError("x"), 1)  # fmt: skip
+        exporter_logger.warning("the host's own exporter: %s", "kept")
+    finally:
+        root.removeHandler(host)
+        otel.removeHandler(ours)
+        exporter_logger.setLevel(level)
+    assert [r.getMessage() for r in host.records] == ["the host's own exporter: kept"]
+    assert [r.getMessage() for r in ours.records] == [
+        "Transient error ConnectionError encountered, retrying in 1s."
+    ]
+    assert otel.propagate is False
 
 
 # --- S6: the explicit line's managed exporter (install_default_provider) ---------------

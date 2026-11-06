@@ -1,0 +1,275 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "edge-agent-started-after-child",
+  "rules": [
+    "A1",
+    "H4"
+  ],
+  "description": "No anchor names the agent's init pid (the effect's exec event was lost: anchor_missing), but the effect carries its start time. A process with the agent's pid_ns and ns_pid that started a tick after the agent's child cannot be the agent (a parent starts before its child): another process, outside the run, not unexplained. The agent's own connection, started earlier, is H4.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 7,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [
+      {
+        "source": "host.ebpf",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      }
+    ],
+    "exchanges": [
+      {
+        "exchange_id": "50211b7e-4e06-4ff7-ac6f-7bf2de1284d5",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_SC",
+            "name": "run_shell"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "51216583-7790-41ba-a472-5ea9287e51b0",
+        "sequence": 4,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_SC",
+            "text": "Command output:\na.txt\nb.txt\nc.txt\n\n(exit 0)"
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "e52ef4cf-9bc4-4329-a4f0-14833f669b40",
+        "event_id": "36aa931a-451d-4617-a31e-b59fcc3e65a4",
+        "label": "exec sh -c 'ls /data' (its exec event lost)",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
+        "pid": 41,
+        "parent_pid": 7,
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "process_start_ns": 60120000000,
+        "stdout": "a.txt\nb.txt\nc.txt\n",
+        "pid_ns": "4026532481"
+      }
+    ],
+    "host_events": [
+      {
+        "event_id": "host-454b4eb834ce26a34e066e01eab9b25f",
+        "label": "connect-model",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331200010000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce",
+        "peer_port": 443,
+        "process_start_ns": 52480000000
+      },
+      {
+        "event_id": "host-2e655f116d5334c915797dd38d2ceaf0",
+        "label": "next-container-exec",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331260001000000,
+        "pid": 4300,
+        "ppid": 4290,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 60130000000
+      }
+    ]
+  },
+  "expected": {
+    "projection_links": [
+      {
+        "attempt_id": "e52ef4cf-9bc4-4329-a4f0-14833f669b40",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-d8390afaa897418ae1b2eadd120f04fc"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "sensor_events": [
+      {
+        "event_id": "host-454b4eb834ce26a34e066e01eab9b25f",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331200010000000,
+        "process_start_ns": 52480000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "partial",
+        "reasons": [
+          "anchor_missing"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "output_match": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        },
+        "process_anchor": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 1
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "applied"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      },
+      "sandbox_events_unlinked": {
+        "count": 0
+      }
+    },
+    "trace": {
+      "effects": {
+        "e52ef4cf-9bc4-4329-a4f0-14833f669b40": "A1"
+      },
+      "anchors": {
+        "e52ef4cf-9bc4-4329-a4f0-14833f669b40": "anchor_missing"
+      },
+      "host_events": {
+        "host-454b4eb834ce26a34e066e01eab9b25f": "H4",
+        "host-2e655f116d5334c915797dd38d2ceaf0": "H4-other-process"
+      },
+      "tool_calls": {
+        "p-d8390afaa897418ae1b2eadd120f04fc": "attributed"
+      },
+      "host_sources": {
+        "s-2c6c641009e36ee2e6587ef29bc3a782": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        }
+      }
+    }
+  }
+}

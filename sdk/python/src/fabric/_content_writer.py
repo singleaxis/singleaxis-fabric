@@ -55,6 +55,9 @@ _PAYLOAD_MAX_CAP = 16 * 1024 * 1024
 _ENQUEUE_TIMEOUT_CAP_MS = 100
 _INLINE_DEADLINE_CAP_MS = 5000
 _INLINE_WORKERS = 4
+# Manifest writes of one manifest id are serialized by one of these striped locks, so a
+# revision written later is never older than the one already at the destination.
+_MANIFEST_WRITE_LOCKS = 64
 _SPOOL_VERSION = "fabric.content-spool/v2"
 _LEGACY_SPOOL_VERSION = 1
 _SPOOL_SUFFIX = ".corrupt"
@@ -201,6 +204,11 @@ class ContentWriter:
         # spool record or reach the destination.
         self._manifest_revisions: dict[str, int] = {}
         self._manifest_revision_counters: dict[str, int] = {}
+        # The highest revision written to the destination per manifest. Inline workers
+        # write concurrently: an older revision that finishes last would replace a newer
+        # one (a failed item shown as pending), so writes are ordered under a lock.
+        self._manifest_written: dict[str, int] = {}
+        self._manifest_write_locks = tuple(threading.Lock() for _ in range(_MANIFEST_WRITE_LOCKS))
         self._inline_workers: _InlineWorkers | None = None
         self._inline_in_flight = 0
         self._worker: threading.Thread | None = None
@@ -420,6 +428,7 @@ class ContentWriter:
         neither waits for them nor reports them as its own pending work."""
         self._pending_lock = threading.Lock()
         self._submission_lock = threading.RLock()
+        self._manifest_write_locks = tuple(threading.Lock() for _ in range(_MANIFEST_WRITE_LOCKS))
         if self._inline_workers is not None:
             self._inline_workers.after_fork_in_child()
         if self._config.durability == "inline":
@@ -623,11 +632,11 @@ class ContentWriter:
             if task.kind == "manifest":
                 if task.manifest is None:
                     raise ValueError("manifest task missing manifest payload")
-                self._store.write_manifest(
-                    task.manifest,
-                    decision_id=task.decision_id or "",
-                    manifest_id=task.manifest_id or "",
-                )
+                if not self._write_manifest_in_order(task):
+                    # A newer revision is already at the destination; this one must not
+                    # replace it (and leaves the newer spool record alone).
+                    self._settle(task, ContentStatus.STORED)
+                    return ContentStatus.STORED
             else:
                 if task.descriptor is None or task.content is None:
                     raise ValueError("object task missing descriptor/content")
@@ -702,6 +711,32 @@ class ContentWriter:
     def _has_subscriber(self, key: str) -> bool:
         with self._pending_lock:
             return key in self._subscribers
+
+    def _write_manifest_in_order(self, task: _Task) -> bool:
+        """Write a manifest revision unless a newer one of the same manifest was already
+        written; ``False`` when it was. Writes of one manifest are serialized, so the
+        destination only ever moves to a newer revision: a settlement's rewrite (a failed
+        or stored item) is never replaced by an older in-flight revision that showed the
+        item pending."""
+        manifest_id = task.manifest_id or ""
+        revision = task.manifest_revision
+        lock = self._manifest_write_locks[hash(manifest_id) % _MANIFEST_WRITE_LOCKS]
+        with lock:
+            with self._pending_lock:
+                written = self._manifest_written.get(manifest_id, 0)
+            if revision is not None and revision < written:
+                return False
+            self._store.write_manifest(
+                task.manifest or {},
+                decision_id=task.decision_id or "",
+                manifest_id=manifest_id,
+            )
+            if revision is not None:
+                with self._pending_lock:
+                    self._manifest_written[manifest_id] = max(
+                        self._manifest_written.get(manifest_id, 0), revision
+                    )
+        return True
 
     def _is_stale_manifest(self, task: _Task) -> bool:
         if task.manifest_id is None or task.manifest_revision is None:

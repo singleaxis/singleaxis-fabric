@@ -13,6 +13,10 @@ exact bytes the Node delivered, not only the decoded view.
 Usage: ``_wire_capture_sink.py OUT_DIR PORT BIND CERT KEY EXPECTED_AUTH``.
 Request headers are never written anywhere.
 
+Fault injection: while ``OUT_DIR/fault`` holds an HTTP status code, every
+authenticated POST is answered with that status and nothing is recorded
+(reliability run S6a: a destination answering 403 or 400 for a while).
+
 The TLS handshake runs on each connection's handler thread, never in ``accept()`` on the
 server's only accept thread, and every connection has a socket timeout: one connection
 whose handshake stalls (a corrupted or lossy network) costs one thread for at most
@@ -45,6 +49,7 @@ EXPECTED_AUTH = sys.argv[6]
 TIMEOUT_S = 30
 RECORDS = OUT / "records.jsonl"
 RAW = OUT / "raw"
+FAULT = OUT / "fault"
 _WRITE_LOCK = threading.Lock()
 
 
@@ -118,6 +123,14 @@ def _decode_logs(body: bytes) -> list[dict[str, Any]]:
     return rows
 
 
+def _fault() -> int | None:
+    try:
+        text = FAULT.read_text("ascii").strip()
+    except OSError:
+        return None
+    return int(text) if text.isdigit() else None
+
+
 def _fsync_dir(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY)
     try:
@@ -152,6 +165,10 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
         if self.headers.get("Authorization") != EXPECTED_AUTH:
             self._reply(HTTPStatus.UNAUTHORIZED)
+            return
+        fault = _fault()
+        if fault is not None:
+            self._reply(HTTPStatus(fault), b"", "text/plain")
             return
         encoding = self.headers.get("Content-Encoding", "").lower()
         if encoding == "gzip":

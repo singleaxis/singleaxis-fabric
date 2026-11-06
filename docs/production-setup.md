@@ -225,7 +225,8 @@ HTTP and is refused in production.
 
 > **Test only.** This is a single SeaweedFS container with a test
 > certificate and static keys, for trying the production Node without a
-> cloud bucket. Never use it for real content.
+> cloud bucket. Never use it for real content. While `FABRIC_COMPOSE_EXTRA`
+> names it, preflight prints a warning saying so on every run.
 
 Preflight refuses a plain-HTTP content endpoint, so the local trial's
 `make up-s3-local` store cannot stand in. The shipped overlay
@@ -294,6 +295,34 @@ and each group's own token, published on `127.0.0.1` unless you set
 containers on its network `fabric-node-production_fabric-node` reach the Node
 as `fabric-node`, and the Node's container is
 `fabric-node-production-fabric-node-1`.
+
+### When the destination refuses data
+
+Once the Node accepts a record (the agent's spool deletes it), the Node never
+drops it silently:
+
+- **Credential, availability or configuration failures** (401, 403, 404,
+  5xx, a redirect, any status not listed below) are retried with backoff for
+  as long as the persistent queue has room. An expired or revoked egress
+  credential costs nothing once it is fixed. When the queue is full, the Node
+  refuses new records and the agents keep them in their spools, as they do
+  when the Node is down. `fabric_delivery_held_responses_total{http_response_status_code}`
+  counts these responses.
+- **Permanent rejections** (400, 409, 413, 422: the destination refuses the
+  bytes themselves) cannot be retried forever. Before the Node releases such a
+  batch, it writes a `destination_rejected` loss record for every source
+  position in the batch to `/var/lib/fabric-node/queue/loss-outbox` on the
+  queue volume. Once the destination accepts an export again, the Node
+  delivers those records, and `python -m fabric.reconstruct` then reports the
+  affected runs with a `loss` gap. They are never `complete` and never
+  missing from the report. If the Node cannot write a loss record, it keeps
+  the batch and retries it.
+- `fabric_delivery_loss_records_pending` is the number of loss records still
+  on the Node's disk. While it is above 0, some lost positions are not yet
+  visible at the destination, and the Node logs an error every 5 minutes.
+  `fabric_delivery_rejected_batches_total` and
+  `fabric_delivery_lost_positions_total` count what was given up. The
+  metrics are on the Node's metrics port (8888).
 
 ## 4. The eBPF emitter
 
@@ -420,6 +449,34 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
 - **Subprocesses** (`FABRIC_WIRE_EXEC=1`) and the host label make the
   process anchor of spec 056: the label must equal the emitter's
   `EMIT_HOST_LABEL`.
+
+### One-shot agent containers
+
+An agent delivers its spool's backlog while it runs. At exit it waits only
+for its exit budget (`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`, 2 s by default), and
+whatever is left stays on the spool volume until the next process that uses
+it. When no later agent run will use the same volume, drain it once the
+agent exits. Use the same image, env file, mounts and volume:
+
+```bash
+docker run --rm --network fabric-node-production_fabric-node --env-file "$M/agent.env" \
+  -v "$M/tls/ca.crt:/fabric/ca.crt:ro" -v "$M/secrets/spool.key:/fabric/spool.key:ro" \
+  -v "$M/policy.json:/fabric/policy.json:ro" \
+  -v fabric-agent-spool:/var/lib/fabric-agent \
+  "$AGENT_IMAGE" python -m fabric.wire drain --until-empty --timeout 600
+```
+
+The drainer builds the agent's sender from the env file and delivers exactly
+as an agent would: bodies to the Node, then spans, and a record is deleted
+only after every part was accepted. It captures nothing itself, even with
+`FABRIC_WIRE_AUTOLOAD=1` in the env file. While a live agent holds the spool,
+the drainer waits; it takes over once the spool is free. It prints one JSON
+line (`drained`, `delivered`, `remaining`, `undecryptable`, `quarantined`,
+`seconds`) and exits with 0 when nothing deliverable is left or 1 when
+records remain on disk, for example while the Node is down. Run it again
+later in that case. Without `--until-empty` it runs as a sidecar until
+SIGTERM, then makes a final drain attempt of up to 10 s. Kubernetes patterns
+are in [wire capture deployment](wire-capture-deployment.md#draining-a-spool-with-no-agent-running).
 
 ## 6. Read a run
 

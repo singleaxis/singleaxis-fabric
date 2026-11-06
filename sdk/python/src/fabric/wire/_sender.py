@@ -113,6 +113,9 @@ class Sender:
         self._helper_done: threading.Event | None = None
         self._exporter_lock = threading.Lock()
         self._stats: dict[str, int] = dict.fromkeys(_STATS, 0)
+        # Drain passes that found nothing to deliver while holding the spool lock (after the
+        # holder's orphan recovery and epoch scan ran): the standalone drainer's "empty".
+        self.idle_passes = 0
         self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
         # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
         # exported again by this drainer; retried before anything new is exported.
@@ -476,6 +479,8 @@ class Sender:
                         self._recover_orphans()
                         self.scan_epochs()
                 state = self._drain() if self.spool.holder else "idle"
+                if state == "idle" and self.spool.holder:
+                    self.idle_passes += 1
             except Exception as exc:  # never let the thread die; never log a message
                 _LOG.warning("fabric.wire: spool sender error (%s)", type(exc).__name__)
                 state = "retry"
@@ -541,6 +546,17 @@ class Sender:
             if not self._retire_delivered():
                 return "retry"
         return state if state == "retry" or not names else "more"
+
+    def backlog(self) -> tuple[int, int]:
+        """``(deliverable, undecryptable)``: records this sender can still deliver (on disk,
+        delivered but not yet retired, orphan heartbeats and held markers not yet
+        exported) and spool records sealed under another key, which only a process holding
+        that key can deliver."""
+        skip = self._sealed_elsewhere
+        names = self.spool.names()
+        sealed = sum(1 for name in names if name in skip)
+        pending = len(names) - sealed + len(self._retiring) + len(self._orphan_beats)
+        return pending + len(self._held), sealed
 
     def _retire_delivered(self) -> bool:
         """Retire delivered records in order (another writer's becomes its receipt in place:

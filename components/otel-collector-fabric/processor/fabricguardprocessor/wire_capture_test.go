@@ -578,3 +578,17 @@ func TestCaptureLossAdmitsDiskFull(t *testing.T) {
 	span := processOne(t, g, "fabric.capture_loss", attrs)
 	assertKeysKept(t, span, attrs)
 }
+
+// destination_rejected is written by the Node's delivery policy after the
+// destination refused a batch, never by a source: a source claiming it loses
+// the reason (the key is stripped), so its range explains nothing and reads
+// as missing, and no agent can blame the destination for its own losses.
+func TestCaptureLossRefusesNodeOnlyReason(t *testing.T) {
+	g := newTestGuard(t, nil)
+	attrs := wireLossAttrs()
+	attrs["fabric.loss.reason"] = "destination_rejected"
+	span := processOne(t, g, "fabric.capture_loss", attrs)
+	if v, ok := span.Attributes().Get("fabric.loss.reason"); ok && v.Str() == "destination_rejected" {
+		t.Fatalf("fabricguard admitted a source-claimed destination_rejected loss")
+	}
+}

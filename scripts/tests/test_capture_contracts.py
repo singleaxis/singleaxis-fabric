@@ -53,7 +53,9 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     # + spec 056 (1.5.0): two exec.subprocess spool records, one chain report, four refusals
     # + spec 056 M2 (1.6.0): eight spool records, one report and three refusals, the host
     #   fixtures and vectors (26), the ingress-group index
-    assert len(validated) == 154
+    # + spec 056 rev 7 (1.7.0): host events in no run, one report and one refusal
+    # + 1.8.0: one destination_rejected loss record
+    assert len(validated) == 157
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -638,9 +640,20 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_6_0() -> None:
-    # 1.5.0: spec 056 M1 (WP6-01); 1.6.0: spec 056 M2 (WP6-11)
-    assert _json("manifest.json")["version"] == "1.6.0"
+def test_capture_family_is_version_1_8_0() -> None:
+    # 1.5.0: spec 056 M1 (WP6-01); 1.6.0: spec 056 M2 (WP6-11); 1.7.0: spec 056 rev 7;
+    # 1.8.0: the Node's destination_rejected loss reason
+    assert _json("manifest.json")["version"] == "1.8.0"
+
+
+def test_destination_rejected_is_a_loss_reason_of_records_and_reports() -> None:
+    """1.8.0: the Node records the positions of a batch the destination permanently
+    refused as a destination_rejected loss; the report carries the reason."""
+    validate_document(
+        _json("fixtures/valid/loss-record-destination-rejected.json"), _schemas()
+    )
+    report = _json("schema/run-reconstruction-v1.schema.json")
+    assert "destination_rejected" in report["$defs"]["lossReason"]["enum"]
 
 
 # ------------------------------------------------------------------ capture/v1 1.4.0 (spec 050 §3.9)
@@ -1189,3 +1202,28 @@ def test_056_m2_ingress_group_goldens_parse(tmp_path: Path) -> None:
         capture_output=True, text=True, check=False, timeout=120,
     )  # fmt: skip
     assert run.returncode == 0, run.stderr
+
+
+# ------------------------------------------------------------------ capture/v1 1.7.0 (spec 056 rev 7)
+def test_056_host_events_in_no_run() -> None:
+    """Spec 056 §4.3 "Host events in no run": listed once at report level with a reason;
+    the reasons add up to the count, and an event a run lists is refused there."""
+    report = _json("fixtures/valid/run-reconstruction-host-events-in-no-run.json")
+    validate_document(report, _schemas())
+    block = report["unattributed_host_events"]
+    assert block["reasons"] == {"other_process": 1, "out_of_scope": 0, "no_run": 1}
+    _assert_error(
+        _json(
+            "fixtures/invalid/run-reconstruction-host-event-in-a-run-and-in-no-run.json"
+        ),
+        "capture.reconstruction.unattributed_host",
+    )
+    miscount = copy.deepcopy(report)
+    miscount["unattributed_host_events"]["count"] = 3
+    _assert_error(miscount, "capture.reconstruction.unattributed_host")
+    unordered = copy.deepcopy(report)
+    unordered["unattributed_host_events"]["events"].reverse()
+    _assert_error(unordered, "capture.reconstruction.unattributed_host")
+    unknown = copy.deepcopy(report)
+    unknown["unattributed_host_events"]["events"][0]["reason"] = "outside_run"
+    _assert_error(unknown, "capture.schema")

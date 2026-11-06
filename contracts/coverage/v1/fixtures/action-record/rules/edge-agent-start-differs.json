@@ -1,0 +1,252 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "edge-agent-start-differs",
+  "rules": [
+    "H4"
+  ],
+  "description": "The agent's start time is known (its epoch registration): an event with the agent's pid_ns and ns_pid in the same tick is H4 certain, one without a start time H4 tentative, and one whose start tick differs is another process: outside the run, neither linked nor unexplained.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 7,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000,
+      "pid_ns": "4026532481",
+      "process_start_ns": 52480000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [
+      {
+        "source": "host.ebpf",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+        "pid_namespace": "recorded",
+        "clock_uncertainty_ns": 2000000,
+        "heartbeats": [
+          {
+            "time_ns": 1791331210000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331220000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331230000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331240000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331250000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331260000000000,
+            "upstream_lost": 0
+          },
+          {
+            "time_ns": 1791331270000000000,
+            "upstream_lost": 0
+          }
+        ]
+      }
+    ],
+    "exchanges": [
+      {
+        "exchange_id": "c10b33b1-f1dc-46c4-a2ff-b619c258a343",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": []
+      }
+    ],
+    "effects": [],
+    "host_events": [
+      {
+        "event_id": "host-08d21f0f28c23a1cce97a978b653a503",
+        "label": "connect-model",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331200010000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce",
+        "peer_port": 443,
+        "process_start_ns": 52484000000
+      },
+      {
+        "event_id": "host-c7d329f1be06699d8f1fb476a3e9f6d8",
+        "label": "connect-model-no-start",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "time_ns": 1791331200020000000,
+        "pid": 4100,
+        "ppid": 1,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "peer_id": "hst-e9c49a15e91b136a7edde1b949c3e1ce",
+        "peer_port": 443
+      },
+      {
+        "event_id": "host-80cc7145d96a9f61e845eece517c7fd4",
+        "label": "next-container-exec",
+        "source": "host.ebpf",
+        "event_class": "exec",
+        "time_ns": 1791331260001000000,
+        "pid": 4300,
+        "ppid": 4290,
+        "result": "success",
+        "source_id": "s-2c6c641009e36ee2e6587ef29bc3a782",
+        "ns_pid": 7,
+        "ns_ppid": 0,
+        "pid_ns": "4026532481",
+        "scope": "agent",
+        "process_start_ns": 112480000000
+      }
+    ]
+  },
+  "expected": {
+    "projection_links": [],
+    "sensor_events": [
+      {
+        "event_id": "host-08d21f0f28c23a1cce97a978b653a503",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331200010000000,
+        "process_start_ns": 52484000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      },
+      {
+        "event_id": "host-c7d329f1be06699d8f1fb476a3e9f6d8",
+        "source": "host.ebpf",
+        "event_class": "connect",
+        "pid": 4100,
+        "ppid": 1,
+        "time_ns": 1791331200020000000,
+        "links": [
+          {
+            "type": "part_of",
+            "target": {
+              "namespace": "run",
+              "id": "r-93347307304ecb0a9bb1b51ae90ac326"
+            },
+            "provenance": "inferred",
+            "method": "process_anchor",
+            "confidence": "tentative",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "not_observed"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "complete"
+      }
+    },
+    "attribution": {
+      "links": {
+        "process_anchor": {
+          "resolved": 2,
+          "ambiguous": 0,
+          "unresolved": 0
+        }
+      },
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "not_applicable",
+        "reason": "not_exposed"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      },
+      "sandbox_events_unlinked": {
+        "count": 0
+      }
+    },
+    "trace": {
+      "effects": {},
+      "anchors": {},
+      "host_events": {
+        "host-08d21f0f28c23a1cce97a978b653a503": "H4",
+        "host-c7d329f1be06699d8f1fb476a3e9f6d8": "H4",
+        "host-80cc7145d96a9f61e845eece517c7fd4": "H4-other-process"
+      },
+      "tool_calls": {},
+      "host_sources": {
+        "s-2c6c641009e36ee2e6587ef29bc3a782": {
+          "basis": [
+            "host_record",
+            "declared"
+          ],
+          "verified": true
+        }
+      }
+    }
+  }
+}

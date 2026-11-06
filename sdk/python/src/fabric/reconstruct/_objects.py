@@ -48,7 +48,7 @@ import re
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from fabric._roles import NODE_MAX_OBJECT_BYTES, ROLES, admits, part_object_id
 from fabric.reconstruct._ids import report_run_id, report_source_id
@@ -58,6 +58,35 @@ Verification = Literal["verified", "missing", "digest_mismatch", "not_stored", "
 StoreKind = Literal["local", "s3"]
 
 _ABSENT_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
+# A read that failed for a reason that says nothing about the object (reliability run
+# S3: 30 stored objects read as missing(read_error) after one failed GetObject; botocore
+# retries the call but not a failure while the body streams). Re-read a bounded number
+# of times before reporting the object unreadable.
+_TRANSIENT_CODES = frozenset({
+    "SlowDown", "Throttling", "ThrottlingException", "ThrottledException", "TooManyRequests",
+    "TooManyRequestsException", "RequestLimitExceeded", "RequestThrottled",
+    "RequestThrottledException", "BandwidthLimitExceeded", "RequestTimeout",
+    "RequestTimeoutException", "PriorRequestNotComplete", "InternalError",
+    "ServiceUnavailable", "500", "502", "503", "504",
+})  # fmt: skip
+_TRANSIENT_ERRORS = frozenset({
+    "EndpointConnectionError", "ConnectionClosedError", "ReadTimeoutError",
+    "ConnectTimeoutError", "ResponseStreamingError", "IncompleteReadError", "ProtocolError",
+    "IncompleteRead", "HTTPClientError", "ConnectionError", "TimeoutError",
+})  # fmt: skip
+# The store refused the reader itself: a setup error (exit 2), never a missing object.
+_DENIED_CODES = frozenset({
+    "AccessDenied", "Forbidden", "403", "InvalidAccessKeyId", "SignatureDoesNotMatch",
+    "ExpiredToken", "TokenRefreshRequired", "InvalidToken", "AllAccessDisabled",
+    "AccountProblem", "InvalidSecurity", "AuthorizationHeaderMalformed",
+    "InvalidClientTokenId", "UnrecognizedClientException", "KMS.AccessDeniedException",
+})  # fmt: skip
+_DENIED_ERRORS = frozenset({
+    "NoCredentialsError", "PartialCredentialsError", "CredentialRetrievalError",
+    "TokenRetrievalError", "UnauthorizedSSOTokenError", "SSOTokenLoadError", "PermissionError",
+})  # fmt: skip
+_READ_ATTEMPTS = 5
+_READ_RETRY_FIRST_S = 0.2
 # Still in flight to the store just after a run (the Node writes body, then descriptor).
 _IN_FLIGHT_REASONS = frozenset({"absent", "descriptor_missing"})
 _RETRY_FIRST_S = 0.2
@@ -522,14 +551,92 @@ def sha256_digest(data: bytes) -> str:
 
 
 def _is_absent(exc: BaseException) -> bool:
-    if isinstance(exc, FileNotFoundError):
-        return True
+    return _read_failure(exc) == "absent"
+
+
+class StoreAccessError(ReconstructInputError):
+    """The content store refused the reader (credentials, permissions, an expired
+    token): a setup error the CLI reports with exit 2. Objects are never reported
+    missing because the reader may not read them. The message is fixed text."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "the content store refused access (credentials or permissions); fix the "
+            "reader's store credentials and run again: no object is reported missing"
+        )
+
+
+def _error_code_and_status(exc: BaseException) -> tuple[str | None, int | None]:
     response = getattr(exc, "response", None)
-    if isinstance(response, Mapping):
-        error = response.get("Error")
-        if isinstance(error, Mapping) and str(error.get("Code")) in _ABSENT_CODES:
-            return True
-    return False
+    if not isinstance(response, Mapping):
+        return None, None
+    error = response.get("Error")
+    code = str(error.get("Code")) if isinstance(error, Mapping) and "Code" in error else None
+    meta = response.get("ResponseMetadata")
+    status = meta.get("HTTPStatusCode") if isinstance(meta, Mapping) else None
+    return code, status if isinstance(status, int) else None
+
+
+ReadFailure = Literal["absent", "denied", "transient", "error"]
+_HTTP_SERVER_ERROR = 500
+_STATUS_FAILURES: Mapping[int, ReadFailure] = {
+    404: "absent", 401: "denied", 403: "denied", 429: "transient",
+}  # fmt: skip
+
+
+def _failure_of(exc: BaseException) -> ReadFailure | None:
+    """What one exception (not its causes) says about a failed read, if anything."""
+    if isinstance(exc, FileNotFoundError):
+        return "absent"
+    code, status = _error_code_and_status(exc)
+    if code is not None:
+        for codes, kind in ((_ABSENT_CODES, "absent"), (_DENIED_CODES, "denied"),
+                            (_TRANSIENT_CODES, "transient")):  # fmt: skip
+            if code in codes:
+                return cast("ReadFailure", kind)
+    elif status is not None:
+        return "transient" if status >= _HTTP_SERVER_ERROR else _STATUS_FAILURES.get(status)
+    names = {cls.__name__ for cls in type(exc).__mro__}
+    if names & _DENIED_ERRORS:
+        return "denied"
+    return "transient" if names & _TRANSIENT_ERRORS else None
+
+
+def _read_failure(exc: BaseException) -> ReadFailure:
+    """What a failed store read says: the object is ``absent``; the reader is ``denied``
+    (a setup error); the failure is ``transient`` (throttling, 5xx, a reset connection,
+    a timeout, a body that stopped streaming), so a re-read may succeed; or another
+    ``error``. The cause chain is inspected, as SDKs wrap transport errors."""
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        kind = _failure_of(current)
+        if kind is not None:
+            return kind
+        current = current.__cause__ or current.__context__
+    return "error"
+
+
+def _read_with_retry(call: Any, uri: str) -> Any:
+    """``call(uri)`` with up to ``_READ_ATTEMPTS`` attempts for a transient failure
+    (about 3 s of backoff in all). A refused reader raises :class:`StoreAccessError`;
+    an absent object and any other failure raise the store's own exception at once."""
+    delay = _READ_RETRY_FIRST_S
+    for attempt in range(1, _READ_ATTEMPTS + 1):
+        try:
+            return call(uri)
+        except ImportError:
+            raise
+        except Exception as exc:
+            kind = _read_failure(exc)
+            if kind == "denied":
+                raise StoreAccessError from None
+            if kind != "transient" or attempt == _READ_ATTEMPTS:
+                raise
+        time.sleep(delay)
+        delay *= 2
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 class StoreReader:
@@ -620,13 +727,13 @@ class StoreReader:
         with both ``None``, of a records-input object (both from its descriptor)."""
         try:
             uri = str(self._store.evidence_ref_for(object_id))
-        except ImportError:
+        except (ImportError, StoreAccessError):
             raise
         except Exception:
             return ObjectResult("missing", object_id, sha256=expected_sha256, reason="read_error")
         try:
-            data = self._store.read(uri)
-        except ImportError:
+            data = _read_with_retry(self._store.read, uri)
+        except (ImportError, StoreAccessError):
             raise  # a missing reader dependency is a setup error, never a missing object
         except Exception as exc:
             absent = _is_absent(exc)
@@ -638,8 +745,8 @@ class StoreReader:
             return ObjectResult("missing", object_id, expected_sha256, reason="read_error")
         data = bytes(data)
         try:
-            descriptor: Any = self._store.read_descriptor(uri)
-        except ImportError:
+            descriptor: Any = _read_with_retry(self._store.read_descriptor, uri)
+        except (ImportError, StoreAccessError):
             raise
         except Exception as exc:
             if _is_absent(exc):
@@ -687,8 +794,8 @@ class StoreReader:
         valid, bound descriptor-only one; else the body is ``missing`` (``absent``) or its
         descriptor refused (``sidecar_mismatch``, ``binding_mismatch``)."""
         try:
-            descriptor: Any = self._store.read_descriptor(uri)
-        except ImportError:
+            descriptor: Any = _read_with_retry(self._store.read_descriptor, uri)
+        except (ImportError, StoreAccessError):
             raise
         except Exception as exc:
             reason = "absent" if _is_absent(exc) else "read_error"
@@ -775,8 +882,10 @@ class StoreReader:
                 return replace(rebuilt, authenticated=authenticated)
             object_id = part_object_id(skeleton_id, index)
             try:
-                descriptor = self._store.read_descriptor(self._store.evidence_ref_for(object_id))
-            except ImportError:
+                descriptor = _read_with_retry(
+                    self._store.read_descriptor, self._store.evidence_ref_for(object_id)
+                )
+            except (ImportError, StoreAccessError):
                 raise
             except Exception as exc:
                 reason = "part_missing" if _is_absent(exc) else "part_read_error"
@@ -832,8 +941,9 @@ class StoreReader:
         ):
             return Reassembly(None, "digest_mismatch", "part_range")
         try:
-            data = bytes(self._store.read(self._store.evidence_ref_for(object_id)))
-        except ImportError:
+            ref = self._store.evidence_ref_for(object_id)
+            data = bytes(_read_with_retry(self._store.read, ref))
+        except (ImportError, StoreAccessError):
             raise
         except Exception as exc:
             reason = "part_missing" if _is_absent(exc) else "part_read_error"

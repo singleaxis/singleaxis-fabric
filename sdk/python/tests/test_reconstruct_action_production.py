@@ -683,6 +683,84 @@ def test_a_recorded_source_never_falls_back_to_init_pids(capture: ExecCapture) -
     assert expected["trace"]["anchors"][uid] == "anchor_missing"
 
 
+def test_a_later_container_with_the_agent_pids_is_in_no_run_but_listed(
+    capture: ExecCapture, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:  # fmt: skip
+    """Spec 056 §4.3 "Host events in no run" (the v0.11.1 UAT, back-to-back containers):
+    a later agent container reuses the pid namespace number, so its agent is ``ns_pid``
+    7 in the same ``pid_ns``, and its exec and connect fall inside the run's window (here
+    plainly inside; in the UAT, inside the clock margin). H4's identity check keeps them
+    out of the run; they, its child and an exec after every window are listed once at
+    report level, in exactly zero runs, and every delivered host event is either in the
+    run or in that list."""
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", KEY.decode())
+    ids = agent_run(capture, docker=False)
+    first, last = window(capture)
+    sensor = Sensor(SOURCE_A)
+    sensor.manifest(first - 5 * S)
+    ls = started(capture, ids["ls"])
+    later = AGENT_INIT_PID + 700  # the next container's agent, init namespace
+    mine = {
+        "ls": sensor.event("execve", ls + MS, 4121, AGENT_INIT_PID, ns_pid=41,
+                           ns_ppid=AGENT_PID, pid_ns=AGENT_NS,
+                           process_start_ns=LS_START + 3_217_448, scope="agent"),
+        "model": sensor.event("connect", first + MS, AGENT_INIT_PID, 1, ns_pid=AGENT_PID,
+                              ns_ppid=0, pid_ns=AGENT_NS, scope="agent", peer_id=MODEL,
+                              peer_port=443),
+    }  # fmt: skip
+    other = {
+        "exec": sensor.event("execve", ls + 5 * MS, later, 1, ns_pid=AGENT_PID, ns_ppid=0,
+                             pid_ns=AGENT_NS, scope="agent"),
+        "connect": sensor.event("connect", ls + 6 * MS, later, 1, ns_pid=AGENT_PID,
+                                ns_ppid=0, pid_ns=AGENT_NS, scope="agent",
+                                peer_id=peer_id("10.9.9.9", KEY), peer_port=443),
+    }  # fmt: skip
+    no_run = {
+        "child": sensor.event("execve", last + 5 * S, later + 1, later, ns_pid=9,
+                              ns_ppid=AGENT_PID, pid_ns=AGENT_NS, scope="agent"),
+        "after": sensor.event("execve", last + 10 * S, 6100, 1, ns_pid=6100, ns_ppid=1,
+                              pid_ns=INIT_NS, scope="agent"),
+    }  # fmt: skip
+    sensor.heartbeats(first - 4 * S, last + 20 * S)
+    path = export(capture, [sensor])
+    plan = plan_for(ids)
+    report, reader = run_export(capture, path, plan)
+    expected = assert_report_equals_reference(report, reader, plan)
+    assert {expected["trace"]["host_events"][other[k]] for k in other} == {"H4-other-process"}
+    run = only_run(report)
+    in_run = {e["event_id"] for e in run["sensor_events"]}
+    in_run |= set(run["attribution"]["unexplained_host_events"]["event_ids"])
+    assert in_run == set(mine.values())
+    block = report["unattributed_host_events"]
+    reasons = {e["event_id"]: e["reason"] for e in block["events"]}
+    assert reasons == {
+        other["exec"]: "other_process", other["connect"]: "other_process",
+        no_run["child"]: "no_run", no_run["after"]: "no_run",
+    }  # fmt: skip
+    assert block["count"] == 4
+    assert block["reasons"] == {"other_process": 2, "out_of_scope": 0, "no_run": 2}
+    assert in_run.isdisjoint(reasons)
+    delivered = {*mine.values(), *other.values(), *no_run.values()}
+    assert in_run | set(reasons) == delivered  # nothing captured is silently missing
+    # A report limited to some runs cannot say which events are in no run: omitted.
+    limited, _ = run_export(capture, path, plan_for(ids), run_ids=[RUN])
+    assert "unattributed_host_events" not in limited
+
+    view_argv = ["actions", *_cli(capture, path), "--profile", "local",
+                 "--endpoint-peer", f"{ids['endpoint']}=10.0.4.7"]  # fmt: skip
+    main([*view_argv, "--json"])
+    view = json.loads(capsys.readouterr().out)
+    assert {e["event_id"]: e["reason"] for e in view["unattributed_host_events"]["events"]} == (
+        reasons
+    )
+    (shown,) = view["runs"]
+    rows = {r["event_id"] for r in shown["rows"] if r["kind"] == "host"}
+    assert rows.isdisjoint(reasons)
+    main(view_argv)
+    text = capsys.readouterr().out
+    assert "session\n  host events in no run: 4   (other_process 2, no_run 2)\n" in text
+
+
 # ------------------------------------------------------------------ certain links
 def assert_no_certain_link_without_proof(
     run: Mapping[str, Any], reader: ActionReader, plan: HostPlan

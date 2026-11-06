@@ -28,7 +28,7 @@
         "kind": {"const": "loss"},
         "source": true,
         "emitted_at": true,
-        "reason": {"enum": ["queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client", "disk_full"]},
+        "reason": {"description": "Why the positions will never produce a record. destination_rejected (capture/v1 1.8.0) is written by the Fabric Node, never by a source: the customer destination permanently refused (HTTP 400, 409, 413 or 422) a batch the Node had acknowledged, and the Node recorded the positions it carried before releasing it.", "enum": ["queue_full", "internal_error", "shutdown", "span_dropped", "uninstrumented_client", "disk_full", "destination_rejected"]},
         "count": {"type": "integer", "minimum": 1},
         "first_sequence": {"type": "integer", "minimum": 0},
         "last_sequence": {"type": "integer", "minimum": 0},

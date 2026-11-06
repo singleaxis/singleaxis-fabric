@@ -411,6 +411,95 @@ class _Hosts:
         margin = self.margin(event)
         return bool(first - margin <= event["time_ns"] <= last + margin)
 
+    def agent_child(self, effect: Mapping[str, Any]) -> bool:
+        """An effect whose process is the agent's own child (its parent pid is the agent's,
+        on the agent's host, in the agent's namespace when both name one)."""
+        mine = effect.get("pid_ns")
+        return (
+            effect.get("pid") is not None
+            and effect.get("parent_pid") == self.agent["pid"]
+            and effect.get("host_id") == self.agent.get("host_id")
+            and (self.agent_ns is None or mine is None or mine == self.agent_ns)
+        )
+
+
+def other_process(
+    hosts: _Hosts,
+    event: Mapping[str, Any],
+    init_pids: set[int],
+    child_tick: int | None,
+) -> bool:
+    """§4.3 "Agent identity": whether an event H4's pid comparison matched is provably
+    another process. Its start tick differs from the agent's known one; else, under
+    ``recorded``, its init-namespace pid is not one the run's certain anchors name as their
+    parent (``init_pids``); else it started in a later tick than the agent's earliest child
+    (``child_tick``). Two processes with the agent's pids never live at the same time, so
+    such an event lies outside the agent's life and so outside the run."""
+    start, own = hosts.agent.get("process_start_ns"), event.get("process_start_ns")
+    if start is not None and own is not None:
+        return not same_tick(start, own)
+    if init_pids and hosts.mode(event) == "recorded" and event["pid"] not in init_pids:
+        return True
+    return own is not None and child_tick is not None and own // TICK_NS > child_tick
+
+
+def descendants_follow(
+    hosts: _Hosts,
+    event: Mapping[str, Any],
+    init_pids: set[int],
+    child_tick: int | None,
+) -> bool:
+    """§4.3 "Agent identity": whether the children of another process with the agent's
+    pids are its own and never the agent's. Under ``recorded`` its init-namespace pid is
+    not one the run's certain anchors name; else it started in a later tick than the agent
+    (its known start, else its earliest child). An earlier process whose init pid may be
+    the agent's leaves a child's parent pid open."""
+    if init_pids and hosts.mode(event) == "recorded" and event["pid"] not in init_pids:
+        return True
+    own = event.get("process_start_ns")
+    if own is None:
+        return False
+    start = hosts.agent.get("process_start_ns")
+    if start is not None:
+        return bool(own // TICK_NS > start // TICK_NS)
+    return child_tick is not None and own // TICK_NS > child_tick
+
+
+def other_lineage(
+    hosts: _Hosts,
+    claimed: set[str],
+    init_pids: set[int],
+    child_tick: int | None,
+) -> dict[str, str]:
+    """§4.3 "Agent identity": per event id, ``H4-other-process`` for another process with
+    the agent's pids (at any time) and ``H4-other-lineage`` for the events of its
+    descendants by the H3 walk, when :func:`descendants_follow`. Identity decides, never
+    the time window; an event with the agent's pids that is not another process is left
+    to H4."""
+    roots = [
+        e
+        for e in hosts.events
+        if e["event_id"] not in claimed
+        and not hosts.sandbox(e)
+        and hosts.agent_match(e)
+        and other_process(hosts, e, init_pids, child_tick)
+    ]
+    other = {root["event_id"]: "H4-other-process" for root in roots}
+    walked: set[tuple[str | None, int, int]] = set()
+    for root in roots:
+        if not descendants_follow(hosts, root, init_pids, child_tick):
+            continue
+        own, host_id = root.get("process_start_ns"), hosts.host_of(root)
+        if own is not None:  # one walk per process: pid and start tick name it
+            if (host_id, root["pid"], own // TICK_NS) in walked:
+                continue
+            walked.add((host_id, root["pid"], own // TICK_NS))
+        linked, _ = walk(hosts, host_id, root, own, claimed)
+        for event in linked:
+            if event["event_id"] not in other and not hosts.agent_match(event):
+                other[event["event_id"]] = "H4-other-lineage"
+    return other
+
 
 def anchor_effect(
     hosts: _Hosts, effect: Mapping[str, Any]
@@ -494,14 +583,26 @@ def lineage(
     that process's tick. A successful exec of a known pid that is neither that process
     nor a child of the chain proves pid reuse: the pid leaves the chain. So does an
     observed exit of the pid (``_Hosts.exited``): nothing of the pid after it is linked."""
-    host_id = effect.get("host_id")
     start = effect.get("process_start_ns", anchor.get("process_start_ns"))
+    return walk(hosts, effect.get("host_id"), anchor, start, claimed)
+
+
+def walk(
+    hosts: _Hosts,
+    host_id: str | None,
+    root: Mapping[str, Any],
+    start: int | None,
+    claimed: set[str],
+) -> tuple[list[Mapping[str, Any]], list[Mapping[str, Any]]]:
+    """The process-tree walk of :func:`lineage` from ``root`` (depth 0, start time
+    ``start``) on ``host_id``: H3 from an anchor, and H4's walk from another process with
+    the agent's pids (:func:`other_lineage`)."""
     procs: dict[int, dict[str, Any]] = {
-        anchor["pid"]: {
+        root["pid"]: {
             "depth": 0,
-            "time": anchor["time_ns"],
+            "time": root["time_ns"],
             "start": start,
-            "ppid": anchor.get("ppid"),
+            "ppid": root.get("ppid"),
         }
     }
     linked: list[Mapping[str, Any]] = []
@@ -509,7 +610,7 @@ def lineage(
     for event in hosts.events:
         if (
             event["event_id"] in claimed
-            or event["time_ns"] < anchor["time_ns"]
+            or event["time_ns"] < root["time_ns"]
             or hosts.sandbox(event)
             or not hosts.same_host(event, host_id)
         ):
@@ -763,6 +864,21 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             trace["host_events"][event["event_id"]] = "H5"
 
     agent = inp["agent"]
+    # §4.3 "Agent identity": what the run's own records prove about the agent process.
+    init_pids = {
+        anchor["ppid"]
+        for effect, anchor, confidence in anchors
+        if confidence == "certain"
+        and anchor.get("ppid") is not None
+        and hosts.agent_child(effect)
+        and hosts.mode(anchor) == "recorded"
+    }
+    child_ticks = [
+        e["process_start_ns"] // TICK_NS
+        for e in effects
+        if e.get("process_start_ns") is not None and hosts.agent_child(e)
+    ]
+    child_tick = min(child_ticks) if child_ticks else None
     called = {
         peer
         for exchange in inp["exchanges"]
@@ -772,6 +888,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     unexplained: list[Mapping[str, Any]] = []
     remote_calls: list[Mapping[str, Any]] = []
     sandbox_unlinked = 0
+    other = other_lineage(hosts, claimed, init_pids, child_tick)
     for event in hosts.events:
         inside = hosts.during(event)
         if event["event_id"] in claimed or not inside:
@@ -781,6 +898,11 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
         if hosts.sandbox(event):
             sandbox_unlinked += 1
             trace["host_events"][event["event_id"]] = "sandbox-unlinked"
+            continue
+        if event["event_id"] in other:
+            # Another process with the agent's pids (a reused pid namespace number or
+            # pid), or its descendant: outside the agent's life, so outside the run.
+            trace["host_events"][event["event_id"]] = other[event["event_id"]]
             continue
         if hosts.agent_match(event):
             start, own = agent.get("process_start_ns"), event.get("process_start_ns")
@@ -999,6 +1121,8 @@ __all__ = [
     "attribute_effect",
     "candidates",
     "lineage",
+    "other_lineage",
+    "other_process",
     "output_matches",
     "reconstruct",
     "same_tick",

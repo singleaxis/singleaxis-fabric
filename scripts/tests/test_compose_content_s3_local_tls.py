@@ -18,7 +18,10 @@ files:
   changing the Node's command;
 * ``preflight-prod.sh --groups`` accepts the page's settings for it
   (https endpoint, path style, SSE-S3) and still refuses a plain-http
-  endpoint, so no production check is relaxed for it.
+  endpoint, so no production check is relaxed for it;
+* preflight warns (never fails) on every run whose ``FABRIC_COMPOSE_EXTRA``
+  names the overlay, from the environment or ``.env``, in any path form, so
+  a test store left in place is not missed; it stays quiet otherwise.
 """
 
 from __future__ import annotations
@@ -302,12 +305,72 @@ def _stage(tmp_path: Path, endpoint: str) -> dict[str, str]:
     return env
 
 
+TEST_STORE_WARNING = (
+    "  WARN FABRIC_COMPOSE_EXTRA enables docker-compose.content-s3-local-tls.yml, "
+    "a TEST-ONLY local S3 store"
+)
+
+
 def test_preflight_accepts_the_test_store_settings(tmp_path: Path) -> None:
     run = HI._preflight(tmp_path, _stage(tmp_path, "https://s3-local-tls:8333"))
     assert run.returncode == 0, run.stdout
     assert "PASS content store endpoint uses https" in run.stdout
     assert "PASS content server-side encryption: AES256" in run.stdout
+    assert "https://s3-local-tls:8333" not in run.stdout  # values are never echoed
+
+
+def _warnings(stdout: str) -> list[str]:
+    return [line for line in stdout.splitlines() if line.startswith(TEST_STORE_WARNING)]
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        OVERLAY,
+        f"./{OVERLAY}",
+        f"site/compose.site.yml {OVERLAY}",
+        f"{OVERLAY} {OVERLAY}",
+    ],
+)
+def test_preflight_warns_that_the_overlay_is_test_only(
+    tmp_path: Path, extra: str
+) -> None:
+    env = _stage(tmp_path, "https://s3-local-tls:8333")
+    env["FABRIC_COMPOSE_EXTRA"] = extra
+    run = HI._preflight(tmp_path, env)
+    assert run.returncode == 0, run.stdout  # a warning, not a failure
+    assert len(_warnings(run.stdout)) == 1, run.stdout
+    assert "site/compose.site.yml" not in run.stdout
+
+
+def test_preflight_reads_the_overlay_from_the_env_file(tmp_path: Path) -> None:
+    env = _stage(tmp_path, "https://s3-local-tls:8333")
+    env.pop("FABRIC_COMPOSE_EXTRA")
+    dotenv = tmp_path / ".env"
+    dotenv.write_text(f"FABRIC_COMPOSE_EXTRA={tmp_path / OVERLAY}\n", encoding="utf-8")
+    dotenv.chmod(0o600)
+    run = HI._preflight(tmp_path, env)
+    assert run.returncode == 0, run.stdout
+    assert len(_warnings(run.stdout)) == 1, run.stdout
+    assert str(tmp_path) not in run.stdout
+
+
+@pytest.mark.parametrize(
+    "extra", ["", "site/compose.site.yml", "docker-compose.content-s3.yml"]
+)
+def test_preflight_is_quiet_without_the_overlay(tmp_path: Path, extra: str) -> None:
+    env = _stage(tmp_path, "https://s3.eu-west-1.amazonaws.com")
+    env["FABRIC_COMPOSE_EXTRA"] = extra
+    run = HI._preflight(tmp_path, env)
+    assert run.returncode == 0, run.stdout
+    assert "test-only" not in run.stdout.lower()
     assert "s3-local-tls" not in run.stdout
+
+
+def test_preflight_still_warns_when_another_check_fails(tmp_path: Path) -> None:
+    run = HI._preflight(tmp_path, _stage(tmp_path, "http://s3-local-tls:8333"))
+    assert run.returncode != 0
+    assert len(_warnings(run.stdout)) == 1, run.stdout
 
 
 def test_preflight_still_refuses_a_plain_http_store(tmp_path: Path) -> None:

@@ -10,6 +10,10 @@
 * ``--spans`` reads the Compose sink's raw OTLP protobuf requests (``*.otlp``)
   and directories of them.
 * ``--wait-for-objects`` re-reads absent objects up to a bounded deadline.
+* A transient read error (throttling, 5xx, a reset connection, a timeout, a body that
+  stopped streaming) is re-read a bounded number of times before the object reads as
+  ``missing(read_error)``; an absent object is still missing; a refused reader
+  (AccessDenied, an expired token) is a setup error, exit 2, never missing objects.
 """
 
 from __future__ import annotations
@@ -112,13 +116,15 @@ def test_a_genuine_per_object_read_error_is_still_a_gap(
     capture = _node_capture(tmp_path)
     victim = next(key for _, key in client.objects if "/meta/" not in key)
     real_get = client.get_object
+    attempts: list[str] = []
 
-    def denied(*, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
+    def archived(*, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
         if Key == victim:
-            raise _ClientError("AccessDenied")
+            attempts.append(Key)
+            raise _ClientError("InvalidObjectState")  # archived: neither absent nor transient
         return real_get(Bucket=Bucket, Key=Key)
 
-    monkeypatch.setattr(client, "get_object", denied)
+    monkeypatch.setattr(client, "get_object", archived)
     out = tmp_path / "report.json"
     exit_code = main(_s3_argv(capture.write(), out))
     assert exit_code == 1
@@ -127,6 +133,158 @@ def test_a_genuine_per_object_read_error_is_still_a_gap(
     assert [(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"] == [
         ("missing_object", "read_error")
     ]
+    assert len(attempts) == 1, "a non-transient read error is not retried"
+
+
+# --------------------------------------------------------------------------
+# Reliability run S3: transient read errors are re-read; an absent object is still
+# missing; a refused reader is a setup error
+# --------------------------------------------------------------------------
+
+
+class _StreamResetError(Exception):
+    """The urllib3 error under botocore's ResponseStreamingError."""
+
+
+class _BotoStreamError(Exception):
+    pass
+
+
+_BotoStreamError.__name__ = "ResponseStreamingError"
+
+
+def _transient(kind: str) -> Exception:
+    if kind == "throttled":
+        return _ClientError("SlowDown")
+    if kind == "server_error":
+        error = Exception("500")
+        error.response = {"ResponseMetadata": {"HTTPStatusCode": 503}}  # type: ignore[attr-defined]
+        return error
+    if kind == "reset":
+        return ConnectionResetError("connection reset by peer")
+    if kind == "timeout":
+        return TimeoutError("read timed out")
+    wrapped = _BotoStreamError("body stopped")  # wrapped like botocore's streaming error
+    wrapped.__cause__ = _StreamResetError()
+    return wrapped
+
+
+@pytest.mark.parametrize("kind", ["throttled", "server_error", "reset", "timeout", "streaming"])
+def test_transient_read_errors_are_retried_before_an_object_is_missing(
+    fake_s3: tuple[_FakeS3, list[dict[str, Any]]],  # noqa: F811
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    client, _ = fake_s3
+    capture = _node_capture(tmp_path)
+    monkeypatch.setattr("fabric.reconstruct._objects._READ_RETRY_FIRST_S", 0.001)
+    real_get = client.get_object
+    failures: dict[str, int] = {}
+
+    def flaky(*, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
+        # Every object and descriptor fails twice, then reads.
+        failures[Key] = failures.get(Key, 0) + 1
+        if failures[Key] <= 2:
+            raise _transient(kind)
+        return real_get(Bucket=Bucket, Key=Key)
+
+    monkeypatch.setattr(client, "get_object", flaky)
+    out = tmp_path / "report.json"
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 0
+    run = only_run(json.loads(out.read_text()))
+    assert run["verdict"] != "partial" and not [g for g in run["gaps"] if g["effect"] == "partial"]
+    assert failures and all(n == 3 for n in failures.values())
+
+
+def test_a_persistently_failing_read_is_a_read_error_after_bounded_retries(
+    fake_s3: tuple[_FakeS3, list[dict[str, Any]]],  # noqa: F811
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _ = fake_s3
+    capture = _node_capture(tmp_path)
+    monkeypatch.setattr("fabric.reconstruct._objects._READ_RETRY_FIRST_S", 0.001)
+    victim = next(key for _, key in client.objects if "/meta/" not in key)
+    real_get = client.get_object
+    attempts: list[str] = []
+
+    def down(*, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
+        if Key == victim:
+            attempts.append(Key)
+            raise _ClientError("ServiceUnavailable")
+        return real_get(Bucket=Bucket, Key=Key)
+
+    monkeypatch.setattr(client, "get_object", down)
+    out = tmp_path / "report.json"
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 1
+    run = only_run(json.loads(out.read_text()))
+    assert [(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"] == [
+        ("missing_object", "read_error")
+    ]
+    assert len(attempts) == 5
+
+
+def test_an_absent_object_is_still_missing_and_not_retried_beyond_the_wait(
+    fake_s3: tuple[_FakeS3, list[dict[str, Any]]],  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    client, _ = fake_s3
+    capture = _node_capture(tmp_path)
+    victim = next(key for key in list(client.objects) if "/meta/" not in key[1])
+    del client.objects[victim]
+    out = tmp_path / "report.json"
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 1
+    run = only_run(json.loads(out.read_text()))
+    assert [(g["gap_type"], g["reason"]) for g in run["gaps"] if g["effect"] == "partial"] == [
+        ("missing_object", "absent")
+    ]
+    assert client.gets.count(victim[1]) == 1
+
+
+@pytest.mark.parametrize(
+    "code", ["AccessDenied", "ExpiredToken", "InvalidAccessKeyId", "SignatureDoesNotMatch"]
+)
+def test_a_refused_reader_is_a_setup_error_not_missing_objects(
+    fake_s3: tuple[_FakeS3, list[dict[str, Any]]],  # noqa: F811
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    code: str,
+) -> None:
+    client, _ = fake_s3
+    capture = _node_capture(tmp_path)
+    victim = next(key for _, key in client.objects if "/meta/" not in key)
+    real_get = client.get_object
+
+    def denied(*, Bucket: str, Key: str) -> dict[str, Any]:  # noqa: N803
+        if Key == victim:
+            raise _ClientError(code)
+        return real_get(Bucket=Bucket, Key=Key)
+
+    monkeypatch.setattr(client, "get_object", denied)
+    out = tmp_path / "report.json"
+    rc = main(_s3_argv(capture.write(), out))
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "refused access" in err and "missing_object" not in err
+    assert BUCKET not in err and victim not in err
+    assert not out.exists()
+
+
+def test_a_local_store_permission_error_is_a_setup_error(tmp_path: Path) -> None:
+    from fabric.reconstruct._objects import StoreAccessError, _read_with_retry  # noqa: PLC0415
+
+    def unreadable(uri: str) -> bytes:
+        raise PermissionError(13, "Permission denied", uri)
+
+    with pytest.raises(StoreAccessError):
+        _read_with_retry(unreadable, str(tmp_path / "x"))
+    with pytest.raises(FileNotFoundError):
+        _read_with_retry(lambda uri: Path(uri).read_bytes(), str(tmp_path / "absent"))
 
 
 def test_s3_store_import_hint_names_the_real_extra(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,7 +373,8 @@ def test_an_empty_span_directory_is_a_usage_error(
 ) -> None:
     empty = tmp_path / "secret-dir"
     empty.mkdir()
-    assert main(["--spans", str(empty)]) == 2
+    rc = main(["--spans", str(empty)])
+    assert rc == 2
     err = capsys.readouterr().err
     assert "no *.otlp files" in err
     assert "secret-dir" not in err
@@ -226,7 +385,8 @@ def test_a_corrupt_otlp_file_is_a_usage_error_without_echo(
 ) -> None:
     bad = tmp_path / "secret-name.otlp"
     bad.write_bytes(b"\xff\xff\xff\xff not protobuf SECRET")
-    assert main(["--spans", str(bad)]) == 2
+    rc = main(["--spans", str(bad)])
+    assert rc == 2
     err = capsys.readouterr().err
     assert "not an OTLP protobuf trace export" in err
     assert "SECRET" not in err and "secret-name" not in err

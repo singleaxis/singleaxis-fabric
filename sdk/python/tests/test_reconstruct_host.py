@@ -24,6 +24,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from fabric.reconstruct import ReconstructInputError, SpanRecord
+from fabric.reconstruct._attribute import ActionReader
 from fabric.reconstruct._host import (
     H2_WINDOW_NS,
     LINEAGE_MAX_EVENTS,
@@ -789,6 +790,204 @@ def test_agent_process_events() -> None:
         ("run", "tentative")
     }
     assert join.link_counts == {"process_anchor": {"resolved": 3, "ambiguous": 0, "unresolved": 0}}
+
+
+def test_back_to_back_containers_with_a_reused_pid_namespace() -> None:
+    """The v0.11.1 UAT finding: two agent containers started back to back, the kernel gave
+    the second pid namespace the first one's number, so both agents are ``ns_pid`` 1 in
+    ``pid_ns`` 4026540451. The second agent's exec falls inside the first run's window
+    widened by the 1 s clock margin. Each host event lands in its own run only: never
+    linked to, nor listed as unexplained in, the other run (spec 056 §4.3 "Agent
+    identity")."""
+    ns, second = "4026540451", 1_000_000_000
+    recorded = HostSource("host.ebpf", HOST, "recorded", 0, verified=True)
+
+    def run(n: int, at: int, init: int, start: int) -> tuple[Any, list[HostEvent], tuple[int, int]]:
+        child_start = start + 400 * MS
+        effect = ProcessEffect(
+            f"0000000{n}-0000-4000-8000-000000000001", f"0000000{n}-0000-4000-8000-0000000000e1",
+            5, at, pid=9, parent_pid=1, process_start_ns=child_start, host_id=HOST, pid_ns=ns,
+        )  # fmt: skip
+        events = [
+            _exec(n * 10, init, init - 10, at - 400 * MS, start, ns_pid=1, ns_ppid=0, pid_ns=ns),
+            _exec(n * 10 + 1, init + 9, init, at + MS, child_start + 3 * MS,
+                  ns_pid=9, ns_ppid=1, pid_ns=ns),
+            _exec(n * 10 + 2, init, init - 10, at + 100 * MS, start, event_class="file",
+                  ns_pid=1, ns_ppid=0, pid_ns=ns),
+        ]  # fmt: skip
+        return effect, events, (at, at + 300 * MS)
+
+    boot = 143_082_091_905_053
+    first = run(1, T0, 2_466_601, boot)
+    nxt = run(2, T0 + 1_300 * MS, 2_467_320, boot + 1_300 * MS)
+    assert first[2][1] + second > nxt[1][0].time_ns  # inside the first run's margin
+    evidence = HostEvidence.of([*first[1], *nxt[1]])
+    agent = AgentProcess(pid=1, host_id=HOST, clock_uncertainty_ns=second, pid_ns=ns)
+    listed: list[set[str]] = []
+    for effect, events, window in (first, nxt):
+        join = join_host_events(
+            [effect], evidence, agent=agent, sources=[recorded], run_id=RUN, window=window
+        )
+        assert join.trace["anchors"][effect.attempt_uid] == "H1"
+        assert [join.trace["host_events"][e.event_id] for e in events] == ["H4", "H1", "H4"]
+        assert join.unexplained_count == 0
+        listed.append({e["event_id"] for e in join.sensor_events} | set(join.unexplained_event_ids))
+        assert {e.event_id for e in events} <= listed[-1]
+    assert listed[0].isdisjoint(listed[1])
+    join = join_host_events(
+        [first[0]], evidence, agent=agent, sources=[recorded], run_id=RUN, window=first[2]
+    )
+    assert join.trace["host_events"][nxt[1][0].event_id] == "H4-other-process"
+    # Without the identity rule only the namespace number and ns_pid would be compared:
+    # the second agent's exec matches them.
+    assert (nxt[1][0].pid_ns, nxt[1][0].ns_pid) == (agent.pid_ns, agent.pid)
+
+    # When the second container has no run of its own (spec 056 §4.3 "Host events in no
+    # run"): its events are in no run, and listed at report level, never dropped.
+    class Plan:  # the CLI joiner's shape (_host.HostPlan): its evidence, configured
+        configured = True
+
+        def __init__(self) -> None:
+            self.evidence = evidence
+
+    reader = ActionReader(host_joiner=Plan())  # type: ignore[arg-type]
+    reader._note_host_events(join.trace["host_events"])  # the first run, joined
+    in_run = {e["event_id"] for e in join.sensor_events} | set(join.unexplained_event_ids)
+    outside = reader.unattributed_host_events()
+    assert outside is not None
+    reasons = {e["event_id"]: e["reason"] for e in outside}
+    assert reasons == {
+        nxt[1][0].event_id: "other_process",  # the second agent's exec, inside the margin
+        nxt[1][1].event_id: "no_run",  # its child and file event, after the margin
+        nxt[1][2].event_id: "no_run",
+    }
+    assert in_run.isdisjoint(reasons)
+    assert in_run | set(reasons) == {e.event_id for e in [*first[1], *nxt[1]]}
+
+
+def test_back_to_back_containers_children_follow_the_other_agent() -> None:
+    """The second container's agent forks children inside the first run's window (spec
+    056 §4.3 "Agent identity"): its child's exec, a grandchild's exec and a child forked
+    without exec descend from another process, so they are outside the first run, neither
+    linked nor unexplained. With no run of its own, every event of the second container is
+    in the session list (``other_process``) and in zero runs; with one, each event lands in
+    exactly one run."""
+    ns, second = "4026540451", 1_000_000_000
+    recorded = HostSource("host.ebpf", HOST, "recorded", 0, verified=True)
+
+    def run(n: int, at: int, init: int, start: int) -> tuple[Any, list[HostEvent], tuple[int, int]]:
+        child_start = start + 400 * MS
+        effect = ProcessEffect(
+            f"0000000{n}-0000-4000-8000-000000000001", f"0000000{n}-0000-4000-8000-0000000000e1",
+            5, at, pid=9, parent_pid=1, process_start_ns=child_start, host_id=HOST, pid_ns=ns,
+        )  # fmt: skip
+        events = [
+            _exec(n * 10, init, init - 10, at - 400 * MS, start, ns_pid=1, ns_ppid=0, pid_ns=ns),
+            _exec(n * 10 + 1, init + 9, init, at + MS, child_start + 3 * MS,
+                  ns_pid=9, ns_ppid=1, pid_ns=ns),
+            _exec(n * 10 + 2, init + 10, init + 9, at + 50 * MS, child_start + 50 * MS,
+                  ns_pid=10, ns_ppid=9, pid_ns=ns),
+            _exec(n * 10 + 3, init + 20, init + 9, at + 60 * MS, child_start + 60 * MS,
+                  event_class="connect", ns_pid=20, ns_ppid=9, pid_ns=ns),
+            _exec(n * 10 + 4, init, init - 10, at + 100 * MS, start, event_class="file",
+                  ns_pid=1, ns_ppid=0, pid_ns=ns),
+        ]  # fmt: skip
+        return effect, events, (at, at + 300 * MS)
+
+    boot = 143_082_091_905_053
+    first = run(1, T0, 2_466_601, boot)
+    nxt = run(2, T0 + 1_000 * MS, 2_467_320, boot + 1_000 * MS)
+    window_end = first[2][1] + second
+    assert all(e.time_ns <= window_end for e in nxt[1])  # all inside the first run's margin
+    evidence = HostEvidence.of([*first[1], *nxt[1]])
+    agent = AgentProcess(pid=1, host_id=HOST, clock_uncertainty_ns=second, pid_ns=ns)
+
+    def join(effect: ProcessEffect, window: tuple[int, int]) -> Any:
+        return join_host_events(
+            [effect], evidence, agent=agent, sources=[recorded], run_id=RUN, window=window
+        )
+
+    alone = join(*first[::2])
+    rules = [alone.trace["host_events"][e.event_id] for e in nxt[1]]
+    assert rules == [
+        "H4-other-process", "H4-other-lineage", "H4-other-lineage", "H4-other-lineage",
+        "H4-other-process",
+    ]  # fmt: skip
+    assert [alone.trace["host_events"][e.event_id] for e in first[1]] == [
+        "H4", "H1", "H3", "H3", "H4",
+    ]  # fmt: skip
+    assert alone.unexplained_count == 0
+    in_run = {e["event_id"] for e in alone.sensor_events} | set(alone.unexplained_event_ids)
+    assert in_run == {e.event_id for e in first[1]}
+
+    # The second container has no run of its own: in the session list, in zero runs.
+    class Plan:  # the CLI joiner's shape (_host.HostPlan): its evidence, configured
+        configured = True
+
+        def __init__(self) -> None:
+            self.evidence = evidence
+
+    reader = ActionReader(host_joiner=Plan())  # type: ignore[arg-type]
+    reader._note_host_events(alone.trace["host_events"])
+    outside = reader.unattributed_host_events()
+    assert outside is not None
+    assert {e["event_id"]: e["reason"] for e in outside} == {
+        e.event_id: "other_process" for e in nxt[1]
+    }
+
+    # With a run of its own, each event is in exactly one run (the first container's
+    # events in the second run's widened window are another process's too).
+    own = join(*nxt[::2])
+    assert [own.trace["host_events"][e.event_id] for e in nxt[1]] == ["H4", "H1", "H3", "H3", "H4"]
+    assert own.unexplained_count == 0
+    listed = {e["event_id"] for e in own.sensor_events} | set(own.unexplained_event_ids)
+    assert listed == {e.event_id for e in nxt[1]}
+    reader = ActionReader(host_joiner=Plan())  # type: ignore[arg-type]
+    reader._note_host_events(alone.trace["host_events"])
+    reader._note_host_events(own.trace["host_events"])
+    assert reader.unattributed_host_events() == []
+
+
+def test_other_process_children_need_identity_not_time() -> None:
+    """Children follow another process with the agent's pid only when its pid cannot name
+    the agent by then: an earlier process under ``declared_same`` shares the agent's pid,
+    so a later child of that pid may be the agent's and stays unexplained; a process that
+    started after the agent takes its children out of the run with it."""
+    agent_start = 52_480_000_000
+    known = AgentProcess(4100, HOST, MS, process_start_ns=agent_start)
+    earlier = _exec(1, 4100, 1, T0 + 10 * MS, agent_start - TICK_NS, event_class="file")
+    child = _exec(2, 4130, 4100, T0 + 20 * MS, agent_start + 5 * TICK_NS)
+    join = _join([], [earlier, child], agent=known)
+    assert join.trace["host_events"][earlier.event_id] == "H4-other-process"
+    assert join.trace["host_events"][child.event_id] == "unexplained"
+    later = _exec(3, 4100, 1, T0 + 30 * MS, agent_start + 9 * TICK_NS, event_class="file")
+    late_child = _exec(4, 4140, 4100, T0 + 40 * MS, agent_start + 10 * TICK_NS)
+    join = _join([], [later, late_child], agent=known)
+    assert join.trace["host_events"][late_child.event_id] == "H4-other-lineage"
+    assert join.unexplained_count == 0
+
+
+def test_h4_identity_from_start_times() -> None:
+    """Without a certain anchor naming the agent's init pid: an event of the agent's pid
+    that started after the agent's own child is another process; with the agent's start
+    time known, a different start tick is another process and the same tick is certain.
+    Neither other process is linked or listed."""
+    child = 60_120_000_000
+    effect = _effect(start=child)  # its exec event was lost: anchor_missing
+    agent_start = 52_480_000_000
+    own = _exec(1, 4100, 1, T0 + 10 * MS, agent_start, event_class="file")
+    later = _exec(2, 4100, 1, WINDOW[1] + MS, child + TICK_NS)
+    join = _join([effect], [own, later])
+    assert join.trace["host_events"][own.event_id] == "H4"
+    assert join.trace["host_events"][later.event_id] == "H4-other-process"
+    assert join.unexplained_count == 0
+    assert [e["event_id"] for e in join.sensor_events] == [own.event_id]
+    known = AgentProcess(4100, HOST, MS, process_start_ns=agent_start)
+    earlier = _exec(3, 4100, 1, T0 + 20 * MS, agent_start - TICK_NS, event_class="file")
+    join = _join([], [own, earlier], agent=known)
+    assert join.trace["host_events"][earlier.event_id] == "H4-other-process"
+    ((link,),) = [e["links"] for e in join.sensor_events]
+    assert link["confidence"] == "certain"
 
 
 def test_no_host_source_is_not_observed() -> None:

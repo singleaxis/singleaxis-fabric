@@ -234,8 +234,16 @@ receivers:
 extensions:
   health_check:
     endpoint: 0.0.0.0:{{ .Values.service.ports.health }}
-  # Spec 048 H1: the OTLP/HTTP exporter never follows a redirect.
+  # Destination response policy: never follow a redirect (spec 048 H1);
+  # retry credential, availability and configuration failures; release a
+  # permanent rejection only after its loss record is in the loss outbox.
+  {{- if $persist.enabled }}
+  noredirect:
+    loss_outbox:
+      directory: {{ printf "%s/loss-outbox" $persist.directory | quote }}
+  {{- else }}
   noredirect: {}
+  {{- end }}
   {{- if $persist.enabled }}
   file_storage/fabric:
     directory: {{ $persist.directory | quote }}

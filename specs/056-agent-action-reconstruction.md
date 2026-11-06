@@ -2,8 +2,8 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 6
-last_updated: 2026-11-05
+revision: 7
+last_updated: 2026-11-06
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
 related: ["030", "031", "047", "048", "054", "055"]
@@ -11,6 +11,14 @@ related: ["030", "031", "047", "048", "054", "055"]
 
 # 056 — Agent action reconstruction
 
+> **Revision 7** (2026-11-06, v0.11.2): H4 checks the agent's process
+> identity, not only its pids. The kernel reuses a freed pid namespace's
+> number, so back-to-back containers report the same `pid_ns` and `ns_pid`;
+> an event whose identity contradicts the agent's is another process,
+> outside the run, and so are its descendants (§4.3 "Agent identity"). A host event no run lists or
+> counts is listed once at report level, with its reason, never dropped
+> (§4.3 "Host events in no run").
+>
 > **Revision 6** (2026-11-05, v0.11.1): a process that made no model call (a
 > tool worker, or one killed before its first call) is a run of its own,
 > never dropped. Its effects are listed, all unattributed, and its
@@ -259,7 +267,7 @@ join on the process tree, not on timing.
 | H1 Anchor, exact | A host `exec` event with the same host, pid namespace, pid, parent pid = the effect's `parent_pid`, and process start time equal to `fabric.process.start_ns` | effect `corroborated_by` → event | `process_anchor` | `certain` |
 | H2 Anchor, no start time | As H1 without a start time on either side; the event lies within the bounded window (default 100 ms, 053 §6.3) and is the only match, or every match is one exec chain (below) | `corroborated_by` the match, or the chain's first exec | `process_anchor` | `tentative` |
 | H3 Lineage | A host event whose parent-pid chain reaches an anchored child, on the same host, pid namespace and boot, with non-decreasing start times; at most depth 16 and 4096 events per anchor | event `part_of` → the anchored effect | `process_lineage` | the confidence of the anchor |
-| H4 Agent process | A host event whose pid is the agent's own pid (registered in the epoch registration, 050 §3.2) | event `part_of` → the run | `process_anchor` | `certain` with start time, else `tentative` |
+| H4 Agent process | A host event whose pid is the agent's own pid (registered in the epoch registration, 050 §3.2) and whose identity does not contradict the agent's (below) | event `part_of` → the run | `process_anchor` | `certain` with start time, else `tentative` |
 
 H3 is what makes a shell script visible: `sh -c "curl …"` is anchored by
 H1, and the `curl` process start and its `connect` to the peer are linked
@@ -271,6 +279,19 @@ scope during the run that no rule links is listed under
 H4 events that connect to a host the run's exchanges did not call are
 listed there too. These lists are the main compliance signal: the operating
 system saw the agent do something the agent's own record does not explain.
+
+**Host events in no run.** Captured host activity is never dropped
+silently. A host event of a host source that no run lists (linked, or
+unexplained) or counts (`sandbox_events_unlinked`) is listed once in the
+report's top-level `unattributed_host_events` (count, count per reason,
+plus the first 64 events in time order), with its reason: `other_process`
+(inside a run's window with the agent's pids but another process, or a
+descendant of one: "Agent identity" below), `out_of_scope` (inside a run's window, outside the
+agent's scope) or `no_run` (inside no run's window, both clock margins
+applied; every event when no run was reconstructed). It is computed over
+every run, so a report limited to some runs (`--run`) omits it, and it
+bounds no run verdict: the events belong to no run. The `actions` view
+ends with their count per reason and lists every one with `--json`.
 
 **Exec chains.** A shell that execs its command in place (`bash -c "cmd"`,
 or `dash` for the last command of `sh -c "a && b"`) keeps its pid and
@@ -367,6 +388,34 @@ The rules use them so:
 - **H4** compares the agent's pid with the event's `ns_pid` when the source
   is `recorded` and `AgentProcess.pid_ns` equals the event's `pid_ns`; with
   the event's `pid` when the source is `declared_same`.
+- **Agent identity (H4).** The pids alone do not name the agent: the kernel
+  reuses a freed pid namespace's inode number, so back-to-back containers
+  report the same `pid_ns` and `ns_pid` (1) for their first process. An
+  event H4's comparison matches is another process when its identity
+  contradicts the agent's, checked in this order: its start time is in
+  another tick than the agent's known one (`AgentProcess.process_start_ns`;
+  the same tick makes the link `certain`); else, from a `recorded` source,
+  its `pid` is not the init-namespace pid the run's `certain` anchors name
+  as their parent (the `ppid` of each H1 event whose effect is the agent's
+  child); else it started in a later tick than the agent's earliest child
+  (a parent starts before its child). Two processes with the agent's pids
+  never live at the same time, so such an event lies outside the agent's
+  life and outside the run: it is neither linked nor listed as unexplained
+  (trace `H4-other-process`). Its descendants are its own, not the
+  agent's: an event whose parent-pid chain reaches such a process, by the
+  H3 walk from that process (same host, init-namespace pids, start ticks,
+  depth 16 and 4096 events), is outside the run too (trace
+  `H4-other-lineage`), whatever its time. The walk starts only from a
+  process whose pid cannot name the agent when a child is seen: from a
+  `recorded` source, its `pid` is not the anchors' init pid; else it
+  started in a later tick than the agent (its known start, else its
+  earliest child). An earlier process that may share the agent's init pid
+  (`declared_same`, or no `certain` anchor) has no descendants this way.
+  Identity moves an event out of a run, never its time alone. Unless
+  another run lists them, these events are listed as host events in no
+  run with reason `other_process` (above). The cgroup id is not an
+  identity check: a process can change cgroup, and the anchors' init pid
+  is the stronger key.
 - Different namespaces never join. Under `recorded`, an effect without
   `fabric.process.pid_ns` (an agent off Linux, or a failed read) or an agent
   without a namespace never joins: the effect is `anchor_missing`. The

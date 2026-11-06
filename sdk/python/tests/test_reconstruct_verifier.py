@@ -966,6 +966,42 @@ def test_queue_full_loss_is_partial_for_adjacent_runs_only(capture: Capture) -> 
     ]
 
 
+def test_node_destination_rejected_loss_marks_the_run_partial(capture: Capture) -> None:
+    """Reliability run S6a: the destination permanently refused a batch the Node had
+    acknowledged; the Node's destination_rejected loss record explains the hole."""
+    run_id = "trace:" + "4" * 32
+    capture.exchange(*react_turns()[0], run_id=run_id)  # 0
+    for _ in range(3):
+        capture.skip()  # 1..3: in the rejected batch
+    capture.loss("destination_rejected", 1, 3)
+    capture.exchange(*react_turns()[0], run_id=run_id)  # 4
+    capture.heartbeat()
+    run = run_by_id(capture.reconstruct(), run_id)
+    assert run["verdict"] == "partial"
+    assert [(g["gap_type"], g.get("reason")) for g in run["gaps"] if g["effect"] != "info"] == [
+        ("loss", "destination_rejected")
+    ]
+
+
+def test_an_epoch_lost_whole_at_the_destination_is_a_lost_run(capture: Capture) -> None:
+    """Every record of an epoch, its markers included, was in rejected batches: only the
+    Node's loss record arrives. The epoch is still reported (its source fallback run,
+    every position lost), never silently absent."""
+    for _ in range(20):
+        capture.skip()
+    capture.loss("destination_rejected", 0, 19)
+    document = capture.reconstruct()
+    (run,) = document["runs"]
+    assert run["verdict"] != "complete"
+    assert any(
+        g["gap_type"] == "loss" and g.get("reason") == "destination_rejected" for g in run["gaps"]
+    )
+    (source,) = document["sources"]
+    assert source["loss_ranges"] == [
+        {"reason": "destination_rejected", "first_sequence": 0, "last_sequence": 19, "count": 20}
+    ]
+
+
 def test_missing_range_split_into_loss_and_unexplained_parts(capture: Capture) -> None:
     capture.exchange(*react_turns()[0])
     for _ in range(3):

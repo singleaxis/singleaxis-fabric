@@ -1,0 +1,14 @@
+{
+  "schema_version": "fabric.loss-record/v1",
+  "kind": "loss",
+  "source": {
+    "source_id": "s-6b5d8e27d5e1875b8804aba62cefb5a4",
+    "source_epoch": 1791331200000000000
+  },
+  "emitted_at": "2026-11-06T10:00:04.000Z",
+  "reason": "destination_rejected",
+  "count": 3,
+  "first_sequence": 40,
+  "last_sequence": 42,
+  "segment_id": "seg-0123456789abcdef0123456789abcdef"
+}

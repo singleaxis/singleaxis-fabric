@@ -77,7 +77,9 @@ extensions:
     timeout: 1s
   health_check:
     endpoint: 0.0.0.0:13133
-  noredirect: {}
+  noredirect:
+    loss_outbox:
+      directory: /var/lib/otelcol-fabric/storage/loss-outbox
 processors:
   fabricguard/agent:
     capture_labels: pseudonymous

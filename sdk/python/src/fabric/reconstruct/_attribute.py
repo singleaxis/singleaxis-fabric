@@ -761,7 +761,8 @@ class ActionReader:
     verdict and the exit code, as the report command leaves it: pre-056 runs are reported
     exactly as before by both. ``links`` collects the links the step projection adds to
     effect steps; ``runs`` keeps each attributed run when ``keep_runs``. Output and result
-    text never outlive the run's attribution."""
+    text never outlive the run's attribution. Across the runs it notes which host events
+    some run lists or counts, so :meth:`unattributed_host_events` can name the rest."""
 
     def __init__(
         self,
@@ -779,6 +780,11 @@ class ActionReader:
         self.keep_runs = keep_runs
         self.links: dict[str, list[dict[str, Any]]] = {}
         self.runs: list[ActionRun] = []
+        # Spec 056 §4.3 "Host events in no run": per host event id, across the joined runs.
+        self._host_in_run: set[str] = set()
+        self._host_other_process: set[str] = set()
+        self._host_out_of_scope: set[str] = set()
+        self._host_event_list: list[Any] | None = None
 
     @property
     def declared_host_sources(self) -> tuple[str, ...]:
@@ -793,6 +799,7 @@ class ActionReader:
         add = getattr(self.host_joiner, "add_evidence", None)
         if add is not None:
             add(evidence, production=production, trusted=trusted)
+            self._host_event_list = None
 
     def _host_configured(self) -> bool:
         if self.host_joiner is None:
@@ -815,6 +822,8 @@ class ActionReader:
         inp = reader.build(gaps, checks)
         joiner = self.host_joiner if self._host_configured() else None
         host = joiner(inp) if joiner is not None else None
+        if host is not None:
+            self._note_host_events(host.trace_host_events)
         result = attribute(inp, host=host)
         if self.keep_runs:
             self.runs.append(ActionRun(report["run_id"], _lean(inp), result))
@@ -828,6 +837,57 @@ class ActionReader:
         for uid, links in result.projection_links.items():
             if links:
                 self.links[uid] = links
+
+    def _host_events(self) -> list[Any]:
+        """The host events a host joiner reads (``_host.HostPlan``), one per event id; the
+        verifier hands the export's over before the first run is annotated."""
+        if self._host_event_list is None:
+            evidence = getattr(self.host_joiner, "evidence", None)
+            events = getattr(evidence, "events", None) or ()
+            self._host_event_list = list({e.event_id: e for e in events}.values())
+        return self._host_event_list
+
+    def _note_host_events(self, traced: Mapping[str, str]) -> None:
+        """One run's host join (its rule per event id): an event it links, lists as
+        unexplained or counts is in a run; ``H4-other-process`` is another process with
+        the agent's pids and ``H4-other-lineage`` its descendant; an event of its sources
+        it did not trace lay in its window outside the agent's scope; ``outside_run``
+        says nothing."""
+        for event in self._host_events():
+            rule = traced.get(event.event_id)
+            if rule is None:
+                self._host_out_of_scope.add(event.event_id)
+            elif rule in ("H4-other-process", "H4-other-lineage"):
+                self._host_other_process.add(event.event_id)
+            elif rule != "outside_run":
+                self._host_in_run.add(event.event_id)
+
+    def unattributed_host_events(self) -> list[dict[str, Any]] | None:
+        """Spec 056 §4.3 "Host events in no run", once every run is annotated: each host
+        event no run lists (linked or unexplained) or counts (sandbox-scope, unlinked),
+        in time order, with its reason: ``other_process`` (inside a run's window with the
+        agent's pids but another process, or its descendant), ``out_of_scope`` (inside a
+        run's window, outside the agent's scope) or ``no_run`` (inside no run's window,
+        the clock margins applied; every event when no run was reconstructed). ``None``
+        without a host source. Captured activity is never dropped silently."""
+        if not self._host_configured():
+            return None
+        out: list[dict[str, Any]] = []
+        for event in sorted(self._host_events(), key=lambda e: (e.time_ns, e.event_id)):
+            if event.event_id in self._host_in_run:
+                continue
+            if event.event_id in self._host_other_process:
+                reason = "other_process"
+            elif event.event_id in self._host_out_of_scope:
+                reason = "out_of_scope"
+            else:
+                reason = "no_run"
+            out.append({
+                "event_id": event.event_id, "source": event.source,
+                "event_class": event.event_class, "pid": event.pid,
+                "time_ns": event.time_ns, "reason": reason,
+            })  # fmt: skip
+        return out
 
 
 def _lean(inp: Mapping[str, Any]) -> dict[str, Any]:

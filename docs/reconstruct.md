@@ -132,7 +132,16 @@ gives `partial`; otherwise any `unverified` gap or skipped check gives
 
 Exit codes: `0` every run and scope is complete; `1` anything is `partial`
 or `unverified`, or no run was reconstructed; `2` an input, usage or
-internal error.
+internal error, including a content store that refuses the reader
+(AccessDenied, an expired token, a local permission error).
+
+**Reading objects.** A transient read failure (throttling, a 5xx, a reset
+connection, a timeout, or a body that stops streaming) is retried up to 5
+times, with about 3 s of backoff in all, before the object reads as
+`missing_object` (`read_error`). An object the store does not hold reads as
+`missing_object` (`absent`) at once, or after `--wait-for-objects`. A store
+that refuses the reader's credentials is a setup error (exit 2): the reader
+never reports objects as missing when it was not allowed to read them.
 
 **What a complete verdict does not say.** It covers only calls made through
 httpx, httpx2 or aiohttp to a matched endpoint, in processes whose records

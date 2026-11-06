@@ -16,10 +16,188 @@ reconstruction instead of disappearing from it, the release images carry
 an accurate description, the production Compose setup refuses a content
 backend it cannot serve, and preflight passes on Docker Desktop. A new
 [production setup](docs/production-setup.md) page gives one tested recipe
-for an agent, a production Node and the eBPF emitter. Capture, protection
-and delivery of model calls behave as in 0.11.0.
+for an agent, a production Node and the eBPF emitter.
+
+A fault-injection run then found that a destination answering 403 made the
+Node drop data it had already acknowledged, with no gap in the record.
+0.11.1 retries credential and availability failures without dropping
+anything, and when a destination refuses the bytes themselves (400, 409,
+413, 422) the Node writes a durable `destination_rejected` loss record
+before giving up (capture contract 1.8.0). Re-run under a 503/403/slow
+destination, a permanent 400, agent kills, a Node SIGKILL, partitions and
+destination outages, every record was delivered or reported lost, with
+none silently missing. The release also adds `python -m fabric.wire drain`
+for spools with no agent running, retries transient store reads in the
+verifier, and keeps Fabric's own warnings off the agent's stderr.
+
+### Added
+
+- **The release names every GHCR package it publishes.** Legacy images
+  (`fabric-redteam-runner`, `fabric-presidio-sidecar`, ...) stayed on GHCR
+  after their sources were removed, and nothing said which packages are
+  current. `release-policy.json` now lists them in `ghcr_packages`
+  (`fabric-otelcol`, `fabric-host-emitter`, `charts/fabric`), and the
+  release qualification runs `scripts/release/check_ghcr_packages.py`
+  before anything is published. It reads every workflow and fails on a push
+  outside the list, a push it cannot name, a `packages: write` job that
+  publishes nothing it recognizes, or a listed package that no workflow
+  publishes. `docs/verify-release.md` lists what a release publishes;
+  anything else on GHCR is stale.
+
+### Changed
+
+- **Contract: `fabric.run-reconstruction/v1` (spec 056 revision 6).**
+  `chains.decisions` may be `not_observed` (without reasons) only for a run
+  with no captured model call (no exchange); the validator refuses it for a
+  run with one. A consumer that assumed every run has at least one exchange
+  should expect runs that list only effects.
+- **The `actions` view lists non-model HTTP requests.** Requests the
+  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
+  not attributed)`, and the footer counts them, so a request a tool made
+  never reads as missing.
+- **`FABRIC_COMPOSE_EXTRA`** (`deploy/compose`): your own Compose override
+  files, appended last by `make up-prod` and `make up-prod-groups`, so a
+  site change such as trusting a private CA for the destination never edits
+  a shipped file.
 
 ### Fixed
+
+- **`python -m fabric.wire drain` delivers a spool's backlog with no agent
+  running.** An agent delivers its backlog only while it runs, and it waits
+  at most its 2 s exit budget at exit. In the reliability run, thousands of
+  records waited on the spool volume after the last process exited, and a
+  one-shot container with no later run on that volume would never have
+  delivered them. The drainer reads the agent's own environment, builds the
+  same spool sender, takes the spool lock once no live process holds it, and
+  delivers exactly as an agent would. It installs no capture, even under
+  `FABRIC_WIRE_AUTOLOAD=1`, which now skips the drainer process.
+  `--until-empty` exits 0 when nothing deliverable is left, or 1 at
+  `--timeout` with the records kept on disk. Without it, the drainer runs as
+  a sidecar until SIGTERM. One JSON summary line goes to stdout.
+  `docs/production-setup.md` ("One-shot agent containers") and
+  `docs/wire-capture-deployment.md` ("Draining a spool with no agent
+  running": one-shot step, Kubernetes native sidecar, preStop) show how to
+  run it.
+
+- **Fabric's exporter warnings no longer appear on the agent's stderr.**
+  While the Node was down, the capture exporter's "Transient error
+  ConnectionError encountered while exporting span batch, retrying" warnings
+  reached the agent's root logger and, with no logging configured, Python's
+  last-resort stderr handler. An agent's output therefore differed with
+  capture on and off (107 lines in the reliability run). Records emitted
+  inside a Fabric export, which the SDK already sanitized, now go only to the
+  non-propagating `fabric.otel` logger. Opt in by adding a handler to it or
+  by setting `FABRIC_OTEL_DIAGNOSTICS=stderr`. The host's own OpenTelemetry
+  exporters log exactly as before. A live test runs an agent through a Node
+  outage with capture on and off and compares its stderr byte for byte.
+
+- **A destination 403 no longer drops data the Node had acknowledged.** The
+  pinned upstream OTLP/HTTP exporter retries only 429, 502, 503 and 504.
+  Every other status, including 401, 403, 404 and 500, was a permanent
+  error, and the queue dropped the batch ("Exporting failed. Dropping
+  data."). In the 0.11.1 reliability run, a 40-second 403 removed 30 whole
+  agent runs, and nothing reported the gap. The Node's `noredirect` client
+  middleware, which fabric-gate already requires on every OTLP/HTTP exporter,
+  is now the destination response policy:
+  - Credential, availability and configuration failures (401, 403, 404,
+    405, 407, 408, 410, 5xx, any status not listed here) are retried with
+    backoff and never dropped. A full queue back-pressures the agent spools.
+  - A permanent rejection (400, 409, 413, 422) is released only after a
+    `destination_rejected` loss record for each source position in the batch
+    is fsynced to a loss outbox on the queue volume (`loss_outbox.directory`,
+    set in every shipped Node config and in the Helm chart when persistence is
+    on). The outbox delivers these records once the destination accepts again,
+    and `fabric.reconstruct` reports the affected runs as `partial` with a
+    `loss` gap, including an epoch whose every record was rejected. Without an
+    outbox, or when a loss cannot be recorded, the batch is retried instead.
+  - New metrics: `fabric_delivery_held_responses`,
+    `fabric_delivery_rejected_batches`, `fabric_delivery_lost_positions`,
+    `fabric_delivery_loss_records_pending` (also logged while above 0) and
+    `fabric_delivery_loss_records_delivered`.
+  - Capture contract 1.8.0 (additive) adds the loss reason
+    `destination_rejected`. Only the Node writes it: fabricguard strips it
+    from a source's loss record.
+  - The content exporter already retried every S3 failure except
+    PreconditionFailed; new tests pin that for AccessDenied, ExpiredToken,
+    InvalidAccessKeyId, SignatureDoesNotMatch and NoSuchBucket.
+  - New Compose e2e tests cover a 403 window (everything is delivered after
+    recovery) and a permanent 400 (the run is reported lost).
+
+- **The reader no longer reports stored S3 objects as missing after one
+  failed read.** `python -m fabric.reconstruct` read each object once. In the
+  reliability run, 30 objects that were in S3 came back
+  `missing(read_error)` and the run read `partial(missing_object)`. botocore
+  retries the GetObject call, but not a body that stops streaming. Reads now
+  retry transient failures (throttling, 5xx, a reset connection, a timeout, a
+  streaming error, including wrapped ones) up to 5 times with about 3 s of
+  backoff in all. An absent object (`NoSuchKey`, 404) is still `missing`
+  (`absent`). A reader the store refuses (AccessDenied, ExpiredToken,
+  InvalidAccessKeyId, SignatureDoesNotMatch, a local permission error) is a
+  setup error with exit 2 and fixed text, not a `missing_object` gap; before,
+  an AccessDenied object read as `missing(read_error)`. Unit tests use a fake
+  S3 client.
+
+- **A container's agent process is no longer linked into the previous
+  container's run (spec 056 revision 7).** When agent containers start back
+  to back, the kernel reuses the pid namespace's number, so the next agent
+  has the same `pid_ns` and `ns_pid` as the last one, and its first events
+  fell inside the previous run's window widened by the clock margin. Rule
+  H4 compared only those numbers, so the next agent's exec was also
+  `part_of` the previous run (`process_anchor · tentative`; 4 of 16 runs in
+  the 0.11.1 acceptance run). H4 now also checks the process's identity:
+  an event whose start tick differs from the agent's known start, whose
+  init-namespace pid is not the parent the run's certain anchors name, or
+  that started after one of the agent's own children is another process,
+  outside the run: neither linked nor listed as unexplained. On the
+  acceptance export, no host event appears in more than one run. Three new
+  rule fixtures pin the rule.
+- **That other container's child processes leave the run too.** Its agent
+  forked children inside the previous run's window. They don't carry the
+  agent's pids, so the run listed them as unexplained: 7 execs (3 children,
+  4 grandchildren) in each of 3 runs on the 0.11.1 acceptance export. H4
+  now follows an other process's descendants along the recorded parent-pid
+  chain (the H3 walk: same host, init-namespace pids, start ticks) and moves
+  them out of the run with it (trace `H4-other-lineage`). They are then
+  listed in `unattributed_host_events` with reason `other_process`. The
+  walk starts only where identity proves the parent pid can't name the
+  agent: its init pid differs from the one the anchors name, or it started
+  after the agent. Time alone never moves an event out of a run. New rule
+  fixture `edge-other-process-children`.
+- **Captured host activity that belongs to no run is listed, not dropped.**
+  A host event that no run linked, listed as unexplained or counted was
+  silently missing from the report: an event outside every run's window
+  (65 of 471 on the 0.11.1 acceptance export), and, after the H4 identity
+  fix above, a later container's events with a run's agent pids (9). The
+  report now has a top-level `unattributed_host_events` (count per reason
+  `other_process`, `out_of_scope` or `no_run`, and the first 64 events), the
+  `actions` view ends with a `session` footer of those counts, and
+  `actions --json` lists every one. It is omitted with `--run` and bounds
+  no run verdict. Capture contract 1.7.0 (additive); spec 056 §4.3 "Host
+  events in no run".
+- **A transcript manifest no longer shows a failed item as pending.** With
+  `durability="inline"`, two inline workers can write two revisions of one
+  manifest at once: decision close's (the item still pending, its object
+  write past the 50 ms deadline) and the settlement's (the item failed or
+  stored). If the older write landed last, the destination kept the stale
+  `pending` revision, and `flush()` still reported nothing pending. The
+  writer now orders writes per manifest and skips a revision older than
+  the one already written. The flaky
+  `test_runtime_manifests_validate_against_contract` was a separate test
+  timing issue: an inline manifest write past the deadline finishes in the
+  background, so the test now waits on `flush()` instead of `close()`.
+  Both cases have deterministic tests.
+- **Preflight warns when the test-only S3 store is enabled.**
+  `preflight-prod.sh` now prints a warning on every run whose
+  `FABRIC_COMPOSE_EXTRA` (environment or `.env`) names
+  `docker-compose.content-s3-local-tls.yml`, saying it is a test-only store
+  that must never hold real content. It is a warning, not a failure, so the
+  [production setup](docs/production-setup.md) test recipe still runs.
+- **A flaky SDK test.** `test_wire_spool.py::test_node_mode_delivers_content_then_span_and_empties_the_spool`
+  read `spool_bytes` right after `flush()`. `flush()` returns once its
+  records are delivered, but the spool releases a delivered record's bytes
+  from its count only after the directory fsync that follows the unlink, so
+  the count could briefly still include it. The test now waits for the count
+  to reach zero. Delivery itself is unchanged.
 
 - **Processes with no model call no longer vanish from a reconstruction
   (spec 056 revision 6).** A process recording with Fabric on whose effects
@@ -80,22 +258,6 @@ and delivery of model calls behave as in 0.11.0.
   policy emits, naming them locally for the viewer; its honesty caveats are
   unchanged.
 
-### Changed
-
-- **Contract: `fabric.run-reconstruction/v1` (spec 056 revision 6).**
-  `chains.decisions` may be `not_observed` (without reasons) only for a run
-  with no captured model call (no exchange); the validator refuses it for a
-  run with one. A consumer that assumed every run has at least one exchange
-  should expect runs that list only effects.
-- **The `actions` view lists non-model HTTP requests.** Requests the
-  `http.nonmodel` hook recorded appear as `http` rows marked `(recorded;
-  not attributed)`, and the footer counts them, so a request a tool made
-  never reads as missing.
-- **`FABRIC_COMPOSE_EXTRA`** (`deploy/compose`): your own Compose override
-  files, appended last by `make up-prod` and `make up-prod-groups`, so a
-  site change such as trusting a private CA for the destination never edits
-  a shipped file.
-
 ### Documentation
 
 - **[Production setup](docs/production-setup.md)** (new). One
@@ -151,6 +313,39 @@ and delivery of model calls behave as in 0.11.0.
   spool on a filesystem that does not enforce locks (a Docker Desktop bind
   mount) can still declare each other's live epochs orphaned; use a named
   volume.
+
+- **Model-call latency while a backlog replays.** In the 0.11.1 reliability
+  run, a few model calls stalled for 0.5 to 3.5 s (4 of 2,400 calls in S3 and
+  11 of 3,280 in S4, worst 3.53 s), all in the process that was replaying a
+  backlog. The median did not change. No path on the model-call thread
+  waits on the replay. The call allocates a position and puts the exchange on
+  a non-blocking queue. Spool I/O, decryption, span rebuilding and export run
+  on the capture worker and spool sender threads, and neither holds a lock
+  the call path needs during I/O. The stalls did not recur in the
+  re-run on this branch, which had a stack watchdog that dumps every thread
+  of a call over 400 ms:
+  - S3 replay windows: p50 5.7 ms, p95 37 ms, max 170 ms, against 4.1, 34
+    and 57 ms before the faults.
+  - S4 replay windows: p50 3.1 ms, p95 27 ms, max 117 ms, against 5.1, 24
+    and 67 ms.
+  - Locally, a 4,000-record node-mode replay with every core saturated:
+    p95 24 ms and max 109 ms, against 20 and 109 ms with capture off.
+
+  The remaining explanation is CPU and GIL contention from the replay thread
+  on a host whose CPU is already saturated. In the chaos run, Docker
+  Desktop's few vCPUs also ran the Node, S3, the sink and the emitter. This
+  is not fixed. Throttling replay would trade delivery time for latency, and
+  nothing measured here justifies that.
+
+- **Node delivery policy edges.** A destination that answers 2xx with an
+  OTLP `partial_success` still loses the items it rejected (the upstream
+  exporter logs the count; it does not say which items, so no loss record is
+  written). Loss records are delivered with the exporter's most recent
+  request headers (static headers and bearer tokens). Request-signing
+  authentication leaves them pending, and the pending metric says so. Markers
+  and heartbeats in a permanently rejected batch get no loss record of their
+  own. The verifier still detects their absence as `tail_unverified`, an
+  unclosed run or an unsealed segment.
 
 ## [0.11.0] - 2026-11-05
 

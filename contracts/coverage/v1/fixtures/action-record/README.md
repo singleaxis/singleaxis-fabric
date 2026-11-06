@@ -293,7 +293,7 @@ comes from `/proc/<pid>/stat` in ticks, a sensor's in nanoseconds.
 | H1 | A successful exec event with the effect's pid and parent pid and a start time in the same tick as `process_start_ns` (both present) | effect `corroborated_by` → `event`, `process_anchor`, `certain`. A later exec of the same process (same pid, parent and start) is lineage at depth 0 |
 | H2 | No start time on one side; exactly one such exec event within 100 ms + both clock uncertainties of the effect's start, or several that form one exec chain (below) | `process_anchor`, `tentative`, on the match or the chain's first exec. Two or more that are not one chain: `ambiguous` with all; the effect counts as not anchored (`anchor_missing`) |
 | H3 | A host event whose parent-pid chain reaches an anchored child, same host and namespace, times not earlier than its parent's, start times non-decreasing, depth ≤ 16, ≤ 4096 events per anchor; connect and file events of a process in the chain, and of an unseen pid whose parent is in the chain (a child forked without exec, which joins the chain one level down) | event `part_of` → `attempt` the effect, `process_lineage`, the anchor's confidence. An event past a bound is not linked, is counted in `attribution.lineage_truncated` and is unexplained |
-| H4 | A host event of the agent's own pid inside the run window | event `part_of` → `run`, `process_anchor`; `certain` only when the event carries the agent's start time and it matches, else `tentative`. A connect to a peer no exchange's endpoint resolves to is also unexplained |
+| H4 | A host event of the agent's own pid inside the run window whose identity does not contradict the agent's (section 9.2 "Agent identity") | event `part_of` → `run`, `process_anchor`; `certain` only when the event carries the agent's start time and it matches, else `tentative`. A connect to a peer no exchange's endpoint resolves to is also unexplained |
 
 **Exec chain** (H2). A shell that execs its command in place (`bash -c
 "cmd"`; `dash` for the last command of a list) gives several successful
@@ -472,6 +472,15 @@ M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with 
 - **H4** compares the agent's pid with the event's `ns_pid` (recorded, and the agent's
   namespace equals the event's) or `pid` (declared_same). With no agent namespace, H4
   links nothing from a recorded source.
+- **Agent identity** (v0.11.2, spec 056 revision 7). A matched event is another process,
+  neither linked nor unexplained (trace `H4-other-process`), when its start tick differs
+  from `agent.process_start_ns`; else, from a recorded source, when its `pid` is not the
+  `ppid` of a `certain` anchor of one of the agent's effects; else when it started in a
+  later tick than the agent's earliest child. Such a process cannot have lived while the
+  agent did (a reused pid namespace number or pid), so it is outside the run. So are its
+  descendants by the H3 walk from it (trace `H4-other-lineage`), when its `pid` is not
+  the anchors' init pid (recorded) or it started in a later tick than the agent: its pid
+  then never names the agent. Time alone moves nothing out of a run.
 - **H3** follows the init-namespace pair (`pid`, `ppid`) from the anchor event's `pid`, on
   the same host, so lineage crosses a nested pid namespace. Exit evidence of an anchored
   effect applies to its anchor's init pid.
@@ -514,6 +523,10 @@ M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with 
 | `edge-quiet-host-epoch` | A1, H1 | A source with a manifest and heartbeats only: complete |
 | `edge-declared-source-empty` | A1, H1 | A declared source that delivered nothing: `source_gap` |
 | `edge-sandbox-peer-port` | H4 | `--sandbox-peer ADDRESS:PORT` on a shared address |
+| `edge-pid-namespace-reuse` | A1, H1, H4 | Back-to-back containers reuse the agent's `pid_ns` and `ns_pid`; their init pids differ from the anchor's parent: other processes, outside the run |
+| `edge-agent-started-after-child` | A1, H4 | No anchor: a process with the agent's pids that started after the agent's child is another process |
+| `edge-other-process-children` | A1, H1, H4 | The next container's agent forks children in the window: its child's exec and connect and its grandchild's exec are outside the run; an unrelated process stays unexplained |
+| `edge-agent-start-differs` | H4 | The agent's start time is known: same tick certain, no start time tentative, another tick another process |
 | `edge-scope-late` | A1, H1 | Upstream loss `scope_late` in the window: `source_gap` |
 | `edge-sandbox-unlinked` | A1, H1 | Unreported containers: counted, not unexplained |
 | `edge-sandbox-before-effect` | A1, H1, H5 | An event of the created id before the effect: not linked |

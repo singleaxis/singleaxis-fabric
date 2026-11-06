@@ -1093,9 +1093,10 @@ def test_runtime_manifests_validate_against_contract(tmp_path: Path) -> None:
 
     broken = BrokenStore(root=str(tmp_path / "b" / "store"), tenant_id=TENANT)
     cfg = ContentCaptureConfig(store=broken, roles="all", durability="inline")
+    writer = ContentWriter(cfg)
     sink = ContentSink(
         config=cfg,
-        writer=ContentWriter(cfg),
+        writer=writer,
         tenant_id=TENANT,
         agent_id="bot",
         decision_id="d-f",
@@ -1103,8 +1104,92 @@ def test_runtime_manifests_validate_against_contract(tmp_path: Path) -> None:
     )
     sink.capture("interaction.payload", "x")
     sink.close(decision_span=None)
-    manifest_path = next((tmp_path / "b" / "store" / TENANT / "manifests").glob("*.json"))
-    jsonschema.validate(json.loads(manifest_path.read_text()), schema)
+    # An inline manifest write past the 50 ms deadline completes in the background
+    # (spec 049 §7.1): flush is what waits for it, not close.
+    assert writer.flush(timeout_s=10).pending == 0
+    manifest = _read_manifest(tmp_path / "b" / "store")
+    assert [item["status"] for item in manifest["items"]] == ["failed"]
+    jsonschema.validate(manifest, schema)
+    writer.close()
+
+
+def _inline_sink(store: Any, decision_id: str) -> tuple[ContentSink, ContentWriter]:
+    cfg = ContentCaptureConfig(store=store, roles="all", durability="inline")
+    writer = ContentWriter(cfg)
+    sink = ContentSink(
+        config=cfg,
+        writer=writer,
+        tenant_id=TENANT,
+        agent_id="bot",
+        decision_id=decision_id,
+        roles_enabled=frozenset(CONTENT_ROLES),
+    )
+    return sink, writer
+
+
+def test_a_slow_inline_manifest_lands_after_close_and_flush_waits(tmp_path: Path) -> None:
+    """The CI flake of test_runtime_manifests_validate_against_contract, made
+    deterministic: the manifest write outlasts the inline deadline, so close() returns
+    with it in flight (no file yet); flush() waits for it, and the failed manifest
+    lands. Never skipped, never dropped."""
+    release = threading.Event()
+
+    class SlowManifest(LocalFilesystemContentStore):
+        def put_object(self, descriptor: Any, content: str) -> Any:
+            raise OSError("down")
+
+        def write_manifest(self, manifest: Any, **kwargs: Any) -> str:
+            release.wait(10)
+            return super().write_manifest(manifest, **kwargs)
+
+    root = tmp_path / "store"
+    sink, writer = _inline_sink(SlowManifest(root=str(root), tenant_id=TENANT), "d-slow")
+    sink.capture("interaction.payload", "x")
+    sink.close(decision_span=None)
+    assert not list((root / TENANT / "manifests").glob("*.json"))
+    assert writer.flush(timeout_s=0.2).pending == 1  # in flight, reported, not lost
+    release.set()
+    assert writer.flush(timeout_s=10).pending == 0
+    assert [i["status"] for i in _read_manifest(root)["items"]] == ["failed"]
+    writer.close()
+
+
+def test_an_older_manifest_revision_never_replaces_a_newer_one(tmp_path: Path) -> None:
+    """Two inline workers write two revisions of one manifest: close's (the item still
+    pending: its object write outlasted the deadline) and the settlement's (the item
+    failed). The older write is slow; if it landed last, the destination would show
+    the failed item as pending, silently. Manifest writes are ordered by revision."""
+    failing, release = threading.Event(), threading.Event()
+    older_entered, newer_landed = threading.Event(), threading.Event()
+
+    class Racy(LocalFilesystemContentStore):
+        def put_object(self, descriptor: Any, content: str) -> Any:
+            failing.wait(10)  # past the inline deadline: the item is pending at close
+            raise OSError("down")
+
+        def write_manifest(self, manifest: Any, **kwargs: Any) -> str:
+            statuses = [item["status"] for item in manifest["items"]]
+            if statuses == ["pending"]:
+                older_entered.set()
+                release.wait(10)  # the older revision is slow to land
+            written = super().write_manifest(manifest, **kwargs)
+            if statuses == ["failed"]:
+                newer_landed.set()
+            return written
+
+    root = tmp_path / "store"
+    sink, writer = _inline_sink(Racy(root=str(root), tenant_id=TENANT), "d-order")
+    sink.capture("interaction.payload", "x")
+    sink.close(decision_span=None)  # revision 1 (pending) goes to an inline worker
+    assert older_entered.wait(10)  # ... and is being written
+    failing.set()  # the object write fails: the settlement submits revision 2 (failed)
+    # Unordered, revision 2 lands now and revision 1 after it; ordered, revision 2 waits
+    # for revision 1 (this wait times out). The outcome does not depend on the wait.
+    newer_landed.wait(1.0)
+    release.set()
+    assert writer.flush(timeout_s=10).pending == 0
+    assert [i["status"] for i in _read_manifest(root)["items"]] == ["failed"]
+    writer.close()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

@@ -36,12 +36,21 @@
 extensions:
   health_check:
     endpoint: 0.0.0.0:13133
-  # Spec 048 H1: HTTP client middleware that refuses redirects. Every
-  # otlp_http exporter lists it (fabric-gate refuses one that does not): a
-  # 3xx from the destination is a retryable failure, so the batch and its
-  # Authorization header are never re-sent to another location and a
-  # redirect to a login page is never a successful export.
-  noredirect: {}
+  # Destination response policy. Every otlp_http exporter lists it
+  # (fabric-gate refuses one that does not). Spec 048 H1: a 3xx from the
+  # destination is a retryable failure, so the batch and its Authorization
+  # header are never re-sent to another location and a redirect to a login
+  # page is never a successful export. A credential, availability or
+  # configuration failure (401, 403, 404, 500, ...) is retried, never
+  # dropped, while the persistent queue has room. A permanent rejection
+  # (400, 409, 413, 422) is released only after a destination_rejected loss
+  # record for each of its source positions is in the loss outbox, which
+  # delivers it once the destination accepts again. The outbox lives on the
+  # queue volume; fabric_delivery_loss_records_pending > 0 means some are
+  # still waiting.
+  noredirect:
+    loss_outbox:
+      directory: /var/lib/fabric-node/queue/loss-outbox
   file_storage/fabric:
     directory: /var/lib/fabric-node/queue
     timeout: 1s
