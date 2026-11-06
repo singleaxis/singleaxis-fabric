@@ -102,14 +102,22 @@ FABRIC_OTLP_URL="http://127.0.0.1:$OTLP_PORT" FABRIC_DEMO_OUT="$RUN_OUT" \
   "$PY" agent.py | tee "$RUN_OUT/decision.json.tmp"
 "$PY" -c 'import pathlib,sys; root=pathlib.Path(sys.argv[1]); lines=(root/"decision.json.tmp").read_text().splitlines(); (root/"decision.json").write_text(lines[-1])' "$RUN_OUT"
 
+# The demo sink's record count. The JSON body is read into a variable and parsed
+# from argv: nothing fetched over the network is piped into an interpreter.
+sink_count() {
+  local body
+  body="$(curl -sf "http://127.0.0.1:$SINK_PORT/count")"
+  python3 -c 'import json,sys; print(json.loads(sys.argv[1])["count"])' "$body"
+}
+
 echo "==> waiting for sink drain"
 for i in $(seq 60); do
-  N=$(curl -sf "http://127.0.0.1:$SINK_PORT/count" | python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])')
+  N=$(sink_count)
   [ "$N" -ge 5 ] && break
   sleep 0.5
 done
 sleep 2  # audit tailer poll interval
-N=$(curl -sf "http://127.0.0.1:$SINK_PORT/count" | python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])')
+N=$(sink_count)
 echo "    sink records: $N"
 
 docker logs "$COL_ID" > "$RUN_OUT/collector.log" 2>&1 || true

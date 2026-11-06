@@ -1,27 +1,40 @@
 version: 2
+# One entry per live ecosystem; scripts/tests/test_supply_chain_pins.py fails
+# when a manifest directory in the repository is not covered here, or when an
+# entry names a directory that no longer exists.
+#
+# Single-maintainer project: cap per-ecosystem PRs at 5 and group related
+# updates to reduce churn. The 7-day cooldown applies to version updates only;
+# security updates are never delayed.
 updates:
+  # Workflows and local composite actions. Every `uses:` is pinned to a full
+  # commit SHA with a `# vX.Y.Z` comment; Dependabot updates both.
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels: ["dependencies", "github-actions"]
 
-  # Python packages — one entry per pyproject.toml location.
-  # Single-maintainer project: cap per-ecosystem PRs at 5 and group
-  # dev-only deps to reduce churn.
-
-
-
-
-
-  - package-ecosystem: "pip"
-    directory: "/sdk/python"
+  # uv.lock projects. CI and release jobs install sdk/python/uv.lock with pip
+  # --require-hashes (scripts/ci/install-python-locked.sh).
+  - package-ecosystem: "uv"
+    directories:
+      - "/sdk/python"
+      - "/examples/reference-agent"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "sdk"]
+    labels: ["dependencies", "python"]
     groups:
+      opentelemetry:
+        patterns: ["opentelemetry-*"]
       dev-dependencies:
         dependency-type: "development"
 
@@ -29,39 +42,89 @@ updates:
     directory: "/examples/harness-smoke"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels: ["dependencies", "python", "examples"]
     groups:
       dev-dependencies:
         dependency-type: "development"
 
-  - package-ecosystem: "pip"
-    directory: "/examples/reference-agent"
+  - package-ecosystem: "npm"
+    directory: "/sdk/typescript"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
-    labels: ["dependencies", "python", "examples"]
+    labels: ["dependencies", "typescript", "sdk"]
     groups:
       dev-dependencies:
         dependency-type: "development"
 
-  - package-ecosystem: "gomod"
-    directory: "/tools/fabricctl"
+  # License-scan project: the optional @aws-sdk/client-s3 peer and the pinned
+  # license scanner. Its client-s3 range must equal the SDK's peer range, so
+  # only the lockfile moves for it (the scanner's exact pin is raised).
+  - package-ecosystem: "npm"
+    directory: "/scripts/license/s3-peer"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
-    labels: ["dependencies", "go"]
+    versioning-strategy: "increase-if-necessary"
+    labels: ["dependencies", "license-scan"]
+    groups:
+      license-scan:
+        patterns: ["*"]
 
+  # Go modules. The Collector modules are built together by OCB
+  # (components/otel-collector-fabric/ocb-config.yaml), so Collector core and
+  # contrib bumps arrive as one grouped PR; ocb-config.yaml's versions are
+  # raised by hand in the same PR.
   - package-ecosystem: "gomod"
-    directory: "/components/otel-collector-fabric/processor/fabricguardprocessor"
+    directories:
+      - "/tools/fabricctl"
+      - "/components/host-emitter"
+      - "/components/otel-collector-fabric/gate"
+      - "/components/otel-collector-fabric/hostrecords"
+      - "/components/otel-collector-fabric/processor/fabricguardprocessor"
+      - "/components/otel-collector-fabric/receiver/auditreceiver"
+      - "/components/otel-collector-fabric/exporter/fabriccontentexporter"
+      - "/components/otel-collector-fabric/extension/noredirectextension"
+      - "/components/otel-collector-fabric/extension/fabricenvelopeextension"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     labels: ["dependencies", "go"]
+    groups:
+      otel-collector:
+        patterns:
+          - "go.opentelemetry.io/collector*"
+          - "github.com/open-telemetry/opentelemetry-collector-contrib/*"
+      opentelemetry-go:
+        patterns: ["go.opentelemetry.io/otel*"]
 
+  # Base images, pinned by digest.
   - package-ecosystem: "docker"
-    directory: "/components/otel-collector-fabric"
+    directories:
+      - "/components/otel-collector-fabric"
+      - "/components/host-emitter"
+      - "/examples/redaction-service"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
-    labels: ["dependencies", "docker", "otel-collector"]
+    labels: ["dependencies", "docker"]
+
+  - package-ecosystem: "docker-compose"
+    directory: "/deploy/compose"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "docker"]
