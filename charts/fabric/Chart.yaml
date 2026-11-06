@@ -5,8 +5,8 @@ description: |
   observable AI activity. Capture, protect, and deliver without changing
   or delaying the monitored system.
 type: application
-version: 0.11.0
-appVersion: "0.11.0"
+version: 0.11.1
+appVersion: "0.11.1"
 kubeVersion: ">=1.29.0-0"
 keywords:
   - ai-observability
