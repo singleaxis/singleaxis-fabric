@@ -47,6 +47,7 @@ jobs:
               - 'scripts/qualification/run_synthetic_agent_pilot.py'
               - 'scripts/qualification/synthetic_agent_tool.py'
               - 'scripts/qualification/verify_synthetic_sink_readback.py'
+              - 'examples/agent-orchestration/**'
               - '.github/workflows/e2e.yml'
       # Manual dispatch has no diff context for paths-filter — always run the
       # smoke rather than silently skipping the only end-to-end gate.
@@ -63,7 +64,7 @@ jobs:
     name: kind cluster install + smoke
     needs: detect
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30  # +5 for the agent-orchestration demo
     env:
       KIND_CLUSTER: fabric-e2e-${{ github.run_id }}-${{ github.run_attempt }}
       NAMESPACE: fabric-system
@@ -353,6 +354,21 @@ jobs:
             ${{ runner.temp }}/fabric-node-image-id.txt
           if-no-files-found: warn
           retention-days: 14
+
+      # The agent-orchestration demo (examples/agent-orchestration) against the
+      # Node image built above, so the demo cannot rot: run.sh as shipped, and
+      # build_journal.py's assertions are its gate.
+      - name: Agent-orchestration demo
+        if: needs.detect.outputs.relevant == 'true'
+        env:
+          FABRIC_DEMO_ISOLATED: "1"
+          IMG: ${{ env.COLLECTOR_IMAGE }}
+        run: |
+          python -m venv "${RUNNER_TEMP}/demo-venv"
+          "${RUNNER_TEMP}/demo-venv/bin/python" -m pip install -q -e './sdk/python[otlp]'
+          PY="${RUNNER_TEMP}/demo-venv/bin/python" \
+            FABRIC_DEMO_OUTPUT_ROOT="${RUNNER_TEMP}/demo-runs" \
+            bash examples/agent-orchestration/run.sh
 
       - name: Diagnostics
         if: failure() && needs.detect.outputs.relevant == 'true'

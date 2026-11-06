@@ -201,7 +201,9 @@ python scripts/contracts/validate_capture_contracts.py
     `effects` and `corroboration`, each `complete`, `partial`, `unverified`
     or `not_observed` with its reasons (`$defs/chainReason`: a gap type of
     this report or a coverage reason). `decisions` is the exchange-only
-    verdict and is never `not_observed`. A `partial` or `unverified` chain
+    verdict; it is `not_observed`, without reasons, only for a run with no
+    captured exchange whose record verifies (an effects-only process, spec
+    056 rev 6). A `partial` or `unverified` chain
     bounds the run verdict: a run is never `complete_*` while one is.
   - `attribution`: link counts by basis, the unattributed effects and the
     unexplained host events (the first 64 with the full count), the tool

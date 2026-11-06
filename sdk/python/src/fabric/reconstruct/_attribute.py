@@ -98,6 +98,10 @@ MIN_MATCH_BYTES: Final = 16
 EXEC_POINT: Final = "exec.subprocess"
 REMOTE_SANDBOX_POINT: Final = "remote.sandbox"
 EFFECT_POINTS: Final = frozenset({EXEC_POINT, REMOTE_SANDBOX_POINT})
+#: Non-model HTTP (053 §5.4) is recorded but is not an effect in spec 056: no rule
+#: attributes it to a tool call or joins a host ``connect`` to it. The action view lists
+#: its requests as recorded and unattributed, so none reads as silently missing.
+HTTP_POINT: Final = "http.nonmodel"
 #: The body role whose text A1 compares with the tool result, per effect capture point.
 OUTPUT_ROLES: Final = {EXEC_POINT: "terminal.stdout", REMOTE_SANDBOX_POINT: "remote.result"}
 # The evidence type a remote sandbox record carries (§7.3.3 (k)); the action view reads it.
@@ -858,6 +862,7 @@ class _RunReader:
         self.effect_records = [
             r for r in self.records if _point_id(r.span.attributes) in EFFECT_POINTS
         ]
+        self.http_records = [r for r in self.records if _point_id(r.span.attributes) == HTTP_POINT]
         self.keys = sorted({x.source for x in run.members} | {r.source for r in self.records})
         self.channels = self._channels()
         self.withheld_privacy = False
@@ -908,6 +913,11 @@ class _RunReader:
         record_positions = {(r.source_id, r.source_epoch, r.source_sequence) for r in self.records}
         decision_gaps = [g for g in gaps if not _record_gap(g, record_positions)]
         decisions = decisions_chain(decision_gaps, checks)
+        if not exchanges and decisions["verdict"] == "complete":
+            # An effects-only process (a tool worker) whose epoch verifies made no model
+            # call: its decisions were not observed, never ``complete`` (§4.5). A gap keeps
+            # its partial or unverified verdict: a lost position may have been a model call.
+            decisions = not_observed()
         inp: dict[str, Any] = {
             "run": {
                 "run_id": self.report["run_id"],
@@ -952,7 +962,42 @@ class _RunReader:
             inp["effect_record_gaps"] = record_gaps
         if self.owner.in_process_tools:
             inp["in_process_tools"] = list(self.owner.in_process_tools)
+        if self.owner.keep_runs and self.http_records:
+            inp["http_requests"] = self._http_requests()  # the view only; no rule reads it
         return inp
+
+    def _http_requests(self) -> list[dict[str, Any]]:
+        """One row per recorded non-model HTTP request (attempt): its first record's
+        position and time, the method and the last status code. Shown by the action view
+        as recorded and unattributed; never attributed (``HTTP_POINT``)."""
+        by_attempt: dict[str, list[Any]] = defaultdict(list)
+        for record in self.http_records:
+            by_attempt[record.attempt_uid].append(record)
+        out: list[dict[str, Any]] = []
+        for uid, records in by_attempt.items():
+            first = records[0]
+            item: dict[str, Any] = {
+                "attempt_uid": uid, "event_id": first.event_id,
+                "source_id": first.source_id, "source_epoch": first.source_epoch,
+                "sequence": first.source_sequence, "start_ns": first.span.start_ns,
+            }  # fmt: skip
+            method = next((v for r in records
+                           if isinstance(v := r.span.attributes.get("http.request.method"), str)),
+                          None)  # fmt: skip
+            if method is not None:
+                item["method"] = method
+            status = next((v for r in reversed(records)
+                           if (v := _int(r.span.attributes.get("http.response.status_code")))
+                           is not None), None)  # fmt: skip
+            if status is not None:
+                item["status"] = status
+            host = next((v for r in records
+                         if isinstance(v := r.span.attributes.get("fabric.network.host_id"), str)),
+                        None)  # fmt: skip
+            if host is not None:
+                item["host_id"] = host
+            out.append(item)
+        return out
 
     def _content_mode(self) -> str:
         """The run's content mode as its manifests declare it. A body PROTECT withheld by
@@ -1318,6 +1363,14 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         events.append((event["time_ns"], 2, 0, row))
     for group in sandboxes.values():
         events.append((group["first_ns"], 3, 0, group))
+    for request in inp.get("http_requests", ()):
+        row = {"kind": "http", "attempt_uid": request["attempt_uid"],
+               "event_id": request["event_id"], "sequence": request["sequence"],
+               "attributed": False}  # fmt: skip
+        for key in ("method", "status", "host_id"):
+            if key in request:
+                row[key] = request[key]
+        events.append((request["start_ns"], 1, request["sequence"], row))
     events.sort(key=lambda item: item[:3])
     rows = []
     numbers: dict[str, int] = {}
@@ -1355,6 +1408,9 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         "unexplained_host_events": result.attribution["unexplained_host_events"],
         **{key: result.attribution[key] for key in _M2_SUMMARY if key in result.attribution},
         "output_match": result.attribution["output_match"],
+        # Recorded by http.nonmodel, never attributed nor joined to host connects (spec
+        # 056 defines no rule for it; docs/action-reconstruction.md, Known limitations).
+        "http_requests_unattributed": len(inp.get("http_requests", ())),
         "complete": all(c["verdict"] in ("complete", "not_observed")
                         for c in result.chains.values()),
     }  # fmt: skip

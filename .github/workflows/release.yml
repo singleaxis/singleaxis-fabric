@@ -135,6 +135,17 @@ jobs:
             --output qualification/chart-stamp.json
           helm lint charts/fabric
           helm package charts/fabric --destination qualification/chart
+      - name: Qualify release image titles, descriptions and Dockerfile labels
+        # The same check runs on the metadata-action output and on the pushed
+        # image in publish-image; here it fails the release before anything is
+        # published.
+        run: |
+          python scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json --image fabric-otelcol \
+            --dockerfile components/otel-collector-fabric/Dockerfile
+          python scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json --image fabric-host-emitter \
+            --dockerfile components/host-emitter/Dockerfile
       - name: Qualify exact publication artifacts
         run: |
           chart_package=$(find qualification/chart -maxdepth 1 -name 'fabric-*.tgz' -type f)
@@ -327,14 +338,46 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # AGENTS.md: metadata-action fills the image description from the GitHub
+      # repository description, which must never reach an image. Title and
+      # description come from the release policy and are set explicitly on the
+      # image config (labels) and on the manifest and index (annotations).
+      - name: Image title and description from the release policy
+        id: describe
+        run: |
+          python3 scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json \
+            --image "${{ matrix.image }}" \
+            --dockerfile "components/${{ matrix.component }}/Dockerfile" \
+            --print-github-output >> "${GITHUB_OUTPUT}"
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ env.VERSION }}
             type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+          labels: |
+            org.opencontainers.image.title=${{ steps.describe.outputs.title }}
+            org.opencontainers.image.description=${{ steps.describe.outputs.description }}
+          annotations: |
+            org.opencontainers.image.title=${{ steps.describe.outputs.title }}
+            org.opencontainers.image.description=${{ steps.describe.outputs.description }}
+      - name: Refuse image metadata outside the recorder scope
+        env:
+          LABELS: ${{ steps.meta.outputs.labels }}
+          ANNOTATIONS: ${{ steps.meta.outputs.annotations }}
+        run: |
+          printf '%s\n' "${LABELS}" > "${RUNNER_TEMP}/labels.txt"
+          printf '%s\n' "${ANNOTATIONS}" > "${RUNNER_TEMP}/annotations.txt"
+          python3 scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json \
+            --image "${{ matrix.image }}" \
+            --labels "${RUNNER_TEMP}/labels.txt" \
+            --annotations "${RUNNER_TEMP}/annotations.txt"
       - name: Build and push (multi-arch)
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -345,10 +388,23 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
           provenance: true
           sbom: true
           cache-from: type=gha,scope=release-${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.image }}
+      - name: Check the pushed image's labels and annotations before signing
+        env:
+          REF: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools inspect --raw "${REF}" > "${RUNNER_TEMP}/index.json"
+          docker buildx imagetools inspect "${REF}" --format '{{json .Image}}' \
+            > "${RUNNER_TEMP}/config.json"
+          python3 scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json \
+            --image "${{ matrix.image }}" \
+            --inspect "${RUNNER_TEMP}/index.json" \
+            --inspect "${RUNNER_TEMP}/config.json"
       - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
       - name: Sign image (keyless via Fulcio)
         env:

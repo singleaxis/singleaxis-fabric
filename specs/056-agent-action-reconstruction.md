@@ -2,8 +2,8 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 5
-last_updated: 2026-11-04
+revision: 6
+last_updated: 2026-11-05
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
 related: ["030", "031", "047", "048", "054", "055"]
@@ -11,6 +11,13 @@ related: ["030", "031", "047", "048", "054", "055"]
 
 # 056 — Agent action reconstruction
 
+> **Revision 6** (2026-11-05, v0.11.1): a process that made no model call (a
+> tool worker, or one killed before its first call) is a run of its own,
+> never dropped. Its effects are listed, all unattributed, and its
+> `decisions` chain is `not_observed` when its epoch verifies, or keeps its
+> gap verdict (a lost position may have been a model call). The `decisions`
+> chain is `not_observed` only for a run with no captured exchange (§4.5).
+>
 > **Revision 5** (2026-11-04): review of the M2 plan. Agent scope is a set
 > of cgroup roots, static or the pods of a label selector on the sensor's
 > node, so an agent in a pod can be scoped (§4.3, OD-12). A Kubernetes
@@ -560,10 +567,25 @@ in meaning (050 §3.12), and is never `complete` when any observed chain is
 
 | Chain | `complete` when | `partial` reasons | `not_observed` when |
 |---|---|---|---|
-| `decisions` | The existing run verdict for exchanges is complete | the existing reasons | never; wire capture is the base |
+| `decisions` | The existing run verdict for exchanges is complete | the existing reasons | only for a run with no captured exchange whose record verifies (rev 6, below); never for a run with an exchange |
 | `actions` | Every tool call in a captured response has its result in a later captured request, or the run ended normally with it outstanding and declared | `tool_result_missing`, `exchange_gap` | no tool calls in the run |
 | `effects` | Every record of every enabled effect channel verifies (positions, seals) and no effect is unattributed | `sequence_gap`, `unattributed_effect`, `ambiguous_attribution`; `remote_sandbox` (M2: the run called a declared sandbox host with no remote-sandbox channel, §4.4.1) | no effect channel enabled (the manifest says so) |
 | `corroboration` | A host source verified for the whole run window, every effect with a known pid is anchored, and no host event is unexplained | `source_gap`, `anchor_missing`, `unexplained_host_event` | no host source configured |
+
+**A process with no model call (rev 6).** Every source epoch the export
+delivers is in the report. An epoch whose records (effects) name a run that
+no exchange or scope names (a tool-worker process, or an agent killed
+before its first model call) is a run of its own: under its source fallback
+run id (`source:<source>:<epoch>`) its window is the whole epoch, otherwise
+the span of its records (047 §9.5 rule b). Its gaps and its end are judged
+as an exchange epoch's are: an epoch without a final heartbeat (a killed
+process) is `tail_unverified(no_final_heartbeat)`. Its effects lie in no
+open tool-call window, so each is A4 and `effects` is
+`partial(unattributed_effect)`. Its `decisions` chain is `not_observed`,
+without reasons, when the record verifies; with a gap it keeps the gap's
+verdict, because a lost position may have been a model call. Nothing about
+such a run is ever `complete` by omission. An epoch with no record at all
+stays the silent-loss run it was (every sequence missing).
 
 `attribution` object: counts of `resolved`, `ambiguous` and `unresolved`
 links by method; `unattributed_effects[]` (event ids, at most 64);

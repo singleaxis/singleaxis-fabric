@@ -239,7 +239,7 @@ process start times).
 | `agent.clock_uncertainty_ns` | The epoch's declared clock uncertainty: the window margin of A rules | the capture manifest / `install.config` (050 §1.3) |
 | `content_mode` | `retain_original` or `metadata_only` | the capture policy in the manifest |
 | `output_withheld` | Optional, `true` when PROTECT withheld some effect's output by policy. Only those effects lose A1 (they carry no `stdout`); the flag makes `output_match` read `not_applicable(privacy_policy)` when A1 applied to no effect | the `terminal.stdout` descriptors (`not_stored`, `privacy_policy`) |
-| `exchange_verdict`, `exchange_reasons` | The existing run verdict over exchanges and its gap types: the `decisions` chain | the verifier's run verdict (050 §3.12) |
+| `exchange_verdict`, `exchange_reasons` | The existing run verdict over exchanges and its gap types: the `decisions` chain; `not_observed` for a run with no captured exchange whose record verifies (spec 056 rev 6) | the verifier's run verdict (050 §3.12) |
 | `exchange_gaps` | Exchanges the action chain needs that are missing or unparsed | gaps of type `sequence_gap` / `unparsed_exchange` on exchanges |
 | `effect_channels` | Per effect capture point: `active` or `disabled` | the manifest's capture-point rows |
 | `effect_sequence_gaps` | Positions of effect records that do not verify | the verifier's sequence gaps |

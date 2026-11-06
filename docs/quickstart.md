@@ -204,5 +204,7 @@ telemetry (one warning); see [privacy and security](privacy-and-security.md#pseu
 ## Next
 
 - [Deployment](deployment.md): the production profile, Compose and Helm.
+- [Production setup](production-setup.md): agent, production Node and eBPF
+  emitter end to end, for action reconstruction.
 - [Architecture](architecture.md) and [privacy and security](privacy-and-security.md).
 - [Limitations and roadmap](limitations-and-roadmap.md).

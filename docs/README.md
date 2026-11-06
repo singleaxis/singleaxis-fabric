@@ -19,6 +19,7 @@ in git.
 | [Quickstart](quickstart.md) | Offline example and zero-code capture through a local Node |
 | [Architecture](architecture.md) | Components, data flow, what ships |
 | [Deployment](deployment.md) | Compose and Helm, local and production profiles, required keys and policy, upgrade notes |
+| [Production setup](production-setup.md) | One copy-pasteable recipe: agent, production Node with ingress groups and content, eBPF emitter in production mode, reading a run; Docker Desktop differences |
 | [Privacy and security](privacy-and-security.md) | Protection modes, pseudonyms, encryption at rest, source authentication, threat model |
 | [Operations](operations/README.md) | Spool, queues, health, metrics, troubleshooting, upgrades; [recovery runbook](operations/dr.md) |
 | [Reconstruct and verdicts](reconstruct.md) | The offline verifier, gaps and verdicts |

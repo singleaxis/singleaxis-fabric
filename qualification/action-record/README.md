@@ -169,7 +169,12 @@ sdk/python/.venv/bin/python qualification/action-record/run_ar1.py \
 
 Live mode needs Linux with cgroup v2, Docker on the `systemd` cgroup driver
 (the harness fails, never skips, otherwise), passwordless `sudo` and the
-emitter built for the kernel. It installs `fabric-agents.slice` and
+emitter built for the kernel. The `systemd` driver is this harness's setup
+(it scopes the agent with systemd slice units), not a requirement of the
+emitter: with the `cgroupfs` driver, `--cgroup-parent=/fabric-agents` and
+`EMIT_AGENT_CGROUP_ROOTS=/sys/fs/cgroup/fabric-agents` scope the agent the
+same way (the v0.11.0 UAT ran so on Docker Desktop;
+[production setup](../../docs/production-setup.md#4-the-ebpf-emitter)). It installs `fabric-agents.slice` and
 `fabric-sandboxes.slice` as runtime units, relaxes
 `kernel.apparmor_restrict_unprivileged_userns` for the run when it is set,
 checks `print-source-id` against the label pseudonym, and fails the run

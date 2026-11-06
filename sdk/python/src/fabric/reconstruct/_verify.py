@@ -1233,11 +1233,15 @@ class _Verifier:
         seen |= {scope.key for scope in self.scopes.values()}
         seen |= {record.source for record in self.records}
         silent = {
-            encode_opaque_id(f"source:{key[0]}:{key[1]}"): key
+            _fallback_run_id(key): key
             for key, source in self.sources.items()
             if key not in seen and source.top >= 0
         }
-        for run_id in sorted(set(observed) | set(run_scopes) | set(silent)):
+        # An epoch whose records name a run that no exchange or scope does (an effects-only
+        # process: a tool worker, or one killed before its first model call) is a run of its
+        # own; its records are judged, never dropped (_Run._record_windows).
+        recorded = {canonical.get(run_id, run_id) for run_id in self.run_records}
+        for run_id in sorted(set(observed) | set(run_scopes) | set(silent) | recorded):
             if wanted is not None and not wanted & set(self.run_ids_of(run_id)):
                 continue
             members = [self.scopes[scope_id] for scope_id in run_scopes.get(run_id, ())]
@@ -1356,6 +1360,12 @@ def _attempts(records: Iterable[RecordObs]) -> list[dict[str, Any]]:
     return out
 
 
+def _fallback_run_id(key: SourceKey) -> str:
+    """The source fallback run id of one epoch (``source:<source>:<epoch>``, spec 050 §3.6)
+    in its report form."""
+    return encode_opaque_id(f"source:{key[0]}:{key[1]}")
+
+
 def _by_source(exchanges: Iterable[ExchangeObs]) -> dict[SourceKey, list[int]]:
     out: dict[SourceKey, list[int]] = defaultdict(list)
     for exchange in exchanges:
@@ -1412,7 +1422,36 @@ class _Run:
             self.windows.append(_Window(silent, 0, top))
             self._inside_gaps(silent, 0, top)
             self._tail(silent, self.verifier.sources[silent].tail_problem())
+        self._record_windows()
         self.windows.sort(key=lambda w: (w.key, w.low, w.high, w.scope_id or ""))
+
+    def _record_windows(self) -> None:
+        """A source epoch whose records name this run but that no window covers yet (an
+        effects-only process: a tool worker, or one killed before its first model call) gets
+        a window of its own, so its gaps and its end are judged like an exchange's epoch: a
+        loss or an unproven tail (``no_final_heartbeat`` for a killed process), never
+        silence. The epoch's source fallback run id names the whole epoch ``[0, top]``; any
+        other run id, the span of its records (spec 047 §9.5 rule b, as :meth:`_unscoped`)."""
+        covered = {window.key for window in self.windows}
+        found: dict[SourceKey, list[int]] = defaultdict(list)
+        for run_id in self.verifier.run_ids_of(self.run_id):
+            for record in self.verifier.run_records.get(run_id, ()):
+                if record.source not in covered:
+                    found[record.source].append(record.source_sequence)
+        for key, sequences in sorted(found.items()):
+            source = self.verifier.sources[key]
+            problem = source.tail_problem()
+            closed_by: Literal["final_heartbeat"] | None = (
+                "final_heartbeat" if problem is None else None
+            )
+            if self.run_id == _fallback_run_id(key):
+                self.windows.append(_Window(key, 0, source.top, None, closed_by))
+                self._inside_gaps(key, 0, source.top)
+            else:
+                low, high = min(sequences), max(sequences)
+                self.windows.append(_Window(key, low, high, None, closed_by))
+                self._near_gaps(key, low, high)
+            self._tail(key, problem)
 
     def _add(self, gap: Gap, scopes: Iterable[str] | None = None) -> None:
         """Record a gap for the run and for each scope it counts against."""

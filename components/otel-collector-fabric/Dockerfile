@@ -76,7 +76,11 @@ COPY --from=builder --chown=nonroot:nonroot /src/fabric-node/queue /var/lib/fabr
 COPY --from=builder --chown=nonroot:nonroot /src/fabric-node/content-queue /var/lib/fabric-node/content-queue
 COPY --from=builder --chown=nonroot:nonroot /src/fabric-node/content /var/lib/fabric-node/content
 
+# Title and description equal scripts/release/release-policy.json `image_metadata`;
+# the release workflow sets the same values so the repository description never
+# replaces them (scripts/release/check_image_metadata.py).
 LABEL org.opencontainers.image.source="https://github.com/singleaxis/singleaxis-fabric" \
+      org.opencontainers.image.title="SingleAxis Fabric Node" \
       org.opencontainers.image.description="SingleAxis Fabric OTel Collector recorder distribution (capture, protect, deliver)"
 
 # Ports the image listens on with a recorder config: OTLP ingress, content

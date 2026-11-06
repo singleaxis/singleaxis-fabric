@@ -33,6 +33,48 @@ class QualificationError(ValueError):
     """An artifact cannot be proven to meet the release policy."""
 
 
+# Packaged metadata fields a registry shows: they never advertise a capability outside
+# Capture -> Protect -> Deliver (AGENTS.md; policy ``forbidden_capability_terms``).
+_PACKAGE_METADATA_FIELDS = ("Summary", "Keywords")
+_CHART_METADATA_RE = re.compile(
+    r"(?ms)^(description|keywords|annotations):(.*?)(?=^[A-Za-z][A-Za-z0-9]*:|\Z)"
+)
+
+
+def forbidden_capability_terms(policy: dict[str, Any]) -> re.Pattern[str] | None:
+    """The policy's capability deny-list as one case-insensitive pattern."""
+    terms = policy.get("forbidden_capability_terms")
+    if terms is None:
+        return None
+    patterns = terms["patterns"]
+    return re.compile("(?i)(" + "|".join(f"(?:{p})" for p in patterns) + ")")
+
+
+def check_metadata_text(policy: dict[str, Any], text: str, where: str) -> None:
+    """Refuse metadata text that names a capability outside the recorder."""
+    deny = forbidden_capability_terms(policy)
+    found = deny.search(text) if deny is not None else None
+    if found:
+        raise QualificationError(
+            f"{where}: metadata advertises a capability outside the recorder "
+            f"({found.group(0)!r})"
+        )
+
+
+def _package_metadata_text(raw: bytes) -> str:
+    message = email.parser.BytesParser().parsebytes(raw)
+    return "\n".join(
+        str(value)
+        for field in _PACKAGE_METADATA_FIELDS
+        for value in message.get_all(field) or ()
+    )
+
+
+def chart_metadata_text(chart_yaml: str) -> str:
+    """A Chart.yaml's description, keywords and annotations blocks."""
+    return "\n".join(body for _, body in _CHART_METADATA_RE.findall(chart_yaml))
+
+
 def normalize_python_version(value: str) -> str:
     """Normalize the repository's SemVer prerelease spelling to PEP 440."""
     match = PYTHON_PRERELEASE_RE.fullmatch(value)
@@ -132,9 +174,14 @@ def verify_chart(chart_dir: Path, policy: dict[str, Any], version: str) -> None:
         path = chart_dir / "charts" / name / "Chart.yaml"
         if not path.is_file():
             raise QualificationError(f"required third-party chart is missing: {path}")
+    for path in [root, *sorted((chart_dir / "charts").glob("*/Chart.yaml"))]:
+        text = chart_metadata_text(path.read_text(encoding="utf-8"))
+        check_metadata_text(policy, text, str(path))
 
 
-def inspect_chart_package(path: Path, expected_version: str) -> dict[str, Any]:
+def inspect_chart_package(
+    path: Path, expected_version: str, policy: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Inspect the exact Helm archive that will be published."""
     with tarfile.open(path, mode="r:gz") as archive:
         members = archive.getmembers()
@@ -150,6 +197,15 @@ def inspect_chart_package(path: Path, expected_version: str) -> dict[str, Any]:
         if extracted is None:
             raise QualificationError(f"{path}: {chart_metadata} is not a regular file")
         metadata = extracted.read().decode("utf-8")
+        if policy is not None:
+            for name in names:
+                if PurePosixPath(name).name != "Chart.yaml":
+                    continue
+                member = archive.extractfile(name)
+                if member is None:
+                    raise QualificationError(f"{path}: {name} is not a regular file")
+                text = chart_metadata_text(member.read().decode("utf-8"))
+                check_metadata_text(policy, text, f"{path.name}:{name}")
     version_matches = re.findall(r"(?m)^version:\s*['\"]?([^'\"\s]+)", metadata)
     app_matches = re.findall(r"(?m)^appVersion:\s*['\"]?([^'\"\s]+)", metadata)
     if version_matches != [expected_version] or app_matches != [expected_version]:
@@ -230,8 +286,10 @@ def inspect_wheel(
                 f"{path}: wheel contains forbidden capability paths: "
                 f"{', '.join(forbidden)}"
             )
-        name, version, requires_python = _metadata_fields(
-            archive.read(metadata_paths[0]), path
+        raw_metadata = archive.read(metadata_paths[0])
+        name, version, requires_python = _metadata_fields(raw_metadata, path)
+        check_metadata_text(
+            policy, _package_metadata_text(raw_metadata), f"{path.name}:METADATA"
         )
         parser = configparser.ConfigParser(interpolation=None)
         required_scripts = policy["python_distribution"]["required_console_scripts"]
@@ -354,7 +412,11 @@ def inspect_sdist(
             raise QualificationError(f"{path}: missing PKG-INFO") from exc
         if extracted is None:
             raise QualificationError(f"{path}: PKG-INFO is not a regular file")
-        name, version, requires_python = _metadata_fields(extracted.read(), path)
+        raw_pkg_info = extracted.read()
+        name, version, requires_python = _metadata_fields(raw_pkg_info, path)
+        check_metadata_text(
+            policy, _package_metadata_text(raw_pkg_info), f"{path.name}:PKG-INFO"
+        )
     expected_name = policy["python_distribution"]["name"]
     if name != expected_name or normalize_python_version(
         version
@@ -569,7 +631,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         chart_artifact = None
         if args.chart_package is not None:
-            chart_artifact = inspect_chart_package(args.chart_package, semver)
+            chart_artifact = inspect_chart_package(args.chart_package, semver, policy)
         workflow_records: list[dict[str, Any]] = []
         if args.workflow_evidence is not None:
             if args.commit_sha is None:

@@ -837,9 +837,15 @@ def _chain_fail(path: str, message: str) -> CaptureContractError:
 
 def _check_chains(run: Mapping[str, Any], path: str) -> None:
     """Spec 056 §4.5: chain verdicts carry reasons exactly when they are not complete, and
-    agree with the attribution summary's lists; host events are listed once."""
+    agree with the attribution summary's lists; host events are listed once. decisions is
+    not_observed only for a run with no captured exchange (an effects-only process)."""
     chains = run.get("chains")
     if chains is not None:
+        if chains["decisions"]["verdict"] == "not_observed" and run["exchanges"]:
+            raise _chain_fail(
+                f"{path}.chains.decisions",
+                "decisions is not_observed only for a run with no captured exchange",
+            )
         for name in _CHAINS:
             chain = chains[name]
             reasons = bool(chain.get("reasons"))

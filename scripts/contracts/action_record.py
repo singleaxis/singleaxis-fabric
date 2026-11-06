@@ -1949,9 +1949,11 @@ def report_fixtures(
         "capture.reconstruction.chains",
         lambda r: r["chains"].update(corroboration={"verdict": "complete"}),
     )
+    # decisions is not_observed only for a run with no captured exchange (spec 056
+    # rev 6: an effects-only process); this run has exchanges.
     variant(
         "run-reconstruction-chain-decisions-not-observed",
-        "capture.schema",
+        "capture.reconstruction.chains",
         lambda r: r["chains"].update(decisions={"verdict": "not_observed"}),
     )
     return out
@@ -2071,7 +2073,10 @@ def _register_invalid() -> None:
             "run-reconstruction-chain-unexplained-not-a-reason",
             "capture.reconstruction.chains",
         ),
-        ("run-reconstruction-chain-decisions-not-observed", "capture.schema"),
+        (
+            "run-reconstruction-chain-decisions-not-observed",
+            "capture.reconstruction.chains",
+        ),
     ):
         INVALID_CAPTURE[f"fixtures/invalid/{name}.json"] = code
 

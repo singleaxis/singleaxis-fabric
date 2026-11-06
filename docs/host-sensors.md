@@ -103,6 +103,10 @@ scope are deliberately unusable until you set them.
 
 ## Production mode
 
+[Production setup](production-setup.md) is a complete recipe for the eBPF
+emitter in production mode beside an agent and a Node, including its
+`docker run` flags and the cgroup scope on either Docker cgroup driver.
+
 Released in v0.11.0 (spec 056 milestone M2). A production-profile Node
 admits a host sensor through a dedicated ingress group of its own: one
 `host.ebpf` (or `host.auditd`) group per sensor process, each binding one

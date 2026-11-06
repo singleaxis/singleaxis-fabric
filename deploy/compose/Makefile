@@ -33,6 +33,13 @@ ifneq ($(FABRIC_AUDITD_TOKEN_FILE),)
 GROUP_FILES += -f docker-compose.host-ingress-auditd-content.yml
 endif
 endif
+# Your own Compose override files (space-separated paths relative to this
+# directory, or absolute), appended last to the production and ingress-group
+# file lists: a site change such as private-CA trust for the destination
+# (docs/production-setup.md) never edits a shipped file.
+FABRIC_COMPOSE_EXTRA ?= $(call env_value,FABRIC_COMPOSE_EXTRA)
+PROD_FILES += $(foreach file,$(FABRIC_COMPOSE_EXTRA),-f $(file))
+GROUP_FILES += $(foreach file,$(FABRIC_COMPOSE_EXTRA),-f $(file))
 # docker-compose.production.yml requires FABRIC_SOURCE_ID (its single binding);
 # with groups the agent group's id is FABRIC_AGENT_SOURCE_ID, so pass it on.
 GROUP_ENV := FABRIC_SOURCE_ID="$${FABRIC_SOURCE_ID:-$(FABRIC_AGENT_SOURCE_ID)}"
