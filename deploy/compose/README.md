@@ -35,6 +35,7 @@ routes content into a telemetry pipeline or to the OTLP destination.
 | local S3-compatible store (SeaweedFS), SSE-S3, path-style | `make up-s3-local` (local trial only, `docker-compose.s3-local.yml`) |
 | S3 / S3-compatible store, server-side encrypted | production: `FABRIC_CONTENT_BACKEND=s3` in `.env` (`docker-compose.content.yml` + `docker-compose.content-s3.yml`, merging `collector-config/collector-content.yaml` + `collector-content-s3.yaml`) |
 | `fabric-content` volume in production | `FABRIC_CONTENT_BACKEND=file` plus `FABRIC_CONTENT_REQUIRE_SSE=false` (no server-side encryption; preflight refuses it otherwise, as the Helm shadow-production profile does) |
+| local S3-compatible store over TLS, for testing the production Node | test only: `FABRIC_COMPOSE_EXTRA=docker-compose.content-s3-local-tls.yml` with `FABRIC_CONTENT_BACKEND=s3`; recipe in [production setup](../../docs/production-setup.md#a-local-s3-store-for-testing) |
 
 The production content path is opt-in: without `FABRIC_CONTENT_BACKEND` the
 production overlay is telemetry only (no port 4319). It still needs
