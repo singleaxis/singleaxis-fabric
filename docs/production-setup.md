@@ -450,6 +450,34 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
   process anchor of spec 056: the label must equal the emitter's
   `EMIT_HOST_LABEL`.
 
+### One-shot agent containers
+
+An agent delivers its spool's backlog while it runs. At exit it waits only
+for its exit budget (`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`, 2 s by default), and
+whatever is left stays on the spool volume until the next process that uses
+it. When no later agent run will use the same volume, drain it once the
+agent exits. Use the same image, env file, mounts and volume:
+
+```bash
+docker run --rm --network fabric-node-production_fabric-node --env-file "$M/agent.env" \
+  -v "$M/tls/ca.crt:/fabric/ca.crt:ro" -v "$M/secrets/spool.key:/fabric/spool.key:ro" \
+  -v "$M/policy.json:/fabric/policy.json:ro" \
+  -v fabric-agent-spool:/var/lib/fabric-agent \
+  "$AGENT_IMAGE" python -m fabric.wire drain --until-empty --timeout 600
+```
+
+The drainer builds the agent's sender from the env file and delivers exactly
+as an agent would: bodies to the Node, then spans, and a record is deleted
+only after every part was accepted. It captures nothing itself, even with
+`FABRIC_WIRE_AUTOLOAD=1` in the env file. While a live agent holds the spool,
+the drainer waits; it takes over once the spool is free. It prints one JSON
+line (`drained`, `delivered`, `remaining`, `undecryptable`, `quarantined`,
+`seconds`) and exits with 0 when nothing deliverable is left or 1 when
+records remain on disk, for example while the Node is down. Run it again
+later in that case. Without `--until-empty` it runs as a sidecar until
+SIGTERM, then makes a final drain attempt of up to 10 s. Kubernetes patterns
+are in [wire capture deployment](wire-capture-deployment.md#draining-a-spool-with-no-agent-running).
+
 ## 6. Read a run
 
 Copy the destination's span export (the OTLP trace export requests it

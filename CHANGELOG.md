@@ -24,6 +24,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **`python -m fabric.wire drain` delivers a spool's backlog with no agent
+  running.** An agent delivers its backlog only while it runs, and it waits
+  at most its 2 s exit budget at exit. In the reliability run, thousands of
+  records waited on the spool volume after the last process exited, and a
+  one-shot container with no later run on that volume would never have
+  delivered them. The drainer reads the agent's own environment, builds the
+  same spool sender, takes the spool lock once no live process holds it, and
+  delivers exactly as an agent would. It installs no capture, even under
+  `FABRIC_WIRE_AUTOLOAD=1`, which now skips the drainer process.
+  `--until-empty` exits 0 when nothing deliverable is left, or 1 at
+  `--timeout` with the records kept on disk. Without it, the drainer runs as
+  a sidecar until SIGTERM. One JSON summary line goes to stdout.
+  `docs/production-setup.md` ("One-shot agent containers") and
+  `docs/wire-capture-deployment.md` ("Draining a spool with no agent
+  running": one-shot step, Kubernetes native sidecar, preStop) show how to
+  run it.
+
 - **A destination 403 no longer drops data the Node had acknowledged.** The
   pinned upstream OTLP/HTTP exporter retries only 429, 502, 503 and 504.
   Every other status, including 401, 403, 404 and 500, was a permanent

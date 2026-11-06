@@ -15,8 +15,21 @@ import os
 import sys
 
 
+def _is_drainer() -> bool:
+    """``python -m fabric.wire drain``: the spool drainer runs with the agent's own
+    environment (autoload included) but must never capture itself, which would add an
+    epoch of its own to the spool it drains."""
+    argv = list(getattr(sys, "orig_argv", ()))
+    for index, arg in enumerate(argv[:-2]):
+        if arg == "-m" and argv[index + 1] == "fabric.wire" and argv[index + 2] == "drain":
+            return True
+    return False
+
+
 def _install() -> None:
     if os.environ.get("FABRIC_WIRE_AUTOLOAD", "").strip().lower() not in ("1", "true"):
+        return
+    if _is_drainer():
         return
     try:
         from fabric.wire import install_from_env  # noqa: PLC0415
