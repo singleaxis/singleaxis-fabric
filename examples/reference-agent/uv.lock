@@ -275,6 +275,11 @@ requires-dist = [
 provides-extras = ["hooks-sandbox-e2b", "mcp", "otlp", "s3", "signing"]
 
 [package.metadata.requires-dev]
+ci = [
+    { name = "build", specifier = ">=1.2.2" },
+    { name = "editables", specifier = ">=0.5" },
+    { name = "hatchling", specifier = ">=1.25.0" },
+]
 dev = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "anthropic", specifier = ">=1.12.1" },
@@ -289,11 +294,12 @@ dev = [
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "pyyaml", specifier = ">=6.0.2,<7.0" },
-    { name = "ruff", specifier = ">=0.6.9" },
+    { name = "ruff", specifier = "==0.13.0" },
     { name = "types-jsonschema", specifier = ">=4.23" },
     { name = "types-pyyaml", specifier = ">=6.0.12" },
     { name = "urllib3", specifier = ">=2.8.0" },
 ]
+license = [{ name = "pip-licenses", specifier = ">=5.0" }]
 
 [[package]]
 name = "typing-extensions"

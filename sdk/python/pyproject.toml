@@ -75,7 +75,8 @@ hooks-sandbox-e2b = [
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
-  "ruff>=0.6.9",
+  # Lockstep with .pre-commit-config.yaml (ruff-pre-commit v0.13.0): CI installs this lock.
+  "ruff==0.13.0",
   "mypy>=1.11.2",
   "jsonschema>=4.23",
   "types-jsonschema>=4.23",
@@ -101,6 +102,19 @@ dev = [
   # application already uses it.
   "e2b==2.62.*",
   "e2b-code-interpreter==2.11.*",
+]
+# CI and release builds: `python -m build --no-isolation` against this locked backend,
+# installed with pip --require-hashes (scripts/ci/install-python-locked.sh), so no
+# build step resolves an unpinned package from the index.
+ci = [
+  "build>=1.2.2",
+  "hatchling>=1.25.0",
+  # hatchling's build_editable requirement (pip install --no-build-isolation -e).
+  "editables>=0.5",
+]
+# The license inventory tool (recorder-license.yml, scripts/license_scan.sh).
+license = [
+  "pip-licenses>=5.0",
 ]
 
 [project.urls]

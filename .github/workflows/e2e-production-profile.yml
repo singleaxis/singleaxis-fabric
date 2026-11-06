@@ -186,11 +186,12 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
+      - uses: ./.github/actions/setup-uv
       - name: Build and install exact Python wheel
         run: |
           set -euo pipefail
-          python -m pip install build==1.6.1
-          python -m build --wheel --outdir "${RUNNER_TEMP}/fabric-wheel" sdk/python
+          scripts/ci/install-python-locked.sh --only-group ci
+          python -m build --no-isolation --wheel --outdir "${RUNNER_TEMP}/fabric-wheel" sdk/python
           python -m venv "${RUNNER_TEMP}/fabric-agent-venv"
           WITNESS_TEST_WHEELS=("${RUNNER_TEMP}"/fabric-wheel/singleaxis_fabric-*.whl)
           test "${#WITNESS_TEST_WHEELS[@]}" -eq 1

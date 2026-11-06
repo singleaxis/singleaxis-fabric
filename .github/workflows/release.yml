@@ -98,11 +98,13 @@ jobs:
         with:
           name: release-workflow-evidence
           path: qualification
+      - uses: ./.github/actions/setup-uv
       - name: Build Python distribution
         working-directory: sdk/python
+        # The locked build front end and backend (uv.lock, pip --require-hashes).
         run: |
-          python -m pip install --upgrade pip build
-          python -m build
+          ../../scripts/ci/install-python-locked.sh --only-group ci
+          python -m build --no-isolation
       - name: Build and qualify TypeScript distribution once
         working-directory: sdk/typescript
         run: |

@@ -29,12 +29,15 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
       - name: Inventory released SDK dependencies
+        # The extra's locked closure from sdk/python/uv.lock (pip --require-hashes)
+        # plus the locked pip-licenses; the SDK itself is ignored by the gate.
         run: |
           python -m venv /tmp/fabric-license-python
+          FABRIC_PYTHON=/tmp/fabric-license-python/bin/python scripts/ci/install-python-locked.sh \
+            --no-default-groups --group license --extra '${{ matrix.extra }}'
           . /tmp/fabric-license-python/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install pip-licenses './sdk/python[${{ matrix.extra }}]'
           mkdir -p raw
           pip-licenses --format=json \
             --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
@@ -59,25 +62,28 @@ jobs:
         run: |
           npm ci --prefix sdk/typescript
           mkdir -p raw
-          npx --yes license-checker-rseidelsohn --production --json \
-            --start sdk/typescript > raw/npm-typescript.json
           # The optional S3 peer is a supported install surface but is not in
-          # the base lockfile. Scan it in its own throwaway project, at the
-          # range package.json declares. Installing it into sdk/typescript
-          # with --package-lock=false re-resolved the SDK's whole dev tree
-          # from the registry (vitest's peer set), which npm 10 crashes on
-          # ("reading 'edgesOut'"); the SDK's own dependencies are covered by
-          # the lockfile scan above.
-          peer_dir="${RUNNER_TEMP}/fabric-s3-peer"
-          mkdir -p "${peer_dir}"
-          range="$(node -p 'require(process.argv[1]).peerDependencies["@aws-sdk/client-s3"]' \
-            "${GITHUB_WORKSPACE}/sdk/typescript/package.json")"
-          test -n "${range}" && test "${range}" != undefined
-          printf '{"name":"fabric-s3-peer-license-scan","version":"0.0.0","private":true}\n' \
-            > "${peer_dir}/package.json"
-          npm install --prefix "${peer_dir}" --ignore-scripts --no-audit --no-fund \
-            "@aws-sdk/client-s3@${range}"
-          npx --yes license-checker-rseidelsohn --production --json --excludePrivatePackages \
+          # the base lockfile. Scan it in its own locked project,
+          # scripts/license/s3-peer, which must declare the range package.json
+          # declares and also pins the license scanner (no npx download).
+          # Installing it into sdk/typescript with --package-lock=false
+          # re-resolved the SDK's whole dev tree from the registry (vitest's
+          # peer set), which npm 10 crashes on ("reading 'edgesOut'"); the SDK's
+          # own dependencies are covered by the lockfile scan below.
+          peer_dir=scripts/license/s3-peer
+          node -e '
+            const [sdk, scan] = process.argv.slice(1).map((f) => require(f));
+            const peer = sdk.peerDependencies["@aws-sdk/client-s3"];
+            const scanned = scan.dependencies["@aws-sdk/client-s3"];
+            if (!peer || peer !== scanned) {
+              console.error("s3-peer scans " + scanned + ", the SDK declares " + peer);
+              process.exit(1);
+            }' "${GITHUB_WORKSPACE}/sdk/typescript/package.json" "${GITHUB_WORKSPACE}/${peer_dir}/package.json"
+          npm ci --prefix "${peer_dir}" --ignore-scripts --no-audit --no-fund
+          checker="${peer_dir}/node_modules/.bin/license-checker-rseidelsohn"
+          "${checker}" --production --json \
+            --start sdk/typescript > raw/npm-typescript.json
+          "${checker}" --production --json --excludePrivatePackages \
             --start "${peer_dir}" > raw/npm-typescript-s3.json
           # Fail closed if the scan did not see the peer.
           grep -q '"@aws-sdk/client-s3@' raw/npm-typescript-s3.json

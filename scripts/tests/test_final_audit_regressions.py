@@ -88,6 +88,8 @@ def _script_root(tmp_path: Path) -> Path:
     for relative in (
         "scripts/license_scan.sh",
         "scripts/license_check.py",
+        "scripts/ci/install-python-locked.sh",
+        "scripts/license/s3-peer/package.json",
         ".github/license-allowlist.txt",
         "sdk/typescript/package.json",
     ):
@@ -177,14 +179,22 @@ def test_local_license_scan_includes_entrypoint_gate_in_real_policy_check(
         " module=pathlib.Path.cwd().name\n"
         " license=os.environ['FIXTURE_GATE_LICENSE'] if module=='gate' else 'MIT'\n"
         " print(f'example.invalid/{module},https://example.invalid/license,{license}')\n"
-        "elif name == 'npx':\n"
+        "elif name == 'uv':\n"
+        " assert args[0] == 'export' and '--require-hashes' not in args, args\n"
+        "elif name == 'license-checker-rseidelsohn':\n"
         " start=pathlib.Path(args[args.index('--start')+1]).name\n"
         " key='@aws-sdk/client-s3@3.0.0' if start=='s3-peer' else 'fixture-npm@1'\n"
         " print(json.dumps({key:{'licenses':'Apache-2.0'}}))\n"
     )
     driver.chmod(0o700)
-    for name in ("python", "go", "npm", "npx"):
+    for name in ("python", "go", "npm", "uv"):
         (bin_dir / name).symlink_to(driver)
+    # The scanner comes from the locked scan project, never from npx.
+    checker = (
+        root / "scripts/license/s3-peer/node_modules/.bin/license-checker-rseidelsohn"
+    )
+    checker.parent.mkdir(parents=True)
+    checker.symlink_to(driver)
     for name in ("go-licenses", "builder"):
         (go_bin / name).symlink_to(driver)
     result = subprocess.run(

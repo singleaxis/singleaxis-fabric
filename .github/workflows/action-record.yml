@@ -83,12 +83,13 @@ jobs:
         run: |
           go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
           make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
+      - uses: ./.github/actions/setup-uv
       - name: Install the SDK and the harness dependencies
+        # sdk/python/uv.lock with pip --require-hashes; the dev group carries the
+        # harness tools (pytest, jsonschema, PyYAML, httpx, openai, ruff, mypy).
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "sdk/python[otlp,hooks-sandbox-e2b]" pytest pytest-cov \
-            jsonschema PyYAML httpx "openai>=3.26.1" cryptography \
-            opentelemetry-exporter-otlp-proto-http ruff==0.13.0 mypy
+          scripts/ci/install-python-locked.sh --extra otlp --extra hooks-sandbox-e2b --group dev --group ci
+          python -m pip install --no-deps --no-build-isolation -e sdk/python
       - name: Lint and type-check the harness
         working-directory: qualification/action-record
         env:
@@ -154,11 +155,12 @@ jobs:
         run: |
           go generate ./...
           CGO_ENABLED=0 go build -trimpath -o fabric-host-emitter .
+      - uses: ./.github/actions/setup-uv
       - name: Install the SDK and the harness dependencies
+        # sdk/python/uv.lock with pip --require-hashes (dev group: the harness tools).
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e sdk/python pytest pytest-cov jsonschema PyYAML httpx \
-            "openai>=3.26.1" cryptography opentelemetry-exporter-otlp-proto-http
+          scripts/ci/install-python-locked.sh --extra otlp --group dev --group ci
+          python -m pip install --no-deps --no-build-isolation -e sdk/python
       - name: Let the auditd scope user read the checkout
         # Only the auditd fallback runs the agent as another user (fabricar1).
         run: |
@@ -212,12 +214,13 @@ jobs:
         run: |
           go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
           make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
+      - uses: ./.github/actions/setup-uv
       - name: Install the SDK and the harness dependencies
+        # sdk/python/uv.lock with pip --require-hashes; the dev group carries the
+        # harness tools (pytest, jsonschema, PyYAML, httpx, openai, ruff, mypy).
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "sdk/python[otlp,hooks-sandbox-e2b]" pytest pytest-cov \
-            jsonschema PyYAML httpx "openai>=3.26.1" cryptography \
-            opentelemetry-exporter-otlp-proto-http
+          scripts/ci/install-python-locked.sh --extra otlp --extra hooks-sandbox-e2b --group dev --group ci
+          python -m pip install --no-deps --no-build-isolation -e sdk/python
       - name: AR-1 production replay
         run: |
           python qualification/action-record/run_ar1.py --profile production --mode replay \
@@ -276,12 +279,13 @@ jobs:
         run: |
           go generate ./...
           CGO_ENABLED=0 go build -trimpath -o fabric-host-emitter .
+      - uses: ./.github/actions/setup-uv
       - name: Install the SDK and the harness dependencies
+        # sdk/python/uv.lock with pip --require-hashes; the dev group carries the
+        # harness tools (pytest, jsonschema, PyYAML, httpx, openai, ruff, mypy).
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e "sdk/python[otlp,hooks-sandbox-e2b]" pytest pytest-cov \
-            jsonschema PyYAML httpx "openai>=3.26.1" cryptography \
-            opentelemetry-exporter-otlp-proto-http
+          scripts/ci/install-python-locked.sh --extra otlp --extra hooks-sandbox-e2b --group dev --group ci
+          python -m pip install --no-deps --no-build-isolation -e sdk/python
       - name: Build the Fabric Node image (once, for every variant's Compose project)
         run: docker build -q -t fabric/node:ar1-production components/otel-collector-fabric
       - name: AR-1 production live

@@ -1,0 +1,17 @@
+{
+  "name": "fabric-s3-peer-license-scan",
+  "version": "0.0.0",
+  "private": true,
+  "description": "License inventory project: the TypeScript SDK's optional @aws-sdk/client-s3 peer at the range sdk/typescript/package.json declares, and the pinned license scanner. Not shipped.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@aws-sdk/client-s3": ">=3.0.0"
+  },
+  "devDependencies": {
+    "license-checker-rseidelsohn": "5.0.1"
+  },
+  "overrides": {
+    "glob": "14.0.4",
+    "minimatch": "11.0.5"
+  }
+}
