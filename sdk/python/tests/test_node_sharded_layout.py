@@ -149,3 +149,66 @@ def test_resolver_reads_sharded_then_flat(tmp_path: Path, *, sharded: bool) -> N
     result = resolver.resolve(descriptor)
     assert result.status == "available", result
     assert result.data == b"response bytes"
+
+
+@pytest.mark.parametrize("levels", [1, 2])
+def test_resolver_falls_back_to_flat_when_the_shard_lacks_the_name(
+    tmp_path: Path, levels: int
+) -> None:
+    # A partial shard (first level only) or a complete but empty shard both
+    # leave the SDK's flat files as the ones read.
+    store, event = _recorded(tmp_path)
+    object_id = event["object_id"]
+    evidence = Path(store.root) / "tenant-a" / "evidence"
+    shard = node_shard(object_id)[:levels]
+    for parent in (evidence, evidence / "meta"):
+        parent.joinpath(*shard).mkdir(parents=True, mode=0o700)
+    resolver = ByteEvidenceResolver(store, tenant_id="tenant-a")
+    result = resolver.resolve(resolver.read_descriptor(object_id))
+    assert result.status == "available", result
+    assert result.data == b"response bytes"
+
+
+@pytest.mark.parametrize("layout", ["flat", "sharded", "empty-shard", "missing", "symlinked-shard"])
+def test_resolver_closes_every_descriptor_it_opens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layout: str
+) -> None:
+    store, event = _recorded(tmp_path / "root")
+    object_id = event["object_id"]
+    evidence = Path(store.root) / "tenant-a" / "evidence"
+    first, second = node_shard(object_id)
+    if layout == "sharded":
+        _place(evidence / first / second / object_id, (evidence / object_id).read_bytes())
+        (evidence / object_id).unlink()
+    elif layout == "empty-shard":
+        (evidence / first / second).mkdir(parents=True, mode=0o700)
+    elif layout == "missing":
+        (evidence / object_id).unlink()
+    elif layout == "symlinked-shard":
+        (tmp_path / "outside" / second).mkdir(parents=True)
+        os.symlink(tmp_path / "outside", evidence / first)
+    resolver = ByteEvidenceResolver(store, tenant_id="tenant-a")
+    real_open, real_close = os.open, os.close
+    opened: list[int] = []
+    closed: list[int] = []
+
+    def tracked_open(*args: Any, **kwargs: Any) -> int:
+        descriptor = real_open(*args, **kwargs)
+        opened.append(descriptor)
+        return descriptor
+
+    def tracked_close(descriptor: int) -> None:
+        closed.append(descriptor)
+        real_close(descriptor)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "open", tracked_open)
+        patch.setattr(os, "close", tracked_close)
+        if layout in {"missing", "symlinked-shard"}:
+            with pytest.raises(OSError):
+                resolver._read(object_id, metadata=False)
+        else:
+            assert resolver._read(object_id, metadata=False) == b"response bytes"
+
+    assert opened
+    assert sorted(closed) == sorted(opened)

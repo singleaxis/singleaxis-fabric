@@ -23,13 +23,12 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, contextmanager, suppress
+from contextlib import contextmanager, suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlsplit
 
-from ._descriptors import open_descriptor
 from .content_store.base import ContentRef, CorruptedObjectError, check_safe_identifier
 from .deployment_policy import DeploymentPolicy
 
@@ -377,8 +376,10 @@ class GovernedLocalContentStore:
         if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
             raise OSError("safe local storage requires POSIX directory descriptors")
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-        with ExitStack() as opened:
-            directory = opened.enter_context(open_descriptor("/", flags))
+        # One directory descriptor is held at a time: each part opens beneath
+        # the last, which is then closed explicitly.
+        directory = os.open("/", flags)
+        try:
             for part in self._parts:
                 if create:
                     try:
@@ -387,10 +388,14 @@ class GovernedLocalContentStore:
                     except FileExistsError:
                         # Open with O_NOFOLLOW below validates the existing directory.
                         pass
-                directory = opened.enter_context(open_descriptor(part, flags, dir_fd=directory))
+                parent = directory
+                directory = os.open(part, flags, dir_fd=parent)
+                os.close(parent)
             if os.fstat(directory).st_mode & 0o077:
                 raise PermissionError("store plane directory must be private (0700)")
             yield directory
+        finally:
+            os.close(directory)
 
     @contextmanager
     def _locked(self, *, create: bool) -> Iterator[int]:

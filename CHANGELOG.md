@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   so the name is not mistaken for secret material (CodeQL
   `py/clear-text-logging-sensitive-data` false positive). Its output is
   unchanged.
+- **Scanner backlog.** The byte resolver, native-witness store and governed
+  store now walk store paths holding one directory descriptor at a time and
+  close each one explicitly on every path, which CodeQL `py/file-not-closed`
+  can see (the previous `ExitStack` already released them). Reads are
+  unchanged. Dependabot groups the `github/codeql-action` sub-actions, which
+  fail when their versions differ. `golang.org/x/net` v0.60.0 → v0.62.0
+  (CVE-2026-78661, HTML parser denial of service) in the host emitter,
+  host-records and no-redirect extension modules and the built Node; this
+  also moves `x/sys` to v0.49.0, `x/text` to v0.43.0 and `x/crypto` to v0.58.0.
 
 ## [0.11.1] - 2026-11-06
 
