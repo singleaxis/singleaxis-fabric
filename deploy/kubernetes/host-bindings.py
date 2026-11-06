@@ -52,7 +52,8 @@ DEFAULT_GROUPS, MAX_GROUPS = 64, 256
 AGENT_PORTS = (4317, 4318, 4319)
 HEALTH_PORT = 13133
 DEFAULT_SERVICE = "fabric-otel-collector.fabric-system.svc.cluster.local"
-NODE_SECRET = "fabric-node-host-ingress"
+# The name of the Node-side token Secret object; its data never reaches stdout.
+HOST_INGRESS_OBJECT_NAME = "fabric-node-host-ingress"
 NODE_NAME = re.compile(r"[a-z0-9]([-a-z0-9.]{0,251}[a-z0-9])?")
 HOST = re.compile(
     r"[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*"
@@ -190,7 +191,7 @@ def values_fragment(
             f"        tenantId: {_quote(tenant)}",
             f"        sourceId: {source}",
             "        tokenSecret:",
-            f"          name: {NODE_SECRET}",
+            f"          name: {HOST_INGRESS_OBJECT_NAME}",
             f"          key: {name}",
             "        protocols:",
             f"          grpc: {port}",
@@ -319,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         "wrote source-bindings.yaml, node-secret/ (one file per group), nodes/<node>/"
     )
     print(
-        f"next: create Secret {NODE_SECRET} from node-secret/, copy each nodes/<node>/ to"
+        f"next: create Secret {HOST_INGRESS_OBJECT_NAME} from node-secret/, copy each nodes/<node>/ to"
     )
     print(
         "      that node's /etc/fabric-host-emitter/ only, fill in the agent group's sourceId"
