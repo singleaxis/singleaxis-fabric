@@ -378,9 +378,8 @@ func fixtureBatchSpans(t *testing.T, name string) []ptrace.Span {
 // eBPF connect and openat tracepoints run at syscall entry, so their result
 // is "unknown" where a fixture shows an observed outcome.
 func TestProductionTranslateGolden(t *testing.T) {
-	savedOffset, savedBoot := bootEpochOffsetNs, bootTimeS
-	t.Cleanup(func() { bootEpochOffsetNs, bootTimeS = savedOffset, savedBoot })
-	bootEpochOffsetNs = 0
+	saved := sensorClock
+	t.Cleanup(func() { sensorClock = saved })
 	hex64 := strings.Repeat("3f", 32)
 	cases := []struct {
 		fixture string
@@ -408,7 +407,7 @@ func TestProductionTranslateGolden(t *testing.T) {
 			if ev.TsNs == 0 {
 				ev.TsNs = uint64(want.StartTimestamp())
 			}
-			bootTimeS = tc.boot
+			sensorClock = fixedClock(0, tc.boot)
 			cfg := productionConfig(t, t.TempDir())
 			cfg.Digests = "omitted"
 			src := openTestSource(t, cfg)

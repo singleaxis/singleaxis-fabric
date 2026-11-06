@@ -252,6 +252,7 @@ func run() error {
 			if !emit {
 				continue
 			}
+			sensorClock.refresh(clockRefreshEvery) // a CLOCK_REALTIME step is logged
 			pending = append(pending, translate(e))
 			if len(pending) >= 64 {
 				if err := flush(); err != nil {
@@ -263,13 +264,15 @@ func run() error {
 				pending = append(pending, collapsedRecord(key, n))
 			}
 		case <-batchTick.C:
+			sensorClock.refresh(0)
 			if err := flush(); err != nil {
 				return err
 			}
 		case <-statusTick.C:
 			files, bytes, peak := spool.status()
 			partialBatches, partialRejected := spool.partialStatus()
-			log.Printf("fabric-host-emitter: spool health queued_batches=%d queued_bytes=%d high_water_bytes=%d capacity_bytes=%d partial_quarantined_batches=%d partial_rejected_records=%d", files, bytes, peak, cfg.SpoolMaxBytes, partialBatches, partialRejected)
+			log.Printf("fabric-host-emitter: spool health queued_batches=%d queued_bytes=%d high_water_bytes=%d capacity_bytes=%d partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d",
+				files, bytes, peak, cfg.SpoolMaxBytes, partialBatches, partialRejected, sensorClock.stepCount())
 		}
 	}
 }

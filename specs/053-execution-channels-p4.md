@@ -1011,7 +1011,7 @@ There are no bodies, no evidence object and no `fabric.content.object_ids`.
 | `fabric.sensor.ns_ppid` | O | int ≥ 0 | eBPF only (revision 3; corrected in revision 4): the parent's thread-group id in the child's namespace, as `getppid()` returns there: the number of `real_parent->group_leader->thread_pid` at the child's level, 0 when that pid is not in the child's namespace. Never the spawning thread's own id |
 | `fabric.sensor.pid_ns` | O | `^[0-9]{1,20}$` (uint64 decimal) | the inode of the namespace `ns_pid` is numbered in (`numbers[level].ns->ns.inum`) |
 | `fabric.sensor.process_start_ns` | O | int ≥ 0, boot-relative | eBPF only: the group leader's `start_boottime` (`CLOCK_BOOTTIME` ns, unrounded), the field `/proc/<pid>/stat` field 22 is computed from (revision 3; 056 §4.3) |
-| `fabric.sensor.boot_time_s` | O | int ≥ 0 | computed once at start from `CLOCK_REALTIME − CLOCK_BOOTTIME`; no file reads |
+| `fabric.sensor.boot_time_s` | O | int ≥ 0 | `CLOCK_REALTIME − CLOCK_BOOTTIME`, re-sampled with the sensor clock (0.11.2: before every batch, so it follows a `CLOCK_REALTIME` step); no file reads |
 | `fabric.sensor.cgroup_id` | O | `^[0-9]{1,20}$` | |
 | `fabric.sensor.scope` | O | enum `agent`, `sandbox` | eBPF only (revision 3): which configured cgroup root admitted the event, the deepest when roots nest (revision 4; 056 §4.3) |
 | `fabric.sensor.pod_id` | O | `sbx-` v2 of `k8s-pod:<uid>` from the cgroup path | eBPF only (revision 3; 056 rule H5) |

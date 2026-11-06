@@ -209,7 +209,7 @@ func (s *Source) manifestSpan(manifestSeq int64, unsealed []uint64) (ptrace.Trac
 	putStrings(m, "fabric.manifest.capture_points", []string{s.point + manifestCaptureSuffix})
 	m.PutBool("fabric.manifest.chunk_boundaries_retained", false)
 	m.PutStr("fabric.manifest.clock.domain", "wall_utc")
-	m.PutInt("fabric.manifest.clock.uncertainty_ns", clockUncertaintyNs)
+	m.PutInt("fabric.manifest.clock.uncertainty_ns", s.clockUncertainty())
 	m.PutStr("fabric.manifest.content_capture", "disabled")
 	m.PutStr("fabric.manifest.content_capture_reason", "not_configured")
 	m.PutStr("fabric.manifest.coverage_profile", coverageProfile)

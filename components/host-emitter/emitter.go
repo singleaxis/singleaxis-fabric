@@ -133,7 +133,7 @@ const (
 
 // event is the platform-neutral event the translator consumes. TsNs is
 // kernel monotonic time (bpf_ktime_get_ns) — converted to wall time at
-// emit via bootEpochOffset.
+// emit via sensorClock (clock.go).
 type event struct {
 	Type               uint32
 	TsNs               uint64
@@ -164,16 +164,13 @@ type event struct {
 	CgroupParentName string
 }
 
-// bootEpochOffsetNs converts kernel monotonic ns to wall-clock ns. Computed
-// once at startup: offset = wallNow - monoNow. Without it every record would
-// be stamped near 1970 (boot-relative), destroying time correlation.
-var bootEpochOffsetNs int64
-
-func init() {
+// monotonicNs is CLOCK_MONOTONIC (bpf_ktime_get_ns's clock) in ns.
+func monotonicNs() int64 {
 	var mono unix.Timespec
-	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono); err == nil {
-		bootEpochOffsetNs = time.Now().UnixNano() - mono.Nano()
+	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono); err != nil {
+		return time.Now().UnixNano() // never on Linux; keeps wall time sane
 	}
+	return mono.Nano()
 }
 
 // translate converts one kernel event into the shared audit-class log
@@ -183,7 +180,7 @@ func init() {
 func translate(e *event) plog.LogRecord {
 	lr := plog.NewLogRecord()
 	lr.SetTimestamp(pcommon.NewTimestampFromTime(
-		time.Unix(0, bootEpochOffsetNs+int64(e.TsNs))))
+		time.Unix(0, sensorClock.wallNs(e.TsNs))))
 	attrs := lr.Attributes()
 	attrs.PutStr("event_class", "audit")
 	attrs.PutStr("audit.source", "ebpf")

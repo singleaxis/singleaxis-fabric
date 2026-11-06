@@ -28,6 +28,7 @@ type recordSource interface {
 	Quarantine(b *hostrecords.Batch, rejected int) (*hostrecords.Batch, error)
 	UpstreamLoss(reason string, count int64)
 	Heartbeat() (*hostrecords.Batch, error)
+	WidenClockUncertainty(ns int64) (*hostrecords.Batch, error)
 	Close(final bool) (*hostrecords.Batch, error)
 }
 
@@ -41,10 +42,6 @@ const (
 
 // stageBatchMax bounds one staged batch (one fsync per batch).
 const stageBatchMax = 512
-
-// bootTimeS is CLOCK_REALTIME - CLOCK_BOOTTIME in seconds, computed once at
-// start with no file reads (053 §6.2.3 fabric.sensor.boot_time_s).
-var bootTimeS = bootTimeSeconds()
 
 func i64(v int64) *int64   { return &v }
 func u64(v uint64) *uint64 { return &v }
@@ -80,10 +77,10 @@ func digest(b []byte) string {
 // policy permits them, and emits no raw path, argv, command or address.
 func hostEvent(e *event) (hostrecords.Event, bool) {
 	ev := hostrecords.Event{
-		TimeUnixNano: uint64(bootEpochOffsetNs + int64(e.TsNs)),
+		TimeUnixNano: uint64(sensorClock.wallNs(e.TsNs)),
 		Pid:          int64(e.Pid),
 		Ppid:         i64(int64(e.Ppid)),
-		BootTimeS:    bootTimeS,
+		BootTimeS:    sensorClock.bootTimeS(),
 	}
 	if e.Pid == 0 {
 		return ev, false
@@ -212,6 +209,22 @@ func (p *production) heartbeat() error {
 		return fmt.Errorf("stage heartbeat: %w", err)
 	}
 	p.notify()
+	return nil
+}
+
+// widenClock stages a manifest declaring a wider clock uncertainty (after a
+// detected CLOCK_REALTIME step); a value not wider than the declared one
+// stages nothing.
+func (p *production) widenClock(ns int64) error {
+	p.mu.Lock()
+	b, err := p.src.WidenClockUncertainty(ns)
+	p.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("stage clock manifest: %w", err)
+	}
+	if b != nil {
+		p.notify()
+	}
 	return nil
 }
 

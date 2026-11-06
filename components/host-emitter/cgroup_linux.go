@@ -8,7 +8,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -27,15 +26,12 @@ func cgroupIDFromPath(path string) (uint64, error) {
 	return st.Ino, nil
 }
 
-// bootTimeSeconds is CLOCK_REALTIME - CLOCK_BOOTTIME in seconds.
-func bootTimeSeconds() *int64 {
-	var boot unix.Timespec
-	if err := unix.ClockGettime(unix.CLOCK_BOOTTIME, &boot); err != nil {
-		return nil
+// suspendedNs is CLOCK_BOOTTIME - CLOCK_MONOTONIC in ns (time spent
+// suspended), read with no file access.
+func suspendedNs() (int64, bool) {
+	var boot, mono unix.Timespec
+	if unix.ClockGettime(unix.CLOCK_BOOTTIME, &boot) != nil || unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono) != nil {
+		return 0, false
 	}
-	v := (time.Now().UnixNano() - boot.Nano()) / int64(time.Second)
-	if v < 0 {
-		return nil
-	}
-	return &v
+	return boot.Nano() - mono.Nano(), true
 }

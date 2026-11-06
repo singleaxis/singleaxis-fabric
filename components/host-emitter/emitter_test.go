@@ -223,16 +223,16 @@ func TestDedupeKeyNeverExportsRawPath(t *testing.T) {
 }
 
 func TestTimestampIsWallClock(t *testing.T) {
-	// bpf_ktime_get_ns is boot-relative; translate must add the computed
-	// boot epoch offset so records carry wall time, not 1970-era stamps.
+	// bpf_ktime_get_ns is boot-relative; translate must add the sensor
+	// clock's offset so records carry wall time, not 1970-era stamps.
 	e := &event{Type: evExec, TsNs: 10 * 1e9, Comm: "x"}
 	lr := translate(e)
-	want := time.Unix(0, bootEpochOffsetNs+int64(e.TsNs))
+	want := time.Unix(0, sensorClock.wallNs(e.TsNs))
 	if !lr.Timestamp().AsTime().Equal(want) {
 		t.Fatalf("timestamp = %v, want boot-offset %v", lr.Timestamp().AsTime(), want)
 	}
 	// And the offset must be nonzero on any real machine (boot epoch != 1970).
-	if bootEpochOffsetNs == 0 {
+	if sensorClock.offset.Load() == 0 {
 		t.Fatal("boot epoch offset never initialized")
 	}
 }

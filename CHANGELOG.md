@@ -69,6 +69,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   host-records and no-redirect extension modules and the built Node; this
   also moves `x/sys` to v0.49.0, `x/text` to v0.43.0 and `x/crypto` to v0.58.0.
 
+### Fixed
+
+- **Host emitter wall clock follows a clock step (0.11.1 acceptance B2).**
+  The eBPF emitter derived wall time from an offset fixed at start, so after
+  a `CLOCK_REALTIME` step (Docker Desktop resyncing its VM clock, an NTP
+  step) records were mis-stamped by the step (2.82 s in the acceptance run)
+  while declaring 2 ms of uncertainty. The offset is now re-sampled with
+  nanosecond precision before events are translated and every 250 ms; a
+  change beyond 1 ms plus 500 ppm of elapsed time is a detected step,
+  logged with its size, counted (`clock_steps=` on the health line), and in
+  production mode the source stages a manifest declaring
+  `clock.uncertainty_ns` = 2 ms + the largest step. The host-records library
+  gains `Source.WidenClockUncertainty`. `fabric.sensor.boot_time_s` follows
+  the step too.
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent

@@ -123,6 +123,7 @@ type Source struct {
 	epoch       uint64
 	next        int64 // the next position to allocate
 	manifestSeq int64
+	clockNs     int64 // the declared clock uncertainty (only ever widened)
 	state       epochState
 	pending     []*Batch
 	nextBatch   uint64
@@ -442,6 +443,45 @@ func (s *Source) stageHeartbeat() (*Batch, error) {
 func (s *Source) Manifest() (*Batch, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.nextManifest()
+}
+
+// WidenClockUncertainty raises the declared clock uncertainty to ns and
+// stages a manifest declaring it, when ns is wider than the declared value; a
+// narrower value changes nothing (nil batch). The sensor calls it after it
+// detected a CLOCK_REALTIME step: records stamped around the step may be off
+// by the step, and a verifier takes the widest uncertainty a source's
+// manifests declare.
+func (s *Source) WidenClockUncertainty(ns int64) (*Batch, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, ErrClosed
+	}
+	if ns <= s.clockUncertainty() {
+		return nil, nil
+	}
+	previous := s.clockNs
+	s.clockNs = ns
+	b, err := s.nextManifest()
+	if err != nil {
+		s.clockNs = previous
+	}
+	return b, err
+}
+
+// ClockUncertainty is the declared clock uncertainty in nanoseconds.
+func (s *Source) ClockUncertainty() int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.clockUncertainty()
+}
+
+func (s *Source) clockUncertainty() int64 {
+	return max(s.clockNs, clockUncertaintyNs)
+}
+
+func (s *Source) nextManifest() (*Batch, error) {
 	if s.closed {
 		return nil, ErrClosed
 	}
