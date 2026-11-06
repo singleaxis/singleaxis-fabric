@@ -34,9 +34,9 @@ jobs:
     outputs:
       relevant: ${{ steps.decide.outputs.relevant }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - id: filter
-        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: |
             relevant:
@@ -74,16 +74,16 @@ jobs:
         if: needs.detect.outputs.relevant != 'true'
         run: echo "No Fabric Node runtime or packaging changes; smoke not required."
 
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         if: needs.detect.outputs.relevant == 'true'
 
       - name: Set up Docker Buildx
         if: needs.detect.outputs.relevant == 'true'
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Build Fabric Node Collector image
         if: needs.detect.outputs.relevant == 'true'
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: components/otel-collector-fabric
           file: components/otel-collector-fabric/Dockerfile
@@ -108,7 +108,7 @@ jobs:
 
       - name: Set up Helm
         if: needs.detect.outputs.relevant == 'true'
-        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           version: v3.15.0
 
@@ -289,7 +289,7 @@ jobs:
 
       - name: Set up Python for exact installed-wheel pilot
         if: needs.detect.outputs.relevant == 'true'
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: '3.11'
 
@@ -344,7 +344,7 @@ jobs:
 
       - name: Publish synthetic pilot evidence
         if: always() && needs.detect.outputs.relevant == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: synthetic-agent-pilot-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
