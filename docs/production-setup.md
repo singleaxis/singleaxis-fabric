@@ -42,7 +42,14 @@ export HOST_LABEL=build-host-1     # FABRIC_HOST_LABEL = EMIT_HOST_LABEL
 export EBPF_LABEL="$HOST_LABEL/ebpf"
 export M="$PWD/fabric-material"    # keep it outside the repository
 export FABRIC_REPO="$HOME/singleaxis-fabric"   # your checkout at the release tag
+export FABRIC_ENV_FILE="$M/node.env"           # the Node's Compose env file
 ```
+
+`FABRIC_ENV_FILE` is the Node's settings file. The Makefile in
+`deploy/compose` reads it, and so do `docker compose --env-file`,
+`preflight-prod.sh` and `verify-prod.sh`, so nothing is written into the
+checkout: a read-only or shared checkout works. Without it they read
+`deploy/compose/.env`, as before.
 
 ## 2. Keys, tokens and certificates
 
@@ -87,8 +94,9 @@ chmod 0400 secrets/spool.key secrets/id.key secrets/ebpf-state.key
 ```
 
 The capture policy (`deployment-policy/v1`, all ten keys required) names the
-roles to keep. This one keeps model exchanges, subprocess arguments and
-output, and non-model HTTP bodies:
+roles to keep. This one keeps the model exchanges (the decisions chain
+needs them), never keeps subprocess arguments, output or non-model HTTP
+bodies in clear, and records only the metadata of the execution context:
 
 ```bash
 cat > policy.json <<EOF
@@ -102,13 +110,13 @@ cat > policy.json <<EOF
     "model.exchange.request": "retain_original",
     "model.exchange.response": "retain_original",
     "model.exchange.part": "retain_original",
-    "terminal.argv": "retain_original",
-    "terminal.context": "retain_original",
-    "terminal.stdout": "retain_original",
-    "terminal.stderr": "retain_original",
+    "terminal.argv": "redact",
+    "terminal.context": "metadata_only",
+    "terminal.stdout": "redact",
+    "terminal.stderr": "redact",
     "record.evidence": "retain_original",
-    "network.request": "retain_original",
-    "network.response": "retain_original"
+    "network.request": "metadata_only",
+    "network.response": "metadata_only"
   },
   "storage": {"backend": "local", "region": "local", "key_id": "support-agent-key"},
   "retention": {"days": 30},
@@ -129,6 +137,16 @@ Roles you leave out are `omit`. Choose the modes your data allows
 backend retained content is readable by anyone who can read the bucket
 prefix ([step 6](#who-can-read-content-in-s3)).
 
+**`redact` under zero-code capture withholds.** A `redact` role is masked by
+your redaction service with a transformation you name in code; the
+zero-code autoload of step 5 cannot name one, so those roles are stored as
+descriptors only (`not_captured(protection_failed)`). The run still
+reconstructs, but the actions view shows each command as `exec pid N`
+instead of its command line, and output matching (rule A1) does not apply.
+To get masked command lines, run a redaction service and name the
+transformation ([masked arguments and output](#masked-arguments-and-output)).
+`retain_original` keeps them in clear: only for data you may store that way.
+
 ## 3. The Node
 
 The two source ids the Node binds, as they travel:
@@ -142,11 +160,11 @@ EBPF_S=$(docker run --rm --user "$(id -u)" -e EMIT_SOURCE_LABEL="$EBPF_LABEL" \
   ghcr.io/singleaxis/fabric-host-emitter:<version> print-source-id)
 ```
 
-`deploy/compose/.env` (mode 0600). Fill in the image version, your
-destination, its token, the bucket and its region:
+The Node's env file, `$FABRIC_ENV_FILE` (mode 0600). Fill in the image
+version, your destination, its token, the bucket and its region:
 
 ```bash
-cat > "$FABRIC_REPO/deploy/compose/.env" <<EOF
+cat > "$FABRIC_ENV_FILE" <<EOF
 FABRIC_NODE_IMAGE=ghcr.io/singleaxis/fabric-otelcol:<version>
 FABRIC_NODE_PULL_POLICY=always
 FABRIC_EXPORT_ENDPOINT=https://otlp.example.com:443
@@ -162,7 +180,7 @@ FABRIC_CONTENT_KEY_FILE=$M/secrets/content.key
 FABRIC_CONTENT_S3_BUCKET=<bucket>
 FABRIC_CONTENT_S3_REGION=<region>
 EOF
-chmod 0600 "$FABRIC_REPO/deploy/compose/.env"
+chmod 0600 "$FABRIC_ENV_FILE"
 ```
 
 For an S3-compatible store, also set `FABRIC_CONTENT_S3_ENDPOINT` (an
@@ -172,7 +190,7 @@ takes S3 credentials from the AWS default chain of its container
 ([deployment](deployment.md#production-profile)): on EC2 the instance role,
 for an S3-compatible store a credentials file mounted as a Compose secret
 (as the [test store](#a-local-s3-store-for-testing) does). Never put keys in
-`.env`.
+the env file.
 
 Two optional steps go before the Node starts: trusting a destination behind
 a private CA, and the local S3 store for testing.
@@ -203,12 +221,12 @@ services:
       - $M/site/export-ca.yaml:/etc/fabric-node/site-export-ca.yaml:ro
 EOF
 # Append to FABRIC_COMPOSE_EXTRA, keeping any file already listed.
-extra=$(sed -n 's/^FABRIC_COMPOSE_EXTRA=//p' "$FABRIC_REPO/deploy/compose/.env" | tail -n 1)
-echo "FABRIC_COMPOSE_EXTRA=${extra:+$extra }$M/site/compose.export-ca.yml" >> "$FABRIC_REPO/deploy/compose/.env"
+extra=$(sed -n 's/^FABRIC_COMPOSE_EXTRA=//p' "$FABRIC_ENV_FILE" | tail -n 1)
+echo "FABRIC_COMPOSE_EXTRA=${extra:+$extra }$M/site/compose.export-ca.yml" >> "$FABRIC_ENV_FILE"
 ```
 
 `FABRIC_COMPOSE_EXTRA` (space-separated Compose files, absolute or relative
-to `deploy/compose`; the last line in `.env` counts) is appended last to the
+to `deploy/compose`; the last line in the env file counts) is appended last to the
 files `make up-prod`/`up-prod-groups` use, so the override's `command`
 replaces the shipped list: keep every `--config` of your profile in it (here
 groups plus S3 content; without content, only the first line). The CA file
@@ -235,9 +253,9 @@ runs the same store over HTTPS, with a certificate signed by the CA from
 [step 2](#2-keys-tokens-and-certificates). The Node trusts that CA for S3
 (`AWS_CA_BUNDLE`) and reads its keys from a credentials file mounted as a
 Compose secret (`AWS_SHARED_CREDENTIALS_FILE`); preflight checks the
-endpoint, bucket, region and SSE as it would for a real store. In `.env`,
+endpoint, bucket, region and SSE as it would for a real store. In the env file,
 use `FABRIC_CONTENT_S3_BUCKET=fabric-content` and
-`FABRIC_CONTENT_S3_REGION=us-east-1`, then:
+`FABRIC_CONTENT_S3_REGION=us-east-1` in the env file, then:
 
 ```bash
 cd "$M" && umask 077 && mkdir -p s3-tls
@@ -257,8 +275,8 @@ done
 openssl rand -hex 32 | tr -d '\n' > secrets/s3-sse.kek   # the store's SSE-S3 key-encryption key
 chmod 0400 secrets/s3-root.credentials secrets/s3-reader.credentials secrets/s3-sse.kek
 chmod 0440 secrets/s3-node.credentials   # native Linux: sudo chgrp 65532 it, like the tokens
-extra=$(sed -n 's/^FABRIC_COMPOSE_EXTRA=//p' "$FABRIC_REPO/deploy/compose/.env" | tail -n 1)
-cat >> "$FABRIC_REPO/deploy/compose/.env" <<EOF
+extra=$(sed -n 's/^FABRIC_COMPOSE_EXTRA=//p' "$FABRIC_ENV_FILE" | tail -n 1)
+cat >> "$FABRIC_ENV_FILE" <<EOF
 FABRIC_COMPOSE_EXTRA=${extra:+$extra }docker-compose.content-s3-local-tls.yml
 FABRIC_CONTENT_S3_ENDPOINT=https://s3-local-tls:8333
 FABRIC_CONTENT_S3_PATH_STYLE=true
@@ -285,6 +303,10 @@ deletes it after the Node is down.
 make -C "$FABRIC_REPO/deploy/compose" up-prod-groups   # runs preflight-prod.sh --groups first; refuses on any FAIL
 ```
 
+It ends by printing the Compose project and the ports it published, read
+from the same env file (`Project fabric-node-production, ingress groups on
+127.0.0.1: agent 4317/4318, content 4319, ebpf 4417 ...`).
+
 Content with ingress groups is S3 only. `FABRIC_CONTENT_BACKEND=file` is
 refused by preflight, and since v0.11.1 also by the Node at startup
 (`fabric-gate`), so it can no longer run telemetry-only by surprise when
@@ -295,6 +317,33 @@ and each group's own token, published on `127.0.0.1` unless you set
 containers on its network `fabric-node-production_fabric-node` reach the Node
 as `fabric-node`, and the Node's container is
 `fabric-node-production-fabric-node-1`.
+
+### Two stacks on one host
+
+The project name and the published ports are settings, so a second Node
+(another tenant, a staging stack) needs only its own env file and material
+directory. Give it its own `COMPOSE_PROJECT_NAME` and free ports:
+
+```bash
+cat >> "$FABRIC_ENV_FILE" <<EOF
+COMPOSE_PROJECT_NAME=fabric-staging
+FABRIC_OTLP_GRPC_PORT=5317
+FABRIC_OTLP_HTTP_PORT=5318
+FABRIC_OTLP_CONTENT_PORT=5319
+FABRIC_EBPF_GRPC_PORT=5417
+FABRIC_HEALTH_PORT=14133
+FABRIC_METRICS_PORT=9888
+EOF
+```
+
+(`FABRIC_S3_LOCAL_TLS_PORT` too when it runs the test store.) Every name the
+rest of this page derives from the project follows: the network is
+`<project>_fabric-node`, the Node's container `<project>-fabric-node-1` and
+the volumes `<project>_<volume>`, so use those in the `--network` flags and
+`docker inspect` commands of that stack. Containers on a stack's network
+still reach its Node as `fabric-node` on the container ports (4317, 4318,
+4319, 4417): only the host-published ports change. Run each stack's `make`
+with its own `FABRIC_ENV_FILE`.
 
 ### When the destination refuses data
 
@@ -338,8 +387,11 @@ at start).
 
 Both drivers work. (AR-1 live uses `systemd` slices because its harness
 creates systemd units; the v0.11.0 UAT ran on `cgroupfs`.) Containers the
-agent starts itself go under a second parent, set as
-`EMIT_SANDBOX_CGROUP_ROOTS`, if you want them linked by rule H5.
+agent starts itself (sandboxes) go under a second parent, the sandbox root,
+created the same way (`/sys/fs/cgroup/fabric-sandboxes` with
+`--cgroup-parent=/fabric-sandboxes` on `cgroupfs`) and passed as
+`-e EMIT_SANDBOX_CGROUP_ROOTS=/sys/fs/cgroup/fabric-sandboxes`; see
+[agents that start containers](#agents-that-start-containers).
 
 ```bash
 EMIT_ETC=/etc/fabric-host-emitter EMIT_VAR=/var/lib/fabric-host-emitter
@@ -418,6 +470,9 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
   "$AGENT_IMAGE" python agent.py
 ```
 
+- **Agent image.** Install the SDK with its `otlp` extra:
+  `pip install "singleaxis-fabric[otlp]==<version>"` (OTLP export, the
+  sealed spool's `cryptography`). The agent never needs `s3`.
 - **Autoload path.** `PYTHONPATH` must name the directory
   `python -m fabric.wire --print-autoload-path` prints in the agent image;
   if the image already sets `PYTHONPATH`, append that directory to it.
@@ -449,6 +504,73 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
 - **Subprocesses** (`FABRIC_WIRE_EXEC=1`) and the host label make the
   process anchor of spec 056: the label must equal the emitter's
   `EMIT_HOST_LABEL`.
+
+### Masked arguments and output
+
+To keep command lines and output masked rather than withheld, run the
+[example redaction service](../examples/redaction-service/README.md) (or
+your own, `contracts/redaction/v1`) next to the agent on a Unix socket in a
+shared volume, set `FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock`
+in `agent.env`, and install capture from the agent's own entry point
+instead of the autoload (drop `FABRIC_WIRE_AUTOLOAD` and the autoload
+`PYTHONPATH` from `agent.env`):
+
+```python
+import json, os
+
+from fabric import wire
+from fabric.wire import Transformation
+
+mask = Transformation("example-mask", "1")   # the id and version your service knows
+policy = json.load(open(os.environ["FABRIC_CAPTURE_POLICY"]))
+wire.install_from_env(transformations={
+    role: mask for role, mode in policy["privacy"].items()
+    if mode in ("redact", "masked_only", "original_plus_masked")
+})
+# ... then import and run the agent
+```
+
+`install_from_env` reads every `FABRIC_*` variable as the autoload does and
+also installs the hooks they switch on (`FABRIC_WIRE_EXEC`,
+`FABRIC_WIRE_HTTP_HOSTS`). Since 0.11.2 a masking transformation always runs
+over the decoded body: a gzip response is decoded first, and a body Fabric
+cannot decode is withheld, never stored as `redacted`. Child Python
+processes the agent starts are captured only through the autoload: keep it
+in their environment if you need them.
+
+### Agents that start containers
+
+An agent whose tools run commands in containers (a sandbox) needs, besides
+step 5's flags:
+
+- **The Docker socket.** `-v /var/run/docker.sock:/var/run/docker.sock` and
+  the `docker` CLI in the image. Anyone with the socket controls the host's
+  Docker daemon: give it only to an agent you would give that.
+- **A sandbox parent.** The agent's tool must start each container with
+  `--cgroup-parent=/fabric-sandboxes` (`fabric-sandboxes.slice` on the
+  `systemd` driver), the sandbox root of [step 4](#4-the-ebpf-emitter), so
+  the emitter scopes its events `sandbox`; a container started without it
+  is outside both roots and unseen. With `FABRIC_WIRE_EXEC=1`, the id
+  `docker run -d` (or `create`) prints becomes the effect's
+  `fabric.sandbox.created_id`, and rule H5 ties the container's own events
+  to that `docker run` effect (`sandbox_report · certain`).
+- **What is linked to what.** A command run with `docker exec` into that
+  container is part of the sandbox (H5), tied to the `docker run` effect,
+  not to the `docker exec` effect or the tool call that ran it (known
+  limitation). A `docker run --rm` prints no id: its events are counted in
+  `sandbox_events_unlinked`, not linked.
+- **Remote sandboxes** (Modal, Daytona and others besides E2B): the
+  commands run elsewhere and are invisible here; only the agent's
+  connections to the provider are seen. Declare its API hosts in
+  `FABRIC_WIRE_SANDBOX_HOSTS` and its addresses to the reader with
+  `--sandbox-peer ADDRESS:PORT`, so those connections are listed under
+  `remote_sandbox_calls` rather than unexplained. Setting
+  `FABRIC_WIRE_REMOTE_SANDBOX=modal` disables only that hook
+  (`disabled(unsupported_provider)`); it never turns the other hooks off.
+- **In-process tools** (file edits, `exec()` of model code, an HTTP client
+  in the agent process): no process starts, so no effect exists. Name them
+  to the reader with `--in-process-tool NAME` so their calls read
+  `no_effect_channel` instead of `none_in_window`.
 
 ### One-shot agent containers
 
@@ -500,6 +622,10 @@ python -m fabric.reconstruct actions export/ \
   --endpoint-peer openai.default=<each address api.openai.com resolved to> \
   --known-peer "$NODE_IP" --known-peer 127.0.0.11
 ```
+
+For an agent with remote sandboxes or in-process tools, add
+`--sandbox-peer <provider address>:443` and `--in-process-tool <tool name>`
+([agents that start containers](#agents-that-start-containers)).
 
 **An S3-compatible store** needs three more settings on the reader:
 `--s3-endpoint-url https://<host>:<port>` (the address the reader reaches
@@ -596,10 +722,12 @@ with these differences:
 - **Only containers are observed.** The emitter sees the VM's kernel: run
   the agent in a container; processes on macOS itself are invisible. The
   VM's kernel has BTF.
-- **cgroup driver.** Docker Desktop uses `cgroupfs`. Create the agent root
-  inside the VM: `docker run --rm --privileged --cgroupns=host -v
-  /sys/fs/cgroup:/sys/fs/cgroup alpine mkdir -p /sys/fs/cgroup/fabric-agents`.
-  Remove it when done (`rmdir` the same way).
+- **cgroup driver.** Docker Desktop uses `cgroupfs`. Create the agent root,
+  and the sandbox root when the agent starts containers, inside the VM:
+  `docker run --rm --privileged --cgroupns=host -v
+  /sys/fs/cgroup:/sys/fs/cgroup alpine mkdir -p /sys/fs/cgroup/fabric-agents
+  /sys/fs/cgroup/fabric-sandboxes`. Remove them when done (`rmdir` the same
+  way, after their containers are gone).
 - **Emitter directories.** `/etc` and `/var/lib` on macOS are not shared
   into the VM. Keep the emitter's files in a directory Docker Desktop shares
   (your home directory by default), without `sudo`; the `docker run` of
@@ -625,3 +753,19 @@ with these differences:
 - **Host services** (a model server on macOS) are `host.docker.internal`
   from the containers; list that address with `--endpoint-peer` or
   `--known-peer` as the agent saw it.
+- **Clock steps.** When the Mac sleeps, the VM's clock falls behind and
+  Docker Desktop steps it forward on wake. Before 0.11.2 the emitter kept
+  its start-time offset and stamped events seconds early. It now follows
+  the step within one batch, logs `CLOCK_REALTIME step detected step_ms=…`,
+  and declares a wider clock uncertainty for that source (2 ms plus the
+  step), which the reader applies to that source's events. Check
+  `docker logs fabric-host-emitter` after a sleep; restarting the emitter
+  starts a fresh epoch with the base uncertainty.
+- **Clock margin.** Each agent process declares
+  `FABRIC_CLOCK_UNCERTAINTY_MS` (default 1000) in its manifest. It widens
+  comparisons across processes and hosts (an exchange of another epoch, a
+  host sensor's event against the run window), not the tool-call windows
+  inside one process, whose wire and exec records share one clock
+  (0.11.2). Here the agent and the emitter read the same VM clock, so a
+  smaller value (for example `FABRIC_CLOCK_UNCERTAINTY_MS=50` in
+  `agent.env`) keeps host links from turning ambiguous.

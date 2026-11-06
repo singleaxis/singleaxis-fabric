@@ -9,11 +9,13 @@ note() { printf '  %s %s\n' "$1" "$2"; }
 ok()   { note "PASS" "$1"; }
 bad()  { note "FAIL" "$1"; fail=1; }
 
+# The env file: FABRIC_ENV_FILE (any path; the Makefile passes it), else .env here.
+ENV_FILE="${FABRIC_ENV_FILE:-.env}"
 # envget reads KEY=VALUE lines from .env without executing it.
 envget() {
   eval "val=\"\${${1}:-}\""
-  if [ -z "${val}" ] && [ -f .env ]; then
-    val=$(sed -n "s/^${1}=//p" .env | tail -n 1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
+  if [ -z "${val}" ] && [ -f "${ENV_FILE}" ]; then
+    val=$(sed -n "s/^${1}=//p" "${ENV_FILE}" | tail -n 1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
   fi
   printf '%s' "${val}"
 }

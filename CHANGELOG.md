@@ -105,6 +105,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `disabled(unsupported_provider)`. Supported providers in the same list
   (`e2b,modal`) are enabled.
 
+### Added
+
+- `fabric.wire.install_from_env(transformations=...)` names the customer
+  transformation of each masking role, so the masking recipe needs no
+  private import (`fabric.wire._config` is no longer in any document).
+- `deploy/compose`: `FABRIC_ENV_FILE` points the Makefile, Compose
+  (`--env-file`), `preflight-prod.sh` and `verify-prod.sh` at an env file
+  outside the checkout (default `.env`, as before). `make up-prod-groups`
+  and `make up-prod` now print the Compose project and the ports actually
+  configured (environment, then that env file, then the default) instead
+  of fixed numbers.
+
+### Documentation
+
+- `docs/production-setup.md` (0.11.1 acceptance, section 5): the Node's env
+  file lives with the key material (`$FABRIC_ENV_FILE`), never in the
+  checkout; a new "Two stacks on one host" section (`COMPOSE_PROJECT_NAME`,
+  ports, derived network and container names); the agent image's
+  `singleaxis-fabric[otlp]` extra; the policy example no longer keeps
+  arguments, output or HTTP bodies in clear, and says that zero-code
+  `redact` withholds them (commands read `exec pid N`) and how to get masked
+  ones (redaction service plus `install_from_env(transformations=...)`); a
+  real "Agents that start containers" recipe (Docker socket,
+  `--cgroup-parent` for agent-started containers and the emitter's sandbox
+  root, what `docker exec` and `docker run --rm` link to, `--sandbox-peer`,
+  `--in-process-tool`); Docker Desktop notes on the sandbox root, VM clock
+  steps and the clock margin. `scripts/tests/test_production_setup_doc.py`
+  checks the new commands.
+- `examples/redaction-service/README.md` and `contracts/redaction/v1` show
+  wire-capture roles (`model.exchange.request`) where the example used an
+  explicit-API role, and the masking recipe in
+  `docs/privacy-and-security.md` uses the public API.
+
+### Known limitations
+
+- A command run with `docker exec` inside an agent-started container is
+  tied to that container's `docker run` effect (rule H5), not to the
+  `docker exec` effect or the tool call that ran it; a `docker run --rm`
+  prints no id and its events stay counted in `sandbox_events_unlinked`.
+- `os.system`, `os.exec*`, `os.posix_spawn` and `pty` are still not hooked:
+  their processes now appear as unexplained `actions` rows (pid, parent pid,
+  time) but carry no command line, since host records never do.
+- Remote sandboxes other than E2B (Modal, Daytona) remain invisible beyond
+  the agent's connections to them.
+- An undecodable body under a masking mode is reported with the existing
+  `protection_failed` reason (counted separately in
+  `WireStats.protection_undecodable`); a distinct `undecodable` reason would
+  need a content-contract change across the SDK and the Node.
+
 ## [0.11.1] - 2026-11-06
 
 Fabric 0.11.1 fixes what a user-acceptance run of 0.11.0 with a real agent

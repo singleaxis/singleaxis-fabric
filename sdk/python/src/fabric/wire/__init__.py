@@ -731,12 +731,20 @@ def _source_id(config: WireConfig, gate: ContentGate | None = None) -> str:
     return source_label(encode_opaque_id(chosen), config.id_key, clear=config.labels == "clear")
 
 
-def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | None:
+def install_from_env(
+    environ: Mapping[str, str] | None = None, *,
+    transformations: Mapping[str, Transformation] | None = None,
+) -> WireHandle | None:  # fmt: skip
     """Install from ``FABRIC_*`` (047 §3, 048 §1); invalid settings log one warning naming the
     error class only. Without a spool losses use the private provider (global mode: exchanges
     the host's, and losses too without an OTLP endpoint). A Fabric-protected global provider
     never carries wire spans: global mode then resolves to the private provider when an OTLP
-    endpoint is set, and otherwise capture is not installed (one class-only warning)."""
+    endpoint is set, and otherwise capture is not installed (one class-only warning).
+
+    ``transformations`` names the customer transformation of each ``redact``,
+    ``masked_only`` or ``original_plus_masked`` role (049 §7.7), performed by the
+    redaction service ``FABRIC_REDACTION_ENDPOINT`` names: the one thing the environment
+    cannot express. Zero-code autoload passes none, so those roles are withheld."""
     _prime_fork_safety()  # before the private provider starts its export thread
     try:
         from .._loss import get_loss_emitter  # noqa: PLC0415
@@ -749,6 +757,8 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> WireHandle | N
 
         env = os.environ if environ is None else environ
         config, tracer_mode = config_from_env(env)
+        if transformations:
+            config = dataclasses.replace(config, transformations=dict(transformations))
         if _otel_disabled():
             return install(config)  # disabled: nothing is built
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():

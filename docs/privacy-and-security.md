@@ -157,19 +157,22 @@ Name the transformation per role in code. Fabric records its id and version
 on every stored object and sends them with each call:
 
 ```python
-import dataclasses
-import os
-
 from fabric import wire
 from fabric.wire import Transformation
-from fabric.wire._config import config_from_env
 
-config, _ = config_from_env(os.environ)   # reads FABRIC_REDACTION_ENDPOINT
 mask = Transformation("example-mask", "1")
-wire.install(dataclasses.replace(config, transformations={
+wire.install_from_env(transformations={   # reads FABRIC_REDACTION_ENDPOINT and FABRIC_*
     "model.exchange.request": mask, "model.exchange.response": mask,
-}))
+    "terminal.argv": mask, "terminal.stdout": mask,
+})
 ```
+
+The transformation runs over the decoded body: a response sent with a
+`Content-Encoding` (gzip, deflate, stacked codings; `br` and `zstd` when
+their module is installed) is decoded first, bounded by the body cap, and
+stored with `content_encoding: identity`. A body Fabric cannot decode is
+withheld (`not_captured(protection_failed)`, counted in
+`WireStats.protection_undecodable`), never stored as `redacted`.
 
 The explicit APIs take the same identity:
 `ContentProtector(policy, transformations={role: Transformation(...)}, redaction=RedactionService(...))`

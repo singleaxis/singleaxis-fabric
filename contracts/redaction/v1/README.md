@@ -62,7 +62,8 @@ Authorization: Bearer <token>   (only when a token file is configured)
   They are recorded on every stored object as `transformation_id` and
   `transformation_version`; a service should refuse an id or version it does not
   implement (`unknown_transformation`).
-- `X-Fabric-Role` is the content role (for example `model.request.messages`).
+- `X-Fabric-Role` is the content role as the capture policy names it (for example
+  `model.exchange.request` for wire capture, `terminal.argv` for the exec hook).
 - `X-Fabric-Mode` is `redact` or `masked_only`. The review copy of an
   `original_plus_masked` role is requested as `masked_only`.
 
