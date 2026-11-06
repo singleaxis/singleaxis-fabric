@@ -13,7 +13,7 @@ require (
 	go.opentelemetry.io/collector/receiver/receivertest v0.150.0
 	go.uber.org/zap v1.27.1
 	golang.org/x/sys v0.49.0
-	google.golang.org/grpc v1.83.2
+	google.golang.org/grpc v1.85.0
 )
 
 require (
@@ -41,8 +41,8 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260817212433-ac3dfec99bb1 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 )
 
 replace github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords => ../../hostrecords
