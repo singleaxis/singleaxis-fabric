@@ -43,7 +43,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   close each one explicitly on every path, which CodeQL `py/file-not-closed`
   can see (the previous `ExitStack` already released them). Reads are
   unchanged. Dependabot groups the `github/codeql-action` sub-actions, which
-  fail when their versions differ.
+  fail when their versions differ. `golang.org/x/net` v0.60.0 → v0.62.0
+  (CVE-2026-78661, HTML parser denial of service) in the host emitter,
+  host-records and no-redirect extension modules and the built Node; this
+  also moves `x/sys` to v0.49.0, `x/text` to v0.43.0 and `x/crypto` to v0.58.0.
 
 ## [0.11.1] - 2026-11-06
 
