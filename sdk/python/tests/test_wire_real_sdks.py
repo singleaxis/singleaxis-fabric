@@ -60,7 +60,7 @@ def test_openai_sync_async_and_streaming(installed: Installed, fake_llm: FakeLLM
     # which the tee honestly reports ``complete``. Either way the bytes are
     # exact; only the recorded end state follows the SDK's reading behaviour.
     # The sync and async streams may differ (3.31 drains only the async one).
-    observed = [(s.attributes or {})["fabric.wire.response_state"] for s in installed.spans()]
+    observed = [str((s.attributes or {})["fabric.wire.response_state"]) for s in installed.spans()]
     assert len(observed) == 4
     assert observed[1] in ("closed_early", "complete")
     assert observed[3] in ("closed_early", "complete")
