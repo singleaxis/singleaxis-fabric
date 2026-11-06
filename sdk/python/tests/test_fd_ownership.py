@@ -18,6 +18,14 @@ from fabric.governed_store import GovernedLocalContentStore, LocalCapabilityAuth
 from fabric.independent_store import LocalIndependentFeedResolver
 
 
+def _release(live: set[int], descriptor: int) -> None:
+    # Ownership, not order: a walk may close a parent as soon as its child is
+    # open, and the kernel may then reuse that number. Each descriptor is
+    # closed exactly once, only by its owner, and none is left open.
+    assert descriptor in live, f"closed a descriptor it does not own: {descriptor}"
+    live.remove(descriptor)
+
+
 @pytest.fixture(params=["byte", "byte_metadata", "witness", "governed"])
 def read_action(request: pytest.FixtureRequest, tmp_path: Path) -> Iterator[Callable[[], object]]:
     root = tmp_path / "store"
@@ -84,7 +92,7 @@ def test_every_acquired_descriptor_closes_on_success_and_each_open_failure(
 
     def exercise(fail_at: int | None) -> int:
         acquired: list[int] = []
-        closed: list[int] = []
+        live: set[int] = set()
         attempts = 0
 
         def tracked_open(*args: Any, **kwargs: Any) -> int:
@@ -94,11 +102,12 @@ def test_every_acquired_descriptor_closes_on_success_and_each_open_failure(
                 raise OSError("synthetic traversal failure")
             descriptor = real_open(*args, **kwargs)
             acquired.append(descriptor)
+            live.add(descriptor)
             return descriptor
 
         def tracked_close(descriptor: int) -> None:
+            _release(live, descriptor)
             real_close(descriptor)
-            closed.append(descriptor)
 
         with monkeypatch.context() as patch:
             patch.setattr(os, "open", tracked_open)
@@ -108,7 +117,7 @@ def test_every_acquired_descriptor_closes_on_success_and_each_open_failure(
             else:
                 with pytest.raises(OSError, match="synthetic traversal failure"):
                     read_action()
-        assert closed == list(reversed(acquired))
+        assert not live, f"descriptors left open: {sorted(live)}"
         for descriptor in acquired:
             with pytest.raises(OSError):
                 os.fstat(descriptor)
@@ -126,16 +135,17 @@ def test_descriptors_close_when_read_or_validation_fails(
 ) -> None:
     real_open, real_close = os.open, os.close
     acquired: list[int] = []
-    closed: list[int] = []
+    live: set[int] = set()
 
     def tracked_open(*args: Any, **kwargs: Any) -> int:
         descriptor = real_open(*args, **kwargs)
         acquired.append(descriptor)
+        live.add(descriptor)
         return descriptor
 
     def tracked_close(descriptor: int) -> None:
+        _release(live, descriptor)
         real_close(descriptor)
-        closed.append(descriptor)
 
     def failed_stat(_descriptor: int) -> os.stat_result:
         raise OSError("synthetic metadata failure")
@@ -147,7 +157,7 @@ def test_descriptors_close_when_read_or_validation_fails(
         with pytest.raises(OSError, match="synthetic metadata failure"):
             read_action()
     assert acquired
-    assert closed == list(reversed(acquired))
+    assert not live, f"descriptors left open: {sorted(live)}"
     for descriptor in acquired:
         with pytest.raises(OSError):
             os.fstat(descriptor)
