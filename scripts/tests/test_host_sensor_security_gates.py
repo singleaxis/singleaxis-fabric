@@ -1,6 +1,7 @@
 """Shipped host sensors must not escape the release security scans."""
 
-from pathlib import Path
+import subprocess
+from pathlib import Path, PurePosixPath
 
 import yaml
 
@@ -80,3 +81,45 @@ def test_every_first_party_node_module_is_in_source_and_dependency_scans() -> No
         assert path in trivy_paths, path
         assert path in semgrep_cmd, path
         assert path in osv_args, path
+
+
+LOCKFILE_NAMES = {"go.mod", "uv.lock", "package-lock.json"}
+
+
+def _osv_scan_args() -> list[str]:
+    jobs = yaml.safe_load(SECURITY_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    return jobs["osv"]["steps"][1]["with"]["scan-args"].split()
+
+
+def test_osv_uses_v2_source_scan_with_explicit_lockfiles() -> None:
+    """osv-scanner v2 rejects v1 flags; v1.9.0's action wrapper hid that.
+
+    On main the v1.9.0 job printed "flag provided but not defined:
+    -lockfile-only" and still passed, so no lockfile was ever scanned.
+    """
+    args = _osv_scan_args()
+    assert args[:2] == ["scan", "source"]
+    for removed in ("--lockfile-only", "--skip-git", "--recursive", "-r"):
+        assert removed not in args, removed
+    rest = args[2:]
+    assert rest and all(arg.startswith("--lockfile=") for arg in rest), rest
+    for arg in rest:
+        target = ROOT / arg.removeprefix("--lockfile=")
+        assert target.is_file(), arg
+        assert target.name in LOCKFILE_NAMES, arg
+
+
+def test_osv_names_every_lockfile_in_each_released_source_tree() -> None:
+    """Every lockfile under a Trivy-scanned release path is OSV-scanned too."""
+    jobs = yaml.safe_load(SECURITY_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    roots = {item["path"] for item in jobs["trivy"]["strategy"]["matrix"]["include"]}
+    named = {arg.removeprefix("--lockfile=") for arg in _osv_scan_args()[2:]}
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", *sorted(roots)],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    present = {path for path in tracked if PurePosixPath(path).name in LOCKFILE_NAMES}
+    assert present == named

@@ -133,22 +133,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: google/osv-scanner-action/osv-scanner-action@19ec1116569a47416e11a45848722b1af31a857b # v1.9.0
+      # osv-scanner v2 has no --lockfile-only or --skip-git (git roots are no
+      # longer scanned by default). Each released lockfile is named with
+      # --lockfile, so the scan covers exactly the released dependency sets.
+      # test_host_sensor_security_gates.py fails when a lockfile under these
+      # module directories is missing here. Usage errors exit non-zero in v2
+      # (v1.9.0's wrapper reported success after rejecting --lockfile-only).
+      - uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
         with:
           scan-args: |-
-            --recursive
-            --lockfile-only
-            --skip-git
-            sdk/python
-            sdk/typescript
-            components/otel-collector-fabric/processor/fabricguardprocessor
-            components/otel-collector-fabric/receiver/auditreceiver
-            components/otel-collector-fabric/exporter/fabriccontentexporter
-            components/otel-collector-fabric/extension/noredirectextension
-            components/otel-collector-fabric/extension/fabricenvelopeextension
-            components/otel-collector-fabric/hostrecords
-            components/host-emitter
-            tools/fabricctl
+            scan
+            source
+            --lockfile=sdk/python/uv.lock
+            --lockfile=sdk/typescript/package-lock.json
+            --lockfile=components/otel-collector-fabric/processor/fabricguardprocessor/go.mod
+            --lockfile=components/otel-collector-fabric/receiver/auditreceiver/go.mod
+            --lockfile=components/otel-collector-fabric/exporter/fabriccontentexporter/go.mod
+            --lockfile=components/otel-collector-fabric/extension/noredirectextension/go.mod
+            --lockfile=components/otel-collector-fabric/extension/fabricenvelopeextension/go.mod
+            --lockfile=components/otel-collector-fabric/hostrecords/go.mod
+            --lockfile=components/host-emitter/go.mod
+            --lockfile=tools/fabricctl/go.mod
 
   scorecard:
     name: OpenSSF Scorecard
