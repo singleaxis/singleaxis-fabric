@@ -53,7 +53,7 @@ jobs:
             "${KIND_CLUSTER}" "docker.io/library/${COLLECTOR_IMAGE}")
           printf 'COLLECTOR_DIGEST=%s\n' "${DIGEST}" >> "${GITHUB_ENV}"
           printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/fabric-node-manifest-digest.txt"
-      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.15.0
       - name: Package exact chart and identify artifacts
@@ -183,7 +183,7 @@ jobs:
             echo 'Node gate leaked outbound credential in diagnostic' >&2
             exit 1
           fi
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
       - uses: ./.github/actions/setup-uv

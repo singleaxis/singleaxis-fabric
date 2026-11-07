@@ -55,8 +55,7 @@ export interface RedactionStats {
 }
 
 export type RedactionEndpoint =
-  | { kind: "unix"; socketPath: string }
-  | { kind: "http"; host: "127.0.0.1" | "::1"; port: number };
+  { kind: "unix"; socketPath: string } | { kind: "http"; host: "127.0.0.1" | "::1"; port: number };
 
 /**
  * `value` as a {@link Transformation}; throws (fixed text) for anything else. A function

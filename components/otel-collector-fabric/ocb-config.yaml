@@ -17,16 +17,16 @@ dist:
 
 extensions:
   # health_check extension ships from the contrib distribution; keep
-  # the version pinned to the same v0.150.0 as the rest of the manifest.
-  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
+  # the version pinned to the same release as the rest of the manifest.
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.164.1
   # Durable exporter queues use the contrib file-storage extension.
   # Merely compiling this component does not make delivery durable: a
   # writable persistent volume and `sending_queue.storage` must also be
   # configured (the Helm chart does both when persistence is enabled).
-  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.164.1
   # Terminates token-authenticated OTLP ingress for non-Kubernetes
   # deployments — wired on both receivers by the compose production overlay.
-  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.164.1
   # HTTP client middleware that refuses redirects (spec 048 H1): every
   # otlphttp exporter lists it (fabric-gate enforces), so a 3xx from a
   # destination is a retryable failure, never a re-send of the body and
@@ -41,7 +41,7 @@ extensions:
     path: ./extension/fabricenvelopeextension
 
 receivers:
-  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.164.0
   # auditd host connector (spec 030): consumes Linux audit events from the
   # audit netlink multicast or audit.log and emits them as logs. Config-gated;
   # only deployments that enable it take CAP_AUDIT_READ or audit-log access.
@@ -49,15 +49,15 @@ receivers:
     path: ./receiver/auditreceiver
 
 processors:
-  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.150.0
-  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.150.0
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.164.0
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.164.0
   # Fabric's exact metadata allowlist and native-field scrubber.
   - gomod: github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
     path: ./processor/fabricguardprocessor
 
 exporters:
-  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.150.0
-  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.150.0
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.164.0
+  - gomod: go.opentelemetry.io/collector/exporter/otlphttpexporter v0.164.0
   # Spec 048 content writer: verifies content log records (closed descriptor,
   # body SHA-256, allowed tenants) and writes body + descriptor to a
   # directory or S3 with the SDK store layout. Only fabric-gate-approved
@@ -66,9 +66,9 @@ exporters:
     path: ./exporter/fabriccontentexporter
 
 providers:
-  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
-  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.56.0
-  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.56.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/envprovider v1.70.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/fileprovider v1.70.0
+  - gomod: go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.70.0
 
 # Resolve the recorder components to their on-disk sources for reproducible builds.
 replaces:
@@ -82,5 +82,6 @@ replaces:
   # It is not a component, so OCB writes this target verbatim into the
   # generated dist/go.mod: the path is relative to output_path.
   - github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords => ../hostrecords
-  # CVE-2026-63209: klauspost/compress below 1.18.7 (transitive).
-  - github.com/klauspost/compress => github.com/klauspost/compress v1.18.7
+  # klauspost/compress (transitive): CVE-2026-63209 below 1.18.7 and
+  # GO-2026-6865 / CVE-2026-116591 (panic on two-block frames) below 1.20.2.
+  - github.com/klauspost/compress => github.com/klauspost/compress v1.20.3

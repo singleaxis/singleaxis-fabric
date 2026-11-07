@@ -60,7 +60,7 @@ if [ ! -x "${FABRIC_GO_BIN}/go-licenses" ]; then
   go install github.com/google/go-licenses@v1.6.0
 fi
 if [ ! -x "${FABRIC_GO_BIN}/builder" ]; then
-  go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+  go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
 fi
 (
   cd components/otel-collector-fabric

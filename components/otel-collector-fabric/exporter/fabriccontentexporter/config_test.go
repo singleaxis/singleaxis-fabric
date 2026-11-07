@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/collector/confmap"
-	"go.opentelemetry.io/collector/confmap/xconfmap"
 )
 
 func unmarshal(t *testing.T, raw map[string]any) (*Config, error) {
@@ -18,7 +17,7 @@ func unmarshal(t *testing.T, raw map[string]any) (*Config, error) {
 	if err := confmap.NewFromStringMap(raw).Unmarshal(cfg); err != nil {
 		return nil, err
 	}
-	return cfg, xconfmap.Validate(cfg)
+	return cfg, confmap.Validate(cfg)
 }
 
 // The defaults are the durable recommendation: bounded request queue with

@@ -11,12 +11,33 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/collector/config/configopaque"
 	"go.uber.org/zap"
+
+	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/internal/credentialsfile"
 )
 
-// The pinned upstream v0.150.0 used to turn every blank file line into an
-// accepted "Bearer " credential. Exercise the exact refresh path used on
-// startup and by the file watcher after rotation.
+func fabricAccepts(t *testing.T, auth *bearerTokenAuth, value string) bool {
+	t.Helper()
+	_, err := auth.Authenticate(context.Background(), map[string][]string{"authorization": {value}})
+	return err == nil
+}
+
+func fabricEventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal(what)
+}
+
+// v0.150.0 turned every blank file line into an accepted "Bearer " credential.
+// Upstream's credentials-file resolver (v0.151.0+) skips blank lines; keep the
+// regression guard on the non-strict path across load and rotation.
 func TestFabricEmptyTokenEntriesNeverAuthenticate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(path, []byte("valid-token\n\n  \n"), 0o600); err != nil {
@@ -24,31 +45,51 @@ func TestFabricEmptyTokenEntriesNeverAuthenticate(t *testing.T) {
 	}
 	cfg := createDefaultConfig().(*Config)
 	cfg.Filename = path
+	cfg.RetryOnFailure = credentialsfile.RetryOnFailureConfig{Enabled: true, MaxRetries: 1, Interval: 10 * time.Millisecond}
+	cfg.WaitForTokenFile = true
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	auth := newBearerTokenAuth(cfg, zap.NewNop())
-	check := func(value string, allowed bool) {
-		t.Helper()
-		_, err := auth.Authenticate(context.Background(), map[string][]string{"authorization": {value}})
-		if (err == nil) != allowed {
-			t.Fatalf("credential accepted=%v, want %v", err == nil, allowed)
+	if err := auth.Start(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := auth.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}()
+	if !fabricAccepts(t, auth, "Bearer valid-token") || fabricAccepts(t, auth, "Bearer ") {
+		t.Fatal("initial non-strict credential acceptance is incorrect")
+	}
+
+	if err := os.WriteFile(path, []byte("\nrotated-token\n \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fabricEventually(t, "non-strict rotation did not load only the new credential", func() bool {
+		return fabricAccepts(t, auth, "Bearer rotated-token") &&
+			!fabricAccepts(t, auth, "Bearer valid-token") &&
+			!fabricAccepts(t, auth, "Bearer ")
+	})
+}
+
+func TestFabricStrictTokenConfigValidation(t *testing.T) {
+	retry := credentialsfile.RetryOnFailureConfig{Enabled: true, Interval: time.Second}
+	for name, mutate := range map[string]func(*Config){
+		"no filename":   func(c *Config) { c.Filename = "" },
+		"inline token":  func(c *Config) { c.BearerToken = "inline" },
+		"inline tokens": func(c *Config) { c.Tokens = []configopaque.String{"inline"} },
+		"retry":         func(c *Config) { c.RetryOnFailure = retry },
+		"wait":          func(c *Config) { c.RetryOnFailure = retry; c.WaitForTokenFile = true },
+	} {
+		cfg := createDefaultConfig().(*Config)
+		cfg.Filename = "/run/secrets/token"
+		cfg.RequireSingleToken = true
+		mutate(cfg)
+		if cfg.Validate() == nil {
+			t.Errorf("%s: require_single_token config accepted", name)
 		}
 	}
-	check("Bearer valid-token", true)
-	check("Bearer ", false)
-
-	if err := os.WriteFile(path, []byte("\n \n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	auth.refreshToken()
-	check("Bearer valid-token", false)
-	check("Bearer ", false)
-
-	if err := os.WriteFile(path, []byte("rotated-token\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	auth.refreshToken()
-	check("Bearer rotated-token", true)
-	check("Bearer valid-token", false)
-	check("Bearer ", false)
 }
 
 func TestFabricStrictTokenReloadFailsClosed(t *testing.T) {
@@ -67,9 +108,8 @@ func TestFabricStrictTokenReloadFailsClosed(t *testing.T) {
 	auth := newBearerTokenAuth(cfg, zap.NewNop())
 	check := func(value string, allowed bool) {
 		t.Helper()
-		_, err := auth.Authenticate(context.Background(), map[string][]string{"authorization": {value}})
-		if (err == nil) != allowed {
-			t.Fatalf("credential accepted=%v, want %v", err == nil, allowed)
+		if fabricAccepts(t, auth, value) != allowed {
+			t.Fatalf("credential accepted=%v, want %v", !allowed, allowed)
 		}
 	}
 	check("Bearer "+first, true)
@@ -77,12 +117,12 @@ func TestFabricStrictTokenReloadFailsClosed(t *testing.T) {
 
 	for _, invalid := range []string{
 		first + "\n", first + "\n" + second, " \n", strings.Repeat("c", 31),
-		strings.Repeat("d", 4097), first + " ", "",
+		strings.Repeat("d", 4097), first + " ", first + " # comment", "",
 	} {
 		if err := os.WriteFile(path, []byte(invalid), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		auth.refreshToken()
+		auth.strict.refresh()
 		check("Bearer "+first, false)
 		check("Bearer "+second, false)
 		check("Bearer ", false)
@@ -90,15 +130,44 @@ func TestFabricStrictTokenReloadFailsClosed(t *testing.T) {
 	if err := os.WriteFile(path, []byte(second), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	auth.refreshToken()
+	auth.strict.refresh()
 	check("Bearer "+second, true)
 	check("Bearer "+first, false)
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	auth.refreshToken()
+	auth.strict.refresh()
 	check("Bearer "+second, false)
 	check("Bearer ", false)
+}
+
+// The watch must outlive the context passed to Start.
+func TestFabricStrictWatchSurvivesStartContext(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	first := strings.Repeat("a", 48)
+	if err := os.WriteFile(path, []byte(first), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := createDefaultConfig().(*Config)
+	cfg.Filename = path
+	cfg.RequireSingleToken = true
+	auth := newBearerTokenAuth(cfg, zap.NewNop())
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := auth.Start(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	defer func() {
+		if err := auth.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	}()
+	if err := os.WriteFile(path, []byte(first+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fabricEventually(t, "malformed rewrite after Start returned did not fail closed", func() bool {
+		return !fabricAccepts(t, auth, "Bearer "+first)
+	})
 }
 
 func TestFabricProjectedSecretAtomicSymlinkRotation(t *testing.T) {
@@ -134,12 +203,7 @@ func TestFabricProjectedSecretAtomicSymlinkRotation(t *testing.T) {
 			t.Error(err)
 		}
 	}()
-	accepted := func(token string) bool {
-		_, err := auth.Authenticate(context.Background(), map[string][]string{
-			"authorization": {"Bearer " + token},
-		})
-		return err == nil
-	}
+	accepted := func(token string) bool { return fabricAccepts(t, auth, "Bearer "+token) }
 	if !accepted(first) || accepted(second) || accepted("") {
 		t.Fatal("initial projected credential acceptance is incorrect")
 	}
@@ -153,31 +217,17 @@ func TestFabricProjectedSecretAtomicSymlinkRotation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	waitFor := func(want string, old string) {
-		t.Helper()
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			if accepted(want) && !accepted(old) && !accepted("") {
-				return
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		t.Fatalf("projected Secret swap did not load only the new credential: new=%v old=%v empty=%v", accepted(want), accepted(old), accepted(""))
-	}
 	writeVersion("..version-2", second)
 	rotate("..version-2")
-	waitFor(second, first)
+	fabricEventually(t, "projected Secret swap did not load only the new credential", func() bool {
+		return accepted(second) && !accepted(first) && !accepted("")
+	})
 
 	// A malformed projected replacement must remove the previously accepted
 	// credential rather than retaining it until the supervisor polls again.
 	writeVersion("..version-3", second+"\n")
 	rotate("..version-3")
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if !accepted(first) && !accepted(second) && !accepted("") {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("malformed projected Secret swap did not fail closed")
+	fabricEventually(t, "malformed projected Secret swap did not fail closed", func() bool {
+		return !accepted(first) && !accepted(second) && !accepted("")
+	})
 }

@@ -25,22 +25,22 @@ fail() {
 #   processors: memory_limiter, batch, fabricguard (local path)
 #   exporters:  debug, otlphttp, fabriccontent (local path — spec 048)
 #   providers:  env, file, yaml
-expected_gomods='github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.150.0
-github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.150.0
-github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.150.0
+expected_gomods='github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension v0.164.1
+github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.164.1
+github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage/filestorage v0.164.1
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/exporter/fabriccontentexporter v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/fabricenvelopeextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/extension/noredirectextension v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/processor/fabricguardprocessor v0.1.0
 github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/receiver/auditreceiver v0.1.0
-go.opentelemetry.io/collector/confmap/provider/envprovider v1.56.0
-go.opentelemetry.io/collector/confmap/provider/fileprovider v1.56.0
-go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.56.0
-go.opentelemetry.io/collector/exporter/debugexporter v0.150.0
-go.opentelemetry.io/collector/exporter/otlphttpexporter v0.150.0
-go.opentelemetry.io/collector/processor/batchprocessor v0.150.0
-go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.150.0
-go.opentelemetry.io/collector/receiver/otlpreceiver v0.150.0'
+go.opentelemetry.io/collector/confmap/provider/envprovider v1.70.0
+go.opentelemetry.io/collector/confmap/provider/fileprovider v1.70.0
+go.opentelemetry.io/collector/confmap/provider/yamlprovider v1.70.0
+go.opentelemetry.io/collector/exporter/debugexporter v0.164.0
+go.opentelemetry.io/collector/exporter/otlphttpexporter v0.164.0
+go.opentelemetry.io/collector/processor/batchprocessor v0.164.0
+go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.164.0
+go.opentelemetry.io/collector/receiver/otlpreceiver v0.164.0'
 
 actual_gomods="$(grep -E 'gomod:' "${manifest}" | sed -E 's/.*gomod:[[:space:]]*//' | sed -E 's/[[:space:]]+$//' | sort)"
 expected_sorted="$(printf '%s\n' "${expected_gomods}" | sort)"
@@ -96,13 +96,23 @@ grep -q 'go env GOVERSION' "${dockerfile}" \
 # ---- 3. Lockstep: local component go.mods must pin the manifest train ----
 # Derive the two collector trains from the manifest itself: the v0.x line
 # (beta components: receivers, processors, exporters, test modules) and the
-# v1.x line (stable modules: providers, pdata, component, consumer).
-train_beta="$(grep -E 'gomod:.*opentelemetry' "${manifest}" | grep -oE 'v0\.[0-9]+\.[0-9]+' | sort -u)"
-train_stable="$(grep -E 'gomod:.*opentelemetry' "${manifest}" | grep -oE 'v1\.[0-9]+\.[0-9]+' | sort -u)"
+# v1.x line (stable modules: providers, pdata, component, consumer). The
+# trains come from the core modules; contrib modules must sit on the same
+# v0.x minor but may carry a contrib-only patch release (v0.164.1 is the
+# contrib build the upstream v0.164.0 release artifacts use).
+train_beta="$(grep -E 'gomod:[[:space:]]*go\.opentelemetry\.io/collector/' "${manifest}" | grep -oE 'v0\.[0-9]+\.[0-9]+' | sort -u)"
+train_stable="$(grep -E 'gomod:[[:space:]]*go\.opentelemetry\.io/collector/' "${manifest}" | grep -oE 'v1\.[0-9]+\.[0-9]+' | sort -u)"
 [ "$(printf '%s\n' "${train_beta}" | grep -c .)" -eq 1 ] \
   || fail "manifest has divergent v0.x collector trains: ${train_beta}"
 [ "$(printf '%s\n' "${train_stable}" | grep -c .)" -eq 1 ] \
   || fail "manifest has divergent v1.x collector trains: ${train_stable}"
+train_minor="${train_beta%.*}."
+for ver in $(grep -E 'gomod:.*opentelemetry-collector-contrib/' "${manifest}" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sort -u); do
+  case "${ver}" in
+    "${train_minor}"*) ;;
+    *) fail "contrib module ${ver} is off the manifest train ${train_beta}" ;;
+  esac
+done
 
 local_gomods="${procgomod} ${root}/receiver/auditreceiver/go.mod ${root}/exporter/fabriccontentexporter/go.mod ${root}/extension/noredirectextension/go.mod ${root}/extension/fabricenvelopeextension/go.mod"
 for gomod in ${local_gomods}; do

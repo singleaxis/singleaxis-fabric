@@ -66,7 +66,8 @@ type lossStats struct {
 func (s lossStats) unpositioned() int { return s.items - s.sequenced }
 
 // decodeBody reverses the confighttp client compression named by a
-// Content-Encoding header (the formats confighttp v0.150 writes).
+// Content-Encoding header (the formats confighttp v0.164 writes; the set is
+// unchanged since v0.150).
 func decodeBody(encoding string, body []byte) ([]byte, error) {
 	var r io.Reader
 	switch strings.ToLower(strings.TrimSpace(encoding)) {

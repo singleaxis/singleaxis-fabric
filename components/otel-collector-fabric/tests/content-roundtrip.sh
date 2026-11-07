@@ -186,24 +186,32 @@ post "${runtime}/good.json"
 post "${runtime}/tampered.json"
 post "${runtime}/good.json" # identical replay
 
+# The directory backend shards by the first two bytes of sha256(object id):
+# <evidence>/<h[0:2]>/<h[2:4]>/<id> and <evidence>/meta/<h[0:2]>/<h[2:4]>/<id>.json.
+shard() {
+  python3 -c 'import hashlib,sys; h=hashlib.sha256(sys.argv[1].encode()).hexdigest(); print(h[0:2]+"/"+h[2:4])' "$1"
+}
 oid="0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
+tampered_oid="0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a03"
 evidence="/var/lib/fabric-node/content/tenant-a/evidence"
 mkdir "${runtime}/out"
 for _ in $(seq 1 20); do
-  if docker cp "${container}:${evidence}/meta/${oid}.json" "${runtime}/out/descriptor" >/dev/null 2>&1; then
+  if docker cp "${container}:${evidence}/meta/$(shard "${oid}")/${oid}.json" "${runtime}/out/descriptor" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
 [[ -f "${runtime}/out/descriptor" ]] || fail "descriptor was not written"
-docker cp "${container}:${evidence}/${oid}" "${runtime}/out/body" >/dev/null \
+docker cp "${container}:${evidence}/$(shard "${oid}")/${oid}" "${runtime}/out/body" >/dev/null \
   || fail "body was not written"
 cmp -s "${runtime}/out/body" "${runtime}/expected-body" || fail "stored body differs from the posted bytes"
 cmp -s "${runtime}/out/descriptor" "${runtime}/expected-descriptor" \
   || fail "stored descriptor differs from the SDK descriptor bytes"
-if docker cp "${container}:${evidence}/0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a03" "${runtime}/out/tampered" >/dev/null 2>&1; then
-  fail "digest-mismatched record was stored"
-fi
+for path in "$(shard "${tampered_oid}")/${tampered_oid}" "${tampered_oid}"; do
+  if docker cp "${container}:${evidence}/${path}" "${runtime}/out/tampered" >/dev/null 2>&1; then
+    fail "digest-mismatched record was stored"
+  fi
+done
 
 logs="$(docker logs "${container}" 2>&1)"
 grep -qF 'fabriccontent: dropped content record' <<<"${logs}" || fail "no drop log line for the tampered record"

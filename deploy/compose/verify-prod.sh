@@ -202,7 +202,7 @@ if [ -n "${grpc_addr}" ]; then
     fi
     # grpcurl trims header values, so it cannot transmit the exact trailing
     # space in "Bearer ". The token-file checks above directly reject every
-    # file shape that makes bearertokenauth v0.150.0 mint that credential.
+    # file shape that made bearertokenauth up to v0.150.0 mint that credential.
   else
     note "WARN" "grpcurl not installed; gRPC ingress auth not exercised (install grpcurl to cover 4317)"
   fi
