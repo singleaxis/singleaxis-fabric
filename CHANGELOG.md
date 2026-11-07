@@ -58,6 +58,16 @@ Planned as 0.12.0: the TypeScript SDK drops Node 20.
   `actions/setup-python` v7.1.0, `actions/setup-go` v7.0.0 and
   `osv-scanner-action` v2.7.0, whose scan now actually runs on every
   released lockfile. The local S3 test store `chrislusf/seaweedfs` is 4.50.
+- **ruff 0.17.3** in the SDK dev group, both uv locks and the pre-commit
+  hook (supersedes #255, with openai 3.42.0). ruff 0.17 widens its default
+  rule set, so a new root `ruff.toml` governs files outside a package
+  config (`scripts/`, `examples/`, `deploy/`): Python 3.11 target, the old
+  E4/E7/E9/F checks kept, and BLE001, RUF100 and TRY004 disabled with a
+  reason each. The SDK config also ignores the newly stable PLR0917, as it
+  does PLR0913, and both keep Markdown out of the formatter, which 0.17
+  would otherwise apply to the hand-laid-out docs code blocks. The
+  remaining findings are fixed in code with no behaviour change, and the 17
+  shebang scripts are now executable.
 
 ### Fixed
 
