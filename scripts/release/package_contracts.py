@@ -312,11 +312,13 @@ def _write_archive(
     archive_root: str,
 ) -> None:
     archive.parent.mkdir(parents=True, exist_ok=True)
-    with archive.open("wb") as raw_stream, gzip.GzipFile(
-        filename="", mode="wb", fileobj=raw_stream, compresslevel=9, mtime=0
-    ) as gzip_stream, tarfile.open(
-        fileobj=gzip_stream, mode="w", format=tarfile.PAX_FORMAT
-    ) as tar:
+    with (
+        archive.open("wb") as raw_stream,
+        gzip.GzipFile(
+            filename="", mode="wb", fileobj=raw_stream, compresslevel=9, mtime=0
+        ) as gzip_stream,
+        tarfile.open(fileobj=gzip_stream, mode="w", format=tarfile.PAX_FORMAT) as tar,
+    ):
         for member in files:
             info = tarfile.TarInfo(
                 f"{archive_root}/contracts/{member.relative_path.as_posix()}"

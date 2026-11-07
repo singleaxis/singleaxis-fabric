@@ -290,7 +290,9 @@ def test_reconstruct_flag_names_match_the_parser_help() -> None:
 
 def _make_targets() -> set[str]:
     return set(
-        re.findall(r"^([A-Za-z0-9_-]+):", MAKEFILE.read_text(encoding="utf-8"), re.MULTILINE)
+        re.findall(
+            r"^([A-Za-z0-9_-]+):", MAKEFILE.read_text(encoding="utf-8"), re.MULTILINE
+        )
     )
 
 
