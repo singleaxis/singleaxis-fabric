@@ -7,7 +7,7 @@
   "compatibility": {
     "activity_contract": null,
     "fabric_versions": ">=0.8.0-rc.1,<1.0.0",
-    "runtimes": ["Node.js >=20"],
+    "runtimes": ["Node.js >=22.18"],
     "protocols": ["OpenTelemetry API", "W3C Trace Context through host OpenTelemetry configuration"]
   },
   "observation": {

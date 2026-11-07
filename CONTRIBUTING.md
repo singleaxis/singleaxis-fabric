@@ -95,7 +95,7 @@ make -C components/otel-collector-fabric test lint   # every Node module
 (cd tools/fabricctl && go test ./...)
 ```
 
-**TypeScript SDK** (`sdk/typescript`, Node.js 20+):
+**TypeScript SDK** (`sdk/typescript`, Node.js 22.18+; CI tests Node 22 and 24):
 
 ```bash
 npm ci --prefix sdk/typescript
