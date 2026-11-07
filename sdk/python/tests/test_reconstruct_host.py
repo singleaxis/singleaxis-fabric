@@ -967,6 +967,59 @@ def test_other_process_children_need_identity_not_time() -> None:
     assert join.unexplained_count == 0
 
 
+def test_previous_container_descendant_is_not_unexplained_in_the_next_run() -> None:
+    """The 0.11.2 replay (back-to-back agent containers, reused pid namespace 4026540586,
+    the sensor's uncertainty widened to 3.002 s by a clock step): the previous container's
+    ``git`` grandchild (ns_pid 44) execs 3.5 s before the next run starts, inside both
+    clock margins. The sensor stamped its exec 1 ms before its parent's, so the walk from
+    the previous agent stops at the parent, and the grandchild was listed as the next
+    run's own unexplained activity: one container's process inside another's run. It
+    started 2.8 s before the next agent (whose start tick the certain anchor's init pid
+    proves), so it is neither that agent nor its descendant (trace ``H4-earlier-process``),
+    outside the run and left to its own run. A process that started after the agent with
+    no known parent stays unexplained."""
+    ns, boot = "4026540586", 1_794_010_000 * 1_000_000_000
+    recorded = HostSource("host.ebpf", HOST, "recorded", 3_002_019_859, verified=True)
+    agent = AgentProcess(pid=1, host_id=HOST, clock_uncertainty_ns=1_000_000_000, pid_ns=ns)
+    child_start = 197_686_706_651_413
+    effect = ProcessEffect(
+        "00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-0000000000e1",
+        5, boot + 361_856 * MS, pid=9, parent_pid=1, process_start_ns=child_start,
+        host_id=HOST, pid_ns=ns,
+    )  # fmt: skip
+    previous = [  # the previous container (smoke1): its agent, sh, the subshell, git
+        _exec(1, 3_830_457, 3_830_434, boot + 357_770 * MS, 197_681_173_777_952,
+              event_class="connect", ns_pid=1, ns_ppid=0, pid_ns=ns, scope="agent"),
+        _exec(2, 3_830_684, 3_830_457, boot + 358_316 * MS, 197_683_165_835_078,
+              ns_pid=42, ns_ppid=1, pid_ns=ns, scope="agent"),
+        _exec(3, 3_830_686, 3_830_685, boot + 358_316 * MS + 139_710, 197_683_166_484_703,
+              ns_pid=44, ns_ppid=43, pid_ns=ns, scope="agent"),
+        _exec(4, 3_830_685, 3_830_684, boot + 358_317 * MS, 197_683_166_372_369,
+              ns_pid=43, ns_ppid=42, pid_ns=ns, scope="agent"),
+    ]  # fmt: skip
+    mine = [  # the next container (zc-T1): its agent's exec and a file open, its child
+        _exec(5, 3_831_158, 3_831_128, boot + 361_214 * MS, 197_685_994_892_996,
+              ns_pid=1, ns_ppid=0, pid_ns=ns, scope="agent"),
+        _exec(6, 3_831_158, 3_831_128, boot + 361_620 * MS, 197_685_994_892_996,
+              event_class="file", ns_pid=1, ns_ppid=0, pid_ns=ns, scope="agent"),
+        _exec(7, 3_831_283, 3_831_158, boot + 361_857 * MS, child_start + 1_000,
+              ns_pid=9, ns_ppid=1, pid_ns=ns, scope="agent"),
+    ]  # fmt: skip
+    stray = _exec(8, 3_831_400, 3_831_399, boot + 362_000 * MS, child_start + 100 * MS,
+                  ns_pid=60, ns_ppid=59, pid_ns=ns, scope="agent")  # fmt: skip
+    join = join_host_events(
+        [effect], HostEvidence.of([*previous, *mine, stray]), agent=agent,
+        sources=[recorded], run_id=RUN, window=(boot + 361_856 * MS, boot + 366_786 * MS),
+    )  # fmt: skip
+    rules = join.trace["host_events"]
+    assert rules[previous[2].event_id] == "H4-earlier-process"
+    assert {rules[e.event_id] for e in previous[1:]} <= {"H4-other-lineage", "H4-earlier-process"}
+    assert [rules[e.event_id] for e in mine] == ["H4", "H4", "H1"]
+    assert join.unexplained_event_ids == (stray.event_id,)  # identity, never time alone
+    in_run = {e["event_id"] for e in join.sensor_events} | set(join.unexplained_event_ids)
+    assert in_run.isdisjoint(e.event_id for e in previous)
+
+
 def test_h4_identity_from_start_times() -> None:
     """Without a certain anchor naming the agent's init pid: an event of the agent's pid
     that started after the agent's own child is another process; with the agent's start

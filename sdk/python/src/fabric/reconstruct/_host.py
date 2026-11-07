@@ -1546,10 +1546,13 @@ class _AgentIdentity:
     of each ``certain`` anchor from a ``recorded`` source whose effect is the agent's child
     (H1 compared the anchor's ``ns_ppid`` with the agent's pid in its namespace).
     ``child_tick``: the earliest start tick of the agent's children; the agent started no
-    later than any of them."""
+    later than any of them. ``start_tick``: the agent's own start tick, from its known
+    start (``AgentProcess.process_start_ns``), else from the H4 events of the init pid the
+    anchors name (one tick, no later than ``child_tick``); ``None`` when neither proves it."""
 
     init_pids: frozenset[int] = frozenset()
     child_tick: int | None = None
+    start_tick: int | None = None
 
 
 def _agent_identity(
@@ -1580,7 +1583,35 @@ def _agent_identity(
         for e in effects
         if e.process_start_ns is not None and child(e)
     ]
-    return _AgentIdentity(init_pids, min(ticks) if ticks else None)
+    child_tick = min(ticks) if ticks else None
+    return _AgentIdentity(init_pids, child_tick, _agent_start_tick(hosts, init_pids, child_tick))
+
+
+def _agent_start_tick(
+    hosts: _Hosts, init_pids: frozenset[int], child_tick: int | None
+) -> int | None:
+    """The agent's start tick (spec 056 §4.3 "Agent identity"): its known start, else the
+    one start tick of the events H4's comparison matches whose init-namespace pid is the
+    one the run's ``certain`` anchors name (``recorded`` sources only), when it is no later
+    than the agent's earliest child; ``None`` otherwise (no anchor, several ticks: a reused
+    init pid)."""
+    if hosts.agent.process_start_ns is not None:
+        return hosts.agent.process_start_ns // TICK_NS
+    if not init_pids:
+        return None
+    seen = {
+        e.process_start_ns // TICK_NS
+        for e in hosts.events
+        if e.process_start_ns is not None
+        and e.pid in init_pids
+        and not _sandbox(e)
+        and hosts.source(e).pid_namespace == "recorded"
+        and hosts.agent_match(e)
+    }
+    if len(seen) != 1:
+        return None
+    (tick,) = seen
+    return tick if child_tick is None or tick <= child_tick else None
 
 
 def _anchor(hosts: _Hosts, effect: ProcessEffect) -> tuple[str, list[HostEvent], str | None]:
@@ -1839,6 +1870,15 @@ class _Join:
             and (own // TICK_NS > identity.child_tick)
         )
 
+    def earlier_process(self, event: HostEvent) -> bool:
+        """Whether the event's process started in an earlier tick than the agent (spec 056
+        §4.3 "Agent identity"): its start time and the agent's (:func:`_agent_start_tick`)
+        are both known. Start ticks are boot-relative and read by the kernel, so neither
+        a clock step nor a clock margin moves them. Such a process is neither the agent
+        nor its descendant, so it lies outside the run, whatever its time."""
+        start, own = self.identity.start_tick, event.process_start_ns
+        return start is not None and own is not None and own // TICK_NS < start
+
     def descendants_follow(self, event: HostEvent) -> bool:
         """Whether the children of another process with the agent's pids are its own and
         never the agent's (spec 056 §4.3 "Agent identity"): under ``recorded`` its
@@ -2018,6 +2058,11 @@ class _Join:
                 # reused pid), or its descendant: outside the agent's life, so outside
                 # the run.
                 self.trace["host_events"][event.event_id] = self.other[event.event_id]
+            elif self.earlier_process(event):
+                # A process that started before the agent is neither the agent nor one of
+                # its descendants (a child starts after its parent): another process, such
+                # as the previous container's, outside the run whatever its time.
+                self.trace["host_events"][event.event_id] = "H4-earlier-process"
             elif self.hosts.agent_match(event):
                 start, own = agent.process_start_ns, event.process_start_ns
                 certain = start is not None and own is not None and same_tick(start, own)

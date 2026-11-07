@@ -403,6 +403,36 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         "parent chain reaches no other process stays unexplained: time alone moves "
         "nothing out of a run.")  # fmt: skip
 
+    # §4.3 "Agent identity" (0.11.2 follow-up): the previous container's last processes
+    # run 1 ms before the window, inside both clock margins, in the reused pid namespace.
+    # A child whose exec event the sensor stamped before its parent's (or whose parent's
+    # events are not in the record) is out of reach of the H4-other-lineage walk; its
+    # start tick, earlier than the agent's, still proves it is not the agent's.
+    s = Scenario("edge-previous-container-descendant")
+    s.host_source()
+    s.exchange(0, 900, calls=[("call_PD", "run_shell")])
+    s.effect("exec sh -c 'ls /data'", 1000, stdout=m1.LS_OUTPUT, pid=41,
+             process_start_ns=START)  # fmt: skip
+    s.host("exec-sh", "exec", 1000.3, 4121, AGENT_INIT_PID, ns=s.agent_ns(41),
+           process_start_ns=START + 3_217_448)  # fmt: skip
+    s.host("previous-grandchild-exec", "exec", -1, 3950, 3940, ns=(44, 43, AGENT_PID_NS),
+           process_start_ns=m1.AGENT_START_NS - 2_800 * MS)  # fmt: skip
+    s.host("connect-model", "connect", 10, AGENT_INIT_PID, 1, ns=(AGENT_PID, 0, AGENT_PID_NS),
+           peer_id=m1.MODEL_PEER, peer_port=443, process_start_ns=m1.AGENT_START_NS)  # fmt: skip
+    s.exchange(1500, 2400, results=[("call_PD", _result(m1.LS_OUTPUT))])
+    s.host("unrelated-exec", "exec", 30_000, 4400, 4390, ns=(12, 11, AGENT_PID_NS),
+           process_start_ns=START + 29_000 * MS)  # fmt: skip
+    put(s, ["A1", "H1", "H4"],
+        "Back-to-back containers in a reused pid namespace number. The previous container's "
+        "grandchild (ns_pid 44) execs 1 ms before the window, inside both clock margins; its "
+        "parent's events are not in the record, so no walk reaches it. The agent's start "
+        "tick is proven: the certain anchor names its init pid (4100), and the agent's own "
+        "connection from that pid carries its start time. The grandchild started 2.8 s "
+        "before the agent, so it is neither the agent nor its descendant: outside the run, "
+        "not unexplained (trace H4-earlier-process). A process that started after the agent "
+        "and whose parent chain reaches nothing stays unexplained: identity moves an event "
+        "out of a run, time alone never does.")  # fmt: skip
+
     s = Scenario("edge-recorded-effect-without-pid-ns")
     s.host_source()
     s.exchange(0, 900, calls=[("call_NN", "run_shell")])

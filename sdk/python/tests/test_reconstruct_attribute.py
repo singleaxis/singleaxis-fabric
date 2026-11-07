@@ -29,6 +29,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from fabric.reconstruct._attribute import (
+    ActionReader,
     ActionRun,
     HostJoin,
     action_rows,
@@ -152,7 +153,7 @@ def test_every_rule_fixture_named_by_the_task_is_present() -> None:
             "edge-clock-margin-boundary", "edge-background-thread", "ar1-run",
             "ar1-negative-d-metadata-only", "edge-exec-in-place", "edge-pid-reuse",
             "edge-same-pid-other-parent"} <= names  # fmt: skip
-    assert len(RULE_FIXTURES) == 51  # 26 M1 + 21 M2 (WP6-11) + 4 agent identity (v0.11.2)
+    assert len(RULE_FIXTURES) == 52  # 26 M1 + 21 M2 (WP6-11) + 5 agent identity (v0.11.2)
 
 
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)
@@ -519,6 +520,73 @@ def test_exec_hook_off_with_remote_sandbox_on_is_channel_disabled() -> None:
     off = attribute(inp, call_id)
     assert off.chains["effects"] == {"verdict": "not_observed", "reasons": ["channel_disabled"]}
     assert set(off.trace["tool_calls"].values()) == {"channel_disabled"}
+
+
+def test_one_agent_process_linked_by_two_runs_is_ambiguous_in_both() -> None:
+    """0.11.2 follow-up (spec 056 §4.3 "One event, several runs"): each run joins its host
+    events alone, so two back-to-back containers whose identities nothing proves (no known
+    start, no certain anchor) both link the same agent-pid process: one container's
+    process inside two runs. Neither is picked: in each run the link is ``ambiguous``,
+    ``tentative``, with both runs as candidates, counted ambiguous, and corroboration (so
+    the run verdict) is ``partial(ambiguous_attribution)``. When one run proves the event
+    its own (``certain``: the same start tick as its known agent start), it keeps the link
+    and only the other run's becomes ambiguous. A run linking only its own events is
+    untouched."""
+    from fabric.reconstruct._host import attribution_join, join_normalized  # noqa: PLC0415
+
+    fixture = load(ACTION / "rules" / "h4-agent-process.json")
+
+    def annotated(reader: ActionReader, run_id: str, *, known_start: bool) -> dict[str, Any]:
+        inp = copy.deepcopy(fixture["input"])
+        inp["run"]["run_id"] = run_id
+        if not known_start:
+            del inp["agent"]["process_start_ns"]
+        result = attribute(inp, call_id, attribution_join(join_normalized(inp)))
+        report = {
+            "run_id": run_id, "verdict": "complete", "chains": result.chains,
+            "attribution": result.attribution, "sensor_events": result.sensor_events,
+        }  # fmt: skip
+        reader._claim_run_links(report, result)
+        return report
+
+    def links(report: Mapping[str, Any]) -> list[dict[str, Any]]:
+        return [link for event in report["sensor_events"] for link in event["links"]]
+
+    first, second = "r-" + "1" * 32, "r-" + "2" * 32
+    reader = ActionReader()
+    one, two = (annotated(reader, r, known_start=False) for r in (first, second))
+    alone = ActionReader()
+    untouched = annotated(alone, first, known_start=False)
+    reader.resolve_shared_run_links()
+    alone.resolve_shared_run_links()
+    for report in (one, two):
+        assert all(
+            link["state"] == "ambiguous" and link["confidence"] == "tentative"
+            and link["candidates"] == [first, second]
+            for link in links(report)
+        )  # fmt: skip
+        assert report["attribution"]["links"]["process_anchor"] == {
+            "resolved": 0, "ambiguous": 2, "unresolved": 0,
+        }  # fmt: skip
+        assert report["chains"]["corroboration"] == {
+            "verdict": "partial", "reasons": ["ambiguous_attribution"],
+        }  # fmt: skip
+        assert report["verdict"] == "partial"
+        assert REPORT_CHAINS.is_valid(report["chains"])
+        assert REPORT_ATTRIBUTION.is_valid(report["attribution"])
+        assert all(REPORT_SENSOR_EVENT.is_valid(e) for e in report["sensor_events"])
+    assert {link["state"] for link in links(untouched)} == {"resolved"}
+    assert untouched["verdict"] == "complete"
+
+    # One run proves the start-time event its own: it keeps that link.
+    reader = ActionReader()
+    proven = annotated(reader, first, known_start=True)
+    other = annotated(reader, second, known_start=False)
+    reader.resolve_shared_run_links()
+    certain = [link for link in links(proven) if link["confidence"] == "certain"]
+    assert [link["state"] for link in certain] == ["resolved"]
+    assert {link["state"] for link in links(other)} == {"ambiguous"}
+    assert other["verdict"] == "partial"
 
 
 def test_unexplained_exec_events_get_timeline_rows() -> None:

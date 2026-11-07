@@ -2,8 +2,8 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 7
-last_updated: 2026-11-06
+revision: 9
+last_updated: 2026-11-07
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
 related: ["030", "031", "047", "048", "054", "055"]
@@ -11,6 +11,15 @@ related: ["030", "031", "047", "048", "054", "055"]
 
 # 056 — Agent action reconstruction
 
+> **Revision 9** (2026-11-07, v0.11.2 follow-up): a host event whose process
+> started in an earlier tick than the agent is neither the agent nor its
+> descendant, so it lies outside the run (§4.3 "Agent identity", trace
+> `H4-earlier-process`). Before, the previous container's descendant whose
+> exec the sensor stamped before its parent's escaped the walk and was listed
+> as the next run's unexplained activity. A host event that H4 links to more
+> than one run is `ambiguous` in each, never given to one silently (§4.3
+> "One event, several runs").
+>
 > **Revision 8** (2026-11-07, v0.11.2): one epoch is one process on one
 > clock, so §4.2 condition 3 no longer widens a window boundary set by an
 > exchange of the effect's own epoch; the declared clock uncertainty still
@@ -306,6 +315,19 @@ every run, so a report limited to some runs (`--run`) omits it, and it
 bounds no run verdict: the events belong to no run. The `actions` view
 ends with their count per reason and lists every one with `--json`.
 
+**One event, several runs (revision 9).** Each run joins its host events
+alone. When the agents' identities are not proven (no known start, no
+`certain` anchor), H4's pid comparison can link one process to more than
+one run: back-to-back containers report the same `pid_ns` and `ns_pid`,
+and their windows overlap by the clock margins. Once every run is joined,
+no rule picks one of them: in each run the `part_of` run link becomes
+`tentative` and `ambiguous`, with every claiming run id as `candidates`
+(at most 64), it counts as `ambiguous` under `process_anchor`, and the
+run's `corroboration` chain is `partial(ambiguous_attribution)` (so the run
+verdict is `partial`). When exactly one run's link is `certain` (the
+event's start tick is its known agent start), that run keeps it and only
+the others' links become ambiguous.
+
 **Exec chains.** A shell that execs its command in place (`bash -c "cmd"`,
 or `dash` for the last command of `sh -c "a && b"`) keeps its pid and
 parent pid, so the sensor reports two successful exec events for one
@@ -429,6 +451,21 @@ The rules use them so:
   run with reason `other_process` (above). The cgroup id is not an
   identity check: a process can change cgroup, and the anchors' init pid
   is the stronger key.
+- **Earlier process (revision 9).** When the agent's start tick is known
+  (`AgentProcess.process_start_ns`, else the one start tick of the events
+  H4's comparison matches whose `pid` is the anchors' init pid, from a
+  `recorded` source, no later than the agent's earliest child), any host
+  event whose process started in an earlier tick is neither the agent nor
+  one of its descendants (a child starts after its parent): outside the
+  run, neither linked nor unexplained (trace `H4-earlier-process`),
+  whatever its time, and listed at report level with reason
+  `other_process` unless another run lists it. Start ticks are
+  boot-relative and read by the kernel, so neither a clock step nor a
+  clock margin moves them. This reaches the previous container's processes
+  that no walk does: a child whose exec the sensor stamped before its
+  parent's (the walk needs non-decreasing times), or a parent with no event
+  in the record. A process that started after the agent and whose parent
+  chain reaches nothing stays unexplained.
 - Different namespaces never join. Under `recorded`, an effect without
   `fabric.process.pid_ns` (an agent off Linux, or a failed read) or an agent
   without a namespace never joins: the effect is `anchor_missing`. The
