@@ -123,7 +123,7 @@ type Source struct {
 	epoch       uint64
 	next        int64 // the next position to allocate
 	manifestSeq int64
-	clockNs     int64 // the declared clock uncertainty (only ever widened)
+	clockNs     int64 // the declared clock uncertainty (never below the default)
 	state       epochState
 	pending     []*Batch
 	nextBatch   uint64
@@ -461,6 +461,29 @@ func (s *Source) WidenClockUncertainty(ns int64) (*Batch, error) {
 	if ns <= s.clockUncertainty() {
 		return nil, nil
 	}
+	return s.declareClock(ns)
+}
+
+// DeclareClockUncertainty sets the declared clock uncertainty to ns (never
+// below the 2 ms default) and stages a manifest declaring it, when that
+// differs from the declared value; an equal value changes nothing (nil
+// batch). The sensor narrows it back after a clock step has settled: the
+// manifest applies to the records staged after it, so the caller stages
+// every record that needs the wider value first. A verifier that takes the
+// widest uncertainty a source's manifests declare is unaffected.
+func (s *Source) DeclareClockUncertainty(ns int64) (*Batch, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, ErrClosed
+	}
+	if max(ns, clockUncertaintyNs) == s.clockUncertainty() {
+		return nil, nil
+	}
+	return s.declareClock(max(ns, clockUncertaintyNs))
+}
+
+func (s *Source) declareClock(ns int64) (*Batch, error) {
 	previous := s.clockNs
 	s.clockNs = ns
 	b, err := s.nextManifest()

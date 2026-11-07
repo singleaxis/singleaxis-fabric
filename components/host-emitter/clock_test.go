@@ -4,6 +4,10 @@
 package main
 
 import (
+	"bytes"
+	"log"
+	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -148,7 +152,7 @@ func TestAStepWidensTheSourceManifest(t *testing.T) {
 	if sensorClock.refresh(0) == 0 {
 		t.Fatal("step not detected")
 	}
-	if err := prod.widenClock(sensorClock.uncertaintyNs()); err != nil {
+	if err := prod.declareClock(sensorClock.uncertaintyNs()); err != nil {
 		t.Fatal(err)
 	}
 	want := int64(clockBaseUncertaintyNs + 2820*time.Millisecond)
@@ -170,4 +174,241 @@ func TestAStepWidensTheSourceManifest(t *testing.T) {
 		t.Fatalf("event time %d, want %d", ev.TimeUnixNano, f.trueWall(ts))
 	}
 	var _ recordSource = (*hostrecords.Source)(nil)
+}
+
+// captureLog collects the standard logger's output for the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	return &buf
+}
+
+// TestSmallResyncsAreFollowedNotSteps: Docker Desktop resyncs its VM clock by
+// about 8-10 ms every few seconds. Below the threshold (10 x the 2 ms base by
+// default) such a change is followed at once but is not a step: no log line,
+// no step count, nothing widened. It is counted apart (clock_small_steps=).
+func TestSmallResyncsAreFollowedNotSteps(t *testing.T) {
+	logged := captureLog(t)
+	f := newFakeClocks()
+	c := f.clock()
+	for i, d := range []time.Duration{8 * time.Millisecond, -10 * time.Millisecond, 9 * time.Millisecond, -8 * time.Millisecond} {
+		f.advance(5 * time.Second) // slewing explains at most 1 ms + 2.5 ms here
+		f.step(d)
+		if got := c.refresh(0); got != 0 {
+			t.Fatalf("resync %d (%s) reported as a step of %d ns", i, d, got)
+		}
+		if ts := uint64(f.monotonic()); c.wallNs(ts) != f.trueWall(ts) {
+			t.Fatalf("resync %d not followed", i)
+		}
+	}
+	if c.stepCount() != 0 || c.smallStepCount() != 4 || c.uncertaintyNs() != clockBaseUncertaintyNs {
+		t.Fatalf("steps %d, small %d, uncertainty %d", c.stepCount(), c.smallStepCount(), c.uncertaintyNs())
+	}
+	if strings.Contains(logged.String(), "step detected") {
+		t.Fatalf("a resync was logged as a step: %q", logged.String())
+	}
+	// The threshold is configurable: at 5 ms an 8 ms resync is a step.
+	c.configure(5*time.Millisecond, defaultClockSettle)
+	f.advance(5 * time.Second)
+	f.step(8 * time.Millisecond)
+	if got := c.refresh(0); got != int64(8*time.Millisecond) || c.stepCount() != 1 {
+		t.Fatalf("an 8 ms change under a 5 ms threshold: %d, %d steps", got, c.stepCount())
+	}
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs+int64(8*time.Millisecond) {
+		t.Fatalf("uncertainty %d", got)
+	}
+	// A threshold below the sampling floor is the floor.
+	c.configure(0, defaultClockSettle)
+	if c.minStepNs != clockStepFloorNs {
+		t.Fatalf("threshold %d, want the %d floor", c.minStepNs, clockStepFloorNs)
+	}
+}
+
+// TestWidenedUncertaintyDecaysAfterTheSettleWindow: after a step the widened
+// value holds for records stamped up to the step's detection, always, and for
+// later records until the offset has been stable (no further step; small
+// resyncs do not count) for the settle window. A step inside the window
+// restarts it. The step log line and counter stay.
+func TestWidenedUncertaintyDecaysAfterTheSettleWindow(t *testing.T) {
+	logged := captureLog(t)
+	f := newFakeClocks()
+	c := f.clock()
+	c.configure(defaultClockStepMin, time.Minute)
+	f.advance(time.Second)
+	before := uint64(f.monotonic())
+	f.step(3 * time.Second) // the replay's forced +3 s step
+	f.advance(10 * time.Millisecond)
+	if c.refresh(0) == 0 {
+		t.Fatal("step not detected")
+	}
+	stepAt := uint64(f.monotonic())
+	wide := clockBaseUncertaintyNs + int64(3*time.Second)
+	for i := 0; i < 11; i++ { // 55 s of routine resyncs
+		f.advance(5 * time.Second)
+		f.step(8 * time.Millisecond)
+		c.refresh(0)
+	}
+	now := uint64(f.monotonic())
+	if got := c.uncertaintyFor(now); got != wide {
+		t.Fatalf("narrowed after 55 s of a 60 s window: %d", got)
+	}
+	f.advance(6 * time.Second) // 61 s since the step, the offset stable
+	c.refresh(0)
+	after := uint64(f.monotonic())
+	if got := c.uncertaintyFor(after); got != clockBaseUncertaintyNs {
+		t.Fatalf("a record stamped after the settled step declares %d, want the base", got)
+	}
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs {
+		t.Fatalf("current uncertainty %d, want the base", got)
+	}
+	for _, ts := range []uint64{before, stepAt} { // stamped around the step: never narrowed
+		if got := c.uncertaintyFor(ts); got != wide {
+			t.Fatalf("a record stamped at %d (step detected at %d) declares %d, want %d", ts, stepAt, got, wide)
+		}
+	}
+	// A second step inside its window restarts it and keeps the larger one.
+	f.step(-2 * time.Second)
+	f.advance(10 * time.Millisecond)
+	c.refresh(0)
+	f.advance(30 * time.Second)
+	f.step(500 * time.Millisecond)
+	c.refresh(0)
+	if got := c.uncertaintyFor(uint64(f.monotonic())); got != clockBaseUncertaintyNs+int64(2*time.Second) {
+		t.Fatalf("after two steps 30 s apart: %d", got)
+	}
+	f.advance(59 * time.Second)
+	c.refresh(0)
+	if got := c.uncertaintyNs(); got == clockBaseUncertaintyNs {
+		t.Fatal("narrowed 59 s after the last step")
+	}
+	f.advance(2 * time.Second)
+	c.refresh(0)
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs {
+		t.Fatalf("not narrowed 61 s after the last step: %d", got)
+	}
+	// A step after the settle window widens by that step alone.
+	f.step(40 * time.Millisecond)
+	f.advance(time.Millisecond)
+	c.refresh(0)
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs+int64(40*time.Millisecond) {
+		t.Fatalf("a fresh 40 ms step widens to %d", got)
+	}
+	if c.stepCount() != 4 || strings.Count(logged.String(), "CLOCK_REALTIME step detected") != 4 {
+		t.Fatalf("steps %d, log %q", c.stepCount(), logged.String())
+	}
+}
+
+// TestASettledStepNarrowsTheManifestAfterPendingRecords: the production
+// pipeline declares, per record, what it needs. A step stages a wider
+// manifest before the records still pending (stamped around the step); once
+// it has settled the base is declared only after every pending record is
+// staged; a record stamped before the step arriving later widens again. Each
+// staged event lies under a manifest at least as wide as it needs.
+func TestASettledStepNarrowsTheManifestAfterPendingRecords(t *testing.T) {
+	captureLog(t)
+	saved := sensorClock
+	t.Cleanup(func() { sensorClock = saved })
+	f := newFakeClocks()
+	sensorClock = f.clock()
+	sensorClock.configure(defaultClockStepMin, time.Minute)
+	src := openTestSource(t, productionConfig(t, t.TempDir()))
+	defer src.Close(false)
+	prod := newProduction(src, &fakeSender{})
+	var pending []hostrecords.Event
+	need := map[int64]int64{} // pid -> the uncertainty its record needs
+	flush := func() error {
+		if len(pending) == 0 {
+			return nil
+		}
+		err := prod.stage(pending)
+		pending = nil
+		return err
+	}
+	add := func(pid uint32, ts uint64) {
+		t.Helper()
+		sensorClock.refresh(0)
+		if err := prod.declareClockFor(sensorClock, ts, flush); err != nil {
+			t.Fatal(err)
+		}
+		ev, ok := hostEvent(&event{Type: evExec, TsNs: ts, Pid: pid, Ppid: 1, Comm: "sh", Scope: scopeAgent})
+		if !ok {
+			t.Fatal("event not translated")
+		}
+		pending = append(pending, ev)
+		need[int64(pid)] = sensorClock.uncertaintyFor(ts)
+	}
+	f.advance(time.Second)
+	a := uint64(f.monotonic())
+	add(101, a) // before the step
+	f.step(3 * time.Second)
+	f.advance(10 * time.Millisecond)
+	add(102, uint64(f.monotonic())) // detects the step: widened before 101 is staged
+	need[101] = sensorClock.uncertaintyFor(a)
+	f.advance(30 * time.Second)
+	add(103, uint64(f.monotonic())) // inside the settle window
+	f.advance(31 * time.Second)
+	add(104, uint64(f.monotonic())) // settled: 101-103 staged first, then the base
+	add(105, a)                     // a straggler stamped before the step: wide again
+	if err := flush(); err != nil {
+		t.Fatal(err)
+	}
+	wide := clockBaseUncertaintyNs + int64(3*time.Second)
+	if need[101] != wide || need[102] != wide || need[103] != wide || need[104] != clockBaseUncertaintyNs || need[105] != wide {
+		t.Fatalf("needs %v", need)
+	}
+	declared := int64(-1)
+	var manifests []int64
+	for _, sp := range pendingSpans(t, src) {
+		switch sp.name {
+		case "fabric.capture_manifest":
+			declared = sp.attrs["fabric.manifest.clock.uncertainty_ns"].(int64)
+			manifests = append(manifests, declared)
+		case "fabric.sensor_event":
+			pid := sp.attrs["fabric.sensor.pid"].(int64)
+			if declared < need[pid] {
+				t.Fatalf("event %d staged under %d, needs %d (manifests %v)", pid, declared, need[pid], manifests)
+			}
+		}
+	}
+	want := []int64{clockBaseUncertaintyNs, wide, clockBaseUncertaintyNs, wide}
+	if len(manifests) != len(want) {
+		t.Fatalf("manifests %v, want %v", manifests, want)
+	}
+	for i := range want {
+		if manifests[i] != want[i] {
+			t.Fatalf("manifests %v, want %v", manifests, want)
+		}
+	}
+}
+
+// TestClockSettingsAreValidated: EMIT_CLOCK_STEP_MIN and EMIT_CLOCK_SETTLE
+// take Go durations within bounds; anything else is refused, never defaulted.
+func TestClockSettingsAreValidated(t *testing.T) {
+	t.Setenv("EMIT_CLOCK_STEP_MIN", "")
+	t.Setenv("EMIT_CLOCK_SETTLE", "")
+	var c Config
+	c.loadClockConfig()
+	if c.ClockStepMin != 20*time.Millisecond || c.ClockSettle != time.Minute || len(c.loadErrs) != 0 {
+		t.Fatalf("defaults %s %s %v", c.ClockStepMin, c.ClockSettle, c.loadErrs)
+	}
+	t.Setenv("EMIT_CLOCK_STEP_MIN", "50ms")
+	t.Setenv("EMIT_CLOCK_SETTLE", "5m")
+	c = Config{}
+	c.loadClockConfig()
+	if c.ClockStepMin != 50*time.Millisecond || c.ClockSettle != 5*time.Minute || len(c.loadErrs) != 0 {
+		t.Fatalf("set %s %s %v", c.ClockStepMin, c.ClockSettle, c.loadErrs)
+	}
+	for _, bad := range [][2]string{{"EMIT_CLOCK_STEP_MIN", "20"}, {"EMIT_CLOCK_STEP_MIN", "-1ms"},
+		{"EMIT_CLOCK_STEP_MIN", "11s"}, {"EMIT_CLOCK_SETTLE", "2h"}, {"EMIT_CLOCK_SETTLE", "soon"}} {
+		t.Setenv("EMIT_CLOCK_STEP_MIN", "")
+		t.Setenv("EMIT_CLOCK_SETTLE", "")
+		t.Setenv(bad[0], bad[1])
+		c = Config{}
+		c.loadClockConfig()
+		if len(c.loadErrs) != 1 || !strings.Contains(c.loadErrs[0].Error(), bad[0]) {
+			t.Fatalf("%s=%s: %v", bad[0], bad[1], c.loadErrs)
+		}
+	}
 }

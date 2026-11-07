@@ -1256,6 +1256,8 @@ class _Verifier:
                 report, scope_reports = run.build()
                 runs.append(report)
                 scopes.extend(scope_reports)
+        if self.actions is not None:  # spec 056 §4.3: one host event linked to several runs
+            self.actions.resolve_shared_run_links()
         return runs, scopes
 
 

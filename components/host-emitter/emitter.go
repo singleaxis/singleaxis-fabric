@@ -54,6 +54,13 @@ type Config struct {
 	SpoolDir        string
 	SpoolMaxBytes   int64
 
+	// ClockStepMin is the smallest CLOCK_REALTIME offset change that is a
+	// step (EMIT_CLOCK_STEP_MIN); ClockSettle is how long the offset stays
+	// stable after a step before the declared uncertainty narrows back
+	// (EMIT_CLOCK_SETTLE). See clock.go.
+	ClockStepMin time.Duration
+	ClockSettle  time.Duration
+
 	// EndpointFile names a file holding one line host:port, an alternative
 	// to Endpoint (spec 056 §7.3.3 (c), (n)).
 	EndpointFile string

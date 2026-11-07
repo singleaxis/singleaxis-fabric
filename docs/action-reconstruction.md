@@ -230,10 +230,17 @@ How to read it:
 - **`session` footer.** After the last run, the host events no run lists
   or counts, by reason: `other_process` (a process with a run's agent pids
   that is not that run's agent, such as a later container that reuses the
-  pid namespace number, and that process's children), `out_of_scope` (in a run's window, outside the
+  pid namespace number, and that process's children, or any process that
+  started before the run's agent, such as the previous container's), `out_of_scope` (in a run's window, outside the
   agent's scope) and `no_run` (in no run's window). Captured host activity
   is never dropped: `--json` lists every one, and the report's top-level
   `unattributed_host_events` gives the count per reason and the first 64.
+- **One process, two runs.** When nothing in the record proves which
+  agent a process belongs to (no known agent start, no certain anchor) and
+  two runs' windows both hold it, neither run gets it: each shows the link
+  as `process_anchor · tentative · ambiguous` (the report's link lists
+  both run ids as `candidates`), and the run's `corroboration` is
+  `partial(ambiguous_attribution)`.
 
 **A process that made no model call** (a tool worker the agent started, or
 an agent killed before its first model call) is a run of its own under its

@@ -28,7 +28,8 @@ type recordSource interface {
 	Quarantine(b *hostrecords.Batch, rejected int) (*hostrecords.Batch, error)
 	UpstreamLoss(reason string, count int64)
 	Heartbeat() (*hostrecords.Batch, error)
-	WidenClockUncertainty(ns int64) (*hostrecords.Batch, error)
+	DeclareClockUncertainty(ns int64) (*hostrecords.Batch, error)
+	ClockUncertainty() int64
 	Close(final bool) (*hostrecords.Batch, error)
 }
 
@@ -212,12 +213,12 @@ func (p *production) heartbeat() error {
 	return nil
 }
 
-// widenClock stages a manifest declaring a wider clock uncertainty (after a
-// detected CLOCK_REALTIME step); a value not wider than the declared one
-// stages nothing.
-func (p *production) widenClock(ns int64) error {
+// declareClock stages a manifest declaring the clock uncertainty ns: wider
+// after a detected CLOCK_REALTIME step, the base again once it has settled;
+// the declared value stages nothing.
+func (p *production) declareClock(ns int64) error {
 	p.mu.Lock()
-	b, err := p.src.WidenClockUncertainty(ns)
+	b, err := p.src.DeclareClockUncertainty(ns)
 	p.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("stage clock manifest: %w", err)
@@ -226,6 +227,33 @@ func (p *production) widenClock(ns int64) error {
 		p.notify()
 	}
 	return nil
+}
+
+// declareClockFor makes the source declare the clock uncertainty a record
+// stamped at kernel time tsNs needs (clock.go). A wider value is staged
+// before the records still pending, so it covers them (they may have been
+// stamped around the step). The base again, once the step has settled, is
+// staged only after flush has staged every pending record, so no record that
+// needs the wider value is staged under the narrower manifest.
+func (p *production) declareClockFor(clock *wallClock, tsNs uint64, flush func() error) error {
+	want := clock.uncertaintyFor(tsNs)
+	declared := p.clockUncertainty()
+	if want == declared {
+		return nil
+	}
+	if want < declared {
+		if err := flush(); err != nil {
+			return err
+		}
+	}
+	return p.declareClock(want)
+}
+
+// clockUncertainty is the source's declared clock uncertainty.
+func (p *production) clockUncertainty() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.src.ClockUncertainty()
 }
 
 // close stages the final marker.

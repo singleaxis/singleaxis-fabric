@@ -484,6 +484,13 @@ M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with 
   descendants by the H3 walk from it (trace `H4-other-lineage`), when its `pid` is not
   the anchors' init pid (recorded) or it started in a later tick than the agent: its pid
   then never names the agent. Time alone moves nothing out of a run.
+- **Earlier process** (v0.11.2 follow-up, spec 056 revision 9). With the agent's start
+  tick known (`agent.process_start_ns`, else the one start tick of the H4-matched events
+  of the anchors' init pid, no later than the agent's earliest child), an event whose
+  process started in an earlier tick is neither the agent nor its descendant: outside the
+  run, neither linked nor unexplained (trace `H4-earlier-process`), whatever its time.
+  This reaches the previous container's descendants that no walk does (an exec the sensor
+  stamped before its parent's, or a parent with no event in the record).
 - **H3** follows the init-namespace pair (`pid`, `ppid`) from the anchor event's `pid`, on
   the same host, so lineage crosses a nested pid namespace. Exit evidence of an anchored
   effect applies to its anchor's init pid.
@@ -529,6 +536,7 @@ M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with 
 | `edge-pid-namespace-reuse` | A1, H1, H4 | Back-to-back containers reuse the agent's `pid_ns` and `ns_pid`; their init pids differ from the anchor's parent: other processes, outside the run |
 | `edge-agent-started-after-child` | A1, H4 | No anchor: a process with the agent's pids that started after the agent's child is another process |
 | `edge-other-process-children` | A1, H1, H4 | The next container's agent forks children in the window: its child's exec and connect and its grandchild's exec are outside the run; an unrelated process stays unexplained |
+| `edge-previous-container-descendant` | A1, H1, H4 | The previous container's grandchild execs in the margin with no walkable parent; it started before the agent: outside the run; a later process with no known parent stays unexplained |
 | `edge-agent-start-differs` | H4 | The agent's start time is known: same tick certain, no start time tentative, another tick another process |
 | `edge-scope-late` | A1, H1 | Upstream loss `scope_late` in the window: `source_gap` |
 | `edge-sandbox-unlinked` | A1, H1 | Unreported containers: counted, not unexplained |

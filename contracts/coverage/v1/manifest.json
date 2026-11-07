@@ -218,6 +218,7 @@
     {"path": "fixtures/action-record/rules/edge-agent-start-differs.json", "sha256": "9d475eecfa6c51fc923eca65f55c06fe13ce2f23efd70a636c2033eb51390ca4", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-agent-started-after-child.json", "sha256": "062d93dc83dfacd146ed02c08cbdcfd3c5a0c57ce357bae2f4e13edfb3210658", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-pid-namespace-reuse.json", "sha256": "6f5c20cf1855b9c7ead2b9130717c4c2ece9cc7c02042309a425d7acf742fe1b", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/edge-other-process-children.json", "sha256": "c414e69959c1f3dd8f8277838676a10894e3b7f538a99d83fc443bfb9cbf440a", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/action-record/rules/edge-other-process-children.json", "sha256": "c414e69959c1f3dd8f8277838676a10894e3b7f538a99d83fc443bfb9cbf440a", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-previous-container-descendant.json", "sha256": "812d63f1df23c418f1f0f9f0e1d23c97d83f196dcb05a57c4793dbcb59edeff9", "expectation": "valid", "expected_error": null}
   ]
 }

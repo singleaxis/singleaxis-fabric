@@ -799,6 +799,10 @@ class ActionReader:
         self._host_other_process: set[str] = set()
         self._host_out_of_scope: set[str] = set()
         self._host_event_list: list[Any] | None = None
+        # Spec 056 §4.3 "One event, several runs": per host event id, every run's H4
+        # ``part_of`` run link to it, with the run's attribution and report entry.
+        self._run_claims: dict[str, list[tuple[str, dict[str, Any], Attribution, dict[str, Any]]]]
+        self._run_claims = defaultdict(list)
 
     @property
     def declared_host_sources(self) -> tuple[str, ...]:
@@ -839,6 +843,7 @@ class ActionReader:
         if host is not None:
             self._note_host_events(host.trace_host_events)
         result = attribute(inp, host=host)
+        self._claim_run_links(report, result)
         if self.keep_runs:
             self.runs.append(ActionRun(report["run_id"], _lean(inp), result))
         if not annotated:
@@ -864,17 +869,59 @@ class ActionReader:
     def _note_host_events(self, traced: Mapping[str, str]) -> None:
         """One run's host join (its rule per event id): an event it links, lists as
         unexplained or counts is in a run; ``H4-other-process`` is another process with
-        the agent's pids and ``H4-other-lineage`` its descendant; an event of its sources
+        the agent's pids, ``H4-other-lineage`` its descendant and ``H4-earlier-process`` a
+        process that started before the agent; an event of its sources
         it did not trace lay in its window outside the agent's scope; ``outside_run``
         says nothing."""
         for event in self._host_events():
             rule = traced.get(event.event_id)
             if rule is None:
                 self._host_out_of_scope.add(event.event_id)
-            elif rule in ("H4-other-process", "H4-other-lineage"):
+            elif rule in ("H4-other-process", "H4-other-lineage", "H4-earlier-process"):
                 self._host_other_process.add(event.event_id)
             elif rule != "outside_run":
                 self._host_in_run.add(event.event_id)
+
+    def _claim_run_links(self, report: dict[str, Any], result: Attribution) -> None:
+        """Note every H4 ``part_of`` run link of one annotated run, per host event id."""
+        for event in result.sensor_events:
+            for link in event.get("links", ()):
+                if link["target"]["namespace"] == "run" and link["method"] == "process_anchor":
+                    claim = (report["run_id"], link, result, report)
+                    self._run_claims[event["event_id"]].append(claim)
+
+    def resolve_shared_run_links(self) -> None:
+        """Spec 056 §4.3 "One event, several runs", once every run is annotated. Each run
+        joins its host events alone, so when the agents' identities are not proven (no
+        known start, no ``certain`` anchor) H4's pid comparison can link one process to
+        more than one run: back-to-back containers report the same ``pid_ns`` and
+        ``ns_pid``, and their windows overlap by the clock margins. No rule picks one: each
+        such link becomes ``ambiguous`` with every claiming run as a candidate, and its
+        run's ``corroboration`` is ``partial(ambiguous_attribution)``. A run whose link is
+        ``certain`` (the event's start tick is the agent's known one) when no other run's
+        is keeps it; the others' become ``ambiguous``."""
+        for claims in self._run_claims.values():
+            runs = sorted({run_id for run_id, _, _, _ in claims})
+            if len(runs) == 1:  # one run's own links
+                continue
+            certain = {run_id for run_id, link, _, _ in claims if link["confidence"] == "certain"}
+            keep = next(iter(certain)) if len(certain) == 1 else None
+            for run_id, link, result, report in claims:
+                if run_id == keep or link["state"] == "ambiguous":
+                    continue
+                link.update(confidence="tentative", state="ambiguous", candidates=runs[:64])
+                counts = result.attribution["links"].setdefault("process_anchor", link_counts())
+                counts["resolved"] -= 1
+                counts["ambiguous"] += 1
+                corroboration = result.chains["corroboration"]
+                if corroboration["verdict"] != "not_observed":
+                    reasons = [*corroboration.get("reasons", ()), "ambiguous_attribution"]
+                    if corroboration["verdict"] == "unverified":
+                        reasons = ["ambiguous_attribution"]  # partial beats unverified
+                    result.chains["corroboration"] = chain(reasons)
+                if "chains" in report:  # the report entry, not only the actions view
+                    report["chains"] = result.chains
+                    report["verdict"] = chained_run_verdict(report["verdict"], result.chains)
 
     def unattributed_host_events(self) -> list[dict[str, Any]] | None:
         """Spec 056 §4.3 "Host events in no run", once every run is annotated: each host

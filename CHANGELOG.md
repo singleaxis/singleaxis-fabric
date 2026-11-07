@@ -34,6 +34,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `osv-scanner-action` v2.7.0, whose scan now actually runs on every
   released lockfile. The local S3 test store `chrislusf/seaweedfs` is 4.50.
 
+### Fixed
+
+- **One container's processes no longer show up in the next container's
+  run (0.11.2 replay).** Back-to-back agent containers reuse a pid namespace
+  number, and after a clock step the sensor declared 3 s of uncertainty, so
+  each run's window reached 4 s into its neighbours'. The previous
+  container's `git` grandchild, whose exec the sensor stamped 1 ms before its
+  parent's, escaped the walk that removes another agent's descendants and
+  was listed (and, since B3, shown as a row) as the next run's own
+  unexplained activity. `fabric.reconstruct` now proves the agent's start
+  tick (its known start, or the start of the init pid its certain anchors
+  name) and treats any process that started earlier as another process:
+  outside the run, listed at report level as `other_process` unless its own
+  run lists it (trace `H4-earlier-process`). When nothing proves which agent
+  a process belongs to and two runs both link it, neither gets it: each
+  run's link is `ambiguous` with both runs as `candidates`, and its
+  `corroboration` is `partial(ambiguous_attribution)`. Spec 056 revision 9;
+  new rule fixture `edge-previous-container-descendant`, and no other
+  fixture changes.
+- **The emitter's widened clock uncertainty no longer ratchets.** After a
+  detected `CLOCK_REALTIME` step the wider value stayed until the emitter
+  restarted, and Docker Desktop's routine 8–10 ms VM resyncs counted as
+  steps, so it only grew. An offset change below `EMIT_CLOCK_STEP_MIN`
+  (default 20 ms, ten times the 2 ms base) is now followed but is not a
+  step: no log line, no `clock_steps` count (it is counted as
+  `clock_small_steps=`), nothing widened. After a real step the widened
+  value holds for every record stamped up to the step's detection, and for
+  later records until the offset has been stable for `EMIT_CLOCK_SETTLE`
+  (default 60 s; a further step restarts the window); then the source
+  declares the base again, staged only after every pending record, so the
+  narrower manifest governs only records stamped after the step and the
+  window. The step log line and counter are unchanged. The host-records
+  library gains `Source.DeclareClockUncertainty`. The reconstruct reader
+  still applies the widest value a source's manifests declare to all its
+  events.
+
 ## [0.11.2] - 2026-11-07
 
 Fabric 0.11.2 fixes what a real-agent acceptance run of 0.11.1 on DeepSeek

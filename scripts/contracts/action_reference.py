@@ -511,6 +511,32 @@ def other_lineage(
     return other
 
 
+def agent_start_tick(
+    hosts: _Hosts, init_pids: set[int], child_tick: int | None
+) -> int | None:
+    """§4.3 "Agent identity": the agent's start tick. Its known start, else the one start
+    tick of the H4-matched events (``recorded``) whose init pid the certain anchors name,
+    when no later than the agent's earliest child; ``None`` otherwise."""
+    start = hosts.agent.get("process_start_ns")
+    if start is not None:
+        return int(start) // TICK_NS
+    if not init_pids:
+        return None
+    seen = {
+        e["process_start_ns"] // TICK_NS
+        for e in hosts.events
+        if e.get("process_start_ns") is not None
+        and e["pid"] in init_pids
+        and not hosts.sandbox(e)
+        and hosts.mode(e) == "recorded"
+        and hosts.agent_match(e)
+    }
+    if len(seen) != 1:
+        return None
+    (tick,) = seen
+    return tick if child_tick is None or tick <= child_tick else None
+
+
 def anchor_effect(
     hosts: _Hosts, effect: Mapping[str, Any]
 ) -> tuple[str, list[Mapping[str, Any]], str | None]:
@@ -889,6 +915,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
         if e.get("process_start_ns") is not None and hosts.agent_child(e)
     ]
     child_tick = min(child_ticks) if child_ticks else None
+    start_tick = agent_start_tick(hosts, init_pids, child_tick)
     called = {
         peer
         for exchange in inp["exchanges"]
@@ -913,6 +940,16 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
             # Another process with the agent's pids (a reused pid namespace number or
             # pid), or its descendant: outside the agent's life, so outside the run.
             trace["host_events"][event["event_id"]] = other[event["event_id"]]
+            continue
+        own_start = event.get("process_start_ns")
+        if (
+            start_tick is not None
+            and own_start is not None
+            and own_start // TICK_NS < start_tick
+        ):
+            # A process that started before the agent is neither the agent nor one of its
+            # descendants: another process (the previous container's), outside the run.
+            trace["host_events"][event["event_id"]] = "H4-earlier-process"
             continue
         if hosts.agent_match(event):
             start, own = agent.get("process_start_ns"), event.get("process_start_ns")

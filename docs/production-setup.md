@@ -758,9 +758,14 @@ with these differences:
   its start-time offset and stamped events seconds early. It now follows
   the step within one batch, logs `CLOCK_REALTIME step detected step_ms=…`,
   and declares a wider clock uncertainty for that source (2 ms plus the
-  step), which the reader applies to that source's events. Check
-  `docker logs fabric-host-emitter` after a sleep; restarting the emitter
-  starts a fresh epoch with the base uncertainty.
+  step). Once the offset has been stable for 60 s (`EMIT_CLOCK_SETTLE`) it
+  declares the 2 ms base again for later records. Docker Desktop's routine
+  8–10 ms resyncs are below the 20 ms step threshold (`EMIT_CLOCK_STEP_MIN`):
+  followed, counted as `clock_small_steps=`, never widening anything. The
+  reader applies the widest value a source's manifests declare to all of
+  that source's events, so read a sleep's runs from an export that starts
+  after the step has settled, or expect a margin of the step's size on that
+  source's host links. Check `docker logs fabric-host-emitter` after a sleep.
 - **Clock margin.** Each agent process declares
   `FABRIC_CLOCK_UNCERTAINTY_MS` (default 1000) in its manifest. It widens
   comparisons across processes and hosts (an exchange of another epoch, a

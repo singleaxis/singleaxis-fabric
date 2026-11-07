@@ -91,6 +91,7 @@ func loadConfig() *Config {
 		SpoolMaxBytes:   envInt64("EMIT_SPOOL_MAX_BYTES", 1<<30),
 	}
 	cfg.endpointSet = cfg.Endpoint != ""
+	cfg.loadClockConfig()
 	cfg.loadProductionConfig()
 	// Local mode keeps its historical default endpoint.
 	if !cfg.Production && !cfg.endpointSet && cfg.EndpointFile == "" {
@@ -126,6 +127,7 @@ func run() error {
 	if err := cfg.resolveEndpoint(); err != nil {
 		return err
 	}
+	sensorClock.configure(cfg.ClockStepMin, cfg.ClockSettle)
 	if cfg.Production {
 		return runProduction(cfg)
 	}
@@ -271,8 +273,8 @@ func run() error {
 		case <-statusTick.C:
 			files, bytes, peak := spool.status()
 			partialBatches, partialRejected := spool.partialStatus()
-			log.Printf("fabric-host-emitter: spool health queued_batches=%d queued_bytes=%d high_water_bytes=%d capacity_bytes=%d partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d",
-				files, bytes, peak, cfg.SpoolMaxBytes, partialBatches, partialRejected, sensorClock.stepCount())
+			log.Printf("fabric-host-emitter: spool health queued_batches=%d queued_bytes=%d high_water_bytes=%d capacity_bytes=%d partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d clock_small_steps=%d",
+				files, bytes, peak, cfg.SpoolMaxBytes, partialBatches, partialRejected, sensorClock.stepCount(), sensorClock.smallStepCount())
 		}
 	}
 }
