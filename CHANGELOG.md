@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Planned as 0.12.0: the TypeScript SDK drops Node 20.
+
+### Changed (breaking)
+
+- **The TypeScript SDK requires Node.js 22.18 or later.** Node 20 reached
+  upstream end of life on 2026-04-30. `@singleaxis/fabric` now declares
+  `engines.node` `>=22.18.0` (was `>=20.6.0`); 22.18 is the lowest Node 22
+  release the SDK's build tools (tsup 9, vitest 5) support. Node 20 users
+  should stay on 0.11.x or upgrade Node. CI tests the SDK on Node 22 and 24,
+  and the release job builds and qualifies it on Node 22. The connector
+  manifest records the `Node.js >=22.18` runtime.
+
 ### Changed
 
 - **Dependency batch.** Collector core v0.150.0 → v0.164.0 (stable modules

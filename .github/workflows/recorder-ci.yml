@@ -61,7 +61,7 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
       - name: Install TypeScript driver for emitted-content contract tests
@@ -157,13 +157,19 @@ jobs:
         run: mypy src tests
 
   typescript-sdk:
-    name: TypeScript SDK
+    name: TypeScript SDK (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported lines: package.json engines is >=22.18.0 (Node 20 is
+        # end of life). Node 22 is the floor line; 24 is the current LTS.
+        node-version: ["22", "24"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "20"
+          node-version: ${{ matrix.node-version }}
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
       - name: Install locked dependencies

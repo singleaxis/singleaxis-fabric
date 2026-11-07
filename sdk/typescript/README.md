@@ -11,7 +11,8 @@ package does not tee model HTTP traffic; every record comes from an explicit
 call. TypeScript wire capture is planned and not built. See
 [limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
 
-Requires Node.js 20.6 or later.
+Requires Node.js 22.18 or later (CI tests Node 22 and 24). Node 20 reached end
+of life on 2026-04-30 and is not supported from 0.12.0.
 
 ```text
 CAPTURE -> PROTECT -> DELIVER

@@ -85,10 +85,10 @@ jobs:
           python-version: "3.12"
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          # npm trusted publishing requires npm 11.5.1 or newer. Node 24
-          # runners ship a qualifying npm CLI; the publish job fails closed
-          # if that runner contract ever changes.
-          node-version: "24"
+          # Build and qualify the TypeScript SDK on its floor line (engines
+          # >=22.18.0). publish-npm only uploads these qualified bytes and runs
+          # on Node 24 for its npm CLI.
+          node-version: "22"
           cache: npm
           cache-dependency-path: sdk/typescript/package-lock.json
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
@@ -538,6 +538,11 @@ jobs:
     steps:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
+          # npm trusted publishing requires npm 11.5.1 or newer. Node 22 ships
+          # npm 10, so this job stays on Node 24, whose runners ship a
+          # qualifying npm CLI; the step below fails closed if that runner
+          # contract ever changes. Nothing is built here: it publishes the
+          # tarball qualify-release built and tested on Node 22.
           node-version: "24"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
