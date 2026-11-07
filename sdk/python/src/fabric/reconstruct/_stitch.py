@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import contextvars
 import hashlib
-import importlib
 import json
-import zlib
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, NoReturn
 
+from fabric._content_coding import UndecodableError, decode_content
 from fabric.reconstruct._inputs import pseudonym
 
 __all__ = [
@@ -226,119 +225,13 @@ compressible body could inflate to gigabytes inside the verifier. Past the
 ceiling the body is not parsed (``undecodable_encoding``)."""
 
 
-class _TooLargeError(Exception):
-    """Decoded output would exceed the ceiling."""
-
-
-def _bounded(chunks: Callable[[int], bytes], limit: int) -> bytes:
-    data = chunks(limit + 1)
-    if len(data) > limit:
-        raise _TooLargeError
-    return data
-
-
-def _inflate(data: bytes, wbits: int, limit: int) -> bytes:
-    decompressor = zlib.decompressobj(wbits)
-    out = decompressor.decompress(data, limit + 1)
-    if len(out) > limit or decompressor.unconsumed_tail:
-        raise _TooLargeError
-    if not decompressor.eof:
-        raise zlib.error("incomplete or truncated stream")
-    return out
-
-
-def _brotli_decoder() -> Callable[[bytes, int], bytes] | None:
-    try:
-        module = importlib.import_module("brotli")
-    except ImportError:
-        return None
-    factory = getattr(module, "Decompressor", None)
-    if not callable(factory):
-        return None
-
-    def _brotli(data: bytes, limit: int) -> bytes:
-        decompressor = factory()
-        # brotli >= 1.2: output_buffer_limit bounds each call. Older releases
-        # raise TypeError -> undecodable_encoding (never unbounded).
-        out = decompressor.process(data, output_buffer_limit=limit + 1)
-        while len(out) <= limit and not decompressor.is_finished():
-            more = decompressor.process(b"", output_buffer_limit=limit + 1 - len(out))
-            if not more:
-                break
-            out += more
-        if len(out) > limit:
-            raise _TooLargeError
-        return bytes(out)
-
-    return _brotli
-
-
-def _zstd_decoder() -> Callable[[bytes, int], bytes] | None:
-    try:
-        module = importlib.import_module("zstandard")
-    except ImportError:
-        module = None
-    if module is not None:
-        decompressor = module.ZstdDecompressor()
-
-        def _zstd(data: bytes, limit: int) -> bytes:
-            reader = decompressor.stream_reader(data)
-            try:
-                return _bounded(lambda n: bytes(reader.read(n)), limit)
-            finally:
-                reader.close()
-
-        return _zstd
-    try:
-        stdlib = importlib.import_module("compression.zstd")
-    except ImportError:
-        return None
-    factory = getattr(stdlib, "ZstdDecompressor", None)
-    if not callable(factory):
-        return None
-
-    def _zstd_stdlib(data: bytes, limit: int) -> bytes:
-        return _bounded(lambda n: bytes(factory().decompress(data, max_length=n)), limit)
-
-    return _zstd_stdlib
-
-
-def _optional_decoder(encoding: str) -> Callable[[bytes, int], bytes] | None:
-    """A size-bounded decoder for ``br``/``zstd`` when a module offers one."""
-    if encoding == "br":
-        return _brotli_decoder()
-    if encoding == "zstd":
-        return _zstd_decoder()
-    return None
-
-
 def _decode(data: bytes, encoding: str | None, limit: int | None = None) -> bytes:
     if not encoding:
         return data
-    if limit is None:
-        limit = MAX_DECODED_BYTES
-    codings = [part.strip().lower() for part in encoding.split(",") if part.strip()]
-    for coding in reversed(codings):
-        if coding == "identity":
-            continue
-        try:
-            if coding in ("gzip", "x-gzip"):
-                data = _inflate(data, 16 + zlib.MAX_WBITS, limit)
-            elif coding == "deflate":
-                try:
-                    data = _inflate(data, zlib.MAX_WBITS, limit)
-                except zlib.error:
-                    data = _inflate(data, -zlib.MAX_WBITS, limit)
-            else:
-                decoder = _optional_decoder(coding)
-                if decoder is None:
-                    raise _UnparsedError("undecodable_encoding")
-                data = decoder(data, limit)
-        except _UnparsedError:
-            raise
-        except Exception as exc:
-            raise _UnparsedError("undecodable_encoding") from exc
-    return data
+    try:
+        return decode_content(data, encoding, MAX_DECODED_BYTES if limit is None else limit)
+    except UndecodableError as exc:
+        raise _UnparsedError("undecodable_encoding") from exc
 
 
 def _reject_json_constant(value: str) -> NoReturn:

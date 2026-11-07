@@ -236,7 +236,7 @@ process start times).
 | `agent.process_start_ns` | The agent's process start time, when known (H4 `certain`) | the epoch registration, when it records one |
 | `agent.pid_ns` | The agent's pid namespace, when known | the epoch registration, when it records one |
 | `agent.host_id` | The agent's host | `fabric.execution.host_id` |
-| `agent.clock_uncertainty_ns` | The epoch's declared clock uncertainty: the window margin of A rules | the capture manifest / `install.config` (050 §1.3) |
+| `agent.clock_uncertainty_ns` | The epoch's declared clock uncertainty: the margin of a window close on another epoch or at the run window's end (A rules), and the agent side of host-event margins | the capture manifest / `install.config` (050 §1.3) |
 | `content_mode` | `retain_original` or `metadata_only` | the capture policy in the manifest |
 | `output_withheld` | Optional, `true` when PROTECT withheld some effect's output by policy. Only those effects lose A1 (they carry no `stdout`); the flag makes `output_match` read `not_applicable(privacy_policy)` when A1 applied to no effect | the `terminal.stdout` descriptors (`not_stored`, `privacy_policy`) |
 | `exchange_verdict`, `exchange_reasons` | The existing run verdict over exchanges and its gap types: the `decisions` chain; `not_observed` for a run with no captured exchange whose record verifies (spec 056 rev 6) | the verifier's run verdict (050 §3.12) |
@@ -268,8 +268,11 @@ pseudonym of its provider id (as `reconstruct` names tool calls everywhere).
 exchange's span and closes at the start of the first later exchange whose
 request carries its result, else at the end of the run window. An effect is
 a candidate when it is on the same segment and epoch, later in sequence
-than the issuing exchange, and starts within the window widened by the
-epoch's clock uncertainty on both sides.
+than the issuing exchange, and starts within the window. The issuing
+exchange and the effect share one process and one clock, so the window
+opens exactly at that exchange's end; its close is widened by the epoch's
+clock uncertainty only when it is another epoch's exchange or the run
+window's end (spec 056 revision 8).
 
 | Rule | Decision | Link(s) on the effect step |
 |---|---|---|
@@ -341,7 +344,7 @@ capture validator enforces it on reports).
 | `a4-no-window` | A4 | An effect before any tool call |
 | `edge-parallel-distinct-outputs` | A1 | Two parallel calls, A1 resolves each |
 | `edge-parallel-metadata-only` | A3 | The same in metadata-only mode: both ambiguous, `output_match` not applicable |
-| `edge-clock-margin-boundary` | A3 | An effect inside the clock margin of two window boundaries is a candidate of both |
+| `edge-clock-margin-boundary` | A4 | An effect between two window boundaries of its own epoch is in neither window: one process, one clock, no margin |
 | `edge-background-thread` | A1, A4 | A background-thread effect between windows is unattributed |
 | `h1-anchor-exact` | A1, H1 | Start times in the same tick: certain anchor |
 | `h2-anchor-no-start` | A1, H2 | Today's local records: tentative anchor |

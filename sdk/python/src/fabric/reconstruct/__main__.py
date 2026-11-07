@@ -39,7 +39,7 @@ import re
 import sys
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
@@ -1003,6 +1003,10 @@ def _caused_text(row: Mapping[str, Any], why: str = "no open tool call") -> str:
 
 def _host_text(row: Mapping[str, Any]) -> tuple[str, str]:
     what = f"{row['event_class']} pid {row['pid']}"
+    if "ppid" in row:
+        what += f" ppid {row['ppid']}"
+    if isinstance(row.get("time_ns"), int):  # an unexplained event no link names
+        what += " " + datetime.fromtimestamp(row["time_ns"] / 1e9, UTC).strftime("%H:%M:%S.%f")[:-3]
     links = [*row.get("anchors", ()), *row.get("part_of", ())]
     refs = row.get("refs") or []
     if refs:

@@ -67,7 +67,7 @@ the [quickstart](quickstart.md). The new run controls are in
 | `fabric.wire.install(patch_httpx=False, patch_aiohttp=False)` | Records-only install: spool, allocator, manifests and sender without teeing any model client. |
 | `FABRIC_RUN_ID`, `FABRIC_RUN_RESUME_TOKEN` | Same-host child processes join the parent's run, or resume from a token, without code changes. |
 | `FABRIC_RUN_OPEN_DEADLINE_S` | How long a resumable run may stay open (default 7 days). |
-| `FABRIC_CLOCK_UNCERTAINTY_MS` | The clock uncertainty this process declares in its manifest (default 1 s). |
+| `FABRIC_CLOCK_UNCERTAINTY_MS` | The clock uncertainty this process declares in its manifest (default 1 s). It widens comparisons with records of other processes and hosts (another epoch, a host sensor); since v0.11.2 it no longer widens tool-call windows against this process's own exec records, which share its clock. |
 | `FABRIC_RECORDS_MAX_OBJECT_BYTES` | Size cap of one records-input content object (default and maximum 16 MiB). |
 
 The verifier gains these options (see [reconstruct](reconstruct.md) for the

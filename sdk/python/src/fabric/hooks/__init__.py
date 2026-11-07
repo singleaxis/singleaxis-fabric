@@ -32,7 +32,9 @@ Rules (053 §4):
 - An explicit :func:`install` with malformed arguments raises ``ValueError``
   (configuration). Environment activation (:func:`install_from_env`) never raises: a
   malformed value leaves every hook disabled, ``status()`` reports
-  ``invalid_configuration``, and one class-only warning is logged.
+  ``invalid_configuration``, and one class-only warning is logged. A
+  ``FABRIC_WIRE_REMOTE_SANDBOX`` provider this build does not have is not malformed:
+  only ``remote.sandbox`` stays off, reported as ``disabled(unsupported_provider)``.
 - Install is idempotent: the same configuration returns the live handle; a different one
   raises ``ValueError`` until the live handle is closed.
 - Patch ownership (``_patches.py``): Fabric restores only its own patches and never undoes
@@ -101,6 +103,9 @@ _NO_HANDLE: Capability = ("installed_inactive", "not_configured")
 _SANDBOX_POINT = "remote.sandbox"
 # 056 §4.4.1: sandbox hosts declared, no provider enabled.
 _SANDBOX_UNDECLARED: Capability = ("disabled", "remote_sandbox")
+# FABRIC_WIRE_REMOTE_SANDBOX named only providers this build does not have (status only:
+# the manifest says what is true of the hook, disabled(hook_disabled) or remote_sandbox).
+_SANDBOX_UNSUPPORTED: Capability = ("disabled", "unsupported_provider")
 
 
 def _load_exec() -> ModuleType:
@@ -184,6 +189,10 @@ class HooksHandle:
             )
         if config is not None and config.sandbox_undeclared:
             self._capabilities[_SANDBOX_POINT] = _SANDBOX_UNDECLARED
+        # status() only: why a requested remote.sandbox is off (never published).
+        self._unsupported = (
+            config is not None and config.remote_sandbox_unsupported and not config.remote_sandbox
+        )
         self._closed: bool | None = None  # the close() result, once closed
 
     # -- lifecycle (under _LOCK by install) -----------------------------------------------
@@ -300,9 +309,12 @@ class HooksHandle:
                 state = "closed"
             elif state == "active" and not self._bound():
                 state = "capture_closed"
+            shown = dict(self._capabilities)
+            if self._unsupported and shown.get(_SANDBOX_POINT, _OFF)[0] == "disabled":
+                shown[_SANDBOX_POINT] = _SANDBOX_UNSUPPORTED
             capabilities = {
                 point: {"state": cap[0], **({"reason": cap[1]} if cap[1] else {})}
-                for point, cap in self._capabilities.items()
+                for point, cap in shown.items()
             }  # fmt: skip
             counters: dict[str, dict[str, int]] = {}
             if self.producer is not None:
@@ -467,6 +479,11 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> HooksHandle | 
                      "fabric.hooks: invalid hook configuration (%s); every hook is disabled",
                      "ValueError")  # fmt: skip
             return HooksHandle(None, state="invalid_configuration", not_in_build=not_in_build)
+        if config.remote_sandbox_unsupported:
+            safe_log(_LOG, logging.WARNING,
+                     "fabric.hooks: FABRIC_WIRE_REMOTE_SANDBOX names a provider this build "
+                     "does not have (only e2b); remote.sandbox is disabled "
+                     "(unsupported_provider), the other hooks are unaffected")  # fmt: skip
         return _install(config, not_in_build)
     except Exception as exc:
         safe_log(_LOG, logging.WARNING, "fabric.hooks: hooks not installed (%s)",

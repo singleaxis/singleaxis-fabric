@@ -211,7 +211,13 @@ How to read it:
   `ambiguous` when there are several candidates.
 - **`host` rows.** Indented under the effect they belong to (`← #7` is row
   7). `← run` marks an event of the agent process itself, and
-  `unexplained` marks an event that no rule explains.
+  `unexplained` marks an event that no rule explains. An unexplained event
+  that no rule links at all (an `os.system` child, or any exec while the
+  exec hook is off) has a row of its own at its time:
+  `exec pid 4130 ppid 4100 00:00:02.500 unexplained` (pid, parent pid and
+  UTC time; `--json` gives `time_ns`, `ppid` and `syscall`). Host records
+  never carry the command line, so the row cannot show it; record the
+  command through the exec hook (`subprocess`) where you need it.
 - **`http` rows.** A non-model HTTP request the `http.nonmodel` hook
   recorded (method, status, keyed host id), marked `(recorded; not
   attributed)`: no rule links it to a tool call yet (see

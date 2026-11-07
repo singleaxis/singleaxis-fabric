@@ -39,6 +39,11 @@ class FakeModel:
     def __init__(self) -> None:
         self.requests: list[bytes] = []
         self._lock = threading.Lock()
+        self._server = _serve(self._handler())
+        self.port = int(self._server.server_address[1])
+
+    def _handler(self) -> type[BaseHTTPRequestHandler]:
+        """The request handler class; a subclass overrides this to serve other bodies."""
         model = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -62,8 +67,7 @@ class FakeModel:
                 self.end_headers()
                 self.wfile.write(data)
 
-        self._server = _serve(Handler)
-        self.port = int(self._server.server_address[1])
+        return Handler
 
     @property
     def base(self) -> str:

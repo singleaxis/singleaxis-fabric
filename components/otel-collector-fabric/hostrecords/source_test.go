@@ -780,3 +780,29 @@ func TestConcurrentStageAndHeartbeat(t *testing.T) {
 		t.Errorf("%d positions, want 40", len(seen))
 	}
 }
+
+func TestWidenClockUncertaintyStagesAWiderManifestOnly(t *testing.T) {
+	s := mustOpen(t, testConfig(t.TempDir()))
+	defer crash(t, s)
+	if got := s.ClockUncertainty(); got != clockUncertaintyNs {
+		t.Fatalf("initial uncertainty %d, want %d", got, clockUncertaintyNs)
+	}
+	if b, err := s.WidenClockUncertainty(clockUncertaintyNs - 1); b != nil || err != nil {
+		t.Fatalf("a narrower value staged (%v, %v)", b, err)
+	}
+	step := int64(2_820_000_000) // the 0.11.1 acceptance run's 2.82 s step
+	b, err := s.WidenClockUncertainty(step + clockUncertaintyNs)
+	if err != nil || b == nil {
+		t.Fatalf("widen: (%v, %v)", b, err)
+	}
+	m := batchSpans(t, b)[0].attrs
+	if m["fabric.manifest.clock.uncertainty_ns"] != step+clockUncertaintyNs || m["fabric.manifest.manifest_seq"] != int64(1) {
+		t.Errorf("widened manifest: %v", m)
+	}
+	if b, err := s.WidenClockUncertainty(step); b != nil || err != nil {
+		t.Errorf("never narrowed: (%v, %v)", b, err)
+	}
+	if got := s.ClockUncertainty(); got != step+clockUncertaintyNs {
+		t.Errorf("uncertainty %d", got)
+	}
+}

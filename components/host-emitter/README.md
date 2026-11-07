@@ -109,6 +109,18 @@ cannot establish per-record delivery or a complete run. Its local count is
 not a destination receipt. Operators must investigate and reconcile it; the
 emitter never silently deletes or replays it.
 
+Wall time: the kernel stamps events with `CLOCK_MONOTONIC`; the emitter adds
+`CLOCK_REALTIME − CLOCK_MONOTONIC`, re-sampled (nanosecond precision) at least
+every 250 ms and before translating events, so a wall-clock step (an NTP
+step, a VM resync such as Docker Desktop's after the host sleeps, `date -s`)
+is followed within one batch. A change of that offset beyond 1 ms plus
+500 ppm of the elapsed time is a detected step: it is logged
+(`CLOCK_REALTIME step detected step_ms=…`), counted (`clock_steps=` on the
+health line), and in production mode the source stages a manifest whose
+`clock.uncertainty_ns` is 2 ms plus the largest step, since events captured
+just before the step and translated after it may be off by that much. A
+verifier then widens the windows of that source's events accordingly.
+
 This does not prove a complete agent transcript. The host sensor sees only its
 enabled, scoped tracepoints and metadata, not command output, file contents,
 SSH remote actions, database queries, or model context. The kernel loss map

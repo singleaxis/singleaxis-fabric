@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Security
 
+- **Redaction now runs over the decoded body (0.11.1 acceptance B1, high).**
+  Under `redact`, `masked_only`, `tokenize` and the review copy of
+  `original_plus_masked`, the wire PROTECT stage handed content-encoded
+  bytes (a gzip model response) to the redaction service unchanged and
+  labelled the result `redacted`; the stored object kept every secret.
+  PROTECT now undoes the `Content-Encoding` first (gzip, x-gzip, deflate,
+  stacked codings; `br` and `zstd` when their module is present), bounded
+  by `max_body_bytes`, and the transformed object records
+  `content_encoding: identity`. A body Fabric cannot decode (unknown or
+  unsupported coding, corrupt or truncated stream) is withheld as
+  `not_captured(protection_failed)` and counted in the new
+  `WireStats.protection_undecodable`; a decoded body over the bound is
+  `not_captured(body_cap)`. Retained originals still store the wire bytes.
+  The HTTP channel no longer records a request body sent with a
+  `Content-Encoding` (as already for responses). The Fabric Node now
+  refuses a `redacted` object whose `content_encoding` is neither
+  `identity` nor `base64`, so a 0.11.1 agent cannot store a mislabelled
+  object through a 0.11.2 Node. Spec 049 revision 6.5 records the rule.
+  Customers who ran `redact`/`masked_only` against a provider that
+  compresses responses should treat `model.exchange.response` objects
+  with `content_encoding` other than `identity` as unredacted.
 - **Patched dependencies.** Python: `mcp` 1.29.0 → 2.3.0 in the SDK lock and
   the optional `mcp` extra's floor raised to `mcp>=1.30,!=2.0.*,!=2.1.*`
   (GHSA-5h93-6whr-6q8j, GHSA-84m7-p3x7-pcfv, GHSA-rwrf-2pqf-9j8j,
@@ -47,6 +68,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   (CVE-2026-78661, HTML parser denial of service) in the host emitter,
   host-records and no-redirect extension modules and the built Node; this
   also moves `x/sys` to v0.49.0, `x/text` to v0.43.0 and `x/crypto` to v0.58.0.
+
+### Fixed
+
+- **Host emitter wall clock follows a clock step (0.11.1 acceptance B2).**
+  The eBPF emitter derived wall time from an offset fixed at start, so after
+  a `CLOCK_REALTIME` step (Docker Desktop resyncing its VM clock, an NTP
+  step) records were mis-stamped by the step (2.82 s in the acceptance run)
+  while declaring 2 ms of uncertainty. The offset is now re-sampled with
+  nanosecond precision before events are translated and every 250 ms; a
+  change beyond 1 ms plus 500 ppm of elapsed time is a detected step,
+  logged with its size, counted (`clock_steps=` on the health line), and in
+  production mode the source stages a manifest declaring
+  `clock.uncertainty_ns` = 2 ms + the largest step. The host-records library
+  gains `Source.WidenClockUncertainty`. `fabric.sensor.boot_time_s` follows
+  the step too.
+- **`actions` shows unexplained host exec events as rows (B3).** Unexplained
+  events no rule links (an `os.system` child, an exec while the exec hook is
+  off) were only counted and id-listed. Each now has a timeline row with
+  pid, parent pid and time, in the text and `--json` views. The run report
+  is unchanged.
+- **No clock margin inside one process (B4).** A tool-call window opened
+  or closed by an exchange of the effect's own epoch is no longer widened by
+  `FABRIC_CLOCK_UNCERTAINTY_MS` (default 1 s): the wire and exec records of
+  one process share one clock. The margin still applies to a close on
+  another epoch, the segment end and every host-event comparison. An effect
+  that started after its call visibly closed no longer reads ambiguous
+  (smoke1: `docker inspect` was `T1|T2`). Spec 056 revision 8; the
+  `edge-clock-margin-boundary` rule fixture now expects `A4` (no window),
+  and no other fixture changes.
+- **An unsupported sandbox provider no longer disables every hook (B5).**
+  `FABRIC_WIRE_REMOTE_SANDBOX=modal` (any provider other than `e2b`) was
+  treated as malformed, so the exec and HTTP hooks were off too. The
+  provider is now dropped with one warning; only `remote.sandbox` stays off,
+  and `fabric.hooks` `status()` reports it as
+  `disabled(unsupported_provider)`. Supported providers in the same list
+  (`e2b,modal`) are enabled.
+
+### Added
+
+- `fabric.wire.install_from_env(transformations=...)` names the customer
+  transformation of each masking role, so the masking recipe needs no
+  private import (`fabric.wire._config` is no longer in any document).
+- `deploy/compose`: `FABRIC_ENV_FILE` points the Makefile, Compose
+  (`--env-file`), `preflight-prod.sh` and `verify-prod.sh` at an env file
+  outside the checkout (default `.env`, as before). `make up-prod-groups`
+  and `make up-prod` now print the Compose project and the ports actually
+  configured (environment, then that env file, then the default) instead
+  of fixed numbers.
+
+### Documentation
+
+- `docs/production-setup.md` (0.11.1 acceptance, section 5): the Node's env
+  file lives with the key material (`$FABRIC_ENV_FILE`), never in the
+  checkout; a new "Two stacks on one host" section (`COMPOSE_PROJECT_NAME`,
+  ports, derived network and container names); the agent image's
+  `singleaxis-fabric[otlp]` extra; the policy example no longer keeps
+  arguments, output or HTTP bodies in clear, and says that zero-code
+  `redact` withholds them (commands read `exec pid N`) and how to get masked
+  ones (redaction service plus `install_from_env(transformations=...)`); a
+  real "Agents that start containers" recipe (Docker socket,
+  `--cgroup-parent` for agent-started containers and the emitter's sandbox
+  root, what `docker exec` and `docker run --rm` link to, `--sandbox-peer`,
+  `--in-process-tool`); Docker Desktop notes on the sandbox root, VM clock
+  steps and the clock margin. `scripts/tests/test_production_setup_doc.py`
+  checks the new commands.
+- `examples/redaction-service/README.md` and `contracts/redaction/v1` show
+  wire-capture roles (`model.exchange.request`) where the example used an
+  explicit-API role, and the masking recipe in
+  `docs/privacy-and-security.md` uses the public API.
+
+### Known limitations
+
+- A command run with `docker exec` inside an agent-started container is
+  tied to that container's `docker run` effect (rule H5), not to the
+  `docker exec` effect or the tool call that ran it; a `docker run --rm`
+  prints no id and its events stay counted in `sandbox_events_unlinked`.
+- `os.system`, `os.exec*`, `os.posix_spawn` and `pty` are still not hooked:
+  their processes now appear as unexplained `actions` rows (pid, parent pid,
+  time) but carry no command line, since host records never do.
+- Remote sandboxes other than E2B (Modal, Daytona) remain invisible beyond
+  the agent's connections to them.
+- An undecodable body under a masking mode is reported with the existing
+  `protection_failed` reason (counted separately in
+  `WireStats.protection_undecodable`); a distinct `undecodable` reason would
+  need a content-contract change across the SDK and the Node.
 
 ## [0.11.1] - 2026-11-06
 

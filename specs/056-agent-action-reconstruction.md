@@ -11,6 +11,16 @@ related: ["030", "031", "047", "048", "054", "055"]
 
 # 056 — Agent action reconstruction
 
+> **Revision 8** (2026-11-07, v0.11.2): one epoch is one process on one
+> clock, so §4.2 condition 3 no longer widens a window boundary set by an
+> exchange of the effect's own epoch; the declared clock uncertainty still
+> widens a close set by another epoch's exchange or the segment end, and
+> every host-event comparison (two clocks). Before, the default 1 s margin
+> made an effect that started after its call visibly closed ambiguous
+> (0.11.1 acceptance B4). The `actions` view also renders unexplained host events no
+> link names as rows (§4.6), and an unsupported `FABRIC_WIRE_REMOTE_SANDBOX`
+> provider disables only `remote.sandbox` (§7.3.3).
+>
 > **Revision 7** (2026-11-06, v0.11.2): H4 checks the agent's process
 > identity, not only its pids. The kernel reuses a freed pid namespace's
 > number, so back-to-back containers report the same `pid_ns` and `ns_pid`;
@@ -212,9 +222,12 @@ response contains T). Its result is fed back in the first later exchange
 of these hold:
 1. E and `X_i` are in the same run segment and the same epoch;
 2. `seq(E) > seq(X_i)`;
-3. E's start time ≥ T's window open and < T's window close, with a margin
-   equal to the epoch's declared clock uncertainty; an effect inside the
-   margin of a boundary is a candidate of both sides;
+3. E's start time ≥ T's window open and < T's window close. The open is
+   `X_i`'s end on E's own epoch and clock, so it takes no margin; the close
+   takes a margin equal to the epoch's declared clock uncertainty only when
+   `X_j` is on another epoch or the window ends at the segment end (an
+   effect inside that margin is a candidate of both sides). Revision 8:
+   records of one epoch share one clock and their order is exact;
 4. E has no reported parent (A0 below).
 
 **Rules, applied in order.**
@@ -1290,7 +1303,12 @@ fabric.hooks.install(
 ```
 
 Environment: `FABRIC_WIRE_HTTP_HOSTS` and `FABRIC_WIRE_SANDBOX_HOSTS`
-(JSON arrays of strings), `FABRIC_WIRE_REMOTE_SANDBOX` (comma-separated).
+(JSON arrays of strings), `FABRIC_WIRE_REMOTE_SANDBOX` (comma-separated;
+revision 8: a provider this build does not have, such as `modal`, is
+dropped with one warning and disables only `remote.sandbox`, which
+`status()` reports as `disabled(unsupported_provider)`; the manifest keeps
+`disabled(hook_disabled)` or `disabled(remote_sandbox)`, and every other
+hook and capture run).
 `CHANNELS` gains `http.nonmodel` (module `fabric.hooks._http`) and
 `remote.sandbox` (module `fabric.hooks._sandbox`, which dispatches to
 `_sandbox_e2b`). `HooksConfig.requested(point)` covers both. When

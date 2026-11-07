@@ -125,7 +125,7 @@
     {"path": "fixtures/action-record/rules/ar1-run.json", "sha256": "482c43176c1c712f2dc5d28333a3f8eb9e505b9042be62ae4f2e5fc752ed7368", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-agent-uncalled-host.json", "sha256": "585e00079a1bf84269ab5f923192656070ec91067d4c195aef89ae6f65c14a57", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-background-thread.json", "sha256": "97ba94ebbc6f67e86293a21f607e763fb335785f38541391d2ba5243e63050b2", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/edge-clock-margin-boundary.json", "sha256": "3755ff194458913cd78515484ce62b48d636f44c314b71c2b35c52f5481157b7", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-clock-margin-boundary.json", "sha256": "915601bc0b7aa46406cec0c4a797576c93be885448234081e06a141e2a5a8ee0", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-lineage-depth-17.json", "sha256": "4d4969ad1bc71c0b78354181e6fb590f01438da0ea21867db2bbdc544e4949a8", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-parallel-distinct-outputs.json", "sha256": "0c53c814f4dbedde6ebb39b89aaf2c9f53d387db16b33ac0d00f23c038e8d19c", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-parallel-metadata-only.json", "sha256": "9190cef8e854c6ae2b267300d7083b0bc3c6827c103596e4bb80c8460d87661a", "expectation": "valid", "expected_error": null},

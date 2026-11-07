@@ -46,26 +46,28 @@ else
 fi
 
 # --- env file ---------------------------------------------------------------
+# The env file: FABRIC_ENV_FILE (any path; the Makefile passes it), else .env here.
+ENV_FILE="${FABRIC_ENV_FILE:-.env}"
 # envget reads KEY=VALUE lines from .env without executing it -- sourcing the
 # file would run any shell code inside it. Exported environment wins over .env.
 envget() {
   eval "val=\"\${${1}:-}\""
-  if [ -z "${val}" ] && [ -f .env ]; then
-    val=$(sed -n "s/^${1}=//p" .env | tail -n 1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
+  if [ -z "${val}" ] && [ -f "${ENV_FILE}" ]; then
+    val=$(sed -n "s/^${1}=//p" "${ENV_FILE}" | tail -n 1 | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'\$//")
   fi
   printf '%s' "${val}"
 }
 
-if [ -f .env ]; then
-  ok ".env present"
+if [ -f "${ENV_FILE}" ]; then
+  ok "env file ${ENV_FILE} present"
   # shellcheck disable=SC2012
-  perms=$(ls -l .env | awk '{print $1}')
+  perms=$(ls -l "${ENV_FILE}" | awk '{print $1}')
   case "${perms}" in
-    -rw-------*) ok ".env permissions ${perms}" ;;
-    *) warn ".env permissions ${perms}; chmod 0600 .env recommended (it holds egress credentials)" ;;
+    -rw-------*) ok "env file permissions ${perms}" ;;
+    *) warn "env file permissions ${perms}; chmod 0600 it (it holds egress credentials)" ;;
   esac
 else
-  warn "no .env; relying on exported environment variables"
+  warn "no env file (${ENV_FILE}); relying on exported environment variables"
 fi
 
 FABRIC_EXPORT_ENDPOINT="$(envget FABRIC_EXPORT_ENDPOINT)"

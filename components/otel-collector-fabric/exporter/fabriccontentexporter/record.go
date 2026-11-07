@@ -370,6 +370,12 @@ func consistent(rec *contentRecord) bool {
 		}
 		switch representation {
 		case "redacted":
+			// A redaction runs over the plaintext (0.11.2): a redacted object whose
+			// content_encoding names a compression was made from encoded wire
+			// bytes and may hold the original in clear, so it is refused.
+			if encoding := rec.strs["content_encoding"]; encoding != "identity" && encoding != "base64" {
+				return false
+			}
 			return transformationsAre(rec, []string{"redact"}, []string{"extract_parts", "redact"})
 		case "tokenized":
 			return transformationsAre(rec, []string{"tokenize"}, []string{"extract_parts", "tokenize"})

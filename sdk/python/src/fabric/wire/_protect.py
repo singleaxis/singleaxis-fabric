@@ -12,6 +12,14 @@ computed under ``redact``, ``tokenize``, ``masked_only`` or ``metadata_only``.
 ``redact``, ``masked_only`` and the review copy of ``original_plus_masked`` are made by
 the customer-run redaction service (``contracts/redaction/v1``), called here on the
 capture worker; Fabric runs no customer code.
+
+Transformations run over the plaintext. A side whose ``Content-Encoding`` is not
+``identity`` (a gzip response, stacked codings) is decoded first, bounded by
+``max_body_bytes``; the transformed object then records ``content_encoding: identity``
+(it describes the stored bytes). A body Fabric cannot decode (an unknown or unsupported
+coding, a corrupt or truncated stream) is withheld, ``not_captured(protection_failed)``:
+encoded bytes are never handed to a transformation and never labelled ``redacted``.
+A retained original stays the wire bytes, as received (047 §7).
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from .._content_coding import TooLargeError, UndecodableError, decode_content, is_identity
 from .._roles import ROLES, admits, part_object_id
 from ..deployment_policy import TOKEN_TRANSFORMATION, token_bytes
 from ..redaction import (
@@ -213,6 +222,8 @@ class Protector:
             if redaction is not None else None
         )  # fmt: skip
         self._saturated_logged = False
+        self._undecodable = 0  # sides withheld because their coding could not be undone
+        self._undecodable_logged = False
 
     def close(self, timeout_s: float = 2.0) -> bool:
         """Close the redaction service connections (later masked content is withheld)."""
@@ -223,11 +234,12 @@ class Protector:
     def stats(self) -> dict[str, int]:
         """The redaction service counters (never a value): calls that timed out, were
         refused at the in-flight bound, or failed otherwise."""
-        if self._client is None:
-            return dict.fromkeys(
-                ("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0
-            )
-        return self._client.stats()
+        out = (
+            dict.fromkeys(("redaction_timeouts", "redaction_saturated", "redaction_failures"), 0)
+            if self._client is None else dict(self._client.stats())
+        )  # fmt: skip
+        out["protection_undecodable"] = self._undecodable
+        return out
 
     # -- one side -----------------------------------------------------------
 
@@ -306,8 +318,15 @@ class Protector:
             obj = self._withheld(base, role, mode, cut_reason)
             self._admit(result, obj, primary=True, reason=cut_reason)
             return
-        stored = data if parts is None else skeleton_of(data, parts)
-        obj = self._protect(base, role, mode, stored, split=parts is not None)
+        if parts is None:  # parts exist only for an identity body
+            plain_base, plain, failed = self._plaintext(base, data)
+            if plain is None:
+                obj = self._withheld(base, role, mode, failed or "protection_failed")
+                self._admit(result, obj, primary=True, reason=failed)
+                return
+            obj = self._protect(plain_base, role, mode, plain, split=False)
+        else:
+            obj = self._protect(base, role, mode, skeleton_of(data, parts), split=True)
         self._admit(result, obj, primary=True)
         for index, part in enumerate(parts or ()):
             self._part(result, base, data, part, obj.object_id, index, retain_skeleton=False)
@@ -388,8 +407,12 @@ class Protector:
         admitted, so a failed masked copy withholds the original too (049 §7.7 rule 4:
         never raw bytes on failure)."""
         mode = "original_plus_masked"
-        review = self._withheld(base, role, mode, cut_reason) if cut_reason else (
-            self._redacted(base, role, mode, data, split=False))  # fmt: skip
+        if cut_reason:
+            review = self._withheld(base, role, mode, cut_reason)
+        else:  # the review copy masks the plaintext; the original stays the wire bytes
+            plain_base, plain, _ = self._plaintext(base, data)
+            review = self._withheld(base, role, mode, "protection_failed") if plain is None else (
+                self._redacted(plain_base, role, mode, plain, split=False))  # fmt: skip
         if cut_reason is None and not (review.stored and self._admissible(review)):
             self._withhold_pair(result, base, role, mode)
             return
@@ -421,6 +444,33 @@ class Protector:
         self._admit(result, review, primary=False)
 
     # -- transformations --------------------------------------------------------
+
+    def _plaintext(
+        self, base: Mapping[str, Any], data: bytes
+    ) -> tuple[Mapping[str, Any], bytes | None, str | None]:
+        """The side's plaintext for a transformation and the base describing it: the bytes
+        as they are for ``identity``, else every ``Content-Encoding`` undone (bounded by
+        ``max_body_bytes``) and ``content_encoding: identity``. ``None`` with the reason
+        when it cannot be produced: ``body_cap`` when the decoded body is over the bound,
+        ``protection_failed`` when the coding is unknown, unsupported or corrupt."""
+        encoding = base.get("content_encoding")
+        if is_identity(encoding):
+            return base, data, None
+        try:
+            plain = decode_content(data, encoding if isinstance(encoding, str) else "unknown",
+                                   self.max_body)  # fmt: skip
+        except TooLargeError:
+            return base, None, "body_cap"
+        except UndecodableError:
+            self._undecodable += 1
+            if not self._undecodable_logged:
+                self._undecodable_logged = True  # once per recorder, by class only
+                _LOG.warning(
+                    "fabric.wire: a body's Content-Encoding could not be decoded; content "
+                    "needing protection is withheld (protection_failed)"
+                )
+            return base, None, "protection_failed"
+        return {**base, "content_encoding": "identity"}, plain, None
 
     def _protect(
         self, base: Mapping[str, Any], role: str, mode: str, data: bytes, *, split: bool

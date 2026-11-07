@@ -29,7 +29,7 @@ headers:
 | `Content-Type` | `application/octet-stream` |
 | `X-Fabric-Transformation` | transformation id (for example `example-mask`) |
 | `X-Fabric-Transformation-Version` | transformation version (for example `1`) |
-| `X-Fabric-Role` | content role (for example `model.request.messages`) |
+| `X-Fabric-Role` | content role as the capture policy names it (for example `model.exchange.request`, `terminal.argv`) |
 | `X-Fabric-Mode` | `redact` or `masked_only` |
 | `Authorization` | `Bearer <token>`, only when a token file is configured |
 
@@ -72,7 +72,7 @@ curl --unix-socket /tmp/fabric-redaction.sock http://localhost/v1/transform \
   -H 'Content-Type: application/octet-stream' \
   -H 'X-Fabric-Transformation: example-mask' \
   -H 'X-Fabric-Transformation-Version: 1' \
-  -H 'X-Fabric-Role: model.request.messages' -H 'X-Fabric-Mode: redact' \
+  -H 'X-Fabric-Role: model.exchange.request' -H 'X-Fabric-Mode: redact' \
   --data-binary 'write to CANARY-7F3K'
 # -> write to [masked]
 ```
@@ -95,13 +95,23 @@ export FABRIC_REDACTION_ENDPOINT=unix:///run/fabric/redaction.sock
 export FABRIC_REDACTION_TOKEN_FILE=/run/secrets/fabric-redaction-token  # optional
 ```
 
-Name the transformation for each masked role:
+Name the transformation for each masked role. For wire capture (the roles
+of the capture policy: `model.exchange.request`, `model.exchange.response`,
+`terminal.argv`, `terminal.stdout`, ...):
 
 ```python
+from fabric import wire
 from fabric.wire import Transformation
 
-transformations = {"model.request.messages": Transformation("example-mask", "1")}
+mask = Transformation("example-mask", "1")
+wire.install_from_env(transformations={
+    "model.exchange.request": mask, "model.exchange.response": mask, "terminal.argv": mask,
+})
 ```
+
+Zero-code autoload cannot name a transformation, so under it the masking
+modes withhold. The explicit content APIs name theirs the same way, with
+their own roles, for example in TypeScript:
 
 ```typescript
 const transformations = { "model.request.messages": { id: "example-mask", version: "1" } };

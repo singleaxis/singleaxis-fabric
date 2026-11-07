@@ -11,4 +11,4 @@ func cgroupIDFromPath(path string) (uint64, error) {
 	return 0, fmt.Errorf("cgroup resolution requires Linux")
 }
 
-func bootTimeSeconds() *int64 { return nil }
+func suspendedNs() (int64, bool) { return 0, false }

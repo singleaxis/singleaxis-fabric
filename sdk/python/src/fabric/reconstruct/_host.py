@@ -1370,6 +1370,10 @@ class HostJoin:
     trace: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     sandbox_events_unlinked: int | None = None
     remote_sandbox_calls: tuple[tuple[str, int, int], ...] | None = None
+    # The ``report_entry`` of the first unexplained events not in ``sensor_events`` (ids,
+    # pids and times; never a path, peer or argv), for the actions view only (0.11.2:
+    # an unexplained exec such as an ``os.system`` child gets a timeline row).
+    unexplained_events: tuple[dict[str, Any], ...] = ()
 
     def unexplained_host_events(self) -> dict[str, Any]:
         """The report's ``attribution.unexplained_host_events``."""
@@ -2141,6 +2145,11 @@ def join_host_events(
         link_counts=join.counts,
         unexplained_count=len(join.unexplained),
         unexplained_event_ids=tuple(e.event_id for e in join.unexplained[:LIST_MAX]),
+        unexplained_events=tuple(
+            _unexplained_entry(e)
+            for e in join.unexplained[:LIST_MAX]
+            if e.event_id not in join.listed
+        ),
         lineage_truncated=len(join.truncated),
         corroboration=corroboration,
         effect_order=tuple(e.attempt_uid for e in ordered),
@@ -2327,6 +2336,14 @@ def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
 
 
 # ------------------------------------------------------------------ attribution (WP6-04)
+def _unexplained_entry(event: HostEvent) -> dict[str, Any]:
+    """An unexplained event's row data for the actions view: its report entry and syscall."""
+    entry = event.report_entry()
+    if event.syscall is not None:
+        entry["syscall"] = event.syscall
+    return entry
+
+
 def attribution_join(join: HostJoin) -> AttributionHostJoin:
     """``join`` in the form :func:`fabric.reconstruct._attribute.attribute` composes into
     the ``corroboration`` chain, the attribution summary and the projection links."""
@@ -2345,6 +2362,7 @@ def attribution_join(join: HostJoin) -> AttributionHostJoin:
         sandbox_events_unlinked=join.sandbox_events_unlinked,
         remote_sandbox_calls=join.remote_sandbox_calls,
         unauthenticated=join.corroboration.unauthenticated,
+        unexplained_events=join.unexplained_events,
     )
 
 

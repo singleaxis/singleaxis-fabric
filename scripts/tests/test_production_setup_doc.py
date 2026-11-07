@@ -14,9 +14,15 @@ of hard-coding it:
   argparse parser, never combines ``--content-key-file`` with ``--store-uri``
   (the reader exits 2) and passes ``--s3-*`` options only with ``--store-uri``;
 * every ``make`` target the page runs or names exists in
-  ``deploy/compose/Makefile``, every variable written to
-  ``deploy/compose/.env`` is read by the Makefile, a Compose file or
-  preflight, and every Compose file it names is shipped;
+  ``deploy/compose/Makefile``, every variable written to the Node's env file
+  (``$FABRIC_ENV_FILE``, outside the checkout) is read by the Makefile, a
+  Compose file or preflight, and every Compose file it names is shipped;
+* the Makefile, preflight and verify read ``FABRIC_ENV_FILE``, and
+  ``make up-prod-groups`` prints the project and ports that file sets;
+* the capture-policy example keeps no argument, output or HTTP body in
+  clear, and the masking recipe imports no private module;
+* the agent-sandbox flags the page names (``--sandbox-peer``,
+  ``--in-process-tool``) parse with the reader;
 * no ``openssl x509 -CAcreateserial`` leaves its serial file in ``tls/``
   (mounted into the Node);
 * no document runs AR-1 with the non-existent ``--mode production-replay``.
@@ -318,16 +324,14 @@ def test_every_make_target_exists() -> None:
 
 
 def _env_file_variables() -> set[str]:
-    """Variables the page writes to deploy/compose/.env (heredocs and echo)."""
+    """Variables the page writes to the Node's env file (heredocs and echo)."""
     found: set[str] = set()
     for block in _code_blocks(_doc()):
         lines = block.splitlines()
         i = 0
         while i < len(lines):
             line = lines[i]
-            heredoc = re.search(
-                r"cat >>? \"\$FABRIC_REPO/deploy/compose/\.env\" <<-?'?(\w+)'?", line
-            )
+            heredoc = re.search(r"cat >>? \"\$FABRIC_ENV_FILE\" <<-?'?(\w+)'?", line)
             if heredoc:
                 i += 1
                 while lines[i].strip() != heredoc.group(1):
@@ -335,7 +339,7 @@ def _env_file_variables() -> set[str]:
                     if match:
                         found.add(match.group(1))
                     i += 1
-            elif "deploy/compose/.env" in line and line.lstrip().startswith("echo"):
+            elif '"$FABRIC_ENV_FILE"' in line and line.lstrip().startswith("echo"):
                 found.update(re.findall(r"\"([A-Z][A-Z0-9_]*)=", line))
             i += 1
     return found
@@ -428,3 +432,161 @@ def test_no_document_runs_ar1_with_a_mode_it_lacks() -> None:
     assert not offenders, (
         f"use `run_ar1.py --profile production --mode replay`: {offenders}"
     )
+
+
+# --------------------------------------------------------------------------
+# 0.11.2: env file outside the checkout, several stacks, safer policy, recipes
+# --------------------------------------------------------------------------
+
+
+def test_the_env_file_lives_outside_the_checkout() -> None:
+    text = _doc()
+    assert 'export FABRIC_ENV_FILE="$M/node.env"' in text
+    writes = [
+        line
+        for block in _code_blocks(text)
+        for line in block.splitlines()
+        if re.search(r"(>>?|tee)\s*\"?\$FABRIC_REPO", line)
+    ]
+    assert not writes, f"the page writes into the checkout: {writes}"
+    for script in (PREFLIGHT, COMPOSE_DIR / "verify-prod.sh"):
+        assert 'ENV_FILE="${FABRIC_ENV_FILE:-.env}"' in script.read_text(
+            encoding="utf-8"
+        )
+    makefile = MAKEFILE.read_text(encoding="utf-8")
+    assert re.search(r"^FABRIC_ENV_FILE \?= \.env$", makefile, re.M)
+    assert "--env-file $(FABRIC_ENV_FILE)" in makefile
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make not installed")
+def test_up_prod_groups_echoes_the_env_file_ports(tmp_path: Path) -> None:
+    env = tmp_path / "node.env"
+    env.write_text(
+        "COMPOSE_PROJECT_NAME=fabric-staging\nFABRIC_OTLP_GRPC_PORT=5317\n"
+        "FABRIC_OTLP_HTTP_PORT=5318\nFABRIC_OTLP_CONTENT_PORT=5319\n"
+        "FABRIC_EBPF_GRPC_PORT=5417\nFABRIC_CONTENT_BACKEND=s3\n",
+        encoding="utf-8",
+    )
+    clean = {
+        k: v for k, v in os.environ.items() if not k.startswith(("FABRIC_", "COMPOSE_"))
+    }
+    out = subprocess.run(
+        [
+            "make",
+            "-n",
+            "-C",
+            str(COMPOSE_DIR),
+            "up-prod-groups",
+            f"FABRIC_ENV_FILE={env}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean,
+    ).stdout
+    assert f"--env-file {env}" in out
+    assert "Project fabric-staging" in out
+    assert "agent 5317/5318, content 5319, ebpf 5417" in out
+    default = subprocess.run(
+        [
+            "make",
+            "-n",
+            "-C",
+            str(COMPOSE_DIR),
+            "up-prod-groups",
+            f"FABRIC_ENV_FILE={tmp_path / 'absent.env'}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        env=clean,
+    ).stdout
+    assert "agent 4317/4318, ebpf 4417" in default and "--env-file" not in default
+
+
+def test_two_stack_variables_are_compose_settings() -> None:
+    text = _doc()
+    assert "### Two stacks on one host" in text
+    compose = "\n".join(
+        p.read_text(encoding="utf-8") for p in COMPOSE_DIR.glob("docker-compose*.yml")
+    )
+    for variable in (
+        "FABRIC_OTLP_GRPC_PORT",
+        "FABRIC_OTLP_HTTP_PORT",
+        "FABRIC_OTLP_CONTENT_PORT",
+        "FABRIC_EBPF_GRPC_PORT",
+        "FABRIC_HEALTH_PORT",
+        "FABRIC_METRICS_PORT",
+    ):
+        assert f"{variable}=" in text and "${" + variable in compose, variable
+    assert "COMPOSE_PROJECT_NAME=" in text
+
+
+def _policy_example() -> dict[str, Any]:
+    import json  # noqa: PLC0415
+
+    block = next(b for b in _code_blocks(_doc()) if "fabric.deployment-policy/v1" in b)
+    body = block.split("<<EOF\n", 1)[1].rsplit("\nEOF", 1)[0].replace("$TENANT", "acme")
+    return json.loads(body)
+
+
+def test_the_policy_example_keeps_no_argv_output_or_body_in_clear() -> None:
+    privacy = _policy_example()["privacy"]
+    clear = {"retain_original", "original_plus_masked"}
+    for role in (
+        "terminal.argv",
+        "terminal.stdout",
+        "terminal.stderr",
+        "network.request",
+        "network.response",
+    ):
+        assert privacy[role] not in clear, role
+    assert "withholds" in _doc() and "#masked-arguments-and-output" in _doc()
+
+
+def test_the_masking_recipe_uses_public_api_only() -> None:
+    recipes = [b for b in _code_blocks(_doc()) if "Transformation(" in b]
+    assert recipes, "no masking recipe"
+    for block in recipes:
+        compile(block, "recipe", "exec")
+        assert "._" not in block and "import _" not in block, block
+        assert "install_from_env(transformations=" in block
+    for doc in (
+        ROOT / "docs/privacy-and-security.md",
+        ROOT / "docs/production-setup.md",
+    ):
+        assert "fabric.wire._config" not in doc.read_text(encoding="utf-8"), doc
+
+
+def test_the_redaction_examples_name_real_roles() -> None:
+    roles_src = (ROOT / "sdk/python/src/fabric/_roles.py").read_text(encoding="utf-8")
+    for path in (
+        ROOT / "examples/redaction-service/README.md",
+        ROOT / "contracts/redaction/v1/README.md",
+    ):
+        text = path.read_text(encoding="utf-8")
+        for role in re.findall(r"X-Fabric-Role:? ?`?([a-z][a-z._]+[a-z])", text):
+            assert f'"{role}"' in roles_src, (path.name, role)
+        # wire capture's examples use the capture policy's roles, never an explicit-API one
+        for block in _code_blocks(text):
+            if "fabric.wire" in block or "X-Fabric-Role" in block:
+                assert "model.request.messages" not in block, (path.name, block)
+
+
+def test_the_sandbox_recipe_names_its_flags() -> None:
+    text = _doc()
+    section = text.split("### Agents that start containers", 1)[1].split("### ", 1)[0]
+    for needle in (
+        "/var/run/docker.sock",
+        "--cgroup-parent=/fabric-sandboxes",
+        "--sandbox-peer",
+        "--in-process-tool",
+        "EMIT_SANDBOX_CGROUP_ROOTS",
+    ):
+        assert needle in section or needle in text, needle
+    main = pytest.importorskip("fabric.reconstruct.__main__")
+    known = {o for a in main._actions_parser()._actions for o in a.option_strings}
+    assert {"--sandbox-peer", "--in-process-tool"} <= known
+    desktop = text.split("## Docker Desktop", 1)[1]
+    assert "fabric-sandboxes" in desktop and "Clock steps" in desktop
+    assert "FABRIC_CLOCK_UNCERTAINTY_MS" in desktop

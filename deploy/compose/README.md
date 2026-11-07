@@ -162,6 +162,12 @@ make verify-prod    # proves health, 401 unauthenticated (spans, and content whe
 make logs-prod
 ```
 
+The env file need not live in the checkout: `FABRIC_ENV_FILE=/path/node.env`
+(exported, or on the `make` command line) makes the Makefile, Compose
+(`--env-file`), preflight and verify read that file instead of `.env`.
+`COMPOSE_PROJECT_NAME` and the `FABRIC_*_PORT` settings in it let two stacks
+share a host ([production setup](../../docs/production-setup.md#two-stacks-on-one-host)).
+
 > **File ownership matters.** The image runs as distroless `nonroot`
 > (uid/gid 65532) and Compose bind-mounts the token secret and the TLS
 > directory with their host owner and mode. A token file owned by your

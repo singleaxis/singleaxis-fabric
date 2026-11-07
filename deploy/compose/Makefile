@@ -1,11 +1,21 @@
 COMPOSE ?= docker compose
+# The env file the production targets read: .env here by default, or any path
+# (absolute, or relative to this directory) so a read-only or shared checkout
+# needs no file written into it. Compose (--env-file), preflight-prod.sh and
+# verify-prod.sh read the same file. COMPOSE_PROJECT_NAME in it (or exported)
+# names the stack, so two stacks on one host need only their own env files
+# with their own project name and ports.
+FABRIC_ENV_FILE ?= .env
+ENV_ARGS := $(if $(wildcard $(FABRIC_ENV_FILE)),--env-file $(FABRIC_ENV_FILE))
+PROD_COMPOSE = $(COMPOSE) $(ENV_ARGS)
+SCRIPT_ENV := FABRIC_ENV_FILE="$(FABRIC_ENV_FILE)"
 
 # Production overlay (client VM). `make up-prod` merges it over the base file.
 # The content path (spec 048) is opt-in: FABRIC_CONTENT_BACKEND=s3 or file
 # (environment or .env) adds docker-compose.content.yml, plus the S3 store
 # overlay for s3; preflight-prod.sh reads the same variable (and refuses
 # file unless FABRIC_CONTENT_REQUIRE_SSE=false). Unset: telemetry only.
-FABRIC_CONTENT_BACKEND ?= $(shell sed -n 's/^FABRIC_CONTENT_BACKEND=//p' .env 2>/dev/null | tail -n 1 | tr -d "\"'")
+FABRIC_CONTENT_BACKEND ?= $(shell sed -n 's/^FABRIC_CONTENT_BACKEND=//p' $(FABRIC_ENV_FILE) 2>/dev/null | tail -n 1 | tr -d "\"'")
 PROD_FILES := -f docker-compose.yml -f docker-compose.production.yml
 ifeq ($(FABRIC_CONTENT_BACKEND),s3)
 PROD_FILES += -f docker-compose.content.yml -f docker-compose.content-s3.yml
@@ -20,7 +30,10 @@ S3_LOCAL_FILES := -f docker-compose.yml -f docker-compose.s3-local.yml
 # `make up-prod-groups` runs the production overlay with one group per source
 # (agent and ebpf; auditd when FABRIC_AUDITD_TOKEN_FILE is set; the agent's
 # content path when FABRIC_CONTENT_BACKEND=s3), after preflight-prod.sh --groups.
-env_value = $(shell sed -n 's/^$(1)=//p' .env 2>/dev/null | tail -n 1 | tr -d "\"'")
+env_value = $(shell sed -n 's/^$(1)=//p' $(FABRIC_ENV_FILE) 2>/dev/null | tail -n 1 | tr -d "\"'")
+# A setting as Compose resolves it: the environment, else the env file, else
+# the default ($(call setting,NAME,default)).
+setting = $(or $($(1)),$(call env_value,$(1)),$(2))
 FABRIC_AUDITD_TOKEN_FILE ?= $(call env_value,FABRIC_AUDITD_TOKEN_FILE)
 FABRIC_AGENT_SOURCE_ID ?= $(call env_value,FABRIC_AGENT_SOURCE_ID)
 GROUP_FILES := -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.host-ingress.yml
@@ -122,23 +135,23 @@ reset-s3-eval: reset-s3-local
 
 preflight-prod: ## Check env/secrets/TLS readiness before production deploy.
 	@chmod +x preflight-prod.sh 2>/dev/null || true
-	./preflight-prod.sh
+	$(SCRIPT_ENV) ./preflight-prod.sh
 
 up-prod: preflight-prod ## Start the production overlay (token auth + durable queue). Runs preflight first.
-	$(COMPOSE) $(PROD_FILES) up -d --wait
-	@echo "Fabric Node OTLP/HTTP: http://localhost:$${FABRIC_OTLP_HTTP_PORT:-4318} (bearer token required)"
-	@echo "Internal metrics: http://localhost:$${FABRIC_METRICS_PORT:-8888}/metrics"
+	$(PROD_COMPOSE) $(PROD_FILES) up -d --wait
+	@echo "Project $(call setting,COMPOSE_PROJECT_NAME,fabric-node-production): OTLP/HTTP https://localhost:$(call setting,FABRIC_OTLP_HTTP_PORT,4318) (bearer token required)"
+	@echo "Internal metrics: http://localhost:$(call setting,FABRIC_METRICS_PORT,8888)/metrics"
 	@echo "Run 'make verify-prod' to check ingress auth and available queue metrics."
 
 verify-prod: ## Check production ingress; destination readback is separate.
 	@chmod +x verify-prod.sh 2>/dev/null || true
-	./verify-prod.sh
+	$(SCRIPT_ENV) ./verify-prod.sh
 
 down-prod: ## Stop the production overlay while keeping the queue volume.
-	$(COMPOSE) $(PROD_FILES) down
+	$(PROD_COMPOSE) $(PROD_FILES) down
 
 logs-prod: ## Tail production overlay logs; use ARGS="fabric-node".
-	$(COMPOSE) $(PROD_FILES) logs -f $(ARGS)
+	$(PROD_COMPOSE) $(PROD_FILES) logs -f $(ARGS)
 
 # --- Ingress groups and the auditd sensor collector --------------------------
 # Requires .env as for up-prod, plus FABRIC_AGENT_SOURCE_ID, FABRIC_EBPF_SOURCE_ID
@@ -148,17 +161,17 @@ logs-prod: ## Tail production overlay logs; use ARGS="fabric-node".
 
 preflight-prod-groups: ## Check env/secrets/TLS readiness of the ingress-group Node.
 	@chmod +x preflight-prod.sh 2>/dev/null || true
-	./preflight-prod.sh --groups
+	$(SCRIPT_ENV) ./preflight-prod.sh --groups
 
 up-prod-groups: preflight-prod-groups ## Start the production Node with one ingress group per source. Runs preflight first.
-	$(GROUP_ENV) $(COMPOSE) $(GROUP_FILES) up -d --wait
-	@echo "Ingress groups: agent 4317/4318, ebpf $${FABRIC_EBPF_GRPC_PORT:-4417}$(if $(FABRIC_AUDITD_TOKEN_FILE),$(comma) auditd $${FABRIC_AUDITD_HTTP_PORT:-4428}) (TLS and each group's own token required)"
+	$(GROUP_ENV) $(PROD_COMPOSE) $(GROUP_FILES) up -d --wait
+	@echo "Project $(call setting,COMPOSE_PROJECT_NAME,fabric-node-production), ingress groups on $(call setting,FABRIC_BIND_ADDR,127.0.0.1): agent $(call setting,FABRIC_OTLP_GRPC_PORT,4317)/$(call setting,FABRIC_OTLP_HTTP_PORT,4318)$(if $(filter s3,$(FABRIC_CONTENT_BACKEND)),$(comma) content $(call setting,FABRIC_OTLP_CONTENT_PORT,4319)), ebpf $(call setting,FABRIC_EBPF_GRPC_PORT,4417)$(if $(FABRIC_AUDITD_TOKEN_FILE),$(comma) auditd $(call setting,FABRIC_AUDITD_HTTP_PORT,4428)) (TLS and each group's own token required)"
 
 down-prod-groups: ## Stop the ingress-group Node while keeping the queue volume.
-	$(GROUP_ENV) $(COMPOSE) $(GROUP_FILES) down
+	$(GROUP_ENV) $(PROD_COMPOSE) $(GROUP_FILES) down
 
 logs-prod-groups: ## Tail ingress-group Node logs; use ARGS="fabric-node".
-	$(GROUP_ENV) $(COMPOSE) $(GROUP_FILES) logs -f $(ARGS)
+	$(GROUP_ENV) $(PROD_COMPOSE) $(GROUP_FILES) logs -f $(ARGS)
 
 up-sensor-auditd: ## Start the auditd sensor collector (production mode) toward the Node's auditd group.
 	$(COMPOSE) $(SENSOR_FILES) up -d --wait

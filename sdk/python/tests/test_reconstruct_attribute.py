@@ -18,6 +18,7 @@ import copy
 import importlib.util
 import json
 import random
+import re
 import sys
 import types
 from collections.abc import Mapping
@@ -518,3 +519,80 @@ def test_exec_hook_off_with_remote_sandbox_on_is_channel_disabled() -> None:
     off = attribute(inp, call_id)
     assert off.chains["effects"] == {"verdict": "not_observed", "reasons": ["channel_disabled"]}
     assert set(off.trace["tool_calls"].values()) == {"channel_disabled"}
+
+
+def test_unexplained_exec_events_get_timeline_rows() -> None:
+    """0.11.1 acceptance B3: unexplained host exec events no link names (the exec hook
+    is off, or an ``os.system`` child Fabric does not hook) were counted and id-listed
+    but had no row. Each now has one, at its time, with pid, parent pid and time, in the
+    JSON and the text view; the report itself is unchanged."""
+    from fabric.reconstruct.__main__ import format_actions  # noqa: PLC0415
+    from fabric.reconstruct._host import attribution_join, join_normalized  # noqa: PLC0415
+
+    fixture = load(ACTION / "rules" / "ar1-negative-c-hook-disabled.json")
+    inp = fixture["input"]
+    result = attribute(inp, call_id, attribution_join(join_normalized(inp)))
+    assert result.expected()["sensor_events"] == fixture["expected"]["sensor_events"]
+    ids = fixture["expected"]["attribution"]["unexplained_host_events"]["event_ids"]
+    listed = {event["event_id"] for event in result.sensor_events}
+    unlisted = [event_id for event_id in ids if event_id not in listed]
+    assert len(unlisted) == 9  # the case the acceptance run met
+    view = action_rows(ActionRun("r-x", inp, result))
+    rows = {row.get("event_id"): row for row in view["rows"] if row["kind"] == "host"}
+    events = {event["event_id"]: event for event in inp["host_events"]}
+    for event_id in ids:
+        row = rows[event_id]
+        assert row["unexplained"] is True and row["pid"] == events[event_id]["pid"]
+    for event_id in unlisted:
+        row, event = rows[event_id], events[event_id]
+        assert row["time_ns"] == event["time_ns"]
+        assert row.get("ppid") == event.get("ppid")
+        assert set(row) <= {"kind", "event_id", "source", "event_class", "pid", "ppid",
+                            "time_ns", "syscall", "unexplained", "n"}  # fmt: skip
+    # in time order on the timeline: each unlisted row sits between its neighbours
+    timed = [(row["n"], row["time_ns"]) for row in view["rows"] if "time_ns" in row]
+    assert [t for _, t in sorted(timed)] == sorted(t for _, t in timed)
+    text = format_actions(view)
+    host_rows = [line for line in text.splitlines()
+                 if re.match(r"^\s*\d+\s+host\s.*unexplained$", line)]  # fmt: skip
+    assert len(host_rows) == len(ids)
+    assert sum(" ppid " in line for line in host_rows) >= len(unlisted)
+    assert f"unexplained host events: {len(ids)}" in text
+    json.dumps(view)  # the --json view stays serialisable
+
+
+def _margin_input(effect_ms: float, *, margin_ns: int) -> dict[str, Any]:
+    inp: dict[str, Any] = copy.deepcopy(
+        dict(load(ACTION / "rules" / "edge-clock-margin-boundary.json")["input"])
+    )
+    inp["agent"]["clock_uncertainty_ns"] = margin_ns
+    base = inp["exchanges"][0]["start_ns"]
+    inp["effects"][0]["start_ns"] = base + int(effect_ms * 1_000_000)
+    return inp
+
+
+def test_one_process_needs_no_clock_margin() -> None:
+    """0.11.1 acceptance B4 (smoke1): with the default 1 s FABRIC_CLOCK_UNCERTAINTY_MS, an
+    effect 100 ms after call M2 opened, and after M1's result was fed back in the same
+    process, read ``M1|M2`` ambiguous. Exchange and effect records of one epoch share one
+    clock: the margin no longer widens those boundaries, so it is M2 alone (A2)."""
+    inp = _margin_input(1600, margin_ns=1_000_000_000)
+    uid = inp["effects"][0]["attempt_uid"]
+    decision = attribute(inp, call_id).decisions[uid]
+    assert decision.rule == "A2"
+    assert [link["target"]["id"] for link in decision.links] == [call_id("call_M2")]
+
+
+def test_a_close_on_another_epoch_keeps_the_margin() -> None:
+    """Across processes the margin stays: M1's result fed back by another epoch's exchange
+    (a resumed run) closes M1's window on another clock, so an effect inside the margin
+    after that close is still M1's candidate."""
+    inp = _margin_input(1500.6, margin_ns=1_000_000)
+    other = dict(inp["agent"], source_epoch=inp["agent"]["source_epoch"] + 1)
+    inp["exchanges"][1] = dict(inp["exchanges"][1], source_epoch=other["source_epoch"],
+                               tool_calls=[])  # fmt: skip
+    uid = inp["effects"][0]["attempt_uid"]
+    decision = attribute(inp, call_id).decisions[uid]
+    assert [link["target"]["id"] for link in decision.links] == [call_id("call_M1")]
+    inp["exchanges"][1].pop("source_epoch")  # same epoch: exact close, no candidate
+    assert attribute(inp, call_id).decisions[uid].rule == "A4"
