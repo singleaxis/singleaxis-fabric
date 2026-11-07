@@ -8,7 +8,6 @@ import json
 import re
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 # Canonical legacy component names (single source of truth for every

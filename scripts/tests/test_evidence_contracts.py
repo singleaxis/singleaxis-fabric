@@ -4,9 +4,9 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import copy
-import base64
 import json
 import shutil
 import subprocess
@@ -472,8 +472,6 @@ process.stdout.write(JSON.stringify(records));
 
 @pytest.mark.parametrize("mode", ["retain_original", "redact", "tokenize"])
 def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) -> None:
-    if sys.version_info < (3, 11):
-        pytest.skip("the Python SDK requires Python 3.11 or newer")
     pytest.importorskip("opentelemetry.sdk")
     pydantic = pytest.importorskip("pydantic")
     if int(pydantic.VERSION.split(".", 1)[0]) < 2:
@@ -510,9 +508,8 @@ def test_python_governed_local_descriptors_conform(tmp_path: Path, mode: str) ->
         )
         for plane in ("original", "derivative")
     ]
-    from fabric.redaction import RedactionService, Transformation
-
     from _redaction_service import reference_service
+    from fabric.redaction import RedactionService, Transformation
 
     service = (
         reference_service({"contract-mask": [("sensitive", "[masked]")]})
@@ -588,8 +585,6 @@ def test_capability_surface_cannot_claim_metadata_as_content() -> None:
 
 
 def test_python_sdk_emitted_byte_descriptor_conforms(tmp_path: Path) -> None:
-    if sys.version_info < (3, 11):
-        pytest.skip("the Python SDK requires Python 3.11 or newer")
     pytest.importorskip("opentelemetry.sdk")
     pydantic = pytest.importorskip("pydantic")
     if int(pydantic.VERSION.split(".", 1)[0]) < 2:

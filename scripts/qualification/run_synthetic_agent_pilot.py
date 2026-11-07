@@ -18,9 +18,10 @@ import sys
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from dataclasses import dataclass
+from typing import Self
 from urllib.parse import quote, urlsplit
 
 import fabric
@@ -111,7 +112,7 @@ class ProviderFixture:
         self.server: ThreadingHTTPServer | None = None
         self.thread: threading.Thread | None = None
 
-    def __enter__(self) -> "ProviderFixture":
+    def __enter__(self) -> Self:
         journal = self.journal
 
         class Handler(BaseHTTPRequestHandler):

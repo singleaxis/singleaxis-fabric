@@ -46,8 +46,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 import httpx
-from opentelemetry import context as otel_context
-from opentelemetry import trace
+from opentelemetry import context as otel_context, trace
 
 
 def get_weather(city: str) -> dict[str, Any]:

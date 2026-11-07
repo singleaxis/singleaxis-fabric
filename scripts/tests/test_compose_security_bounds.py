@@ -11,7 +11,6 @@ from pathlib import Path
 import pytest
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_DIR = ROOT / "deploy/compose"
 PREFLIGHT = COMPOSE_DIR / "preflight-prod.sh"

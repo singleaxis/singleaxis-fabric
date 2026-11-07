@@ -38,8 +38,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NoReturn
 
-from contracts import p1_reference as ref
-from contracts import validate_coverage_contracts as coverage
+from contracts import p1_reference as ref, validate_coverage_contracts as coverage
 
 _REPO = Path(__file__).resolve().parents[2]
 COVERAGE = Path("contracts/coverage/v1")
@@ -298,7 +297,7 @@ def created_clear_text(command: str | Sequence[str], stdout: str | None) -> str 
     argv = _argv(command)
     if not argv or stdout is None:
         return None
-    text = stdout[:-1] if stdout.endswith("\n") else stdout
+    text = stdout.removesuffix("\n")
     tool = argv[0].rsplit("/", 1)[-1]
     rest = argv[1:]
     if tool in _RUNTIMES:

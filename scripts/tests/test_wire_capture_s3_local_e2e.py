@@ -86,6 +86,7 @@ from typing import Any
 from urllib.parse import quote
 
 import pytest
+
 from _wire_capture_common import (
     AGENT,
     COMPOSE_DIR,
@@ -96,8 +97,8 @@ from _wire_capture_common import (
     build_image,
     capture_protection,
     compose_available,
-    free_port,
     content_config_with_tls,
+    free_port,
     open_spool_record,
     production_config_with_tls,
     pseudonym,

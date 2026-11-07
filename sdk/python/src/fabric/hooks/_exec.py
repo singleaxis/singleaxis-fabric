@@ -741,7 +741,7 @@ class ExecChannel:
             return DescriptorOnlyBody.for_reason(role, JSON, BOUNDARY, "payload_too_large")
         return RecordBody(role, canonical_json(value), JSON, BOUNDARY, "protocol")
 
-    def _argv(self, args: object, shell: bool) -> tuple[str, dict[str, Any] | None | bool]:
+    def _argv(self, args: object, shell: bool) -> tuple[str, dict[str, Any] | bool | None]:
         """``(argv_form, document)``: ``None`` over a bound, ``False`` not exposed."""
         if shell and (type(args) is str or type(args) is bytes):
             if _chars(args) > MAX_ARGV_CHARS:
