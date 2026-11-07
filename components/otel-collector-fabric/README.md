@@ -163,11 +163,12 @@ and `retry_on_failure.max_elapsed_time: 0`; S3 credentials come from the AWS
 default chain (IRSA on EKS), never from the agent.
 
 `fabric-gate` also rejects `bearertokenauth` extensions whose token material
-would mint an empty credential under the pinned extension (v0.150.0 keeps
-empty entries after splitting token files on newlines): missing, empty,
-blank-line, or newline-terminated token files, and empty inline `tokens`
-entries. When token files are configured the gate stays resident as a thin
-supervisor — the extension re-reads the file via fsnotify, so the gate
+is not exactly one token (upstream up to v0.150.0 minted an empty credential
+from blank entries; the pinned v0.164.1 reads only each line's first field
+and keeps the last value on a failed reload): missing, empty, blank-line, or
+newline-terminated token files, and empty inline `tokens` entries. When
+token files are configured the gate stays resident as a thin supervisor —
+the extension re-reads the file via fsnotify, so the gate
 re-validates it on a poll interval and stops the collector (SIGTERM, letting
 the queue drain) if a rotation reintroduces an unsafe file. Operators who
 override the container entrypoint or launch `otelcol-fabric` directly leave
@@ -219,7 +220,7 @@ override at verification time.
 ## Build and qualify
 
 ```bash
-go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
 make test
 make build
 make qualify-config

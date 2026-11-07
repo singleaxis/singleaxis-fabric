@@ -28,7 +28,7 @@ def test_patched_build_discovers_custom_module_cache(tmp_path: Path) -> None:
     cache = tmp_path / "custom module cache"
     module = (
         cache
-        / "github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension@v0.150.0"
+        / "github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension@v0.164.1"
     )
     module.mkdir(parents=True)
     (module / "bearertokenauth.go").write_text("package fixture\n")

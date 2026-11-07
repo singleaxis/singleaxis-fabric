@@ -5,10 +5,10 @@ set -eu
 root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 dist="${root}/dist"
 module='github.com/open-telemetry/opentelemetry-collector-contrib/extension/bearertokenauthextension'
-version='v0.150.0'
+version='v0.164.1'
 upstream="$(go env GOMODCACHE)/${module}@${version}"
 patched="${dist}/bearertokenauth-patched"
-marker="${patched}/.fabric-generated-v0.150.0"
+marker="${patched}/.fabric-generated-${version}"
 
 [ -f "${dist}/go.mod" ] || { echo 'OCB distribution has not been generated' >&2; exit 1; }
 [ -f "${upstream}/bearertokenauth.go" ] || go mod download "${module}@${version}"
@@ -27,9 +27,14 @@ chmod -R u+w "${patched}"
   cd "${patched}"
   git apply --check -p3 "${root}/upstream/bearertokenauth-empty-tokens.patch"
   git apply -p3 "${root}/upstream/bearertokenauth-empty-tokens.patch"
-  gofmt -w config.go bearertokenauth.go
+  gofmt -w config.go bearertokenauth.go strict_token_file.go
+  # Upstream resolves its internal credentials-file helper through a
+  # monorepo-relative replace that does not exist outside the contrib tree;
+  # use the published module of the same version (checked against go.sum
+  # and the checksum database).
+  go mod edit "-dropreplace=github.com/open-telemetry/opentelemetry-collector-contrib/extension/internal/credentialsfile"
   cp "${root}/upstream/bearertokenauth_empty_tokens_test.go" ./bearertokenauth_empty_tokens_test.go
-  go test -run '^TestFabric' .
+  go test -mod=mod -run '^TestFabric' .
 )
 (
   cd "${dist}"

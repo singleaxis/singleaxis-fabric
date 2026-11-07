@@ -335,14 +335,15 @@ check_token() {
     [ -z "${blank_lines}" ] || [ -z "${last_byte}" ]; then
     bad "reading $2 ($1) failed, so its format cannot be checked; ${SECRET_FIX}"
   elif [ "${blank_lines}" != "0" ]; then
-    # bearertokenauth v0.150.0 splits the file on newlines and keeps EMPTY
-    # entries: a blank line mints "Bearer " (empty token) as a valid
-    # credential, which gRPC metadata preserves verbatim -- auth bypass.
-    bad "$2 contains a blank line; an empty 'Bearer ' credential would authenticate -- remove blank lines"
+    # The Node accepts exactly one token per file (require_single_token).
+    # bearertokenauth up to v0.150.0 also kept EMPTY entries, so a blank line
+    # minted "Bearer " (empty token) as a valid credential -- auth bypass.
+    bad "$2 contains a blank line; the Node accepts exactly one token with no blank lines -- remove blank lines"
   elif [ "${last_byte}" = "$(printf '\nx')" ]; then
-    # Same extension quirk: a trailing newline produces a trailing empty
-    # entry -> "Bearer " authenticates. The only safe file ends mid-line.
-    bad "$2 ends with a newline; an empty 'Bearer ' credential would authenticate -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
+    # A trailing newline makes the file malformed for require_single_token
+    # (the Node then accepts no token); up to v0.150.0 it also produced a
+    # trailing empty entry -> "Bearer " authenticated. The file ends mid-line.
+    bad "$2 ends with a newline; the Node would reject the token file -- rewrite without trailing newline (printf %s, not echo or > from a newline-terminated source)"
   else
     ok "$2 present, non-empty, single-entry-safe format"
     # Compose file secrets are bind mounts: owner and mode are the host's.

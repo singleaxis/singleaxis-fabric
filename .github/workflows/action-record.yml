@@ -81,7 +81,7 @@ jobs:
           cache-dependency-path: components/otel-collector-fabric/**/go.sum
       - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
         run: |
-          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
           make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
       - uses: ./.github/actions/setup-uv
       - name: Install the SDK and the harness dependencies
@@ -146,7 +146,7 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
       - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
         run: |
-          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
           make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
       - name: Build the eBPF host emitter
         # A failed BPF build is not fatal: the harness then uses auditd (OD-6).
@@ -212,7 +212,7 @@ jobs:
           cache-dependency-path: components/otel-collector-fabric/**/go.sum
       - name: Build the Fabric Node (fabric-gate and otelcol-fabric)
         run: |
-          go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+          go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
           make -C components/otel-collector-fabric build OCB="$(go env GOPATH)/bin/builder"
       - uses: ./.github/actions/setup-uv
       - name: Install the SDK and the harness dependencies

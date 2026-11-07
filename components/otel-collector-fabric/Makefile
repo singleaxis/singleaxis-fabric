@@ -1,7 +1,7 @@
 # SingleAxis Fabric OTel Collector distribution — build helpers.
 #
 # Prereqs: Go >= 1.26, and the OpenTelemetry Collector Builder:
-#   go install go.opentelemetry.io/collector/cmd/builder@v0.150.0
+#   go install go.opentelemetry.io/collector/cmd/builder@v0.164.0
 #
 # The `builder` binary is traditionally named `ocb` by operators; both
 # names work. This Makefile uses whichever is on $PATH.
@@ -20,7 +20,7 @@ all: test build
 build:
 	@if [ -z "$(OCB)" ]; then \
 		echo "ocb/builder not found. Install with:"; \
-		echo "  go install go.opentelemetry.io/collector/cmd/builder@v0.150.0"; \
+		echo "  go install go.opentelemetry.io/collector/cmd/builder@v0.164.0"; \
 		exit 1; \
 	fi
 	$(OCB) --config ocb-config.yaml

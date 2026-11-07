@@ -577,7 +577,7 @@ func checkExporterHeaders(cfg map[string]any) error {
 // last.
 //
 // --set is refused outright, in both spellings (--set=k=v and --set k=v):
-// the pinned collector (otelcol v0.150.0 flags.go) turns each --set into a
+// the pinned collector (otelcol v0.164.0 flags.go) turns each --set into a
 // configuration source merged after every --config, so a single
 // --set=service.pipelines.traces.processors=[batch] would remove fabricguard
 // after the gate had approved the files. Overrides belong in an additional
@@ -1488,10 +1488,12 @@ func checkGuarded(pipeline string, processors []any) error {
 }
 
 // checkBearerTokenAuth enforces safe configuration on every bearertokenauth
-// extension. The pinned extension (v0.150.0) splits token files on newlines
-// and retains empty entries after trimming, so blank lines or a trailing
-// newline mint an empty "Bearer " credential that gRPC metadata preserves
-// verbatim — an auth bypass. File checks mirror preflight-prod.sh so a
+// extension. Upstream up to v0.150.0 retained empty entries after splitting
+// token files on newlines, so blank lines or a trailing newline minted an
+// empty "Bearer " credential that gRPC metadata preserves verbatim — an auth
+// bypass. The pinned v0.164.1 skips blank lines but reads only each line's
+// first field and keeps the last value when a reload fails, so a token file
+// must still be exactly one token. File checks mirror preflight-prod.sh so a
 // format rejected there is also rejected here, inside the image.
 func checkBearerTokenAuth(cfg map[string]any) ([]tokenFile, error) {
 	var watched []tokenFile

@@ -9,7 +9,7 @@
 # Two-stage build: the builder compiles a static binary via OCB, the
 # runtime stage ships that binary on a distroless base with ca-certs.
 
-ARG OCB_VERSION=v0.150.0
+ARG OCB_VERSION=v0.164.0
 ARG GO_VERSION=1.26
 
 # ---------- builder ---------------------------------------------------------

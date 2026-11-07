@@ -49,9 +49,12 @@
 // Diagnostics name config sources by position (--config #N) and never echo
 // source text, paths, URLs or underlying error text.
 //   - every bearertokenauth extension that reads tokens from a file must point
-//     at a file the pinned extension (v0.150.0) cannot misread: it splits on
-//     newlines and retains empty entries, so a blank line or trailing newline
-//     mints an empty "Bearer " credential that gRPC metadata preserves.
+//     at a file that holds exactly one token and nothing else. Upstream up to
+//     v0.150.0 kept empty entries, so a blank line or trailing newline minted
+//     an empty "Bearer " credential that gRPC metadata preserves; the pinned
+//     v0.164.1 skips blank lines but reads only the first field of each line
+//     and keeps the last value when a reload fails, so the file is still
+//     checked here rather than trusted to the extension.
 //
 // When the config carries token files, the gate stays resident as a thin
 // supervisor: it execs the collector as a child, forwards signals, and

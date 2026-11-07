@@ -194,3 +194,9 @@ service:
               prometheus:
                 host: 0.0.0.0
                 port: 8888
+                # Pinned to the names the Node has always exported (and the docs
+                # and alerts use): since collector v0.151 an explicit reader defaults
+                # all three to true, which drops the _total suffix from counters.
+                without_type_suffix: false
+                without_units: false
+                without_scope_info: false
