@@ -959,8 +959,10 @@ def _sink(tmp_path: Path, **overrides: Any) -> tuple[ContentSink, ContentWriter]
 
 def test_fast_store_cannot_settle_before_registration(tmp_path: Path) -> None:
     """A store that settles inside submit must never leave the item pending:
-    the manifest slot exists before the writer can fire."""
-    sink, writer = _sink(tmp_path, durability="inline")
+    the manifest slot exists before the writer can fire. The deadline is
+    generous so a slow runner cannot turn this into a timing test: past the
+    50 ms default, ``pending`` is the correct outcome (spec 049 §7.1)."""
+    sink, writer = _sink(tmp_path, durability="inline", inline_deadline_ms=5000)
     ref = sink.capture("interaction.payload", "data")
     assert ref is not None
     item = sink.manifest.items[-1]
