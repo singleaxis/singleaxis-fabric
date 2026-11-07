@@ -70,23 +70,21 @@
     }
   },
   "devDependencies": {
-    "@eslint/js": "9.39.4",
-    "@opentelemetry/api": "1.9.0",
-    "@opentelemetry/context-async-hooks": "2.10.0",
-    "@opentelemetry/sdk-trace-node": "2.10.0",
-    "@types/node": "22.18.0",
-    "@typescript-eslint/eslint-plugin": "8.20.0",
-    "@typescript-eslint/parser": "8.20.0",
-    "eslint": "9.39.4",
-    "prettier": "3.4.2",
+    "@eslint/js": "10.0.1",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/context-async-hooks": "2.12.0",
+    "@opentelemetry/sdk-trace-node": "2.12.0",
+    "@types/node": "22.20.5",
+    "@typescript-eslint/eslint-plugin": "8.72.1",
+    "@typescript-eslint/parser": "8.72.1",
+    "eslint": "10.14.0",
+    "prettier": "3.9.10",
     "tsup": "8.5.1",
     "typescript": "5.7.3",
     "vitest": "4.1.12"
   },
   "overrides": {
     "esbuild": "0.28.1",
-    "@typescript-eslint/typescript-estree": {
-      "minimatch": "11.0.5"
-    }
+    "minimatch": "11.0.5"
   }
 }

@@ -204,8 +204,7 @@ export class ContentResolver {
     for (const item of manifest["items"] as Record<string, unknown>[]) {
       const links = (item["links"] ?? {}) as Record<string, unknown>;
       const bindings = ((item["descriptor"] ?? {}) as Record<string, unknown>)["bindings"] as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const span =
         (links["span_id"] as string | undefined) ?? (bindings?.["span_id"] as string | undefined);
       const groupKey = span ?? `__item_${item["sequence"]}`;

@@ -25,12 +25,7 @@ export type PrivacyMode =
   | "masked_only"
   | "original_plus_masked";
 export type ProtectionStatus =
-  | "withheld"
-  | "redacted"
-  | "tokenized"
-  | "retained"
-  | "unsupported"
-  | "lost";
+  "withheld" | "redacted" | "tokenized" | "retained" | "unsupported" | "lost";
 export const PRIVACY_MODES: ReadonlySet<string> = new Set([
   "metadata_only",
   "omit",
