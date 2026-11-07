@@ -75,8 +75,8 @@ hooks-sandbox-e2b = [
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
-  # Lockstep with .pre-commit-config.yaml (ruff-pre-commit v0.13.0): CI installs this lock.
-  "ruff==0.13.0",
+  # Lockstep with .pre-commit-config.yaml (ruff-pre-commit v0.17.3): CI installs this lock.
+  "ruff==0.17.3",
   "mypy>=1.11.2",
   "jsonschema>=4.23",
   "types-jsonschema>=4.23",
