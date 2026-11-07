@@ -1,0 +1,20 @@
+# Lint rules for repository files outside a package with its own ruff config
+# (scripts/, examples/, deploy/). sdk/python, examples/reference-agent and
+# qualification/* keep their own configs; ruff uses the nearest one.
+target-version = "py311" # the CI floor; scripts already use datetime.UTC and tomllib
+src = [".", "sdk/python/src", "scripts", "scripts/tests"]
+
+[lint]
+# Keep the pycodestyle/pyflakes checks the pre-0.17 default enforced (0.17 dropped E4/E7).
+extend-select = ["E4", "E7", "E9", "F"]
+ignore = [
+  "BLE001", # scripts and fixture servers catch Exception only at CLI/HTTP boundaries, to emit one-line diagnostics
+  "RUF100", # noqa codes here mark SDK-ruleset exceptions (S603, PLC0415, ...) this default set does not enable
+  "TRY004", # input-shape validators raise ValueError by contract; TypeError would change what callers catch
+]
+
+[lint.isort]
+combine-as-imports = true # one statement, so one `noqa: E402` covers imports placed after a sys.path insert
+
+[format]
+exclude = ["*.md"] # docs code blocks are hand-laid-out (aligned comments); 0.17 would rewrap them
