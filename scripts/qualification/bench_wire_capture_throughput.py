@@ -38,7 +38,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 TENANT, SOURCE = "t-bench", "s-" + "b" * 32
 REPLY = json.dumps({
@@ -74,7 +74,7 @@ class _Model(_Quiet):
 
 
 class _Node(_Quiet):
-    counts: dict[str, int] = {"/v1/traces": 0, "/v1/logs": 0}
+    counts: ClassVar[dict[str, int]] = {"/v1/traces": 0, "/v1/logs": 0}
     lock = threading.Lock()
 
     def do_POST(self) -> None:  # noqa: N802

@@ -39,17 +39,20 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any
 from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contracts import action_record  # noqa: E402
-from contracts import host_records  # noqa: E402
-from contracts import ingress_groups  # noqa: E402
-from contracts import p1_reference as ref  # noqa: E402
-from contracts import validate_coverage_contracts as coverage  # noqa: E402
+from contracts import (  # noqa: E402
+    action_record,
+    host_records,
+    ingress_groups,
+    p1_reference as ref,
+    validate_coverage_contracts as coverage,
+)
 
 COVERAGE = Path("contracts/coverage/v1")
 CAPTURE = Path("contracts/capture/v1")
@@ -4077,7 +4080,7 @@ def _prevalidate_vectors(
         out.update(change)
         return out
 
-    args_id, result_id, evidence_id = (
+    args_id, _result_id, evidence_id = (
         b["descriptor"]["object_id"] for b in record["bodies"]
     )
 

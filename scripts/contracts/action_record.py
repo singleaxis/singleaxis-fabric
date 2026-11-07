@@ -30,9 +30,11 @@ from typing import Any, NoReturn
 
 from jsonschema import Draft202012Validator
 
-from contracts import action_reference as rules
-from contracts import p1_reference as ref
-from contracts import validate_coverage_contracts as coverage
+from contracts import (
+    action_reference as rules,
+    p1_reference as ref,
+    validate_coverage_contracts as coverage,
+)
 
 COVERAGE = Path("contracts/coverage/v1")
 CAPTURE = Path("contracts/capture/v1")
@@ -2511,7 +2513,7 @@ def _check_interface(
                     where,
                     "the span differs from its capture/v1 spool record",
                 )
-            kept, dropped = ref.project_record_attributes(
+            _kept, dropped = ref.project_record_attributes(
                 span["attributes"],
                 table,
                 coverage.check_value,

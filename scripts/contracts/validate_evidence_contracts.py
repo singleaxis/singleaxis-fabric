@@ -15,10 +15,11 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping, Sequence
+from typing import Any
 from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -26,7 +27,6 @@ from jsonschema import Draft202012Validator, FormatChecker
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from contracts import p1_reference as ref  # noqa: E402
-
 
 ROOTS = {
     "evidence": Path("contracts/evidence/v1"),
@@ -152,7 +152,7 @@ def _safe_content_ref(document: Mapping[str, Any]) -> bool:
 
 
 def _timestamp(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 def _validate_content(document: Mapping[str, Any]) -> None:
@@ -221,16 +221,19 @@ def _validate_content(document: Mapping[str, Any]) -> None:
             "$",
             "stored byte length and digest must be present together",
         )
-    if representation == "exact" and status in RESOLVABLE_STATUSES:
-        if (
+    if (
+        representation == "exact"
+        and status in RESOLVABLE_STATUSES
+        and (
             document["source_byte_length"] != document["stored_byte_length"]
             or document["source_sha256"] != document["stored_sha256"]
-        ):
-            raise EvidenceContractError(
-                "evidence.content.false_exact",
-                "$",
-                "exact source and stored bytes must match",
-            )
+        )
+    ):
+        raise EvidenceContractError(
+            "evidence.content.false_exact",
+            "$",
+            "exact source and stored bytes must match",
+        )
     if representation == "split" and status != "stored":
         raise EvidenceContractError(
             "evidence.content.representation",
@@ -592,9 +595,9 @@ def _run_verdict(document: Mapping[str, Any]) -> str:
                     "one content descriptor cannot represent two distinct items",
                 )
             object_ids.add(item["content_object_id"])
-        if item["status"] in BAD_STATUSES:
-            partial = True
-        elif item["status"] == "stored" and item.get("representation") != "exact":
+        if item["status"] in BAD_STATUSES or (
+            item["status"] == "stored" and item.get("representation") != "exact"
+        ):
             partial = True
         elif item["status"] != "stored" or not item["verified"]:
             unverified = True
@@ -955,11 +958,14 @@ def validate_document(
                 "$.observation_level",
                 "aggregate content level must match surfaces",
             )
-    if version == "agent.evidence.event/v1" and "role" in document:
-        if document["role"] not in known_roles:
-            raise EvidenceContractError(
-                "evidence.event.role", "$.role", "unknown content role"
-            )
+    if (
+        version == "agent.evidence.event/v1"
+        and "role" in document
+        and document["role"] not in known_roles
+    ):
+        raise EvidenceContractError(
+            "evidence.event.role", "$.role", "unknown content role"
+        )
     if version == "agent.evidence.run-manifest/v1":
         declared_roles = set(document["scope"]["required_roles"])
         item_roles = {item["role"] for item in document["items"]}

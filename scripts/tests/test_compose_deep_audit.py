@@ -45,6 +45,7 @@ def test_nonloopback_requires_both_protocols_tls(tmp_path, tls_protocols, accept
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
     assert (result.returncode == 0) is accepted, result.stdout
 
@@ -93,6 +94,7 @@ esac
         capture_output=True,
         text=True,
         timeout=10,
+        check=False,
     )
     assert (result.returncode == 0) is (privacy == "false"), result.stdout
     if privacy != "false":

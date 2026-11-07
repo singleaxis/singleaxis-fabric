@@ -18,8 +18,8 @@ import os
 import platform
 import threading
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 # auditd encodes the syscall arch as a hex elf-machine token; syscall
 # numbers differ per arch, and the receiver translates via both.
@@ -79,10 +79,12 @@ class AuditLog:
         exe = str(Path(argv[0]).resolve()) if Path(argv[0]).exists() else argv[0]
         success = "yes" if exit_code == 0 else "no"
         lines = [
-            f"type=SYSCALL msg={stamp}: arch={arch} syscall={_SYS[arch]['execve']} "
-            f"success={success} exit={exit_code} ppid={ppid} pid={pid} "
-            f"auid={os.getuid()} uid={os.getuid()} comm={self._quote(comm)} "
-            f'exe={self._quote(exe)} key="fabric"',
+            (
+                f"type=SYSCALL msg={stamp}: arch={arch} syscall={_SYS[arch]['execve']} "
+                f"success={success} exit={exit_code} ppid={ppid} pid={pid} "
+                f"auid={os.getuid()} uid={os.getuid()} comm={self._quote(comm)} "
+                f'exe={self._quote(exe)} key="fabric"'
+            ),
             f"type=EXECVE msg={stamp}: argc={len(argv)} "
             + " ".join(f"a{i}={self._quote(a)}" for i, a in enumerate(argv)),
             f"type=CWD msg={stamp}: cwd={self._quote(cwd)}",
@@ -111,10 +113,12 @@ class AuditLog:
             saddr = ""
         success = "yes" if ok else "no"
         lines = [
-            f"type=SYSCALL msg={stamp}: arch={arch} syscall={_SYS[arch]['connect']} "
-            f"success={success} exit={0 if ok else -111} ppid={ppid} pid={pid} "
-            f"auid={os.getuid()} uid={os.getuid()} comm={self._quote(comm)} "
-            f'exe={self._quote(exe)} key="fabric"',
+            (
+                f"type=SYSCALL msg={stamp}: arch={arch} syscall={_SYS[arch]['connect']} "
+                f"success={success} exit={0 if ok else -111} ppid={ppid} pid={pid} "
+                f"auid={os.getuid()} uid={os.getuid()} comm={self._quote(comm)} "
+                f'exe={self._quote(exe)} key="fabric"'
+            ),
         ]
         if saddr:
             lines.append(f"type=SOCKADDR msg={stamp}: saddr={saddr}")
@@ -128,18 +132,19 @@ class AuditLog:
         stamp, _ = self._stamp()
         arch = _arch()
         lines = [
-            f"type=SYSCALL msg={stamp}: arch={arch} syscall={_SYS[arch]['openat']} "
-            f"success=yes exit={fd} ppid={ppid} pid={pid} "
-            f"auid={os.getuid()} uid={os.getuid()} comm={self._quote(comm)} "
-            f'exe={self._quote(exe)} key="fabric"',
+            (
+                f"type=SYSCALL msg={stamp}: arch={arch} syscall={_SYS[arch]['openat']} "
+                f"success=yes exit={fd} ppid={ppid} pid={pid} "
+                f"auid={os.getuid()} uid={os.getuid()} comm={self._quote(comm)} "
+                f'exe={self._quote(exe)} key="fabric"'
+            ),
             f"type=PATH msg={stamp}: item=0 name={self._quote(path)} nametype=NORMAL",
             f"type=EOE msg={stamp}:",
         ]
         self._append(lines)
 
     def _append(self, lines: list[str]) -> None:
-        with self._lock:
-            with self._path.open("a", encoding="utf-8") as fh:
-                fh.write("\n".join(lines) + "\n")
-                fh.flush()
-                os.fsync(fh.fileno())
+        with self._lock, self._path.open("a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())

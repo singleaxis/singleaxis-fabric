@@ -91,7 +91,7 @@ def _code_blocks(text: str) -> list[str]:
             blocks.append("\n".join(current))
             current = None
         elif current is not None:
-            current.append(line[len(indent) :] if line.startswith(indent) else line)
+            current.append(line.removeprefix(indent))
     assert current is None, "unterminated code block"
     return blocks
 
@@ -290,7 +290,7 @@ def test_reconstruct_flag_names_match_the_parser_help() -> None:
 
 def _make_targets() -> set[str]:
     return set(
-        re.findall(r"^([A-Za-z0-9_-]+):", MAKEFILE.read_text(encoding="utf-8"), re.M)
+        re.findall(r"^([A-Za-z0-9_-]+):", MAKEFILE.read_text(encoding="utf-8"), re.MULTILINE)
     )
 
 
@@ -359,7 +359,7 @@ def test_env_variables_are_read_by_the_deployment() -> None:
     makefile = MAKEFILE.read_text(encoding="utf-8")
     # The Make variables the page relies on to select overlays.
     for variable in ("FABRIC_COMPOSE_EXTRA", "FABRIC_CONTENT_BACKEND"):
-        assert re.search(rf"^{variable} \?=", makefile, re.M), variable
+        assert re.search(rf"^{variable} \?=", makefile, re.MULTILINE), variable
 
 
 def test_every_named_compose_file_is_shipped() -> None:
@@ -454,7 +454,7 @@ def test_the_env_file_lives_outside_the_checkout() -> None:
             encoding="utf-8"
         )
     makefile = MAKEFILE.read_text(encoding="utf-8")
-    assert re.search(r"^FABRIC_ENV_FILE \?= \.env$", makefile, re.M)
+    assert re.search(r"^FABRIC_ENV_FILE \?= \.env$", makefile, re.MULTILINE)
     assert "--env-file $(FABRIC_ENV_FILE)" in makefile
 
 

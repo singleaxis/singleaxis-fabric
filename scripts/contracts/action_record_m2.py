@@ -24,9 +24,7 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from contracts import action_record as m1
-from contracts import host_records
-from contracts import p1_reference as ref
+from contracts import action_record as m1, host_records, p1_reference as ref
 
 HTTP_TYPE = "fabric.http.observation/v1"
 SANDBOX_TYPE = "fabric.sandbox.observation/v1"

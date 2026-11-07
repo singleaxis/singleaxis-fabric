@@ -127,7 +127,7 @@ def _chars(value: object) -> int:
     return 0
 
 
-def _env_names(envs: object) -> list[str] | None | bool:
+def _env_names(envs: object) -> list[str] | bool | None:
     """The sorted names of an explicitly passed exact ``dict`` with exact ``str`` keys;
     ``False`` when there are none to report, ``None`` over the bound. Values are never
     read."""

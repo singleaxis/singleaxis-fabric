@@ -269,14 +269,14 @@ def test_merged_group_config_passes_fabric_gate(
                 filename=f"{root}/secrets/fabric_ingress_token_copy"
             ),
             "r5",
-        ),  # fmt: skip
+        ),
         # A group pipeline reading another group's receiver.
         (
             lambda d, root: d["service"]["pipelines"]["traces/ebpf"].update(
                 receivers=["otlp/agent"]
             ),
             "r2",
-        ),  # fmt: skip
+        ),
         # A host group with a logs pipeline.
         (
             lambda d, root: d["service"]["pipelines"].update(
@@ -289,7 +289,7 @@ def test_merged_group_config_passes_fabric_gate(
                 }
             ),
             "h1",
-        ),  # fmt: skip
+        ),
     ],
 )
 def test_fabric_gate_refuses_a_weakened_group_config(

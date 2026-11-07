@@ -61,6 +61,7 @@ def main() -> int:
             ],
             cwd=fixture,
             capture_output=True,
+            check=False,
         )
         findings = json.loads(report.read_bytes()) if report.exists() else []
         if result.returncode != 1 or not any(
