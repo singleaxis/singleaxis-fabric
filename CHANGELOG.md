@@ -31,6 +31,10 @@ Planned as 0.12.0: the TypeScript SDK drops Node 20.
   The built JavaScript and source maps are byte-identical. The `.d.ts` files
   export the same 145 names, with the same type-only split; tsup 9 only
   formats them differently. No runtime dependencies were added.
+  Dependabot holds `@opentelemetry/api` at 1.9.x (the published peer range
+  is `<1.10`), `@opentelemetry/context-async-hooks` at 2.x (sdk-trace-node
+  2.x pins it) and `@types/node` at 22.x. The holds are update-type rules,
+  so they never block security updates.
 - **Dependency batch.** Collector core v0.150.0 → v0.164.0 (stable modules
   v1.56.0 → v1.70.0), contrib extensions → v0.164.1 and OCB v0.164.0 across
   all seven Go modules, the OCB manifest, Dockerfile and CI; with it

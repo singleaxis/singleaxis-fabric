@@ -245,6 +245,49 @@ def test_dependabot_moves_lockstep_dependencies_together() -> None:
     assert all(entry["cooldown"]["default-days"] >= 3 for entry in config["updates"])
 
 
+def test_typescript_sdk_holds_never_block_security_updates() -> None:
+    # The TypeScript SDK's version-update holds: the OpenTelemetry API stays
+    # inside the published peer range, context-async-hooks stays with
+    # sdk-trace-node's pin, and @types/node tracks the engines floor. For
+    # security updates Dependabot applies only an ignore rule's `versions`,
+    # so update-types-only rules hold version updates without blocking a
+    # security fix.
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    (entry,) = [
+        e
+        for e in config["updates"]
+        if e["package-ecosystem"] == "npm" and e.get("directory") == "/sdk/typescript"
+    ]
+    rules = {rule["dependency-name"]: rule for rule in entry["ignore"]}
+    assert set(rules) == {
+        "@opentelemetry/api",
+        "@opentelemetry/context-async-hooks",
+        "@types/node",
+    }
+    assert all(
+        set(rule) == {"dependency-name", "update-types"} for rule in rules.values()
+    )
+    major = "version-update:semver-major"
+    minor = "version-update:semver-minor"
+    assert set(rules["@opentelemetry/api"]["update-types"]) == {minor, major}
+    assert rules["@opentelemetry/context-async-hooks"]["update-types"] == [major]
+    assert rules["@types/node"]["update-types"] == [major]
+
+    package = json.loads((ROOT / "sdk/typescript/package.json").read_text())
+    dev = package["devDependencies"]
+    # A minor hold on the API is only right while the peer range spans one
+    # minor and the tested devDependency sits inside it.
+    peer = package["peerDependencies"]["@opentelemetry/api"]
+    span = re.fullmatch(r">=(\d+)\.(\d+)\.0 <(\d+)\.(\d+)\.0", peer)
+    assert span, peer
+    major_v, minor_v, upper_major, upper_minor = map(int, span.groups())
+    assert (upper_major, upper_minor) == (major_v, minor_v + 1), peer
+    assert dev["@opentelemetry/api"].startswith(f"{major_v}.{minor_v}.")
+    floor = re.fullmatch(r">=(\d+)\.\d+\.\d+", package["engines"]["node"])
+    assert floor, package["engines"]["node"]
+    assert dev["@types/node"].split(".")[0] == floor.group(1)
+
+
 def test_license_scan_project_tracks_the_sdk_peer_range() -> None:
     sdk = json.loads((ROOT / "sdk/typescript/package.json").read_text())
     scan_dir = ROOT / "scripts/license/s3-peer"

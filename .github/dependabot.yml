@@ -66,6 +66,25 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: "development"
+    # Version-update holds. Each rule uses `update-types` only, never
+    # `versions`. GitHub documents `ignore` as applying to security updates
+    # as well, but for security updates Dependabot honours only a rule's
+    # `versions` and skips its `update-types`
+    # (dependabot-core Config::IgnoreCondition#ignored_versions). So these
+    # rules never block a security update. A `versions` rule would.
+    ignore:
+      # The published peer range is ">=1.9.0 <1.10.0". The SDK is tested
+      # against 1.9.x, so 1.10 and later stay out until that range moves.
+      - dependency-name: "@opentelemetry/api"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      # @opentelemetry/sdk-trace-node 2.x still pins context-async-hooks
+      # 2.x; hooks 3 arrives with an sdk-trace-node major, not alone.
+      - dependency-name: "@opentelemetry/context-async-hooks"
+        update-types: ["version-update:semver-major"]
+      # Track the Node floor: types must match the oldest supported Node
+      # (engines >=22.18.0), so stay on @types/node 22.x.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   # License-scan project: the optional @aws-sdk/client-s3 peer and the pinned
   # license scanner. Its client-s3 range must equal the SDK's peer range, so
