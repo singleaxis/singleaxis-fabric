@@ -22,6 +22,15 @@ Planned as 0.12.0: the TypeScript SDK drops Node 20.
 
 ### Changed
 
+- **TypeScript SDK build tools on Node 22.** vitest 5.0.5 (was 4.1.12),
+  tsup 9.0.0 (was 8.5.1) and the `esbuild` override 0.28.2 (was 0.28.1;
+  tsup 9 requires `^0.28.2`). `@types/node` stays on 22.20.5, the newest
+  22.x, to match the Node floor. TypeScript stays on 5.7.3: TypeScript 7
+  typechecks the SDK, but typescript-eslint 8 rejects it and tsup's
+  declaration bundler needs the compiler API that TypeScript 7 does not ship.
+  The built JavaScript and source maps are byte-identical. The `.d.ts` files
+  export the same 145 names, with the same type-only split; tsup 9 only
+  formats them differently. No runtime dependencies were added.
 - **Dependency batch.** Collector core v0.150.0 → v0.164.0 (stable modules
   v1.56.0 → v1.70.0), contrib extensions → v0.164.1 and OCB v0.164.0 across
   all seven Go modules, the OCB manifest, Dockerfile and CI; with it
