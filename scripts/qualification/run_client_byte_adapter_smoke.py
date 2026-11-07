@@ -12,8 +12,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, LocalFilesystemContentStore
-from fabric import __file__ as fabric_package_file
+from fabric import (
+    ByteEvidenceConfig,
+    ByteEvidenceRecorder,
+    LocalFilesystemContentStore,
+    __file__ as fabric_package_file,
+)
 from fabric.adapters.byte_boundary import ByteBoundaryAdapter
 from fabric.adapters.synthetic_evidence import SyntheticCaptureSession
 from fabric.synthetic_otlp import project_synthetic_snapshot

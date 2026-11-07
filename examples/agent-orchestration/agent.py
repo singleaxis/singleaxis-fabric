@@ -40,6 +40,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from audit_shim import AuditLog  # noqa: E402
+from opentelemetry import trace  # noqa: E402
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # noqa: E402
+from opentelemetry.sdk.resources import Resource  # noqa: E402
+from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
 
 from fabric import (  # noqa: E402
     ContentCaptureConfig,
@@ -47,11 +52,6 @@ from fabric import (  # noqa: E402
     FabricConfig,
     LocalFilesystemContentStore,
 )
-from opentelemetry import trace  # noqa: E402
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter  # noqa: E402
-from opentelemetry.sdk.resources import Resource  # noqa: E402
-from opentelemetry.sdk.trace import TracerProvider  # noqa: E402
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor  # noqa: E402
 
 DATA = HERE / "data"
 OUT = Path(os.environ.get("FABRIC_DEMO_OUT", HERE / "out"))

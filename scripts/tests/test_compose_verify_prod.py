@@ -98,6 +98,7 @@ def _run(
         capture_output=True,
         text=True,
         timeout=20,
+        check=False,
     )
     return result, payloads
 

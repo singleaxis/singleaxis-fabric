@@ -951,8 +951,11 @@ def test_exec_subprocess_spool_records_are_observed_terminal_records() -> None:
 
 
 # ------------------------------------------------------------------ capture/v1 1.6.0 (spec 056 M2)
-from contracts import host_records, ingress_groups  # noqa: E402
-from contracts import validate_coverage_contracts as coverage  # noqa: E402
+from contracts import (  # noqa: E402
+    host_records,
+    ingress_groups,
+    validate_coverage_contracts as coverage,  # noqa: E402
+)
 
 HOST = FAMILY / "fixtures" / "host"
 INGRESS = FAMILY / "fixtures" / "ingress-groups"

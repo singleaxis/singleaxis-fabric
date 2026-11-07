@@ -5,7 +5,6 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SECURITY_WORKFLOW = ROOT / ".github/workflows/recorder-security.yml"
 CI_WORKFLOW = ROOT / ".github/workflows/recorder-ci.yml"

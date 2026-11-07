@@ -14,9 +14,10 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 from jsonschema import Draft202012Validator
 
@@ -190,16 +191,15 @@ def validate_document(document: Mapping[str, Any], schema: Mapping[str, Any]) ->
             "$.control.telemetry_pipeline_actions",
             "only gateways and telemetry receivers may claim telemetry pipeline actions",
         )
-    if observation["decision_semantics"] == "native":
-        if not any(
-            item["surface"] == "decision_boundary" and item["source"] == "native_hook"
-            for item in surfaces
-        ):
-            raise ContractValidationError(
-                "connect.semantic.native_decision_without_hook",
-                "$.observation",
-                "native decision semantics require a native decision-boundary hook",
-            )
+    if observation["decision_semantics"] == "native" and not any(
+        item["surface"] == "decision_boundary" and item["source"] == "native_hook"
+        for item in surfaces
+    ):
+        raise ContractValidationError(
+            "connect.semantic.native_decision_without_hook",
+            "$.observation",
+            "native decision semantics require a native decision-boundary hook",
+        )
     if (
         content["default_raw_capture"]
         and content["raw_content_behavior"] != "configurable_raw"

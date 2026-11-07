@@ -16,9 +16,10 @@ import hashlib
 import json
 import re
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator

@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+
 import test_wire_capture_node_e2e as node_e2e
 import test_wire_capture_s3_local_e2e as s3_e2e
 from _redaction_service import reference_service

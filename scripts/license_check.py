@@ -41,8 +41,8 @@ import json
 import os
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 # ---------------------------------------------------------------------------
 # SPDX normalization
@@ -211,7 +211,7 @@ class Policy:
     declared: dict[tuple[str, str, str], str] = field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: str) -> "Policy":
+    def load(cls, path: str) -> Policy:
         pol = cls()
         with open(path, encoding="utf-8") as fh:
             for line in fh:
@@ -338,9 +338,10 @@ class Policy:
         for character in raw_license:
             if character in "([":
                 stack.append(character)
-            elif character in ")]":
-                if not stack or stack.pop() != {")": "(", "]": "["}[character]:
-                    return ("UNKNOWN", raw_license, "malformed license expression")
+            elif character in ")]" and (
+                not stack or stack.pop() != {")": "(", "]": "["}[character]
+            ):
+                return ("UNKNOWN", raw_license, "malformed license expression")
         if stack:
             return ("UNKNOWN", raw_license, "malformed license expression")
         try:
@@ -448,9 +449,10 @@ def parse_license_checker(surface: str, path: str) -> list[Dep]:
                 for character in item:
                     if character in "([":
                         stack.append(character)
-                    elif character in ")]":
-                        if not stack or stack.pop() != {")": "(", "]": "["}[character]:
-                            raise ValueError("malformed npm license array member")
+                    elif character in ")]" and (
+                        not stack or stack.pop() != {")": "(", "]": "["}[character]
+                    ):
+                        raise ValueError("malformed npm license array member")
                 if stack:
                     raise ValueError("malformed npm license array member")
             lic = " AND ".join(f"({item})" for item in lic)
@@ -501,7 +503,7 @@ def write_csv(deps: list[Dep], path: str) -> None:
 def write_json(deps: list[Dep], path: str, summary: dict) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     payload = {
-        "generated_utc": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "generated_utc": _dt.datetime.now(_dt.UTC).isoformat(),
         "summary": summary,
         "dependencies": [
             {
@@ -526,7 +528,7 @@ def write_markdown(
     deps: list[Dep], path: str, summary: dict, violations: list[Dep]
 ) -> None:
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d %H:%M UTC")
     lines: list[str] = []
     lines.append("# Third-Party Licenses — SingleAxis Fabric")
     lines.append("")

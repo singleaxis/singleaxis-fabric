@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 
 PRIMARY_DOCS = (

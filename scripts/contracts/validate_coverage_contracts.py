@@ -34,10 +34,11 @@ import hmac
 import json
 import re
 import sys
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, NoReturn, Sequence
+from typing import Any, NoReturn
 from urllib.parse import unquote
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -142,7 +143,7 @@ NON_INPUTS = {"fabric", "config", "offline", "sensor", "qualified"}
 MEDIA_RE = re.compile(r"^(\*|[a-z0-9!#$&^_.+-]+/(\*|[a-z0-9!#$&^_.+-]+))$")
 BLOCK_RE = re.compile(
     r"<!-- generated:(?P<name>[a-z_:A-Z]+):begin -->\n(?P<body>.*?)<!-- generated:(?P=name):end -->",
-    re.S,
+    re.DOTALL,
 )
 # vocabulary name -> JSON pointer-ish path of the enum in the projection schema
 PROJECTION_ENUMS = {
@@ -961,7 +962,7 @@ def _rfc3339(value: str) -> bool:
     if RFC3339.fullmatch(value) is None:
         return False
     try:
-        datetime.fromisoformat(re.sub(r"\.[0-9]+", "", value).replace("Z", "+00:00"))
+        datetime.fromisoformat(re.sub(r"\.[0-9]+", "", value))
     except ValueError:
         return False
     return True
@@ -1895,7 +1896,7 @@ def pseudonym_v2(prefix: str, id_type: str, value: str, key: str | None) -> str 
     if not key:
         return None  # spec 049 §2.9 rule 5: v2 ids are omitted without a key
     k_type = hmac.new(
-        key.encode("utf-8"), f"fabric-id/v2/{id_type}".encode("utf-8"), hashlib.sha256
+        key.encode("utf-8"), f"fabric-id/v2/{id_type}".encode(), hashlib.sha256
     ).digest()
     digest = hmac.new(
         k_type, value.encode("utf-8", "surrogatepass"), hashlib.sha256

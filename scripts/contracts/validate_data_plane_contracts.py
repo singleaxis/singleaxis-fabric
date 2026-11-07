@@ -13,10 +13,11 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Mapping, Sequence, TypedDict
+from typing import Any, TypedDict
 
 from jsonschema import Draft202012Validator, FormatChecker
 
@@ -241,7 +242,7 @@ def _repo_artifact(repo_root: Path, relative: object) -> Path:
 
 
 def _iso8601(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.fromisoformat(value)
 
 
 def validate_delivery_evidence(

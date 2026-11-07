@@ -14,9 +14,10 @@ import re
 import stat
 import sys
 import tarfile
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 try:
     from .qualify_release import QualificationError, release_versions
@@ -311,25 +312,23 @@ def _write_archive(
     archive_root: str,
 ) -> None:
     archive.parent.mkdir(parents=True, exist_ok=True)
-    with archive.open("wb") as raw_stream:
-        with gzip.GzipFile(
-            filename="", mode="wb", fileobj=raw_stream, compresslevel=9, mtime=0
-        ) as gzip_stream:
-            with tarfile.open(
-                fileobj=gzip_stream, mode="w", format=tarfile.PAX_FORMAT
-            ) as tar:
-                for member in files:
-                    info = tarfile.TarInfo(
-                        f"{archive_root}/contracts/{member.relative_path.as_posix()}"
-                    )
-                    info.size = len(member.content)
-                    info.mode = 0o644
-                    info.uid = 0
-                    info.gid = 0
-                    info.uname = ""
-                    info.gname = ""
-                    info.mtime = 0
-                    tar.addfile(info, io.BytesIO(member.content))
+    with archive.open("wb") as raw_stream, gzip.GzipFile(
+        filename="", mode="wb", fileobj=raw_stream, compresslevel=9, mtime=0
+    ) as gzip_stream, tarfile.open(
+        fileobj=gzip_stream, mode="w", format=tarfile.PAX_FORMAT
+    ) as tar:
+        for member in files:
+            info = tarfile.TarInfo(
+                f"{archive_root}/contracts/{member.relative_path.as_posix()}"
+            )
+            info.size = len(member.content)
+            info.mode = 0o644
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            info.mtime = 0
+            tar.addfile(info, io.BytesIO(member.content))
 
 
 def _verify_archive(
