@@ -6,7 +6,7 @@ Fabric OSS is a customer-controlled, passive recorder for AI systems:
 CAPTURE -> PROTECT -> DELIVER
 ```
 
-These pages describe the current release, v0.11.1, and any work on main
+These pages describe the current release, v0.11.2, and any work on main
 not yet in a release; each page says which. A capability that is not described here is not built; see
 [limitations and roadmap](limitations-and-roadmap.md). Superseded pages are
 deleted rather than archived (unlike superseded specs); their history lives

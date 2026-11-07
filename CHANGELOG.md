@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-07
+
+Fabric 0.11.2 fixes what a real-agent acceptance run of 0.11.1 on DeepSeek
+V4.1 Flash found, and ships the supply-chain and scanner hardening merged
+since 0.11.1. The headline is a security fix: under `redact`, `masked_only`
+and `tokenize`, a model response sent with `Content-Encoding: gzip` reached
+the redaction service still compressed and was stored with its secrets while
+labelled `redacted`. Redaction now runs over the decoded body, and a body
+Fabric cannot decode is withheld. The eBPF emitter follows wall-clock steps,
+the actions view shows every unexplained host exec (including `os.system`),
+records from one process no longer get a cross-source clock margin, and an
+unsupported remote-sandbox provider disables only that hook. Customers who
+ran a redaction policy against a provider that compresses responses should
+review the "Security" entry below.
+
 ### Security
 
 - **Redaction now runs over the decoded body (0.11.1 acceptance B1, high).**
@@ -3204,7 +3219,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.2...HEAD
+[0.11.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.9.1...v0.10.0
