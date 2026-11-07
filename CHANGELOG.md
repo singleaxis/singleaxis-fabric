@@ -8,6 +8,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency batch.** Collector core v0.150.0 → v0.164.0 (stable modules
+  v1.56.0 → v1.70.0), contrib extensions → v0.164.1 and OCB v0.164.0 across
+  all seven Go modules, the OCB manifest, Dockerfile and CI; with it
+  `go.uber.org/zap` 1.28.0, `go.opentelemetry.io/otel` 1.47.0,
+  `klauspost/compress` 1.20.3 (GO-2026-6865), `google.golang.org/grpc`
+  1.85.0 and `golang.org/x/sys` 0.49.0. The patched `bearertokenauth` keeps
+  the same fail-closed `require_single_token` rules on v0.164.1. The
+  production Compose configs now pin the Prometheus reader's
+  `without_type_suffix`, `without_units` and `without_scope_info` to false:
+  since v0.151 an explicit reader defaults them to true, which would have
+  dropped `_total` from `fabric_delivery_*` and `otelcol_*` counters. Metric
+  names are unchanged. Python:
+  pydantic 2.14.2 (GHSA-qpmf-fgh3-ff25, GHSA-3r8g-cqwr-jr29), boto3
+  1.43.123, and the dev group (mypy 2.4.1, pytest 9.2.0, cryptography
+  50.0.2, openai 3.41.0, anthropic 2.3.0, jsonschema 4.26.0). TypeScript SDK
+  development tools: eslint 10, typescript-eslint 8.72.1, prettier 3.9.10,
+  `@opentelemetry/*` 2.12.0, and a package-wide `minimatch` 11.0.5 override
+  (GHSA-g3hv-75wg-m249 via eslint 10); the published package is
+  byte-identical.
+  Actions: `github/codeql-action` v4.39.1, `azure/setup-helm` v5.0.1,
+  `actions/setup-python` v7.1.0, `actions/setup-go` v7.0.0 and
+  `osv-scanner-action` v2.7.0, whose scan now actually runs on every
+  released lockfile. The local S3 test store `chrislusf/seaweedfs` is 4.50.
+
 ## [0.11.2] - 2026-11-07
 
 Fabric 0.11.2 fixes what a real-agent acceptance run of 0.11.1 on DeepSeek
