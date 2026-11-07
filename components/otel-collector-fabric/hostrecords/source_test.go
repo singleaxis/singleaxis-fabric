@@ -781,6 +781,42 @@ func TestConcurrentStageAndHeartbeat(t *testing.T) {
 	}
 }
 
+// TestDeclareClockUncertaintyNarrowsBack: after a step has settled the sensor
+// declares the base again; the manifest is staged only on a change, and
+// never below the default.
+func TestDeclareClockUncertaintyNarrowsBack(t *testing.T) {
+	s := mustOpen(t, testConfig(t.TempDir()))
+	defer crash(t, s)
+	if b, err := s.DeclareClockUncertainty(clockUncertaintyNs); b != nil || err != nil {
+		t.Fatalf("an unchanged value staged (%v, %v)", b, err)
+	}
+	if b, err := s.DeclareClockUncertainty(1); b != nil || err != nil {
+		t.Fatalf("a value below the default staged (%v, %v)", b, err)
+	}
+	wide := int64(3_002_019_859) // the 0.11.2 replay's widened value
+	b, err := s.DeclareClockUncertainty(wide)
+	if err != nil || b == nil {
+		t.Fatalf("widen: (%v, %v)", b, err)
+	}
+	if got := batchSpans(t, b)[0].attrs["fabric.manifest.clock.uncertainty_ns"]; got != wide {
+		t.Fatalf("widened manifest declares %v", got)
+	}
+	if b, err := s.DeclareClockUncertainty(wide); b != nil || err != nil {
+		t.Fatalf("an unchanged value staged (%v, %v)", b, err)
+	}
+	b, err = s.DeclareClockUncertainty(0) // settled: back to the default
+	if err != nil || b == nil {
+		t.Fatalf("narrow: (%v, %v)", b, err)
+	}
+	m := batchSpans(t, b)[0].attrs
+	if m["fabric.manifest.clock.uncertainty_ns"] != int64(clockUncertaintyNs) || m["fabric.manifest.manifest_seq"] != int64(2) {
+		t.Errorf("narrowed manifest: %v", m)
+	}
+	if got := s.ClockUncertainty(); got != clockUncertaintyNs {
+		t.Errorf("uncertainty %d, want %d", got, clockUncertaintyNs)
+	}
+}
+
 func TestWidenClockUncertaintyStagesAWiderManifestOnly(t *testing.T) {
 	s := mustOpen(t, testConfig(t.TempDir()))
 	defer crash(t, s)

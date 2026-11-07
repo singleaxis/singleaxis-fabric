@@ -184,20 +184,16 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 		pending = nil
 		return nil
 	}
-	// refreshClock re-derives wall time (CLOCK_REALTIME may have stepped);
-	// a step widens the source's declared clock uncertainty.
-	refreshClock := func(every time.Duration) error {
-		if sensorClock.refresh(every) == 0 {
-			return nil
-		}
-		return prod.widenClock(sensorClock.uncertaintyNs())
-	}
+	declareClock := func(tsNs uint64) error { return prod.declareClockFor(sensorClock, tsNs, flush) }
 	add := func(e *event) error {
 		if !bucket.allow(time.Now()) {
 			rateLimited++
 			return nil
 		}
-		if err := refreshClock(clockRefreshEvery); err != nil {
+		// Re-derive wall time (CLOCK_REALTIME may have stepped), then declare
+		// what this record needs.
+		sensorClock.refresh(clockRefreshEvery)
+		if err := declareClock(e.TsNs); err != nil {
 			return err
 		}
 		ev, ok := hostEvent(e)
@@ -293,7 +289,8 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 				return err
 			}
 		case <-batchTick.C:
-			if err := refreshClock(0); err != nil {
+			sensorClock.refresh(0)
+			if err := declareClock(sensorClock.nowMono()); err != nil {
 				return err
 			}
 			if err := flush(); err != nil {
@@ -309,8 +306,8 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 			}
 		case <-statusTick.C:
 			partialBatches, partialRejected := prod.status()
-			line := fmt.Sprintf("fabric-host-emitter: health partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d clock_uncertainty_ns=%d",
-				partialBatches, partialRejected, sensorClock.stepCount(), sensorClock.uncertaintyNs())
+			line := fmt.Sprintf("fabric-host-emitter: health partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d clock_small_steps=%d clock_uncertainty_ns=%d",
+				partialBatches, partialRejected, sensorClock.stepCount(), sensorClock.smallStepCount(), prod.clockUncertainty())
 			if pods != nil {
 				line += fmt.Sprintf(" pod_roots=%d pod_roots_installed=%d pod_roots_removed=%d pod_roots_late=%d pod_api_errors=%d",
 					pods.installedCount(), pods.rootsInstalled.Load(), pods.rootsRemoved.Load(), pods.rootsLate.Load(), pods.apiErrors.Load())

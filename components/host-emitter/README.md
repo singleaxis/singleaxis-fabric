@@ -114,12 +114,26 @@ Wall time: the kernel stamps events with `CLOCK_MONOTONIC`; the emitter adds
 every 250 ms and before translating events, so a wall-clock step (an NTP
 step, a VM resync such as Docker Desktop's after the host sleeps, `date -s`)
 is followed within one batch. A change of that offset beyond 1 ms plus
-500 ppm of the elapsed time is a detected step: it is logged
-(`CLOCK_REALTIME step detected step_ms=…`), counted (`clock_steps=` on the
-health line), and in production mode the source stages a manifest whose
-`clock.uncertainty_ns` is 2 ms plus the largest step, since events captured
-just before the step and translated after it may be off by that much. A
-verifier then widens the windows of that source's events accordingly.
+500 ppm of the elapsed time, and at least `EMIT_CLOCK_STEP_MIN` (default
+20 ms, ten times the 2 ms base uncertainty), is a detected step: it is
+logged (`CLOCK_REALTIME step detected step_ms=…`), counted (`clock_steps=` on
+the health line), and in production mode the source stages a manifest whose
+`clock.uncertainty_ns` is 2 ms plus the step, since events captured just
+before the step and translated after it may be off by that much. A smaller
+change, such as Docker Desktop's routine 8–10 ms resyncs, is followed at once
+but is not a step: it is counted as `clock_small_steps=` and widens nothing.
+
+The widened value does not stay until a restart. Every record stamped up to
+the step's detection keeps it, and so does every record while the offset has
+not been stable (no further step) for `EMIT_CLOCK_SETTLE` (default 60 s); a
+step inside that window restarts it and keeps the larger of the two. After
+it, the source stages a manifest declaring the 2 ms base again, once every
+record still pending has been staged, so the narrower manifest only governs
+records stamped after the step and the settle window. A record stamped
+before the step that arrives later still widens the next manifest. The
+reconstruct reader currently applies the widest value a source's manifests
+declare to all of that source's events, so its windows narrow only for an
+export that no longer holds the widened manifests.
 
 This does not prove a complete agent transcript. The host sensor sees only its
 enabled, scoped tracepoints and metadata, not command output, file contents,
@@ -149,6 +163,8 @@ own ingress group on the Node. Local mode is unchanged.
 | `EMIT_ALL_HOST` | `false` | every event outside a sandbox root is scope `agent` |
 | `EMIT_DIGESTS` | `omitted` | `permitted` emits executable, argv and path digests (the Node's group must permit them too) |
 | `EMIT_HEARTBEAT_INTERVAL` | `10s` | 1s to 60s |
+| `EMIT_CLOCK_STEP_MIN` | `20ms` | 0 to 10s (below the 1 ms sampling floor: the floor); a smaller offset change is followed but is not a step. Local mode too |
+| `EMIT_CLOCK_SETTLE` | `60s` | 0 to 1h; how long the offset stays stable after a step before the declared uncertainty returns to the base. Local mode too |
 
 Production refuses `EMIT_CGROUP_PATH` (an exact cgroup cannot scope a pod;
 use `EMIT_AGENT_CGROUP_ROOTS`), a non-zero `EMIT_DEDUPE_WINDOW` (every event

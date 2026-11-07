@@ -53,6 +53,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `corroboration` is `partial(ambiguous_attribution)`. Spec 056 revision 9;
   new rule fixture `edge-previous-container-descendant`, and no other
   fixture changes.
+- **The emitter's widened clock uncertainty no longer ratchets.** After a
+  detected `CLOCK_REALTIME` step the wider value stayed until the emitter
+  restarted, and Docker Desktop's routine 8–10 ms VM resyncs counted as
+  steps, so it only grew. An offset change below `EMIT_CLOCK_STEP_MIN`
+  (default 20 ms, ten times the 2 ms base) is now followed but is not a
+  step: no log line, no `clock_steps` count (it is counted as
+  `clock_small_steps=`), nothing widened. After a real step the widened
+  value holds for every record stamped up to the step's detection, and for
+  later records until the offset has been stable for `EMIT_CLOCK_SETTLE`
+  (default 60 s; a further step restarts the window); then the source
+  declares the base again, staged only after every pending record, so the
+  narrower manifest governs only records stamped after the step and the
+  window. The step log line and counter are unchanged. The host-records
+  library gains `Source.DeclareClockUncertainty`. The reconstruct reader
+  still applies the widest value a source's manifests declare to all its
+  events.
 
 ## [0.11.2] - 2026-11-07
 
