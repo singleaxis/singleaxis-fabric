@@ -375,6 +375,27 @@ def test_c0_2_a_check_that_admits_free_text_is_rejected(tmp_path: Path) -> None:
     _assert_code(root, "coverage.keys.free_text")
 
 
+@pytest.mark.parametrize(
+    "check",
+    [
+        {"type": "number", "min": 5, "max": 1},
+        {"type": "number", "min": "0"},
+        {"type": "number", "min": True},
+    ],
+)
+def test_c0_2_a_malformed_number_check_is_rejected(
+    tmp_path: Path, check: dict[str, Any]
+) -> None:
+    """Spec 057 D41/E03: a number check names a finite minimum no greater than its max."""
+    root = _copy_tree(tmp_path)
+
+    def malform(document: Any) -> None:
+        _key(document, "fabric.control.latency_ms")["check"] = check
+
+    _edit_registry(root, "keys", malform)
+    _assert_code(root, "coverage.keys.check")
+
+
 def test_c0_3_pseudonym_v1_is_unchanged_and_v2_is_domain_separated() -> None:
     v1_path = REPO_ROOT / PSEUDONYM_V1_VECTORS
     capture = json.loads((REPO_ROOT / "contracts/capture/v1/manifest.json").read_text())

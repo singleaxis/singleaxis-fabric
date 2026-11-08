@@ -1043,6 +1043,13 @@ def _check_shape(check: Any, where: str) -> None:
         or check.get("max", INT64_MAX) < check["min"]
     ):
         _fail("coverage.keys.check", where, "int needs min <= max")
+    if kind == "number" and (
+        isinstance(check.get("min"), bool)
+        or not isinstance(check.get("min"), (int, float))
+        or not math.isfinite(check["min"])
+        or check.get("max", float("inf")) < check["min"]
+    ):
+        _fail("coverage.keys.check", where, "number needs a finite min <= max")
     if kind == "string":
         try:
             re.compile(check["pattern"])

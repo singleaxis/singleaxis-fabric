@@ -137,7 +137,11 @@ func raw(t *testing.T, value any) any {
 	case json.Number:
 		n, err := v.Int64()
 		if err != nil {
-			t.Fatalf("non-integer number %v", v)
+			f, ferr := v.Float64() // a registry "number" check (spec 057 D41, E03)
+			if ferr != nil {
+				t.Fatalf("not a number %v", v)
+			}
+			return f
 		}
 		return n
 	case []any:
@@ -181,6 +185,12 @@ func admitted(check *registryCheck) []any {
 			out = append(out, json.Number(itoa(*check.Max)))
 		}
 		return out
+	case "number": // spec 057 D41, E03: integers and finite doubles within the bounds
+		out := []any{json.Number(itoa(*check.Min)), json.Number(itoa(*check.Min) + ".25")}
+		if check.Max != nil {
+			out = append(out, json.Number(itoa(*check.Max)))
+		}
+		return out
 	}
 	return check.Examples
 }
@@ -211,6 +221,11 @@ func rejected(check *registryCheck) []any {
 		if *check.Min > math.MinInt64 {
 			out = append(out, json.Number(itoa(*check.Min-1)))
 		}
+		if check.Max != nil {
+			out = append(out, json.Number(itoa(*check.Max+1)))
+		}
+	case "number":
+		out = append(out, "1", true, float64(*check.Min)-0.5, json.Number(itoa(*check.Min-1)), math.NaN(), math.Inf(1))
 		if check.Max != nil {
 			out = append(out, json.Number(itoa(*check.Max+1)))
 		}
