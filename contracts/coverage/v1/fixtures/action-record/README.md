@@ -458,10 +458,12 @@ M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with 
 | `host_sources[].pid_namespace` | Per source, never per export: `recorded` when every record of the source carries `fabric.sensor.pid_ns` (production eBPF), else `declared_same` (local profile, auditd) | the records; `--host-pid-namespace KIND=MODE` overrides it per kind |
 | `host_sources[].heartbeats` | `[{time_ns, upstream_lost, reason?}]` (M2). With it the source verifies when it is authenticated (`authenticated`, default true), has no `sequence_gaps`, has a heartbeat at or after the window end plus both clock margins, and no heartbeat of an interval overlapping the window reports upstream loss; without it `verified` decides (M1) | the source's periodic heartbeats (053 §6.2.4) |
 | `host_sources[].declared`, `.manifest_point_kinds` | `--host-source` named it (default true, as every M1 source is a declaration); the kinds of its manifest's capture-point rows | the CLI; the source's `fabric.capture_manifest` |
+| `host_sources[].clock_manifests` | `[{epoch, manifest_seq, after_source_sequence, clock_uncertainty_ns}]` (spec 056 revision 10): the source's manifests by position. A record whose `source_epoch` and `sequence` fall in a manifest's governed range (spec 049 §2.4) takes that manifest's clock uncertainty as its margin; the source's `clock_uncertainty_ns` (the widest its manifests declare) applies when the governing manifest is unknown (see §9.5) and to the source's coverage checks. Heartbeats may carry `epoch` and `manifest_seq` (the latest manifest they name) | the source's `fabric.capture_manifest` spans (`fabric.manifest.manifest_seq`, `.after_source_sequence`, `.clock.uncertainty_ns`); heartbeats' `fabric.capture.manifest_seq` |
 | `agent.pid_ns` | The declared agent namespace (`--agent-pid-namespace`); absent: the value every effect's `pid_ns` agrees on, else none | §4.3 "The agent's namespace" |
 | `effects[].pid_ns`, `.created_sandbox_id` | `fabric.process.pid_ns`, `fabric.sandbox.created_id` | the exec records |
 | `effects[].capture_point`, `.sandbox_id` | `remote.sandbox` for a remote effect (no pid, its output is `remote.result`); its `fabric.execution.sandbox_id` | the remote.sandbox records |
 | `host_events[].source_id`, `.ns_pid`, `.ns_ppid`, `.pid_ns`, `.scope`, `.sandbox_id`, `.pod_id`, `.peer_port` | The production record's source, both pid numberings (`pid`/`ppid` stay the init numbers), the sensor scope, the keyed container and pod ids, the peer port | `fabric.source_id`, `fabric.sensor.*`, `fabric.execution.sandbox_id` |
+| `host_events[].source_epoch`, `.sequence` | The record's position on its source (revision 10): it names the manifest that governs the record | `fabric.source.epoch`, `fabric.source.sequence` |
 | `sandbox_peers` | `[{peer_id, port}]` (`--sandbox-peer ADDRESS[:PORT]`; `port` null: any port) | the CLI |
 | `effect_channels["remote.sandbox"]` | `active`, or `disabled` (the manifest row `remote.sandbox@<ver>:H:disabled:…:remote_sandbox`) | the manifest |
 
@@ -539,6 +541,7 @@ M2 rules; under them every M1 fixture gives its M1 output (the M1 fixtures with 
 | `edge-previous-container-descendant` | A1, H1, H4 | The previous container's grandchild execs in the margin with no walkable parent; it started before the agent: outside the run; a later process with no known parent stays unexplained |
 | `edge-agent-start-differs` | H4 | The agent's start time is known: same tick certain, no start time tentative, another tick another process |
 | `edge-scope-late` | A1, H1 | Upstream loss `scope_late` in the window: `source_gap` |
+| `edge-clock-per-manifest` | A1, H2 | Base, widened, base manifests of one epoch: only the record under the widened manifest takes its 67.5 ms margin and anchors (revision 10) |
 | `edge-sandbox-unlinked` | A1, H1 | Unreported containers: counted, not unexplained |
 | `edge-sandbox-before-effect` | A1, H1, H5 | An event of the created id before the effect: not linked |
 | `remote-sandbox-output-match` | A1, H4 | A remote effect resolved by A1, no anchor |
@@ -582,3 +585,8 @@ The M1 sections are unchanged, so the M1 hook and reader tests keep reading them
   reported it (both reported it; no candidate is preferred).
 - **Heartbeat coverage** needs a heartbeat at or after the window end plus both margins;
   a loss in any heartbeat of an interval overlapping the window is a `source_gap`.
+- **A record's clock margin when its manifest is unknown** (revision 10) is the source's
+  widest declared value: the record has no position, its epoch has no known manifest, no
+  known manifest precedes it, the next manifest is missing although a later manifest or a
+  heartbeat proves it exists, two copies of one manifest differ, or the known positions
+  decrease. Coverage checks (heartbeats, position gaps) keep the source's widest value.

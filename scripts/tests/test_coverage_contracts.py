@@ -1319,6 +1319,7 @@ M2_RULE_FIXTURES = (
     "edge-quiet-host-epoch",
     "edge-sandbox-peer-port",
     "edge-scope-late",
+    "edge-clock-per-manifest",
     "edge-sandbox-unlinked",
     "edge-sandbox-before-effect",
     "remote-sandbox-output-match",
@@ -1441,6 +1442,19 @@ def test_056_m2_rule_fixtures_match_reference() -> None:
     assert empty == {"verdict": "partial", "reasons": ["source_gap"]}
     late = _rule("edge-scope-late")["expected"]["chains"]["corroboration"]
     assert late == {"verdict": "partial", "reasons": ["source_gap"]}
+    # Revision 10: only the record the widened manifest governs takes its margin; with
+    # the source's widest value on every record, all three would anchor.
+    clock = _rule("edge-clock-per-manifest")
+    assert _trace_by_label(clock) == {
+        "exec-sh-1": "unexplained",
+        "exec-sh-2": "H2",
+        "exec-sh-3": "unexplained",
+    }
+    widest = copy.deepcopy(clock["input"])
+    for source in widest["host_sources"]:
+        del source["clock_manifests"]
+    anchors = rules.reconstruct(widest, action_record.call_id)["trace"]["anchors"]
+    assert set(anchors.values()) == {"H2"}
     port = _rule("edge-sandbox-peer-port")
     assert _trace_by_label(port) == {
         "connect-model": "H4",

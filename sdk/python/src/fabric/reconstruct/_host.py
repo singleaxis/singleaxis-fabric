@@ -102,6 +102,7 @@ from ._inputs import (
     A_ATTEMPT_UID,
     A_CAPTURE_INPUT,
     A_EVENT_ID,
+    A_MANIFEST_SEQ,
     A_RUN_ID,
     A_SOURCE_EPOCH,
     A_SOURCE_ID,
@@ -200,6 +201,8 @@ S_PEER_PORT = "fabric.sensor.peer_port"
 # Host-source manifest keys (manifest-span-v1): the capture-point rows and the clock.
 M_CAPTURE_POINTS = "fabric.manifest.capture_points"
 M_CLOCK_UNCERTAINTY = "fabric.manifest.clock.uncertainty_ns"
+M_MANIFEST_SEQ = "fabric.manifest.manifest_seq"
+M_AFTER_SEQUENCE = "fabric.manifest.after_source_sequence"
 
 # exec.subprocess record keys (spec 056 §4.3 new fields; 053 §5.1).
 P_PID = "fabric.process.pid"
@@ -313,7 +316,9 @@ class HostEvent:
     its parent's thread-group id in the process's own namespace ``pid_ns``; ``scope`` is
     the cgroup root kind that admitted it (``agent`` or ``sandbox``); ``sandbox_id`` and
     ``pod_id`` the keyed container and pod ids of a sandbox-scope event; ``peer_port`` the
-    connection's port."""
+    connection's port; ``epoch`` and ``sequence`` the record's source position, which
+    names the manifest that governs it (spec 049 §2.4; its clock uncertainty is the
+    event's margin, spec 056 revision 10)."""
 
     event_id: str
     source: str
@@ -336,6 +341,8 @@ class HostEvent:
     sandbox_id: str | None = None
     pod_id: str | None = None
     peer_port: int | None = None
+    epoch: int | None = None
+    sequence: int | None = None
 
     def report_entry(self) -> dict[str, Any]:
         """The run report's ``sensor_events[]`` entry, without links: ids, pids and times
@@ -382,7 +389,8 @@ class HostHeartbeat:
     """A periodic or ``final`` heartbeat of a host source (053 §6.2.4): positions up to
     ``last_sequence`` were allocated by ``time_ns`` (sensor clock); ``upstream_lost`` is the
     events lost before translation in the interval it closes (``-1``: unknown count, as is
-    any malformed value), ``reason`` the upstream-loss reason."""
+    any malformed value), ``reason`` the upstream-loss reason, ``manifest_seq`` the latest
+    manifest it names (``None`` when absent or malformed)."""
 
     source_id: str
     epoch: int
@@ -391,6 +399,7 @@ class HostHeartbeat:
     upstream_lost: int = 0
     reason: str | None = None
     kind: str = "periodic"
+    manifest_seq: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -434,7 +443,12 @@ class HostEvidence:
     markers only, ``(source_id, epoch, time_ns)``) and ``loss_ranges`` (their positions);
     ``source_kinds`` (the kind each source id's records or markers name);
     ``manifest_kinds`` (the capture-point kinds of each source id's manifests);
-    ``clock_uncertainty`` (the largest a source's manifests declare); ``heartbeat_rule``
+    ``clock_uncertainty`` (the largest a source's manifests declare: the fallback margin of
+    a record whose governing manifest is unknown, and the margin of the source's coverage
+    checks); ``clock_manifests`` (per ``(source_id, epoch)``, each host manifest's
+    ``manifest_seq`` → ``(after_source_sequence, clock.uncertainty_ns)``, the clock ``None``
+    when unreadable) and ``clock_conflicts`` (epochs with two differing copies of one
+    manifest), read by :meth:`record_clock`; ``heartbeat_rule``
     (the sources whose coverage is proven by heartbeats: any heartbeat or a host
     manifest); ``record_sources`` and ``ns_missing`` (the source ids with a host record,
     and those with one lacking ``fabric.sensor.pid_ns``); ``unstamped`` (the keys of
@@ -456,6 +470,10 @@ class HostEvidence:
     source_kinds: dict[str, str] = field(default_factory=dict)
     manifest_kinds: dict[str, set[str]] = field(default_factory=dict)
     clock_uncertainty: dict[str, int] = field(default_factory=dict)
+    clock_manifests: dict[tuple[str, int], dict[int, tuple[int, int | None]]] = field(
+        default_factory=dict
+    )
+    clock_conflicts: set[tuple[str, int]] = field(default_factory=set)
     heartbeat_rule: set[str] = field(default_factory=set)
     record_sources: set[str] = field(default_factory=set)
     ns_missing: set[str] = field(default_factory=set)
@@ -502,12 +520,46 @@ class HostEvidence:
             self.manifest_kinds.setdefault(source_id, set()).update(kinds)
         for source_id, value in other.clock_uncertainty.items():
             self.clock_uncertainty[source_id] = max(value, self.clock_uncertainty.get(source_id, 0))
+        for key, manifests in other.clock_manifests.items():
+            for manifest_seq, declared in manifests.items():
+                self.add_clock_manifest(key, manifest_seq, *declared)
+        self.clock_conflicts |= other.clock_conflicts
         self.heartbeat_rule |= other.heartbeat_rule
         self.record_sources |= other.record_sources
         self.ns_missing |= other.ns_missing
         self.unstamped |= other.unstamped
         self.stamped = self.stamped or other.stamped
         self.gap_sources |= other.gap_sources
+
+    def add_clock_manifest(
+        self, key: tuple[str, int], manifest_seq: int, after: int, clock: int | None
+    ) -> None:
+        """Keep one host manifest's position and clock; a differing copy of the same
+        ``manifest_seq`` makes the epoch's per-record clocks unknown."""
+        known = self.clock_manifests.setdefault(key, {})
+        if known.get(manifest_seq, (after, clock)) != (after, clock):
+            self.clock_conflicts.add(key)
+        known.setdefault(manifest_seq, (after, clock))
+
+    def record_clock(self, event: HostEvent) -> int | None:
+        """The clock uncertainty the manifest in force for ``event`` declares (spec 056
+        revision 10), or ``None`` when the record has no position or its manifest is not
+        known (:func:`governing_clock`)."""
+        if event.source_id is None or event.epoch is None or event.sequence is None:
+            return None
+        key = (event.source_id, event.epoch)
+        manifests = self.clock_manifests.get(key)
+        if not manifests or key in self.clock_conflicts:
+            return None
+        named = max(
+            (
+                h.manifest_seq
+                for h in self.heartbeats
+                if (h.source_id, h.epoch) == key and h.manifest_seq is not None
+            ),
+            default=-1,
+        )
+        return governing_clock(manifests, event.sequence, named)
 
     def drop(self, source: str | None) -> None:
         """Count one host record dropped as malformed: a loss of its source, or of every
@@ -861,6 +913,8 @@ def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
         result=str(result),
         syscall=syscall,
         source_id=position.source_id,
+        epoch=position.epoch,
+        sequence=position.sequence,
         **optional,
     )
 
@@ -904,6 +958,32 @@ def is_host_manifest(span: SpanRecord) -> bool:
     return manifest_point_kinds(span) == {"S"}
 
 
+def governing_clock(
+    manifests: Mapping[int, tuple[int, int | None]], sequence: int, named: int = -1
+) -> int | None:
+    """The clock uncertainty a source epoch declares for the record at ``sequence``
+    (spec 049 §2.4, spec 056 revision 10): manifest ``k`` governs sequences
+    ``after_source_sequence(k) + 1`` up to the next manifest's ``after_source_sequence``.
+    ``manifests`` maps each known ``manifest_seq`` to ``(after_source_sequence, clock)``;
+    ``named`` is the highest ``manifest_seq`` a heartbeat of the epoch names.
+
+    ``None`` (unknown: the caller falls back to the widest value the source declares) when
+    no known manifest precedes the record, when the next manifest after the governing one
+    is missing although a later one or a heartbeat proves it exists (it may govern the
+    record, rule R1), when the governing manifest's clock is unreadable, or when the known
+    manifests' positions decrease."""
+    ordered = sorted(manifests.items())
+    if any(a[1][0] > b[1][0] for a, b in pairwise(ordered)):
+        return None
+    governing = [seq for seq, (after, _) in ordered if after < sequence]
+    if not governing:
+        return None
+    k = governing[-1]
+    if k + 1 not in manifests and k + 1 <= max(ordered[-1][0], named):
+        return None
+    return manifests[k][1]
+
+
 def _add_marker(evidence: HostEvidence, span: SpanRecord) -> None:
     """A heartbeat, loss or manifest marker. It carries a source id but no position, so
     it is kept by source id and counts only for a host source (:func:`source_verified`)."""
@@ -926,6 +1006,10 @@ def _add_marker(evidence: HostEvidence, span: SpanRecord) -> None:
             if clock is not None:
                 old = evidence.clock_uncertainty.get(source_id, 0)
                 evidence.clock_uncertainty[source_id] = max(old, clock)
+            manifest_seq = _int(attrs.get(M_MANIFEST_SEQ), 0)
+            after = _int(attrs.get(M_AFTER_SEQUENCE), -1)
+            if manifest_seq is not None and after is not None:
+                evidence.add_clock_manifest((source_id, epoch), manifest_seq, after, clock)
         return
     if H_LAST in attrs:
         # An upstream loss of -1 (unknown count) or any malformed value is a loss too.
@@ -942,6 +1026,7 @@ def _add_marker(evidence: HostEvidence, span: SpanRecord) -> None:
                 count,
                 reason if isinstance(reason, str) else None,
                 "final" if attrs.get(H_KIND) == "final" else "periodic",
+                _int(attrs.get(A_MANIFEST_SEQ), 0),
             )
         )
         evidence.heartbeat_rule.add(source_id)
@@ -1423,6 +1508,8 @@ class _Hosts:
     ) -> None:
         self.agent = agent
         self.window = window
+        self.evidence = evidence
+        self._clocks: dict[str, int] = {}
         self.sources = {s.key: s for s in sources}
         if len(self.sources) != len(sources):
             raise ValueError("each host source may be declared once")
@@ -1517,8 +1604,19 @@ class _Hosts:
             )
         return event.pid == self.agent.pid
 
+    def clock(self, event: HostEvent) -> int:
+        """The sensor-side margin of one event (spec 056 revision 10): the clock
+        uncertainty of the manifest in force for its record, else (no position, or that
+        manifest unknown) the source's declared value, the widest its manifests declare."""
+        value = self._clocks.get(event.event_id)
+        if value is None:
+            governed = self.evidence.record_clock(event)
+            value = self.source(event).clock_uncertainty_ns if governed is None else governed
+            self._clocks[event.event_id] = value
+        return value
+
     def margin(self, event: HostEvent) -> int:
-        return self.agent.clock_uncertainty_ns + self.source(event).clock_uncertainty_ns
+        return self.agent.clock_uncertainty_ns + self.clock(event)
 
     def during(self, event: HostEvent) -> bool:
         """Whether the event lies in the run window, widened by both clocks' declared
@@ -2322,12 +2420,20 @@ def _fixture_source(entry: Mapping[str, Any], evidence: HostEvidence) -> HostSou
         evidence.heartbeats.extend(
             HostHeartbeat(
                 source.key,
-                0,
+                beat.get("epoch", 0),
                 beat["time_ns"],
                 upstream_lost=beat.get("upstream_lost", 0),
                 reason=beat.get("reason"),
+                manifest_seq=beat.get("manifest_seq"),
             )
             for beat in entry["heartbeats"]
+        )
+    for manifest in entry.get("clock_manifests", []):
+        evidence.add_clock_manifest(
+            (source.key, manifest["epoch"]),
+            manifest["manifest_seq"],
+            manifest["after_source_sequence"],
+            manifest.get("clock_uncertainty_ns"),
         )
     if not entry.get("authenticated", True) or entry.get("sequence_gaps"):
         evidence.gap_sources.add(source.key)
@@ -2364,6 +2470,8 @@ def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
             sandbox_id=e.get("sandbox_id"),
             pod_id=e.get("pod_id"),
             peer_port=e.get("peer_port"),
+            epoch=e.get("source_epoch"),
+            sequence=e.get("sequence"),
         )
         for e in inp.get("host_events", [])
     ]
@@ -2635,6 +2743,7 @@ __all__ = [
     "SensorPosition",
     "agreed_pid_ns",
     "attribution_join",
+    "governing_clock",
     "host_evidence_from_logs",
     "host_evidence_from_spans",
     "host_joiner",

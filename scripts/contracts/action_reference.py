@@ -298,6 +298,45 @@ def source_verified(
     return all(h.get("upstream_lost", 0) == 0 for h in covering[: end + 1])
 
 
+def governing_clock(source: Mapping[str, Any], event: Mapping[str, Any]) -> int | None:
+    """The clock uncertainty the manifest in force for a host record declares (spec 056
+    revision 10; spec 049 §2.4: manifest k governs sequences after_source_sequence(k) + 1
+    up to the next manifest's after_source_sequence). ``None`` (the caller uses the
+    source's declared value, the widest of its manifests) when the record carries no
+    position or its epoch no ``clock_manifests``; when no known manifest precedes the
+    record; when the next manifest is missing although a later manifest or a heartbeat
+    (``manifest_seq``) proves it exists; when two entries of one manifest differ; when
+    the known positions decrease; or when the governing entry declares no clock."""
+    epoch, sequence = event.get("source_epoch"), event.get("sequence")
+    if epoch is None or sequence is None:
+        return None
+    known: dict[int, tuple[int, int | None]] = {}
+    for m in source.get("clock_manifests", []):
+        if m["epoch"] != epoch:
+            continue
+        entry = (m["after_source_sequence"], m.get("clock_uncertainty_ns"))
+        if known.setdefault(m["manifest_seq"], entry) != entry:
+            return None
+    if not known:
+        return None
+    seqs = sorted(known)
+    afters = [known[k][0] for k in seqs]
+    if afters != sorted(afters):
+        return None
+    preceding = [k for k in seqs if known[k][0] < sequence]
+    if not preceding:
+        return None
+    k = preceding[-1]
+    named = [
+        h["manifest_seq"]
+        for h in source.get("heartbeats", [])
+        if h.get("epoch", 0) == epoch and h.get("manifest_seq") is not None
+    ]
+    if k + 1 not in known and k + 1 <= max([seqs[-1], *named]):
+        return None
+    return known[k][1]
+
+
 class _Hosts:
     """Host-source facts shared by the H rules."""
 
@@ -410,9 +449,12 @@ class _Hosts:
         return bool(event["pid"] == self.agent["pid"])
 
     def margin(self, event: Mapping[str, Any]) -> int:
-        return int(self.agent["clock_uncertainty_ns"]) + int(
-            self.source(event).get("clock_uncertainty_ns", 0)
-        )
+        """Both clocks' declared uncertainty: the agent's, and the sensor's for this
+        record (revision 10: the manifest in force for it, else the source's value)."""
+        source = self.source(event)
+        governed = governing_clock(source, event)
+        clock = source.get("clock_uncertainty_ns", 0) if governed is None else governed
+        return int(self.agent["clock_uncertainty_ns"]) + int(clock)
 
     def during(self, event: Mapping[str, Any]) -> bool:
         """Inside the run window widened by both clocks' declared uncertainty (the window

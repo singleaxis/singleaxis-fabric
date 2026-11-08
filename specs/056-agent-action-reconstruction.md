@@ -2,8 +2,8 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 9
-last_updated: 2026-11-07
+revision: 10
+last_updated: 2026-11-08
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
 related: ["030", "031", "047", "048", "054", "055"]
@@ -11,6 +11,24 @@ related: ["030", "031", "047", "048", "054", "055"]
 
 # 056 — Agent action reconstruction
 
+> **Revision 10** (2026-11-08, after the 0.12.0 acceptance N2): a host
+> event's clock margin is the clock uncertainty of the manifest in force for
+> its record, not the widest value its source's manifests declare. 049 §2.4
+> defines which manifest that is: manifest `k` of a source epoch governs
+> sequences `after_source_sequence(k) + 1` up to the next manifest's
+> `after_source_sequence`, and a host record carries its source position
+> (`fabric.source.epoch`, `fabric.source.sequence`). Before, one clock step
+> widened every host link of a long export (to 67.5 ms in the acceptance
+> run); now only the records the widened manifest governs take it. The
+> source's widest value is still used where the governing manifest is not
+> known: a record without a position, an epoch with no known manifest, a
+> record no known manifest precedes, a missing next manifest that a later
+> manifest or a heartbeat's `fabric.capture.manifest_seq` proves exists (049
+> §2.4 rule 4), two differing copies of one manifest, decreasing positions,
+> or an unreadable clock. Coverage checks (heartbeats, position gaps, §4.5
+> `source_gap`) keep the widest value. Fixture `edge-clock-per-manifest`
+> pins it (§6.1, README §9.1).
+>
 > **Revision 9** (2026-11-07, v0.11.2 follow-up): a host event whose process
 > started in an earlier tick than the agent is neither the agent nor its
 > descendant, so it lies outside the run (§4.3 "Agent identity", trace
@@ -197,7 +215,8 @@ what is built.
 - **Order comes from the shared allocator.** Within one epoch, record
   order is the sequence order. Wall-clock time is used only to compare
   records across epochs or hosts, and then only with the clock uncertainty
-  each source declares (050 §1.3, `install.config`).
+  each source declares (050 §1.3, `install.config`); for a host record,
+  the uncertainty its governing manifest declares (revision 10).
 
 **Rejected alternatives**, recorded so they are not re-proposed:
 
@@ -840,6 +859,7 @@ M2 adds (WP6-11; file names under `rules/` and `invalid/`):
 | `edge-quiet-host-epoch.json` | A declared host source whose epoch holds only a manifest and heartbeats in the window: a host source (never in `sources[]` gaps), `corroboration` from its heartbeats |
 | `edge-sandbox-peer-port.json` | A model endpoint and a sandbox provider on one address, different ports: `--sandbox-peer ADDRESS:PORT` classifies only the provider's connections |
 | `edge-scope-late.json` | A `scope_late` upstream loss inside the run window: `corroboration` `partial(source_gap)` |
+| `edge-clock-per-manifest.json` | Revision 10: base, widened (67.5 ms) and base manifests of one host epoch; each exec record takes its governing manifest's margin, so only the record under the widened manifest anchors its effect (H2) |
 | `edge-sandbox-unlinked.json` | Sandbox-scope events with no reported id: `sandbox_events_unlinked`, not unexplained; `corroboration` unaffected |
 | `edge-sandbox-before-effect.json` | Events of the created id earlier than the effect start minus the margin: not linked |
 | `remote-sandbox-output-match.json` | A `remote.sandbox` `commands_run` effect resolved by A1; no anchor expected, no `anchor_missing` |

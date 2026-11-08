@@ -273,8 +273,8 @@ func run() error {
 		case <-statusTick.C:
 			files, bytes, peak := spool.status()
 			partialBatches, partialRejected := spool.partialStatus()
-			log.Printf("fabric-host-emitter: spool health queued_batches=%d queued_bytes=%d high_water_bytes=%d capacity_bytes=%d partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d clock_small_steps=%d",
-				files, bytes, peak, cfg.SpoolMaxBytes, partialBatches, partialRejected, sensorClock.stepCount(), sensorClock.smallStepCount())
+			log.Printf("fabric-host-emitter: spool health queued_batches=%d queued_bytes=%d high_water_bytes=%d capacity_bytes=%d partial_quarantined_batches=%d partial_rejected_records=%d clock_steps=%d clock_small_steps=%d clock_rejected_samples=%d",
+				files, bytes, peak, cfg.SpoolMaxBytes, partialBatches, partialRejected, sensorClock.stepCount(), sensorClock.smallStepCount(), sensorClock.rejectedSampleCount())
 		}
 	}
 }

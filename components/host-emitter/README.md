@@ -123,6 +123,18 @@ before the step and translated after it may be off by that much. A smaller
 change, such as Docker Desktop's routine 8–10 ms resyncs, is followed at once
 but is not a step: it is counted as `clock_small_steps=` and widens nothing.
 
+Each sample of the offset is the tightest of four bracketed reads. A sample
+whose tightest bracket is wider than 100 µs (the emitter was descheduled
+mid-read, which moves the reading by half the stall) is not used and is
+taken again. A change beyond slewing is re-sampled at once before it is
+followed. If the re-sample is back at the old offset, the change was a
+transient reading, not a clock change: it is not followed, not logged, widens
+nothing and is counted as `clock_rejected_samples=` on the health line. A
+change the re-sample confirms is handled as above, at the same refresh, so a
+real step is detected no later than before. A clock that is really set
+forward and back again (it holds the new value across samples) is two steps,
+because records stamped across either change may be off by its size.
+
 The widened value does not stay until a restart. Every record stamped up to
 the step's detection keeps it, and so does every record while the offset has
 not been stable (no further step) for `EMIT_CLOCK_SETTLE` (default 60 s); a
@@ -131,9 +143,9 @@ it, the source stages a manifest declaring the 2 ms base again, once every
 record still pending has been staged, so the narrower manifest only governs
 records stamped after the step and the settle window. A record stamped
 before the step that arrives later still widens the next manifest. The
-reconstruct reader currently applies the widest value a source's manifests
-declare to all of that source's events, so its windows narrow only for an
-export that no longer holds the widened manifests.
+reconstruct reader applies to each record the value of the manifest in force
+for it (by the record's sequence, spec 056 revision 10), so a step widens
+only the records the wider manifest governs, not the whole export.
 
 This does not prove a complete agent transcript. The host sensor sees only its
 enabled, scoped tracepoints and metadata, not command output, file contents,
