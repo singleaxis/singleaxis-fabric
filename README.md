@@ -102,6 +102,8 @@ pip install "singleaxis-fabric[otlp]"
 npm install @singleaxis/fabric
 ```
 
+The TypeScript SDK requires Node.js 22.18 or later.
+
 The Fabric Node installs with the Helm chart
 `oci://ghcr.io/singleaxis/charts/fabric` and a `shadow-dev` or
 `shadow-production` profile ([deployment](docs/deployment.md)), or with
