@@ -13,7 +13,7 @@ dist:
   name: otelcol-fabric
   description: SingleAxis Fabric OpenTelemetry Collector distribution
   output_path: ./dist
-  version: 0.12.0
+  version: 0.12.1
 
 extensions:
   # health_check extension ships from the contrib distribution; keep

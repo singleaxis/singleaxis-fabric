@@ -17,7 +17,7 @@ import (
 
 // version is the capture point version (host.ebpf@<version>); release
 // builds set it with -ldflags "-X main.version=...".
-var version = "0.12.0"
+var version = "0.12.1"
 
 // Production scope limits (spec 056 §7.3.3 (c)).
 const (

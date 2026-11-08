@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-08
+
+Fabric 0.12.1 is a patch release that fixes what the 0.12.0 real-agent
+acceptance run found. The fix that matters most: with capture on, every
+Python process an agent started (a tool's `python -c`, a pytest run)
+printed Fabric's autoload warnings on its stderr, which is part of the tool
+result the agent's model reads, so turning capture on changed 8 tool
+results. A process's output is now identical with capture on and off. Read
+the warnings with the new `python -m fabric.wire status`, or set
+`FABRIC_WIRE_DIAGNOSTICS=stderr` to print them. Note the behaviour change:
+the process the operator launches is quiet too, so warnings that used to
+reach its stderr or its logging now appear only through those two routes
+(or `status()` in process). The eBPF emitter now confirms a clock step
+before declaring it, so a step that reverses at once no longer widens the
+declared clock uncertainty, and the reconstruct reader applies each host
+record's own clock uncertainty instead of the widest one its source
+declared (spec 056 revision 10). The operations docs now give Collector
+counters their `_total` names, and the production setup page explains the
+queue-size warning on small hosts. There are no breaking changes.
+
 ### Added
 
 - **`python -m fabric.wire status`.** Run with the agent's environment, it
@@ -3401,7 +3421,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.0...v0.11.1
