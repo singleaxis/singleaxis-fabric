@@ -92,10 +92,12 @@ func capturePointKind(value pcommon.Value) string {
 	return capturePointKinds[id]
 }
 
-// Rule A refuses floats, bytes and nested values instead of rewriting them.
+// Rule A refuses bytes, maps and nested values instead of rewriting them. A scalar
+// double passes the shape check only so its key's validator can decide: a registry
+// "number" check (spec 057 D41, E03) admits it, every other validator refuses it.
 func recordMetadataShape(value pcommon.Value) bool {
 	switch value.Type() {
-	case pcommon.ValueTypeStr, pcommon.ValueTypeInt, pcommon.ValueTypeBool:
+	case pcommon.ValueTypeStr, pcommon.ValueTypeInt, pcommon.ValueTypeBool, pcommon.ValueTypeDouble:
 		return true
 	case pcommon.ValueTypeSlice:
 		values := value.Slice()
