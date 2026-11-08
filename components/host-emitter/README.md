@@ -143,9 +143,9 @@ it, the source stages a manifest declaring the 2 ms base again, once every
 record still pending has been staged, so the narrower manifest only governs
 records stamped after the step and the settle window. A record stamped
 before the step that arrives later still widens the next manifest. The
-reconstruct reader currently applies the widest value a source's manifests
-declare to all of that source's events, so its windows narrow only for an
-export that no longer holds the widened manifests.
+reconstruct reader applies to each record the value of the manifest in force
+for it (by the record's sequence, spec 056 revision 10), so a step widens
+only the records the wider manifest governs, not the whole export.
 
 This does not prove a complete agent transcript. The host sensor sees only its
 enabled, scoped tracepoints and metadata, not command output, file contents,

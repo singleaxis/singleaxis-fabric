@@ -55,6 +55,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `EMIT_CLOCK_SETTLE` work as before. A clock that is really set forward and
   back again is still two steps, since records stamped across either change
   may be off by its size.
+- **The reconstruct reader applies each host record's own clock
+  uncertainty.** Before, it applied the widest value a source's manifests
+  declared to every event of that source, so one clock step widened every
+  eBPF link in a long export (to 67.5 ms in the 0.12.0 acceptance run). Now
+  each host record takes the value of the manifest in force for it: the
+  manifest whose `after_source_sequence` precedes the record's sequence, up
+  to the next manifest (spec 049 §2.4; spec 056 revision 10). The widest
+  value is still used when that manifest cannot be known, for example when
+  a manifest is missing from the export, and for the source's coverage
+  checks. No existing rule fixture changed; the new fixture
+  `edge-clock-per-manifest` covers a base, widened, base sequence.
 
 ## [0.12.0] - 2026-11-08
 

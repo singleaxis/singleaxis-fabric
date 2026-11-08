@@ -806,11 +806,13 @@ with these differences:
   step). Once the offset has been stable for 60 s (`EMIT_CLOCK_SETTLE`) it
   declares the 2 ms base again for later records. Docker Desktop's routine
   8–10 ms resyncs are below the 20 ms step threshold (`EMIT_CLOCK_STEP_MIN`):
-  followed, counted as `clock_small_steps=`, never widening anything. The
-  reader applies the widest value a source's manifests declare to all of
-  that source's events, so read a sleep's runs from an export that starts
-  after the step has settled, or expect a margin of the step's size on that
-  source's host links. Check `docker logs fabric-host-emitter` after a sleep.
+  followed, counted as `clock_small_steps=`, never widening anything. A
+  reading that a second sample at once does not confirm is counted as
+  `clock_rejected_samples=` and also widens nothing. The reader gives each
+  host record the margin of the manifest in force for it, so only the host
+  links of records stamped around the step and during the settle window
+  carry a margin of the step's size; the rest of the export keeps 2 ms.
+  Check `docker logs fabric-host-emitter` after a sleep.
 - **Clock margin.** Each agent process declares
   `FABRIC_CLOCK_UNCERTAINTY_MS` (default 1000) in its manifest. It widens
   comparisons across processes and hosts (an exchange of another epoch, a

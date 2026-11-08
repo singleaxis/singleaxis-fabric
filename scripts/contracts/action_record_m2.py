@@ -58,6 +58,7 @@ E2B_PEER = pv2("hst", E2B_ADDRESS)
 E2B_SANDBOX = "ifx3k9q2m7r1z8w4b6t0"
 START = m1.EXEC_CHILD_START_NS
 TICK = 10_000_000
+CLOCK_EPOCH = 732_467_681_722_995_081  # a sensor epoch (edge-clock-per-manifest)
 
 
 def _beats(every_s: int = 10, until_s: int = 70, **loss: Any) -> list[dict[str, Any]]:
@@ -540,6 +541,45 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         "The agent pod's root was installed after its containers started: the heartbeat of "
         "the first interval reports upstream loss scope_late of unknown count, inside the "
         "run window, so corroboration is partial(source_gap), never complete by omission.")  # fmt: skip
+
+    # Revision 10: each host record takes the clock uncertainty of the manifest in force
+    # for it (spec 049 §2.4), not the widest a source's manifests declare.
+    wide = 2 * MS + 65_537_041  # the 0.12.0 acceptance N2 step
+    s = Scenario("edge-clock-per-manifest")
+    s.host_source(
+        clock_uncertainty_ns=wide,
+        clock_manifests=[
+            {"epoch": CLOCK_EPOCH, "manifest_seq": 0, "after_source_sequence": -1,
+             "clock_uncertainty_ns": 2 * MS},
+            {"epoch": CLOCK_EPOCH, "manifest_seq": 1, "after_source_sequence": 15,
+             "clock_uncertainty_ns": wide},
+            {"epoch": CLOCK_EPOCH, "manifest_seq": 2, "after_source_sequence": 25,
+             "clock_uncertainty_ns": 2 * MS},
+        ],
+    )  # fmt: skip
+    outputs = (
+        "a.txt\nb.txt\nc.txt\n",
+        "4 files in /srv/build\n",
+        "build ok: 3 targets\n",
+    )
+    for n, (printed, sequence) in enumerate(zip(outputs, (10, 20, 30), strict=True)):
+        base = 2500 * n
+        call = f"call_CK{n + 1}"
+        fed = [(f"call_CK{n}", _result(outputs[n - 1]))] if n else []
+        s.exchange(base, base + 900, calls=[(call, "run_shell")], results=fed)
+        s.effect(f"exec sh -c 'step {n + 1}'", base + 1000, stdout=printed, pid=41 + n)
+        # 130 ms after the effect: inside H2's 100 ms window only with the 67.5 ms margin.
+        s.host(f"exec-sh-{n + 1}", "exec", base + 1130, 4121 + n, AGENT_INIT_PID,
+               ns=s.agent_ns(41 + n), source_epoch=CLOCK_EPOCH, sequence=sequence)  # fmt: skip
+    s.exchange(7500, 8400, results=[("call_CK3", _result(outputs[2]))])
+    put(s, ["A1", "H2"],
+        "One source, three manifests of one epoch: the 2 ms base (records 0-15), 67.5 ms "
+        "after a clock step (records 16-25), the base again (from 26). Each effect's exec "
+        "record lies 130 ms after it, outside H2's 100 ms window plus the agent's 1 ms and "
+        "the base 2 ms, inside it with the widened 67.5 ms. Only the record the widened "
+        "manifest governs (sequence 20) anchors its effect; the other two effects are "
+        "anchor_missing. Before revision 10 the source's widest value applied to every "
+        "record and all three anchored.")  # fmt: skip
 
     s = Scenario("edge-sandbox-unlinked")
     s.host_source()

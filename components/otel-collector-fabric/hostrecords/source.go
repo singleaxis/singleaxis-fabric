@@ -450,8 +450,8 @@ func (s *Source) Manifest() (*Batch, error) {
 // stages a manifest declaring it, when ns is wider than the declared value; a
 // narrower value changes nothing (nil batch). The sensor calls it after it
 // detected a CLOCK_REALTIME step: records stamped around the step may be off
-// by the step, and a verifier takes the widest uncertainty a source's
-// manifests declare.
+// by the step. A manifest governs the records staged after it (spec 049
+// §2.4), and the reader applies its value to those records.
 func (s *Source) WidenClockUncertainty(ns int64) (*Batch, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -469,8 +469,8 @@ func (s *Source) WidenClockUncertainty(ns int64) (*Batch, error) {
 // differs from the declared value; an equal value changes nothing (nil
 // batch). The sensor narrows it back after a clock step has settled: the
 // manifest applies to the records staged after it, so the caller stages
-// every record that needs the wider value first. A verifier that takes the
-// widest uncertainty a source's manifests declare is unaffected.
+// every record that needs the wider value first. The reader applies each
+// manifest's value to the records it governs (spec 056 revision 10).
 func (s *Source) DeclareClockUncertainty(ns int64) (*Batch, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

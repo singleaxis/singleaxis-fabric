@@ -36,6 +36,7 @@ from fabric.reconstruct._host import (
     HostSource,
     HostStatus,
     ProcessEffect,
+    governing_clock,
     host_evidence_from_logs,
     host_evidence_from_spans,
     host_joiner,
@@ -1399,3 +1400,71 @@ def test_lineage_follows_a_child_forked_without_exec() -> None:
     assert [trace[e.event_id] for e in (forked, grandchild)] == ["H3", "H3"]
     assert [trace[e.event_id] for e in (stranger, older)] == ["unexplained"] * 2
     assert join.link_counts["process_lineage"]["resolved"] == 2
+
+
+# ------------------------------------------------------------------ revision 10: per-record clocks
+def test_governing_clock_follows_after_source_sequence() -> None:
+    """Spec 049 §2.4: manifest k governs sequences after(k) + 1 up to after(k + 1)."""
+    manifests = {0: (-1, 2 * MS), 1: (15, 67 * MS), 2: (25, 2 * MS)}
+    assert [governing_clock(manifests, seq) for seq in (0, 15, 16, 25, 26, 10_000)] == [
+        2 * MS, 2 * MS, 67 * MS, 67 * MS, 2 * MS, 2 * MS]  # fmt: skip
+
+
+def test_governing_clock_is_unknown_when_the_manifest_may_be_lost() -> None:
+    """A lost manifest may govern the record: the reader falls back (``None``)."""
+    # Manifest 1 lost, manifest 2 known: records after manifest 0's position are unknown,
+    # records after manifest 2's are known.
+    lost = {0: (-1, 2 * MS), 2: (25, 2 * MS)}
+    assert governing_clock(lost, 10) is None
+    assert governing_clock(lost, 30) == 2 * MS
+    # A heartbeat names manifest 2, only 0 and 1 are known: the tail is unknown.
+    known = {0: (-1, 2 * MS), 1: (15, 67 * MS)}
+    assert governing_clock(known, 10) == 2 * MS
+    assert governing_clock(known, 20) == 67 * MS
+    assert governing_clock(known, 20, named=2) is None
+    # Manifest 0 lost: nothing precedes the first records.
+    assert governing_clock({1: (15, 67 * MS)}, 3) is None
+    # Decreasing positions, or an unreadable clock.
+    assert governing_clock({0: (-1, 2 * MS), 1: (15, MS), 2: (9, MS)}, 20) is None
+    assert governing_clock({0: (-1, None)}, 0) is None
+
+
+SOURCE_ID = "s-2c6c641009e36ee2e6587ef29bc3a782"
+
+
+def _manifest_span(seq: int, after: int, clock: int, epoch: int = 7) -> SpanRecord:
+    return SpanRecord(
+        trace_id="a" * 32, span_id=f"{seq + 1:016x}", parent_span_id=None,
+        name="fabric.capture_manifest", start_ns=WINDOW[0], end_ns=WINDOW[0],
+        attributes={
+            "fabric.source_id": SOURCE_ID, "fabric.source.epoch": epoch,
+            "fabric.capture.point": "host.ebpf@0.12.0",
+            "fabric.manifest.capture_points": ["host.ebpf@0.12.0:S:active:0:1:-"],
+            "fabric.manifest.manifest_seq": seq,
+            "fabric.manifest.after_source_sequence": after,
+            "fabric.manifest.clock.uncertainty_ns": clock,
+        },
+        resource={},
+    )  # fmt: skip
+
+
+def test_record_clock_reads_the_manifests_of_the_records_epoch() -> None:
+    """The reader keeps each host manifest's position and clock per (source, epoch); a
+    record of another epoch, or without a position, has no per-record clock; a differing
+    copy of one manifest makes the epoch unknown."""
+    spans = [_manifest_span(0, -1, 2 * MS), _manifest_span(1, 15, 67 * MS),
+             _manifest_span(2, 25, 2 * MS)]  # fmt: skip
+    evidence = host_evidence_from_spans(spans)
+    assert evidence.clock_uncertainty[SOURCE_ID] == 67 * MS
+
+    def at(sequence: int | None, epoch: int | None = 7) -> HostEvent:
+        return HostEvent("e", "host.ebpf", "exec", WINDOW[0], 1, source_id=SOURCE_ID,
+                         epoch=epoch, sequence=sequence)  # fmt: skip
+
+    assert [evidence.record_clock(at(seq)) for seq in (3, 20, 30)] == [2 * MS, 67 * MS, 2 * MS]
+    assert evidence.record_clock(at(20, epoch=8)) is None
+    assert evidence.record_clock(at(None)) is None
+    merged = HostEvidence()
+    merged.extend(evidence)
+    merged.extend(host_evidence_from_spans([_manifest_span(1, 15, 3 * MS)]))
+    assert merged.record_clock(at(20)) is None

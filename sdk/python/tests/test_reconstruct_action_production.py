@@ -162,6 +162,7 @@ class Sensor:
                  stamped: bool = True) -> None:  # fmt: skip
         self.source_id, self.kind, self.host_id, self.stamped = source_id, kind, host_id, stamped
         self.sequence = 0
+        self.manifests = 0  # manifests staged so far
         self.rows: list[dict[str, Any]] = []
         self.ids = 0
 
@@ -180,12 +181,16 @@ class Sensor:
         self.rows.append(row)
         return row
 
-    def manifest(self, time_ns: int) -> None:
+    def manifest(self, time_ns: int, clock_ns: int = CLOCK_NS) -> None:
+        """The next manifest, effective after the positions allocated so far (049 §2.4)."""
         self._span("fabric.capture_manifest", time_ns, {
-            "fabric.capture.manifest_id": self._uuid(), "fabric.manifest.manifest_seq": 0,
+            "fabric.capture.manifest_id": self._uuid(),
+            "fabric.manifest.manifest_seq": self.manifests,
+            "fabric.manifest.after_source_sequence": self.sequence - 1,
             "fabric.manifest.capture_points": [f"{self.kind}@0.11.0:S:active:0:1:-"],
-            "fabric.manifest.clock.uncertainty_ns": CLOCK_NS,
+            "fabric.manifest.clock.uncertainty_ns": clock_ns,
         })  # fmt: skip
+        self.manifests += 1
 
     def heartbeats(
         self, first: int, last: int, every: int = 10 * S,
@@ -199,7 +204,8 @@ class Sensor:
             attrs: dict[str, Any] = {
                 "fabric.heartbeat.kind": "periodic",
                 "fabric.heartbeat.last_sequence": self.sequence - 1,
-                "fabric.capture.manifest_seq": 0, "fabric.event_id": self._uuid(),
+                "fabric.capture.manifest_seq": self.manifests - 1,
+                "fabric.event_id": self._uuid(),
                 "fabric.sensor.upstream_lost": 0,
             }  # fmt: skip
             if index in (at_index or {}):
@@ -309,6 +315,8 @@ def _event_entry(event: HostEvent) -> dict[str, Any]:
         value = getattr(event, name)
         if value is not None:
             entry[name] = value
+    if event.epoch is not None and event.sequence is not None:
+        entry.update(source_epoch=event.epoch, sequence=event.sequence)
     return entry
 
 
@@ -334,8 +342,20 @@ def fixture_input(plan: HostPlan, inp: Mapping[str, Any]) -> dict[str, Any]:
             entry["host_id"] = source.host_id
         beats = [b for b in plan.evidence.heartbeats if b.source_id == source.key]
         if source.key in plan.evidence.heartbeat_rule:
-            entry["heartbeats"] = [{"time_ns": b.time_ns, "upstream_lost": b.upstream_lost}
-                                   for b in beats]  # fmt: skip
+            entry["heartbeats"] = [
+                {"time_ns": b.time_ns, "upstream_lost": b.upstream_lost, "epoch": b.epoch,
+                 **({} if b.manifest_seq is None else {"manifest_seq": b.manifest_seq})}
+                for b in beats
+            ]  # fmt: skip
+        manifests = [
+            {"epoch": epoch, "manifest_seq": seq, "after_source_sequence": after,
+             **({} if clock is None else {"clock_uncertainty_ns": clock})}
+            for (sid, epoch), known in sorted(plan.evidence.clock_manifests.items())
+            if sid == source.key
+            for seq, (after, clock) in sorted(known.items())
+        ]  # fmt: skip
+        if manifests:
+            entry["clock_manifests"] = manifests
         else:
             entry["verified"] = bool(source.verified)
         kinds = plan.evidence.manifest_kinds.get(source.key)
@@ -559,6 +579,43 @@ def test_heartbeats_verify_a_production_source(
     assert expected["trace"]["host_sources"][SOURCE_A]["verified"] is verified
     assert ("source_gap" in only_run(report)["chains"]["corroboration"].get("reasons", ())) is (
         not verified)  # fmt: skip
+
+
+def test_each_host_record_takes_the_clock_of_its_manifest(capture: ExecCapture) -> None:
+    """Spec 056 revision 10 on an export: a source declares the 2 ms base, then 67.5 ms
+    after a clock step, then the base again. Three exec records match the ls effect's
+    pids without a start time, one under each manifest, 130-132 ms after the effect. Only
+    the record the widened manifest governs is inside H2's window, so it is the anchor;
+    with the source's widest value on every record all three were candidates and the
+    first (an exec chain's first record) anchored. The report equals the reference's over
+    the same input."""
+    ids = agent_run(capture, docker=False)
+    first, last = window(capture)
+    ls = started(capture, ids["ls"])
+    wide = CLOCK_NS + 65_537_041
+    sensor = Sensor(SOURCE_A)
+    found = {}
+    for n, clock in enumerate((CLOCK_NS, wide, CLOCK_NS)):
+        sensor.manifest(first - 5 * S if n == 0 else ls + n * MS, clock)
+        found[n] = sensor.event(
+            "execve", ls + 130 * MS + n * MS, 4121, AGENT_INIT_PID,
+            ns_pid=41, ns_ppid=AGENT_PID, pid_ns=AGENT_NS, scope="agent",
+        )  # fmt: skip
+    sensor.heartbeats(first - 4 * S, last + 20 * S)
+    plan = plan_for(ids)
+    report, reader = run_export(capture, export(capture, [sensor]), plan)
+    (inp,) = plan.inputs
+    assert inp["agent"]["clock_uncertainty_ns"] + CLOCK_NS + 132 * MS > 100 * MS + 30 * MS
+    assert inp["agent"]["clock_uncertainty_ns"] < 28 * MS  # the base keeps 130 ms outside
+    expected = assert_report_equals_reference(report, reader, plan)
+    assert expected["trace"]["anchors"][ids["ls"]] == "H2"
+    assert expected["trace"]["host_events"][found[1]] == "H2"
+    assert plan.evidence.clock_uncertainty[SOURCE_A] == wide
+    widest = fixture_input(plan, inp)
+    for source in widest["host_sources"]:
+        source.pop("clock_manifests", None)
+    old = REFERENCE.reconstruct(widest, lambda raw: raw)
+    assert old["trace"]["host_events"][found[0]] == "H2"  # the first of an exec chain
 
 
 def test_a_missing_position_in_the_window_is_a_source_gap(capture: ExecCapture) -> None:
