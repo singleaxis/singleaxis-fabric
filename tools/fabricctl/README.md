@@ -82,7 +82,7 @@ make race
 same default target that is shipped:
 
 ```sh
-make build VERSION=0.11.2 COMMIT="$(git rev-parse HEAD)" DATE=2026-08-31T00:00:00Z
+make build VERSION=0.12.0 COMMIT="$(git rev-parse HEAD)" DATE=2026-08-31T00:00:00Z
 ./bin/fabricctl help
 ./bin/fabricctl version
 ```

@@ -82,7 +82,7 @@ sleep 2
 step "Running the demo agent"
 cd "$(dirname "$0")"
 python3 -m venv .venv
-./.venv/bin/pip install -q "singleaxis-fabric[otlp]==0.11.2"
+./.venv/bin/pip install -q "singleaxis-fabric[otlp]==0.12.0"
 if [[ $MOCK -eq 0 ]]; then
   ./.venv/bin/pip install -q anthropic
 fi
