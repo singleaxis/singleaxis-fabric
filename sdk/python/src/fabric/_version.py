@@ -2,4 +2,4 @@
 # SPDX-License-Identifier: Apache-2.0
 """SDK build version, verified against the repository ``VERSION`` file."""
 
-__version__ = "0.12.0"
+__version__ = "0.12.1"
