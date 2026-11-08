@@ -1,8 +1,8 @@
 ---
 title: Security context recording — permissions, control decisions, hooks and extensions, captured at the boundaries every agent crosses (record-only)
-status: draft
+status: accepted
 qualification: NO_COVERAGE_CLAIM
-revision: 2
+revision: 3
 last_updated: 2026-11-09
 owner: recorder-engineering
 depends_on: ["049", "050", "051", "052", "053", "056"]
@@ -15,14 +15,17 @@ related: ["022", "028", "030", "031", "047", "055"]
 
 | Rev | Date | Change |
 |---|---|---|
+| 3 | 2026-11-09 | **Accepted.** The owner replied "I accept your recommendations" to every open question of rev 2. Section 12 is now the owner decisions table: OD-n is rev 2 open question n, each marked *Accepted by owner 2026-11-09*, and every "open question n" reference in the text now points at OD-n with the decision applied (MCP over stdio via the 053 transport hook for Python, never a relay; external judge scores out; legacy v1 verdict shapes replaced by the control decision record; denial markers; instructions `off` by default in production; the 053 sensor amendment; and the rest). Status `draft` → `accepted`. **New section 4.10, code-level permissions**, answering the owner's question of how permission decisions made inside the agent's own code are captured: layer 1 observed effect and configured denial markers (zero code change), layer 2 declared rule files (watched opens and an operator snapshot), layer 3 one reported line per check, with a `control_check` wrapper (decorator or context manager) and offline auto-linking to the single pending tool call. Wired into the records (5.3), joins and action view (6.1, 6.2), phases (P0: wrapper, auto-linking and the `AGENTS.md` change; P1: denial markers; P3: operator snapshot as WP7-17) and a new acceptance run SC-CP (10.1, 10.2). Details rev 3 had to choose inside the accepted decisions are listed in 12.1. |
 | 2 | 2026-11-09 | **Framework-agnostic rewrite.** Owner correction of 2026-11-09: "Please do not fixate on a particular framework. We should be a generalized capture layer which tries to trace everything an agent does and not get fixated on a particular framework." This restates the standing rule (since 2026-10): capture the model wire and generic I/O, not framework hooks. Most real agents are hand-written tool loops or customer workflows that no adapter covers. Rev 1 broke the rule: its P1 and P2 phases were built around adapters for named agent SDKs, a coding agent and named guardrail libraries. Changes: capture sources rebuilt around six generic boundaries (section 4); every framework adapter removed from the phases, which are now ordered by boundary (section 10); every record field marked observed, reported or inferred per boundary, with additions so that grants derived from the wire and denials observed at the OS fit (section 5); new mechanical facts F12–F14; zero-code coverage stated plainly (4.8); open questions rewritten (section 12); new rule B9 (no framework dependency); the `AGENTS.md` proposal now names boundaries. |
 | 1 | 2026-11-09 | First draft, from the owner's direction of 2026-11-08 ("we shouldn't focus on control. We just focus on recording all of that to be able to monitor it from a security angle as well"). |
 
-**Status: draft; not built.** Every field, key, vocabulary value, schema
-and configuration key below is a proposal. Contract changes are applied
-only by the P0 contract work package (WP7-0, section 10.1), after owner
-approval. This spec changes no code and does not edit `AGENTS.md`. The
-proposed `AGENTS.md` wording is in section 11.
+**Status: accepted (revision 3), approved by the owner 2026-11-09; not
+built.** Every recommendation of rev 2 was accepted as written (section
+12). Fields, keys, vocabulary values, schemas and configuration keys below
+are the accepted design. Contract changes are applied only by the P0
+contract work package (WP7-0, section 10.1). This spec changes no code and
+does not edit `AGENTS.md`. The approved `AGENTS.md` wording (section 11)
+lands with P0 (WP7-3).
 
 ---
 
@@ -81,7 +84,8 @@ Four records carry the facts:
 
 - the agent's declared permission rules;
 - any decision its own code makes in process (a permission callback, a
-  library guardrail, an approval held in memory);
+  library guardrail, an approval held in memory): one `record_control`
+  line, or a `control_check` wrapper around the existing check (4.10);
 - in-process hook callbacks;
 - what a hook *decided*;
 - a control's mode;
@@ -89,7 +93,11 @@ Four records carry the facts:
 
 Plainly: with zero code changes Fabric records what the agent was
 **offered** and what the OS, the network and the provider **allowed or
-refused**. It does not record what the agent's own code decided.
+refused**. For a permission check in the agent's own code, it records what
+the code answered the model and whether any effect followed, and a refusal
+when the customer has listed the exact text its code writes. It does not
+record which rule decided. **One line per check** records the decision
+itself (section 4.10).
 
 Questions 2 and 3 are **downstream analysis** over these records, done
 outside the OSS recorder. Fabric captures both halves that analysis needs:
@@ -100,7 +108,7 @@ states a violation.
 
 Question 5 (judges) is answered in 5.6. A judge call the agent makes itself
 is already recorded as a model call. A score from an external evaluator
-stays out of the OSS record (open question 1).
+stays out of the OSS record (OD-1).
 
 ## 1. Background
 
@@ -116,6 +124,10 @@ stays out of the OSS record (open question 1).
 - **2026-11-09:** "Please do not fixate on a particular framework. We
   should be a generalized capture layer which tries to trace everything an
   agent does and not get fixated on a particular framework."
+- **2026-11-09 (later):** "I accept your recommendations" for every open
+  question of rev 2 (section 12). The owner also asked how permission
+  decisions made inside the agent's own code are captured; section 4.10
+  answers.
 
 So Fabric **records**, and records **at generic boundaries**. It never
 evaluates, blocks, delays, modifies or approves anything, and it runs no
@@ -139,9 +151,10 @@ or applied decisions about the agent.
 The v1 shapes `fabric.policy.evaluation` (engine, policy id, decision
 allow/deny/warn/escalate/redact, input hash, latency, reason),
 `fabric.tool.authorization` (tool name, allow/deny, reason, arguments hash)
-and `fabric.escalation` were **not** deprecated in v0.9. Whether they follow
-the guardrail path is still an open owner decision
-(`docs/api-stability.md`). Section 9.3 proposes the answer.
+and `fabric.escalation` were **not** deprecated in v0.9. `docs/api-stability.md`
+listed whether they follow the guardrail path as an open owner decision.
+OD-11 decides it: they follow it, and are replaced by the control decision
+record (9.3).
 
 They were removed for two reasons:
 
@@ -181,7 +194,7 @@ already define. It reuses them and adds only what is missing.
 | Provider refusal and finish reason | 049 `N06` refusal, `N07` finish reasons | built (non-stream), P1 (stream) | A provider-neutral safety-signal map that projects control rows (4.1) |
 | Declared permissions | 049 `C30`–`C33`; 051 `record_run_context` | specified (P2), not built | A structured declared-grant document, change events, a keyed digest, counts on telemetry, per-element protection (5.2) |
 | Non-model HTTP bodies | 053 §5.4 `http.nonmodel` (Python httpx, `FABRIC_WIRE_HTTP_HOSTS`); `jsonrpc2` dialect | hook built (v0.11); dialect specified | An `mcp` method layer over `jsonrpc2` (4.2); control-endpoint classification (4.4) |
-| MCP transport | 053 §5.5 `mcp.client` (WP4-06a), 049 `C25`–`C29`, `N22`–`N25` | specified, not built (`FABRIC_WIRE_MCP` is in `NOT_IN_BUILD_ENV`) | Annotation counts, user-confirmation rows, listed grants (4.2, open question 4) |
+| MCP transport | 053 §5.5 `mcp.client` (WP4-06a), 049 `C25`–`C29`, `N22`–`N25` | specified, not built (`FABRIC_WIRE_MCP` is in `NOT_IN_BUILD_ENV`) | Annotation counts, user-confirmation rows, listed grants (4.2); WP4-06a pulled into 057 P1 for stdio (OD-4) |
 | Subprocesses | 053 §5.1 `exec.subprocess` (argv, exit code, signal, timing) | built (v0.10, Python) | Hook-program classification, exit-code maps, spawn-time OS refusals (4.3) |
 | Host sensor | 053 §6.2 `host.auditd` (syscall result and errno), `host.ebpf` (`sched_process_exec`, `sys_enter_connect`, `sys_enter_openat`) | built (v0.11) | Watched-path labels, OS-refusal projection; eBPF exit tracepoints and process exit (4.3) |
 | Control decisions | 049 `D01`–`D11`, 052 `record_control`, `ControlObservation` v1 | keys admitted; API specified in 052; not built | Stage, engine, gated call, latency, reason code, mode, grant, error class, evidence ref, derivation, safety signal (5.3) |
@@ -229,7 +242,7 @@ Each rule has a test that enforces it (section 10).
 | B6 | **No evaluation in the reader.** The reader never matches a call against a grant rule, never labels a record a violation, and prints only the closed fact list of 6.3. Every inference it makes is one of the mechanical inferences in 3.8. | Reader golden tests; a word scan of reader output for `violation`, `unauthori`, `non-compliant`, `breach`, `policy failure` |
 | B7 | **No control artifact.** No release artifact compiles, bundles, installs or advertises a guardrail, policy engine, judge or approval flow. | Existing `test_no_artifact_gains_an_evaluator_policy_or_enforcement_component` and `test_recorder_documentation_scope.py`; extended in 10.1 |
 | B8 | **Opt-in capture points.** Every capture point, classification list, mapping profile and receiver in this spec is off by default and published in the capture manifest with its state. | Manifest tests |
-| B9 | **No framework dependency.** No capture point in this spec imports, patches, or is named after an agent framework, agent SDK or guardrail library. Classification (which hosts are control endpoints, which programs are hooks, which paths are configuration) is customer configuration, never a built-in list of products. No release artifact ships a vendor-specific mapping profile. | Import-graph test over new modules (stdlib, `fabric`, and the already-qualified transport libraries only); a capture-point name pattern test (`^(records\|reconstruct\|wire\|http\|mcp\|exec\|host\|otlp\|classify)\.[a-z0-9_.]+$`); a release-content test that no mapping profile or classification list ships in an artifact |
+| B9 | **No framework dependency.** No capture point in this spec imports, patches, or is named after an agent framework, agent SDK or guardrail library. Classification (which hosts are control endpoints, which programs are hooks, which paths are configuration) is customer configuration, never a built-in list of products. No release artifact ships a vendor-specific mapping profile. | Import-graph test over new modules (stdlib, `fabric`, and the already-qualified transport libraries only; the MCP protocol library joins that list when 053 WP4-06a qualifies it, OD-4); a capture-point name pattern test (`^(records\|reconstruct\|wire\|http\|mcp\|exec\|host\|otlp\|classify)\.[a-z0-9_.]+$`); a release-content test that no mapping profile or classification list ships in an artifact |
 
 ### 2.2 Naming constraint from the release-boundary test
 
@@ -331,10 +344,10 @@ adds no capture point and no request-path work (B2).
 | `tool_choice` and allowed-tool restrictions in the request (`C38`) | The restriction in force for that call: mode `auto`/`none`/`required`/`specific`/`allowed_subset`, the size of an allowed subset, and the parallel-tool-call setting. Examples: OpenAI-compatible `tool_choice` including an allowed-tools subset; Anthropic `tool_choice` with `disable_parallel_tool_use`. | grant fields `G13`, `G14` | observed · application |
 | System and developer instructions (`C19`, `C20`) | Referenced from the offered grant by digest only. The instructions themselves stay governed content in `model.request.instructions` (7.1). | grant field `G15` | observed · application |
 | Provider safety signals in responses | Control rows, `kind=provider_safety`, through the closed map below | control | observed · provider |
-| Tool results returned to the model | A structured error flag where the dialect has one (for example Anthropic `tool_result.is_error`). It is a literal flag, not a denial. Denial *text* is not parsed by default. A customer may configure exact marker strings that its own tool layer writes (`tool_result_markers`). A match projects a control row with derivation `configured_marker`, provenance `inferred`, confidence `certain` (open question 6). | fact F14; control (opt-in) | observed (flag); inferred (marker) · application |
+| Tool results returned to the model | A structured error flag where the dialect has one (for example Anthropic `tool_result.is_error`). It is a literal flag, not a denial. Denial *text* is not parsed by default. A customer may configure exact marker strings that its own tool layer writes (`tool_result_markers`). A match projects a control row with derivation `configured_marker`, provenance `inferred`, confidence `certain` (OD-6; matching rules in 4.10.1). | fact F14; control (opt-in) | observed (flag); inferred (marker) · application |
 | Tool calls in responses vs tools offered in the same request | Fact F12 `tool_called_not_offered`: set membership on literal names | fact | inferred · certain |
 
-**Provider safety-signal map** (proposed contract file
+**Provider safety-signal map** (contract file
 `contracts/coverage/v1/registry/provider-safety-map-v1.json`). Each row
 maps a literal response field to a provider-neutral `control.signal`
 (`D48`), a stage and a decision:
@@ -380,8 +393,9 @@ Rules for the map:
   content is visible only through what it returns in the response.
 - **Cost.** No new bytes are captured. The tool definitions are already
   inside each stored request, so the cost is storage of repeated
-  definitions (open question 2). Projection de-duplicates snapshots by
-  digest.
+  definitions. OD-2: keep exact bytes and de-duplicate only the derived
+  snapshots by digest; measure real runs, and take content-addressed
+  storage of the `tools` sub-object to 048 only if they show it matters.
 
 ### 4.2 M — MCP and other tool protocols on the wire
 
@@ -416,13 +430,15 @@ protocol level covers every MCP client, whatever framework sits above it.
   second consumer. So **exec and HTTP capture cannot see stdio MCP
   content.** What they do give is the server's identity as a process
   (`extension` with `observed_via=process_launch`, keyed `source_ref` of
-  the command) and its lifetime. Three options for the content (open
-  question 4):
-  - (a) build 053 §5.5 WP4-06a. It hooks the MCP protocol library's
-    transport serialise and parse boundary. That is a protocol library,
-    the same class as an HTTP client, not an agent framework, so it covers
-    every agent built on that library in that language. It is pinned per
-    library version.
+  the command) and its lifetime. Three options were weighed for the
+  content; **OD-4 chose (a) for Python**, with other languages
+  `not_captured`, and never a relay:
+  - (a) build 053 §5.5 WP4-06a, pulled forward into 057 P1 (WP7-8). It
+    hooks the MCP protocol library's transport serialise and parse
+    boundary. That is a protocol library, the same class as an HTTP
+    client, not an agent framework, so it covers every agent built on that
+    library in that language. It is pinned per library version, with
+    053's budgets and identity rules.
   - (b) an inline relay wrapped around the server command. **Excluded**:
     it sits in the byte path, so its failure would break the agent (B1,
     B3).
@@ -439,8 +455,10 @@ marker, and `http.nonmodel` excludes that traffic (053 §5.4 route 2), so
 nothing is recorded twice.
 
 **Limits of M.** Server-side authorisation and server internals are
-invisible (049 §1.4). Annotations are hints. stdio content needs option
-(a). The HTTP path covers Python httpx today. An MCP client in another
+invisible (049 §1.4). Annotations are hints. stdio content is captured
+for Python only, through the transport hook (OD-4, P1); in any other
+language it is `not_captured(not_exposed)`. The HTTP path covers Python
+httpx today. An MCP client in another
 language is seen only as processes and connects (P, N).
 
 ### 4.3 P — process and OS
@@ -467,8 +485,8 @@ the outcome is `inferred`, derivation `configured_exit_map`, confidence
 rules (inferred; `tentative` unless the anchor is exact).
 
 **OS-level refusals are observed evidence that something was not
-allowed.** The closed set projected as control rows (`kind=os_access`,
-`phase=observation`, `decision=deny`, engine `kernel`):
+allowed.** The closed set projected as control rows (OD-14;
+`kind=os_access`, `phase=observation`, `decision=deny`, engine `kernel`):
 
 | Evidence | Source today | Projected `reason_code` |
 |---|---|---|
@@ -482,7 +500,7 @@ allowed.** The closed set projected as control rows (`kind=os_access`,
   and a seccomp `ERRNO` action look identical from errno.
 - "The kernel refused" is not a policy statement.
 
-**New sensor work (amends 053 §6.2; P2).** Today's eBPF emitter attaches
+**New sensor work (amends 053 §6.2, OD-13; P2).** Today's eBPF emitter attaches
 to `sys_enter_connect` and `sys_enter_openat` and to `sched_process_exec`,
 which fires only on success. It therefore records `fabric.sensor.result =
 unknown` for connect and open, and never sees a failed exec or a process
@@ -516,7 +534,7 @@ open *the agent made*. It never opens, reads, stats, hashes or watches the
 file itself, and the file's content is not captured. The content of a
 permission file reaches the record only as `reported`: through the
 explicit grant API, through OTLP, or through an operator-run snapshot
-outside the agent process (open question 8).
+outside the agent process (OD-8; 4.10.2).
 
 **Limits of P.**
 
@@ -583,7 +601,9 @@ OpenTelemetry sends it to the Node's authenticated OTLP receiver.
     profiles recorded from real emitters live only in test fixtures.
 - Where the OpenTelemetry GenAI semantic conventions define an attribute
   for the same fact (for example a tool name), the neutral mapping lists
-  it as an accepted source key (open question 12).
+  it as an accepted source key. OD-12: one pinned semconv version,
+  accepted as source keys only and never emitted as Fabric's own keys;
+  WP7-14 pins it.
 
 Provenance is always `reported` (3.3), with origin as the emitter declares
 it.
@@ -609,10 +629,10 @@ All are passive and never raise. Provenance is `reported`.
 - the declared permission rules, filesystem and network scopes, credential
   scopes, approval mode and permission mode held in the agent's
   configuration or code;
-- a permission callback, allow-list check or approval prompt implemented
-  as a function in the agent's process (no subprocess, no network, no
-  syscall refusal), unless the agent tells the model through a tool result
-  that matches a configured marker;
+- the decision of a permission callback, allow-list check or approval
+  prompt implemented as a function in the agent's process (no subprocess,
+  no network, no syscall refusal), beyond what the agent tells the model in
+  a tool result and a configured denial marker can state (4.10);
 - a guardrail library that runs in process without calling a model or a
   listed endpoint (a regex, a local classifier);
 - an in-process hook callback and what it decided;
@@ -638,6 +658,9 @@ available from that boundary.
 | Q4 provider safety filter | O | — | — | — | R | R |
 | Q4 guardrail service on a listed host | — | — | — | contact O; decision I (configured) | R | R |
 | Q4 in-process guardrail library | — | — | — | — | R | R |
+| Q2 in-code permission check: what the code answered, whether an effect followed | O (tool result) | — | O (effect, 056) | O (effect, 056) | — | R |
+| Q2 in-code permission check: the decision | I (configured denial marker; refusals only) | — | — | — | R | R (one line or wrapper, 4.10.3) |
+| Q1 contents of a declared rule file | — | — | open O; content R (operator snapshot, 4.10.2) | — | R | R |
 | User confirmation | — | O (elicitation) | — | approval service: contact O | R | R |
 | Q5 judge call the agent makes | O (as a model call) | — | — | — | R | R |
 | Q6 hook program ran, exit code, timing | — | — | O | — | R | R |
@@ -655,7 +678,8 @@ over stdio, and a hook script it runs before shell commands.
 
 **The configuration** (zero code changes is not zero configuration):
 
-- the Fabric autoload, with `FABRIC_WIRE_EXEC=1`;
+- the Fabric autoload, with `FABRIC_WIRE_EXEC=1` and, after P1,
+  `FABRIC_WIRE_MCP=1` for the stdio server;
 - the MCP and control hosts in `FABRIC_WIRE_HTTP_HOSTS` and
   `control_hosts`, with the `network.*` roles retained for the MCP host;
 - `hook_programs` and `watched_paths`;
@@ -671,8 +695,11 @@ over stdio, and a hook script it runs before shell commands.
 - tool results fed back with a structured error flag (F14);
 - the HTTP MCP server's identity, version, tools, annotation counts,
   inventory changes, calls, errors and user confirmations;
-- the stdio MCP server as a process (launch, lifetime, exit), but **not**
-  its messages unless open question 4 resolves to (a);
+- the stdio MCP server as a process (launch, lifetime, exit), and, for a
+  Python agent after P1, its messages through the MCP transport hook
+  (OD-4);
+- every tool result the agent's code returned, byte-exact, and a
+  permission refusal wherever a configured denial marker matches (4.10.1);
 - the hook script's runs: argv (protected), exit code, timing, and the
   outcome when an exit map is configured;
 - OS refusals (EACCES and EPERM on exec, open and connect; SIGSYS kills)
@@ -683,10 +710,12 @@ over stdio, and a hook script it runs before shell commands.
   process opened (labels only).
 
 **Not recorded without the explicit API:** everything in the list in 4.6.
-In particular, a plain agent whose permission check is an `if` statement
-in its own loop leaves no trace of that check. Fabric sees that the model
-asked for the tool, and that no effect followed (056 `effect_not_observed`),
-but not why.
+In particular, when a plain agent's permission check is an `if` statement
+in its own loop, Fabric sees that the model asked for the tool, what the
+code answered, and that no effect followed (056 `effect_not_observed`).
+It states a refusal only when a configured denial marker matches, and it
+never knows which rule decided. Section 4.10 sets out the three layers and
+the one line that closes the gap.
 
 **Other languages.**
 
@@ -703,7 +732,9 @@ but not why.
   OTLP.
 - **Fabric hooks inside a runtime's hook chain.** A synchronous hook adds
   start-up time to every tool call and can return a decision, which breaks
-  B1 and B4 (open question 9).
+  B1 and B4 (OD-9: never).
+- **Finding permission checks in application code.** No monkeypatching,
+  import hook or automatic wrapping of customer functions (4.10.3).
 - **An inline relay for MCP stdio**, and **reading pipes** (4.2).
 - **Free-text inference** from tool results or response text. Only
   structured flags and customer-configured exact markers are used.
@@ -712,6 +743,258 @@ but not why.
 - **Reading configuration files**, in process or from the sensor.
 - **TLS interception**, and reading request or response headers (049
   §1.4).
+
+### 4.10 Permission checks inside the agent's own code
+
+**The question.** Many agents decide permissions in their own code: an
+`if` before a tool runs, a role lookup, an allow-list, a call into a
+permission helper. Nothing crosses a boundary: no model call, no network
+request, no process, no syscall refusal. How does Fabric capture those
+decisions, without depending on the framework the agent is built with?
+
+**The answer, in three layers.** Each layer adds to the one before. A
+deployment can stop at any layer, and none of them names, imports or
+patches a framework (B9).
+
+| Layer | Code change | What a reviewer learns | Provenance |
+|---|---|---|---|
+| 1 Observed effect | none | which tools the agent was offered, what the model asked for, what the code answered, whether anything happened; a refusal when the customer's own denial text matches | observed; a marker match is inferred |
+| 2 Declared rules | none | which permission and policy files the agent loaded, and what they said when the operator snapshotted them | observed (the open); reported (the snapshot) |
+| 3 Reported decision | one line per check | which check decided, what it decided, why, how long it took, and which tool call it gated | reported; the link is reported or inferred |
+
+#### 4.10.1 Layer 1 — observed effect (zero code change)
+
+Wire capture (W) and the effect channels (P and N through 056) already
+record four things around every tool call, whatever the code in between
+does:
+
+1. **The tools offered on each request.** When the agent filters its
+   tools by role, tenant or context before calling the model, the
+   filtering shows as the offered set: one offered grant per distinct set
+   (5.2), a grant-change row whenever the set changes (F2), and F12 if the
+   model names a tool outside it. Fabric records the result of the
+   filtering, never the rule behind it.
+2. **The model's tool call**: tool name, arguments (protected) and the
+   provider's tool-call id (049 `C21`–`C23`; 056).
+3. **The tool result the code returned for that call.** The agent sends it
+   back to the model on the next request, so it is captured byte-exact in
+   that request's bytes and joined to the call by the provider tool-call id.
+   A refusal message the code returned ("permission denied: /etc") is in
+   the record exactly as the model saw it. A structured error flag gives
+   F14.
+4. **Whether any effect followed**: a process, file or network effect
+   attributed to the call (056), or `effect_not_observed` when the enabled
+   effect channels saw nothing.
+
+**Denial markers (OD-6; opt-in, off by default).** The customer may list
+the exact text its own code writes into a tool result when it refuses a
+call (`tool_result_markers` in the capture policy's `security_context`
+section). Each entry has:
+
+- `label`: the customer's name for the check that writes it; it becomes
+  `control.engine.name` (D38);
+- one matching rule, byte-exact and case-sensitive:
+  - `equals`: the tool result's text is exactly the marker;
+  - `prefix`: the tool result's text begins with the marker;
+  - `json`: an RFC 6901 pointer into a JSON tool result, and the literal
+    values at that pointer that mean a refusal;
+- optional `kind` (default `permission_check`), `decision` (`deny`, the
+  default, or `escalate`; a marker never states `allow`) and
+  `reason_code`.
+
+The reader applies the list offline (B2) to the tool results in stored
+request bytes. A match projects one control row:
+
+- kind from the entry, phase `observation`, decision from the entry,
+  stage `unknown`, gated kind `tool_call`;
+- `gated_tool_call_id` (D40) = the call the result answers, link
+  `provider_id`, certain;
+- derivation `configured_marker`, provenance `inferred`, confidence
+  `certain`: the bytes match exactly, and the meaning is the customer's
+  own declaration;
+- `evidence_ref` (D47) = the request exchange that carried the result;
+  `decided_by` `unknown`; `mode` `unknown`.
+
+There is no regular expression, no search anywhere inside the text, no
+case folding, no language model and no built-in marker list. A near miss
+produces nothing. A result that matches no marker produces nothing, and
+never an `allow`.
+
+**Limits of layer 1.**
+
+- **Which rule and which identity decided are not known.** Layer 1 shows
+  that the code refused (a marker matched) or that nothing happened (no
+  effect observed). It does not show which rule, role or user caused it.
+- A refusal written as free-form text that matches no marker is visible
+  only as the tool result itself and an absent effect. Fabric does not
+  interpret it.
+- If the agent stops after a refusal and never calls the model again, the
+  tool result is never sent and is not captured.
+- "No effect observed" is evidence of absence only for the effect channels
+  the manifest says were enabled (056 §4.5).
+- An action the code takes without the model asking for it has no tool
+  call to attach a decision to.
+
+#### 4.10.2 Layer 2 — declared rules (zero code change)
+
+- **Which rule files the agent loaded.** The customer lists its permission
+  and policy files in `watched_paths` with class `permission_config`
+  (4.3). Each open the agent's process makes is recorded from the host
+  sensor or auditd with the customer's label and a keyed `pth-` id, never
+  the path (P2). Fabric does not open, read or hash the file itself.
+- **What they said.** An operator-run snapshot, outside the agent process
+  (OD-8; a `fabricctl` subcommand, WP7-17, P3), reads the listed files and
+  records each as a `declared` grant snapshot:
+  - `source.boundary` = `operator_snapshot`, provenance `reported`;
+  - the file's keyed `pth-` id, so it joins to the watched opens;
+  - its content digest (G11), only where the capture policy permits
+    digests;
+  - its contents verbatim, in the runtime's own syntax, in
+    `run.permissions`, only when the capture policy names that role (7.1).
+- **In the reader**, each watched open in a run is shown with the latest
+  snapshot of the same `pth-` id and the time between the snapshot and the
+  open (link method `path_ref`).
+
+**Limits of layer 2.** A snapshot shows the file at snapshot time, not at
+the moment of the open; the reader shows the gap and never assumes the
+content was the same. The rules are recorded verbatim and never parsed or
+applied to calls (B6). Rules held in code, a database or a remote service
+are not files, and layer 2 does not cover them.
+
+#### 4.10.3 Layer 3 — reported decision (one line per check)
+
+One line placed at the check records the decision:
+
+```python
+from fabric import records
+
+if not acl.can_write(user, path):
+    records.record_control(kind="permission_check", control="fs-write",
+                           decision="deny", reason_code="path.outside_root")
+    return "permission denied"
+```
+
+Or the existing check function is wrapped, so its return value or
+exception becomes the decision without touching its body:
+
+```python
+@records.control_check(kind="permission_check", control="fs-write")
+def can_write(user, path) -> bool:          # body unchanged
+    ...
+
+with records.control_check(kind="permission_check", control="shell",
+                           exit_means="allow"):
+    require_shell_access(user)              # raises PermissionError to refuse
+```
+
+- `record_control` is 052's function with the 5.3 additions. In this form
+  `phase` defaults to `observation` and `decision` to `unknown`; 052's
+  positional order is unchanged.
+- `control` is the customer's label for the check, recorded as
+  `control.engine.name` (D38). `kind` is usually `permission_check`
+  (added in 5.3).
+- Any other 5.3 argument may be passed: `reason`, `decided_by`, `grant`,
+  `gated_tool_call_id`, `stage`.
+
+**How the wrapper turns an outcome into a decision.** The mapping is
+closed and mechanical:
+
+| Outcome of the wrapped check | Decision | Other fields |
+|---|---|---|
+| returns `True` | `allow` | |
+| returns `False` | `deny` | |
+| returns a value listed in the wrapper's `decision_map` (a literal map, for example `{"granted": "allow", "denied": "deny"}`) | the mapped value | |
+| returns anything else | `unknown` | never `allow` |
+| raises an exception whose class is in `deny_on` (default `(PermissionError,)`) | `deny` | `reason_code` `exception.<class name, lower-cased>` unless one is given |
+| raises any other exception | `error` | `error_class` `exception` |
+| context manager, block exits normally | `allow` when `exit_means="allow"` was passed; otherwise the value assigned to `check.result`, mapped as above; otherwise `unknown` | |
+
+Latency (D41) is measured from entry to exit, timing basis `measured`.
+Derivation (D49) is `wrapped_check`. `async def` checks are wrapped the
+same way. Any other kind of callable is called unwrapped and counted
+(`records.unsupported_callable`), with no record.
+
+**Passivity.** B1–B4 apply to the wrapper as to every other capture point:
+
+- it returns the check's own return value by identity and re-raises the
+  check's exception as the same object, with its traceback;
+- it never blocks, waits, retries or calls the check more than once, and
+  recording is a non-blocking enqueue;
+- a failure inside recording is swallowed and counted, and never reaches
+  the caller. This holds under `FABRIC_RECORDS_STRICT=1` as well: for the
+  wrapper forms, strict mode reports through the diagnostics counter
+  instead of raising, because a raise would change the check's behaviour;
+- with capture off the wrapper is a direct call (5 µs budget); with
+  capture on it stays within 50 µs (B4).
+
+The value the wrapper returns is the customer's own, not one Fabric
+produced, so 052 E5 (no records API returns a decision value) still holds.
+The API-surface test asserts identity with the wrapped function's result.
+
+**Linking the decision to its tool call.** The link is made offline in the
+reader, never at call time (B2). Rules, in order:
+
+1. `gated_tool_call_id` was passed (the provider's tool-call id, which the
+   agent's loop already holds) → link `provider_id`, certain.
+2. The check ran inside a `decision.tool_call()` scope → that call, link
+   `reported_ref`, certain (056 A0).
+3. Otherwise the reader takes the **pending tool calls** at the record's
+   position: the tool calls named in model responses of the same run,
+   before the record in sequence order, whose result has not yet been sent
+   back to the model (no later request before the record carries a result
+   with that id).
+   - **Exactly one pending** → link `pending_single`, provenance
+     `inferred`, confidence `certain`. In a sequential tool loop this is
+     the single call from the latest model response, being dispatched.
+   - **Two or more pending** (parallel tool calls, or concurrent loops in
+     one run) → `ambiguous`, with every pending call as `candidates` (at
+     most 64), the same rule as 056 A3. The `controls` chain is
+     `partial(ambiguous_attribution)`. The caller removes the ambiguity by
+     passing `gated_tool_call_id`.
+   - **None pending** → no link. F3 applies when the record declares a
+     pre- or post-tool stage.
+
+Auto-linking (rule 3) applies only when `gated_kind` is unset or
+`tool_call`. A check that is not about a tool call (an input screen, a
+run-level check) says so with `gated_kind` and is never linked by
+position. Without wire capture there is no pending set, so only rules 1
+and 2 link.
+
+`pending_single` is `certain` where 056 A2 (one window) is `tentative`
+because the evidence differs. A host effect inside a window may come from
+anything in the process tree. This record was reported by the agent's own
+code at a point where the wire bytes prove exactly one tool call was
+outstanding in the run, and the caller did not declare a different target.
+An ambiguous link gates no call: it counts toward neither F5 nor F6.
+
+**What is out.** Fabric never finds permission checks by itself:
+
+- no monkeypatching, import hooks or wrapping of any application function
+  the customer did not decorate or wrap;
+- no guessing by function, module or exception name, no stack inspection,
+  and no static or AST scan of customer code;
+- no reading of free-text tool results beyond the customer's exact
+  markers;
+- the wrapper never changes what the check returns or raises, and never
+  calls a check on Fabric's own initiative.
+
+#### 4.10.4 What is captured with no code change and with one line
+
+| Fact about an in-code permission check | No code change (layers 1 and 2) | One line per check (layer 3) |
+|---|---|---|
+| Tools offered on each request (role or context filtering) | O offered grant, F2, F12 | same |
+| The model asked for the tool | O tool call | same |
+| What the code answered | O tool result, byte-exact, joined by id | same |
+| Whether anything happened | O effect, or `effect_not_observed` | same, and F5 `control_denied` or F6 `deny_with_effect` when the decision gates the call |
+| That the code refused | I, only when a configured denial marker matches | R |
+| That the code allowed | — (a marker never states `allow`) | R |
+| Which check decided | the marker's label only | R `control` (D38) |
+| Why (reason code, reason text) | the marker's `reason_code`, if any | R `reason_code` (D42), `reason` (D10, protected) |
+| For whom (the user or role checked) | — | R `decided_by` (D07) when passed |
+| Which rule file was loaded | O watched open (label and `pth-`, P2) | same |
+| What that file said | R operator snapshot (P3) | same, plus `grant` (D44) when passed |
+| Which tool call it gated | I by provider id (marker) | R by id or scope; I `pending_single` (certain); ambiguous with candidates when several are pending |
+| How long the check took | — | O measured (wrapper) or R |
 
 ## 5. Records
 
@@ -750,7 +1033,7 @@ different questions:
 |---|---|---|---|
 | `offered` | The tools, tool choice and instructions digest one model request carried | W:O; A:R (the explicit call recorder's `C21`); T:R | Projected for the first model call of a run segment, and again whenever the offered digest changes |
 | `listed` | The tools and roots an MCP server listed to the client | M:O; T:R | Each `tools/list` result whose digest differs from the last for that server; each `roots/list` result |
-| `declared` | The permission configuration the customer reports | A:R; T:R; operator snapshot (open question 8) | Run start, change, resume, on request |
+| `declared` | The permission configuration the customer reports | A:R; T:R; operator snapshot (OD-8, 4.10.2) | Run start, change, resume, on request |
 
 The reader takes as "in force" for a record the latest snapshot of each
 basis before it in the same run segment (sequence order on one epoch, 050
@@ -878,21 +1161,26 @@ by, policy id/version/digest, proof reference, the `checked`/`reason`/
 
 **Kinds (`D02`).** 049 has
 `guardrail/policy/permission_request/approval/rate_limit/budget/other`.
-This spec adds three kinds, each tied to a boundary:
+This spec adds three kinds, each tied to a boundary, and one for checks
+in the agent's own code:
 
 - `provider_safety` (W): a provider-side filter, refusal or safety stop.
 - `elicitation` (M): an MCP server's user-confirmation request and its
   answer.
 - `os_access` (P): a kernel refusal from the closed set of 4.3.
+- `permission_check` (A, or W through a denial marker): a one-shot check
+  of whether the agent may do something, with no request and resolution
+  pair (4.10). `permission_request` stays for the request/resolution
+  pattern.
 
 A control-endpoint row (N) takes its kind from the customer's list.
 
-**Proposed fields.**
+**New fields.**
 
 | # | Field | Type | Privacy | Lives in | Req | Sources | Definition |
 |---|---|---|---|---|---|---|---|
 | D37 | `control.stage` | enum input/output/pre_model/post_model/pre_tool/post_tool/pre_effect/post_effect/effect/inventory/run/other/unknown | META | T `fabric.control.stage` | R (control) | W:O, M:O, P:O (`effect`), N:I, T:R, A:R | Where in the agent loop the control sat. Distinct from `D03` phase. `effect` is a refusal at the moment of the OS action; `inventory` covers decisions on tool listings. |
-| D38 | control.engine.name, control.engine.version | label, label | LABEL | T `fabric.control.engine.name`, `.engine.version` | O | W:O (endpoint id), N:O (list label), P:O (`kernel`), T:R, A:R | What decided: the provider endpoint, the listed endpoint's label, the kernel, or the reported library, service or approver. |
+| D38 | control.engine.name, control.engine.version | label, label | LABEL | T `fabric.control.engine.name`, `.engine.version` | O | W:O (endpoint id), W:I (denial marker label), N:O (list label), P:O (`kernel`), T:R, A:R (`control=` or `engine=`) | What decided: the provider endpoint, the listed endpoint's label, the kernel, the customer's label for an in-code check, or the reported library, service or approver. |
 | D39 | `control.gated_kind` | enum tool_call/model_call/side_effect/mcp_call/process/input/output/run/other | META | T `fabric.control.gated_kind` | R (control) | all | What kind of thing was gated. `process` for an OS refusal. |
 | D40 | `control.gated_tool_call_id` | `p-` keyed pseudonym | ID | T `fabric.control.gated_tool_call_id` | O | A:R, T:R; P projection by join (6.1) | The provider tool-call id the model issued. It joins a record to the tool call parsed from wire bytes (050 §3.13). `D06` stays for explicit steps and actions. |
 | D41 | `control.latency_ms` | number ≥ 0 | META | T `fabric.control.latency_ms` | O | N:O (measured), T:R, A:R | How long the decision took; `timing_basis` `measured` or `reported`. |
@@ -903,7 +1191,7 @@ A control-endpoint row (N) takes its kind from the customer's list.
 | D46 | `control.reason_ref` | content object id | ID | T `fabric.content.object_ids` (existing key); C descriptor of `control.reason` | O | T:R, A:R | Governed reference to the reason text. |
 | D47 | `control.evidence_ref` | list of event ids, at most 8 | ID | P; T `fabric.control.evidence_event_ids` on exported rows | R (derived rows) | W, M, P, N | The wire exchange, MCP message, sensor or exec record, or HTTP exchange the row was derived from. |
 | D48 | `control.signal` | enum content_filter/refusal/guardrail_intervened/prompt_blocked/safety_stop/moderation_flag/other | META | T `fabric.control.signal` | R (`provider_safety`) | W:O | The provider-neutral safety signal from the map in 4.1. |
-| D49 | `control.derivation` | enum literal/configured_extract/configured_marker/configured_exit_map/reported | META | T `fabric.control.derivation` | R (control) | all | How the decision value was obtained: copied from a literal field, through a customer-configured table, or reported. Lets a reviewer weigh `deny` from a provider field differently from `deny` extracted by a configured pointer. |
+| D49 | `control.derivation` | enum literal/configured_extract/configured_marker/configured_exit_map/reported/wrapped_check | META | T `fabric.control.derivation` | R (control) | all | How the decision value was obtained: copied from a literal field, through a customer-configured table, reported, or mapped from a wrapped check's return value or exception by the closed table of 4.10.3. Lets a reviewer weigh `deny` from a provider field differently from `deny` extracted by a configured pointer. |
 
 **Decision vocabulary (`D04`).** 049 has
 `allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown`.
@@ -915,22 +1203,26 @@ different from `unknown` (Fabric does not know the decision) and from
 `approve` and `reject` are **not** added as values. An approval is
 `kind=approval` with decision `allow` or `deny`. The SDK accepts `approve`
 and `reject` as input aliases and records them as `allow` and `deny`, so
-one fact has one encoding (open question 3). A runtime's "ask the user"
+one fact has one encoding (OD-3). A runtime's "ask the user"
 outcome is `phase=request`, `decision=escalate`.
 
 **Stage × decision.** Any decision may occur at any stage. The 052 §4.2.2
 phase × decision matrix still applies.
 
 **SDK API (P0).** 052's `record_control` gains keyword arguments for
-`D37`–`D45`. `D47`–`D49` are set by the reader on derived rows. Reported
-records get `derivation=reported`.
+`D37`–`D45` and a `control=` shorthand. `phase` and `decision` gain
+defaults, so the one-line form of 4.10.3 needs no phase; 052's positional
+order is unchanged. `D47`–`D49` are set by the reader on derived rows.
+Reported records get `derivation=reported`; wrapped checks get
+`wrapped_check`.
 
 ```python
 fabric.records.record_control(
-    kind, phase, decision,
-    *, stage: ControlStage | str = "unknown",
-    engine: ControlEngineRef | None = None,      # name, version
-    gated_kind: GatedKind | str = "other",
+    kind, phase="observation", decision="unknown",
+    *, control: str | None = None,               # label → engine.name (D38)
+    stage: ControlStage | str = "unknown",
+    engine: ControlEngineRef | None = None,      # name, version; wins over control=
+    gated_kind: GatedKind | str | None = None,   # None: reader sets tool_call when it links one, else other
     gated_tool_call_id: str | None = None,       # clear provider id → p- (never stored clear on T)
     latency_ms: float | None = None,
     reason_code: str | None = None,
@@ -939,9 +1231,29 @@ fabric.records.record_control(
     error_class: ControlErrorClass | str | None = None,
     ...                                          # 052 §4.2.1 arguments unchanged
 ) -> ControlRef                                  # ids only
+
+fabric.records.control_check(
+    kind="permission_check", control=None,
+    *, decision_map: Mapping[object, str] | None = None,     # literal return value → decision
+    deny_on: tuple[type[BaseException], ...] = (PermissionError,),
+    exit_means: Literal["allow", "unknown"] = "unknown",      # context-manager form only
+    **record_control_keywords,                                # stage, reason_code, grant, …
+)   # usable as a decorator (sync or async) or a context manager; 4.10.3
 ```
 
 `ControlObservation` v2 (052 §4.2.4) gains the same optional fields.
+
+**Fields filled by each layer of an in-code permission check (4.10).**
+
+| Layer | Fields | Provenance · derivation |
+|---|---|---|
+| 1 Denial marker | `D02` (entry kind), `D03` `observation`, `D04` (entry decision, never `allow`), `D37` `unknown`, `D38` (marker label), `D39` `tool_call`, `D40` (the call the result answers), `D42` (entry reason, if any), `D47` (the request exchange), `D49` `configured_marker`; the D11 constants | inferred · certain; link `provider_id` certain |
+| 1 Tool result and effect | No control row. The tool result stays protected content of the next request; the effect or `effect_not_observed` comes from 056 | observed |
+| 2 Watched open | `fabric.sensor.watch_label`, `fabric.sensor.watch_class` (`permission_config`), `pth-` id | observed |
+| 2 Operator snapshot | Grant `G01`–`G04` (`G04` `operator_snapshot`), `G10` (only if `run.permissions` is named), `G11` (only where digests are permitted), `G12` `declared` | reported |
+| 3 One line | `D01`–`D10` and `D37`–`D45` as passed; `D38` from `control=`; `D49` `reported` | reported |
+| 3 Wrapper | as one line, plus `D04` from the 4.10.3 mapping, `D41` measured, `D42` `exception.*` or as passed, `D45` `exception` on decision `error`, `D49` `wrapped_check` | reported (latency measured) |
+| 3 Link | `D40` when passed; otherwise the reader's link `reported_ref` (tool-call scope), `pending_single` or `pending_set` | reported · certain; inferred · certain; ambiguous |
 
 ### 5.4 Hook outcome
 
@@ -992,7 +1304,7 @@ emitted and read.
 
 ### 5.6 Evaluation judges
 
-**Default (proposed):**
+**Decision (OD-1, accepted by owner 2026-11-09):**
 
 - **A judge call the agent makes itself** is already in the record. This
   covers self-critique, a model call used as a gate, and a classifier
@@ -1009,7 +1321,7 @@ emitted and read.
   security reviewer joins them to Fabric's record by trace, run and call
   ids, which Fabric preserves.
 
-**Trade-off (open question 1).**
+**Trade-off considered (OD-1).**
 
 - **For recording external scores:** one record holds everything; a
   customer with its own evaluators gets one delivery path; the reader
@@ -1021,10 +1333,11 @@ emitted and read.
     record;
   - it invites requests for Fabric to schedule, store and compare scores.
 
-The recommendation is to keep external scores out. If the owner decides
-otherwise, the narrowest form is a reported `evaluation.result` record
-carrying only evaluator identity, a bounded result code and a governed
-reference, with no numeric score on telemetry.
+The owner accepted keeping external scores out. If that is ever revisited,
+the narrowest form would be a reported `evaluation.result` record carrying
+only evaluator identity, a bounded result code and a governed reference,
+with no numeric score on telemetry; it would need its own owner decision
+and an `AGENTS.md` change.
 
 ### 5.7 Activity v2.1 shapes
 
@@ -1036,7 +1349,7 @@ Activity v2.0.0 is closed:
 - every object sets `additionalProperties: false`.
 
 Contract schemas are immutable (`docs/api-stability.md`). So this spec
-proposes **activity 2.1.0**: a new schema file and manifest beside 2.0.0.
+adds **activity 2.1.0**: a new schema file and manifest beside 2.0.0.
 It is additive:
 
 - `version` and `schema_version` accept `2.0.0` and `2.1.0`;
@@ -1113,6 +1426,11 @@ The other three objects:
 | control resolution | its request, by `D05` across runs (052 §4.9) | `ref_join` | as the record · certain |
 | hook program, OS refusal | the exec record it came from, then the tool call by 056's process anchor (§4.3) and attribution rules (§4.2) | `process_anchor`, then 056 methods | inferred · as 056 grades it |
 | control-endpoint row | the open tool call by the 056 window rules | `sequence_bracket` | inferred · tentative |
+| denial-marker row (4.10.1) | the tool call whose result matched, by the provider tool-call id the result carries | `provider_id` | inferred (decision) · certain (link) |
+| reported control inside a `decision.tool_call()` scope | that tool call | `reported_ref` | reported · certain |
+| reported control with no `D40`, no scope, `gated_kind` unset or `tool_call` (4.10.3) | the single pending tool call of the run at the record's position | `pending_single` | inferred · certain |
+| the same, with two or more pending tool calls | every pending call, as `candidates` (at most 64) | `pending_set` | inferred · tentative · `ambiguous` |
+| watched open of a `permission_config` file | the latest operator snapshot with the same `pth-` id, with the time gap shown | `path_ref` | reported (snapshot) · certain (identity only) |
 | any record | the grant in force per basis: `D44` if present, else the latest snapshot of that basis before it in the segment | `grant_in_force` | as the snapshot · certain (named) / inferred · certain (sequence) |
 
 ### 6.2 The action view
@@ -1153,6 +1471,40 @@ run r-3f2a…  decisions: complete  actions: complete  effects: complete  corrob
     F13 OS refusals: 1 (openat errno.eacces: 1)
 ```
 
+**An in-code permission check, layer by layer (4.10).** The same plain
+tool loop refuses a `write_file` call in its own code. With no code
+change and no markers (layer 1 only):
+
+```text
+  4  model_call   → tool_call T2 write_file
+  5    tool_result T2  29 bytes  is_error no  (observed; content protected)
+  6    no effect observed for T2 (none_in_window)
+```
+
+With a denial marker configured (`prefix` "permission denied", label
+`fs-acl`) and the rule file watched and snapshotted (layers 1 and 2):
+
+```text
+  file   permission_config  agent-acl pth-9c4e…  opened  (observed)  snapshot grt-5d21… 6 h before open  (reported, operator_snapshot)
+  4  model_call   → tool_call T2 write_file
+  5    control    permission_check · observation · deny  fs-acl  (configured_marker)   ← T2  provider_id · certain
+  6    no effect observed for T2 (control_denied: #5)
+```
+
+With one line, or the wrapper, at the check (layer 3):
+
+```text
+  4  model_call   → tool_call T2 write_file
+  5    control    permission_check · observation · deny  fs-write  path.outside_root  0.04 ms  (wrapped_check)   ← T2  pending_single · certain
+  6    no effect observed for T2 (control_denied: #5)
+  9  model_call   → tool_calls T5 read_file, T6 write_file
+ 10    control    permission_check · observation · allow  fs-read  (reported)   ← ambiguous: T5, T6  pending_set
+```
+
+Row 10 shows the parallel case: two calls are pending and the caller
+passed no tool-call id, so the row names both candidates and the
+`controls` chain is `partial(ambiguous_attribution)`.
+
 `--json` prints the same rows. The view is a rendering of the step
 projection and the report; it adds no contract beyond section 8.
 
@@ -1169,7 +1521,7 @@ membership on literal names in one exchange, not rule matching.
 | F3 `control_unmatched` | A control or hook names a gated call, step or action that is not in the run, or a pre/post-tool record has no ref and no open window. Shown as "decision recorded with no matching call". |
 | F4 `control_pending_at_end` | A request has no resolution at run end (052 `D36` `pending`), including an elicitation with no answer. |
 | F5 `control_denied` | A `deny` (or hook `blocked`) gates tool call T and no effect is attributed to T. Becomes the 056 `effect_not_observed` reason `control_denied`. |
-| F6 `deny_with_effect` | A `deny` (or hook `blocked`) gates T and an effect is attributed to T. The fact lists the deny's `mode`, `derivation`, the effect's attribution method and confidence, and any later `allow` for T. It is co-occurrence, not a conclusion (open question 10). |
+| F6 `deny_with_effect` | A `deny` (or hook `blocked`) gates T and an effect is attributed to T. The fact lists the deny's `mode`, `derivation`, the effect's attribution method and confidence, and any later `allow` for T. It is co-occurrence, not a conclusion (OD-10). |
 | F7 `approval_required_without_decision` | A side effect recorded with `approval_required=true` has no `approval` or `elicitation` control gating it or its tool call. |
 | F8 `hook_errored`, `hook_modified` | Counts of hook outcomes `errored` and `modified`. |
 | F9 `extension_signature` | Counts of extensions by `signature_status` other than `verified`. |
@@ -1178,6 +1530,9 @@ membership on literal names in one exchange, not rule matching.
 | F12 `tool_called_not_offered` | A response names a tool call whose name is not among the tool names offered in the request that produced the response. Provider-hosted tool types are excluded by their literal `type`. |
 | F13 `os_denied` | Counts of `os_access` rows by syscall class and reason code, each with its attribution method and confidence. |
 | F14 `tool_result_error` | Counts of tool results fed back to the model with a structured error flag (`is_error`, MCP `isError`), per tool call. Not a denial claim. |
+
+"Gates T" in F5–F7 means a link to T that is not `ambiguous`. A row
+linked by `pending_set` gates no call until the caller passes the id.
 
 ### 6.4 Coverage and completeness signals
 
@@ -1190,6 +1545,7 @@ membership on literal names in one exchange, not rule matching.
     invariants), every gating reference resolves, and no request is
     pending at the end;
   - `partial` reasons are `control_unmatched`, `control_pending_at_end`,
+    `ambiguous_attribution` (a control linked by `pending_set`, 4.10.3),
     `grant_not_recorded` (a declared-grant capture point is active but no
     declared snapshot exists), `body_not_retained` (an MCP or control host
     is listed but its bodies are not retained, so derivation was
@@ -1205,7 +1561,7 @@ membership on literal names in one exchange, not rule matching.
 - **`attribution` gains** `effects_not_observed.control_denied`.
 - **New object `security_context`** on the report, with counts only:
   - grants by basis;
-  - controls by kind × decision × derivation;
+  - controls by kind × decision × derivation, and by link method;
   - hooks by basis × outcome;
   - extensions by kind × observed_via × signature status;
   - facts F1–F14 with their first 64 event ids.
@@ -1213,7 +1569,8 @@ membership on literal names in one exchange, not rule matching.
   - new capture points `records.control`, `records.grant`,
     `records.extension`;
   - derivation rules under `reconstruct.parse`: `wire.offered_grant`,
-    `wire.safety_map`, `wire.tool_result_flag`, `mcp.jsonrpc`;
+    `wire.safety_map`, `wire.tool_result_flag`, `wire.tool_result_marker`,
+    `mcp.jsonrpc`;
   - classification lists, published as digests and counts, never as
     contents: `classify.control_hosts`, `classify.hook_programs`,
     `classify.watched_paths`, `classify.tool_result_markers`;
@@ -1231,7 +1588,7 @@ membership on literal names in one exchange, not rule matching.
 | Declared grant document | CONTENT | never | `run.permissions` | retained, structurally pseudonymised (7.2) | omitted unless the capture policy names the role |
 | Offered grant document | CONTENT | never | P ref into `model.exchange.request` | inherits the request's protection | inherits the request's protection |
 | Tool definitions | CONTENT | never (names only inside content) | `model.request.tool_definitions` | as 049 | as 049 |
-| System and developer instructions | CONTENT | never; `C20` digest in P only | `model.request.instructions` | as 049 | as 049 (open question 5) |
+| System and developer instructions | CONTENT | never; the `C20` digest reaches telemetry only as a keyed pseudonym (OD-5) | `model.request.instructions` | as 049 | **off**, digest only, unless the capture policy names the role (changed from 049's default, OD-5) |
 | Grant plain digest | DIGEST | never | descriptor | where policy permits digests | where policy permits digests |
 | Tool rules, MCP server names, model names inside a document | LABEL inside CONTENT | never as lists (049 §4.1) | `run.permissions` | clear | per role mode |
 | Filesystem paths, network hosts inside a document; MCP roots | CONTENT | never | `run.permissions` | `pth-` / `net-` pseudonyms | `pth-` / `net-` pseudonyms |
@@ -1239,7 +1596,10 @@ membership on literal names in one exchange, not rule matching.
 | Credential values, environment values, headers | — | never read | — | never | never |
 | Control reason code, safety signal, errno code | LABEL/META | clear (pattern-validated) | — | on | on |
 | Control reason text | CONTENT | never | `control.reason` | retained | omitted unless named |
-| What the control checked (the prompt, output or arguments) | CONTENT | never | `control.checked` | **off** (proposed change from `content`) | off |
+| Tool result text a denial marker matched | CONTENT | never; only the marker's label and reason code | stays in the request bytes (`model.exchange.request`) | inherits the request's protection | inherits the request's protection |
+| Denial marker strings | CONTENT (configuration) | never; manifest carries digest and count | — | — | — |
+| Operator snapshot of a rule file | CONTENT | never; `grt-` id and `pth-` id only | `run.permissions` | retained, structurally pseudonymised (7.2) | omitted unless the capture policy names the role |
+| What the control checked (the prompt, output or arguments) | CONTENT | never | `control.checked` | **off** (changed from `content`, OD-19) | off |
 | Control-endpoint request and response bodies | CONTENT | never | `control.exchange.request`, `control.exchange.response` (new) | off | off |
 | Provider filter severities and scores | CONTENT | never | inside `model.exchange.response` | as the response | as the response |
 | MCP messages | CONTENT | never | `network.request`/`network.response` (HTTP path) or `mcp.*` (053) | off | off |
@@ -1293,26 +1653,31 @@ the role's mode.
 A failed protection withholds the content (049 `protection_failed`) and
 never falls back to clear.
 
-## 8. Contract changes (proposed; applied only by WP7-0)
+## 8. Contract changes (applied only by WP7-0)
+
+The new field rows amend 049 as revision 6.5, with 057 as the build spec,
+as 050–055 did (OD-18).
 
 | File | Change |
 |---|---|
 | `contracts/coverage/v1/registry/field-registry-v1.json` | Rows `G01`–`G16`, `D37`–`D49`, `E01`–`E09`, `E10`–`E23`. `C32` points at G10 and keeps `fabric.run.permissions.count` as the sum of the declared counts. |
-| `contracts/coverage/v1/registry/vocabularies-v1.json` | `control_decision` gains `error`; `control_kind` gains `provider_safety`, `elicitation`, `os_access`. New vocabularies: `control_stage`, `gated_kind`, `control_mode`, `control_error_class`, `control_signal`, `control_derivation`, `grant_trigger`, `grant_basis`, `grant_source_boundary`, `tool_choice_mode`, `sandbox_kind`, `hook_outcome`, `hook_basis`, `extension_kind`, `extension_source_kind`, `extension_observed_via`, `signature_status`, `extension_scope`, `watch_class`. Chain `controls` and its reasons; `effect_not_observed` reason `control_denied`; fact codes F1–F14. |
+| `contracts/coverage/v1/registry/vocabularies-v1.json` | `control_decision` gains `error`; `control_kind` gains `provider_safety`, `elicitation`, `os_access`, `permission_check`; `control_derivation` includes `wrapped_check`; link methods `pending_single`, `pending_set`, `path_ref`; `grant_source_boundary` includes `operator_snapshot`. New vocabularies: `control_stage`, `gated_kind`, `control_mode`, `control_error_class`, `control_signal`, `control_derivation`, `grant_trigger`, `grant_basis`, `grant_source_boundary`, `tool_choice_mode`, `sandbox_kind`, `hook_outcome`, `hook_basis`, `extension_kind`, `extension_source_kind`, `extension_observed_via`, `signature_status`, `extension_scope`, `watch_class`. Chain `controls` and its reasons; `effect_not_observed` reason `control_denied`; fact codes F1–F14. |
 | `contracts/coverage/v1/registry/telemetry-keys-v1.json` | Every T key in section 5, with validators; fabricguard exact-key allowlist and Go validators generated from it |
 | `contracts/coverage/v1/registry/provider-safety-map-v1.json` | New: the closed map of 4.1, one row per dialect field, each with its fixture id |
 | `contracts/coverage/v1/schema/grant-snapshot-v1.schema.json` | New: three bases, JCS digest vectors (including offered-set de-duplication) and pseudonymisation vectors |
 | `contracts/coverage/v1/schema/control-observation-v2.schema.json` (052) | Gains `D37`–`D49` |
-| `contracts/capture/v1/schema/capture-policy` (the existing policy schema) | New optional `security_context` section: `control_hosts` (with `label`, `control_kind`, optional `decision_pointer` and `decision_map`), `control_addresses`, `hook_programs` (with optional `exit_map`), `watched_paths`, `tool_result_markers`; new roles `control.exchange.request`, `control.exchange.response` |
+| `contracts/capture/v1/schema/capture-policy` (the existing policy schema) | New optional `security_context` section: `control_hosts` (with `label`, `control_kind`, optional `decision_pointer` and `decision_map`), `control_addresses`, `hook_programs` (with optional `exit_map`), `watched_paths`, `tool_result_markers` (with `label`, one of `equals`/`prefix`/`json` (pointer and values), optional `kind`, `decision` `deny`/`escalate`, `reason_code`; 4.10.1); new roles `control.exchange.request`, `control.exchange.response`; production default of `model.request.instructions` → `off` (OD-5) |
 | `contracts/capture/v1/schema/otlp-mapping-profile-v1.schema.json` | New: declarative profile; closed target keys; literal value maps; drop-by-default |
 | `contracts/capture/v1/schema/run-reconstruction-v1.schema.json` | `chains.controls`; `security_context` object; `attribution.effects_not_observed.control_denied` |
-| `contracts/coverage/v1/schema/step-projection-v1.schema.json` | Link methods `provider_id`, `exchange_id`, `mcp_session`, `rpc_id`, `process_anchor`, `grant_in_force`; `offered_grant_id` on model calls |
+| `contracts/coverage/v1/schema/step-projection-v1.schema.json` | Link methods `provider_id`, `exchange_id`, `mcp_session`, `rpc_id`, `process_anchor`, `grant_in_force`, `pending_single`, `pending_set`, `path_ref`; `offered_grant_id` on model calls |
 | 053 §6.2.3 host record schema (amendment) | `fabric.sensor.event_class` gains `exit`; `fabric.sensor.exit_code`, `fabric.sensor.signal`; `fabric.sensor.watch_label`, `fabric.sensor.watch_class`; `fabric.sensor.result`/`errno` filled by eBPF exit tracepoints |
 | pseudonym v2 vectors | Types `grant`, `credential`, `extension`, `extension_source`, `path_rule`, `net_rule` |
 | `_roles.py` role table and Node exporter | New roles `extension.manifest`, `control.exchange.request`, `control.exchange.response` (all `off`); `control.checked` default `off` |
 | `reconstruct/dialects/` | `mcp` method layer over `jsonrpc2`; safety-map rules per supported model dialect |
 | `contracts/activity/v2` | New 2.1.0 schema, manifest and fixtures beside 2.0.0 (5.7); `MAPPING.md` rows for the new keys |
 | `contracts/connect/v2` (when cut for v1.0) | Surfaces `control_decision`, `grant_snapshot` and `extension_inventory` replace `policy_verdict`, `guardrail_verdict`, `authorization_verdict` and `escalation` (9.3); `evaluation` stays dropped |
+| `docs/api-stability.md` | Records OD-11: the activity v1 `fabric.policy.evaluation`, `fabric.tool.authorization` and `fabric.escalation` events and the connect v1 verdict surfaces are deprecated, replaced in v2 by the control decision record |
+| `AGENTS.md` | The approved wording of section 11, applied by WP7-3 in P0 (OD-20) |
 
 ## 9. Compatibility and versioning
 
@@ -1334,6 +1699,14 @@ never falls back to clear.
   `extension.loaded` is emitted beside them, and the reader de-duplicates
   by (`kind`, `name`, `version`, `manifest_hash`).
 - `ControlObservation` v1 documents still load (052 §4.2.4).
+- `record_control` keeps 052's positional order; `phase` and `decision`
+  only gain defaults (`observation`, `unknown`), so every 052 call is
+  unchanged.
+- **Two production-profile defaults change** (OD-5, OD-19):
+  `model.request.instructions` and `control.checked` become `off`. A
+  deployment that relied on retaining either names the role in its capture
+  policy. WP7-0 lists both in the CHANGELOG as behaviour changes, and the
+  capture manifest records the effective mode as today.
 - Activity 2.0.0 stays valid and published. 2.1.0 is additive (5.7).
 - The host-record amendment adds optional keys and one event class. Older
   Nodes refuse unknown keys per fabricguard. Sensors emit the new keys only
@@ -1348,15 +1721,16 @@ never falls back to clear.
 - Connect: the new surfaces arrive with connect v2 at Fabric v1.0, as
   already planned for the guardrail and evaluation removals.
 
-### 9.3 The open v1 verdict elements
+### 9.3 The v1 verdict elements (OD-11)
 
-This spec recommends that the activity v1 `fabric.policy.evaluation`,
-`fabric.tool.authorization` and `fabric.escalation` events, and the connect
-v1 `policy_verdict`, `authorization_verdict` and `escalation` surfaces,
-**follow the guardrail path**. That means they are deprecated in v1 and
-replaced in v2 by the record-only control decision record. One shape with
-invariants is better than four legacy shapes without them (open question
-11).
+Decided (accepted by owner 2026-11-09): the activity v1
+`fabric.policy.evaluation`, `fabric.tool.authorization` and
+`fabric.escalation` events, and the connect v1 `policy_verdict`,
+`authorization_verdict` and `escalation` surfaces, **follow the guardrail
+path**. They are deprecated in v1 and replaced in v2 by the record-only
+control decision record. One shape with invariants is better than four
+legacy shapes without them. WP7-0 records the deprecation in
+`docs/api-stability.md`.
 
 ## 10. Phases
 
@@ -1367,9 +1741,8 @@ capture works on it unchanged. No code, profile or fixture-only shim is
 written for that runtime, and it is not a deliverable.
 
 **Ordering note.** 057 P0 needs the records core of 051 and
-`record_control` of 052, and neither is built. This spec proposes pulling
-forward only these, as part of 057 P0, the same way 056 OD-1 pulled 053
-work forward (open question 15):
+`record_control` of 052, and neither is built. OD-15 pulls forward only
+these, as part of 057 P0, the same way 056 OD-1 pulled 053 work forward:
 
 - 051's records core;
 - 051's `record_run_context` (`C30`–`C33`);
@@ -1380,9 +1753,9 @@ work forward (open question 15):
 | WP | Work | Tests and fixtures | Exit |
 |---|---|---|---|
 | WP7-0 Contracts | Section 8 rows, schemas, vocabularies, keys, vectors, safety map skeleton, capture-policy `security_context` section, mapping-profile schema; activity 2.1.0 | `validate_coverage_contracts.py`; valid and invalid schema fixtures for every new enum value and every required-by-kind rule; JCS, offered-set de-duplication and pseudonym vectors; activity 2.1.0 manifest with fixtures for all four event types and invalid cross-type objects | validators pass |
-| WP7-1 SDK records | `record_grant`; `record_control` additions; `record_hook`/`record_skill` keyword additions; `record_extension`; structural pseudonymisation | Goldens per record; never-raise matrix; `ControlRef`/`GrantRef` surface test (ids only); privacy canaries: a path, a host, a credential name and a reason-text marker never appear in clear on T, in the spool or in a Node export under the production profile | goldens emitted |
-| WP7-2 Reader | Joins (6.1), action-view rows, facts F1–F14, `controls` chain, `security_context` | Fixture runs: `sc-grant-bases` (declared start/change/resume, offered change, listed change), `sc-control-matrix` (kind × decision × stage × derivation sample), `sc-pending-resolved-cross-process`, `sc-control-unmatched`, `sc-deny-no-effect`, `sc-deny-with-effect-shadow`, `sc-approval-required-missing`, `sc-hook-outcomes`, `sc-extension-signature`, `sc-forged-invariant`, `sc-inventory-changed`, `sc-no-security-records` (byte-identical to today plus `not_observed`) | every fixture's golden report and view |
-| WP7-3 Boundary | B1–B9 tests; release-boundary and documentation-scope tests extended to new modules; reader output word scan; import-graph and capture-point-name tests (B9) | AST scan; identity and fault tests; forbidden-term path scan; release-content test for shipped profiles or lists | all pass |
+| WP7-1 SDK records | `record_grant`; `record_control` additions, including `control=`, the `permission_check` kind and the `phase`/`decision` defaults; the `control_check` wrapper (decorator for sync and async functions, and context manager) with the closed outcome mapping of 4.10.3; `record_hook`/`record_skill` keyword additions; `record_extension`; structural pseudonymisation | Goldens per record; never-raise matrix; `ControlRef`/`GrantRef` surface test (ids only); privacy canaries: a path, a host, a credential name and a reason-text marker never appear in clear on T, in the spool or in a Node export under the production profile. Wrapper: one golden per row of the outcome table; return-value and exception identity (same object, same traceback); the check is called exactly once; recorder fault injection (raise, block, full queue) leaves the return value and exception unchanged, with and without `FABRIC_RECORDS_STRICT=1`; passivity benchmark at the B4 budgets | goldens emitted |
+| WP7-2 Reader | Joins (6.1) including `pending_single`, `pending_set` and `path_ref`, action-view rows, facts F1–F14, `controls` chain, `security_context` | Fixture runs: `sc-link-pending-single` (sequential loop), `sc-link-pending-set` (parallel tool calls, no id → ambiguous with both candidates; with id → certain), `sc-link-not-tool-call` (`gated_kind=input` is never linked by position), `sc-link-no-wire` (wire capture off → only id and scope link), `sc-grant-bases` (declared start/change/resume, offered change, listed change), `sc-control-matrix` (kind × decision × stage × derivation sample), `sc-pending-resolved-cross-process`, `sc-control-unmatched`, `sc-deny-no-effect`, `sc-deny-with-effect-shadow`, `sc-approval-required-missing`, `sc-hook-outcomes`, `sc-extension-signature`, `sc-forged-invariant`, `sc-inventory-changed`, `sc-no-security-records` (byte-identical to today plus `not_observed`) | every fixture's golden report and view |
+| WP7-3 Boundary | B1–B9 tests; release-boundary and documentation-scope tests extended to new modules; reader output word scan; import-graph and capture-point-name tests (B9); a no-auto-wrapping test; the approved section 11 wording applied to `AGENTS.md` (OD-20) | AST scan; identity and fault tests; forbidden-term path scan; release-content test for shipped profiles or lists; no-auto-wrapping: importing and autoloading Fabric leaves every attribute of a fixture application module identical (no function replaced), and the SDK contains no import hook, `sys.setprofile`/`settrace` call or name-based function matching; `AGENTS.md` diff matches section 11 | all pass |
 
 **P0 acceptance (SC-0).**
 
@@ -1399,15 +1772,57 @@ work forward (open question 15):
   - fault injection in every new records function leaves the agent's
     outputs unchanged.
 
+**P0 acceptance, code-level permissions (SC-CP).** The test of section
+4.10.
+
+- **The agent:** a plain Python tool loop on a fixture model, with wire
+  capture and the exec effect channel on. Its dispatcher calls an in-code
+  permission check, `can_use(user, tool, args)`, before running each tool,
+  and returns a fixed refusal text when the check says no. The scripted
+  task makes the check allow some calls and deny others, includes one
+  check that raises `PermissionError`, and includes one model response
+  with two parallel tool calls.
+- **Ground truth:** the harness, not Fabric, wraps `can_use` with its own
+  ledger writer and records (provider tool-call id, decision) for every
+  check to a separate file.
+- **Run A, no code change:** the agent as written.
+  - Every ledger check has its tool call and its tool result recorded,
+    joined by id.
+  - Every denied call shows `effect_not_observed`, and every allowed call
+    that ran a command shows its effect.
+  - **No control row exists.** Fabric states no decision it was not given:
+    the view and report must not contain one.
+- **Run B, one line per check:** the same agent with `can_use` decorated by
+  `control_check`, nothing else changed.
+  - Every ledger check has exactly one control row, with the same
+    decision, and no control row lacks a ledger entry.
+  - Each sequential check links to the ledger's tool call, `pending_single`
+    · certain.
+  - The two parallel checks are `ambiguous` with both calls as candidates
+    and the chain is `partial(ambiguous_attribution)`. A third run passing
+    `gated_tool_call_id` links both, certain.
+  - The raised `PermissionError` is `deny` with `reason_code`
+    `exception.permissionerror`, and reaches the agent's dispatcher as the
+    same object.
+  - Every denied call carries F5 `control_denied`.
+- **Both runs:** tool results, process output and exit codes are identical
+  with capture off, run A and run B; recorder fault injection in run B
+  changes none of them; B4 budgets hold.
+
+P1 adds run C to SC-CP (WP7-6): run A with a denial marker equal to the
+refusal text. Every denial in the ledger has exactly one
+`configured_marker` row linked by `provider_id`; allows produce no row; a
+refusal text changed by one byte produces no row.
+
 ### 10.2 P1 — LLM-wire and MCP-wire derivation
 
 | WP | Work | Tests |
 |---|---|---|
 | WP7-4 Offered grants | `wire.offered_grant` rule: offered sets, tool choice, instructions digest ref, digest de-duplication, `offered_grant_id` per model call, F12 | Recorded request fixtures per supported dialect; stable digest across identical sets with different request ids; F12 on a replayed response naming an un-offered tool; provider-hosted tool types excluded |
 | WP7-5 Safety map | `wire.safety_map` rows for supported dialects | One recorded response fixture per map row; no row when the field is absent; no text heuristics (a refusal-like sentence without the field produces nothing) |
-| WP7-6 Tool-result flags | `wire.tool_result_flag` (F14); `tool_result_markers` if open question 6 is approved | Fixtures with and without the flag; marker match exact only; a near-miss marker produces nothing |
+| WP7-6 Tool-result flags and denial markers | `wire.tool_result_flag` (F14); `wire.tool_result_marker` applying `tool_result_markers` (OD-6, 4.10.1): `equals`, `prefix` and `json` matching, rows linked by `provider_id` | Fixtures with and without the flag; one fixture per matching rule; a near miss (one byte, case, leading space) produces nothing; a marker declaring `allow` is refused at install with a status; marker strings never on telemetry (manifest digest and count only); SC-CP run C |
 | WP7-7 MCP over HTTP | `mcp` method layer over `jsonrpc2` for bytes from `http.nonmodel`: `initialize`, `tools/list`, `list_changed`, `roots/list`, `tools/call`, `isError`, protocol errors, `elicitation/create` and answers | A fixture MCP server over Streamable HTTP with annotated tools; inventory change mid-run (F11); elicitation accept, decline and cancel; bodies not retained → `body_not_retained`, no rows; no double record when the MCP owner marker is set |
-| WP7-8 MCP over stdio | Process-launch extension records from the exec hook and the sensor. Message content only if open question 4 resolves to (a), in which case 053 WP4-06a is pulled forward under its own pins and budgets | Fixture stdio server: launch, lifetime and exit recorded; message content `not_captured(not_exposed)` unless (a) is built |
+| WP7-8 MCP over stdio | Process-launch extension records from the exec hook and the sensor. Message content through 053 WP4-06a, pulled forward for Python under its own pins and budgets (OD-4); the `mcp` method layer reads its records as it reads the HTTP path's. Never an inline relay, never a second pipe reader | Fixture stdio server: launch, lifetime and exit recorded; the same message set as WP7-7 derived from the transport hook; no double record with HTTP (owner marker); an unpinned library version leaves the hook off with `not_captured(not_exposed)`; a non-Python MCP client gives launch evidence only |
 
 **P1 real-agent acceptance (SC-RA-1)**, modelled on the 0.12.0 real-agent
 run.
@@ -1493,13 +1908,14 @@ the elicitation answers it gave.
 - the paths of the permission file and extension folder never appear in
   clear.
 
-### 10.4 P3 — OTLP mapping for third-party emitters
+### 10.4 P3 — OTLP mapping for third-party emitters, operator snapshots
 
 | WP | Work | Tests |
 |---|---|---|
-| WP7-14 Neutral mapping | Publish the `fabric.grant.*`, `fabric.control.*`, `fabric.hook.*`, `fabric.extension.*` and `fabric.mcp.*` attribute contract for emitters; fabricguard admission; accepted OTel GenAI source keys (open question 12) | Golden OTLP inputs → records; forged invariants refused |
+| WP7-14 Neutral mapping | Publish the `fabric.grant.*`, `fabric.control.*`, `fabric.hook.*`, `fabric.extension.*` and `fabric.mcp.*` attribute contract for emitters; fabricguard admission; OTel GenAI source keys from one pinned semconv version, accepted as sources only (OD-12) | Golden OTLP inputs → records; forged invariants refused |
 | WP7-15 Mapping profiles | Node processor applying a customer-supplied `otlp-mapping-profile/v1` before fabricguard; drop-by-default; pseudonymisation of named ids | Two example emitters with different attribute names, recorded from real runtimes and kept only as fixtures, map to identical records through two profiles; unmapped-attribute canaries (a user email, an organisation id, prompt text) dropped; no profile in any release artifact |
-| WP7-16 TS parity | `recordGrant`, `recordControl` additions, `recordExtension`; offered-grant and safety-map derivation over 055 wire bytes | Shared goldens with Python; non-gating, as in 052 §4.8 |
+| WP7-16 TS parity | `recordGrant`, `recordControl` additions, a `controlCheck` wrapper, `recordExtension`; offered-grant, safety-map and denial-marker derivation over 055 wire bytes | Shared goldens with Python; non-gating, as in 052 §4.8 |
+| WP7-17 Operator configuration snapshot (OD-8, 4.10.2) | A `fabricctl` subcommand, run by the operator outside the agent process, that reads the customer's `watched_paths` of class `permission_config` and records each file as a `declared` grant snapshot (`operator_snapshot`, keyed `pth-` id, digest and verbatim contents under the content policy); reader link `path_ref` | Snapshot of a fixture rule file joins the run's watched open with the time gap shown; contents absent under the default production profile; path never in clear on telemetry; a changed file gives a new snapshot and F2; the agent process never opens the file on Fabric's behalf |
 
 **P3 acceptance (SC-RA-3).**
 
@@ -1513,9 +1929,12 @@ policy-engine decision-log receiver and an approval webhook receiver.
 Those systems reach Fabric through OTLP with a mapping profile, the
 explicit API, or control-endpoint capture.
 
-## 11. Proposed `AGENTS.md` change (for owner approval)
+## 11. `AGENTS.md` change (approved; lands with P0)
 
-This section proposes wording only; `AGENTS.md` is not edited by this spec.
+The owner approved this wording on 2026-11-09 (OD-20). This spec does not
+edit `AGENTS.md`; WP7-3 applies the wording below in P0, in the same
+change set that first ships a 057 record, so the scope statement and the
+code arrive together.
 
 **Add to "In scope for the OSS core"** (after "preservation of OTLP
 identity and causal correlation supplied by the source;"):
@@ -1552,92 +1971,63 @@ bullet:**
 > the recorder through the same public control decision record as any other
 > external control. The recorder never depends on it.
 
-## 12. Open questions for the owner
+## 12. Owner decisions
 
-Rev 1's framework-specific questions are dropped:
+Rev 2 listed twenty open questions. On 2026-11-09 the owner replied "I
+accept your recommendations", so each question is now a decision taken as
+recommended. Numbering is unchanged: **OD-n is rev 2 open question n**,
+and "decision OD-n" elsewhere in this spec means row n below. Rev 1's
+framework-specific questions were already dropped in rev 2 (rev 1
+question 4 became OD-8, rev 1 question 5 became OD-9).
 
-- rev 1 question 4 was a settings-file snapshot for one named runtime. It
-  is generalised as question 8.
-- rev 1 question 5 was about Fabric hooks in a named runtime's hook chain.
-  It is generalised as question 9.
+Every row is *Accepted by owner 2026-11-09*.
 
-1. **Judges.** Should external evaluator scores stay out of the OSS record,
-   with only judge calls the agent makes itself recorded (as model calls,
-   plus a control record when used as a gate)? Recommended: yes (5.6).
-2. **Cost of tool definitions on every request.** The stored request
-   bytes already repeat the full tool definitions on every call, which can
-   dominate storage for agents with large tool sets. Options:
-   - (a) keep exact bytes and de-duplicate only the derived snapshots by
-     digest;
-   - (b) add content-addressed storage of the `tools` sub-object, with the
-     request stored as a reference plus the remaining bytes, which changes
-     048 storage and exact-byte verification.
+| Id | Decision | Applied in |
+|---|---|---|
+| OD-1 | **Judges.** External evaluator scores stay out of the OSS record. A judge call the agent makes itself is recorded as a model call, plus a control record when the agent uses it as a gate. | 0, 5.6 |
+| OD-2 | **Tool definitions on every request.** Keep exact request bytes; de-duplicate only the derived grant snapshots by digest. Measure real runs, and take content-addressed storage of the `tools` sub-object to 048 only if they show it matters. | 4.1, 5.2 |
+| OD-3 | **Decision vocabulary.** Add only `error`. `approve` and `reject` are SDK input aliases for `allow` and `deny` on approvals, never stored values. | 5.3 |
+| OD-4 | **MCP over stdio.** Pull 053 WP4-06a (the MCP protocol library's transport hook, pinned per version) forward into 057 P1 for Python. Other languages stay `not_captured`, with launch and lifetime evidence only. Never an inline relay, never a pipe reader. | 1.4, 2.1 (B9), 4.2, 4.8, 10.2 (WP7-8) |
+| OD-5 | **System prompt privacy.** The production default of `model.request.instructions` becomes `off` (digest only), retained only when the capture policy names the role. The `C20` digest reaches telemetry only as a keyed pseudonym. | 7.1, 8, 9.1 |
+| OD-6 | **Denial markers.** Customers may list the exact text their own tool layer writes on a refusal; a match projects a `configured_marker` row. Exact matching only, off by default, never a built-in list. | 4.1, 4.10.1, 7.1, 8, 10.2 (WP7-6) |
+| OD-7 | **Control-endpoint decision extraction.** The reader applies a customer-declared JSON Pointer and literal value map to retained control-endpoint responses, offline only, labelled `configured_extract`. | 4.4, 10.3 (WP7-13) |
+| OD-8 | **Configuration snapshots.** An opt-in, operator-run snapshot of the customer's watched `permission_config` files, outside the agent process, is a `reported` declared-grant source. P3 item. | 4.3, 4.10.2, 10.4 (WP7-17) |
+| OD-9 | **Hooks in a runtime's chain.** Fabric never installs its own hook in any runtime's hook chain. Hook programs are observed as processes. | 4.9 |
+| OD-10 | **`deny_with_effect` (F6).** The OSS reader shows it, labelled as co-occurrence, with the deny's mode and derivation and the effect's attribution. | 6.3 |
+| OD-11 | **Legacy verdict shapes.** The activity v1 `fabric.policy.evaluation`, `fabric.tool.authorization` and `fabric.escalation` events and the connect v1 `policy_verdict`, `authorization_verdict` and `escalation` surfaces are deprecated, and replaced in v2 by the control decision record. | 1.2, 8, 9.3 |
+| OD-12 | **OTel GenAI semantic conventions.** Accept one pinned semconv version as source keys only; never emit them as Fabric's own keys. | 4.5, 10.4 (WP7-14) |
+| OD-13 | **Host-sensor amendment (053 §6.2).** eBPF exit tracepoints (`sys_exit_connect`, `sys_exit_openat`, `sys_exit_execve`) fill syscall result and errno; `sched_process_exit` adds the `exit` event class with exit code and signal; watched-path labels are applied in emitter user space. | 4.3, 8, 10.3 (WP7-11) |
+| OD-14 | **OS refusals as control rows.** Kernel refusals from the closed errno and signal set are projected as `os_access` control rows, so one join model covers every refusal. | 4.3, 5.3, 10.3 (WP7-12) |
+| OD-15 | **Ordering.** 051's records core and `record_run_context` (`C30`–`C33`), and 052 WP3-0, WP3-1, WP3-4 and WP3-5, are pulled forward into 057 P0. | 10 |
+| OD-16 | **Grant digest exposure.** On telemetry the grant id is the keyed `grt-` pseudonym only; the plain digest stays in the content descriptor where policy permits digests. | 5.2 (G01, G11), 7.1 |
+| OD-17 | **`controls` chain.** A fifth chain verdict, reported like the other four, with counts in `security_context`. | 6.4 |
+| OD-18 | **Where field ids live.** The new rows amend 049 as revision 6.5; 057 is the build spec, as 050–055 were. | 8 |
+| OD-19 | **`control.checked` default.** Changes from `content` to `off`, since it usually holds the prompt or output a control flagged. | 7.1, 8, 9.1 |
+| OD-20 | **`AGENTS.md`.** The wording of section 11 is approved. It is not edited by this spec; WP7-3 applies it in P0. | 11, 10.1 (WP7-3) |
 
-   Recommended: (a) now; measure, and take (b) to 048 only if real runs
-   show it matters.
-3. **Decision vocabulary.** Should only `error` be added, with `approve`
-   and `reject` accepted as SDK input aliases for `allow`/`deny` on
-   approvals? Recommended: yes.
-4. **MCP over stdio.** Exec and HTTP capture cannot see stdio messages
-   without teeing a pipe, which is excluded. Should 053 WP4-06a (a
-   transport hook in the MCP protocol library, pinned per version) be
-   pulled into 057 P1? Or should stdio content stay `not_captured`, with
-   launch and lifetime evidence only? Recommended: pull it forward for
-   Python, declare other languages `not_captured`, and never use a relay.
-5. **System prompt privacy.** Instructions often hold policy text,
-   internal names and sometimes secrets. Should the production profile
-   default for `model.request.instructions` move to `off` (digest only),
-   with retention named explicitly? And should the `C20` digest become a
-   keyed pseudonym on any telemetry it reaches, since short instructions
-   are guessable? Recommended: yes to both.
-6. **Tool-result denial markers.** Should customers be allowed to
-   configure exact marker strings that their own tool layer writes on a
-   denial, projecting `configured_marker` rows? It is exact matching on
-   customer-declared text, not a heuristic, but it is a step toward text
-   inference. Recommended: yes, exact match only, off by default.
-7. **Control-endpoint decision extraction.** Should the reader apply a
-   customer-declared JSON Pointer and value map to retained control
-   responses (offline)? Recommended: yes, offline only, labelled
-   `configured_extract`.
-8. **Configuration snapshots.** 049 §1.4 forbids extra file reads in
-   process. Should an out-of-process, operator-run snapshot of
-   customer-listed configuration files (the `watched_paths` of class
-   `permission_config`) be allowed as a `reported` declared-grant source?
-   Recommended: yes, opt-in, outside the agent process, as a P3 item.
-9. **Hooks in a runtime's chain.** Should Fabric ever install its own hook
-   in any runtime's hook chain? Recommended: no. Hook programs are already
-   observed as processes.
-10. **`deny_with_effect` (F6).** Should the OSS reader show this
-    co-occurrence fact, or leave every cross-reference of decisions and
-    effects to downstream analysis? Recommended: show it, labelled as
-    co-occurrence with the deny's mode and derivation.
-11. **Legacy verdict shapes.** Should the v1 `fabric.policy.evaluation`,
-    `fabric.tool.authorization` and `fabric.escalation` events and the
-    connect `policy_verdict`, `authorization_verdict` and `escalation`
-    surfaces be deprecated and replaced in v2 by the control decision
-    record? Recommended: yes (9.3).
-12. **OTel GenAI semantic conventions.** Which semconv version, if any,
-    should the neutral mapping accept as source keys? They are still
-    marked development upstream. Recommended: accept a pinned version as
-    source keys only, and never emit them as Fabric's own keys.
-13. **Sensor amendment.** Approve the 053 §6.2 amendment: eBPF exit
-    tracepoints for syscall results, `sched_process_exit`, and watched-path
-    labels. Without it, out-of-process OS refusals come only from auditd.
-    Recommended: yes.
-14. **OS refusals as control rows.** Should kernel refusals be projected
-    as `os_access` control rows, or shown only as facts over sensor
-    records? Recommended: control rows, so one join model covers every
-    refusal, with the closed errno and signal set.
-15. **Ordering.** Should 051's records core and `C30`–`C33`, and 052's
-    control work packages, be pulled forward into 057 P0? Recommended: yes.
-16. **Grant digest exposure.** Should the grant id be the keyed `grt-`
-    pseudonym only (recommended), or should the plain sha256 also go on
-    telemetry where policy permits digests?
-17. **`controls` chain.** Should it be a fifth chain verdict, or only
-    counts in `security_context`? Recommended: fifth chain.
-18. **Where field ids live.** Should the new rows amend 049 (rev 6.5),
-    with 057 as the build spec? Recommended: yes, as 050–055 did.
-19. **`control.checked` default.** Should its default policy change from
-    `content` to `off`, since it usually holds the very prompt or output a
-    guardrail flagged? Recommended: yes.
-20. **`AGENTS.md`.** Approve the wording in section 11.
+### 12.1 Details rev 3 chose inside the accepted decisions
+
+The owner's 2026-11-09 question on code-level permissions (4.10) needed a
+few details that no decision states word for word. Each follows from an
+accepted decision or from the owner's instruction for 4.10; a reviewer who
+disagrees should raise it on the pull request before WP7-0 starts.
+
+- **What "exact" means for a denial marker (OD-6):** whole-text `equals`,
+  a literal `prefix`, or a `json` pointer with literal values; all
+  byte-exact and case-sensitive. A marker can state `deny` or `escalate`,
+  never `allow`.
+- **A new control kind `permission_check`** for one-shot in-code checks,
+  beside 049's `permission_request` (request and resolution).
+- **`record_control` defaults** `phase="observation"` and
+  `decision="unknown"`, and a `control=` label mapped to D38, so the
+  one-line form needs no phase. 052's positional order is unchanged.
+- **The wrapper's closed outcome table** (4.10.3), with derivation
+  `wrapped_check`, and strict mode reporting through the counter rather
+  than raising for the wrapper forms.
+- **Auto-linking confidence:** `pending_single` is `certain`, where 056 A2
+  is `tentative`, for the reason given in 4.10.3; several pending calls
+  give `ambiguous` with candidates, as 056 A3.
+- **The operator snapshot is a `fabricctl` subcommand** (WP7-17), the
+  existing operator tool, rather than a new binary.
+
+There are no open questions.

@@ -114,7 +114,7 @@ otherwise current spec.
 | [054](054-specialised-runtimes-p5.md) | Specialised runtimes and media — provider endpoints, realtime and automation (049 P5) | draft; NO_COVERAGE_CLAIM |
 | [055](055-typescript-wire-capture.md) | TypeScript model-call wire capture for Node.js agents (TS-1) | draft; NO_COVERAGE_CLAIM |
 | [056](056-agent-action-reconstruction.md) | **Agent action reconstruction** — linking model decisions, tool calls, effects and host evidence (current work) | draft; M1 implemented (v0.10, [action reconstruction](../docs/action-reconstruction.md)); AR-1 passes in CI, hermetic and live (Linux, eBPF); M2, the production profile, implemented (v0.11); AR-1 production passes in CI (replay, live, auditd); NO_COVERAGE_CLAIM |
-| [057](057-security-context-recording.md) | Security context recording — permissions, control decisions, hooks and extensions, captured at the boundaries every agent crosses (model wire, tool protocols, process and OS, network, OTLP; record-only; extends 049 D01–D11 and C30–C33) | draft (rev 2); NO_COVERAGE_CLAIM |
+| [057](057-security-context-recording.md) | Security context recording — permissions, control decisions, hooks and extensions, captured at the boundaries every agent crosses (model wire, tool protocols, process and OS, network, OTLP; record-only; extends 049 D01–D11 and C30–C33) | accepted (rev 3, owner 2026-11-09); not built; NO_COVERAGE_CLAIM |
 
 Specs 036 and 040–046 are the design of record for the explicit evidence
 line (`CallRecorder`, byte-boundary adapters, qualified-run mode), which
