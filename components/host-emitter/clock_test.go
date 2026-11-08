@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,6 +22,10 @@ type fakeClocks struct {
 	mono    atomic.Int64 // ns since boot
 	rtDelta atomic.Int64 // realtime - monotonic, ns
 	susp    atomic.Int64 // boottime - monotonic, ns
+
+	mu     sync.Mutex
+	glitch []int64 // added to the next realtime reads, one entry per read
+	stall  []int64 // monotonic time that passes just before the next realtime reads
 }
 
 func newFakeClocks() *fakeClocks {
@@ -30,7 +35,40 @@ func newFakeClocks() *fakeClocks {
 	return f
 }
 
-func (f *fakeClocks) realtime() int64              { return f.mono.Load() + f.rtDelta.Load() }
+func (f *fakeClocks) realtime() int64 {
+	f.mu.Lock()
+	var glitch int64
+	if len(f.glitch) > 0 {
+		glitch, f.glitch = f.glitch[0], f.glitch[1:]
+	}
+	if len(f.stall) > 0 {
+		f.mono.Add(f.stall[0]) // descheduled between the bracket's first read and this one
+		f.stall = f.stall[1:]
+	}
+	f.mu.Unlock()
+	return f.mono.Load() + f.rtDelta.Load() + glitch
+}
+
+// glitchReads makes the next n realtime reads return d too much (a transient
+// read; the clock itself does not change).
+func (f *fakeClocks) glitchReads(n int, d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := 0; i < n; i++ {
+		f.glitch = append(f.glitch, int64(d))
+	}
+}
+
+// stallReads deschedules the reader for d before each of the next n realtime
+// reads, so each of those brackets is d wide and its midpoint d/2 early.
+func (f *fakeClocks) stallReads(n int, d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := 0; i < n; i++ {
+		f.stall = append(f.stall, int64(d))
+	}
+}
+
 func (f *fakeClocks) monotonic() int64             { return f.mono.Load() }
 func (f *fakeClocks) suspended() (int64, bool)     { return f.susp.Load(), true }
 func (f *fakeClocks) advance(d time.Duration)      { f.mono.Add(int64(d)) }
@@ -97,8 +135,8 @@ func TestSlewAndNoiseAreNotSteps(t *testing.T) {
 	}
 	f.advance(time.Millisecond)
 	f.step(500 * time.Microsecond) // sampling noise
-	if c.refresh(0) != 0 || c.stepCount() != 0 || c.uncertaintyNs() != clockBaseUncertaintyNs {
-		t.Fatalf("noise reported as a step: %d steps", c.stepCount())
+	if c.refresh(0) != 0 || c.stepCount() != 0 || c.rejectedSampleCount() != 0 || c.uncertaintyNs() != clockBaseUncertaintyNs {
+		t.Fatalf("noise reported as a step: %d steps, %d rejected", c.stepCount(), c.rejectedSampleCount())
 	}
 	ts := uint64(f.monotonic())
 	if c.wallNs(ts) != f.trueWall(ts) {
@@ -203,8 +241,8 @@ func TestSmallResyncsAreFollowedNotSteps(t *testing.T) {
 			t.Fatalf("resync %d not followed", i)
 		}
 	}
-	if c.stepCount() != 0 || c.smallStepCount() != 4 || c.uncertaintyNs() != clockBaseUncertaintyNs {
-		t.Fatalf("steps %d, small %d, uncertainty %d", c.stepCount(), c.smallStepCount(), c.uncertaintyNs())
+	if c.stepCount() != 0 || c.smallStepCount() != 4 || c.rejectedSampleCount() != 0 || c.uncertaintyNs() != clockBaseUncertaintyNs {
+		t.Fatalf("steps %d, small %d, rejected %d, uncertainty %d", c.stepCount(), c.smallStepCount(), c.rejectedSampleCount(), c.uncertaintyNs())
 	}
 	if strings.Contains(logged.String(), "step detected") {
 		t.Fatalf("a resync was logged as a step: %q", logged.String())
@@ -410,5 +448,151 @@ func TestClockSettingsAreValidated(t *testing.T) {
 		if len(c.loadErrs) != 1 || !strings.Contains(c.loadErrs[0].Error(), bad[0]) {
 			t.Fatalf("%s=%s: %v", bad[0], bad[1], c.loadErrs)
 		}
+	}
+}
+
+// n2Step is the 0.12.0 acceptance N2 magnitude: 2^16 us.
+const n2Step = 65_536 * time.Microsecond
+
+// TestATransientChangeThatRevertsIsRejected: 0.12.0 acceptance N2. A sample
+// that reads +65.536 ms while the clock has not changed is re-sampled at
+// once; the re-sample is back at the old offset, so the change is rejected:
+// not followed, not a step, not logged, nothing widened, counted apart.
+func TestATransientChangeThatRevertsIsRejected(t *testing.T) {
+	logged := captureLog(t)
+	f := newFakeClocks()
+	c := f.clock()
+	var seen []int64
+	c.onStep = func(ns int64) { seen = append(seen, ns) }
+	for _, d := range []time.Duration{n2Step, -n2Step, 3 * time.Second} {
+		f.advance(250 * time.Millisecond)
+		f.glitchReads(clockSampleReads, d) // every read of one sample
+		if got := c.refresh(0); got != 0 {
+			t.Fatalf("a transient %s read reported as a step of %d ns", d, got)
+		}
+		if ts := uint64(f.monotonic()); c.wallNs(ts) != f.trueWall(ts) {
+			t.Fatalf("a transient %s read was followed", d)
+		}
+	}
+	if c.stepCount() != 0 || c.smallStepCount() != 0 || c.rejectedSampleCount() != 3 || len(seen) != 0 {
+		t.Fatalf("steps %d, small %d, rejected %d, callbacks %v", c.stepCount(), c.smallStepCount(), c.rejectedSampleCount(), seen)
+	}
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs {
+		t.Fatalf("uncertainty %d, want the base", got)
+	}
+	if strings.Contains(logged.String(), "step detected") {
+		t.Fatalf("a rejected sample was logged as a step: %q", logged.String())
+	}
+	// A transient small change is rejected the same way, not counted as small.
+	f.advance(5 * time.Second)
+	f.glitchReads(clockSampleReads, 9*time.Millisecond)
+	if c.refresh(0) != 0 || c.smallStepCount() != 0 || c.rejectedSampleCount() != 4 {
+		t.Fatalf("small %d, rejected %d", c.smallStepCount(), c.rejectedSampleCount())
+	}
+}
+
+// TestAWideBracketIsRejected: a goroutine descheduled between the monotonic
+// and realtime reads moves the midpoint by half the stall (a 131.072 ms stall
+// reads as +65.536 ms). The tightest of a sample's brackets is kept; a sample
+// whose tightest bracket is still too wide is retaken; if every try is wide,
+// the re-sample still rejects the false change.
+func TestAWideBracketIsRejected(t *testing.T) {
+	logged := captureLog(t)
+	f := newFakeClocks()
+	c := f.clock()
+	stall := 2 * n2Step
+	check := func(what string, rejected uint64) {
+		t.Helper()
+		if got := c.refresh(0); got != 0 {
+			t.Fatalf("%s: reported as a step of %d ns", what, got)
+		}
+		if ts := uint64(f.monotonic()); c.wallNs(ts) != f.trueWall(ts) {
+			t.Fatalf("%s: wall time off by %d ns", what, c.wallNs(ts)-f.trueWall(ts))
+		}
+		if c.stepCount() != 0 || c.smallStepCount() != 0 || c.rejectedSampleCount() != rejected {
+			t.Fatalf("%s: steps %d, small %d, rejected %d (want %d)", what, c.stepCount(), c.smallStepCount(), c.rejectedSampleCount(), rejected)
+		}
+	}
+	f.advance(250 * time.Millisecond)
+	f.stallReads(1, stall) // one bracket of the sample: a tighter one is kept
+	check("one wide bracket", 0)
+	f.advance(250 * time.Millisecond)
+	f.stallReads(clockSampleReads, stall) // the whole sample: retaken
+	check("one wide sample", 1)
+	f.advance(250 * time.Millisecond)
+	f.stallReads(clockSampleReads*clockSampleTries, stall) // every try: the re-sample rejects it
+	check("every try wide", 1+clockSampleTries+1)
+	f.advance(250 * time.Millisecond)
+	f.stallReads(clockSampleReads, clockMaxBracketNs*time.Nanosecond) // at the bound: usable
+	if c.refresh(0) != 0 || c.rejectedSampleCount() != 1+clockSampleTries+1 {
+		t.Fatalf("a bracket at the bound was rejected: %d", c.rejectedSampleCount())
+	}
+	if c.uncertaintyNs() != clockBaseUncertaintyNs || strings.Contains(logged.String(), "step detected") {
+		t.Fatalf("uncertainty %d, log %q", c.uncertaintyNs(), logged.String())
+	}
+}
+
+// TestARealStepIsConfirmedAtOnce: a persistent step is confirmed by the
+// immediate re-sample, so it is detected at the refresh that first sees it,
+// with the same widening and settle window as before. A real excursion that
+// the clock holds across samples (the clock is set, then set back) is two
+// steps: records stamped across either edge may be off by the step.
+func TestARealStepIsConfirmedAtOnce(t *testing.T) {
+	logged := captureLog(t)
+	f := newFakeClocks()
+	c := f.clock()
+	f.advance(time.Second)
+	before := uint64(f.monotonic())
+	f.step(n2Step)
+	f.advance(10 * time.Millisecond)
+	if got := c.refresh(0); got != int64(n2Step) {
+		t.Fatalf("refresh reported %d, want %d", got, int64(n2Step))
+	}
+	wide := clockBaseUncertaintyNs + int64(n2Step)
+	if c.stepCount() != 1 || c.rejectedSampleCount() != 0 || c.uncertaintyFor(before) != wide {
+		t.Fatalf("steps %d, rejected %d, uncertainty %d", c.stepCount(), c.rejectedSampleCount(), c.uncertaintyFor(before))
+	}
+	for i := 0; i < 3; i++ { // held across three batch ticks
+		f.advance(250 * time.Millisecond)
+		if c.refresh(0) != 0 {
+			t.Fatal("a held offset reported as another step")
+		}
+	}
+	f.step(-n2Step)
+	f.advance(10 * time.Millisecond)
+	if got := c.refresh(0); got != -int64(n2Step) {
+		t.Fatalf("the set-back reported %d", got)
+	}
+	if ts := uint64(f.monotonic()); c.wallNs(ts) != f.trueWall(ts) || c.uncertaintyFor(ts) != wide {
+		t.Fatalf("after the set-back: wall error %d, uncertainty %d", c.wallNs(ts)-f.trueWall(ts), c.uncertaintyFor(ts))
+	}
+	if c.stepCount() != 2 || c.rejectedSampleCount() != 0 || strings.Count(logged.String(), "step detected") != 2 {
+		t.Fatalf("steps %d, rejected %d, log %q", c.stepCount(), c.rejectedSampleCount(), logged.String())
+	}
+	f.advance(defaultClockSettle + time.Second)
+	c.refresh(0)
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs {
+		t.Fatalf("not narrowed after the settle window: %d", got)
+	}
+}
+
+// TestAConfirmedChangeWidensByTheLargerReading: when the re-sample confirms a
+// change but reads a different offset (the clock was still moving), wall time
+// follows the re-sample and the widening covers the larger change.
+func TestAConfirmedChangeWidensByTheLargerReading(t *testing.T) {
+	captureLog(t)
+	f := newFakeClocks()
+	c := f.clock()
+	f.advance(time.Second)
+	f.step(40 * time.Millisecond)
+	f.glitchReads(clockSampleReads, 25*time.Millisecond) // the first sample reads 65 ms
+	if got := c.refresh(0); got != int64(40*time.Millisecond) {
+		t.Fatalf("refresh reported %d", got)
+	}
+	if ts := uint64(f.monotonic()); c.wallNs(ts) != f.trueWall(ts) {
+		t.Fatal("the re-sample was not followed")
+	}
+	if got := c.uncertaintyNs(); got != clockBaseUncertaintyNs+int64(65*time.Millisecond) {
+		t.Fatalf("uncertainty %d, want the base plus 65 ms", got)
 	}
 }

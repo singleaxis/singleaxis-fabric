@@ -42,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - **Queue sizing on small hosts.** `docs/production-setup.md` now explains
   preflight's worst-case queue warning (for example 80 GB on a laptop with
   58 GB free), which values to lower, and what each change costs.
+- **The eBPF emitter confirms a clock step before declaring it.** The 0.12.0
+  acceptance run logged a +65.536 ms step and its exact reversal 0.7 s
+  later, which widened the source's declared clock uncertainty to 67.5 ms
+  for the 60 s settle window. Each offset sample is now the tightest of four
+  bracketed reads; a sample whose bracket is wider than 100 µs (the emitter
+  was descheduled mid-read) is taken again. A change beyond slewing is
+  re-sampled at once. When the re-sample is back at the old offset, the
+  change is not followed, logged or widened, and is counted as
+  `clock_rejected_samples=` on the health line. A confirmed step is still
+  detected at the refresh that first sees it, and `EMIT_CLOCK_STEP_MIN` and
+  `EMIT_CLOCK_SETTLE` work as before. A clock that is really set forward and
+  back again is still two steps, since records stamped across either change
+  may be off by its size.
 
 ## [0.12.0] - 2026-11-08
 
