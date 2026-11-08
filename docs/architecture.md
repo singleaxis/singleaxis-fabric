@@ -141,7 +141,7 @@ authenticated, single-source Node). See [deployment](deployment.md).
 | Artifact | Contents |
 |---|---|
 | Python SDK `singleaxis-fabric` | wire capture, explicit APIs, `fabric.reconstruct`, qualified-run verifier; extras `otlp`, `s3`, `mcp`, `signing` |
-| TypeScript SDK `@singleaxis/fabric` | explicit APIs only (no wire capture); Node.js ≥ 20.6 |
+| TypeScript SDK `@singleaxis/fabric` | explicit APIs only (no wire capture); Node.js ≥ 22.18 |
 | Fabric Node image `ghcr.io/singleaxis/fabric-otelcol` | `otelcol-fabric` with `fabric-gate`; components: `otlp` and `audit` receivers; `fabricguard`, `batch`, `memory_limiter` processors; `fabriccontent`, `otlphttp`, `debug` exporters; `health_check`, `file_storage`, patched `bearertokenauth`, `noredirect`, `fabricenvelope` extensions |
 | Host emitter image `ghcr.io/singleaxis/fabric-host-emitter` | eBPF host sensor |
 | Helm chart `fabric` | the Node, profiles `shadow-dev` and `shadow-production` |
