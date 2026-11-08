@@ -39,7 +39,7 @@ jobs:
           tags: ${{ env.COLLECTOR_IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
         with:
           cluster_name: ${{ env.KIND_CLUSTER }}
           node_image: kindest/node:v1.30.0
