@@ -5,7 +5,7 @@
   "artifacts": [
     {"path": "registry/capture-points-v1.json", "sha256": "41949edb2ae3021b16a38a277d42b7bf3dcc2f870871cacb5e5bd0f49f864e21", "expectation": "registry", "expected_error": null},
     {"path": "registry/content-roles-v1.json", "sha256": "d634243b1981493a0099212934f900b94e1eb639abdb7d83115356995178a38f", "expectation": "registry", "expected_error": null},
-    {"path": "registry/field-registry-v1.json", "sha256": "fbf724ff33b1b8ee41490b44a3a5dc51a279a13998e945b3935e5acb26aa690f", "expectation": "registry", "expected_error": null},
+    {"path": "registry/field-registry-v1.json", "sha256": "f5306f7b9610c82c5b4dbd8adbbe1670c911cb3993771afabc3d0315b74bb8ce", "expectation": "registry", "expected_error": null},
     {"path": "registry/telemetry-keys-v1.json", "sha256": "80348fb207e2c66668254ef61852914750166d25f326d744ad78425faa6064b5", "expectation": "registry", "expected_error": null},
     {"path": "registry/vocabularies-v1.json", "sha256": "80a0daaa632d3b785bd23d4b3592c6229df01bc977be1b6d84cca829a2f52e21", "expectation": "registry", "expected_error": null},
     {"path": "schema/capture-manifest-v1.schema.json", "sha256": "a76cf3560797cfc5405d5bec83818010ca89eec139f44cd782df6a6d26dc938f", "expectation": "schema", "expected_error": null},

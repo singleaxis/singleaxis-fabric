@@ -1379,7 +1379,7 @@
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_instrumented)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.run.execution_mode`",
       "definition": "Customer's execution mode. Declared, not proof of enforcement. Via `record_run_context`."
     },
@@ -1395,7 +1395,7 @@
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.run.approval_policy`",
       "definition": "When approval is required."
     },
@@ -1411,7 +1411,7 @@
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "C `run.permissions` (the declared grant document, G10); T `fabric.run.permissions.count`",
       "definition": "Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry. Spec 057: the body is a declared `fabric.grant-snapshot/v1` document (G10); `fabric.run.permissions.count` stays the sum of the declared counts (G07)."
     },
@@ -1427,7 +1427,7 @@
       "privacy_class": "LABEL/META/DIGEST",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.run.agent_policy_id`, `.agent_policy_version`, `.agent_policy_digest`",
       "definition": "The customer's agent policy identity. Not the recorder capture policy (X31)."
     },
@@ -3168,7 +3168,7 @@
       "privacy_class": "ID",
       "required": "R (control)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.id`",
       "definition": "One control observation. Via `record_control`."
     },
@@ -3184,7 +3184,7 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.kind`",
       "definition": "What kind of external control decided. Spec 057 adds `provider_safety` (W), `elicitation` (M), `os_access` (P) and `permission_check` (in-code one-shot check)."
     },
@@ -3200,7 +3200,7 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.phase`",
       "definition": "Approvals are a request and a later resolution, linked by `resolves`."
     },
@@ -3216,7 +3216,7 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.decision`",
       "definition": "Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow. `error` (spec 057): the control ran and failed to decide. The phase × decision matrix of spec 052 §4.2.2 applies."
     },
@@ -3232,7 +3232,7 @@
       "privacy_class": "ID",
       "required": "R (resolution)",
       "status_if_hook_absent": "unresolved",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.resolves`",
       "definition": "Request this resolution answers."
     },
@@ -3248,7 +3248,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.gated_step_id`, `fabric.control.action_id`",
       "definition": "Step or action it applied to. A denied action may have no executed step."
     },
@@ -3264,7 +3264,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.actor.type`, `fabric.actor.id` on the event",
       "definition": "human_approver, system or external_service. A control record's actor defaults to `unknown`, not `agent` (spec 052 D-3)."
     },
@@ -3280,7 +3280,7 @@
       "privacy_class": "LABEL/META/DIGEST",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.policy_id`, `.policy_version`, `.policy_digest`",
       "definition": "Policy the control applied."
     },
@@ -3296,7 +3296,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "absent",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.proof_ref`",
       "definition": "Reference to the external system's own record. Fabric does not verify it."
     },
@@ -3312,7 +3312,7 @@
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "C `control.checked`, `control.reason`, `control.approval`",
       "definition": "What was checked, why, and the scope and duration of a grant."
     },
@@ -3328,7 +3328,7 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "always",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.authentication`, `fabric.control.enforced_by_fabric`",
       "definition": "Invariants on every control event."
     },
@@ -3733,7 +3733,7 @@
       "privacy_class": "META",
       "required": "R (control request)",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "P",
       "definition": "Spec 052 D-1: the carrier for 049 §6.3 \"pending at run end\". `resolved` when a resolution is in the input (disagreeing resolutions: `conflict`), `revoked` when a revocation targets the request or a resolution, else `pending`; never mapped to allow or deny."
     },

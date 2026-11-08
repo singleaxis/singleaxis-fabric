@@ -75,6 +75,7 @@ from fabric._model_names import HASHED_MODEL_RE, expose_model
 from fabric._sequence import key_id
 from fabric._version import __version__
 
+from . import _controls
 from ._evidence import EVIDENCE_TYPES, EvidenceDecode, decode_evidence
 from ._fields_model import (
     _ALL_FIELD_IDS,
@@ -292,6 +293,30 @@ _ROWS: tuple[tuple[str, tuple[str, ...], bool, str, tuple[str, ...]], ...] = (
      ("reconstruct.parse",)),
     ("D34", ("usage.basis",), True, "always", ("fabric.self",)),
 )  # fmt: skip
+# Spec 051 C30-C33 (run annotations) and spec 052 D01-D11, D36 (control steps), pulled
+# forward by spec 057 OD-15.
+_ROWS += (
+    ("C30", ("execution_mode",), False, "not_captured(not_instrumented)", ("sdk.records",)),
+    ("C31", ("approval_policy",), False, "not_captured(caller_omitted)", ("sdk.records",)),
+    ("C32", ("permissions",), False, "not_captured(caller_omitted)", ("sdk.records",)),
+    ("C33", ("agent_policy.id", "agent_policy.version", "agent_policy.digest"), False,
+     "not_captured(caller_omitted)", ("sdk.records",)),
+    ("D01", ("control.id",), True, "not_captured(not_instrumented)", ("sdk.records",)),
+    ("D02", ("control.kind",), True, "not_captured(not_instrumented)", ("sdk.records",)),
+    ("D03", ("control.phase",), True, "unknown", ("sdk.records",)),
+    ("D04", ("control.decision",), True, "unknown", ("sdk.records",)),
+    ("D05", ("control.resolves",), True, "unresolved", ("sdk.records",)),
+    ("D06", ("control.gated_step", "control.action_id"), False, "unknown", ("sdk.records",)),
+    ("D07", ("control.decided_by",), False, "unknown", ("sdk.records",)),
+    ("D08", ("control.policy_id", "control.policy_version", "control.policy_digest"), False,
+     "not_captured(caller_omitted)", ("sdk.records",)),
+    ("D09", ("control.proof_ref",), False, "absent", ("sdk.records",)),
+    ("D10", ("control.checked", "control.reason", "control.approval"), False,
+     "not_captured(caller_omitted)", ("sdk.records",)),
+    ("D11", ("control.authentication", "control.enforced_by_fabric"), True, "always",
+     ("fabric.self",)),
+    ("D36", ("control.resolution_state",), True, "unknown", ("reconstruct.parse",)),
+)  # fmt: skip
 FIELD_ROWS: Mapping[str, FieldRow] = {row[0]: FieldRow(*row) for row in _ROWS}
 #: Projection key -> its row (keys are unique across the registry, 049 §3).
 KEY_ROWS: Mapping[str, FieldRow] = {key: row for row in FIELD_ROWS.values() for key in row.keys}
@@ -318,6 +343,7 @@ KIND_REQUIRED: Mapping[str, tuple[str, ...]] = {
     "file": ("N45",),
     "message": ("N58",),
     "outcome": ("N59",),
+    "control": ("D01", "D02", "D03", "D04", "D11"),  # spec 052 §4.9 rule 9
 }  # fmt: skip
 #: R fields under a condition (``R (timed steps)``, ``R (on error)``, ...).
 CONDITIONAL_REQUIRED: Mapping[str, str] = {
@@ -377,6 +403,9 @@ ROLE_FIELDS: Mapping[str, str] = {
     "run.input": "input.payload",
     "side_effect.request": "effect.request",
     "side_effect.result": "effect.result",
+    "control.checked": "control.checked",
+    "control.reason": "control.reason",
+    "control.approval": "control.approval",
 }
 STEP_KINDS: frozenset[str] = PROFILES["fabric.profile.full/v1"][0] | {"agent_turn"}
 
@@ -876,6 +905,7 @@ def build_projection(
         if root is not None:
             roots[root[0]].append((run["run_id"], root[1]))
     _same_as_by_trace(roots)
+    _controls.pair_controls(steps, wrap=wrapper)  # spec 052 §4.9 rules 3, 4 (all runs)
     verifier = collector.verifier
     document: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -985,11 +1015,13 @@ class _Builder:
         member_ids = set(graph.member_run_ids()) if graph is not None else {run_id}
         builder = _RunSteps(self, run, member_ids)
         steps = builder.build()
-        return self._run_document(run, graph, steps), steps, builder.root_trace()
+        document = self._run_document(run, graph, steps, builder.annotations)
+        return document, steps, builder.root_trace()
 
     def _run_document(
-        self, run: Mapping[str, Any], graph: RunGraph | None, steps: Sequence[Mapping[str, Any]]
-    ) -> dict[str, Any]:
+        self, run: Mapping[str, Any], graph: RunGraph | None, steps: Sequence[Mapping[str, Any]],
+        annotations: Sequence[tuple[Mapping[str, Any], str, str, tuple[str, int, int]]] = (),
+    ) -> dict[str, Any]:  # fmt: skip
         state, resumable = "not_resumable_unclosed", False
         if graph is not None and graph.run_state is not None:
             state, resumable = graph.run_state, bool(graph.resumable)
@@ -1000,6 +1032,11 @@ class _Builder:
             out["scope_ids"] = scope_ids
         out["integrity_verdict"] = run["verdict"]
         run_fields, governed = _RunFields(self, run, steps).build()
+        ordered = sorted(annotations, key=lambda a: a[3])
+        for key, value in _controls.run_annotation_fields(
+            ((attrs, point, provenance) for attrs, point, provenance, _ in ordered), wrap=wrapper
+        ).items():  # 051 §4.13 rule 8: the latest value per key, every observation an item
+            run_fields.put(key, value, layer="context")
         verdicts, none_seen = self._run_verdicts(run, state, steps, run_fields, governed)
         out["layer_verdicts"] = verdicts
         if none_seen:
@@ -1275,6 +1312,8 @@ class _RunSteps:
         self.entries = {entry["exchange_id"]: entry for entry in run.get("exchanges", ())}
         self.traces: dict[str, str] = {}  # attempt id -> the W3C trace id of its record
         self.record_attempts: set[str] = set()
+        # 051 §4.13 rule 1: run annotations (records with step kind ``run``), not steps
+        self.annotations: list[tuple[Mapping[str, Any], str, str, tuple[str, int, int]]] = []
 
     def root_trace(self) -> tuple[str, dict[str, Any]] | None:
         """The run's root step (its outermost first scope, else its first exchange, else its
@@ -1490,7 +1529,7 @@ class _RunSteps:
 
     # -- records-input attempts -------------------------------------------------
 
-    def _records_step(self, attempt_uid: str) -> None:
+    def _records_step(self, attempt_uid: str) -> None:  # noqa: PLR0915 - one statement per field
         held = self.collector.records.get(attempt_uid, {})
         records = sorted(
             ((obs, span) for obs, span in held.items() if obs.run_id in self.members),
@@ -1506,6 +1545,9 @@ class _RunSteps:
         kind = kind if kind in STEP_KINDS else "interaction"
         point_attr = _str_attr(attrs, "fabric.capture.point")
         point = point_attr if point_attr and _POINT_RE.fullmatch(point_attr) else "sdk.records"
+        if kind == "run":  # a run annotation merges into the run's fields (051 rule 1)
+            self._annotation(records, point, attrs)
+            return
         point_id = point.split("@", 1)[0]
         ctx = self._context(key, first.source_sequence, point_id, kind, ("sdk.records",))
         provenance = _str_attr(attrs, "fabric.capture.source")
@@ -1547,11 +1589,37 @@ class _RunSteps:
             step["links"] = [dict(link) for link in action_links][:_MAX_LINKS]
         fields = _Fields()
         self._record_fields(fields, step, records, ctx)
+        if kind == "control":
+            self._control(fields, step, attrs, last_attrs)
         flags = ["timed", *self._segment_flag(step)]
         if result == "error":
             flags.append("on_error")
         self._note_attempt(attempt_uid, step_id, first_span)
         self._finish(step, fields, ctx, flags)
+
+    def _annotation(
+        self, records: Sequence[tuple[RecordObs, SpanRecord]], point: str,
+        attrs: Mapping[str, Any],
+    ) -> None:  # fmt: skip
+        source = _str_attr(attrs, "fabric.capture.source")
+        provenance = source if source in ("observed", "reported") else "reported"
+        for obs, span in records:
+            position = (obs.source_id, obs.source_epoch, obs.source_sequence)
+            self.annotations.append((span.attributes, point, provenance, position))
+
+    def _control(
+        self, fields: _Fields, step: dict[str, Any], first: Mapping[str, Any],
+        last: Mapping[str, Any],
+    ) -> None:  # fmt: skip
+        """Spec 052 §4.9 rules 1, 2 and 5: D01-D11 and the ``gates`` links."""
+        point, provenance = step["capture_point"], step["provenance"]
+        for key, value in _controls.control_fields(
+            last, point=point, provenance=provenance, wrap=wrapper
+        ).items():
+            fields.put(key, value, layer=_controls.LAYER)
+        gates = _controls.gates_links(first, self.record_steps)
+        if gates:
+            step["links"] = [*step.get("links", []), *gates][:_MAX_LINKS]
 
     def _note_attempt(self, attempt_uid: str, step_id: str, span: SpanRecord) -> None:
         self.record_steps[attempt_uid] = step_id
