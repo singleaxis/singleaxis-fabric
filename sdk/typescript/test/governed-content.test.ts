@@ -137,7 +137,8 @@ beforeEach(() => {
 });
 
 function tmpRoot(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "fabric-governed-"));
+  // Real path: the store issues URIs under its canonical root (macOS tmpdir is a link).
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "fabric-governed-")));
 }
 
 function store(root: string, tenant = "acme"): LocalFilesystemContentStore {

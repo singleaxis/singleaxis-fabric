@@ -13,7 +13,8 @@ vi.mock("node:fs", async (importOriginal) => {
 const original = await vi.importActual<typeof import("node:fs")>("node:fs");
 let root: string;
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-open-authority-"));
+  // Real path: the store issues URIs under its canonical root (macOS tmpdir is a link).
+  root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "fabric-open-authority-")));
 });
 afterEach(() => {
   vi.mocked(fs.lstatSync).mockImplementation(original.lstatSync);

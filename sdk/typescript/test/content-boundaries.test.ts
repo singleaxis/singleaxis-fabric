@@ -9,6 +9,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { LocalFilesystemContentStore, S3ContentStore } from "../src/index.js";
 
 const roots: string[] = [];
+// The store canonicalizes its configured root once and issues every URI under
+// that real path, so hand-built URIs must use it too (macOS tmpdir is a link).
+function tempRoot(prefix: string): string {
+  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
+}
 afterEach(() => {
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
@@ -17,7 +22,7 @@ describe("manifest namespace boundaries", () => {
   it.each(["../../outside", "../other-tenant/manifest", "a/b", "a\\b", "", ".", "..", "id\n"])(
     "rejects unsafe manifest IDs before any storage access: %j",
     async (manifestId) => {
-      const root = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-manifest-boundaries-"));
+      const root = tempRoot("fabric-manifest-boundaries-");
       roots.push(root);
       const local = new LocalFilesystemContentStore(root, "acme");
       const remote = new S3ContentStore("acme-evidence", "acme");
@@ -35,7 +40,7 @@ describe("manifest namespace boundaries", () => {
 
 describe("local store symbolic-link boundaries", () => {
   function fixture() {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "fabric-symlink-boundaries-"));
+    const root = tempRoot("fabric-symlink-boundaries-");
     roots.push(root);
     const base = path.join(root, "store");
     const outside = path.join(root, "outside");
@@ -50,8 +55,13 @@ describe("local store symbolic-link boundaries", () => {
     fs.symlinkSync(outside, alias, "dir");
     const store = new LocalFilesystemContentStore(path.join(alias, "missing", "store"), "acme");
     const uri = store.writeManifest({}, "decision", "manifest");
-    expect(uri).toContain(`${outside}/missing/store/acme/`);
+    expect(uri).toBe(`file://${outside}/missing/store/acme/manifests/manifest.json`);
     expect(store.readManifest(uri)).toEqual({});
+    // Containment stays strict: only the canonical spelling is owned, never
+    // the same object reached through the configured alias.
+    const aliased = `file://${alias}/missing/store/acme/manifests/manifest.json`;
+    expect(store.ownsUri(aliased)).toBe(false);
+    expect(() => store.readManifest(aliased)).toThrow(/escapes/);
   });
 
   it.each(["root", "tenant"])("rejects an initial %s symlink", (component) => {

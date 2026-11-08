@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- TypeScript SDK tests: the local content-store tests now pass on macOS,
+  where the default temp directory is a symlink. The SDK was already right:
+  `LocalFilesystemContentStore` resolves its configured root to the real path
+  once and issues every `file://` URI under that path, as the Python store
+  does. The tests built URIs by hand from the unresolved temp path, so the
+  strict containment check correctly rejected them. The tests now resolve
+  their temp roots, and the parent-alias test checks that URIs use the real
+  path and that a URI spelled through the alias is not owned. SDK behaviour
+  is unchanged.
+
 ## [0.12.1] - 2026-11-08
 
 Fabric 0.12.1 is a patch release that fixes what the 0.12.0 real-agent
