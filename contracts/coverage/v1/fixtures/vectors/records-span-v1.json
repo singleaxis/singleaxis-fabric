@@ -36,6 +36,7 @@
     "fabric.control.resolves",
     "fabric.control.signal",
     "fabric.control.stage",
+    "fabric.conversation_id",
     "fabric.error.domain",
     "fabric.event_id",
     "fabric.execution.host_id",
@@ -148,6 +149,7 @@
     "fabric.step.timing_basis",
     "fabric.step.update_of",
     "fabric.tenant_id",
+    "fabric.turn_id",
     "http.request.method",
     "http.response.status_code"
   ],

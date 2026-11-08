@@ -346,3 +346,26 @@ def test_context_binds_a_default_actor(tmp_path: Path, monkeypatch: pytest.Monke
             "act-"
         )
         assert unbound["fabric.actor.type"] == "unknown" and "fabric.actor.id" not in unbound
+
+
+def test_context_binds_conversation_and_turn_pseudonyms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """051 X15/X16: ``context(conversation_id=, turn_id=)`` reaches every records-input
+    record in scope as ``conv-``/``turn-`` pseudonyms (records-class placement, 051 §5.1);
+    rule A must not drop them, and the clear ids never appear."""
+    with installed(tmp_path, monkeypatch) as (handle, exporter):
+        with records.context(conversation_id="CANARY-conv-1", turn_id="CANARY-turn-1"):
+            records.record_control("rate_limit", "observation", "deny")
+            records.record_run_context(execution_mode="supervised")
+        records.record_control("rate_limit", "observation", "allow")
+        assert handle.flush(10.0)
+        spans = records_of(exporter)
+        dropped = _records.records_input(handle).stats.snapshot()["records_keys_dropped"]
+    bound, annotation, unbound = spans
+    for attrs in (bound, annotation):
+        assert str(attrs["fabric.conversation_id"]).startswith("conv-")
+        assert str(attrs["fabric.turn_id"]).startswith("turn-")
+    assert "fabric.conversation_id" not in unbound and "fabric.turn_id" not in unbound
+    assert "CANARY" not in json.dumps(spans, default=str)
+    assert dropped == 0

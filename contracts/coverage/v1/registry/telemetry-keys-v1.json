@@ -743,6 +743,9 @@
       "field": "X15",
       "validator": "ID: `conv-` + 32 hex",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^conv-[0-9a-f]{32}$",
@@ -3397,6 +3400,9 @@
       "field": "X16",
       "validator": "ID: `turn-` + 32 hex",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^turn-[0-9a-f]{32}$",

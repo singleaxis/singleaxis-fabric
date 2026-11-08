@@ -345,6 +345,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         ),
         "source": "field_type",
     },
+    "fabric.conversation_id": {
+        "type": "string",
+        "pattern": "^conv-[0-9a-f]{32}$",
+        "examples": ("conv-9f86d081884c7d659a2feaa0c55ad015",),
+    },
     "fabric.error.domain": {
         "type": "enum",
         "values": (
@@ -1127,6 +1132,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
             "tenant-a",
             "acme.prod",
         ),
+    },
+    "fabric.turn_id": {
+        "type": "string",
+        "pattern": "^turn-[0-9a-f]{32}$",
+        "examples": ("turn-9f86d081884c7d659a2feaa0c55ad015",),
     },
     "http.request.method": {
         "type": "enum",
