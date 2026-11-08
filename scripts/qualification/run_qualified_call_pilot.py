@@ -32,8 +32,12 @@ from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from fabric import ByteEvidenceConfig, ByteEvidenceRecorder, LocalFilesystemContentStore
-from fabric import __file__ as fabric_package_file
+from fabric import (
+    ByteEvidenceConfig,
+    ByteEvidenceRecorder,
+    LocalFilesystemContentStore,
+    __file__ as fabric_package_file,
+)
 from fabric.byte_resolver import ByteEvidenceResolver
 from fabric.call_otlp import project_call_snapshot
 from fabric.call_reconcile import RouteDeclaration
@@ -624,17 +628,17 @@ def _run_pilot(output: Path, resources: ExitStack) -> dict[str, Any]:  # noqa: P
         )
 
     def verify(**changes: Any) -> dict[str, Any]:
-        inputs = dict(
-            expectation=expectation,
-            feeds=feeds,
-            resolver=resolver,
-            source_spool=spool,
-            source_binding_attestation=source_binding,
-            route_closure_attestation=route_closure,
-            receipts=receipts,
-            trusted_keys=signer.trusted,
-            verification_time=now,
-        )
+        inputs: dict[str, Any] = {
+            "expectation": expectation,
+            "feeds": feeds,
+            "resolver": resolver,
+            "source_spool": spool,
+            "source_binding_attestation": source_binding,
+            "route_closure_attestation": route_closure,
+            "receipts": receipts,
+            "trusted_keys": signer.trusted,
+            "verification_time": now,
+        }
         changed_snapshot = changes.pop("snapshot", snapshot)
         inputs.update(changes)
         return verify_qualified_call_run(changed_snapshot, **inputs)

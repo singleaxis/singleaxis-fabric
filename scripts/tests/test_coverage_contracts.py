@@ -10,22 +10,24 @@ import json
 import re
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from contracts import action_record  # noqa: E402
 from contracts.validate_coverage_contracts import (  # noqa: E402
     FAMILY,
     FREE_TEXT,
     MANIFEST_RECORD_SCHEMA,
     PSEUDONYM_V1_VECTORS,
+    PSEUDONYM_V2_TYPES,
     REGISTRY,
     SPEC,
-    PSEUDONYM_V2_TYPES,
     CoverageContractError,
     check_value,
     field_set_keys,
@@ -36,7 +38,6 @@ from contracts.validate_coverage_contracts import (  # noqa: E402
     pseudonym_v2,
     validate_coverage_contracts,
 )
-from contracts import action_record  # noqa: E402
 from release import package_contracts as packaging  # noqa: E402
 
 
@@ -751,7 +752,7 @@ def test_p1_records_table_has_no_content_key_and_matches_the_go_table() -> None:
     block = go[
         go.index("var recordKeyValidators") : go.index("var recordKeyConditions")
     ]
-    assert set(re.findall(r'^\t"([^"]+)":', block, re.M)) == set(table)
+    assert set(re.findall(r'^\t"([^"]+)":', block, re.MULTILINE)) == set(table)
 
 
 def test_p1_role_tables_are_generated_from_the_registry() -> None:
@@ -1294,8 +1295,10 @@ def test_056_window_margin_and_peerless_syscalls() -> None:
 
 
 # ---------------------------------------------------------------- spec 056 M2 (coverage/v1 1.3.0)
-from contracts import action_record_m2  # noqa: E402
-from contracts import host_records  # noqa: E402
+from contracts import (  # noqa: E402
+    action_record_m2,
+    host_records,
+)
 from contracts.validate_coverage_contracts import (  # noqa: E402
     point_kinds as coverage_point_kinds,
     record_checks as coverage_record_checks,

@@ -75,8 +75,8 @@ hooks-sandbox-e2b = [
 dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
-  # Lockstep with .pre-commit-config.yaml (ruff-pre-commit v0.13.0): CI installs this lock.
-  "ruff==0.13.0",
+  # Lockstep with .pre-commit-config.yaml (ruff-pre-commit v0.17.3): CI installs this lock.
+  "ruff==0.17.3",
   "mypy>=1.11.2",
   "jsonschema>=4.23",
   "types-jsonschema>=4.23",
@@ -245,9 +245,15 @@ exclude_lines = [
 line-length = 100
 target-version = "py311"
 
+[tool.ruff.format]
+exclude = ["*.md"] # docs code blocks are hand-laid-out (aligned comments); 0.17 would rewrap them
+
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "S", "C4", "PIE", "RET", "SIM", "PL", "RUF"]
-ignore = ["PLR0913"]
+ignore = [
+  "PLR0913",
+  "PLR0917", # positional-count twin of PLR0913; keyword-only rewrites would change call signatures
+]
 
 [tool.ruff.lint.per-file-ignores]
 # S108: hardcoded /tmp paths are intentional in tests (short paths to

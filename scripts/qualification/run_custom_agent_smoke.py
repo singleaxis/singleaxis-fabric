@@ -32,10 +32,8 @@ from fabric import (
     ByteEvidenceRecorder,
     BytePrivacyPolicy,
     LocalFilesystemContentStore,
+    __file__ as fabric_package_file,
 )
-from fabric import __file__ as fabric_package_file
-from fabric.call_recorder import CallRecorder
-from fabric.redaction import RedactionService
 from fabric.byte_resolver import ByteEvidenceResolver
 from fabric.call_reconcile import (
     CallByteWitness,
@@ -43,8 +41,10 @@ from fabric.call_reconcile import (
     RouteDeclaration,
     reconcile_call_run,
 )
-from fabric.synthetic_reconcile import SyntheticByteResolver
+from fabric.call_recorder import CallRecorder
+from fabric.redaction import RedactionService
 from fabric.source_spool import SyntheticSourceSpool
+from fabric.synthetic_reconcile import SyntheticByteResolver
 
 SOURCE = "dispatcher"
 CANARY = b"CUSTOM_AGENT_PRIVATE_CANARY"

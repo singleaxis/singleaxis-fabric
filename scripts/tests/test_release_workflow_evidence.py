@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from release import verify_workflow_runs as verifier  # noqa: E402
 
-
 SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
@@ -106,6 +105,7 @@ def test_short_sha_is_rejected_before_query() -> None:
 
 def test_semgrep_findings_fail_the_security_workflow() -> None:
     import shlex
+
     import yaml
 
     workflow = (

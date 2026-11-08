@@ -15,8 +15,9 @@ import sys
 import tarfile
 import tempfile
 import zipfile
+from collections.abc import Iterable, Sequence
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 SEMVER_RE = re.compile(
     r"^v?(?P<base>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))"

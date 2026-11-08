@@ -456,7 +456,7 @@ def _responses(
         base = "response:final"
     else:
         base = "response:"
-    if "error" in resp and resp["error"]:
+    if resp.get("error"):
         out["error.code"] = resp["error"].get("code")
     out["model.served"] = resp.get("model")
     if resp.get("status"):

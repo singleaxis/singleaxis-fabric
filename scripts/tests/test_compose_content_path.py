@@ -32,7 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 COMPOSE_DIR = REPO_ROOT / "deploy" / "compose"
 FIXTURES = COMPOSE_DIR / "fixtures" / "preflight-tls"
 # Built at runtime so the fixture is not a credential-shaped literal.
-SECRET_MARKER = "-".join(("s3cr3t", "marker", "7f1d"))
+SECRET_MARKER = "-".join(("s3cr3t", "marker", "7f1d"))  # noqa: FLY002 - not a literal, see above
 
 
 def _harness() -> types.ModuleType:

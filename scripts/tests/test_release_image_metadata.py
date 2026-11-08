@@ -25,8 +25,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from release import check_image_metadata as images  # noqa: E402
-from release import qualify_release as qualify  # noqa: E402
+from release import (
+    check_image_metadata as images,  # noqa: E402
+    qualify_release as qualify,  # noqa: E402
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_PATH = ROOT / "scripts/release/release-policy.json"

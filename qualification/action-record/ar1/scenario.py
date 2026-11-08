@@ -93,7 +93,7 @@ def write_policy(path: Path, *, metadata_only_output: bool = False) -> Path:
 
 
 def autoload_path() -> str:
-    return subprocess.run(  # noqa: S603 - this interpreter, fixed arguments
+    return subprocess.run(
         [sys.executable, "-m", "fabric.wire", "--print-autoload-path"],
         check=True,
         capture_output=True,
