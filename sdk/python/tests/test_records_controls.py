@@ -137,6 +137,28 @@ def test_in_process_resolves_and_gates_links(
         f"resolves/attempt/{req.attempt_uid}", f"gates/attempt/{tool.attempt_uid}"}  # fmt: skip
 
 
+def test_caller_tuple_links_are_misuse_never_encoded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A caller's ``(type, namespace, id)`` tuple is not an internal encoded link: it is
+    dropped and counted, the clear id never reaches ``fabric.step.links``, and the control
+    record itself is still emitted (a malformed tuple never loses the record)."""
+    with installed(tmp_path, monkeypatch) as (handle, exporter):
+        tool = emit("tool_call", attrs={})
+        first = records.record_control(
+            "policy", "observation", "deny", gated_step=tool,
+            links=[("gates", "external", "CANARY-clear-ticket-9"), ("gates", 1, 2)],
+        )  # fmt: skip
+        second = records.record_control("policy", "observation", "deny", links="gates")
+        assert handle.flush(10.0)
+        got = records_of(exporter, "control")
+    assert first.recorded and second.recorded and len(got) == 2
+    assert list(got[0]["fabric.step.links"]) == [f"gates/attempt/{tool.attempt_uid}"]
+    assert "fabric.step.links" not in got[1]
+    assert "CANARY" not in json.dumps(got, default=str)
+    assert (COUNTERS.api_misuse, COUNTERS.internal_errors) == (3, 0)
+
+
 def test_without_a_key_caller_ids_are_omitted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

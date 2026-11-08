@@ -34,6 +34,7 @@ from ._capture_types import UUID4_RE, misuse
 from ._records_api import (
     ActorRef,
     Body,
+    EncodedLink,
     Timing,
     current_records,
     emit,
@@ -150,13 +151,13 @@ def _policy(records: Any, policy: object) -> dict[str, Any]:
     return out
 
 
-def _resolves_link(records: Any, target: object, emitted: str) -> tuple[str, str, str]:
+def _resolves_link(records: Any, target: object, emitted: str) -> EncodedLink:
     """``resolves/attempt/<uid>`` for an in-process ``ControlRef``, else
     ``resolves/external/<ctl-… or uuid4>``."""
     uid = getattr(target, "attempt_uid", None)
     if isinstance(target, ControlRef) and isinstance(uid, str) and UUID4_RE.fullmatch(uid):
-        return ("resolves", "attempt", str.__str__(uid))
-    return ("resolves", "external", str.__str__(emitted))
+        return EncodedLink("resolves", "attempt", str.__str__(uid))
+    return EncodedLink("resolves", "external", str.__str__(emitted))
 
 
 @never_raises(ControlRef.unrecorded)
@@ -210,7 +211,11 @@ def record_control(  # noqa: PLR0912, PLR0915 - the 052 §4.2.1 surface
     emitted_id = mint_id(records) if control_id is None else _control_id(records, control_id)
     if emitted_id is not None:
         attrs["fabric.control.id"] = emitted_id
-    links_out: list[object] = list(links) if links and isinstance(links, (list, tuple)) else []
+    links_out: list[object] = []
+    if isinstance(links, (list, tuple)):
+        links_out.extend(links)  # each one checked by encode_links (a plain tuple is misuse)
+    elif links:
+        misuse("links must be a sequence")
     if resolves is not None:
         target = _control_id(records, resolves)
         if target is not None:
@@ -220,7 +225,7 @@ def record_control(  # noqa: PLR0912, PLR0915 - the 052 §4.2.1 surface
         found = step_target(records, gated_step)
         if found is not None:
             attrs["fabric.control.gated_step_id"] = found[1]
-            links_out.append(("gates", found[0], found[1]))
+            links_out.append(EncodedLink("gates", found[0], found[1]))
     if action_id is not None and (action := map_v2(records, "axn", action_id)) is not None:
         attrs["fabric.control.action_id"] = action
     if proof_ref is not None and (proof := map_v2(records, "prf", proof_ref)) is not None:

@@ -76,6 +76,17 @@ class Link:
 
 
 @dataclass(frozen=True, slots=True)
+class EncodedLink:
+    """A link the records core has already resolved to a Fabric-emitted id (``type``,
+    ``namespace``, ``id``). Internal only: a caller's plain tuple is never taken as one, so
+    no caller id reaches ``fabric.step.links`` without going through :func:`step_target`."""
+
+    type: str
+    namespace: str
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
 class Body:
     """One content body: a role of the role table, the value and its media type."""
 
@@ -245,8 +256,8 @@ def encode_links(records: RecordsInput, links: Sequence[object]) -> list[str]:
         misuse("links must be a sequence")
         return out
     for link in links:
-        if isinstance(link, tuple) and len(link) == 3:  # noqa: PLR2004 - (type, ns, id) encoded
-            out.append("/".join(link))
+        if type(link) is EncodedLink:  # resolved by the core itself
+            out.append(f"{link.type}/{link.namespace}/{link.id}")
             continue
         if not isinstance(link, Link) or link.type not in LINK_TYPES:
             misuse("link")
@@ -378,7 +389,7 @@ def emit(
 
 
 __all__ = [
-    "ActorRef", "Bindings", "Body", "Link", "Timing", "actor_attributes", "build_body",
-    "context", "current_records", "emit", "encode_links", "map_v2", "mint_id",
+    "ActorRef", "Bindings", "Body", "EncodedLink", "Link", "Timing", "actor_attributes",
+    "build_body", "context", "current_records", "emit", "encode_links", "map_v2", "mint_id",
     "never_raises", "retained_digest", "role_cap", "step_target", "timing_window",
 ]  # fmt: skip
