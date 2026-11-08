@@ -81,6 +81,17 @@ __all__ = [
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.wire")
+# Configuration diagnostics, class-only text; ``python -m fabric.wire status`` reports the
+# same lines (``_status.py``) without installing anything.
+_MSG_NOT_INSTALLED = "fabric.wire: capture not installed (%s)"
+_MSG_OTEL_DISABLED = "fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is recorded"
+_MSG_MIGRATE_IGNORED = ("fabric.wire: spool plaintext migration is ignored in the production "
+                   "profile; plaintext spool records are quarantined")  # fmt: skip
+_MSG_CONTENT_DISABLED = (
+    "fabric.wire: content capture disabled (%s, %s profile); metadata capture continues"
+)
+_MSG_LLM_CONTENT_IGNORED = ("fabric.wire: FABRIC_CAPTURE_LLM_CONTENT does not affect wire capture; "
+                       "wire already stores content off telemetry")  # fmt: skip
 _LOCK = threading.RLock()
 _HANDLE: WireHandle | None = None
 _DRAIN_SHARE = 0.75  # of the close budget; the rest delivers the shutdown loss records
@@ -382,23 +393,17 @@ def install(
             _LOG.warning("fabric.wire: already installed; returning the active handle")
             return _HANDLE
         config = dataclasses.replace(config, **overrides) if config else WireConfig(**overrides)
-        if config.id_key is None and (key := id_key_from_env(os.environ)) is not None:
-            config = dataclasses.replace(config, id_key=key)
-        if config.labels is None:
-            config = dataclasses.replace(config, labels=labels_from_env(os.environ))
-        config = _protection_from_env(config)
+        config = _env_defaults(config)
         if _otel_disabled():
             # The OpenTelemetry kill switch also stops Fabric's capture, never silently
             # (agent matrix D6): one warning, and status() says so.
-            _LOG.warning("fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is "
-                         "recorded")  # fmt: skip
+            _LOG.warning(_MSG_OTEL_DISABLED)
             _HANDLE = WireHandle(config, None, patched=False)
             return _HANDLE
         gate = _gate(config)
         if config.spool_migrate_plaintext and gate.profile == "production":
             # 049 §7.8: never in production; plaintext records there are quarantined.
-            _LOG.warning("fabric.wire: spool plaintext migration is ignored in the production "
-                         "profile; plaintext spool records are quarantined")  # fmt: skip
+            _LOG.warning(_MSG_MIGRATE_IGNORED)
             config = dataclasses.replace(config, spool_migrate_plaintext=False)
         explicit = config.tracer_provider is not None
         if config.spool_dir is None and (
@@ -446,10 +451,7 @@ def install(
         _transport._ACTIVE = tee
         atexit.register(_HANDLE._atexit_close)
         if _truthy(os.environ.get("FABRIC_CAPTURE_LLM_CONTENT")):
-            _LOG.warning(
-                "fabric.wire: FABRIC_CAPTURE_LLM_CONTENT does not affect wire capture; "
-                "wire already stores content off telemetry"
-            )
+            _LOG.warning(_MSG_LLM_CONTENT_IGNORED)
         return _HANDLE
 
 
@@ -626,6 +628,16 @@ def _client_status(config: WireConfig) -> dict[str, Any]:
             "uninstrumented_clients": sorted(unseen)}  # fmt: skip
 
 
+def _env_defaults(config: WireConfig) -> WireConfig:
+    """``install()``'s environment defaults: the id key, labels and protection settings an
+    explicit config left unset (shared with ``python -m fabric.wire status``)."""
+    if config.id_key is None and (key := id_key_from_env(os.environ)) is not None:
+        config = dataclasses.replace(config, id_key=key)
+    if config.labels is None:
+        config = dataclasses.replace(config, labels=labels_from_env(os.environ))
+    return _protection_from_env(config)
+
+
 def _protection_from_env(config: WireConfig) -> WireConfig:
     """Fill the capture policy, keys and redaction service an explicit config left unset
     from ``FABRIC_*`` (049 §7.3, §7.7, §7.8); a malformed value raises (fixed text, never
@@ -662,10 +674,7 @@ def _log_gate(gate: ContentGate) -> None:
     """049 §7.3: never blocked, but not silent: every install logs a disabled content state,
     by reason only (class-only text, no values)."""
     if gate.content_capture == "disabled":
-        _LOG.warning(
-            "fabric.wire: content capture disabled (%s, %s profile); metadata capture continues",
-            gate.reason, gate.profile,
-        )  # fmt: skip
+        _LOG.warning(_MSG_CONTENT_DISABLED, gate.reason, gate.profile)
 
 
 def _otel_disabled() -> bool:
@@ -764,9 +773,7 @@ def install_from_env(
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():
             # D3: a Fabric-protected global provider never carries wire spans.
             if not otlp_endpoint_configured():
-                _LOG.warning(
-                    "fabric.wire: capture not installed (%s)", "ProtectedGlobalTracerProvider"
-                )
+                _LOG.warning(_MSG_NOT_INSTALLED, "ProtectedGlobalTracerProvider")
                 return None
             tracer_mode = "private"
         if config.spool_dir is None and (tracer_mode == "private" or otlp_endpoint_configured()):
@@ -782,7 +789,7 @@ def install_from_env(
         _hooks_from_env(env)
         return handle
     except Exception as exc:
-        _LOG.warning("fabric.wire: capture not installed (%s)", type(exc).__name__)
+        _LOG.warning(_MSG_NOT_INSTALLED, type(exc).__name__)
         return None
 
 

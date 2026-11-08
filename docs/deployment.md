@@ -223,6 +223,16 @@ as before. To see them, attach a handler to `fabric.otel` or set
 `FABRIC_OTEL_DIAGNOSTICS=stderr`. They are sanitized: status codes and class
 names only, never an endpoint or a header.
 
+Under the zero-code autoload the same holds for every Fabric diagnostic,
+configuration warnings included. Each Python process the agent starts (a
+tool's `python -c`, a test run) inherits the autoload, and its output is the
+tool result the model reads, so the autoload gives the `fabric` logger its
+own `NullHandler` and stops it propagating: nothing reaches stderr or a
+handler the application installs. Run `python -m fabric.wire status` with
+the agent's environment to read the configuration warnings (one JSON line;
+exit 1 when there are any), or set `FABRIC_WIRE_DIAGNOSTICS=stderr` to print
+them from every autoloaded process.
+
 ### Compose production overlay
 
 For one VM. `make up-prod` runs `preflight-prod.sh` first and refuses to

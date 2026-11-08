@@ -405,6 +405,19 @@ realtime/WebSocket and gRPC.
   interpreter (a `sys` sentinel guards symlinked or re-spelled paths); then
   chains to the next `sitecustomize` on `sys.path`, excluding its own
   directory by `realpath`.
+- **Autoload diagnostics stay off the process's output.** Every Python
+  process that inherits the environment loads the autoload, including a
+  child an agent's tool starts, whose stdout and stderr are the tool result
+  the model reads. Before installing, the autoload gives the `fabric` logger
+  a `NullHandler` and sets `propagate = False`, so no Fabric diagnostic
+  reaches Python's last-resort stderr handler or a handler the application
+  installs: a process's stdout and stderr are byte-identical with capture on
+  and off. `FABRIC_WIRE_DIAGNOSTICS=stderr` adds a stderr handler (in every
+  autoloaded process). `python -m fabric.wire status` prints, as one JSON
+  line and without installing anything, the configuration warnings the
+  autoload would log for the current environment (wire and content capture,
+  hooks); exit 1 when there is at least one. The drainer and the status
+  command never capture themselves.
 - Installation patches httpx and, when `importlib.util.find_spec("httpx2")`
   finds it, imports and patches httpx2 too. A failed import is swallowed;
   it never raises into the host.
@@ -445,7 +458,8 @@ realtime/WebSocket and gRPC.
 - `install(tracer_provider=X)` sends exchange, loss and heartbeat spans
   through `X`.
 - Invalid configuration installs nothing; autoload catches the error and
-  logs one warning (fail open). The host is unaffected.
+  logs one warning to Fabric's own logger (fail open; see above). The host
+  is unaffected.
 
 ## 4. Passivity rules (normative)
 

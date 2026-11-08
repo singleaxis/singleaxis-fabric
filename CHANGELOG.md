@@ -8,6 +8,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`python -m fabric.wire status`.** Run with the agent's environment, it
+  prints the configuration warnings the zero-code autoload would log, as one
+  JSON line: wire and content capture, each hook's state (for example
+  `remote.sandbox` `disabled(unsupported_provider)`) and a `warnings` list.
+  It exits 1 when there is at least one warning. It installs nothing and
+  never captures itself.
+- **`FABRIC_WIRE_DIAGNOSTICS=stderr`** prints Fabric's diagnostics on stderr
+  from every autoloaded process, for debugging.
+
+### Fixed
+
+- **Autoload warnings no longer change what an agent's tools print.** Every
+  Python process an agent starts (a tool's `python -c`, a pytest run)
+  inherits the autoload. Each one printed Fabric's configuration warnings on
+  stderr, such as "remote.sandbox is disabled (unsupported_provider)" or
+  "invalid hook configuration", and that stderr is part of the tool result
+  the model reads. In the 0.12.0 acceptance run, turning capture on changed
+  8 tool results. The autoload now gives the `fabric` logger its own handler
+  and stops it propagating, so its warnings reach neither stderr nor the
+  application's logging. A process's stdout and stderr are now the same with
+  capture on and off. Capture and the records are unchanged. Read the
+  warnings with `python -m fabric.wire status` (or `status()` in process),
+  or set `FABRIC_WIRE_DIAGNOSTICS=stderr`.
+- **Metric names in the operations docs.** `docs/operations/README.md`,
+  `docs/operations/dr.md` and the Compose README named Collector counters
+  without the `_total` suffix the Prometheus endpoint adds, for example
+  `otelcol_exporter_send_failed_spans_total` and
+  `fabriccontent_dropped_records_total`. The queue series and
+  `fabric_delivery_loss_records_pending` are gauges and keep their names.
+- **Queue sizing on small hosts.** `docs/production-setup.md` now explains
+  preflight's worst-case queue warning (for example 80 GB on a laptop with
+  58 GB free), which values to lower, and what each change costs.
+
 ## [0.12.0] - 2026-11-08
 
 Fabric 0.12.0 has one breaking change: the TypeScript SDK
