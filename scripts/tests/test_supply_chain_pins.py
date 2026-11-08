@@ -263,6 +263,7 @@ def test_typescript_sdk_holds_never_block_security_updates() -> None:
         "@opentelemetry/api",
         "@opentelemetry/context-async-hooks",
         "@types/node",
+        "typescript",
     }
     assert all(
         set(rule) == {"dependency-name", "update-types"} for rule in rules.values()
@@ -272,6 +273,8 @@ def test_typescript_sdk_holds_never_block_security_updates() -> None:
     assert set(rules["@opentelemetry/api"]["update-types"]) == {minor, major}
     assert rules["@opentelemetry/context-async-hooks"]["update-types"] == [major]
     assert rules["@types/node"]["update-types"] == [major]
+    # typescript-eslint and tsup's dts build do not support TypeScript 7.
+    assert rules["typescript"]["update-types"] == [major]
 
     package = json.loads((ROOT / "sdk/typescript/package.json").read_text())
     dev = package["devDependencies"]

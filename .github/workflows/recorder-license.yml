@@ -42,7 +42,7 @@ jobs:
           pip-licenses --format=json \
             --ignore-packages pip-licenses prettytable wcwidth tomli pip setuptools wheel hatchling hatch-vcs pathspec trove-classifiers \
             > raw/python-${{ matrix.extra }}.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorder-license-python-${{ matrix.extra }}
           path: raw/
@@ -53,7 +53,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -87,7 +87,7 @@ jobs:
             --start "${peer_dir}" > raw/npm-typescript-s3.json
           # Fail closed if the scan did not see the peer.
           grep -q '"@aws-sdk/client-s3@' raw/npm-typescript-s3.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorder-license-typescript
           path: raw/
@@ -145,7 +145,7 @@ jobs:
           "$(go env GOPATH)/bin/go-licenses" report . \
             --ignore github.com/singleaxis/singleaxis-fabric \
             > "${GITHUB_WORKSPACE}/raw/go-hostrecords.csv"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorder-license-go
           path: raw/
@@ -190,7 +190,7 @@ jobs:
             --json build/recorder-license-report/third-party-licenses.json
       - name: Upload procurement evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: recorder-third-party-license-report
           path: build/recorder-license-report/

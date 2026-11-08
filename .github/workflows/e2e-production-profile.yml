@@ -39,11 +39,14 @@ jobs:
           tags: ${{ env.COLLECTOR_IMAGE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - uses: helm/kind-action@0025e74a8c7512023d06dc019c617aa3cf561fde # v1.10.0
+      - uses: helm/kind-action@ea822c7bf1874f08e5a491df991c228edffc3376 # v1.15.2
         with:
           cluster_name: ${{ env.KIND_CLUSTER }}
           node_image: kindest/node:v1.30.0
           version: v0.23.0
+          # kind-action v1.15 defaults kubectl to v1.37; keep the client
+          # inside the supported skew of the v1.30 node image.
+          kubectl_version: v1.30.0
           wait: 120s
       - run: kind load docker-image "${COLLECTOR_IMAGE}" --name "${KIND_CLUSTER}"
       - name: Pin actual imported Node manifest on every kind node
@@ -550,7 +553,7 @@ jobs:
           kubectl logs --namespace "${NAMESPACE}" job/fabric-auth-queue-privacy-scan
       - name: Publish non-secret qualification evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: synthetic-production-profile-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

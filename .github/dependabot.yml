@@ -85,6 +85,11 @@ updates:
       # (engines >=22.18.0), so stay on @types/node 22.x.
       - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
+      # Hold TypeScript at 5.x: typescript-eslint does not support
+      # TypeScript 7 yet, and tsup's dts build needs the TypeScript compiler
+      # API that TypeScript 7 does not ship (found in #256).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # License-scan project: the optional @aws-sdk/client-s3 peer and the pinned
   # license scanner. Its client-s3 range must equal the SDK's peer range, so

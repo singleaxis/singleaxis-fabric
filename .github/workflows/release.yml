@@ -31,7 +31,7 @@ jobs:
           --sha "${GITHUB_SHA}"
           --policy scripts/release/release-policy.json
           --output release-workflow-evidence.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-workflow-evidence
           path: release-workflow-evidence.json
@@ -83,7 +83,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # Build and qualify the TypeScript SDK on its floor line (engines
           # >=22.18.0). publish-npm only uploads these qualified bytes and runs
@@ -168,17 +168,17 @@ jobs:
             --dist-dir sdk/python/dist \
             --smoke-install \
             --output qualification/release-qualification.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualified-python-dist
           path: sdk/python/dist/*
           retention-days: 90
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualified-chart
           path: qualification/chart/*.tgz
           retention-days: 90
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualified-typescript-dist
           path: |
@@ -187,7 +187,7 @@ jobs:
             qualification/npm/typescript-package.json
             qualification/npm/npm-pack-metadata.json
           retention-days: 90
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualified-contracts
           path: |
@@ -195,7 +195,7 @@ jobs:
             qualification/contracts/SHA256SUMS.contracts
             qualification/contracts/contracts-qualification.json
           retention-days: 90
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-qualification
           path: qualification/release-qualification.json
@@ -305,7 +305,7 @@ jobs:
             fabricctl-dist/fabricctl_*.tar.gz
             fabricctl-dist/fabricctl_*.zip
             fabricctl-dist/fabricctl-SHA256SUMS
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fabricctl-release
           path: fabricctl-dist/*
@@ -499,7 +499,7 @@ jobs:
           ref="ghcr.io/${{ github.repository_owner }}/charts/${CHART_NAME}:${{ steps.package.outputs.chart_version }}@${{ steps.push.outputs.digest }}"
           echo "cosign sign ${ref}"
           cosign sign --yes "${ref}"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: chart-package
           path: dist/*.tgz
@@ -536,7 +536,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # npm trusted publishing requires npm 11.5.1 or newer. Node 22 ships
           # npm 10, so this job stays on Node 24, whose runners ship a

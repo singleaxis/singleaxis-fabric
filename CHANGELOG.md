@@ -68,6 +68,20 @@ Planned as 0.12.0: the TypeScript SDK drops Node 20.
   would otherwise apply to the hand-laid-out docs code blocks. The
   remaining findings are fixed in code with no behaviour change, and the 17
   shebang scripts are now executable.
+- **CI actions off the deprecated node20 runtime.** `actions/setup-node`
+  v4.4.0 → v7.1.0, `actions/upload-artifact` v4.6.2 → v7.0.2 and
+  `helm/kind-action` v1.10.0 → v1.15.2 now run on node24. No input changes
+  were needed: no `package.json` declares `packageManager`, so setup-node's
+  automatic caching stays off, and the npm publish job never relied on the
+  `NODE_AUTH_TOKEN` placeholder v7 removed. The kind jobs keep kind v0.23.0
+  and the `kindest/node:v1.30.0` image and now pin kubectl v1.30.0, since
+  kind-action's default moved to v1.37. `pre-commit/action` v3.0.1 is still
+  the latest release and still wraps `actions/cache@v4` on node20.
+  Dependabot holds TypeScript at 5.x for the SDK (major updates only, so
+  security updates still flow): typescript-eslint does not support
+  TypeScript 7 yet, and tsup's declaration build needs the compiler API that
+  TypeScript 7 does not ship. The top-level README now states the Node.js
+  22.18 floor next to the npm install command.
 
 ### Fixed
 
