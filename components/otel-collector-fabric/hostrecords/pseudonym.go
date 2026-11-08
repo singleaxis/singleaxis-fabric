@@ -31,6 +31,12 @@ var v2Types = map[string]string{
 	"mst":  "memory_store",
 	"mkey": "memory_key",
 	"p":    "provider",
+	// spec 051 §5.3 and spec 052 (pulled forward by spec 057 OD-15)
+	"ckp": "checkpoint", "eff": "effect", "out": "outcome", "ctl": "control", "axn": "action",
+	"prf": "proof",
+	// spec 057 §3 rule 6
+	"grt": "grant", "crd": "credential", "ext": "extension", "src": "extension_source",
+	"pth": "path_rule", "net": "net_rule",
 }
 
 // bare returns a prefix without its trailing "-": both "s" and "s-" name the
