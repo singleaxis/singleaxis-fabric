@@ -41,22 +41,23 @@ if TYPE_CHECKING:
 
 # The reporting API is loaded on first use (PEP 562): the records core imports this
 # package's handle and vocabulary modules, so importing it eagerly here would be circular.
-_LAZY = {
-    "AUTHENTICATION": "_rec_controls", "ENFORCED_BY_FABRIC": "_rec_controls",
-    "ControlPolicyRef": "_rec_controls", "ControlRef": "_rec_controls",
-    "record_control": "_rec_controls", "AgentPolicyRef": "_rec_run",
-    "record_run_context": "_rec_run", "ActorRef": "_records_api", "Link": "_records_api",
-    "Timing": "_records_api", "context": "_records_api",
-}  # fmt: skip
+_CONTROLS = frozenset(
+    {"AUTHENTICATION", "ENFORCED_BY_FABRIC", "ControlPolicyRef", "ControlRef", "record_control"}
+)
+_RUN = frozenset({"AgentPolicyRef", "record_run_context"})
+_CORE = frozenset({"ActorRef", "Link", "Timing", "context"})
 
 
 def __getattr__(name: str) -> Any:
-    module = _LAZY.get(name)
-    if module is None:
+    if name in _CONTROLS:
+        from .. import _rec_controls as module  # noqa: PLC0415
+    elif name in _RUN:
+        from .. import _rec_run as module  # type: ignore[no-redef]  # noqa: PLC0415
+    elif name in _CORE:
+        from .. import _records_api as module  # type: ignore[no-redef]  # noqa: PLC0415
+    else:
         raise AttributeError(f"module 'fabric.records' has no attribute {name!r}")
-    import importlib  # noqa: PLC0415
-
-    value = getattr(importlib.import_module(f"fabric.{module}"), name)
+    value = getattr(module, name)
     globals()[name] = value
     return value
 
