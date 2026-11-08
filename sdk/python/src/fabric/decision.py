@@ -57,7 +57,7 @@ from contextlib import (
 )
 from dataclasses import dataclass
 from types import TracebackType
-from typing import TYPE_CHECKING, Protocol, Self
+from typing import TYPE_CHECKING, Any, Protocol, Self
 from uuid import UUID, uuid4
 
 from opentelemetry.trace import SpanKind, Status, StatusCode
@@ -2313,6 +2313,57 @@ class Decision(AbstractContextManager["Decision"]):
                 label=self._identity.label,
             )  # fmt: skip
             span.add_event("fabric.hook", attributes=event_attrs)
+
+    def record_control(
+        self, kind: str | None, phase: str | None, decision: str | None, **kwargs: Any
+    ) -> Any:
+        """Record one decision an external control made (spec 052 §4.2;
+        :func:`fabric.records.record_control`). Passive and fail-open: it never takes the
+        decision's overlap guard, never waits, never raises, and returns a ``ControlRef``
+        (ids only). Fabric decides nothing; every control record carries
+        ``enforced_by_fabric=false`` and ``authentication=unverified_caller_report``.
+
+        With an installed capture handle the record is sequenced on the records input;
+        without one (051 A15) the decision span gets a ``fabric.control`` event with the
+        closed kind, phase and decision and the two invariants only (no ids, no content).
+        """
+        from ._rec_controls import (  # noqa: PLC0415 - records modules import decision lazily
+            AUTHENTICATION,
+            ENFORCED_BY_FABRIC,
+            ControlRef,
+            record_control,
+        )
+        from ._records_api import current_records  # noqa: PLC0415
+        from .records._vocab import (  # noqa: PLC0415
+            CONTROL_DECISIONS,
+            CONTROL_KINDS,
+            CONTROL_PHASES,
+            PHASE_DECISIONS,
+        )
+
+        ref = record_control(kind, phase, decision, **kwargs)
+        if ref.recorded:
+            return ref
+        try:
+            if current_records() is not None:
+                return ref
+            kind_value = kind if kind in CONTROL_KINDS else "other"
+            phase_value = phase if phase in CONTROL_PHASES else None
+            decision_value = decision if decision in CONTROL_DECISIONS else "unknown"
+            if phase_value is None or decision_value not in PHASE_DECISIONS[phase_value]:
+                decision_value = "unknown"
+            event: dict[str, str | int | float | bool | tuple[str, ...]] = {
+                "fabric.control.kind": str(kind_value),
+                "fabric.control.decision": str(decision_value),
+                "fabric.control.authentication": AUTHENTICATION,
+                "fabric.control.enforced_by_fabric": ENFORCED_BY_FABRIC,
+            }
+            if phase_value is not None:
+                event["fabric.control.phase"] = str(phase_value)
+            self.span.add_event("fabric.control", attributes=event)
+        except Exception as exc:  # recording never reaches the application (R9)
+            self._note_internal_error(exc)
+        return ref if isinstance(ref, ControlRef) else ControlRef.unrecorded()
 
     def record_file_access(
         self,
