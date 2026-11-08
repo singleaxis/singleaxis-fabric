@@ -8,7 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Planned as 0.12.0: the TypeScript SDK drops Node 20.
+## [0.12.0] - 2026-11-08
+
+Fabric 0.12.0 has one breaking change: the TypeScript SDK
+`@singleaxis/fabric` now requires Node.js 22.18 or later, because Node 20
+reached end of life on 2026-04-30. Node 20 users should stay on 0.11.x or
+upgrade Node; the SDK is tested on Node 22 and 24. The release also brings
+the dependency backlog, including OpenTelemetry Collector v0.164 for the
+Fabric Node with unchanged metric names (#250). The reconstruct reader no
+longer attributes a previous container's processes to the next container's
+run, and the eBPF emitter's widened clock uncertainty no longer ratchets
+(#253). The TypeScript SDK builds with tsup 9 and vitest 5 (#256), lint
+moves to ruff 0.17.3 (#257), and CI moves off the deprecated node20 Actions
+runtime (#269).
 
 ### Changed (breaking)
 
@@ -3330,7 +3342,8 @@ been exercised against a real tag. See Known issues below.
   async judge loop.
 
 
-[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.2...HEAD
+[Unreleased]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.2...v0.12.0
 [0.11.2]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.1...v0.11.2
 [0.11.1]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/singleaxis/singleaxis-fabric/compare/v0.10.0...v0.11.0

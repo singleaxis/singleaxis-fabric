@@ -1,6 +1,6 @@
 # Limitations and roadmap
 
-> **Status:** describes the limits of the released code (v0.11.2) and the
+> **Status:** describes the limits of the released code (v0.12.0) and the
 > state of the planned work. Each roadmap row says whether it is released or
 > not built.
 
