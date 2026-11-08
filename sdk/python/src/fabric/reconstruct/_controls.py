@@ -58,6 +58,15 @@ CONTROL_KEYS: Mapping[str, str] = {
     "fabric.control.policy_digest": "control.policy_digest",
     "fabric.control.proof_ref": "control.proof_ref",
 }
+# The phases a ``resolves`` link may target, per phase of the record that carries it.
+_TARGET_PHASES: Mapping[str, frozenset[str]] = {
+    "resolution": frozenset({"request"}),
+    "revocation": frozenset({"request", "resolution"}),
+}
+_ACTOR_TYPES = frozenset({
+    "user", "agent", "sub_agent", "human_approver", "human_operator", "system", "scheduler",
+    "external_service", "provider",
+})  # fmt: skip
 CONTENT_KEYS: Mapping[str, str] = {
     "control.checked": "control.checked",
     "control.reason": "control.reason",
@@ -86,6 +95,12 @@ def control_fields(
         value = attrs.get(key)
         if value is not None:
             out[field_key] = wrap("captured", provenance=provenance, point=point, value=value)
+    # D07: the record's actor (``fabric.actor.type``); a control record's default actor is
+    # ``unknown`` (052 D-3), which leaves D07 at its registry status ``unknown``.
+    actor = attrs.get("fabric.actor.type")
+    if isinstance(actor, str) and actor in _ACTOR_TYPES:
+        out["control.decided_by"] = wrap("captured", provenance=provenance, point=point,
+                                         value=actor)  # fmt: skip
     phase, decision = attrs.get("fabric.control.phase"), attrs.get("fabric.control.decision")
     if (isinstance(phase, str) and isinstance(decision, str)
             and decision not in PHASE_DECISIONS.get(phase, frozenset())):  # fmt: skip
@@ -164,7 +179,12 @@ def pair_controls(steps: Sequence[dict[str, Any]], *, wrap: Wrapper) -> None:
         phase = _value(step, "control.phase")
         if not isinstance(target, str):
             continue
-        candidates = by_id.get(target, [])
+        # A resolution answers a request; a revocation withdraws a request or one of its
+        # resolutions (052 §4.2.2). A record never resolves itself: a resolution that
+        # reuses its request's clear id (052 §7.2) shares that ``ctl-`` id.
+        phases = _TARGET_PHASES.get(phase) if isinstance(phase, str) else None
+        candidates = [c for c in by_id.get(target, ()) if c is not step
+                      and (phases is None or _value(c, "control.phase") in phases)]  # fmt: skip
         _resolves_link(step, target, candidates)
         if phase == "resolution":
             resolutions[target].append(step)

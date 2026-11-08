@@ -201,3 +201,49 @@ def test_projection_pairs_across_processes_and_runs(
         "supervised", "read_only"]  # fmt: skip
     assert context["approval_policy"]["value"] == "per_tool"
     assert context["permissions"]["value"] == 1
+
+
+def test_a_resolution_reusing_its_request_id_pairs_with_the_request_never_itself(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """052 §7.2 "pending -> resolved": the resolver in process B passes the same clear id as
+    ``control_id`` and ``resolves``; both records carry the same ``ctl-`` id, and the link is
+    ``resolved`` to the request, not ``ambiguous`` with the resolution as its own candidate.
+    D07 is the resolution's actor; a record without one leaves D07 unset (052 D-3)."""
+
+    def first() -> None:
+        records.record_control("approval", "request", "pending", control_id="approval:42")
+
+    def second() -> None:
+        records.record_control("approval", "resolution", "allow", control_id="approval:42",
+                               resolves="approval:42",
+                               decided_by=records.ActorRef("human_approver", "alice"))  # fmt: skip
+        records.record_control("approval", "revocation", "revoked", resolves="approval:42")
+
+    _process(tmp_path / "a", "host-a", "run-a", first, monkeypatch)
+    _process(tmp_path / "b", "host-b", "run-b", second, monkeypatch)
+    (tmp_path / "a" / "store").mkdir(exist_ok=True)
+    out, projection = tmp_path / "report.json", tmp_path / "projection.json"
+    code = main([
+        "--spans", str(tmp_path / "a" / "spans.jsonl"),
+        "--spans", str(tmp_path / "b" / "spans.jsonl"),
+        "--store-root", str(tmp_path / "a" / "store"), "--tenant", TENANT,
+        "--out", str(out), "--projection", str(projection),
+    ])  # fmt: skip
+    assert code == 0, capsys.readouterr().err
+    document = json.loads(projection.read_text())
+    validate_projection(document)
+    by_phase = {s["layers"]["decisions_effects"]["control.phase"]["value"]: s
+                for s in document["steps"] if s["step_kind"] == "control"}  # fmt: skip
+    request, resolution = by_phase["request"], by_phase["resolution"]
+    (link,) = [lk for lk in resolution["links"] if lk["type"] == "resolves"]
+    assert (link["state"], link["target"]["id"]) == ("resolved", request["step_id"])
+    # the revocation targets the id the request and its resolution share: two candidates
+    (revoke,) = [lk for lk in by_phase["revocation"]["links"] if lk["type"] == "resolves"]
+    assert revoke["state"] == "ambiguous"
+    assert sorted(revoke["candidates"]) == sorted([request["step_id"], resolution["step_id"]])
+    layer = resolution["layers"]["decisions_effects"]
+    assert layer["control.decided_by"]["value"] == "human_approver"
+    assert "control.decided_by" not in request["layers"]["decisions_effects"]
+    state = request["layers"]["decisions_effects"]["control.resolution_state"]
+    assert state["value"] == "revoked"
