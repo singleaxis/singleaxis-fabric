@@ -50,7 +50,9 @@ and `install()` succeed, log the disabled state (reason only) at every
 install, and `WireHandle.status()` reports it. A **malformed**
 configuration (unreadable or invalid policy, key too short, invalid
 endpoint, node mode without tenant or spool) raises at explicit `install()`;
-autoload logs one warning and does not install.
+autoload logs one warning and does not install. Autoload warnings go to
+Fabric's own logger, not the process's stderr; `python -m fabric.wire
+status` lists them.
 
 ## Protection modes (the PROTECT stage)
 

@@ -422,7 +422,9 @@ no switch: the application calls it.
   `install()` (049 §7.3), not a recorder call.
 - Environment activation never raises: malformed or contradictory
   environment values leave every hook disabled, `status()` reports
-  `invalid_configuration`, and one class-only warning is logged.
+  `invalid_configuration`, and one class-only warning is logged. Under the
+  autoload that warning never reaches the process's stdout or stderr (047
+  §3); `python -m fabric.wire status` reports it.
 - An unavailable or unsupported driver yields a disabled capability with
   reason `unsupported_runtime` or `unsupported_version`, published through
   `manifest.capture_point_changed` (B9). Never an action-time error.

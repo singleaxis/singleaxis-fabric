@@ -144,13 +144,17 @@ files across the whole content tree, which takes longer as the store grows.
 
 - **Health:** `GET :13133/` (health_check extension).
 - **Metrics:** Compose production publishes the Collector's Prometheus
-  endpoint on `127.0.0.1:8888`. Useful series:
+  endpoint on `127.0.0.1:8888`. Useful series (the exporter adds `_total`
+  to every counter; the queue series are gauges):
   `otelcol_exporter_queue_size` against `otelcol_exporter_queue_capacity`,
-  `otelcol_exporter_send_failed_spans` / `_log_records`,
-  `otelcol_receiver_refused_*`, and the content exporter's
-  `fabriccontent_dropped_records` (attribute `reason`) and
-  `fabriccontent_written_records`. The Helm chart does not expose a metrics
-  port.
+  `otelcol_exporter_send_failed_spans_total` /
+  `otelcol_exporter_send_failed_log_records_total`,
+  `otelcol_receiver_refused_spans_total` /
+  `otelcol_receiver_refused_log_records_total`, and the content exporter's
+  `fabriccontent_dropped_records_total` (attribute `reason`) and
+  `fabriccontent_written_records_total`. A counter appears only once it has
+  counted something: no `send_failed` series means no failure yet. The Helm
+  chart does not expose a metrics port.
 - **Content drops.** `fabriccontent` logs `fabriccontent: dropped content
   record` with a reason only: `bad_descriptor`, `digest_mismatch`,
   `tenant_not_allowed`, `conflict`, `source_unbound`. Any non-zero count
@@ -191,8 +195,8 @@ After any change to the Node, the store or the agents:
 | Spans carry `fabric.wire.store_reason=missing_capture_policy` / `missing_id_key` / `missing_spool_key` | Production profile without that item; content disabled, metadata continues. |
 | `store_reason=protection_failed` | A masking mode with no transformation (always the case under autoload) or no redaction service, or the service failed, timed out, answered a non-200 status or was saturated (`redaction_*` counters). |
 | `store_reason=privacy_policy` | The policy says `metadata_only` or `omit` for that role. |
-| Warning `fabric.wire: autoload failed (...)` or `capture not installed (...)` | Invalid configuration; the class name says which. Capture is off; the application runs. |
-| No spans at all | No OTLP endpoint (spans are dropped with a warning), `OTEL_SDK_DISABLED=true` (`status()` says `capture: disabled`), or the autoload directory is not on `PYTHONPATH`. |
+| Warning `fabric.wire: autoload failed (...)` or `capture not installed (...)` | Invalid configuration; the class name says which. Capture is off; the application runs. Under autoload these warnings are not printed: run `python -m fabric.wire status` with the agent's environment, or set `FABRIC_WIRE_DIAGNOSTICS=stderr`. |
+| No spans at all | No OTLP endpoint (spans are dropped with a warning), `OTEL_SDK_DISABLED=true` (`status()` says `capture: disabled`), or the autoload directory is not on `PYTHONPATH`. `python -m fabric.wire status` reports the first two. |
 | `uninstrumented_client` losses | Model calls sent through `requests` or `urllib3`, which are not captured; move them to httpx, httpx2 or aiohttp. |
 | Calls missing from the record | The client is not httpx, httpx2 or aiohttp (`boto3`, gRPC, other processes), `FABRIC_WIRE_AIOHTTP=0`, the host is not matched (add `FABRIC_WIRE_ENDPOINTS`), or the path is not one of the five supported APIs. |
 | `queue_full` losses | Burst larger than the capture queue, CPU-bound threads starving the capture worker (see Throughput), or a full spool: raise `FABRIC_WIRE_QUEUE_MAX_ITEMS` or `FABRIC_WIRE_SPOOL_MAX_BYTES`. |

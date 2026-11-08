@@ -318,6 +318,41 @@ containers on its network `fabric-node-production_fabric-node` reach the Node
 as `fabric-node`, and the Node's container is
 `fabric-node-production-fabric-node-1`.
 
+### Queue size on a small host
+
+Preflight compares the Node's worst-case queue size with the free disk and
+warns when it does not fit, for example on a laptop: an 80 GB worst case
+with 58 GB free. The worst case is `queue_size` times the largest request
+the Node accepts: 10000 telemetry batches of up to 8 MiB, plus 64 content
+records of up to 64 MiB each. Real batches are far smaller, so this is a
+warning, not a failure. It means a long destination outage could fill the
+disk before the queue is full.
+
+To fit a small host, lower these values in the collector config your
+target uses (`collector-config/collector-production-groups.yaml` for
+`up-prod-groups`, `collector-production.yaml` for `up-prod`), then run
+preflight again. It reads the same file.
+
+- **`exporters.otlp_http/fabric.sending_queue.queue_size`** (10000). This is
+  the main lever: 2000 gives a worst case of about 16 GB. The Node then
+  holds fewer batches while the destination is down. When the queue is
+  full, `block_on_overflow` pushes back on senders: an agent with a spool
+  keeps its records on its own disk until the Node accepts them, and a
+  sender without one may drop them.
+- **The OTLP receivers' `max_request_body_size`** (8 MiB) **and
+  `max_recv_msg_size_mib`** (8). Lowering them shrinks the worst case per
+  batch, but the Node refuses any larger request outright, so keep them
+  above the largest batch your senders send.
+- **The content queue's `queue_size`** (64, in the `fabriccontent`
+  exporters of the content overlay,
+  `collector-config/collector-production-groups-content.yaml`). Each item
+  can be 64 MiB, so 16 cuts that part to 1 GB. Bodies then wait for an
+  unavailable store in a shorter queue. Leave the content receiver's
+  64 MiB limit as it is: an agent sends bodies up to 63 MiB.
+
+[Operations: queue volume sizing](operations/dr.md#queue-volume-sizing)
+covers sizing for a production outage window.
+
 ### Two stacks on one host
 
 The project name and the published ports are settings, so a second Node
@@ -476,6 +511,15 @@ docker run --rm --name support-agent --cgroup-parent=/fabric-agents \
 - **Autoload path.** `PYTHONPATH` must name the directory
   `python -m fabric.wire --print-autoload-path` prints in the agent image;
   if the image already sets `PYTHONPATH`, append that directory to it.
+- **Check the configuration.** Every Python process the agent starts
+  inherits the autoload, so Fabric keeps its warnings off stdout and stderr:
+  a tool's output reads the same with capture on or off. Read them instead
+  with `python -m fabric.wire status`, run with the agent's environment
+  (`docker run --rm --env-file "$M/agent.env" "$AGENT_IMAGE" python -m
+  fabric.wire status`). It prints one JSON line: wire and content capture,
+  each hook's state, and a `warnings` list, and exits 1 if that list is not
+  empty. It installs nothing. To print the warnings from every autoloaded
+  process while debugging, set `FABRIC_WIRE_DIAGNOSTICS=stderr`.
 - **Scope.** `--cgroup-parent=/fabric-agents` is the `cgroupfs` form; on the
   `systemd` driver use `--cgroup-parent=fabric-agents.slice`
   ([step 4](#4-the-ebpf-emitter)).
@@ -566,7 +610,8 @@ step 5's flags:
   `--sandbox-peer ADDRESS:PORT`, so those connections are listed under
   `remote_sandbox_calls` rather than unexplained. Setting
   `FABRIC_WIRE_REMOTE_SANDBOX=modal` disables only that hook
-  (`disabled(unsupported_provider)`); it never turns the other hooks off.
+  (`disabled(unsupported_provider)`, reported by `python -m fabric.wire
+  status`); it never turns the other hooks off.
 - **In-process tools** (file edits, `exec()` of model code, an HTTP client
   in the agent process): no process starts, so no effect exists. Name them
   to the reader with `--in-process-tool NAME` so their calls read

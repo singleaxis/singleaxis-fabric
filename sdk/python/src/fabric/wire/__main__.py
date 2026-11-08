@@ -8,7 +8,12 @@
   with no agent running, using the agent's own ``FABRIC_*`` / ``OTEL_*`` environment
   (a one-shot container's last step, a sidecar, a Kubernetes preStop hook). Prints one
   JSON summary line. Exit 0: nothing deliverable left; 1: records remain (they stay on
-  disk for the next drainer or agent); 2: usage or configuration error."""
+  disk for the next drainer or agent); 2: usage or configuration error.
+- ``status``: the configuration diagnostics the autoload would log for this environment
+  (wire capture, content capture, hooks), as one JSON line; installs nothing. Run it with
+  the agent's ``FABRIC_*`` / ``OTEL_*`` environment: the autoload itself keeps them off the
+  agent's stdout and stderr unless ``FABRIC_WIRE_DIAGNOSTICS=stderr``. Exit 0: no
+  warnings; 1: at least one (listed under ``warnings``); 2: usage error."""
 
 from __future__ import annotations
 
@@ -21,6 +26,7 @@ from pathlib import Path
 USAGE = (
     "usage: python -m fabric.wire --print-autoload-path\n"
     "       python -m fabric.wire drain [--spool DIR] [--until-empty] [--timeout SECONDS]\n"
+    "       python -m fabric.wire status\n"
 )
 
 
@@ -67,6 +73,14 @@ def _drain(argv: Sequence[str]) -> int:
     return 0 if result.drained or (not options.until_empty and result.remaining == 0) else 1
 
 
+def _status() -> int:
+    from ._status import env_status  # noqa: PLC0415
+
+    status = env_status()
+    sys.stdout.write(json.dumps(status, sort_keys=True) + "\n")
+    return 1 if status["warnings"] else 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if args == ["--print-autoload-path"]:
@@ -74,6 +88,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args and args[0] == "drain":
         return _drain(args[1:])
+    if args == ["status"]:
+        return _status()
     sys.stderr.write(USAGE)
     return 2
 

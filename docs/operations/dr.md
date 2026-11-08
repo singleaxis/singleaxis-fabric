@@ -130,18 +130,20 @@ assumes exclusive access.
   sustained growth and on it approaching
   `otelcol_exporter_queue_capacity`.
 - **Delivery failures**: alert on rising
-  `otelcol_exporter_send_failed_spans` /
-  `otelcol_exporter_send_failed_log_records` and on
-  `otelcol_receiver_refused_*` (rejected or backpressured ingress).
+  `otelcol_exporter_send_failed_spans_total` /
+  `otelcol_exporter_send_failed_log_records_total` and on
+  `otelcol_receiver_refused_spans_total` /
+  `otelcol_receiver_refused_log_records_total` (rejected or backpressured
+  ingress). A counter appears on `/metrics` only after its first count, so
+  a missing series means zero, not a broken scrape.
 - **Liveness**: poll the health extension at `127.0.0.1:13133` and alert on
   container restarts (`docker compose ps`, `restart: unless-stopped` only
   covers process exits).
 - **Host resources**: `fabric-queue` and `fabric-content-queue` volume disk
   utilization, since the queues bound items, not bytes.
-- **Content drops**: the content exporter's `fabriccontent_dropped_records`
-  counter (attribute `reason`; the Prometheus endpoint may add the usual
-  prefix and `_total` suffix) and the log line `fabriccontent: dropped
-  content record` count records the Node refused permanently (bad
+- **Content drops**: the content exporter's
+  `fabriccontent_dropped_records_total` counter (attribute `reason`) and the
+  log line `fabriccontent: dropped content record` count records the Node refused permanently (bad
   descriptor, digest mismatch, tenant not allowed, conflict). Any non-zero
   value needs review: the verifier will report those objects as missing.
 

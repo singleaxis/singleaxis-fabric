@@ -58,6 +58,12 @@ then choose where records go:
   keys content capture is disabled (metadata continues) and every span says
   why.
 
+The autoload never prints to the process's stdout or stderr (a child process
+an agent's tool starts inherits it, and its output is what the model reads).
+`python -m fabric.wire status` prints the configuration warnings it would
+log as one JSON line; `FABRIC_WIRE_DIAGNOSTICS=stderr` prints them from
+every autoloaded process.
+
 Or install from code:
 
 ```python

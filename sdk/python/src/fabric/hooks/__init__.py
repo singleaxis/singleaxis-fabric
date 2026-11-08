@@ -35,6 +35,8 @@ Rules (053 §4):
   ``invalid_configuration``, and one class-only warning is logged. A
   ``FABRIC_WIRE_REMOTE_SANDBOX`` provider this build does not have is not malformed:
   only ``remote.sandbox`` stays off, reported as ``disabled(unsupported_provider)``.
+  Under the autoload these warnings never reach the process's stdout or stderr (spec
+  047 §3); :func:`env_status` (``python -m fabric.wire status``) reports them.
 - Install is idempotent: the same configuration returns the live handle; a different one
   raises ``ValueError`` until the live handle is closed.
 - Patch ownership (``_patches.py``): Fabric restores only its own patches and never undoes
@@ -86,11 +88,18 @@ if TYPE_CHECKING:
 __all__ = [
     "CHANNELS", "EXEC_ENV", "HOOK_ENV_NAMES", "HOST_LABEL_ENV", "HTTP_HOSTS_ENV",
     "REMOTE_SANDBOX_ENV", "ChannelSlot", "HookChannel", "HookProducer", "HooksConfig",
-    "HooksHandle", "PatchSet", "Switch", "UnsupportedChannel", "current_handle", "install",
-    "install_from_env",
+    "HooksHandle", "PatchSet", "Switch", "UnsupportedChannel", "current_handle", "env_status",
+    "install", "install_from_env",
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.hooks")
+# Configuration diagnostics, class-only text; :func:`env_status` (``python -m fabric.wire
+# status``) reports the same lines without installing anything.
+_MSG_NO_HANDLE = "fabric.hooks: no capture handle is installed; nothing is patched"
+_MSG_INVALID = "fabric.hooks: invalid hook configuration (ValueError); every hook is disabled"
+_MSG_UNSUPPORTED = ("fabric.hooks: FABRIC_WIRE_REMOTE_SANDBOX names a provider this build "
+                    "does not have (only e2b); remote.sandbox is disabled "
+                    "(unsupported_provider), the other hooks are unaffected")  # fmt: skip
 
 HandleState = Literal[
     "active", "no_capture_handle", "invalid_configuration", "capture_closed", "closed"
@@ -446,8 +455,7 @@ def _install(config: HooksConfig, not_in_build: tuple[str, ...] = ()) -> HooksHa
         records = handle.records if handle is not None and handle.capturing else None
         if handle is None or records is None or not records.active:
             if config.any_requested:
-                message = "fabric.hooks: no capture handle is installed; nothing is patched"
-                safe_log(_LOG, logging.WARNING, message)
+                safe_log(_LOG, logging.WARNING, _MSG_NO_HANDLE)
             return HooksHandle(config, state="no_capture_handle", not_in_build=not_in_build)
         hooks = HooksHandle(
             config, state="active", producer=HookProducer(handle, records, config),
@@ -475,20 +483,50 @@ def install_from_env(environ: Mapping[str, str] | None = None) -> HooksHandle | 
             return None
         config, not_in_build = config_from_env(env)
         if config is None:
-            safe_log(_LOG, logging.WARNING,
-                     "fabric.hooks: invalid hook configuration (%s); every hook is disabled",
-                     "ValueError")  # fmt: skip
+            safe_log(_LOG, logging.WARNING, _MSG_INVALID)
             return HooksHandle(None, state="invalid_configuration", not_in_build=not_in_build)
         if config.remote_sandbox_unsupported:
-            safe_log(_LOG, logging.WARNING,
-                     "fabric.hooks: FABRIC_WIRE_REMOTE_SANDBOX names a provider this build "
-                     "does not have (only e2b); remote.sandbox is disabled "
-                     "(unsupported_provider), the other hooks are unaffected")  # fmt: skip
+            safe_log(_LOG, logging.WARNING, _MSG_UNSUPPORTED)
         return _install(config, not_in_build)
     except Exception as exc:
         safe_log(_LOG, logging.WARNING, "fabric.hooks: hooks not installed (%s)",
                  type(exc).__name__)  # fmt: skip
         return None
+
+
+def env_status(environ: Mapping[str, str], *, capturing: bool = True) -> dict[str, Any]:
+    """What :func:`install_from_env` would make of ``environ``, without installing or
+    patching anything: ``configuration`` (``unset``, ``valid`` or ``invalid``), each
+    channel's ``requested`` flag and the reason a requested-or-declared channel stays off,
+    ``not_in_build``, and the ``warnings`` it would log. ``capturing`` says whether a
+    capture handle would be installed. Class-only, like :meth:`HooksHandle.status`."""
+    if not any((environ.get(name) or "").strip() for name in HOOK_ENV_NAMES):
+        return {"configuration": "unset", "warnings": []}
+    config, not_in_build = config_from_env(environ)
+    out: dict[str, Any] = {"configuration": "invalid" if config is None else "valid"}
+    warnings: list[str] = []
+    if config is None:
+        warnings.append(_MSG_INVALID)
+    else:
+        channels: dict[str, dict[str, Any]] = {}
+        for slot in CHANNELS:
+            channels[slot.point] = {"requested": config.requested(slot.point)}
+        off: Capability | None = None
+        if config.remote_sandbox_unsupported and not config.remote_sandbox:
+            off = _SANDBOX_UNSUPPORTED
+        elif config.sandbox_undeclared:
+            off = _SANDBOX_UNDECLARED
+        if off is not None:
+            channels[_SANDBOX_POINT].update({"state": off[0], "reason": off[1]})
+        out["channels"] = channels
+        if config.remote_sandbox_unsupported:
+            warnings.append(_MSG_UNSUPPORTED)
+        if config.any_requested and not capturing:
+            warnings.append(_MSG_NO_HANDLE)
+    if not_in_build:
+        out["not_in_build"] = list(not_in_build)
+    out["warnings"] = warnings
+    return out
 
 
 def _after_fork_in_child() -> None:

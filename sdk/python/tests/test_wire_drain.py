@@ -163,8 +163,10 @@ def test_autoload_skips_the_drainer(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FABRIC_WIRE_AUTOLOAD", "0")  # loading it must not install anything
     spec.loader.exec_module(module)
     monkeypatch.setattr(sys, "orig_argv", ["python", "-m", "fabric.wire", "drain", "--x"])
-    assert module._is_drainer() is True
+    assert module._is_fabric_tool() is True
+    monkeypatch.setattr(sys, "orig_argv", ["python", "-m", "fabric.wire", "status", "--x"])
+    assert module._is_fabric_tool() is True
     monkeypatch.setattr(sys, "orig_argv", ["python", "-m", "fabric.wire", "--print-autoload-path"])
-    assert module._is_drainer() is False
+    assert module._is_fabric_tool() is False
     monkeypatch.setattr(sys, "orig_argv", ["python", "agent.py", "drain"])
-    assert module._is_drainer() is False
+    assert module._is_fabric_tool() is False

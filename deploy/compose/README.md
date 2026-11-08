@@ -357,7 +357,7 @@ allow bounded time to finish. Neither an exit handler nor a flush proves
 destination durability; hard termination can lose buffered spans. Inspect
 source SDK/exporter diagnostics and any counters that the configured SDK
 actually exposes. `otelcol_*` metrics belong to the Collector, not the Python
-agent: monitor `otelcol_receiver_refused_spans` on the Node for admission
+agent: monitor `otelcol_receiver_refused_spans_total` on the Node for admission
 pressure. A healthy Node cannot detect spans lost before they reach it.
 
 ## Ingress groups and the auditd sensor collector
