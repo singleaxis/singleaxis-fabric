@@ -32,7 +32,8 @@ it never makes, applies, waits for or returns one.
   the lists only as `run.permissions` content) and agent policy.
 - **The records core** behind both: bounded serialisation that never runs
   application code, reported links, timing, update records, and handles that
-  expose ids only. `fabric.records.context(...)` binds a default actor.
+  expose ids only. `fabric.records.context(...)` binds a default actor and
+  the conversation and turn ids (`conv-`/`turn-` pseudonyms).
 - **The reader** projects control steps (decision, phase, invariants, the
   `resolves` and `gates` links) and a request's resolution state
   (`resolved`, `pending`, `revoked`, or `conflict` when answers disagree)

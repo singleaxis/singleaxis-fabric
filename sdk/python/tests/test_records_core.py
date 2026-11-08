@@ -361,7 +361,9 @@ def test_context_binds_conversation_and_turn_pseudonyms(
         records.record_control("rate_limit", "observation", "allow")
         assert handle.flush(10.0)
         spans = records_of(exporter)
-        dropped = _records.records_input(handle).stats.snapshot()["records_keys_dropped"]
+        records_input = _records.records_input(handle)
+        assert records_input is not None
+        dropped = records_input.stats.snapshot()["records_keys_dropped"]
     bound, annotation, unbound = spans
     for attrs in (bound, annotation):
         assert str(attrs["fabric.conversation_id"]).startswith("conv-")
