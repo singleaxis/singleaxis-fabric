@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/capture/v1/otlp-mapping-profile-v1.schema.json",
+  "title": "Fabric OTLP mapping profile v1 (spec 057 §4.5)",
+  "description": "A customer-supplied, declarative profile the Node applies before fabricguard to telemetry from an emitter with its own attribute names. Each rule matches a span or log name (and optional literal attribute values) and maps source attributes to a closed set of Fabric target keys, with optional literal value maps. Every unmapped attribute is dropped. Identifiers the profile names are pseudonymised before fabricguard. Provenance is always reported. Fabric ships no vendor profile in a release artifact (B9); example profiles live only in test fixtures. The invariants fabric.control.authentication and fabric.control.enforced_by_fabric are never mapped: the Node stamps them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "profile_version",
+    "rules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "fabric.otlp-mapping-profile/v1"
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "profile_version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647
+    },
+    "unmapped": {
+      "const": "drop",
+      "description": "Drop-by-default: the only admitted value."
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    }
+  },
+  "$defs": {
+    "target": {
+      "enum": [
+        "fabric.control.action_id",
+        "fabric.control.decision",
+        "fabric.control.derivation",
+        "fabric.control.engine.name",
+        "fabric.control.engine.version",
+        "fabric.control.error_class",
+        "fabric.control.evidence_event_ids",
+        "fabric.control.gated_kind",
+        "fabric.control.gated_step_id",
+        "fabric.control.gated_tool_call_id",
+        "fabric.control.grant_id",
+        "fabric.control.id",
+        "fabric.control.kind",
+        "fabric.control.latency_ms",
+        "fabric.control.mode",
+        "fabric.control.phase",
+        "fabric.control.policy_digest",
+        "fabric.control.policy_id",
+        "fabric.control.policy_version",
+        "fabric.control.proof_ref",
+        "fabric.control.reason_code",
+        "fabric.control.resolves",
+        "fabric.control.signal",
+        "fabric.control.stage",
+        "fabric.extension.contributes.commands",
+        "fabric.extension.contributes.hooks",
+        "fabric.extension.contributes.mcp_servers",
+        "fabric.extension.contributes.subagents",
+        "fabric.extension.contributes.tools",
+        "fabric.extension.enabled",
+        "fabric.extension.id",
+        "fabric.extension.kind",
+        "fabric.extension.manifest_hash",
+        "fabric.extension.name",
+        "fabric.extension.observed_via",
+        "fabric.extension.scope",
+        "fabric.extension.signature_status",
+        "fabric.extension.source_kind",
+        "fabric.extension.source_ref",
+        "fabric.extension.version",
+        "fabric.grant.basis",
+        "fabric.grant.credentials.count",
+        "fabric.grant.fs_rules.count",
+        "fabric.grant.id",
+        "fabric.grant.mcp_servers.count",
+        "fabric.grant.model_rules.count",
+        "fabric.grant.net_rules.count",
+        "fabric.grant.network_default",
+        "fabric.grant.parallel_tools",
+        "fabric.grant.permission_mode",
+        "fabric.grant.previous_id",
+        "fabric.grant.sandbox_kind",
+        "fabric.grant.source_boundary",
+        "fabric.grant.tool_choice",
+        "fabric.grant.tool_choice.allowed_count",
+        "fabric.grant.tools_allow.count",
+        "fabric.grant.tools_ask.count",
+        "fabric.grant.tools_deny.count",
+        "fabric.grant.tools_listed.count",
+        "fabric.grant.tools_offered.count",
+        "fabric.grant.trigger",
+        "fabric.hook.basis",
+        "fabric.hook.event_name",
+        "fabric.hook.exit_code",
+        "fabric.hook.extension_id",
+        "fabric.hook.gated_tool_call_id",
+        "fabric.hook.latency_ms",
+        "fabric.hook.outcome",
+        "fabric.hook.program_label",
+        "fabric.hook.reason_code",
+        "fabric.hook.signal",
+        "fabric.mcp.server_ref",
+        "fabric.mcp.tools.destructive_count",
+        "fabric.mcp.tools.idempotent_count",
+        "fabric.mcp.tools.open_world_count",
+        "fabric.mcp.tools.read_only_count"
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "match",
+        "record",
+        "map"
+      ],
+      "properties": {
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "span_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "log_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "attributes": {
+              "type": "object",
+              "maxProperties": 16,
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_.:/-]{0,255}$"
+              },
+              "additionalProperties": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "span_name"
+              ],
+              "not": {
+                "required": [
+                  "log_name"
+                ]
+              }
+            },
+            {
+              "required": [
+                "log_name"
+              ],
+              "not": {
+                "required": [
+                  "span_name"
+                ]
+              }
+            }
+          ]
+        },
+        "record": {
+          "enum": [
+            "control",
+            "grant",
+            "hook",
+            "extension"
+          ]
+        },
+        "assertion_origin": {
+          "enum": [
+            "application",
+            "provider",
+            "service",
+            "human",
+            "unknown"
+          ]
+        },
+        "map": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/mapping"
+          }
+        },
+        "set": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target",
+              "value"
+            ],
+            "properties": {
+              "target": {
+                "$ref": "#/$defs/target"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "mapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source",
+        "target"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:/-]{0,255}$"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "from",
+              "to"
+            ],
+            "properties": {
+              "from": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              },
+              "to": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "pseudonymise": {
+          "enum": [
+            "action",
+            "actor",
+            "agent",
+            "checkpoint",
+            "control",
+            "conversation",
+            "credential",
+            "db_namespace",
+            "db_transaction",
+            "dispatch",
+            "effect",
+            "extension",
+            "extension_source",
+            "grant",
+            "host",
+            "jsonrpc",
+            "mcp_session",
+            "memory_key",
+            "memory_store",
+            "net_rule",
+            "outcome",
+            "path_rule",
+            "proof",
+            "provider",
+            "sandbox",
+            "session",
+            "target",
+            "trigger",
+            "turn",
+            "user"
+          ]
+        }
+      },
+      "not": {
+        "required": [
+          "values",
+          "pseudonymise"
+        ]
+      }
+    }
+  }
+}

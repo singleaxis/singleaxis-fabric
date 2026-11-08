@@ -55,7 +55,9 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     #   fixtures and vectors (26), the ingress-group index
     # + spec 056 rev 7 (1.7.0): host events in no run, one report and one refusal
     # + 1.8.0: one destination_rejected loss record
-    assert len(validated) == 157
+    # + 1.9.0 (spec 057 WP7-0): the mapping-profile schema, two valid and five invalid
+    #   fixtures (mapping profiles, the controls chain and security_context counts)
+    assert len(validated) == 165
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -640,10 +642,10 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_8_0() -> None:
+def test_capture_family_is_version_1_9_0() -> None:
     # 1.5.0: spec 056 M1 (WP6-01); 1.6.0: spec 056 M2 (WP6-11); 1.7.0: spec 056 rev 7;
-    # 1.8.0: the Node's destination_rejected loss reason
-    assert _json("manifest.json")["version"] == "1.8.0"
+    # 1.8.0: the Node's destination_rejected loss reason; 1.9.0: spec 057 WP7-0
+    assert _json("manifest.json")["version"] == "1.9.0"
 
 
 def test_destination_rejected_is_a_loss_reason_of_records_and_reports() -> None:

@@ -1,0 +1,57 @@
+{
+  "schema_version": "fabric.otlp-mapping-profile/v1",
+  "profile_id": "example-gateway",
+  "profile_version": 1,
+  "unmapped": "keep",
+  "rules": [
+    {
+      "match": {
+        "span_name": "gateway.policy_check",
+        "attributes": {
+          "gateway.kind": "policy"
+        }
+      },
+      "record": "control",
+      "assertion_origin": "service",
+      "map": [
+        {
+          "source": "gateway.verdict",
+          "target": "fabric.control.decision",
+          "values": [
+            {
+              "from": "PASS",
+              "to": "allow"
+            },
+            {
+              "from": "BLOCK",
+              "to": "deny"
+            }
+          ]
+        },
+        {
+          "source": "gateway.policy_name",
+          "target": "fabric.control.engine.name"
+        },
+        {
+          "source": "gateway.call_id",
+          "target": "fabric.control.gated_tool_call_id",
+          "pseudonymise": "provider"
+        },
+        {
+          "source": "gateway.ms",
+          "target": "fabric.control.latency_ms"
+        }
+      ],
+      "set": [
+        {
+          "target": "fabric.control.kind",
+          "value": "policy"
+        },
+        {
+          "target": "fabric.control.derivation",
+          "value": "reported"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,5485 @@
+{
+  "schema_version": "fabric.schema-cases/v1",
+  "schema": "contracts/coverage/v1/schema/grant-snapshot-v1.schema.json",
+  "note": "Spec 057 §5.2: a valid case for every enum value and an invalid case for every required-by-basis rule of the grant document.",
+  "cases": [
+    {
+      "name": "declared full",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "offered",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "listed",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "mcp_wire",
+          "name": "repo-tools"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "/work"
+        ]
+      }
+    },
+    {
+      "name": "execution_mode autonomous",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "autonomous",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "execution_mode supervised",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "execution_mode approval_required",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "approval_required",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "execution_mode read_only",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "read_only",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "execution_mode unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "unknown",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "approval_policy none",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "none",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "approval_policy per_tool",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "approval_policy per_side_effect",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_side_effect",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "approval_policy all",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "all",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "approval_policy unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "unknown",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "declared source api",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "declared source otlp",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "otlp"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "declared source operator_snapshot",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "operator_snapshot",
+          "path_ref": "pth-0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "declared source other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "other"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "offered source otlp",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "otlp"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "listed source otlp",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "otlp"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "/work"
+        ]
+      }
+    },
+    {
+      "name": "tool_choice auto",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": false
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool_choice none",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "none",
+          "allowed_count": null,
+          "parallel": false
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool_choice required",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "required",
+          "allowed_count": null,
+          "parallel": false
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool_choice specific",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "specific",
+          "allowed_count": 1,
+          "parallel": false
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool_choice allowed_subset",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "allowed_subset",
+          "allowed_count": 1,
+          "parallel": false
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool_choice unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "unknown",
+          "allowed_count": null,
+          "parallel": false
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool type function",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "function"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool type custom",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "custom"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool type provider_hosted",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "provider_hosted"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool type mcp",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "mcp"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool type computer",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "computer"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "tool type other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "other"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      }
+    },
+    {
+      "name": "sandbox none",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "none"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "sandbox process",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "process"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "sandbox container",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "sandbox vm",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "vm"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "sandbox remote",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "remote"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "sandbox unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "unknown"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "network default allow",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "allow"
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "network default deny",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny"
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "network default unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "unknown"
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "credential kind env",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "X",
+            "kind": "env"
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "credential kind file",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "X",
+            "kind": "file"
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "credential kind secret_store",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "X",
+            "kind": "secret_store"
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "credential kind token",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "X",
+            "kind": "token"
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "credential kind other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "X",
+            "kind": "other"
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp transport stdio",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "transport": "stdio"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp transport streamable_http",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "transport": "streamable_http"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp transport sse",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "transport": "sse"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp transport other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "transport": "other"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp scope managed",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "scope": "managed"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp scope user",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "scope": "user"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp scope project",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp scope local",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "scope": "local"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp scope session",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "scope": "session"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "mcp scope unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "s",
+            "scope": "unknown"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "unknown basis",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "granted",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "offered without tools_offered",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      },
+      "rule": "offered requires tools_offered"
+    },
+    {
+      "name": "offered carrying declared rules",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        },
+        "tools": {
+          "allow": [
+            {
+              "rule": "x"
+            }
+          ]
+        }
+      },
+      "rule": "offered forbids declared fields"
+    },
+    {
+      "name": "offered from mcp_wire",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "mcp_wire"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      },
+      "rule": "offered boundary"
+    },
+    {
+      "name": "listed without tools or roots",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "mcp_wire",
+          "name": "repo-tools"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        }
+      },
+      "rule": "listed requires tools_listed or roots"
+    },
+    {
+      "name": "listed carrying tool_choice",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "mcp_wire",
+          "name": "repo-tools"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "/work"
+        ],
+        "tool_choice": {
+          "mode": "auto"
+        }
+      },
+      "rule": "listed forbids offered fields"
+    },
+    {
+      "name": "listed from llm_wire",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "llm_wire"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "/work"
+        ]
+      },
+      "rule": "listed boundary"
+    },
+    {
+      "name": "declared carrying tools_offered",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        },
+        "tools_offered": [
+          {
+            "name": "t",
+            "type": "function"
+          }
+        ]
+      },
+      "rule": "declared forbids offered fields"
+    },
+    {
+      "name": "declared carrying request_ref",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        },
+        "request_ref": {
+          "exchange_id": "x"
+        }
+      },
+      "rule": "declared forbids request_ref"
+    },
+    {
+      "name": "declared from llm_wire",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "llm_wire"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "declared boundary"
+    },
+    {
+      "name": "credential value",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "X",
+            "value": "ghp_secret"
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "credential values are never recorded"
+    },
+    {
+      "name": "tool_choice mode",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "any"
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "sandbox kind",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "jail"
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "network default",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "maybe"
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "source boundary",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "framework"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "unknown top-level key",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        },
+        "rules_text": "..."
+      },
+      "rule": "closed document"
+    },
+    {
+      "name": "float limit",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "x",
+            "limit": 1.5
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "rule": "integers only"
+    }
+  ]
+}

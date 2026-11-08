@@ -1,0 +1,40 @@
+{
+  "schema_version": "fabric.records-golden/v1",
+  "spec": "052 §7.2 (WP3-0)",
+  "scenario": "pending-resolved-cross-process",
+  "records": [
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e85",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "ctl-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "fabric.control.kind": "approval",
+        "fabric.control.phase": "request",
+        "fabric.control.decision": "pending",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown"
+      }
+    },
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e86",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e06",
+        "fabric.control.kind": "approval",
+        "fabric.control.phase": "resolution",
+        "fabric.control.decision": "allow",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "human_approver",
+        "fabric.control.resolves": "ctl-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+      },
+      "process": "B"
+    }
+  ],
+  "expect": {
+    "resolution_state": {
+      "ctl-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1": "resolved"
+    }
+  }
+}

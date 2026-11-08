@@ -1,0 +1,38 @@
+{
+  "schema_version": "fabric.records-golden/v1",
+  "spec": "052 §7.2 (WP3-0)",
+  "scenario": "allow",
+  "records": [
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5ef0",
+      "attributes": {
+        "fabric.step.kind": "tool_call"
+      }
+    },
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e81",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e01",
+        "fabric.control.kind": "policy",
+        "fabric.control.phase": "observation",
+        "fabric.control.decision": "allow",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown",
+        "fabric.control.gated_step_id": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5ef0",
+        "fabric.step.links": [
+          "gates/attempt/7d444840-9dc0-4a1f-9c1e-2b8a6f0d5ef0"
+        ]
+      }
+    }
+  ],
+  "expect": {
+    "decisions": {
+      "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e01": "allow"
+    },
+    "gates": {
+      "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e01": "resolved"
+    }
+  }
+}

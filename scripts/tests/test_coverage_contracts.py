@@ -44,6 +44,9 @@ from release import package_contracts as packaging  # noqa: E402
 def _copy_tree(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     shutil.copytree(REPO_ROOT / FAMILY, root / FAMILY)
+    # spec 057: the security_context case table checks the deployment-policy schema
+    policy = Path("contracts/deployment-policy")
+    shutil.copytree(REPO_ROOT / policy, root / policy)
     (root / SPEC).parent.mkdir(parents=True)
     shutil.copy(REPO_ROOT / SPEC, root / SPEC)
     for extra in (
@@ -659,9 +662,8 @@ def _vector_code(document: Any) -> str:
 def test_p1_every_section_4_3_artifact_is_pinned() -> None:
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {record["path"]: record for record in manifest["artifacts"]}
-    assert (
-        manifest["version"] == "1.3.0"
-    )  # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11)
+    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0
+    assert manifest["version"] == "1.4.0"
     for path in P1_ARTIFACTS:
         assert path in pinned, path
     assert (
@@ -678,9 +680,12 @@ def test_p1_registry_rows() -> None:
     assert "emitted as given in clear mode" in fields["X08"]["definition"]
     assert fields["C35"]["lives_in"].startswith("T `fabric.wire.endpoint_id`")
     assert fields["C40"]["lives_in"] == "T `fabric.wire.provider_request_id`"
-    assert not [f["id"] for f in fields.values() if "P0" in f["phase"]]
+    # 049's own P0 is built; "P0 (spec 057)" is the security-context build phase.
+    assert not [f["id"] for f in fields.values()
+                if "P0" in f["phase"] and "spec 057" not in f["phase"]]  # fmt: skip
     keys = {k["key"]: k for k in reg["keys"]["keys"]}
-    assert not [k for k, row in keys.items() if "P0" in row["phase"]]
+    assert not [k for k, row in keys.items()
+                if "P0" in row["phase"] and "spec 057" not in row["phase"]]  # fmt: skip
     assert keys["fabric.capture.source"]["check"]["values"] == ["observed", "reported"]
     assert keys["fabric.run.segment_id"]["placement"] == [
         "exchange", "record", "loss", "run_start", "run_end", "segment_seal"
@@ -691,7 +696,9 @@ def test_p1_registry_rows() -> None:
     evidence = roles["record.evidence"]
     assert evidence["default_policy"] == "metadata" and evidence["cap"] == "1 MiB"
     assert evidence["allowed_modes"] == ["retain_original", "metadata_only", "omit"]
-    assert reg["roles"]["registry_revision"] == 4
+    assert (
+        reg["roles"]["registry_revision"] == 5
+    )  # spec 057 roles and control.checked off
     assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
         "fabric.test.items/v1",
         "fabric.exec.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-01

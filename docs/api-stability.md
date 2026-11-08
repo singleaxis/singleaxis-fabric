@@ -61,11 +61,25 @@ There is no replacement in Fabric; evaluation results belong to the system
 that produces them. Neither SDK emits these elements and no shipped connector
 manifest declares them, so there is no runtime warning to act on.
 
-The policy, tool-authorization and escalation verdict elements (connect
-`policy_verdict`, `authorization_verdict` and `escalation`; activity
-`fabric.policy.evaluation`, `fabric.tool.authorization`, `fabric.escalation`
-and their span attributes) are not deprecated by this change. Whether they
-follow the same path is an open owner decision.
+The policy, tool-authorization and escalation verdict elements follow the
+same path (spec 057 owner decision OD-11, 2026-11-09):
+
+- `contracts/connect/v1`: the `policy_verdict`, `authorization_verdict` and
+  `escalation` semantic-surface enum values. Connect v2 (Fabric v1.0) replaces
+  them with `control_decision`, `grant_snapshot` and `extension_inventory`.
+- `contracts/activity/v1`: the `fabric.policy.evaluation`,
+  `fabric.tool.authorization` and `fabric.escalation` events and their
+  attributes.
+
+Each is marked `"deprecated": true` in its v1 schema and stays accepted. The
+replacement is one record-only shape with invariants: the control decision
+record of spec 057 (`record_control`, `ControlObservation` v2,
+`contracts/coverage/v1/schema/control-observation-v2.schema.json`, activity
+2.1.0 `control.decision`). Every control decision carries
+`enforced_by_fabric=false` and `authentication=unverified_caller_report`;
+Fabric records a decision another system made and never makes, applies,
+waits for or returns one. No SDK emits the deprecated elements and no
+shipped connector manifest declares them.
 
 ## Artifact boundary
 

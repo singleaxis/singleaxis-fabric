@@ -1,0 +1,2658 @@
+{
+  "schema_version": "fabric.schema-cases/v1",
+  "schema": "contracts/deployment-policy/v1/schema/deployment-policy-v1.schema.json",
+  "note": "Spec 057 §8: the capture-policy security_context section (exact-match classification lists; denial markers never state allow).",
+  "cases": [
+    {
+      "name": "full security_context",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "policy.internal.example",
+              "label": "policy-svc",
+              "control_kind": "policy",
+              "decision_pointer": "/decision",
+              "decision_map": [
+                {
+                  "value": "ALLOW",
+                  "decision": "allow"
+                },
+                {
+                  "value": "DENY",
+                  "decision": "deny"
+                },
+                {
+                  "value": "REWRITE",
+                  "decision": "modify"
+                },
+                {
+                  "value": "ASK",
+                  "decision": "escalate"
+                }
+              ]
+            },
+            {
+              "host": "guard.internal.example:8443",
+              "label": "guard",
+              "control_kind": "guardrail"
+            }
+          ],
+          "control_addresses": [
+            {
+              "address": "10.0.3.0/24",
+              "label": "policy-svc",
+              "control_kind": "policy"
+            },
+            {
+              "address": "fd00::10",
+              "label": "approvals",
+              "control_kind": "approval"
+            }
+          ],
+          "hook_programs": [
+            {
+              "path": "/opt/hooks/pre-shell.sh",
+              "label": "pre-shell-check",
+              "exit_map": {
+                "0": "passed",
+                "2": "blocked",
+                "3": "modified",
+                "4": "escalated",
+                "-1": "errored"
+              }
+            },
+            {
+              "basename": "lint-hook",
+              "label": "linter"
+            }
+          ],
+          "watched_paths": [
+            {
+              "path": "/work/.agent/permissions.json",
+              "match": "exact",
+              "label": "agent-acl",
+              "class": "permission_config"
+            },
+            {
+              "path": "/work/.agent/hooks",
+              "match": "prefix",
+              "label": "hooks",
+              "class": "hook_config"
+            },
+            {
+              "path": "/work/.agent/skills",
+              "match": "prefix",
+              "label": "skills",
+              "class": "extension_dir"
+            },
+            {
+              "path": "/home/agent/.netrc",
+              "match": "exact",
+              "label": "netrc",
+              "class": "credential_file"
+            },
+            {
+              "path": "/etc/agent",
+              "match": "prefix",
+              "label": "etc",
+              "class": "other"
+            }
+          ],
+          "tool_result_markers": [
+            {
+              "label": "fs-acl",
+              "prefix": "permission denied",
+              "kind": "permission_check",
+              "decision": "deny",
+              "reason_code": "path.outside_root"
+            },
+            {
+              "label": "approval-gate",
+              "equals": "approval required",
+              "decision": "escalate"
+            },
+            {
+              "label": "json-gate",
+              "json": {
+                "pointer": "/status",
+                "values": [
+                  "denied",
+                  403
+                ]
+              }
+            }
+          ],
+          "grant": {
+            "pseudonymise": {
+              "paths": true,
+              "hosts": false,
+              "credentials": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "empty security_context",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {}
+      }
+    },
+    {
+      "name": "control kind rate_limit",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "rate_limit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "control kind budget",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "budget"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "control kind other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind guardrail",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "guardrail"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind policy",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "policy"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind permission_request",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "permission_request"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind approval",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "approval"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind rate_limit",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "rate_limit"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind budget",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "budget"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker kind other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "kind": "other"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "marker states allow",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "decision": "allow"
+            }
+          ]
+        }
+      },
+      "rule": "a marker never states allow"
+    },
+    {
+      "name": "marker with two rules",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "prefix": "n"
+            }
+          ]
+        }
+      },
+      "rule": "exactly one matching rule"
+    },
+    {
+      "name": "marker without a rule",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m"
+            }
+          ]
+        }
+      },
+      "rule": "exactly one matching rule"
+    },
+    {
+      "name": "marker regex field",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "regex": "no.*"
+            }
+          ]
+        }
+      },
+      "rule": "no regular expressions"
+    },
+    {
+      "name": "wildcard host",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "*.example",
+              "label": "x",
+              "control_kind": "policy"
+            }
+          ]
+        }
+      },
+      "rule": "exact match only"
+    },
+    {
+      "name": "pointer without map",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "policy",
+              "decision_pointer": "/d"
+            }
+          ]
+        }
+      },
+      "rule": "pointer and map together"
+    },
+    {
+      "name": "extract maps unknown",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "policy",
+              "decision_pointer": "/d",
+              "decision_map": [
+                {
+                  "value": "x",
+                  "decision": "unknown"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "rule": "an extracted decision is allow, deny, modify or escalate"
+    },
+    {
+      "name": "hook path and basename",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "hook_programs": [
+            {
+              "path": "/a",
+              "basename": "a",
+              "label": "a"
+            }
+          ]
+        }
+      },
+      "rule": "path or basename"
+    },
+    {
+      "name": "hook exit map outcome",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "hook_programs": [
+            {
+              "basename": "a",
+              "label": "a",
+              "exit_map": {
+                "0": "ok"
+              }
+            }
+          ]
+        }
+      },
+      "rule": "hook outcome enum"
+    },
+    {
+      "name": "watched relative path",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "watched_paths": [
+            {
+              "path": "work/x",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            }
+          ]
+        }
+      },
+      "rule": "absolute paths"
+    },
+    {
+      "name": "watch class",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "watched_paths": [
+            {
+              "path": "/x",
+              "match": "exact",
+              "label": "x",
+              "class": "secrets"
+            }
+          ]
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "unknown section",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "guardrails": []
+        }
+      },
+      "rule": "closed section"
+    },
+    {
+      "name": "control kind",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "judge"
+            }
+          ]
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "over 256 entries",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "watched_paths": [
+            {
+              "path": "/p0",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p1",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p2",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p3",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p4",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p5",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p6",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p7",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p8",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p9",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p10",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p11",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p12",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p13",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p14",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p15",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p16",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p17",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p18",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p19",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p20",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p21",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p22",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p23",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p24",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p25",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p26",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p27",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p28",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p29",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p30",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p31",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p32",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p33",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p34",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p35",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p36",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p37",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p38",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p39",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p40",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p41",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p42",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p43",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p44",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p45",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p46",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p47",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p48",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p49",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p50",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p51",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p52",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p53",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p54",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p55",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p56",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p57",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p58",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p59",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p60",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p61",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p62",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p63",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p64",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p65",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p66",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p67",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p68",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p69",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p70",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p71",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p72",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p73",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p74",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p75",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p76",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p77",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p78",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p79",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p80",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p81",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p82",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p83",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p84",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p85",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p86",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p87",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p88",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p89",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p90",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p91",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p92",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p93",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p94",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p95",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p96",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p97",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p98",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p99",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p100",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p101",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p102",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p103",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p104",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p105",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p106",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p107",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p108",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p109",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p110",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p111",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p112",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p113",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p114",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p115",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p116",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p117",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p118",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p119",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p120",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p121",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p122",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p123",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p124",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p125",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p126",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p127",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p128",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p129",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p130",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p131",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p132",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p133",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p134",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p135",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p136",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p137",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p138",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p139",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p140",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p141",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p142",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p143",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p144",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p145",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p146",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p147",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p148",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p149",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p150",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p151",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p152",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p153",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p154",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p155",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p156",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p157",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p158",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p159",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p160",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p161",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p162",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p163",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p164",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p165",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p166",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p167",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p168",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p169",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p170",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p171",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p172",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p173",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p174",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p175",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p176",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p177",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p178",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p179",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p180",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p181",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p182",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p183",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p184",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p185",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p186",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p187",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p188",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p189",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p190",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p191",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p192",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p193",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p194",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p195",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p196",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p197",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p198",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p199",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p200",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p201",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p202",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p203",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p204",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p205",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p206",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p207",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p208",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p209",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p210",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p211",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p212",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p213",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p214",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p215",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p216",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p217",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p218",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p219",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p220",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p221",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p222",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p223",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p224",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p225",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p226",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p227",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p228",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p229",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p230",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p231",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p232",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p233",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p234",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p235",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p236",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p237",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p238",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p239",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p240",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p241",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p242",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p243",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p244",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p245",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p246",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p247",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p248",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p249",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p250",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p251",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p252",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p253",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p254",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p255",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            },
+            {
+              "path": "/p256",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            }
+          ]
+        }
+      },
+      "rule": "at most 256 entries"
+    }
+  ]
+}

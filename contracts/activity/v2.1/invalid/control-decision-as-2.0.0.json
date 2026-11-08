@@ -1,0 +1,49 @@
+{
+  "contract": "singleaxis.fabric.activity-sequence",
+  "version": "2.1.0",
+  "sequence_id": "0c1d2e3f-4051-4627-8839-4a5b6c7d8e9f",
+  "events": [
+    {
+      "contract": "singleaxis.fabric.activity-envelope",
+      "schema_version": "2.0.0",
+      "event_id": "5b0c1d2e-3f40-4a51-8b62-000000000000",
+      "event_type": "control.decision",
+      "identity": {
+        "tenant_id": "tenant-a",
+        "system_id": "support",
+        "agent_id": "agent-1",
+        "deployment_id": "dep-1",
+        "environment": "prod",
+        "release_id": "r-1"
+      },
+      "correlation": {
+        "causal_references": []
+      },
+      "source": {
+        "source_id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+        "kind": "sdk",
+        "component": "fabric-python",
+        "component_version": "0.12.1"
+      },
+      "original_timestamp": "2026-11-09T10:00:00Z",
+      "source_sequence": 0,
+      "capture_semantics": "reported",
+      "content": {
+        "mode": "metadata",
+        "classification": "none"
+      },
+      "activity": {
+        "outcome": "succeeded",
+        "control": {
+          "control_id": "ctl-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+          "kind": "policy",
+          "phase": "observation",
+          "decision": "deny",
+          "derivation": "reported",
+          "enforced_by_fabric": false,
+          "authentication": "unverified_caller_report"
+        }
+      }
+    }
+  ]
+}

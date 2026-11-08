@@ -1,0 +1,1367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.singleaxis.dev/fabric/activity/v2.1/activity-sequence-v2.1.schema.json",
+  "title": "Fabric activity envelope v2.1 conformance sequence",
+  "type": "object",
+  "required": [
+    "contract",
+    "version",
+    "sequence_id",
+    "events"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract": {
+      "const": "singleaxis.fabric.activity-sequence"
+    },
+    "version": {
+      "enum": [
+        "2.0.0",
+        "2.1.0"
+      ]
+    },
+    "sequence_id": {
+      "$ref": "#/$defs/uuid"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#activity-envelope-v2"
+      }
+    }
+  },
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "opaqueId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "activityIdentifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,127}$"
+    },
+    "governedReference": {
+      "type": "string",
+      "pattern": "^ref_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+    },
+    "provenance": {
+      "enum": [
+        "observed",
+        "reported",
+        "inferred"
+      ]
+    },
+    "uuidCorrelation": {
+      "type": "object",
+      "required": [
+        "value",
+        "provenance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "$ref": "#/$defs/uuid"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "traceCorrelation": {
+      "type": "object",
+      "required": [
+        "value",
+        "provenance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "spanCorrelation": {
+      "type": "object",
+      "required": [
+        "value",
+        "provenance"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{16}$"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        }
+      }
+    },
+    "causalReference": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "scope",
+            "event_id",
+            "provenance"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "scope": {
+              "const": "sequence"
+            },
+            "event_id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "provenance": {
+              "$ref": "#/$defs/provenance"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "scope",
+            "event_id",
+            "source_id",
+            "source_sequence",
+            "provenance"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "scope": {
+              "const": "external"
+            },
+            "event_id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "source_id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "source_sequence": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "provenance": {
+              "$ref": "#/$defs/provenance"
+            }
+          }
+        }
+      ]
+    },
+    "contentDescriptor": {
+      "type": "object",
+      "required": [
+        "mode",
+        "classification"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": [
+            "metadata",
+            "hash",
+            "governed_reference"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "none",
+            "public",
+            "internal",
+            "confidential",
+            "restricted"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "governed_reference": {
+          "$ref": "#/$defs/governedReference"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "mode": {
+              "const": "metadata"
+            }
+          },
+          "not": {
+            "anyOf": [
+              {
+                "required": [
+                  "sha256"
+                ]
+              },
+              {
+                "required": [
+                  "governed_reference"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "hash"
+            }
+          },
+          "required": [
+            "sha256"
+          ],
+          "not": {
+            "required": [
+              "governed_reference"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "mode": {
+              "const": "governed_reference"
+            }
+          },
+          "required": [
+            "governed_reference"
+          ]
+        }
+      ]
+    },
+    "activityEnvelope": {
+      "$anchor": "activity-envelope-v2",
+      "type": "object",
+      "required": [
+        "contract",
+        "schema_version",
+        "event_id",
+        "event_type",
+        "identity",
+        "correlation",
+        "source",
+        "original_timestamp",
+        "source_sequence",
+        "capture_semantics",
+        "content",
+        "activity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "contract": {
+          "const": "singleaxis.fabric.activity-envelope"
+        },
+        "schema_version": {
+          "enum": [
+            "2.0.0",
+            "2.1.0"
+          ]
+        },
+        "event_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "event_type": {
+          "enum": [
+            "model.request",
+            "model.response",
+            "tool.request",
+            "tool.result",
+            "retrieval.request",
+            "retrieval.result",
+            "side_effect.requested",
+            "side_effect.completed",
+            "human.action",
+            "execution.error",
+            "execution.retry",
+            "execution.cancelled",
+            "deployment.changed",
+            "grant.snapshot",
+            "control.decision",
+            "hook.completed",
+            "extension.loaded"
+          ]
+        },
+        "identity": {
+          "type": "object",
+          "required": [
+            "tenant_id",
+            "system_id",
+            "agent_id",
+            "deployment_id",
+            "environment",
+            "release_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "tenant_id": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "system_id": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "agent_id": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "deployment_id": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "environment": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "release_id": {
+              "$ref": "#/$defs/opaqueId"
+            }
+          }
+        },
+        "correlation": {
+          "type": "object",
+          "required": [
+            "causal_references"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "trace_id": {
+              "$ref": "#/$defs/traceCorrelation"
+            },
+            "span_id": {
+              "$ref": "#/$defs/spanCorrelation"
+            },
+            "parent_span_id": {
+              "$ref": "#/$defs/spanCorrelation"
+            },
+            "execution_id": {
+              "$ref": "#/$defs/uuidCorrelation"
+            },
+            "decision_id": {
+              "$ref": "#/$defs/uuidCorrelation"
+            },
+            "attempt_id": {
+              "$ref": "#/$defs/uuidCorrelation"
+            },
+            "causal_references": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/causalReference"
+              }
+            }
+          }
+        },
+        "source": {
+          "type": "object",
+          "required": [
+            "source_id",
+            "kind",
+            "component",
+            "component_version"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "source_id": {
+              "$ref": "#/$defs/uuid"
+            },
+            "kind": {
+              "enum": [
+                "sdk",
+                "framework_adapter",
+                "gateway",
+                "otlp",
+                "vendor_receiver",
+                "discovery"
+              ]
+            },
+            "component": {
+              "$ref": "#/$defs/opaqueId"
+            },
+            "component_version": {
+              "$ref": "#/$defs/opaqueId"
+            }
+          }
+        },
+        "original_timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "source_sequence": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "capture_semantics": {
+          "enum": [
+            "observed",
+            "reported",
+            "inferred"
+          ]
+        },
+        "content": {
+          "$ref": "#/$defs/contentDescriptor"
+        },
+        "activity": {
+          "type": "object",
+          "required": [
+            "outcome"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "outcome": {
+              "enum": [
+                "requested",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "unknown"
+              ]
+            },
+            "operation": {
+              "$ref": "#/$defs/activityIdentifier"
+            },
+            "name": {
+              "$ref": "#/$defs/activityIdentifier"
+            },
+            "target": {
+              "$ref": "#/$defs/activityIdentifier"
+            },
+            "latency_ms": {
+              "type": "number",
+              "minimum": 0
+            },
+            "status_code": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "error_code": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "input": {
+              "$ref": "#/$defs/contentDescriptor"
+            },
+            "output": {
+              "$ref": "#/$defs/contentDescriptor"
+            },
+            "grant": {
+              "$ref": "#/$defs/grantActivity"
+            },
+            "control": {
+              "$ref": "#/$defs/controlActivity"
+            },
+            "hook": {
+              "$ref": "#/$defs/hookActivity"
+            },
+            "extension": {
+              "$ref": "#/$defs/extensionActivity"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "grant.snapshot"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "activity": {
+                "required": [
+                  "grant"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "control"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "hook"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "extension"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "control.decision"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "activity": {
+                "required": [
+                  "control"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "grant"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "hook"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "extension"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "hook.completed"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "activity": {
+                "required": [
+                  "hook"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "grant"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "control"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "extension"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "const": "extension.loaded"
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "activity": {
+                "required": [
+                  "extension"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "grant"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "control"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "hook"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "event_type": {
+                "enum": [
+                  "grant.snapshot",
+                  "control.decision",
+                  "hook.completed",
+                  "extension.loaded"
+                ]
+              }
+            },
+            "required": [
+              "event_type"
+            ]
+          },
+          "then": {
+            "properties": {
+              "schema_version": {
+                "const": "2.1.0"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "activity": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "grant"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "control"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "hook"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "extension"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "controlActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_id",
+        "kind",
+        "phase",
+        "decision",
+        "derivation",
+        "enforced_by_fabric",
+        "authentication"
+      ],
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$"
+        },
+        "kind": {
+          "enum": [
+            "guardrail",
+            "policy",
+            "permission_request",
+            "approval",
+            "rate_limit",
+            "budget",
+            "other",
+            "provider_safety",
+            "elicitation",
+            "os_access",
+            "permission_check"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "request",
+            "resolution",
+            "revocation",
+            "observation"
+          ]
+        },
+        "stage": {
+          "enum": [
+            "input",
+            "output",
+            "pre_model",
+            "post_model",
+            "pre_tool",
+            "post_tool",
+            "pre_effect",
+            "post_effect",
+            "effect",
+            "inventory",
+            "run",
+            "other",
+            "unknown"
+          ]
+        },
+        "decision": {
+          "enum": [
+            "allow",
+            "deny",
+            "modify",
+            "escalate",
+            "pending",
+            "timeout",
+            "cancelled",
+            "revoked",
+            "unknown",
+            "error"
+          ]
+        },
+        "signal": {
+          "enum": [
+            "content_filter",
+            "refusal",
+            "guardrail_intervened",
+            "prompt_blocked",
+            "safety_stop",
+            "moderation_flag",
+            "other"
+          ]
+        },
+        "derivation": {
+          "enum": [
+            "literal",
+            "configured_extract",
+            "configured_marker",
+            "configured_exit_map",
+            "reported",
+            "wrapped_check"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "enforcing",
+            "advisory",
+            "shadow",
+            "unknown"
+          ]
+        },
+        "error_class": {
+          "enum": [
+            "timeout",
+            "exception",
+            "unavailable",
+            "misconfigured",
+            "other"
+          ]
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+            }
+          }
+        },
+        "gated": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "tool_call",
+                "model_call",
+                "side_effect",
+                "mcp_call",
+                "process",
+                "input",
+                "output",
+                "run",
+                "other"
+              ]
+            },
+            "step_id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "tool_call_id": {
+              "type": "string",
+              "pattern": "^p-[0-9a-f]{32}$"
+            },
+            "action_id": {
+              "type": "string",
+              "pattern": "^axn-[0-9a-f]{32}$"
+            }
+          }
+        },
+        "resolves": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "grant_id": {
+          "type": "string",
+          "pattern": "^grt-[0-9a-f]{32}$"
+        },
+        "latency_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
+        },
+        "evidence_event_ids": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/uuid"
+          }
+        },
+        "assertion_origin": {
+          "enum": [
+            "application",
+            "provider",
+            "service",
+            "human",
+            "unknown"
+          ]
+        },
+        "enforced_by_fabric": {
+          "const": false
+        },
+        "authentication": {
+          "const": "unverified_caller_report"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "provider_safety"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "signal"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "error_class"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "request"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "pending",
+                  "escalate",
+                  "unknown"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "resolution"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "allow",
+                  "deny",
+                  "modify",
+                  "escalate",
+                  "timeout",
+                  "cancelled",
+                  "unknown",
+                  "error"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "revocation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "revoked"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "phase": {
+                "const": "observation"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "decision": {
+                "enum": [
+                  "allow",
+                  "deny",
+                  "modify",
+                  "escalate",
+                  "timeout",
+                  "unknown",
+                  "error"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "grantActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "basis",
+        "trigger",
+        "source_boundary"
+      ],
+      "properties": {
+        "grant_id": {
+          "type": "string",
+          "pattern": "^grt-[0-9a-f]{32}$"
+        },
+        "basis": {
+          "enum": [
+            "offered",
+            "listed",
+            "declared"
+          ]
+        },
+        "trigger": {
+          "enum": [
+            "run_start",
+            "change",
+            "resume",
+            "requested",
+            "derived",
+            "unknown"
+          ]
+        },
+        "previous_id": {
+          "type": "string",
+          "pattern": "^grt-[0-9a-f]{32}$"
+        },
+        "source_boundary": {
+          "enum": [
+            "llm_wire",
+            "mcp_wire",
+            "api",
+            "otlp",
+            "operator_snapshot",
+            "other"
+          ]
+        },
+        "permission_mode": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$"
+        },
+        "execution_mode": {
+          "enum": [
+            "autonomous",
+            "supervised",
+            "approval_required",
+            "read_only",
+            "unknown"
+          ]
+        },
+        "approval_policy": {
+          "enum": [
+            "none",
+            "per_tool",
+            "per_side_effect",
+            "all",
+            "unknown"
+          ]
+        },
+        "tool_choice": {
+          "enum": [
+            "auto",
+            "none",
+            "required",
+            "specific",
+            "allowed_subset",
+            "unknown"
+          ]
+        },
+        "sandbox_kind": {
+          "enum": [
+            "none",
+            "process",
+            "container",
+            "vm",
+            "remote",
+            "unknown"
+          ]
+        },
+        "network_default": {
+          "enum": [
+            "allow",
+            "deny",
+            "unknown"
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tools_allow": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tools_deny": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tools_ask": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tools_offered": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tools_listed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mcp_servers": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "fs_rules": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "net_rules": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "credentials": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "model_rules": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "hookActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "phase",
+        "basis",
+        "outcome"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        },
+        "phase": {
+          "enum": [
+            "pre_model",
+            "post_model",
+            "pre_tool",
+            "post_tool",
+            "pre_decision",
+            "post_decision"
+          ]
+        },
+        "basis": {
+          "enum": [
+            "process",
+            "callback",
+            "reported_unknown"
+          ]
+        },
+        "event_name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        },
+        "outcome": {
+          "enum": [
+            "passed",
+            "modified",
+            "blocked",
+            "escalated",
+            "errored",
+            "unknown"
+          ]
+        },
+        "modified": {
+          "type": "boolean"
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "signal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "program_label": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+        },
+        "gated_tool_call_id": {
+          "type": "string",
+          "pattern": "^p-[0-9a-f]{32}$"
+        },
+        "extension_id": {
+          "type": "string",
+          "pattern": "^ext-[0-9a-f]{32}$"
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
+        },
+        "input_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "output_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "modified"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "modified": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
+    },
+    "extensionActivity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "observed_via",
+        "signature_status"
+      ],
+      "properties": {
+        "extension_id": {
+          "type": "string",
+          "pattern": "^ext-[0-9a-f]{32}$"
+        },
+        "kind": {
+          "enum": [
+            "skill",
+            "plugin",
+            "mcp_server",
+            "hook_bundle",
+            "subagent",
+            "tool_pack",
+            "other"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
+        },
+        "source_kind": {
+          "enum": [
+            "registry",
+            "marketplace",
+            "git",
+            "local_path",
+            "url",
+            "process",
+            "builtin",
+            "unknown"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "pattern": "^src-[0-9a-f]{32}$"
+        },
+        "manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signature_status": {
+          "enum": [
+            "verified",
+            "invalid",
+            "unsigned",
+            "unverified",
+            "unknown"
+          ]
+        },
+        "scope": {
+          "enum": [
+            "managed",
+            "user",
+            "project",
+            "local",
+            "session",
+            "unknown"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "observed_via": {
+          "enum": [
+            "mcp_initialize",
+            "mcp_tools_list",
+            "process_launch",
+            "path_open",
+            "reported"
+          ]
+        },
+        "contributes": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tools": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "hooks": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "commands": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "mcp_servers": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "subagents": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "description": "Activity 2.1.0 (spec 057 §5.7): additive beside 2.0.0. version and schema_version accept 2.0.0 and 2.1.0; event_type gains grant.snapshot, control.decision, hook.completed and extension.loaded; activity gains four optional objects, each required by exactly its event type and forbidden on every other. A 2.0.0 document is valid under 2.1.0. Producers emit the four event types only to a destination that declares 2.1.0. Every control object carries enforced_by_fabric=false and authentication=unverified_caller_report."
+}

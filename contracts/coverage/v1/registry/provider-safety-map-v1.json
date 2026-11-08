@@ -1,0 +1,127 @@
+{
+  "schema_version": "fabric.provider-safety-map/v1",
+  "note": "Spec 057 \u00a74.1: the closed map from a literal provider response field to a provider-neutral control.signal (D48), stage and decision, projected offline by the reader as kind provider_safety, derivation literal. Skeleton: a row ships (status confirmed) only after it is confirmed against a recorded response fixture for its dialect (WP7-5); until then status is pending_fixture and the reader projects nothing for it. A missing field produces no row, never allow. Severity scores and probabilities stay in the protected response bytes. engine is the endpoint id; reason_code is the category literal, lower-cased and pattern-validated.",
+  "rows": [
+    {
+      "id": "openai.finish_reason.content_filter",
+      "dialect": "openai_chat",
+      "field": "choices[].finish_reason",
+      "match": "equals \"content_filter\"",
+      "signal": "content_filter",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/openai.finish_reason.content_filter.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "azure.prompt_filter_results.filtered",
+      "dialect": "azure_openai_chat",
+      "field": "prompt_filter_results[].content_filter_results.<category>.filtered",
+      "match": "equals true",
+      "signal": "content_filter",
+      "stage": "input",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/azure.prompt_filter_results.filtered.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "azure.choice_filter_results.filtered",
+      "dialect": "azure_openai_chat",
+      "field": "choices[].content_filter_results.<category>.filtered",
+      "match": "equals true (modify when the choice still carries content)",
+      "signal": "content_filter",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/azure.choice_filter_results.filtered.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "openai.message.refusal",
+      "dialect": "openai_chat",
+      "field": "choices[].message.refusal",
+      "match": "present",
+      "signal": "refusal",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/openai.message.refusal.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "openai.responses.refusal_part",
+      "dialect": "openai_responses",
+      "field": "output[].content[].type",
+      "match": "equals \"refusal\"",
+      "signal": "refusal",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/openai.responses.refusal_part.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "anthropic.stop_reason.refusal",
+      "dialect": "anthropic_messages",
+      "field": "stop_reason",
+      "match": "equals \"refusal\"",
+      "signal": "refusal",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/anthropic.stop_reason.refusal.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "bedrock.stop_reason.guardrail_intervened",
+      "dialect": "bedrock_converse",
+      "field": "stopReason",
+      "match": "equals \"guardrail_intervened\" (stage from the trace when present, else unknown)",
+      "signal": "guardrail_intervened",
+      "stage": "unknown",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/bedrock.stop_reason.guardrail_intervened.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "bedrock.stop_reason.content_filtered",
+      "dialect": "bedrock_converse",
+      "field": "stopReason",
+      "match": "equals \"content_filtered\"",
+      "signal": "content_filter",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/bedrock.stop_reason.content_filtered.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "gemini.prompt_feedback.block_reason",
+      "dialect": "gemini_generate",
+      "field": "promptFeedback.blockReason",
+      "match": "present",
+      "signal": "prompt_blocked",
+      "stage": "input",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/gemini.prompt_feedback.block_reason.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "gemini.finish_reason.safety",
+      "dialect": "gemini_generate",
+      "field": "candidates[].finishReason",
+      "match": "in SAFETY, PROHIBITED_CONTENT, BLOCKLIST, SPII, IMAGE_SAFETY",
+      "signal": "safety_stop",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/gemini.finish_reason.safety.json",
+      "status": "pending_fixture"
+    },
+    {
+      "id": "gateway.moderation.flagged",
+      "dialect": "openai_chat",
+      "field": "<gateway moderation object>.flagged",
+      "match": "equals true (the flag kept in reason_code; the provider did not stop the call)",
+      "signal": "moderation_flag",
+      "stage": "unknown",
+      "decision": "allow",
+      "fixture_id": "fixtures/provider-safety/gateway.moderation.flagged.json",
+      "status": "pending_fixture"
+    }
+  ]
+}

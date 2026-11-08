@@ -120,6 +120,400 @@
         "tls_required",
         "encrypted_store_required"
       ]
+    },
+    "security_context": {
+      "description": "Spec 057 §4, §8 (optional, off by default): the customer's classification lists for security-context capture. Classification is customer configuration, never a built-in list of products (B9). Exact match only: no suffix match, no wildcard. Lists are applied offline by the reader or in emitter user space, never in the request path; the capture manifest carries only their digest and counts, never their contents.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "control_hosts": {
+          "description": "Control endpoints the agent calls itself (policy services, guardrail APIs, approval systems), as canonical lower-case host[:port], the FABRIC_WIRE_HTTP_HOSTS syntax. A response body is read offline only when a decision_pointer and decision_map are given (OD-7, derivation configured_extract).",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "host",
+              "label",
+              "control_kind"
+            ],
+            "properties": {
+              "host": {
+                "type": "string",
+                "pattern": "^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?(:[0-9]{1,5})?$"
+              },
+              "label": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+              },
+              "control_kind": {
+                "enum": [
+                  "policy",
+                  "guardrail",
+                  "approval",
+                  "rate_limit",
+                  "budget",
+                  "other"
+                ]
+              },
+              "decision_pointer": {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^(/([^~/]|~[01])*)*$"
+              },
+              "decision_map": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "value",
+                    "decision"
+                  ],
+                  "properties": {
+                    "value": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    },
+                    "decision": {
+                      "enum": [
+                        "allow",
+                        "deny",
+                        "modify",
+                        "escalate"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "dependentRequired": {
+              "decision_pointer": [
+                "decision_map"
+              ],
+              "decision_map": [
+                "decision_pointer"
+              ]
+            }
+          }
+        },
+        "control_addresses": {
+          "description": "The same endpoints as the host sensor sees them: IPv4/IPv6 addresses or CIDRs.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "address",
+              "label",
+              "control_kind"
+            ],
+            "properties": {
+              "address": {
+                "type": "string",
+                "pattern": "^([0-9]{1,3}(\\.[0-9]{1,3}){3}(/[0-9]{1,2})?|[0-9A-Fa-f:]{2,39}(/[0-9]{1,3})?)$"
+              },
+              "label": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+              },
+              "control_kind": {
+                "enum": [
+                  "policy",
+                  "guardrail",
+                  "approval",
+                  "rate_limit",
+                  "budget",
+                  "other"
+                ]
+              }
+            }
+          }
+        },
+        "hook_programs": {
+          "description": "Processes classified as hook programs: an exact absolute executable path or an argv[0] basename. exit_map maps an exit code to a hook outcome (derivation configured_exit_map); without it the outcome is unknown.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/[ -~]{0,4095}$"
+              },
+              "basename": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._+-]{1,255}$"
+              },
+              "label": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+              },
+              "exit_map": {
+                "type": "object",
+                "maxProperties": 64,
+                "propertyNames": {
+                  "pattern": "^(0|-?[1-9][0-9]{0,9})$"
+                },
+                "additionalProperties": {
+                  "enum": [
+                    "passed",
+                    "modified",
+                    "blocked",
+                    "escalated",
+                    "errored"
+                  ]
+                }
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "path"
+                ],
+                "not": {
+                  "required": [
+                    "basename"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "basename"
+                ],
+                "not": {
+                  "required": [
+                    "path"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "watched_paths": {
+          "description": "Files and folders whose opens are labelled (fabric.sensor.watch_label, watch_class, a keyed pth- id); the path never reaches telemetry and Fabric never opens, reads or hashes it.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "match",
+              "label",
+              "class"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/[ -~]{0,4095}$"
+              },
+              "match": {
+                "enum": [
+                  "exact",
+                  "prefix"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+              },
+              "class": {
+                "enum": [
+                  "permission_config",
+                  "hook_config",
+                  "extension_dir",
+                  "credential_file",
+                  "other"
+                ]
+              }
+            }
+          }
+        },
+        "tool_result_markers": {
+          "description": "Exact text the customer's own tool layer writes into a tool result when it refuses a call (OD-6). Byte-exact and case-sensitive: equals the whole text, a literal prefix, or a JSON Pointer and literal values. A marker states deny or escalate, never allow. No regular expression, no search inside the text, no built-in list.",
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+              },
+              "equals": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "prefix": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "json": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "pointer",
+                  "values"
+                ],
+                "properties": {
+                  "pointer": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "pattern": "^(/([^~/]|~[01])*)*$"
+                  },
+                  "values": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 64,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "maxLength": 1024
+                        },
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "kind": {
+                "enum": [
+                  "guardrail",
+                  "policy",
+                  "permission_request",
+                  "approval",
+                  "rate_limit",
+                  "budget",
+                  "other",
+                  "permission_check"
+                ]
+              },
+              "decision": {
+                "enum": [
+                  "deny",
+                  "escalate"
+                ]
+              },
+              "reason_code": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "equals"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "prefix"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "json"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "prefix"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "equals"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "json"
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "json"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "equals"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "prefix"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "grant": {
+          "description": "Structural pseudonymisation of grant documents (spec 057 §7.2): on by default for every field group; false keeps that group clear, and the capture manifest records the setting.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pseudonymise": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "paths": {
+                  "type": "boolean"
+                },
+                "hosts": {
+                  "type": "boolean"
+                },
+                "credentials": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "required": [

@@ -1,0 +1,152 @@
+{
+  "schema_version": "fabric.control-observation-mapping-vectors/v1",
+  "note": "Spec 052 §4.2.4 (O3-5): v1 documents still load and map to v2: requires_review to escalate, phase observation, kind policy, issuer_id to decided_by_id with decided_by_type external_service. to_dict() emits v2.",
+  "cases": [
+    {
+      "name": "v1 requires_review",
+      "v1": {
+        "schema_version": "fabric.external-control-observation/v1",
+        "action_id": "refund-REF-1",
+        "control_id": "approval:42",
+        "decision": "requires_review",
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "proof_ref": "proof:1",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforcement_performed_by_fabric": false
+      },
+      "v2": {
+        "action_id": "refund-REF-1",
+        "authentication": "unverified_caller_report",
+        "control_id": "approval:42",
+        "decided_by_id": "policy-svc",
+        "decided_by_type": "external_service",
+        "decision": "escalate",
+        "enforced_by_fabric": false,
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "kind": "policy",
+        "phase": "observation",
+        "policy_scope": "external_action_control",
+        "proof_ref": "proof:1",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "schema_version": "fabric.external-control-observation/v2"
+      }
+    },
+    {
+      "name": "v1 allow, no proof",
+      "v1": {
+        "schema_version": "fabric.external-control-observation/v1",
+        "action_id": "refund-REF-1",
+        "control_id": "approval:42",
+        "decision": "allow",
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforcement_performed_by_fabric": false
+      },
+      "v2": {
+        "action_id": "refund-REF-1",
+        "authentication": "unverified_caller_report",
+        "control_id": "approval:42",
+        "decided_by_id": "policy-svc",
+        "decided_by_type": "external_service",
+        "decision": "allow",
+        "enforced_by_fabric": false,
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "kind": "policy",
+        "phase": "observation",
+        "policy_scope": "external_action_control",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "schema_version": "fabric.external-control-observation/v2"
+      }
+    },
+    {
+      "name": "v1 deny",
+      "v1": {
+        "schema_version": "fabric.external-control-observation/v1",
+        "action_id": "refund-REF-1",
+        "control_id": "approval:42",
+        "decision": "deny",
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "proof_ref": "proof:1",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforcement_performed_by_fabric": false
+      },
+      "v2": {
+        "action_id": "refund-REF-1",
+        "authentication": "unverified_caller_report",
+        "control_id": "approval:42",
+        "decided_by_id": "policy-svc",
+        "decided_by_type": "external_service",
+        "decision": "deny",
+        "enforced_by_fabric": false,
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "kind": "policy",
+        "phase": "observation",
+        "policy_scope": "external_action_control",
+        "proof_ref": "proof:1",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "schema_version": "fabric.external-control-observation/v2"
+      }
+    },
+    {
+      "name": "v1 unknown",
+      "v1": {
+        "schema_version": "fabric.external-control-observation/v1",
+        "action_id": "refund-REF-1",
+        "control_id": "approval:42",
+        "decision": "unknown",
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "proof_ref": "proof:1",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforcement_performed_by_fabric": false
+      },
+      "v2": {
+        "action_id": "refund-REF-1",
+        "authentication": "unverified_caller_report",
+        "control_id": "approval:42",
+        "decided_by_id": "policy-svc",
+        "decided_by_type": "external_service",
+        "decision": "unknown",
+        "enforced_by_fabric": false,
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "external_policy_id": "refunds",
+        "external_policy_version": 3,
+        "issuer_id": "policy-svc",
+        "kind": "policy",
+        "phase": "observation",
+        "policy_scope": "external_action_control",
+        "proof_ref": "proof:1",
+        "reviewed_artifact_digest": "sha256:4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e",
+        "schema_version": "fabric.external-control-observation/v2"
+      }
+    }
+  ]
+}

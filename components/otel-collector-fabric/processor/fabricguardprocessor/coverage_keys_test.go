@@ -294,6 +294,8 @@ func hostKeyKept(t *testing.T, key string, value pcommon.Value) (record, heartbe
 		syscalls := map[string]string{"exec": "execve", "connect": "connect", "file": "openat"}
 		if syscall, ok := syscalls[value.AsString()]; ok && value.Type() == pcommon.ValueTypeStr {
 			recordAttrs["fabric.sensor.syscall"] = syscall
+		} else if value.Type() == pcommon.ValueTypeStr && value.Str() == "exit" {
+			delete(recordAttrs, "fabric.sensor.syscall") // spec 057 OD-13: an exit names no syscall
 		}
 	case "fabric.sensor.syscall":
 		if class, ok := hostSyscallClass[value.AsString()]; ok && value.Type() == pcommon.ValueTypeStr {

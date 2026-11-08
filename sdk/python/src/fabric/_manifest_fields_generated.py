@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@12"
+FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@13"
 
 MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
     "fabric.self": (
@@ -95,6 +95,9 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "X14",
         "X21",
     ),
+    "records.control": (),
+    "records.grant": (),
+    "records.extension": (),
     "mcp.wrapper": (
         "C25",
         "C28",

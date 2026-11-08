@@ -77,7 +77,7 @@
           "maxItems": 64,
           "items": {
             "type": "string",
-            "pattern": "^[a-z][a-z0-9_.]{0,63}=([XCSND][0-9]{2}(,[XCSND][0-9]{2}){0,255})?$"
+            "pattern": "^[a-z][a-z0-9_.]{0,63}=([XCSNDGE][0-9]{2}(,[XCSNDGE][0-9]{2}){0,255})?$"
           }
         },
         "fabric.manifest.capture_points": {

@@ -155,7 +155,7 @@ class FieldRow:
 
 _LAYER_OF_PREFIX: Mapping[str, str] = {
     "X": "cross_cutting", "C": "context", "S": "structure", "N": "content",
-    "D": "decisions_effects",
+    "D": "decisions_effects", "G": "context", "E": "structure",
 }  # fmt: skip
 _WIRE = ("wire.py.httpx", "wire.py.aiohttp")
 _ROWS: tuple[tuple[str, tuple[str, ...], bool, str, tuple[str, ...]], ...] = (

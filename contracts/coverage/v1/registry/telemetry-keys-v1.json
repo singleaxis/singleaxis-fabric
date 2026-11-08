@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.telemetry-key-registry/v1",
-  "registry_revision": 12,
+  "registry_revision": 13,
   "check_rule": "check is the machine-readable form of validator: the closed admission fabricguard applies to the key (C0-4; scripts/tests and the fabricguard key-by-key test read it; scripts/contracts/generate_p0_contracts.py derives it). Every key is admitted in P0 (spec 049 §4.2): admission names the exceptions, 'existing' (enforced by fabricguard code that predates spec 049), 'never' (no value is admitted) or 'P0-A' (a tightening validator that switches in its listed phase; today's admission stays until then). identity_mode names the admission under a Node configured identity_mode: clear ('existing': the clear value keeps its pre-049 admission); under the default pseudonymous Node only the check admits. Keys with owner receiver are stripped from every agent-supplied record. A check with span applies only on that span.",
   "capture_check_rule": "capture_check is the closed check fabricguard applies to a reused key on the capture classes its placement names (spec 050 §3.14: the records class, the X05 block on exchanges and run_start); elsewhere the key keeps its existing admission. placement lists the capture record classes a key may appear on: exchange, record (the records input, spec 050 §3.14), loss, the heartbeat kinds run_start, run_end, segment_seal, periodic and final, and manifest (the fabric.capture_manifest span). A key without placement is admitted on non-capture spans only. The records class admits exactly the keys whose placement names record, each with its check (capture_check when the row has one): generated into fabricguard's recordKeyValidators and the SDK's fabric._records_keys_generated (spec 050 §3.4 rule A).",
   "keys": [
@@ -175,6 +175,9 @@
       "field": "S04",
       "validator": "ID: `act-` + 32 hex",
       "phase": "P1",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^act-[0-9a-f]{32}$",
@@ -480,14 +483,19 @@
       "key": "fabric.control.action_id",
       "change": "new",
       "field": "D06",
-      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
-      "phase": "P3",
+      "validator": "ID: `axn-` + 32 hex (keyed v2 `action`); clear only under an explicit clear-identity Node",
+      "phase": "P3 (spec 052 §5; pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "pattern": "^axn-[0-9a-f]{32}$",
+        "identity_mode": {
+          "clear": "existing"
+        },
         "examples": [
-          "ctl-7f3a",
-          "approval:42"
+          "axn-9f86d081884c7d659a2feaa0c55ad015"
         ]
       }
     },
@@ -497,6 +505,9 @@
       "field": "D11",
       "validator": "META: const `unverified_caller_report`",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "const",
         "value": "unverified_caller_report"
@@ -508,6 +519,9 @@
       "field": "D04",
       "validator": "META: closed enum (field type)",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -519,7 +533,8 @@
           "timeout",
           "cancelled",
           "revoked",
-          "unknown"
+          "unknown",
+          "error"
         ],
         "source": "field_type"
       }
@@ -531,6 +546,9 @@
       "validator": "META: const `false`",
       "phase": "P3",
       "note": "A boolean validator would admit `true`.",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "const",
         "value": false
@@ -540,14 +558,20 @@
       "key": "fabric.control.gated_step_id",
       "change": "new",
       "field": "D06",
-      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
-      "phase": "P3",
+      "validator": "ID: uuid4 attempt uid, or a mapped step id (`lbl-` or `g-` + 32 hex); clear only under an explicit clear-identity Node",
+      "phase": "P3 (spec 052 §5; pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:lbl|g)-[0-9a-f]{32})$",
+        "identity_mode": {
+          "clear": "existing"
+        },
         "examples": [
-          "ctl-7f3a",
-          "approval:42"
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+          "lbl-9f86d081884c7d659a2feaa0c55ad015"
         ]
       }
     },
@@ -555,14 +579,20 @@
       "key": "fabric.control.id",
       "change": "new",
       "field": "D01",
-      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
-      "phase": "P3",
+      "validator": "ID: uuid4 (minted) or `ctl-` + 32 hex (keyed v2 `control` of a caller id); clear only under an explicit clear-identity Node",
+      "phase": "P3 (spec 052 §5; pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$",
+        "identity_mode": {
+          "clear": "existing"
+        },
         "examples": [
-          "ctl-7f3a",
-          "approval:42"
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+          "ctl-9f86d081884c7d659a2feaa0c55ad015"
         ]
       }
     },
@@ -572,6 +602,9 @@
       "field": "D02",
       "validator": "META: closed enum (field type)",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -581,7 +614,11 @@
           "approval",
           "rate_limit",
           "budget",
-          "other"
+          "other",
+          "provider_safety",
+          "elicitation",
+          "os_access",
+          "permission_check"
         ],
         "source": "field_type"
       }
@@ -592,6 +629,9 @@
       "field": "D03",
       "validator": "META: closed enum (field type)",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -609,6 +649,9 @@
       "field": "D08",
       "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^sha256:[0-9a-f]{64}$",
@@ -623,6 +666,9 @@
       "field": "D08",
       "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
@@ -642,6 +688,9 @@
       "field": "D08",
       "validator": "META: integer ≥ 1",
       "phase": "P3",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "int",
         "min": 1
@@ -651,14 +700,19 @@
       "key": "fabric.control.proof_ref",
       "change": "new",
       "field": "D09",
-      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
-      "phase": "P3",
+      "validator": "ID: `prf-` + 32 hex (keyed v2 `proof`); the clear value only in `control.checked` content",
+      "phase": "P3 (spec 052 §5; pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "pattern": "^prf-[0-9a-f]{32}$",
+        "identity_mode": {
+          "clear": "existing"
+        },
         "examples": [
-          "ctl-7f3a",
-          "approval:42"
+          "prf-9f86d081884c7d659a2feaa0c55ad015"
         ]
       }
     },
@@ -666,14 +720,20 @@
       "key": "fabric.control.resolves",
       "change": "new",
       "field": "D05",
-      "validator": "ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`",
-      "phase": "P3",
+      "validator": "ID: uuid4 or `ctl-` + 32 hex (the control it resolves); clear only under an explicit clear-identity Node",
+      "phase": "P3 (spec 052 §5; pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$",
+        "identity_mode": {
+          "clear": "existing"
+        },
         "examples": [
-          "ctl-7f3a",
-          "approval:42"
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+          "ctl-9f86d081884c7d659a2feaa0c55ad015"
         ]
       }
     },
@@ -1016,7 +1076,7 @@
       "key": "fabric.manifest.capture_point_fields",
       "change": "new",
       "field": "X34",
-      "validator": "META: array (max 64) of `<id>=<field id>,<field id>,…`, field ids `^[XCSND][0-9]{2}$`",
+      "validator": "META: array (max 64) of `<id>=<field id>,<field id>,…`, field ids `^[XCSNDGE][0-9]{2}$`",
       "phase": "P1",
       "note": "Attribute of the `fabric.capture_manifest` span.",
       "manifest_property": "capture_points/fields",
@@ -1024,7 +1084,7 @@
         "type": "array",
         "items": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9_.]{0,63}=([XCSND][0-9]{2}(,[XCSND][0-9]{2}){0,255})?$",
+          "pattern": "^[a-z][a-z0-9_.]{0,63}=([XCSNDGE][0-9]{2}(,[XCSNDGE][0-9]{2}){0,255})?$",
           "examples": [
             "wire.py.httpx=X08,N01,N02"
           ]
@@ -2042,6 +2102,9 @@
       "field": "C33",
       "validator": "DIGEST: `sha256:` + 64 hex",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^sha256:[0-9a-f]{64}$",
@@ -2056,6 +2119,9 @@
       "field": "C33",
       "validator": "LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
@@ -2074,6 +2140,9 @@
       "field": "C33",
       "validator": "META: integer ≥ 1",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "int",
         "min": 1
@@ -2085,6 +2154,9 @@
       "field": "C31",
       "validator": "META: closed enum (field type)",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2155,6 +2227,9 @@
       "field": "C30",
       "validator": "META: closed enum (field type)",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "enum",
         "values": [
@@ -2252,6 +2327,9 @@
       "field": "C32",
       "validator": "META: integer ≥ 0",
       "phase": "P2",
+      "placement": [
+        "record"
+      ],
       "check": {
         "type": "int",
         "min": 0
@@ -2697,9 +2775,9 @@
       "key": "fabric.sensor.event_class",
       "change": "new",
       "field": "X21",
-      "validator": "META: closed enum `exec`, `connect`, `file`",
+      "validator": "META: closed enum `exec`, `connect`, `file`, `exit`",
       "phase": "P4 (spec 056 M2)",
-      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7).",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 adds `exit` (eBPF `sched_process_exit`).",
       "placement": [
         "record"
       ],
@@ -2711,7 +2789,8 @@
         "values": [
           "exec",
           "connect",
-          "file"
+          "file",
+          "exit"
         ],
         "source": "validator"
       }
@@ -3894,6 +3973,1300 @@
         "type": "int",
         "min": 100,
         "max": 599
+      }
+    },
+    {
+      "key": "fabric.step.links",
+      "change": "new",
+      "field": "X21",
+      "validator": "ID: array (max 16) of `<link_type>/<namespace>/<id>`: a registry link type other than `parent`; namespace `attempt`, `step`, `event`, `run`, `provider_item` or `external`; a Fabric-emitted id only (uuid4, `run:` + uuid4, or a registered prefix + 32 hex); never a clear caller id",
+      "phase": "P2 (spec 051, pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^(?:caused_by|depends_on|result_of|emits|consumes|continues|retries|fallback_of|hedges|delegates|resumes|gates|resolves|compensates|delivers|derived_from|part_of|corroborated_by|same_as)/(?:attempt|step|event|run|provider_item|external)/(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:r|p|seg|lbl|g|br|sess|usr|act|conv|turn|trg|dsp|agt|tgt|hst|sbx|mcps|rpc|dbn|txn|mst|mkey|p|ckp|eff|out|ctl|axn|prf|grt|crd|ext|src|pth|net)-[0-9a-f]{32})$",
+          "examples": [
+            "resolves/external/ctl-00000000000000000000000000000000",
+            "gates/attempt/7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+          ]
+        },
+        "max_items": 16,
+        "examples": [
+          [
+            "resolves/external/ctl-00000000000000000000000000000000"
+          ]
+        ]
+      }
+    },
+    {
+      "key": "fabric.step.update_of",
+      "change": "new",
+      "field": "X19",
+      "validator": "ID: uuid4 attempt uid, or `out-`, `eff-`, `ckp-`, `dsp-` or `ctl-` + 32 hex (an entity ref)",
+      "phase": "P2 (spec 051, pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{32})$",
+        "examples": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+          "ctl-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.step.timing_basis",
+      "change": "new",
+      "field": "X23",
+      "validator": "META: closed enum `measured`, `reported`, `not_captured`",
+      "phase": "P2 (spec 051, pulled forward by spec 057 OD-15)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "measured",
+          "reported",
+          "not_captured"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.control.stage",
+      "change": "new",
+      "field": "D37",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "input",
+          "output",
+          "pre_model",
+          "post_model",
+          "pre_tool",
+          "post_tool",
+          "pre_effect",
+          "post_effect",
+          "effect",
+          "inventory",
+          "run",
+          "other",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.control.engine.name",
+      "change": "new",
+      "field": "D38",
+      "validator": "LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (a public engine or check label; the kernel, an endpoint id or the customer's label)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": [
+          "kernel",
+          "azure-openai-prod",
+          "fs-write"
+        ]
+      }
+    },
+    {
+      "key": "fabric.control.engine.version",
+      "change": "new",
+      "field": "D38",
+      "validator": "LABEL: software version `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+        "examples": [
+          "1.4.0",
+          "2025.06.0"
+        ]
+      }
+    },
+    {
+      "key": "fabric.control.gated_kind",
+      "change": "new",
+      "field": "D39",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "tool_call",
+          "model_call",
+          "side_effect",
+          "mcp_call",
+          "process",
+          "input",
+          "output",
+          "run",
+          "other"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.control.gated_tool_call_id",
+      "change": "new",
+      "field": "D40",
+      "validator": "ID: `p-` + 32 hex (keyed v2 `provider` of the provider tool-call id); never the clear id",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^p-[0-9a-f]{32}$",
+        "examples": [
+          "p-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.control.latency_ms",
+      "change": "new",
+      "field": "D41",
+      "validator": "META: finite number ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "number",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.control.reason_code",
+      "change": "new",
+      "field": "D42",
+      "validator": "LABEL: `^[a-z0-9][a-z0-9._:-]{0,63}$`",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+        "examples": [
+          "errno.eacces",
+          "exception.permissionerror",
+          "violence"
+        ]
+      }
+    },
+    {
+      "key": "fabric.control.mode",
+      "change": "new",
+      "field": "D43",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "enforcing",
+          "advisory",
+          "shadow",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.control.grant_id",
+      "change": "new",
+      "field": "D44",
+      "validator": "ID: `grt-` + 32 hex",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^grt-[0-9a-f]{32}$",
+        "examples": [
+          "grt-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.control.error_class",
+      "change": "new",
+      "field": "D45",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "timeout",
+          "exception",
+          "unavailable",
+          "misconfigured",
+          "other"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.control.evidence_event_ids",
+      "change": "new",
+      "field": "D47",
+      "validator": "ID: array (max 8, unique) of uuid4 event ids",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "examples": [
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+          ]
+        },
+        "max_items": 8,
+        "unique": true,
+        "examples": [
+          [
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+          ],
+          [
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
+          ]
+        ]
+      }
+    },
+    {
+      "key": "fabric.control.signal",
+      "change": "new",
+      "field": "D48",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "content_filter",
+          "refusal",
+          "guardrail_intervened",
+          "prompt_blocked",
+          "safety_stop",
+          "moderation_flag",
+          "other"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.control.derivation",
+      "change": "new",
+      "field": "D49",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "literal",
+          "configured_extract",
+          "configured_marker",
+          "configured_exit_map",
+          "reported",
+          "wrapped_check"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.id",
+      "change": "new",
+      "field": "G01",
+      "validator": "ID: `grt-` + 32 hex (keyed pseudonym of the grant digest; the plain digest never reaches telemetry)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^grt-[0-9a-f]{32}$",
+        "examples": [
+          "grt-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.grant.trigger",
+      "change": "new",
+      "field": "G02",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "run_start",
+          "change",
+          "resume",
+          "requested",
+          "derived",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.previous_id",
+      "change": "new",
+      "field": "G03",
+      "validator": "ID: `grt-` + 32 hex",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^grt-[0-9a-f]{32}$",
+        "examples": [
+          "grt-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.grant.source_boundary",
+      "change": "new",
+      "field": "G04",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "llm_wire",
+          "mcp_wire",
+          "api",
+          "otlp",
+          "operator_snapshot",
+          "other"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.permission_mode",
+      "change": "new",
+      "field": "G05",
+      "validator": "LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$` (the runtime's own mode name, verbatim)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$",
+        "examples": [
+          "ask_on_write",
+          "acceptEdits"
+        ]
+      }
+    },
+    {
+      "key": "fabric.grant.tools_allow.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.tools_deny.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.tools_ask.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.tools_offered.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.tools_listed.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.mcp_servers.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.fs_rules.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.net_rules.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.credentials.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.model_rules.count",
+      "change": "new",
+      "field": "G07",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.sandbox_kind",
+      "change": "new",
+      "field": "G08",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "none",
+          "process",
+          "container",
+          "vm",
+          "remote",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.network_default",
+      "change": "new",
+      "field": "G09",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "allow",
+          "deny",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.basis",
+      "change": "new",
+      "field": "G12",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "offered",
+          "listed",
+          "declared"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.tool_choice",
+      "change": "new",
+      "field": "G13",
+      "validator": "META: closed enum (field type)",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "auto",
+          "none",
+          "required",
+          "specific",
+          "allowed_subset",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.grant.tool_choice.allowed_count",
+      "change": "new",
+      "field": "G14",
+      "validator": "META: integer ≥ 0",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.grant.parallel_tools",
+      "change": "new",
+      "field": "G14",
+      "validator": "META: boolean",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "bool"
+      }
+    },
+    {
+      "key": "fabric.hook.outcome",
+      "change": "new",
+      "field": "E01",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "passed",
+          "modified",
+          "blocked",
+          "escalated",
+          "errored",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.hook.event_name",
+      "change": "new",
+      "field": "E02",
+      "validator": "LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (the runtime's own event name, verbatim)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": [
+          "PreToolUse",
+          "before_shell"
+        ]
+      }
+    },
+    {
+      "key": "fabric.hook.latency_ms",
+      "change": "new",
+      "field": "E03",
+      "validator": "META: finite number ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "number",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.hook.gated_tool_call_id",
+      "change": "new",
+      "field": "E04",
+      "validator": "ID: `p-` + 32 hex",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^p-[0-9a-f]{32}$",
+        "examples": [
+          "p-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.hook.extension_id",
+      "change": "new",
+      "field": "E05",
+      "validator": "ID: `ext-` + 32 hex",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^ext-[0-9a-f]{32}$",
+        "examples": [
+          "ext-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.hook.reason_code",
+      "change": "new",
+      "field": "E06",
+      "validator": "LABEL: `^[a-z0-9][a-z0-9._:-]{0,63}$`",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+        "examples": [
+          "errno.eacces",
+          "exception.permissionerror",
+          "violence"
+        ]
+      }
+    },
+    {
+      "key": "fabric.hook.basis",
+      "change": "new",
+      "field": "E07",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "process",
+          "callback",
+          "reported_unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.hook.exit_code",
+      "change": "new",
+      "field": "E08",
+      "validator": "META: 32-bit signed integer",
+      "phase": "P2 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": -2147483648,
+        "max": 2147483647
+      }
+    },
+    {
+      "key": "fabric.hook.signal",
+      "change": "new",
+      "field": "E08",
+      "validator": "META: integer ≥ 1",
+      "phase": "P2 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 1
+      }
+    },
+    {
+      "key": "fabric.hook.program_label",
+      "change": "new",
+      "field": "E09",
+      "validator": "LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (the customer's label from `hook_programs`; never a path)",
+      "phase": "P2 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": [
+          "pre-shell-check"
+        ]
+      }
+    },
+    {
+      "key": "fabric.extension.id",
+      "change": "new",
+      "field": "E10",
+      "validator": "ID: `ext-` + 32 hex",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^ext-[0-9a-f]{32}$",
+        "examples": [
+          "ext-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.extension.kind",
+      "change": "new",
+      "field": "E11",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "skill",
+          "plugin",
+          "mcp_server",
+          "hook_bundle",
+          "subagent",
+          "tool_pack",
+          "other"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.extension.name",
+      "change": "new",
+      "field": "E12",
+      "validator": "LABEL: `^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$` (as the extension declares it)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$",
+        "examples": [
+          "repo-tools",
+          "@acme/skills"
+        ]
+      }
+    },
+    {
+      "key": "fabric.extension.version",
+      "change": "new",
+      "field": "E12",
+      "validator": "LABEL: software version `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+        "examples": [
+          "1.4.0",
+          "2025.06.0"
+        ]
+      }
+    },
+    {
+      "key": "fabric.extension.source_kind",
+      "change": "new",
+      "field": "E13",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "registry",
+          "marketplace",
+          "git",
+          "local_path",
+          "url",
+          "process",
+          "builtin",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.extension.source_ref",
+      "change": "new",
+      "field": "E14",
+      "validator": "ID: `src-` + 32 hex (keyed; the clear source only in `extension.manifest` content)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^src-[0-9a-f]{32}$",
+        "examples": [
+          "src-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.extension.manifest_hash",
+      "change": "new",
+      "field": "E15",
+      "validator": "DIGEST: bare 64 hex `^[0-9a-f]{64}$`",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        ]
+      }
+    },
+    {
+      "key": "fabric.extension.signature_status",
+      "change": "new",
+      "field": "E16",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "verified",
+          "invalid",
+          "unsigned",
+          "unverified",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.extension.scope",
+      "change": "new",
+      "field": "E17",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "managed",
+          "user",
+          "project",
+          "local",
+          "session",
+          "unknown"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.extension.enabled",
+      "change": "new",
+      "field": "E18",
+      "validator": "META: boolean",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "bool"
+      }
+    },
+    {
+      "key": "fabric.extension.contributes.tools",
+      "change": "new",
+      "field": "E19",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.extension.contributes.hooks",
+      "change": "new",
+      "field": "E19",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.extension.contributes.commands",
+      "change": "new",
+      "field": "E19",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.extension.contributes.mcp_servers",
+      "change": "new",
+      "field": "E19",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.extension.contributes.subagents",
+      "change": "new",
+      "field": "E19",
+      "validator": "META: integer ≥ 0",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.extension.observed_via",
+      "change": "new",
+      "field": "E23",
+      "validator": "META: closed enum (field type)",
+      "phase": "P0 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "mcp_initialize",
+          "mcp_tools_list",
+          "process_launch",
+          "path_open",
+          "reported"
+        ],
+        "source": "field_type"
+      }
+    },
+    {
+      "key": "fabric.mcp.tools.read_only_count",
+      "change": "new",
+      "field": "E20",
+      "validator": "META: integer ≥ 0",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.mcp.tools.destructive_count",
+      "change": "new",
+      "field": "E20",
+      "validator": "META: integer ≥ 0",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.mcp.tools.open_world_count",
+      "change": "new",
+      "field": "E20",
+      "validator": "META: integer ≥ 0",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.mcp.tools.idempotent_count",
+      "change": "new",
+      "field": "E20",
+      "validator": "META: integer ≥ 0",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "int",
+        "min": 0
+      }
+    },
+    {
+      "key": "fabric.mcp.server_ref",
+      "change": "new",
+      "field": "E21",
+      "validator": "ID: `src-` + 32 hex",
+      "phase": "P1 (spec 057)",
+      "placement": [
+        "record"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^src-[0-9a-f]{32}$",
+        "examples": [
+          "src-9f86d081884c7d659a2feaa0c55ad015"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.exit_code",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: 32-bit signed integer (event class `exit`)",
+      "phase": "P2 (spec 057)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": -2147483648,
+        "max": 2147483647
+      }
+    },
+    {
+      "key": "fabric.sensor.signal",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: integer ≥ 1 (event class `exit`, killed by a signal)",
+      "phase": "P2 (spec 057)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "int",
+        "min": 1
+      }
+    },
+    {
+      "key": "fabric.sensor.watch_label",
+      "change": "new",
+      "field": "X21",
+      "validator": "LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (the customer's `watched_paths` label; never the path)",
+      "phase": "P2 (spec 057)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": [
+          "agent-acl",
+          "skills-dir"
+        ]
+      }
+    },
+    {
+      "key": "fabric.sensor.watch_class",
+      "change": "new",
+      "field": "X21",
+      "validator": "META: closed enum `permission_config`, `hook_config`, `extension_dir`, `credential_file`, `other`",
+      "phase": "P2 (spec 057)",
+      "note": "Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment.",
+      "placement": [
+        "record"
+      ],
+      "capture_point_kinds": [
+        "S"
+      ],
+      "check": {
+        "type": "enum",
+        "values": [
+          "permission_config",
+          "hook_config",
+          "extension_dir",
+          "credential_file",
+          "other"
+        ],
+        "source": "validator"
       }
     }
   ],

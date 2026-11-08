@@ -16,9 +16,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@12"
+RECORD_KEY_TABLE_REVISION = "fabric.telemetry-key-registry/v1@13"
 
 RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
+    "fabric.actor.id": {
+        "type": "string",
+        "pattern": "^act-[0-9a-f]{32}$",
+        "examples": ("act-9f86d081884c7d659a2feaa0c55ad015",),
+    },
     "fabric.actor.type": {
         "type": "enum",
         "values": (
@@ -82,6 +87,264 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "min_items": 1,
         "unique": True,
     },
+    "fabric.control.action_id": {
+        "type": "string",
+        "pattern": "^axn-[0-9a-f]{32}$",
+        "identity_mode": {
+            "clear": "existing",
+        },
+        "examples": ("axn-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.control.authentication": {
+        "type": "const",
+        "value": "unverified_caller_report",
+    },
+    "fabric.control.decision": {
+        "type": "enum",
+        "values": (
+            "allow",
+            "deny",
+            "modify",
+            "escalate",
+            "pending",
+            "timeout",
+            "cancelled",
+            "revoked",
+            "unknown",
+            "error",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.derivation": {
+        "type": "enum",
+        "values": (
+            "literal",
+            "configured_extract",
+            "configured_marker",
+            "configured_exit_map",
+            "reported",
+            "wrapped_check",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.enforced_by_fabric": {
+        "type": "const",
+        "value": False,
+    },
+    "fabric.control.engine.name": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": (
+            "kernel",
+            "azure-openai-prod",
+            "fs-write",
+        ),
+    },
+    "fabric.control.engine.version": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+        "examples": (
+            "1.4.0",
+            "2025.06.0",
+        ),
+    },
+    "fabric.control.error_class": {
+        "type": "enum",
+        "values": (
+            "timeout",
+            "exception",
+            "unavailable",
+            "misconfigured",
+            "other",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.evidence_event_ids": {
+        "type": "array",
+        "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "examples": ("7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",),
+        },
+        "max_items": 8,
+        "unique": True,
+        "examples": (
+            ("7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",),
+            (
+                "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+                "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+            ),
+        ),
+    },
+    "fabric.control.gated_kind": {
+        "type": "enum",
+        "values": (
+            "tool_call",
+            "model_call",
+            "side_effect",
+            "mcp_call",
+            "process",
+            "input",
+            "output",
+            "run",
+            "other",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.gated_step_id": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:lbl|g)-[0-9a-f]{32})$",
+        "identity_mode": {
+            "clear": "existing",
+        },
+        "examples": (
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            "lbl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+    },
+    "fabric.control.gated_tool_call_id": {
+        "type": "string",
+        "pattern": "^p-[0-9a-f]{32}$",
+        "examples": ("p-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.control.grant_id": {
+        "type": "string",
+        "pattern": "^grt-[0-9a-f]{32}$",
+        "examples": ("grt-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.control.id": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$",
+        "identity_mode": {
+            "clear": "existing",
+        },
+        "examples": (
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            "ctl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+    },
+    "fabric.control.kind": {
+        "type": "enum",
+        "values": (
+            "guardrail",
+            "policy",
+            "permission_request",
+            "approval",
+            "rate_limit",
+            "budget",
+            "other",
+            "provider_safety",
+            "elicitation",
+            "os_access",
+            "permission_check",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.latency_ms": {
+        "type": "number",
+        "min": 0,
+    },
+    "fabric.control.mode": {
+        "type": "enum",
+        "values": (
+            "enforcing",
+            "advisory",
+            "shadow",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.phase": {
+        "type": "enum",
+        "values": (
+            "request",
+            "resolution",
+            "revocation",
+            "observation",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.policy_digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "examples": ("sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.control.policy_id": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+            "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$",
+        },
+        "examples": (
+            "refund-approvals",
+            "acme/policies:v7",
+            "lbl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+    },
+    "fabric.control.policy_version": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.control.proof_ref": {
+        "type": "string",
+        "pattern": "^prf-[0-9a-f]{32}$",
+        "identity_mode": {
+            "clear": "existing",
+        },
+        "examples": ("prf-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.control.reason_code": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+        "examples": (
+            "errno.eacces",
+            "exception.permissionerror",
+            "violence",
+        ),
+    },
+    "fabric.control.resolves": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$",
+        "identity_mode": {
+            "clear": "existing",
+        },
+        "examples": (
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            "ctl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+    },
+    "fabric.control.signal": {
+        "type": "enum",
+        "values": (
+            "content_filter",
+            "refusal",
+            "guardrail_intervened",
+            "prompt_blocked",
+            "safety_stop",
+            "moderation_flag",
+            "other",
+        ),
+        "source": "field_type",
+    },
+    "fabric.control.stage": {
+        "type": "enum",
+        "values": (
+            "input",
+            "output",
+            "pre_model",
+            "post_model",
+            "pre_tool",
+            "post_tool",
+            "pre_effect",
+            "post_effect",
+            "effect",
+            "inventory",
+            "run",
+            "other",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
     "fabric.error.domain": {
         "type": "enum",
         "values": (
@@ -112,6 +375,339 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "type": "string",
         "pattern": "^sbx-[0-9a-f]{32}$",
         "examples": ("sbx-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.extension.contributes.commands": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.extension.contributes.hooks": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.extension.contributes.mcp_servers": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.extension.contributes.subagents": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.extension.contributes.tools": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.extension.enabled": {
+        "type": "bool",
+    },
+    "fabric.extension.id": {
+        "type": "string",
+        "pattern": "^ext-[0-9a-f]{32}$",
+        "examples": ("ext-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.extension.kind": {
+        "type": "enum",
+        "values": (
+            "skill",
+            "plugin",
+            "mcp_server",
+            "hook_bundle",
+            "subagent",
+            "tool_pack",
+            "other",
+        ),
+        "source": "field_type",
+    },
+    "fabric.extension.manifest_hash": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.extension.name": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$",
+        "examples": (
+            "repo-tools",
+            "@acme/skills",
+        ),
+    },
+    "fabric.extension.observed_via": {
+        "type": "enum",
+        "values": (
+            "mcp_initialize",
+            "mcp_tools_list",
+            "process_launch",
+            "path_open",
+            "reported",
+        ),
+        "source": "field_type",
+    },
+    "fabric.extension.scope": {
+        "type": "enum",
+        "values": (
+            "managed",
+            "user",
+            "project",
+            "local",
+            "session",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.extension.signature_status": {
+        "type": "enum",
+        "values": (
+            "verified",
+            "invalid",
+            "unsigned",
+            "unverified",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.extension.source_kind": {
+        "type": "enum",
+        "values": (
+            "registry",
+            "marketplace",
+            "git",
+            "local_path",
+            "url",
+            "process",
+            "builtin",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.extension.source_ref": {
+        "type": "string",
+        "pattern": "^src-[0-9a-f]{32}$",
+        "examples": ("src-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.extension.version": {
+        "type": "string",
+        "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
+        "examples": (
+            "1.4.0",
+            "2025.06.0",
+        ),
+    },
+    "fabric.grant.basis": {
+        "type": "enum",
+        "values": (
+            "offered",
+            "listed",
+            "declared",
+        ),
+        "source": "field_type",
+    },
+    "fabric.grant.credentials.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.fs_rules.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.id": {
+        "type": "string",
+        "pattern": "^grt-[0-9a-f]{32}$",
+        "examples": ("grt-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.grant.mcp_servers.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.model_rules.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.net_rules.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.network_default": {
+        "type": "enum",
+        "values": (
+            "allow",
+            "deny",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.grant.parallel_tools": {
+        "type": "bool",
+    },
+    "fabric.grant.permission_mode": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$",
+        "examples": (
+            "ask_on_write",
+            "acceptEdits",
+        ),
+    },
+    "fabric.grant.previous_id": {
+        "type": "string",
+        "pattern": "^grt-[0-9a-f]{32}$",
+        "examples": ("grt-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.grant.sandbox_kind": {
+        "type": "enum",
+        "values": (
+            "none",
+            "process",
+            "container",
+            "vm",
+            "remote",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.grant.source_boundary": {
+        "type": "enum",
+        "values": (
+            "llm_wire",
+            "mcp_wire",
+            "api",
+            "otlp",
+            "operator_snapshot",
+            "other",
+        ),
+        "source": "field_type",
+    },
+    "fabric.grant.tool_choice": {
+        "type": "enum",
+        "values": (
+            "auto",
+            "none",
+            "required",
+            "specific",
+            "allowed_subset",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.grant.tool_choice.allowed_count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.tools_allow.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.tools_ask.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.tools_deny.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.tools_listed.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.tools_offered.count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.grant.trigger": {
+        "type": "enum",
+        "values": (
+            "run_start",
+            "change",
+            "resume",
+            "requested",
+            "derived",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.hook.basis": {
+        "type": "enum",
+        "values": (
+            "process",
+            "callback",
+            "reported_unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.hook.event_name": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": (
+            "PreToolUse",
+            "before_shell",
+        ),
+    },
+    "fabric.hook.exit_code": {
+        "type": "int",
+        "min": -2147483648,
+        "max": 2147483647,
+    },
+    "fabric.hook.extension_id": {
+        "type": "string",
+        "pattern": "^ext-[0-9a-f]{32}$",
+        "examples": ("ext-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.hook.gated_tool_call_id": {
+        "type": "string",
+        "pattern": "^p-[0-9a-f]{32}$",
+        "examples": ("p-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.hook.latency_ms": {
+        "type": "number",
+        "min": 0,
+    },
+    "fabric.hook.outcome": {
+        "type": "enum",
+        "values": (
+            "passed",
+            "modified",
+            "blocked",
+            "escalated",
+            "errored",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.hook.program_label": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": ("pre-shell-check",),
+    },
+    "fabric.hook.reason_code": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
+        "examples": (
+            "errno.eacces",
+            "exception.permissionerror",
+            "violence",
+        ),
+    },
+    "fabric.hook.signal": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.mcp.server_ref": {
+        "type": "string",
+        "pattern": "^src-[0-9a-f]{32}$",
+        "examples": ("src-9f86d081884c7d659a2feaa0c55ad015",),
+    },
+    "fabric.mcp.tools.destructive_count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.mcp.tools.idempotent_count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.mcp.tools.open_world_count": {
+        "type": "int",
+        "min": 0,
+    },
+    "fabric.mcp.tools.read_only_count": {
+        "type": "int",
+        "min": 0,
     },
     "fabric.network.host_id": {
         "type": "string",
@@ -144,6 +740,48 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "type": "int",
         "min": 0,
     },
+    "fabric.run.agent_policy_digest": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$",
+        "examples": ("sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.run.agent_policy_id": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "capture_labels": {
+            "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$",
+        },
+        "examples": (
+            "support-agent-policy",
+            "lbl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+    },
+    "fabric.run.agent_policy_version": {
+        "type": "int",
+        "min": 1,
+    },
+    "fabric.run.approval_policy": {
+        "type": "enum",
+        "values": (
+            "none",
+            "per_tool",
+            "per_side_effect",
+            "all",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
+    "fabric.run.execution_mode": {
+        "type": "enum",
+        "values": (
+            "autonomous",
+            "supervised",
+            "approval_required",
+            "read_only",
+            "unknown",
+        ),
+        "source": "field_type",
+    },
     "fabric.run.id": {
         "type": "string",
         "pattern": "^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40}|source:(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,100}):(?P<epoch>[0-9]{1,19}))$",
@@ -160,6 +798,10 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
             "trace:4bf92f3577b34da6a3ce929d0e0e4736",
             "source:s-c5aedfd8a3ee415e277e335bf1517ff4:4611686018427387905",
         ),
+    },
+    "fabric.run.permissions.count": {
+        "type": "int",
+        "min": 0,
     },
     "fabric.run.scope_id": {
         "type": "string",
@@ -218,6 +860,7 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
             "exec",
             "connect",
             "file",
+            "exit",
         ),
         "source": "validator",
     },
@@ -225,6 +868,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "type": "string",
         "pattern": "^[0-9a-f]{64}$",
         "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.sensor.exit_code": {
+        "type": "int",
+        "min": -2147483648,
+        "max": 2147483647,
     },
     "fabric.sensor.incomplete": {
         "type": "enum",
@@ -302,6 +950,10 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         ),
         "source": "validator",
     },
+    "fabric.sensor.signal": {
+        "type": "int",
+        "min": 1,
+    },
     "fabric.sensor.syscall": {
         "type": "enum",
         "values": (
@@ -315,6 +967,25 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
             "open",
         ),
         "source": "validator",
+    },
+    "fabric.sensor.watch_class": {
+        "type": "enum",
+        "values": (
+            "permission_config",
+            "hook_config",
+            "extension_dir",
+            "credential_file",
+            "other",
+        ),
+        "source": "validator",
+    },
+    "fabric.sensor.watch_label": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": (
+            "agent-acl",
+            "skills-dir",
+        ),
     },
     "fabric.source.epoch": {
         "type": "int",
@@ -400,6 +1071,19 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         ),
         "source": "vocabulary:lifecycle_state",
     },
+    "fabric.step.links": {
+        "type": "array",
+        "items": {
+            "type": "string",
+            "pattern": "^(?:caused_by|depends_on|result_of|emits|consumes|continues|retries|fallback_of|hedges|delegates|resumes|gates|resolves|compensates|delivers|derived_from|part_of|corroborated_by|same_as)/(?:attempt|step|event|run|provider_item|external)/(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:r|p|seg|lbl|g|br|sess|usr|act|conv|turn|trg|dsp|agt|tgt|hst|sbx|mcps|rpc|dbn|txn|mst|mkey|p|ckp|eff|out|ctl|axn|prf|grt|crd|ext|src|pth|net)-[0-9a-f]{32})$",
+            "examples": (
+                "resolves/external/ctl-00000000000000000000000000000000",
+                "gates/attempt/7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            ),
+        },
+        "max_items": 16,
+        "examples": (("resolves/external/ctl-00000000000000000000000000000000",),),
+    },
     "fabric.step.parent_id": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
@@ -418,6 +1102,23 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
             "unknown",
         ),
         "source": "vocabulary:result_status",
+    },
+    "fabric.step.timing_basis": {
+        "type": "enum",
+        "values": (
+            "measured",
+            "reported",
+            "not_captured",
+        ),
+        "source": "validator",
+    },
+    "fabric.step.update_of": {
+        "type": "string",
+        "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{32})$",
+        "examples": (
+            "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
+            "ctl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
     },
     "fabric.tenant_id": {
         "type": "string",
@@ -484,6 +1185,9 @@ RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
     "fabric.sensor.exe_sha256": {
         "capture_point_kinds": ("S",),
     },
+    "fabric.sensor.exit_code": {
+        "capture_point_kinds": ("S",),
+    },
     "fabric.sensor.incomplete": {
         "capture_point_kinds": ("S",),
     },
@@ -523,7 +1227,16 @@ RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
     "fabric.sensor.scope": {
         "capture_point_kinds": ("S",),
     },
+    "fabric.sensor.signal": {
+        "capture_point_kinds": ("S",),
+    },
     "fabric.sensor.syscall": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.watch_class": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.watch_label": {
         "capture_point_kinds": ("S",),
     },
     "fabric.tenant_id": {

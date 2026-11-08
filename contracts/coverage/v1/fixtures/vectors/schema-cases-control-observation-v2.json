@@ -1,0 +1,1604 @@
+{
+  "schema_version": "fabric.schema-cases/v1",
+  "schema": "contracts/coverage/v1/schema/control-observation-v2.schema.json",
+  "note": "Spec 052 §4.2.2/§4.2.4, spec 057 §5.3: every phase x decision cell, every kind, stage, gated kind, mode, error class, signal and derivation; the required-by-kind rules (provider_safety signal, error error_class, derived-row evidence) and the D11 constants.",
+  "cases": [
+    {
+      "name": "request pending",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "request",
+        "decision": "pending",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "request escalate",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "request",
+        "decision": "escalate",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "request unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "request",
+        "decision": "unknown",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution allow",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "allow",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution deny",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution modify",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "modify",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution escalate",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "escalate",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution timeout",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "timeout",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution cancelled",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "cancelled",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "unknown",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "resolution error",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "resolution",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "exception"
+      }
+    },
+    {
+      "name": "revocation revoked",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "revocation",
+        "decision": "revoked",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation allow",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "allow",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation deny",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation modify",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "modify",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation escalate",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "escalate",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation timeout",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "timeout",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "unknown",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "observation error",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "exception"
+      }
+    },
+    {
+      "name": "kind guardrail",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "guardrail",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind policy",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind permission_request",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "permission_request",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind approval",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "approval",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind rate_limit",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "rate_limit",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind budget",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "budget",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "other",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind provider_safety",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "content_filter",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "kind elicitation",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "elicitation",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "kind os_access",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "os_access",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "process",
+        "engine": {
+          "name": "kernel",
+          "version": null
+        }
+      }
+    },
+    {
+      "name": "kind permission_check",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "permission_check",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      }
+    },
+    {
+      "name": "stage input",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "input"
+      }
+    },
+    {
+      "name": "stage output",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "output"
+      }
+    },
+    {
+      "name": "stage pre_model",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "pre_model"
+      }
+    },
+    {
+      "name": "stage post_model",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "post_model"
+      }
+    },
+    {
+      "name": "stage pre_tool",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "pre_tool"
+      }
+    },
+    {
+      "name": "stage post_tool",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "post_tool"
+      }
+    },
+    {
+      "name": "stage pre_effect",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "pre_effect"
+      }
+    },
+    {
+      "name": "stage post_effect",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "post_effect"
+      }
+    },
+    {
+      "name": "stage effect",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "effect"
+      }
+    },
+    {
+      "name": "stage inventory",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "inventory"
+      }
+    },
+    {
+      "name": "stage run",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "run"
+      }
+    },
+    {
+      "name": "stage other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "other"
+      }
+    },
+    {
+      "name": "stage unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "unknown"
+      }
+    },
+    {
+      "name": "gated tool_call",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "tool_call"
+      }
+    },
+    {
+      "name": "gated model_call",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "model_call"
+      }
+    },
+    {
+      "name": "gated side_effect",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "side_effect"
+      }
+    },
+    {
+      "name": "gated mcp_call",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "mcp_call"
+      }
+    },
+    {
+      "name": "gated process",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "process"
+      }
+    },
+    {
+      "name": "gated input",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "input"
+      }
+    },
+    {
+      "name": "gated output",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "output"
+      }
+    },
+    {
+      "name": "gated run",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "run"
+      }
+    },
+    {
+      "name": "gated other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "other"
+      }
+    },
+    {
+      "name": "mode enforcing",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "mode": "enforcing"
+      }
+    },
+    {
+      "name": "mode advisory",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "mode": "advisory"
+      }
+    },
+    {
+      "name": "mode shadow",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "mode": "shadow"
+      }
+    },
+    {
+      "name": "mode unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "mode": "unknown"
+      }
+    },
+    {
+      "name": "error_class timeout",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "timeout"
+      }
+    },
+    {
+      "name": "error_class exception",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "exception"
+      }
+    },
+    {
+      "name": "error_class unavailable",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "unavailable"
+      }
+    },
+    {
+      "name": "error_class misconfigured",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "misconfigured"
+      }
+    },
+    {
+      "name": "error_class other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "other"
+      }
+    },
+    {
+      "name": "signal content_filter",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "content_filter",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "signal refusal",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "refusal",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "signal guardrail_intervened",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "guardrail_intervened",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "signal prompt_blocked",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "prompt_blocked",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "signal safety_stop",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "safety_stop",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "signal moderation_flag",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "moderation_flag",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "signal other",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "other",
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "derivation literal",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "literal",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "derivation configured_extract",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "configured_extract",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "derivation configured_marker",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "configured_marker",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "derivation configured_exit_map",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "configured_exit_map",
+        "evidence_event_ids": [
+          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
+        ]
+      }
+    },
+    {
+      "name": "derivation reported",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "reported"
+      }
+    },
+    {
+      "name": "derivation wrapped_check",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "wrapped_check"
+      }
+    },
+    {
+      "name": "decided_by user",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "user"
+      }
+    },
+    {
+      "name": "decided_by agent",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "agent"
+      }
+    },
+    {
+      "name": "decided_by sub_agent",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "sub_agent"
+      }
+    },
+    {
+      "name": "decided_by human_approver",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "human_approver"
+      }
+    },
+    {
+      "name": "decided_by human_operator",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "human_operator"
+      }
+    },
+    {
+      "name": "decided_by system",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "system"
+      }
+    },
+    {
+      "name": "decided_by scheduler",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "scheduler"
+      }
+    },
+    {
+      "name": "decided_by external_service",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "external_service"
+      }
+    },
+    {
+      "name": "decided_by provider",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "provider"
+      }
+    },
+    {
+      "name": "decided_by unknown",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "decided_by_type": "unknown"
+      }
+    },
+    {
+      "name": "full 057 fields",
+      "valid": true,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "pre_tool",
+        "engine": {
+          "name": "fs-write",
+          "version": "1.0"
+        },
+        "gated_kind": "tool_call",
+        "gated_tool_call_id": "toolu_01",
+        "latency_ms": 0.04,
+        "reason_code": "path.outside_root",
+        "mode": "enforcing",
+        "grant_id": "grt-1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+        "derivation": "wrapped_check",
+        "reason_ref": "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01",
+        "resolves": "approval:41",
+        "action_id": "delete-branch",
+        "gated_step_id": "step-7",
+        "decided_by_id": "act-1",
+        "external_policy_id": "refunds",
+        "external_policy_version": 7,
+        "external_policy_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "reviewed_artifact_digest": "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+        "issuer_id": "policy-svc",
+        "proof_ref": "proof:abc"
+      }
+    },
+    {
+      "name": "request allow",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "request",
+        "decision": "allow",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "phase x decision"
+    },
+    {
+      "name": "request error",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "request",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "other"
+      },
+      "rule": "phase x decision"
+    },
+    {
+      "name": "revocation deny",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "revocation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "phase x decision"
+    },
+    {
+      "name": "observation pending",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "pending",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "phase x decision"
+    },
+    {
+      "name": "observation revoked",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "revoked",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "phase x decision"
+    },
+    {
+      "name": "provider_safety without signal",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "provider_safety",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "provider_safety requires signal"
+    },
+    {
+      "name": "signal on a policy row",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "signal": "refusal"
+      },
+      "rule": "signal only on provider_safety"
+    },
+    {
+      "name": "error without error_class",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "error",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "error requires error_class"
+    },
+    {
+      "name": "error_class on a deny",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "error_class": "timeout"
+      },
+      "rule": "error_class only on error"
+    },
+    {
+      "name": "derived row without evidence",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "derivation": "configured_marker"
+      },
+      "rule": "derived rows require evidence_event_ids"
+    },
+    {
+      "name": "os_access not on a process",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "os_access",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "gated_kind": "tool_call"
+      },
+      "rule": "os_access gates a process"
+    },
+    {
+      "name": "forged enforcement",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": true
+      },
+      "rule": "D11 constant"
+    },
+    {
+      "name": "forged authentication",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "verified",
+        "enforced_by_fabric": false
+      },
+      "rule": "D11 constant"
+    },
+    {
+      "name": "requires_review is v1 only",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "requires_review",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "approve is an input alias only",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "approval",
+        "phase": "observation",
+        "decision": "approve",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false
+      },
+      "rule": "enum (OD-3)"
+    },
+    {
+      "name": "bad reason code",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "reason_code": "Path Outside Root"
+      },
+      "rule": "reason_code pattern"
+    },
+    {
+      "name": "negative latency",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "latency_ms": -1
+      },
+      "rule": "latency >= 0"
+    },
+    {
+      "name": "unknown stage",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.external-control-observation/v2",
+        "control_id": "approval:42",
+        "kind": "policy",
+        "phase": "observation",
+        "decision": "deny",
+        "policy_scope": "external_action_control",
+        "authentication": "unverified_caller_report",
+        "enforced_by_fabric": false,
+        "stage": "during"
+      },
+      "rule": "enum"
+    }
+  ]
+}

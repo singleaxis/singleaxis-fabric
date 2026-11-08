@@ -45,7 +45,9 @@ def _schemas(
 
 def test_all_pinned_data_plane_contracts_validate() -> None:
     validated = validate_data_plane_contracts(REPO_ROOT)
-    assert len(validated) == 18
+    assert (
+        len(validated) == 28
+    )  # + activity 2.1.0 (spec 057 §5.7): schema, 1 valid, 8 invalid
     assert "activity/valid/shadow-execution.json" in validated
     assert "privacy/valid/metadata-only-assertion.json" in validated
     assert "delivery/valid/audit-delivery.json" in validated

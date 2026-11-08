@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import math
 import os
 import re
 import threading
@@ -199,6 +200,10 @@ def compile_check(  # noqa: PLR0911 - one return per check type
         low, high = check["min"], check.get("max", INT64_MAX)
         return lambda value: _is_int(value) and INT64_MIN <= value <= INT64_MAX and (
             low <= value <= high)  # fmt: skip
+    if kind == "number":  # spec 057 (D41, E03): a finite number; an int is a number too
+        floor, ceiling = check["min"], check.get("max", math.inf)
+        return lambda value: (isinstance(value, (int, float)) and not isinstance(value, bool)
+                              and math.isfinite(value) and floor <= value <= ceiling)  # fmt: skip
     if kind == "string":
         return _string_predicate(check, labels)
     if kind == "array":
@@ -245,7 +250,7 @@ def _array_bound(table: Mapping[str, Mapping[str, Any]]) -> int:
 # The longest array any records-class key admits: a longer sequence is refused by its
 # length alone, before any element is looked at.
 MAX_ATTRIBUTE_ITEMS = _array_bound(RECORD_KEY_CHECKS)
-_SCALARS = (str, bool, int)
+_SCALARS = (str, bool, int, float)  # a float passes only a "number" check
 
 
 def _admitted_value(value: Any) -> tuple[bool, Any]:
@@ -255,7 +260,7 @@ def _admitted_value(value: Any) -> tuple[bool, Any]:
     refuses the value without entering it (so a cyclic or huge value costs one bounded
     look). ``str`` subclasses become ``str``; tuples become lists."""
     kind = type(value)
-    if kind is str or kind is int or kind is bool:  # the common case: kept as is
+    if kind is str or kind is int or kind is bool or kind is float:  # kept as is
         return True, value
     if isinstance(value, _SCALARS):
         return True, str.__str__(value) if isinstance(value, str) else value

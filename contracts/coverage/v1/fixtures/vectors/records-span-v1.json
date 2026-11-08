@@ -1,19 +1,98 @@
 {
   "schema_version": "fabric.records-span-vectors/v1",
   "rule": "Spec 050 §3.4 rule A and §3.14: a records-class span keeps exactly the keys whose registry placement names record, each value passing the key's check (capture_check for a reused key) under the Node's capture_labels and identity_mode; every other key, a failing value, a float, a map or bytes is dropped and counted (records_keys_dropped), never hashed or truncated. keys is the table (fabric/_records_keys_generated.py and fabricguard recordKeyValidators are generated from the same rows).",
-  "table_revision": 12,
+  "table_revision": 13,
   "keys": [
+    "fabric.actor.id",
     "fabric.actor.type",
     "fabric.attempt.uid",
     "fabric.capture.input",
     "fabric.capture.point",
     "fabric.capture.source",
     "fabric.content.object_ids",
+    "fabric.control.action_id",
+    "fabric.control.authentication",
+    "fabric.control.decision",
+    "fabric.control.derivation",
+    "fabric.control.enforced_by_fabric",
+    "fabric.control.engine.name",
+    "fabric.control.engine.version",
+    "fabric.control.error_class",
+    "fabric.control.evidence_event_ids",
+    "fabric.control.gated_kind",
+    "fabric.control.gated_step_id",
+    "fabric.control.gated_tool_call_id",
+    "fabric.control.grant_id",
+    "fabric.control.id",
+    "fabric.control.kind",
+    "fabric.control.latency_ms",
+    "fabric.control.mode",
+    "fabric.control.phase",
+    "fabric.control.policy_digest",
+    "fabric.control.policy_id",
+    "fabric.control.policy_version",
+    "fabric.control.proof_ref",
+    "fabric.control.reason_code",
+    "fabric.control.resolves",
+    "fabric.control.signal",
+    "fabric.control.stage",
     "fabric.error.domain",
     "fabric.event_id",
     "fabric.execution.host_id",
     "fabric.execution.image_digest",
     "fabric.execution.sandbox_id",
+    "fabric.extension.contributes.commands",
+    "fabric.extension.contributes.hooks",
+    "fabric.extension.contributes.mcp_servers",
+    "fabric.extension.contributes.subagents",
+    "fabric.extension.contributes.tools",
+    "fabric.extension.enabled",
+    "fabric.extension.id",
+    "fabric.extension.kind",
+    "fabric.extension.manifest_hash",
+    "fabric.extension.name",
+    "fabric.extension.observed_via",
+    "fabric.extension.scope",
+    "fabric.extension.signature_status",
+    "fabric.extension.source_kind",
+    "fabric.extension.source_ref",
+    "fabric.extension.version",
+    "fabric.grant.basis",
+    "fabric.grant.credentials.count",
+    "fabric.grant.fs_rules.count",
+    "fabric.grant.id",
+    "fabric.grant.mcp_servers.count",
+    "fabric.grant.model_rules.count",
+    "fabric.grant.net_rules.count",
+    "fabric.grant.network_default",
+    "fabric.grant.parallel_tools",
+    "fabric.grant.permission_mode",
+    "fabric.grant.previous_id",
+    "fabric.grant.sandbox_kind",
+    "fabric.grant.source_boundary",
+    "fabric.grant.tool_choice",
+    "fabric.grant.tool_choice.allowed_count",
+    "fabric.grant.tools_allow.count",
+    "fabric.grant.tools_ask.count",
+    "fabric.grant.tools_deny.count",
+    "fabric.grant.tools_listed.count",
+    "fabric.grant.tools_offered.count",
+    "fabric.grant.trigger",
+    "fabric.hook.basis",
+    "fabric.hook.event_name",
+    "fabric.hook.exit_code",
+    "fabric.hook.extension_id",
+    "fabric.hook.gated_tool_call_id",
+    "fabric.hook.latency_ms",
+    "fabric.hook.outcome",
+    "fabric.hook.program_label",
+    "fabric.hook.reason_code",
+    "fabric.hook.signal",
+    "fabric.mcp.server_ref",
+    "fabric.mcp.tools.destructive_count",
+    "fabric.mcp.tools.idempotent_count",
+    "fabric.mcp.tools.open_world_count",
+    "fabric.mcp.tools.read_only_count",
     "fabric.network.host_id",
     "fabric.process.exit_code",
     "fabric.process.parent_pid",
@@ -21,7 +100,13 @@
     "fabric.process.pid_ns",
     "fabric.process.signal",
     "fabric.process.start_ns",
+    "fabric.run.agent_policy_digest",
+    "fabric.run.agent_policy_id",
+    "fabric.run.agent_policy_version",
+    "fabric.run.approval_policy",
+    "fabric.run.execution_mode",
     "fabric.run.id",
+    "fabric.run.permissions.count",
     "fabric.run.scope_id",
     "fabric.run.segment_id",
     "fabric.sandbox.created_id",
@@ -32,6 +117,7 @@
     "fabric.sensor.errno",
     "fabric.sensor.event_class",
     "fabric.sensor.exe_sha256",
+    "fabric.sensor.exit_code",
     "fabric.sensor.incomplete",
     "fabric.sensor.ns_pid",
     "fabric.sensor.ns_ppid",
@@ -45,7 +131,10 @@
     "fabric.sensor.process_start_ns",
     "fabric.sensor.result",
     "fabric.sensor.scope",
+    "fabric.sensor.signal",
     "fabric.sensor.syscall",
+    "fabric.sensor.watch_class",
+    "fabric.sensor.watch_label",
     "fabric.source.epoch",
     "fabric.source.sequence",
     "fabric.source_id",
@@ -53,8 +142,11 @@
     "fabric.step.id",
     "fabric.step.kind",
     "fabric.step.lifecycle_state",
+    "fabric.step.links",
     "fabric.step.parent_id",
     "fabric.step.status",
+    "fabric.step.timing_basis",
+    "fabric.step.update_of",
     "fabric.tenant_id",
     "http.request.method",
     "http.response.status_code"
@@ -111,6 +203,11 @@
       ]
     },
     "fabric.sensor.exe_sha256": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.exit_code": {
       "capture_point_kinds": [
         "S"
       ]
@@ -180,7 +277,22 @@
         "S"
       ]
     },
+    "fabric.sensor.signal": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
     "fabric.sensor.syscall": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.watch_class": {
+      "capture_point_kinds": [
+        "S"
+      ]
+    },
+    "fabric.sensor.watch_label": {
       "capture_point_kinds": [
         "S"
       ]
@@ -1213,6 +1325,7 @@
     "fabric.sensor.errno",
     "fabric.sensor.event_class",
     "fabric.sensor.exe_sha256",
+    "fabric.sensor.exit_code",
     "fabric.sensor.incomplete",
     "fabric.sensor.ns_pid",
     "fabric.sensor.ns_ppid",
@@ -1226,7 +1339,10 @@
     "fabric.sensor.process_start_ns",
     "fabric.sensor.result",
     "fabric.sensor.scope",
+    "fabric.sensor.signal",
     "fabric.sensor.syscall",
+    "fabric.sensor.watch_class",
+    "fabric.sensor.watch_label",
     "fabric.source.epoch",
     "fabric.source.sequence",
     "fabric.source_id",

@@ -1,0 +1,53 @@
+{
+  "schema_version": "fabric.records-golden/v1",
+  "spec": "052 §7.2 (WP3-0)",
+  "scenario": "revoked",
+  "records": [
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e88",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "ctl-c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "fabric.control.kind": "approval",
+        "fabric.control.phase": "request",
+        "fabric.control.decision": "pending",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown"
+      }
+    },
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e89",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "ctl-c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+        "fabric.control.kind": "approval",
+        "fabric.control.phase": "resolution",
+        "fabric.control.decision": "allow",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown",
+        "fabric.control.resolves": "ctl-c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+      }
+    },
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e8a",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e0a",
+        "fabric.control.kind": "approval",
+        "fabric.control.phase": "revocation",
+        "fabric.control.decision": "revoked",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown",
+        "fabric.control.resolves": "ctl-c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4"
+      }
+    }
+  ],
+  "expect": {
+    "resolution_state": {
+      "ctl-c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3": "revoked"
+    }
+  }
+}

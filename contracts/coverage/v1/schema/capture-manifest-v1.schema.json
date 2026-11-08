@@ -320,7 +320,7 @@
             "maxItems": 256,
             "items": {
               "type": "string",
-              "pattern": "^[XCSND][0-9]{2}$"
+              "pattern": "^[XCSNDGE][0-9]{2}$"
             }
           },
           "reason": {

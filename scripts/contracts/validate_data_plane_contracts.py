@@ -44,6 +44,11 @@ CONTRACTS: dict[str, _ContractConfig] = {
         "root": Path("contracts/activity/v2"),
         "identity": ("singleaxis.fabric.activity", "2.0.0"),
     },
+    # Spec 057 §5.7: activity 2.1.0, additive beside 2.0.0 (not yet published).
+    "activity-2.1": {
+        "root": Path("contracts/activity/v2.1"),
+        "identity": ("singleaxis.fabric.activity", "2.1.0"),
+    },
     "privacy": {
         "root": Path("contracts/privacy/v1"),
         "identity": ("singleaxis.fabric.privacy", "1.0.0"),
@@ -577,6 +582,9 @@ def validate_data_plane_contracts(repo_root: Path) -> list[str]:
 
     validators = {
         "activity": lambda doc: validate_activity_sequence(doc, schemas["activity"]),
+        "activity-2.1": lambda doc: validate_activity_sequence(
+            doc, schemas["activity-2.1"]
+        ),
         "privacy": lambda doc: validate_privacy_assertion(doc, schemas["privacy"]),
         "delivery": lambda doc: validate_delivery_evidence(
             doc,

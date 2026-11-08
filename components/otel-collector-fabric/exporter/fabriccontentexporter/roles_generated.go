@@ -8,7 +8,7 @@
 package fabriccontentexporter
 
 // roleTableVersion is the role table this exporter enforces.
-const roleTableVersion = "fabric.content-role-table/v1@4"
+const roleTableVersion = "fabric.content-role-table/v1@5"
 
 // roleTable is every content role with its permitted boundaries, provenance,
 // media types and cap (capBytes 0: the configured max_body_bytes).
@@ -85,6 +85,9 @@ var roleTable = map[string]roleRule{
 	"media.transcript":               {boundary: []string{"provider_bound"}, provenance: []string{"protocol", "caller_reported"}, media: []string{"text/plain", "application/json"}, capBytes: 4194304},
 	"artifact.locator":               {boundary: []string{"host"}, provenance: []string{"caller_reported", "protocol"}, media: []string{"application/json"}, capBytes: 65536},
 	"record.evidence":                {boundary: []string{"caller", "provider_bound", "tool", "terminal", "sandbox", "remote", "host", "service"}, provenance: []string{"caller_reported", "protocol"}, media: []string{"application/vnd.fabric.record-evidence+json"}, capBytes: 1048576},
+	"extension.manifest":             {boundary: []string{"caller"}, provenance: []string{"caller_reported"}, media: []string{"application/json"}, capBytes: 1048576},
+	"control.exchange.request":       {boundary: []string{"service"}, provenance: []string{"protocol"}, media: []string{"*"}, capBytes: 1048576},
+	"control.exchange.response":      {boundary: []string{"service"}, provenance: []string{"protocol"}, media: []string{"*"}, capBytes: 1048576},
 }
 
 // statusReasons is the closed coverage reason vocabulary a descriptor-only
