@@ -7,23 +7,18 @@ exception object with its traceback; it calls the check exactly once; a recorder
 raises, blocks or finds the queue full changes neither the return value nor the exception,
 with and without ``FABRIC_RECORDS_STRICT=1`` (the wrapper forms report through the
 counters, never by raising); capture off is a direct call; unsupported callables come
-back unchanged and counted; the B4 budgets hold (50 us on, 5 us off), and a blocking
-injection shows the benchmark would catch a recorder that waits.
+back unchanged and counted; the B4 budgets (50 us on, 5 us off) are gated in
+``test_records_passivity.py``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import queue
-import subprocess
-import sys
-import textwrap
 import time
 import traceback
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -34,9 +29,6 @@ from fabric import records
 from fabric._capture_types import COUNTERS, STRICT_ENV
 
 from ._security_capture import capture, spans
-from .test_wire_passivity import calibrate, scale_for
-
-SDK_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
@@ -373,74 +365,5 @@ def test_recorder_faults_never_reach_the_check(
 
 
 # ----------------------------------------------------------------- B4 passivity benchmark
-_BENCH = textwrap.dedent("""
-    import json, os, statistics, sys, tempfile, time
-    sys.path.insert(0, sys.argv[1])
-    inject = sys.argv[2] == "block"
-    from tests._records_capture import ID_KEY
-    from opentelemetry.sdk.trace import TracerProvider
-    from fabric import LocalFilesystemContentStore, records, wire
-    from fabric import _rec_check
-    from fabric.wire import WireConfig
-    os.environ["FABRIC_IDENTITY_MODE"] = "pseudonymous"
-
-    def check(user, path):
-        return path.startswith("/work/")
-
-    wrapped = records.control_check(control="fs-write")(check)
-
-    def measure(fn, flush, rounds=7, n=300):
-        for _ in range(200):
-            fn()
-        medians = []
-        for _ in range(rounds):  # the best round's median overhead, as the passivity gate
-            flush()
-            samples = []
-            for _ in range(n):
-                start = time.perf_counter_ns(); check("u", "/work/a")
-                bare = time.perf_counter_ns() - start
-                start = time.perf_counter_ns(); fn()
-                samples.append(time.perf_counter_ns() - start - bare)
-            medians.append(statistics.median(samples))
-        return max(0.0, min(medians))
-
-    off = measure(lambda: wrapped("u", "/work/a"), lambda: None)
-    root = tempfile.mkdtemp()
-    store = LocalFilesystemContentStore(root=root, tenant_id="t")
-    handle = wire.install(WireConfig(store=store, tracer_provider=TracerProvider(),
-                                     patch_httpx=False, patch_aiohttp=False, id_key=ID_KEY))
-    if inject:  # the control: a recorder that waits must show up in the measurement
-        real = _rec_check.emit_control
-        def slow(*a, **k):
-            end = time.perf_counter_ns() + 200_000
-            while time.perf_counter_ns() < end:
-                pass
-            return real(*a, **k)
-        _rec_check.emit_control = slow
-    on = measure(lambda: wrapped("u", "/work/a"), lambda: handle.flush(5.0))
-    handle.flush(5.0)
-    wire.uninstall()
-    print(json.dumps({"off": off, "on": on}))
-""")
-
-
-def _bench(mode: str) -> dict[str, float]:
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_", "FABRIC_"))}
-    out = subprocess.run([sys.executable, "-c", _BENCH, str(SDK_ROOT), mode],  # noqa: S603
-                         capture_output=True, text=True, timeout=300, env=env, cwd=SDK_ROOT,
-                         check=True)  # fmt: skip
-    measured: dict[str, float] = json.loads(out.stdout.strip().splitlines()[-1])
-    return measured
-
-
-def test_control_check_is_within_the_b4_budgets() -> None:
-    """B4 (053 §4.4 budgets, machine-relative as the wire passivity gate): the wrapper adds
-    at most 5 us per call with capture off and 50 us with capture on (median overhead over
-    the bare check, best round, fresh interpreter without coverage tracing). The control
-    run injects a 200 us busy wait into the recorder and must exceed the on budget."""
-    scale = scale_for(calibrate())
-    measured = _bench("plain")
-    assert measured["off"] <= 5_000 * scale, measured
-    assert measured["on"] <= 50_000 * scale, measured
-    control = _bench("block")
-    assert control["on"] > 50_000 * scale, control  # the gate sees a recorder that waits
+# The wrapper's B4 budgets (5 us off, 50 us on) are gated with every other records API in
+# ``test_records_passivity.py``, with the blocking control.

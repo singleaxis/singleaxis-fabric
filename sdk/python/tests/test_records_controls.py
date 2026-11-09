@@ -13,11 +13,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
-import statistics
-import subprocess
-import sys
-import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +31,8 @@ from fabric.control_evidence import ControlObservation
 from fabric.records._vocab import CONTROL_DECISIONS, CONTROL_PHASES, PHASE_DECISIONS
 
 from ._records_capture import installed, record_spans, records_of
-from .test_wire_passivity import calibrate, scale_for
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "fabric"
-SDK_ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
@@ -270,47 +263,6 @@ def test_a_raising_body_builder_never_reaches_the_caller(
         assert record_spans(exporter) == []
 
 
-_BENCH = textwrap.dedent("""
-    import json, os, statistics, sys, tempfile, time
-    sys.path.insert(0, sys.argv[1])
-    from tests._records_capture import ID_KEY
-    from opentelemetry.sdk.trace import TracerProvider
-    from fabric import LocalFilesystemContentStore, records, wire
-    from fabric.wire import WireConfig
-    os.environ["FABRIC_IDENTITY_MODE"] = "pseudonymous"
-    root = tempfile.mkdtemp()
-    store = LocalFilesystemContentStore(root=root, tenant_id="t")
-    handle = wire.install(WireConfig(store=store, tracer_provider=TracerProvider(),
-                                     patch_httpx=False, patch_aiohttp=False, id_key=ID_KEY))
-    def measure(fn, rounds=7, n=300):
-        for _ in range(200):
-            fn()
-        medians = []
-        for _ in range(rounds):  # the best round's median, as the wire passivity gate
-            handle.flush(5.0)
-            samples = []
-            for _ in range(n):
-                start = time.perf_counter_ns(); fn()
-                samples.append(time.perf_counter_ns() - start)
-            medians.append(statistics.median(samples))
-        return min(medians)
-    plain = measure(lambda: records.record_control("policy", "observation", "deny"))
-    body = measure(lambda: records.record_control("policy", "observation", "deny", reason="r" * 64))
-    handle.flush(5.0)
-    wire.uninstall()
-    print(json.dumps({"plain": plain, "body": body}))
-""")
-
-
-def test_record_control_is_within_the_051_budgets() -> None:
-    """051 §4.11 rows 1-2 (machine-relative, as the wire passivity gate): a record call
-    with no body <= 20 us median, with a str body <= 30 us; measured in a fresh interpreter
-    without coverage tracing."""
-    scale = scale_for(calibrate())
-    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_", "FABRIC_"))}
-    out = subprocess.run([sys.executable, "-c", _BENCH, str(SDK_ROOT)], capture_output=True,  # noqa: S603
-                         text=True, timeout=300, env=env, cwd=SDK_ROOT, check=True)  # fmt: skip
-    measured = json.loads(out.stdout.strip().splitlines()[-1])
-    assert measured["plain"] <= 20_000 * scale, measured
-    assert measured["body"] <= 30_000 * scale, measured
-    assert statistics.mean([measured["plain"], measured["body"]]) > 0
+# The 051 §4.11 record-call budgets (rows 1-2) are gated with the other records budgets in
+# ``test_records_passivity.py``: many batches in a fresh interpreter, each judged against
+# the machine state it ran in, and a blocking control.
