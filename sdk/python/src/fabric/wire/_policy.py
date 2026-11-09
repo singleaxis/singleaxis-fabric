@@ -52,6 +52,8 @@ class CapturePolicy:
     encrypted_store_required: bool = False
     workload_id: str | None = None
     tenant_id: str | None = None
+    # spec 057 §7.2: grant pseudonymisation groups the policy switches off (all on when absent)
+    grant_pseudonymise: Mapping[str, bool] = field(default_factory=dict)
 
     def mode(self, role: str) -> str:
         """The role's privacy mode by the §2.7 precedence (rules 2-5): named → that mode;
@@ -79,6 +81,7 @@ class CapturePolicy:
             profile=deployment["profile"],
             encrypted_store_required=bool(deployment["encrypted_store_required"]),
             workload_id=policy.workload_id, tenant_id=policy.tenant_id,
+            grant_pseudonymise=dict(policy.grant_pseudonymise),
         )  # fmt: skip
 
 

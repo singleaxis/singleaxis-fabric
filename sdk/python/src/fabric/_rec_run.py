@@ -12,9 +12,14 @@ retained only as the capture policy allows. A later call in the same run is a ne
 observation (a configuration change), not a conflict. Run annotations default their actor
 to ``unknown`` (051 D-12).
 
-Pulled forward by spec 057 OD-15. Spec 057 §5.2 later maps ``permissions=`` into a
-declared ``fabric.grant-snapshot/v1`` document with structural pseudonymisation; that
-mapping belongs to ``record_grant`` (spec 057 WP7-1) and is not done here.
+Pulled forward by spec 057 OD-15. Spec 057 §5.2 (WP7-1): ``permissions=`` is mapped into
+a minimal declared ``fabric.grant-snapshot/v1`` document, so the annotation is also a
+declared grant snapshot (``grt-`` id, counts; trigger ``run_start``) and its
+``run.permissions`` body is the structurally pseudonymised document. A name of the form
+``<group>.<list>`` that names a list of the document (``tools.allow|deny|ask``,
+``filesystem.roots|read|write|deny``, ``network.allow|deny``, ``models.allow|deny``)
+fills that list; any other name is kept verbatim under ``x-permissions``.
+``fabric.run.permissions.count`` stays the number of leaf entries.
 """
 
 from __future__ import annotations
@@ -25,7 +30,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from ._capture_types import misuse
-from ._records_api import Body, current_records, emit, never_raises
+from ._rec_grant import check_document, emit_grant
+from ._records_api import current_records, emit, never_raises
 from ._sequence import operator_label
 from .records._handles import RecordHandle
 from .records._vocab import APPROVAL_POLICIES, EXECUTION_MODES, normalise
@@ -70,6 +76,38 @@ def _permission_count(permissions: object) -> int | None:
             misuse("more than 4096 permission entries")
             return None
     return total
+
+
+_GROUPS = {
+    "tools": ("allow", "deny", "ask"), "filesystem": ("roots", "read", "write", "deny"),
+    "network": ("allow", "deny"), "models": ("allow", "deny"),
+}  # fmt: skip
+
+
+def declared_document(
+    permissions: Mapping[str, Sequence[str]], execution_mode: object, approval_policy: object,
+) -> dict[str, Any]:  # fmt: skip
+    """The minimal declared grant document of ``permissions=`` (spec 057 §5.2)."""
+    doc: dict[str, Any] = {"schema_version": "fabric.grant-snapshot/v1", "basis": "declared",
+                           "source": {"boundary": "api"}}  # fmt: skip
+    if isinstance(execution_mode, str):
+        doc["execution_mode"] = execution_mode
+    if isinstance(approval_policy, str):
+        doc["approval_policy"] = approval_policy
+    other: dict[str, list[str]] = {}
+    for name, entries in permissions.items():
+        group, _, leaf = name.partition(".")
+        if leaf in _GROUPS.get(group, ()):
+            values = list(entries)
+            if group == "tools":
+                doc.setdefault("tools", {})[leaf] = [{"rule": v} for v in values]
+            else:
+                doc.setdefault(group, {})[leaf] = values
+        else:
+            other[name] = list(entries)
+    if other:
+        doc["x-permissions"] = other
+    return doc
 
 
 def _agent_policy(records: Any, policy: object) -> dict[str, Any]:
@@ -118,16 +156,19 @@ def record_run_context(
     if approval_policy is not None:
         attrs["fabric.run.approval_policy"] = normalise(approval_policy, APPROVAL_POLICIES,
                                                         "approval policy")  # fmt: skip
-    bodies: list[Body] = []
+    if agent_policy is not None:
+        attrs.update(_agent_policy(records, agent_policy))
     if permissions is not None:
         count = _permission_count(permissions)
         if count is not None:
             attrs["fabric.run.permissions.count"] = count
-            bodies.append(Body("run.permissions", {k: list(v) for k, v in permissions.items()}))
-    if agent_policy is not None:
-        attrs.update(_agent_policy(records, agent_policy))
+            document = check_document(declared_document(
+                permissions, attrs.get("fabric.run.execution_mode"),
+                attrs.get("fabric.run.approval_policy")))  # fmt: skip
+            if document is not None:
+                return emit_grant(records, document, trigger="run_start", attrs=attrs)[0]
     return emit("run", attrs=attrs, records=records, name_hint="fabric.activity",
-                bodies=bodies, default_actor="unknown")  # fmt: skip
+                default_actor="unknown")  # fmt: skip
 
 
 __all__ = ["AgentPolicyRef", "record_run_context"]

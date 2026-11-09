@@ -239,6 +239,14 @@ class DeploymentPolicy:
     def required_integrations(self) -> tuple[str, ...]:
         return tuple(self.to_dict()["required_integrations"])
 
+    @property
+    def grant_pseudonymise(self) -> Mapping[str, bool]:
+        """Spec 057 §7.2: the ``security_context.grant.pseudonymise`` switches as given
+        (``paths``, ``hosts``, ``credentials``); a group the policy does not name is on."""
+        section = self.to_dict().get("security_context") or {}
+        switches = (section.get("grant") or {}).get("pseudonymise") or {}
+        return MappingProxyType(dict(switches))
+
 
 @dataclass(frozen=True, slots=True)
 class ProtectedContent:
