@@ -26,9 +26,11 @@ keyed pseudonym. Every call is passive and fails open (051 R9).
 from __future__ import annotations
 
 import hashlib
+import json
+import json.encoder
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from decimal import Decimal
 from typing import Any
@@ -121,21 +123,11 @@ def _number(value: int | float) -> str:  # noqa: PLR0911 - RFC 8785 §3.2.2.3 ca
     return f"{sign}{mantissa}e{'+' if power > 0 else '-'}{abs(power)}"
 
 
-_ESCAPES = {8: "\\b", 9: "\\t", 10: "\\n", 12: "\\f", 13: "\\r"}
-
-
-def _string(value: str) -> str:
-    out = ['"']
-    for char in value:
-        code = ord(char)
-        if char in ('"', "\\"):
-            out.append("\\" + char)
-        elif code < 0x20:  # noqa: PLR2004 - control characters
-            out.append(_ESCAPES.get(code, f"\\u{code:04x}"))
-        else:
-            out.append(char)
-    out.append('"')
-    return "".join(out)
+# RFC 8785 §3.2.2.2 escapes exactly what the stdlib's JSON string encoder escapes when it
+# keeps non-ASCII text (``"``, ``\\``, the short forms \b \t \n \f \r, and every other
+# control character as a lower-case ``\u00xx``); its C form keeps a grant record inside the
+# B4 budget (spec 057 §2.1), where a per-character loop did not.
+_string: Callable[[str], str] = json.encoder.encode_basestring
 
 
 def _jcs(value: object) -> str:  # noqa: PLR0911 - one return per JSON type
@@ -158,10 +150,40 @@ def _jcs(value: object) -> str:  # noqa: PLR0911 - one return per JSON type
     raise _NotJsonError
 
 
+# For a value with no float, no integer beyond +-2**53 and only ASCII object keys, RFC 8785
+# is exactly the stdlib's sorted-key, compact, non-ASCII-keeping JSON: strings escape alike
+# (above), integers print alike, and ASCII keys sort alike by UTF-16 code units and by code
+# points. The C encoder then does the work; anything else takes the exact path above.
+_FAST = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+                         check_circular=False).encode  # fmt: skip
+_SAFE_INT = 1 << 53
+
+
+def _simple(value: object) -> bool:
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        kind = type(node)
+        if kind is dict:
+            for key, child in node.items():  # type: ignore[attr-defined]
+                if type(key) is not str or not key.isascii():
+                    return False
+                stack.append(child)
+        elif kind is list or kind is tuple:
+            stack.extend(node)  # type: ignore[arg-type]
+        elif kind is int:
+            if not -_SAFE_INT <= node <= _SAFE_INT:  # type: ignore[operator]
+                return False
+        elif not (kind is str or node is None or kind is bool):
+            return False  # a float, or not JSON: the exact path decides
+    return True
+
+
 def jcs(value: object) -> bytes:
     """The RFC 8785 canonical UTF-8 bytes of a JSON value (plain ``dict``/``list``/``str``/
     ``int``/``float``/``bool``/``None`` only; anything else raises)."""
-    return _jcs(value).encode("utf-8", "surrogatepass")
+    text = _FAST(value) if _simple(value) else _jcs(value)
+    return text.encode("utf-8", "surrogatepass")
 
 
 def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
@@ -172,6 +194,8 @@ def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
         if type(value) is dict:
             return {k: walk(v) for k, v in value.items()}
         if type(value) is list:
+            if len(value) == 1:  # one item: nothing to sort or de-duplicate
+                return [walk(value[0])]
             items = {jcs(item): item for item in (walk(v) for v in value)}
             return [items[k] for k in sorted(items)]
         return value
@@ -179,6 +203,24 @@ def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = walk(dict(document))
     out.pop("request_ref", None)
     return out
+
+
+def _normalised_in_place(value: Any) -> Any:
+    """:func:`normalise_grant`'s list rule applied to a document Fabric owns (a checked
+    copy), mutating its objects instead of rebuilding them; ``request_ref`` is kept."""
+    kind = type(value)
+    if kind is dict:
+        for key, child in value.items():
+            if type(child) is dict or type(child) is list:
+                value[key] = _normalised_in_place(child)
+        return value
+    if kind is list:
+        items = [_normalised_in_place(v) for v in value]
+        if len(items) <= 1:
+            return items
+        keyed = {jcs(item): item for item in items}
+        return [keyed[k] for k in sorted(keyed)]
+    return value
 
 
 def grant_digest(document: Mapping[str, Any]) -> str:
@@ -621,6 +663,11 @@ class GrantRef:
 def _plain(value: object) -> Any:
     """A caller mapping as plain ``dict``/``list`` values (``Mapping``/``Sequence`` copied),
     so the shape checks never call back into application objects beyond iteration."""
+    kind = type(value)
+    if kind is str or kind is int or kind is bool or value is None:
+        return value  # the common leaves, without the ABC checks below
+    if kind is dict:
+        return {k: _plain(v) for k, v in value.items()}  # type: ignore[attr-defined]
     if isinstance(value, Mapping):
         return {k: _plain(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -712,16 +759,21 @@ def emit_grant(
     Raises only misuse and faults."""
     from ._rec_controls import grant_id_of  # noqa: PLC0415 - the controls module imports none
 
-    doc = normalise_grant(document)
+    # ``document`` is the checked copy (check_document): normalised in place, its ``source``
+    # and ``request_ref`` as given
+    doc = _normalised_in_place(dict(document))
     doc["source"] = document["source"]
-    if "request_ref" in document:
-        doc["request_ref"] = document["request_ref"]
     out: dict[str, Any] = dict(attrs or {})
     for name, value in grant_attributes(doc).items():
         out.setdefault(name, value)  # a run-context key the caller set wins
     out["fabric.grant.trigger"] = normalise(trigger, GRANT_TRIGGERS, "grant trigger")
     key = getattr(records, "_key", None)
-    emitted = grant_id(grant_digest(doc), key)
+    # ``doc`` is already normalised (its ``source`` holds no list): digest it as is, once
+    digest = (
+        "sha256:"
+        + hashlib.sha256(jcs({k: v for k, v in doc.items() if k != "request_ref"})).hexdigest()
+    )
+    emitted = grant_id(digest, key)
     if emitted is not None:
         out["fabric.grant.id"] = emitted
     if previous is not None and (previous_id := grant_id_of(previous)) is not None:
@@ -729,10 +781,10 @@ def emit_grant(
     bodies: list[Body] = []
     if records.mode_of("run.permissions") != "omit":
         groups = pseudonymise_groups(records)
-        if key is not None:
+        if key is not None and needs_key(doc, groups):
             stored = _resorted(pseudonymise_grant(doc, key, **groups))
             bodies.append(Body("run.permissions", stored, "application/json"))
-        elif not needs_key(doc, groups):
+        elif not needs_key(doc, groups):  # nothing to replace: the document as it is
             bodies.append(Body("run.permissions", doc, "application/json"))
         # else: no key, nothing to pseudonymise with: withheld, never clear (§7.3)
     handle = emit("run", attrs=out, records=records, name_hint="fabric.activity",
