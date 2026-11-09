@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import math
 import os
 import threading
 import time
@@ -135,11 +136,21 @@ def sha256_digest(data: bytes) -> str:
 
 
 def _plain(value: Any) -> Any:
-    """Attribute values as JSON types: tuples are lists, ``str`` subclasses plain ``str``."""
+    """Attribute values as JSON types: tuples are lists, ``str`` subclasses plain ``str``,
+    and a finite float the tagged object ``{"f64": repr(value)}`` (spec 057 revision 3.3:
+    canonical JSON carries no floats, while D41 and E03 are numbers). An OTLP attribute is
+    never a map, so the tag cannot collide with an emitted value; a non-finite float is
+    never emitted and still raises."""
     if isinstance(value, (list, tuple)):
         return [_plain(item) for item in value]
     if isinstance(value, str):
         return str.__str__(value)
+    if isinstance(value, Mapping):  # never emitted; refused so nothing can pose as a tag
+        raise TypeError("a record attribute is never a map")
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("a record attribute is never a non-finite float")
+        return {"f64": repr(float(value))}
     return value
 
 

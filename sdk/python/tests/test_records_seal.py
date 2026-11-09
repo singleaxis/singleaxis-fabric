@@ -131,6 +131,23 @@ def test_digest_rules() -> None:
     assert seal_digest([]) == reference().seal_digest([])
 
 
+def test_a_float_attribute_has_a_tagged_digest() -> None:
+    """Spec 057 revision 3.3: D41 and E03 are numbers, so a records-input record can carry
+    a float (a ``control_check`` record always does). Canonical JSON carries no floats, so
+    the digest document holds ``{"f64": repr(value)}``; agent and reference agree, a map
+    value (never emitted) cannot pose as the tag, and a non-finite float still raises."""
+    parts: dict[str, Any] = {"name": "fabric.activity", "start_ns": 1, "end_ns": 2,
+                             "status": "unset", "content": []}  # fmt: skip
+    attrs = {"fabric.control.latency_ms": 0.04, "fabric.hook.latency_ms": 18.0, "n": [1.5, 2]}
+    digest = record_digest(attributes=attrs, **parts)
+    assert digest == reference().record_digest(attributes=attrs, **parts)
+    assert digest != record_digest(attributes={**attrs, "fabric.hook.latency_ms": 18}, **parts)
+    with pytest.raises(TypeError):
+        record_digest(attributes={"fabric.control.latency_ms": {"f64": "0.04"}}, **parts)
+    with pytest.raises(ValueError, match="non-finite"):
+        record_digest(attributes={"fabric.control.latency_ms": float("nan")}, **parts)
+
+
 # --- the accumulator -------------------------------------------------------------------------
 
 

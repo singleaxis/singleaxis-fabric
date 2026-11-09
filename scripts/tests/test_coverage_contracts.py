@@ -879,8 +879,17 @@ def test_p1_reference_seal_and_record_digest() -> None:
     assert ref.record_digest(**span, content=[None]) == ref.record_digest(
         **stamped, content=[None]
     )
+    # Spec 057 revision 3.3 (049 revision 6.8): a finite float is tagged, never a bare JSON
+    # number; a non-finite float and a map value are refused.
+    tagged = ref.record_digest_document(**dict(span, attributes={"a": 1.5}), content=[])
+    assert tagged["attributes"] == {"a": {"f64": "1.5"}}
+    assert ref.record_digest(**dict(span, attributes={"a": 1.5}), content=[]) != (
+        ref.record_digest(**dict(span, attributes={"a": "1.5"}), content=[])
+    )
     with pytest.raises(ValueError):
-        ref.record_digest(**dict(span, attributes={"a": 1.5}), content=[])
+        ref.record_digest(**dict(span, attributes={"a": float("inf")}), content=[])
+    with pytest.raises(TypeError):
+        ref.record_digest(**dict(span, attributes={"a": {"f64": "1.5"}}), content=[])
     with pytest.raises(ValueError):
         ref.record_digest(**dict(span, status="Error: boom"), content=[])
 
