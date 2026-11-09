@@ -942,10 +942,34 @@ def _check_chains(run: Mapping[str, Any], path: str) -> None:
                     f"{path}.chains.{chain_name}",
                     f"{reason} is a reason exactly when {key} is not empty",
                 )
+        _check_startup_effects(attribution, path)
     ids = [event["event_id"] for event in run.get("sensor_events", [])]
     if len(ids) != len(set(ids)):
         raise _chain_fail(f"{path}.sensor_events", "a host event is listed once")
     _check_security_context(run, path)
+
+
+def _check_startup_effects(attribution: Mapping[str, Any], path: str) -> None:
+    """Spec 056 revision 11 (S0): a startup effect is listed once, in startup_effects only
+    (never also unattributed), and the list holds the first min(count, 64) entries."""
+    block = attribution.get("startup_effects")
+    if block is None:
+        return
+    effects = block["effects"]
+    if block["count"] < len(effects) or len(effects) < min(block["count"], 64):
+        raise _chain_fail(
+            f"{path}.attribution.startup_effects",
+            "the list holds the first min(count, 64) entries",
+        )
+    startup = {entry["attempt_uid"] for entry in effects}
+    unattributed = {
+        e["attempt_uid"] for e in attribution["unattributed_effects"]["effects"]
+    }
+    if startup & unattributed:
+        raise _chain_fail(
+            f"{path}.attribution.startup_effects",
+            "a startup effect is never also an unattributed effect",
+        )
 
 
 # Spec 057 §6.4: each controls-chain reason that a fact states, and the fact it needs.

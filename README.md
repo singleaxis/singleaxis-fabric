@@ -141,16 +141,29 @@ Now tamper with the record. Delete one `"fabric.model_call"` line from
 ```bash
 python -m fabric.reconstruct --spans /tmp/fabric-demo/spans.jsonl \
   --store-root /tmp/fabric-demo/store --tenant demo-tenant --run react-demo-1
-# -> partial (sequence_gap), exit code 1
+# -> r-73312ae0…: partial (2 exchanges, 3 gaps: seal_mismatch, sequence_gap, unmatched_tool_call)
+#    exit code 1 (add --json for the full report)
 ```
 
-To record your own application, enable autoload. No code change is needed:
+To record your own application, enable autoload. No code change is needed,
+but the record needs somewhere to go and Fabric must know your model host:
 
 ```bash
 export PYTHONPATH="$(python -m fabric.wire --print-autoload-path)${PYTHONPATH:+:$PYTHONPATH}"
 export FABRIC_WIRE_AUTOLOAD=1
+export FABRIC_TENANT_ID=demo
+export FABRIC_WIRE_STORE="file://$PWD/store"           # request and response bodies
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 # a Fabric Node; https:// with a CA if not loopback
+# Only for a model host other than api.openai.com, api.anthropic.com, *.openai.azure.com:
+export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"my-model","dialect":"openai","hosts":["models.example.com"]}]'
+python -m fabric.wire status   # exit 0 and no warnings: capture is on and has a destination
 ```
 
+Without an OTLP endpoint the spans are dropped, and a model host that no
+endpoint matches is not recorded; `status` warns about the first, and the
+running process counts the second and names the host and the
+`FABRIC_WIRE_ENDPOINTS` value that records it (see
+[operations](docs/operations/README.md#troubleshooting)).
 The [quickstart](docs/quickstart.md) runs an unmodified OpenAI SDK program
 through a local Fabric Node. [Deployment](docs/deployment.md) covers the
 production profile.

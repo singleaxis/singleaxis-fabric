@@ -180,7 +180,8 @@ def test_install_from_env_refuses_an_unusable_protocol(
     caplog.set_level("WARNING", logger="fabric.wire")
     assert wire.install_from_env({}) is None
     assert [r.getMessage() for r in caplog.records if r.name == "fabric.wire"] == [
-        "fabric.wire: capture not installed (ValueError)"
+        "fabric.wire: capture not installed (ValueError): OTLP protocol must be http/protobuf or "
+        "grpc for Fabric capture"
     ]
 
 

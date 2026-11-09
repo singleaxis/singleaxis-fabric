@@ -47,6 +47,7 @@ from urllib.parse import urlsplit
 from fabric._model_names import parse_model_allowlist
 from fabric._sequence import label_pseudonym, pseudonym_v2
 from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
+from fabric.reconstruct._explain import explain_no_runs
 from fabric.reconstruct._graph import RunGraph
 from fabric.reconstruct._host import (
     HOST_SOURCES,
@@ -124,7 +125,8 @@ class _Parser(argparse.ArgumentParser):
 
 _SPANS_HELP = (
     "sink JSONL, OTLP/JSON, or a raw OTLP protobuf trace export request (*.otlp, as "
-    "`make export-spans` copies them); a directory stands for its *.otlp files"
+    "`make export-spans` copies them); a directory stands for its *.otlp, *.json and "
+    "*.jsonl files"
 )
 
 
@@ -148,7 +150,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--out",
         metavar="FILE",
-        help="write the report here (atomically, mode 0600) instead of stdout",
+        help="write the full JSON report here (atomically, mode 0600); the one-line summary "
+        "per run goes to stderr",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="print the full JSON report on stdout instead of the one-line summary per run",
     )
     parser.add_argument(
         "--projection",
@@ -730,23 +738,36 @@ def report_main(argv: Sequence[str]) -> int:
         except OSError:
             _fail("cannot write the --out report file")
             return EXIT_USAGE
-        for run in document["runs"]:
-            print(
-                f"{run['run_id']}: {run['verdict']} "
-                f"({run['counts']['exchanges']} exchanges, {len(run['gaps'])} gaps)",
-                file=sys.stderr,
-            )
-        outside = document.get("unattributed_host_events")
-        if outside and outside["count"]:
-            print(_unattributed_host_text(outside), file=sys.stderr)
-    else:
+    if args.json:
         for chunk in _report_chunks(document):
             sys.stdout.write(chunk)
+    else:  # the summary: on stdout, or on stderr next to an --out report
+        stream = sys.stderr if args.out else sys.stdout
+        for line in summary_lines(document):
+            print(line, file=stream)
     if args.projection and not _write_projection(args.projection, projection):
         return EXIT_USAGE
     if not document["runs"]:
-        _fail("no runs reconstructed")
+        _explain_no_runs(args.spans, args.runs)
     return _exit_code(document)
+
+
+def summary_lines(document: Mapping[str, Any]) -> list[str]:
+    """One line per run: ``RUN: VERDICT (N exchanges, M gaps[: TYPE, ...])``, the gap types
+    in report order without repeats; then the host events in no run, when there are any."""
+    lines: list[str] = []
+    for run in document["runs"]:
+        gaps = run["gaps"]
+        types = ", ".join(dict.fromkeys(str(gap["gap_type"]) for gap in gaps))
+        lines.append(
+            f"{run['run_id']}: {run['verdict']} "
+            f"({run['counts']['exchanges']} exchanges, {len(gaps)} gaps"
+            f"{': ' + types if types else ''})"
+        )
+    outside = document.get("unattributed_host_events")
+    if outside and outside["count"]:
+        lines.append(_unattributed_host_text(outside))
+    return lines
 
 
 def _action_reader(
@@ -947,8 +968,17 @@ def actions_main(argv: Sequence[str]) -> int:
         if outside:
             sys.stdout.write(("\n" if views else "") + format_unattributed_host(outside))
     if not document["runs"]:
-        _fail("no runs reconstructed")
+        _explain_no_runs(args.spans, args.runs)
     return _exit_code(document)
+
+
+def _explain_no_runs(spans: Sequence[str], runs: Sequence[str] | None) -> None:
+    """``no runs reconstructed``, then why: what the inputs hold and what a run needs
+    (``_explain.py``). Fixed vocabulary only, never a value from the input."""
+    _fail("no runs reconstructed")
+    with contextlib.suppress(Exception):
+        for line in explain_no_runs(spans, run_filter=bool(runs)):
+            print(f"  {line}", file=sys.stderr)
 
 
 def _view(run: ActionRun, document: Mapping[str, Any]) -> dict[str, Any]:
@@ -995,6 +1025,8 @@ def _effect_text(row: Mapping[str, Any]) -> str:
 def _caused_text(row: Mapping[str, Any], why: str = "no open tool call") -> str:
     links = row.get("caused_by") or []
     if not links:
+        if row.get("rule") == "S0":
+            return "(startup: before the first model call)"
         return f"({why})" if row.get("rule") == "A4" else ""
     targets = "|".join(
         link["target"] if link["namespace"] == "call" else f"attempt {link['target'][:8]}…"
@@ -1090,6 +1122,14 @@ def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list
             for e in unattributed[:8]
         )
         lines.append(f"  unattributed effects: {len(unattributed)}   ({details})")
+    if startup := view.get("startup_effects"):
+        details = "; ".join(
+            f"exec {e.get('label', e['attempt_uid'])}, seq {e['sequence']}" for e in startup[:8]
+        )
+        lines.append(
+            f"  startup effects: {len(startup)}   ({details}: before the first model call; "
+            "not attributed, not a gap)"
+        )
     if no_model:
         lines.append("  model calls: none recorded in this run (decisions not observed)")
     if "no_final_heartbeat" in view.get("unproven_ends", ()):

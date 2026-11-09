@@ -178,7 +178,7 @@ Abridged output of the AR-1 run (paths shortened, host replay):
 
 ```text
 run source:s-b42b…:1160…  decisions: complete  actions: complete  effects: partial(unattributed_effect)  corroboration: partial(unexplained_host_event)  verdict: partial
-  1    effect     exec uname -p exit 0                 (no open tool call)
+  1    effect     exec uname -p exit 0                 (startup: before the first model call)
   2      host     exec pid 24462                     ← #1  process_anchor · tentative
   5  model_call   m-b53a8eb814d42c21  → tool_call T1 run_shell
   6      host     connect pid 24459                  ← run  process_anchor · tentative
@@ -194,7 +194,8 @@ run source:s-b42b…:1160…  decisions: complete  actions: complete  effects: p
  …
  30    effect     exec uname -a exit 0                 (no open tool call)
  35      host     connect pid 24459                  ← run  process_anchor · tentative  unexplained
-  unattributed effects: 3   (exec uname -p, seq 0: no open tool call; …; exec uname -a, seq 16: no open tool call)
+  unattributed effects: 1   (exec uname -a, seq 16: no open tool call)
+  startup effects: 2   (exec uname -p, seq 0; …: before the first model call; not attributed, not a gap)
   unexplained host events: 1
   output match: applied
 ```
@@ -257,8 +258,16 @@ report: `0` only when the run is complete, `1` when it is `partial` or
 `unverified`, `2` for a usage or input error.
 
 What this run shows: `uname -p` and `file -b` are started by Python's
-`platform` module, which the OpenAI SDK calls at its first request, so no
-tool call explains them. `uname -a` is a background thread of the agent. Row 35 is
+`platform` module, which the OpenAI SDK calls while it builds its first
+request. They run before the first model call of the run, so no call can
+have caused them: they are **startup effects** (spec 056 revision 11),
+listed and counted in the footer and in the report's
+`attribution.startup_effects`, never attributed to a call, and they do not
+make `effects` partial. An effect after the first model call with no open
+tool call is still unattributed: `uname -a` is a background thread of the
+agent, and it alone makes `effects` `partial(unattributed_effect)`. An
+effect behind a lost sequence position stays unattributed too, because the
+lost position may have been a model call. Row 35 is
 the agent connecting to a host no model call reached.
 
 ## Security context in the view and the report (spec 057)

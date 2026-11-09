@@ -376,6 +376,8 @@ class OtlpSettings:
     client_key: str | None
     timeout_s: float
     protocol: str
+    # The variable the endpoint came from, so a diagnostic names the one the user set.
+    endpoint_name: str | None = None
 
 
 def otlp_signal_settings(
@@ -421,6 +423,7 @@ def otlp_signal_settings(
         endpoint[1] if endpoint else None, headers, path["CERTIFICATE"],
         path["CLIENT_CERTIFICATE"], path["CLIENT_KEY"], timeout_s,
         (pick("PROTOCOL") or ("", "http/protobuf"))[1],
+        endpoint[0] if endpoint else None,
     )  # fmt: skip
 
 
@@ -575,13 +578,14 @@ def _harden_exporter_session(exporter: object) -> None:
     no_redirect_session(session)
 
 
-def _grpc_options(endpoint: str) -> dict[str, Any]:
+def _grpc_options(
+    endpoint: str, name: str = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+) -> dict[str, Any]:
     """The effective gRPC channel security, decided here and passed explicitly (``insecure``)
     so the exporter's own environment rules cannot change it: ``https://`` is TLS, ``http://``
     is plaintext, and a scheme-less ``host:port`` is plaintext only when
     ``OTEL_EXPORTER_OTLP_TRACES_INSECURE`` (else ``OTEL_EXPORTER_OTLP_INSECURE``) is ``true``.
     Plaintext is refused unless the host is loopback. The error never echoes the URL."""
-    name = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
     check_endpoint_url(name, endpoint)
     value = endpoint.strip()
     parts = urlsplit(value)
@@ -659,11 +663,12 @@ def _otlp_exporter() -> SpanExporter | None:
     name = "http" if settings.protocol == "http/protobuf" else "grpc"
     # Fabric-owned trace delivery follows the content rule: verified TLS, or plaintext to a
     # loopback host only (the ingress credential never crosses a network unencrypted).
+    variable = settings.endpoint_name or "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
     if name == "http":
-        check_content_endpoint_url("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", settings.endpoint)
+        check_content_endpoint_url(variable, settings.endpoint)
         options: dict[str, Any] = {}
     else:
-        options = _grpc_options(settings.endpoint)
+        options = _grpc_options(settings.endpoint, variable)
     proxy = delivery_proxy_from_env()
     try:
         module = importlib.import_module(f"opentelemetry.exporter.otlp.proto.{name}.trace_exporter")

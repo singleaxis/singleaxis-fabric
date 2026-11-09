@@ -142,6 +142,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 # The fake server is not a default model host, so list it:
 export FABRIC_WIRE_ENDPOINTS='[{"endpoint_id":"local-llm","dialect":"openai","hosts":["127.0.0.1"],"ports":[8000],"schemes":["http"]}]'
 
+python -m fabric.wire status   # one JSON line; exit 0 with "warnings": [] means capture is on
 python app.py
 unset PYTHONPATH FABRIC_WIRE_AUTOLOAD
 ```
@@ -158,6 +159,18 @@ python -m fabric.reconstruct --spans spans --store-root store --tenant demo
 ```text
 source:s-…:…: complete_for_declared_scope (2 exchanges, 0 gaps)
 ```
+
+The reader prints one line per run; `--json` prints the full report, and
+`--out FILE` writes it to a file.
+
+If nothing was recorded, run `python -m fabric.wire status` with the same
+environment. Under autoload Fabric prints nothing to your program's output,
+so this is where its warnings appear: why capture is not installed and how
+to fix it (for example, plaintext `http://` to a host that is not loopback,
+such as a Compose service name, is refused), spans with no destination, or
+a policy that withholds content. A running process also counts model calls
+to a host that no endpoint matches; set `FABRIC_WIRE_DIAGNOSTICS=stderr` to
+see the host and the `FABRIC_WIRE_ENDPOINTS` value that records it.
 
 If a run reports `unverified` with `tail_unverified` (`no_final_heartbeat`),
 its closing heartbeat did not reach the Node within the 2-second exit budget

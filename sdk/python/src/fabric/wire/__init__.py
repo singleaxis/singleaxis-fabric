@@ -58,6 +58,7 @@ from .._sequence import (
 )
 from ..redaction import RedactionService, Transformation
 from ._config import DEFAULT_ENDPOINTS, WireConfig, migrate_plaintext_from_env
+from ._diagnose import describe, fix, not_installed_message
 from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
 from ._policy import ContentGate, decide, policy_from_env
@@ -81,9 +82,24 @@ __all__ = [
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.wire")
+# Library logging etiquette and spec 057 B1-B4: with no logging configured by the app,
+# Python's last-resort handler would print these diagnostics into the agent's stderr. A
+# NullHandler stops that; an app that configures logging still receives them, and
+# ``python -m fabric.wire status`` / ``FABRIC_WIRE_DIAGNOSTICS=stderr`` report them.
+if not any(isinstance(h, logging.NullHandler) for h in _LOG.handlers):
+    _LOG.addHandler(logging.NullHandler())
 # Configuration diagnostics, class-only text; ``python -m fabric.wire status`` reports the
 # same lines (``_status.py``) without installing anything.
 _MSG_NOT_INSTALLED = "fabric.wire: capture not installed (%s)"
+# The spans have nowhere to go: the private tracer provider has no exporter (F2).
+_MSG_NO_DESTINATION = (
+    "fabric.wire: spans have no destination (no OTEL_EXPORTER_OTLP_ENDPOINT or "
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT): captured spans are dropped. Fix: export "
+    "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 (a local Fabric Node), or an https:// "
+    "endpoint with a CA"
+)
+# A Fabric-protected global provider with no OTLP endpoint (D3): the reason, in words.
+_REASON_PROTECTED_GLOBAL = "a Fabric-protected global tracer provider cannot carry wire spans"
 _MSG_OTEL_DISABLED = "fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is recorded"
 _MSG_MIGRATE_IGNORED = ("fabric.wire: spool plaintext migration is ignored in the production "
                    "profile; plaintext spool records are quarantined")  # fmt: skip
@@ -217,6 +233,9 @@ class WireStats:
     disk_full_drops: int = 0
     markers_held: int = 0
     ledger_recovered: int = 0
+    # Model-looking requests (POST to an OpenAI- or Anthropic-style API path) that matched
+    # no configured endpoint and so were not recorded; status() names their hosts.
+    unmatched_model_calls: int = 0
 
 
 class WireHandle:
@@ -267,6 +286,11 @@ class WireHandle:
             status["spool_plaintext_records"] = plaintext
             status["spool_encrypted"] = bool(status["spool_encrypted"]) and plaintext == 0
         status.update(_p1_status(self))
+        with contextlib.suppress(Exception):
+            if unmatched := self._tee.unmatched.status():
+                # The hosts a model-looking request went to that no endpoint matched, each
+                # with the FABRIC_WIRE_ENDPOINTS value that records it (audit F2).
+                status["unmatched_model_hosts"] = unmatched
         return status
 
     @property
@@ -773,9 +797,14 @@ def install_from_env(
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():
             # D3: a Fabric-protected global provider never carries wire spans.
             if not otlp_endpoint_configured():
-                _LOG.warning(_MSG_NOT_INSTALLED, "ProtectedGlobalTracerProvider")
+                _LOG.warning(not_installed_message(
+                    "ProtectedGlobalTracerProvider", _REASON_PROTECTED_GLOBAL,
+                    fix(_REASON_PROTECTED_GLOBAL)))  # fmt: skip
                 return None
             tracer_mode = "private"
+        # Spans with nowhere to go (audit F2): warned only once capture is installed.
+        dropped = config.spool_dir is None and tracer_mode == "private"
+        dropped = dropped and not otlp_endpoint_configured()
         if config.spool_dir is None and (tracer_mode == "private" or otlp_endpoint_configured()):
             private = build_private_provider(service_name=capture_service_name(
                 id_key=config.id_key, clear=config.labels == "clear"))  # fmt: skip
@@ -787,9 +816,13 @@ def install_from_env(
 
         intake_environment(handle, env)  # same-host FABRIC_RUN_ID / FABRIC_RUN_RESUME_TOKEN
         _hooks_from_env(env)
+        if dropped:
+            _LOG.warning(_MSG_NO_DESTINATION)
         return handle
     except Exception as exc:
-        _LOG.warning(_MSG_NOT_INSTALLED, type(exc).__name__)
+        # The reason and the fix, scrubbed (_diagnose.py): never a value from the environment.
+        why, hint = describe(exc)
+        _LOG.warning(not_installed_message(type(exc).__name__, why, hint))
         return None
 
 

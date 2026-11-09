@@ -32,6 +32,13 @@ sides. Host events keep both clocks' uncertainties (``_host.py``).
 - A3 several windows: one ``ambiguous`` link per candidate, each listing them all;
 - A4 no window: no link; E is listed in ``attribution.unattributed_effects``.
 
+**S0 startup effects** (revision 11, :func:`startup_effects`): an effect with no reported
+parent that the agent process ran before its first model call of the run (a lower
+sequence than every exchange of the run on its epoch), with no unverified position below
+it, is decided before A1-A4: it is listed in ``attribution.startup_effects``, never
+attributed to a call and never a reason of the ``effects`` chain. A client library that
+probes the platform at import does this in every run.
+
 No rule ever picks the most likely of several candidates (§4.1).
 
 **Host events** (§4.3, rules H1-H4) are joined by ``_host.py`` (WP6-05) through the
@@ -91,9 +98,12 @@ __all__ = [
     "candidates",
     "output_matches",
     "sha256_text",
+    "startup_effects",
     "tool_calls",
 ]
 
+#: Spec 056 revision 11, rule S0: an effect the process ran before its first model call.
+STARTUP: Final = "S0"
 #: Spec 056 §4.2 A1: the shortest output that can match a result by substring.
 MIN_MATCH_BYTES: Final = 16
 #: The effect capture points whose records are effects (spec 056 §2 "Effect"; M2 adds the
@@ -337,7 +347,7 @@ def _caused_by(
 class Decision:
     """Which rule decided one effect, its links and whether A1 was evaluated for it."""
 
-    rule: str  # A0, A1, A1-ambiguous, A2, A3, A4
+    rule: str  # A0, A1, A1-ambiguous, A2, A3, A4, or S0 (startup, revision 11)
     links: list[dict[str, Any]]
     evaluated: bool
 
@@ -345,11 +355,37 @@ class Decision:
     def basis(self) -> str:
         if self.rule == "A0":
             return "reported"
-        return "none" if self.rule == "A4" else str(self.links[0]["method"])
+        return "none" if self.rule in ("A4", STARTUP) else str(self.links[0]["method"])
 
     @property
     def state(self) -> str:
-        return "unresolved" if self.rule == "A4" else str(self.links[0]["state"])
+        return "unresolved" if self.rule in ("A4", STARTUP) else str(self.links[0]["state"])
+
+
+def startup_effects(inp: Mapping[str, Any], effects: Iterable[Mapping[str, Any]]) -> set[str]:
+    """Spec 056 revision 11: the attempt uids of the effects the agent process ran before
+    its first model call of the run. An effect is one when it has no reported parent (A0
+    or an explicit tool-call scope), the run has an exchange on its epoch, its sequence is
+    lower than every such exchange's, and no unverified position (``effect_sequence_gaps``)
+    lies below it: a lost position could have been a model call. A run with no exchange on
+    the effect's epoch (a tool-worker process, rev 6) has none: there is no first call."""
+    first: dict[tuple[str, int], int] = {}
+    for exchange in inp.get("exchanges", ()):
+        key = _epoch(inp, exchange)
+        first[key] = min(first.get(key, int(exchange["sequence"])), int(exchange["sequence"]))
+    lowest_gap = min((int(gap[0]) for gap in inp.get("effect_sequence_gaps", ())), default=None)
+    found: set[str] = set()
+    for effect in effects:
+        if effect.get("reported_parent_attempt") or effect.get("reported_parent_call"):
+            continue
+        sequence = int(effect["sequence"])
+        bound = first.get(_epoch(inp, effect))
+        if bound is None or sequence >= bound:
+            continue
+        if lowest_gap is not None and lowest_gap < sequence:
+            continue
+        found.add(str(effect["attempt_uid"]))
+    return found
 
 
 def attribute_effect(
@@ -452,10 +488,18 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
     decisions: dict[str, Decision] = {}
     attributed: set[str] = set()
     unattributed: list[Mapping[str, Any]] = []
+    startup: list[Mapping[str, Any]] = []
+    before_first_call = startup_effects(inp, effects)
     evaluated = ambiguous = False
     for effect in effects:
-        decision = attribute_effect(inp, effect, calls)
         uid = effect["attempt_uid"]
+        if uid in before_first_call:
+            # Revision 11: counted and listed, never attributed, never a chain reason.
+            decisions[uid] = Decision(STARTUP, [], evaluated=False)
+            trace["effects"][uid] = STARTUP
+            startup.append(effect)
+            continue
+        decision = attribute_effect(inp, effect, calls)
         decisions[uid] = decision
         trace["effects"][uid] = decision.rule
         links[uid] += decision.links
@@ -575,6 +619,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         unexplained=unexplained,
         unexplained_count=unexplained_count,
         lineage_truncated=truncated,
+        startup=[{"attempt_uid": e["attempt_uid"], "event_id": e["event_id"]} for e in startup],
     )
     # M2 summary objects (§4.5): present when an event carries a sensor scope or sandbox
     # peers are declared, so M1 reports are unchanged.
@@ -1601,6 +1646,12 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         if result.decisions.get(effect["attempt_uid"]) is not None
         and result.decisions[effect["attempt_uid"]].rule == "A4"
     ]
+    startup = [
+        {k: v for k, v in effect.items() if k in ("attempt_uid", "event_id", "sequence", "label")}
+        for effect in inp["effects"]
+        if (decision := result.decisions.get(effect["attempt_uid"])) is not None
+        and decision.rule == STARTUP
+    ]
     without = [
         {"call": labels[call_id], "name": names.get(call_id), "reason": reason}
         for call_id, reason in result.trace["tool_calls"].items() if reason != "attributed"
@@ -1618,6 +1669,7 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         **extra,
         "rows": rows,
         "unattributed_effects": unattributed,
+        **({"startup_effects": startup} if startup else {}),
         "tool_calls_without_effect": without,
         "unexplained_host_events": result.attribution["unexplained_host_events"],
         **{key: result.attribution[key] for key in _M2_SUMMARY if key in result.attribution},

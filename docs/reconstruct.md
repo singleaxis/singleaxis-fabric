@@ -30,7 +30,7 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 
 | Option | Meaning |
 |---|---|
-| `--spans PATH` (repeatable, required) | Span files: the example sink's JSONL, OTLP/JSON (one request per file or per line), or raw OTLP protobuf `*.otlp` files as `make export-spans` copies them. A directory stands for its `*.otlp` files. |
+| `--spans PATH` (repeatable, required) | Span files: the example sink's JSONL, OTLP/JSON (one request per file or per line), or raw OTLP protobuf `*.otlp` files as `make export-spans` copies them. A directory stands for its `*.otlp`, `*.json` and `*.jsonl` files (an OpenTelemetry Collector file exporter writes `.jsonl`), not recursively. |
 | `--store-root DIR` | A local content store (`file://` mode, or the Node's file backend). |
 | `--content-key-file PATH` | The Node file backend's content key, to open its sealed objects under `--store-root`. Never logged. |
 | `--store-uri s3://BUCKET/PREFIX` | An S3 or S3-compatible store. Needs `pip install "singleaxis-fabric[s3]"` (boto3). Credentials come from the default AWS chain. With `--s3-endpoint-url`, `--s3-region`, `--s3-path-style`. |
@@ -41,7 +41,8 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 | `--trusted-source` | The span files are the Node's own export or destination, read from a location you trust. Only then do the Node's `fabric.source.authenticated` stamps count. |
 | `--profile local\|production` | Default: `production` when any span carries the Node's stamp, else `local`. Production requires every record to be authenticated. |
 | `--model-allowlist TEXT` | Model names reported as is (default `$FABRIC_WIRE_MODEL_ALLOWLIST`); others appear as `m-` digests. |
-| `--out FILE` | Write the report atomically with mode `0600` instead of stdout. |
+| `--out FILE` | Write the full JSON report atomically with mode `0600`; the one-line summary per run goes to stderr. |
+| `--json` | Print the full JSON report on stdout. Without `--json` or `--out`, the reader prints one line per run: `RUN: VERDICT (N exchanges, M gaps: GAP_TYPE, ...)`. Exit codes are the same either way. |
 | `--projection FILE` | Since v0.10.0 (see [step projection](#step-projection)). Also write the `fabric.step-projection/v1` document here, atomically with mode `0600`. |
 | `--coverage-profile ID` | Since v0.10.0. The coverage profile the projection is judged against (default `fabric.profile.model-calls/v1`). |
 | `--evaluated-at RFC3339` | Since v0.10.0. The time run states and open-run deadlines are computed at (default: now). |
@@ -198,3 +199,14 @@ coverage report of spec 049 (per-layer verdicts, step projection) is not in
 v0.8.0 or v0.9.x; since v0.10.0 the verifier also reads records-input
 records and writes the step projection for model calls
 ([the P1 run record](run-record.md)).
+
+When the inputs hold no run it can reconstruct, the reader prints
+`no runs reconstructed` and then why, from what the inputs hold:
+explicit-API spans with no capture record (as the TypeScript SDK sends:
+they lack the capture sequence `fabric.source_id`, `fabric.source.epoch`,
+`fabric.source.sequence` and the `fabric.capture_heartbeat` markers), spans
+with no Fabric record at all (capture was not installed: run
+`python -m fabric.wire status` with the agent's environment), capture
+records with no model exchange (no call matched an endpoint), or a `--run`
+that matches nothing. It names only Fabric span names, never a value from
+the input. The exit code stays `1`.

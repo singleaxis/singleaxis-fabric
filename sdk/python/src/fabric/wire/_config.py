@@ -226,7 +226,12 @@ def _frozen(value: Any) -> frozenset[Any]:
 
 def parse_endpoints(text: str) -> tuple[EndpointMatcher, ...]:
     """Parse ``FABRIC_WIRE_ENDPOINTS`` (a JSON array of matcher objects)."""
-    raw = json.loads(text)  # JSONDecodeError is a ValueError
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as exc:  # its own message can quote the text: position only
+        raise ValueError(
+            f"FABRIC_WIRE_ENDPOINTS is not valid JSON (line {exc.lineno} column {exc.colno})"
+        ) from None
     if not isinstance(raw, list):
         raise ValueError("FABRIC_WIRE_ENDPOINTS must be a JSON array")
     matchers: list[EndpointMatcher] = []

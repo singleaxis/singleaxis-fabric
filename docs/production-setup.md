@@ -648,7 +648,8 @@ are in [wire capture deployment](wire-capture-deployment.md#draining-a-spool-wit
 ## 6. Read a run
 
 Copy the destination's span export (the OTLP trace export requests it
-received, `*.otlp` protobuf or OTLP/JSON) into a directory `export/`. The
+received, `*.otlp` protobuf or OTLP/JSON `*.json`/`*.jsonl`, as a collector
+file exporter writes them) into a directory `export/`. The
 reader takes the content of each run from the store with its own
 credentials, from the AWS default credential chain (environment variables,
 `AWS_PROFILE`, a shared credentials file, an instance role). Give it a

@@ -106,7 +106,7 @@
     {"path": "fixtures/action-record/invalid/a1-output-match-tentative.json", "sha256": "f332ef84d45853d59f6a7984e6fd940b862a577194d3c59e217df4417ec84b01", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
     {"path": "fixtures/action-record/invalid/a2-single-window-claims-certain.json", "sha256": "c124887270b579e2ee781446ebdf46a0ea9c804b3c1ad5a80a632a8036d448e3", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
     {"path": "fixtures/action-record/invalid/a3-ambiguous-lists-one-candidate.json", "sha256": "5428d1b627c13c42ab0ddb5bcbf33d9a883dca938fc9dc3ec92bd97c4424191e", "expectation": "invalid", "expected_error": "coverage.action.link"},
-    {"path": "fixtures/action-record/invalid/a4-unattributed-effect-not-listed.json", "sha256": "3d7e98cfe3c0b271a0f61f81cac951062d262d0016e8fd44049534397213ccc7", "expectation": "invalid", "expected_error": "coverage.action.chains"},
+    {"path": "fixtures/action-record/invalid/a4-unattributed-effect-not-listed.json", "sha256": "71a80704cc68157536d09c7afbfa42a28d7782d71224990f61a5065560c726d3", "expectation": "invalid", "expected_error": "coverage.action.chains"},
     {"path": "fixtures/action-record/invalid/h1-certain-without-start-time.json", "sha256": "af5d05545ac6061b1b6897082fa630cf76d1ad8f31f589aefafcc7a30c670707", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
     {"path": "fixtures/action-record/invalid/h2-pid-reuse-picks-one-candidate.json", "sha256": "38060def219650845c6d9468279bb4b95a330119d2436e5c5c6560ab50c8e06d", "expectation": "invalid", "expected_error": "coverage.action.expected"},
     {"path": "fixtures/action-record/invalid/h3-lineage-exceeds-anchor-confidence.json", "sha256": "3ac816c9e002f7383b8dc140ab33b1817f27aa6a1c7a9358a3e49635c8bcaec3", "expectation": "invalid", "expected_error": "coverage.action.confidence"},
@@ -116,7 +116,7 @@
     {"path": "fixtures/action-record/rules/a1-output-match.json", "sha256": "58b6355582152276678df60a5c7633c76c39f557c951271fbbfe02778a742775", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/a2-single-window.json", "sha256": "0dff988f213de6ebe8b390365b89bfb23c3eb0b954231cd4c2ef9daacd217c7d", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/a3-several-windows.json", "sha256": "2a7020ad614261e6cf31c0f19c8dda4c1951a5a3373ba511d6f92f6bcde122e6", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/a4-no-window.json", "sha256": "866ab5db5d52b1a2b413d6693286f4ffc733241c127f7edb0a588e32e5167c2c", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/a4-no-window.json", "sha256": "91b7d367389cbc6f6f806c80ee9e7a581fda02f36d316d1d28921231669df8dc", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-negative-a-no-host-source.json", "sha256": "e57d32d735887b3bac69cc05031f5d6661fd7ad260f3a2f4e76caa3dafd2f24b", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-negative-b-effect-dropped.json", "sha256": "1e52e5b280978e92f6d66df50b28deff8fb2e0174ebaf0b29cea19440e140f70", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/ar1-negative-c-hook-disabled.json", "sha256": "beb6661b22a8eae8bb32468e93f76807c2610e7a7756a52be206c46a9f4d459c", "expectation": "valid", "expected_error": null},
@@ -237,6 +237,9 @@
     {"path": "fixtures/vectors/schema-cases-grant-snapshot-v1.json", "sha256": "068b13c04a1aa916f3139bdb87bec33e73440c70c48df4c48a63bc42503d6493", "expectation": "vectors", "expected_error": null},
     {"path": "registry/provider-safety-map-v1.json", "sha256": "93821f905fa1c2206929ed605fcf8fdaca51c285f8458d9331ccdc8853706782", "expectation": "registry", "expected_error": null},
     {"path": "schema/control-observation-v2.schema.json", "sha256": "d1c0c1fb5c87fe02e48e7fc986b2af0524100e342bb9f3851857a0bdfcbc0a22", "expectation": "schema", "expected_error": null},
-    {"path": "schema/grant-snapshot-v1.schema.json", "sha256": "60fe3b5830cc43bb2f08636872c85a0d3286caa0c934ca56c9784a7e32c8755f", "expectation": "schema", "expected_error": null}
+    {"path": "schema/grant-snapshot-v1.schema.json", "sha256": "60fe3b5830cc43bb2f08636872c85a0d3286caa0c934ca56c9784a7e32c8755f", "expectation": "schema", "expected_error": null},
+    {"path": "fixtures/action-record/invalid/s0-startup-effect-also-unattributed.json", "sha256": "662a3fc91ac51d5da5f369c63d49962dc12177c1747f4bfbccab0beecdbcace4", "expectation": "invalid", "expected_error": "coverage.action.startup"},
+    {"path": "fixtures/action-record/rules/edge-startup-after-gap.json", "sha256": "aaa2ebe49e122dfba6b7e61738ea9bca9951dd700f8cbaa57d46864884b4d629", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/action-record/rules/edge-startup-effect.json", "sha256": "17a25e9bd36494888b81c1c39a60e7ef9f183f3c228441a515610f5aab497b31", "expectation": "valid", "expected_error": null}
   ]
 }

@@ -1005,6 +1005,7 @@ def _init_namespace(inp: dict[str, Any]) -> None:
 
 
 LS_OUTPUT = "a.txt\nb.txt\nc.txt\n"
+UNAME_NPROC_OUTPUT = "6.12.76-linuxkit\n8\n"
 SHA_OUTPUT = (
     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08  /data/a.txt\n"
 )
@@ -1077,18 +1078,49 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         )
     )
 
-    # A4: no open window.
+    # A4: no open window. The effect follows a model call that issued no tool call, so it
+    # is not a startup effect (S0, revision 11) either.
     s = Scenario("a4-no-window")
+    s.exchange(0, 900)
     s.effect(
-        "exec uname -a (before any tool call)",
-        100,
+        "exec uname -a (no tool call open)",
+        1000,
         stdout="Linux build-host-7 6.8.0 x86_64 GNU/Linux\n",
     )
+    put(
+        s.fixture(
+            ["A4"],
+            "An effect after a model call that issued no tool call has no candidate: no link, listed in unattributed_effects; effects is partial(unattributed_effect).",
+        )
+    )
+
+    # S0 (revision 11): an effect the process ran before its first model call (a client
+    # library's platform probe at import) is a startup effect: listed, never attributed,
+    # never partial. The tool's own effect is still attributed by A1.
+    s = Scenario("edge-startup-effect")
+    s.effect("exec uname -p (client library probe at import)", 100, stdout="x86_64\n")
+    s.exchange(200, 900, calls=[("call_S1", "run_shell")])
+    s.effect("exec uname -r; nproc", 1000, stdout=UNAME_NPROC_OUTPUT)
+    s.exchange(1500, 2400, results=[("call_S1", _result(UNAME_NPROC_OUTPUT))])
+    put(
+        s.fixture(
+            ["A1", "S0"],
+            "Spec 056 revision 11: the process ran uname -p before its first model call (an SDK's platform probe at import). It is a startup effect: listed in startup_effects, never attributed to a call, not counted in links and not a reason; effects is complete. The tool's own effect is attributed by A1.",
+        )
+    )
+
+    # S0 needs every position below the effect verified: a lost position could have
+    # been a model call, so the same effect stays A4 behind an unverified position.
+    s = Scenario("edge-startup-after-gap")
+    s.input["exchange_verdict"] = "partial"
+    s.input["exchange_reasons"] = ["sequence_gap"]
+    s.input["effect_sequence_gaps"] = [[0, 0]]
+    s.effect("exec uname -p (after a lost position)", 100, stdout="x86_64\n")
     s.exchange(200, 900)
     put(
         s.fixture(
             ["A4"],
-            "An effect before any tool call has no candidate: no link, listed in unattributed_effects; effects is partial(unattributed_effect).",
+            "Spec 056 revision 11: position 0 is unverified, so it may have been a model call; the effect before the first captured exchange is not a startup effect and stays A4 (unattributed); effects is partial(sequence_gap, unattributed_effect).",
         )
     )
 
@@ -1728,6 +1760,20 @@ def invalid_rule_fixtures(
         "a4-unattributed-effect-not-listed",
         "coverage.action.chains",
         a4,
+    )
+
+    def s0(doc: dict[str, Any]) -> None:
+        startup = doc["expected"]["attribution"]["startup_effects"]
+        doc["expected"]["attribution"]["unattributed_effects"] = {
+            "count": startup["count"],
+            "effects": list(startup["effects"]),
+        }
+
+    variant(
+        "edge-startup-effect",
+        "s0-startup-effect-also-unattributed",
+        "coverage.action.startup",
+        s0,
     )
 
     def h1(doc: dict[str, Any]) -> None:
@@ -2417,6 +2463,38 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
             "$.expected.attribution.unexplained_host_events",
             "a sandbox-scope event is counted in sandbox_events_unlinked, never listed as unexplained (§4.3)",
         )
+    startup = attribution.get("startup_effects")
+    if startup is not None:
+        uids = {entry["attempt_uid"] for entry in startup["effects"]}
+        if (
+            startup["count"] != len(startup["effects"])
+            and len(startup["effects"]) < rules.LIST_MAX
+        ):
+            _fail(
+                "coverage.action.chains",
+                "$.expected.attribution.startup_effects",
+                "count and list disagree",
+            )
+        if uids & {
+            e["attempt_uid"] for e in attribution["unattributed_effects"]["effects"]
+        }:
+            _fail(
+                "coverage.action.startup",
+                "$.expected.attribution.startup_effects",
+                "a startup effect (S0) is never also unattributed (spec 056 rev 11)",
+            )
+        caused = [
+            entry["attempt_id"]
+            for entry in expected["projection_links"]
+            if entry["attempt_id"] in uids
+            and any(link["type"] == "caused_by" for link in entry["links"])
+        ]
+        if caused:
+            _fail(
+                "coverage.action.startup",
+                "$.expected.projection_links",
+                "a startup effect (S0) is never attributed to a call (spec 056 rev 11)",
+            )
     for name in rules.CHAIN_NAMES:
         chain = chains[name]
         has = bool(chain.get("reasons"))
@@ -2465,7 +2543,7 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
         rule.split("-")[0]
         for part in ("effects", "anchors", "host_events")
         for rule in recomputed["trace"][part].values()
-        if re.fullmatch(r"[AH][0-5](-.*)?", rule)
+        if re.fullmatch(r"[AHS][0-5](-.*)?", rule)
     }
     if set(doc["rules"]) != named:
         _fail(

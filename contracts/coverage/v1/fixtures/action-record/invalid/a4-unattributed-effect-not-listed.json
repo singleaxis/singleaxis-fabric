@@ -4,7 +4,7 @@
   "rules": [
     "A4"
   ],
-  "description": "An effect before any tool call has no candidate: no link, listed in unattributed_effects; effects is partial(unattributed_effect).",
+  "description": "An effect after a model call that issued no tool call has no candidate: no link, listed in unattributed_effects; effects is partial(unattributed_effect).",
   "key": "fabric-test-id-key-not-a-secret",
   "input": {
     "run": {
@@ -36,8 +36,8 @@
     "exchanges": [
       {
         "exchange_id": "85d8ad53-d1da-4cb2-ae72-fd0ab017aa91",
-        "sequence": 3,
-        "start_ns": 1791331200200000000,
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
         "end_ns": 1791331200900000000,
         "endpoint_id": "openai.default",
         "tool_calls": [],
@@ -48,9 +48,9 @@
       {
         "attempt_uid": "fc92fcb2-7371-4149-ac62-ebed70060598",
         "event_id": "1f00c71f-4f6d-4f5a-a769-efb2b1113475",
-        "label": "exec uname -a (before any tool call)",
-        "sequence": 1,
-        "start_ns": 1791331200100000000,
+        "label": "exec uname -a (no tool call open)",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
         "stdout": "Linux build-host-7 6.8.0 x86_64 GNU/Linux\n"
       }
     ],

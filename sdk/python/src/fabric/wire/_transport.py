@@ -30,6 +30,7 @@ from ._model import CaptureJob
 from ._pipeline import Budget, CapturePipeline, protector_for
 from ._routes import NONE, Decision, decide
 from ._stream import DELEGATION_MARK, FLAVORS, Exchange, drain_reaper, private_copy
+from ._unmatched import UnmatchedModelHosts
 
 if TYPE_CHECKING:  # statically typed as httpx transports, as before; see _new_wrapper
     from httpx import AsyncBaseTransport as _AsyncBase
@@ -127,6 +128,8 @@ class WireTee:
         self.index = EndpointIndex(config.all_endpoints)
         self.closed, self.matched, self.internal_errors = False, 0, 0
         self.deferred_to_explicit = 0  # local counter only; never telemetry
+        # Model-looking requests no endpoint matched (a diagnostic, never telemetry).
+        self.unmatched = UnmatchedModelHosts()
         self.stranded = 0  # exchanges claimed open at shutdown (``shutdown`` losses)
         self._active: set[Exchange] = set()
         self.forks = ForkLedger()  # what forked children allocate survives their death
@@ -159,6 +162,15 @@ class WireTee:
             self.internal_errors += 1
             return NONE
 
+    def _note_unmatched(self, request: Any, decision: Decision | None) -> None:
+        """Count a request no endpoint matched (``_unmatched.py``): only one routed nowhere
+        (``none``), never one another capture point owns. Never raises."""
+        if decision is not None and decision.route != "none":
+            return
+        with contextlib.suppress(Exception):
+            url = request.url
+            self.unmatched.note(request.method, url.scheme, url.host, url.port, url.path)
+
     def begin(
         self, request: Any, *, factory: type[Exchange] | None = None,
         decision: Decision | None = None,
@@ -185,6 +197,7 @@ class WireTee:
             else:
                 found = decision.found if decision.route == "model" else None
             if found is None:
+                self._note_unmatched(request, decision)
                 return False, None
             if (deferral := current_explicit_model_scope()) is None:
                 # 050 §3.9, R2: the record's id, minted once (before allocating, so nothing
@@ -383,6 +396,7 @@ class WireTee:
 
         return {**pipeline, **sender, "matched": self.matched, "internal_errors": internal,
                 "uninstrumented_calls": _detect.count(),
+                "unmatched_model_calls": self.unmatched.count,
                 "inflight_bytes": self.budget.used,
                 "deferred_to_explicit": self.deferred_to_explicit}  # fmt: skip
 
@@ -394,6 +408,7 @@ def _after_fork_in_child() -> None:
         for exchange in list(tee._active):
             exchange.done = True
         tee._active, tee.budget = set(), Budget(tee.config.max_inflight_bytes)
+        tee.unmatched.reset()
 
 
 if hasattr(os, "register_at_fork"):

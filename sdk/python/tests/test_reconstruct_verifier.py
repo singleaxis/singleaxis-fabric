@@ -2039,7 +2039,7 @@ def test_cli_exit_zero_for_complete_run(capture: Capture, tmp_path: Path) -> Non
 
 def test_cli_exit_one_for_unverified(capture: Capture, capsys: pytest.CaptureFixture[str]) -> None:
     react_run(capture)
-    exit_code = main(["--spans", str(capture.write())])
+    exit_code = main(["--spans", str(capture.write()), "--json"])
     assert exit_code == 1  # no store: unverified
     validate(json.loads(capsys.readouterr().out))
 

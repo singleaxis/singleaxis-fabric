@@ -376,7 +376,7 @@ def test_an_empty_span_directory_is_a_usage_error(
     rc = main(["--spans", str(empty)])
     assert rc == 2
     err = capsys.readouterr().err
-    assert "no *.otlp files" in err
+    assert "no *.otlp, *.json or *.jsonl files" in err
     assert "secret-dir" not in err
 
 

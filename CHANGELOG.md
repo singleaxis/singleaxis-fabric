@@ -151,8 +151,65 @@ it never makes, applies, waits for or returns one.
   activity v1 `fabric.policy.evaluation`, `fabric.tool.authorization`,
   `fabric.escalation`) follow the guardrail path and are replaced in v2 by the
   control decision record (`docs/api-stability.md`).
+- **`python -m fabric.reconstruct` prints one line per run by default**,
+  for example `r-…: partial (2 exchanges, 3 gaps: seal_mismatch,
+  sequence_gap, unmatched_tool_call)`, as the README shows. It used to
+  print the full JSON report (about 320 lines). `--json` prints the report
+  on stdout, and `--out FILE` still writes it to a file. Exit codes are
+  unchanged. A script that read the JSON from stdout adds `--json`.
+- **Commands that run before the agent's first model call no longer make
+  the run `partial`** (spec 056 revision 11). OpenAI-style client libraries
+  run `uname -p` to describe the platform before their first request, so
+  with the exec hook every run read `partial(unattributed_effect)`. Such a
+  command is now a **startup effect**: listed and counted in
+  `attribution.startup_effects` and in the actions view, never attributed
+  to a model call, and not a reason for `partial`. A command after the first
+  model call with no open tool call is still unattributed, and so is one
+  behind a lost sequence position, which might have been a model call.
 
 ### Fixed
+
+- **`python -m fabric.wire status` gives the reason and the fix when capture
+  is not installed.** It used to print only the error's class name
+  (`ValueError`). Now it says, for example, that plaintext `http://` to a
+  host that is not loopback (such as a Compose service name) is refused,
+  and to use `https://` with a CA or a loopback address. The same text
+  appears with `FABRIC_WIRE_DIAGNOSTICS=stderr`. URLs keep only their
+  scheme, host and port, key-like values are hidden, and a message from
+  another library is reported by its class name only, so no secret is
+  printed. An invalid `FABRIC_WIRE_ENDPOINTS` is reported by line and column,
+  never by its text.
+- **`status` warns when spans have nowhere to go.** With no OTLP endpoint,
+  capture was on but every span was dropped, and `status` said
+  `warnings: []`. It now reports `span_destination: none` and the warning
+  `spans have no destination`, with the variable to set. The documented
+  "record your own application" steps in the README now include a
+  destination and, for a model host Fabric does not know,
+  `FABRIC_WIRE_ENDPOINTS`.
+- **A model call to a host no endpoint matches is no longer silent.** A
+  `POST` to an OpenAI- or Anthropic-style API path on an unknown host is
+  still sent unchanged and not recorded, but it is now counted
+  (`stats().unmatched_model_calls`), listed in `handle.status()` as
+  `unmatched_model_hosts` with the `FABRIC_WIRE_ENDPOINTS` value that would
+  record it, and logged once per host on Fabric's diagnostics channel. It
+  never prints into the agent's own output: the `fabric.wire` logger now has
+  a `NullHandler`, so with Fabric installed in code and no logging configured,
+  its diagnostics no longer reach stderr through Python's last-resort handler.
+  An app that configures logging still receives them.
+- **`status` says when the policy withholds content.** Content capture can
+  be enabled while the capture policy masks roles (`redact`, for example on
+  `terminal.argv`) that the autoload cannot transform, so their content is
+  withheld and commands read `exec pid N`. `status` now lists those roles in
+  `content_withheld_roles` with a warning and the fix.
+- **The reader explains `no runs reconstructed`.** It now says what the
+  inputs hold and what is missing: explicit-API spans with no capture
+  record (as the TypeScript SDK sends), spans from a process where capture
+  was not installed, capture records with no model call, or a `--run` that
+  matches nothing.
+- **The reader accepts a directory of OTLP/JSON exports.** A `--spans`
+  directory now stands for its `*.otlp`, `*.json` and `*.jsonl` files (an
+  OpenTelemetry Collector file exporter writes `.jsonl`), and the error for
+  an empty directory names the forms it accepts.
 
 - **A record with a fractional number no longer breaks its segment's seal.**
   A `control_check` record always carries its measured latency as a
