@@ -37,7 +37,7 @@
 
 x-s3-local-tls-image: &s3-local-tls-image
   # The same pinned image as docker-compose.s3-local.yml.
-  image: chrislusf/seaweedfs:4.50@sha256:c2658820e763294a9e9de7b36c81e59b879e3459148351aee4e31a126ca64860
+  image: chrislusf/seaweedfs:4.51@sha256:f7a49e3f3972ebed5be2ed4befa4a0c68eb7bdddba6e692d42729ceb545134b8
 
 x-s3-local-tls-bucket: &s3-local-tls-bucket
   BUCKET: ${FABRIC_CONTENT_S3_BUCKET:?set FABRIC_CONTENT_S3_BUCKET in .env}
