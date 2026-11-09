@@ -130,8 +130,22 @@ render --values "${umbrella}/profiles/shadow-production.yaml" \
 [[ "$(render "${groups[@]}" --set otel-collector.networkPolicy.hostSensorEgress.enabled=false | grep -cE -- '-(host-emitter|auditd-sensor)-egress$' || true)" == 0 ]] \
   || fail "hostSensorEgress.enabled=false still renders sensor egress"
 
-reject "hostSensorEgress.ebpfPodSelector must name matchLabels" "${groups[@]}" \
-  --set 'otel-collector.networkPolicy.hostSensorEgress.ebpfPodSelector.matchLabels=null'
+# An empty sensor selector would give every pod in the namespace the
+# sensor's egress. Helm before 3.18 cannot null a subchart default from the
+# command line, so render a copy whose default selector is empty.
+cp -R "${umbrella}" "${tmp}/emptysel"
+python3 - "${tmp}/emptysel/charts/otel-collector/values.yaml" <<'EOF'
+import sys
+path = sys.argv[1]
+text = open(path, encoding="utf-8").read()
+old = "    ebpfPodSelector:\n      matchLabels:\n        app.kubernetes.io/name: fabric-host-emitter\n"
+assert text.count(old) == 1
+open(path, "w", encoding="utf-8").write(text.replace(old, "    ebpfPodSelector: {}\n"))
+EOF
+if result="$(helm template fabric "${tmp}/emptysel" -n fabric-system "${groups[@]}" 2>&1)"; then
+  fail "rendered successfully with an empty ebpfPodSelector"
+fi
+contains "${result}" "hostSensorEgress.ebpfPodSelector must name matchLabels"
 reject "apiServer.to requires apiServer.ports" "${groups[@]}" \
   --set 'otel-collector.networkPolicy.hostSensorEgress.apiServer.to[0].ipBlock.cidr=172.18.0.3/32'
 reject "world CIDR" "${groups[@]}" \
