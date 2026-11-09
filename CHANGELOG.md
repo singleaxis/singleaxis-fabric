@@ -97,6 +97,20 @@ it never makes, applies, waits for or returns one.
 - **`ControlObservation` v2**: new optional fields (kind, phase, resolves,
   the deciding actor, and the spec 057 stage, engine, mode, reason code and
   derivation); v1 documents and v1 construction keep working.
+- **The reader shows the security context** (`python -m fabric.reconstruct`
+  and its `actions` view, spec 057 §6). Each control decision and hook
+  outcome is joined to the tool call it names: by the provider tool-call id,
+  by a reported step, by its request across runs, or, when the agent passed
+  neither, by position. One tool call still waiting for its result gives a
+  certain link; several give an `ambiguous` link that lists every candidate
+  instead of picking one. Grants, extension loads, control and hook rows
+  appear in the view under the calls they name. The report gains a fifth
+  chain, `controls`, and a `security_context` object with counts only
+  (grants by basis, controls by kind, decision and how the decision was
+  obtained, link methods, hooks, extensions) and the closed list of facts
+  F1–F14, such as "deny gates a tool call and no effect is attributed to it"
+  or "decision recorded with no matching call". A fact is co-occurrence, and
+  the reader never says whether a call was right.
 
 ### Changed
 
@@ -111,6 +125,15 @@ it never makes, applies, waits for or returns one.
   (`model.request.instructions`) are retained only when the capture policy
   names the role. A production policy already omits every role it does not
   name, so a deployment that relied on it names it in its policy.
+- **Reports: a fifth chain.** A run that has an effect channel, a host
+  sensor or any security record now carries `chains.controls` and
+  `security_context`. With no security record they are `not_observed` and
+  all zero, and the rest of the report is unchanged. A `partial` controls
+  chain (a decision naming a call that is not in the run, a request never
+  answered, an ambiguous link, a missing invariant) makes the run `partial`
+  and the reader's exit code `1`. A tool call that a deny gates and that has
+  no effect is counted as `effects_not_observed.control_denied` instead of
+  `none_in_window`.
 - **Deprecated:** the v1 policy, tool-authorization and escalation verdict
   shapes (connect `policy_verdict`, `authorization_verdict`, `escalation`;
   activity v1 `fabric.policy.evaluation`, `fabric.tool.authorization`,
@@ -119,6 +142,14 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **A record with a fractional number no longer breaks its segment's seal.**
+  A `control_check` record always carries its measured latency as a
+  fraction of a millisecond, and `record_control(latency_ms=...)` can too.
+  The record digest refused fractional numbers, so the agent never sealed
+  that segment and the reader reported the record as unverifiable. The
+  digest now encodes a finite fractional number as a tagged string, and the
+  agent and the reader agree on it (spec 057 revision 3.3, spec 049
+  revision 6.8).
 - TypeScript SDK tests: the local content-store tests now pass on macOS,
   where the default temp directory is a symlink. The SDK was already right:
   `LocalFilesystemContentStore` resolves its configured root to the real path
