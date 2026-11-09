@@ -121,7 +121,7 @@ def record_content(
 
 def _plain(value: Any) -> Any:
     """A record attribute value in the digest document: tuples as lists, and a finite float
-    as ``{"f64": repr(value)}`` (spec 057 revision 3.3; canonical JSON carries no floats)."""
+    as ``{"f64": repr(value)}`` (spec 057 revision 3.4; canonical JSON carries no floats)."""
     if isinstance(value, (list, tuple)):
         return [_plain(item) for item in value]
     if isinstance(

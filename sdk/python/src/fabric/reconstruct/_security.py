@@ -97,7 +97,7 @@ _EXT_VIA: Final = frozenset({"mcp_initialize", "mcp_tools_list", "process_launch
                              "reported"})  # fmt: skip
 _SIGNATURES: Final = frozenset({"verified", "invalid", "unsigned", "unverified", "unknown"})
 _TOOL_STAGES: Final = frozenset({"pre_tool", "post_tool"})
-#: The 056 ``effects_not_observed`` reasons F5 moves to ``control_denied`` (rev 3.3 note 6).
+#: The 056 ``effects_not_observed`` reasons F5 moves to ``control_denied`` (rev 3.4 note 6).
 _ABSENCE_REASONS: Final = frozenset({"none_in_window", "no_effect_channel"})
 _GATING_KINDS: Final = frozenset({"approval", "elicitation"})  # F7
 _TARGET_PHASES: Final = {"resolution": frozenset({"request"}),
@@ -463,7 +463,7 @@ def _link_control(  # noqa: PLR0912 - one branch per join rule and its outcome
                     if key in request:
                         item[key] = request[key]
         return
-    # Rule 3 applies to observations and requests only (rev 3.3 note 4): a resolution or
+    # Rule 3 applies to observations and requests only (rev 3.4 note 4): a resolution or
     # revocation gates what its request gates, never a call by position.
     if gated_kind in (None, "tool_call") and wire and item.get("phase") not in _TARGET_PHASES:
         pending = _pending_calls(item, calls)

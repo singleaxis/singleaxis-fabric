@@ -132,7 +132,7 @@ def test_digest_rules() -> None:
 
 
 def test_a_float_attribute_has_a_tagged_digest() -> None:
-    """Spec 057 revision 3.3: D41 and E03 are numbers, so a records-input record can carry
+    """Spec 057 revision 3.4: D41 and E03 are numbers, so a records-input record can carry
     a float (a ``control_check`` record always does). Canonical JSON carries no floats, so
     the digest document holds ``{"f64": repr(value)}``; agent and reference agree, a map
     value (never emitted) cannot pose as the tag, and a non-finite float still raises."""

@@ -260,7 +260,7 @@ def test_a_resolution_reusing_its_request_id_pairs_with_the_request_never_itself
 def test_a_wrapped_check_record_seals_and_verifies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Spec 057 revision 3.3: a ``control_check`` record carries a measured float latency
+    """Spec 057 revision 3.4: a ``control_check`` record carries a measured float latency
     (D41). Its segment seals in the agent and the reader recomputes the same seal: no
     ``seal_mismatch`` and no ``unsealed_segment``, and the controls chain is reported."""
 
@@ -311,7 +311,7 @@ def _protojson(value: Any) -> dict[str, Any]:
 def test_an_integral_float_written_by_a_go_exporter_still_verifies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Spec 057 revision 3.3 seals a float attribute as ``{"f64": repr}``. An OTLP/JSON
+    """Spec 057 revision 3.4 seals a float attribute as ``{"f64": repr}``. An OTLP/JSON
     export from the Node (Go protojson) writes the double 412.0 as ``412``; the reader must
     read it back as the float the agent sealed, not as an int (a seal mismatch)."""
 

@@ -137,7 +137,7 @@ def sha256_digest(data: bytes) -> str:
 
 def _plain(value: Any) -> Any:
     """Attribute values as JSON types: tuples are lists, ``str`` subclasses plain ``str``,
-    and a finite float the tagged object ``{"f64": repr(value)}`` (spec 057 revision 3.3:
+    and a finite float the tagged object ``{"f64": repr(value)}`` (spec 057 revision 3.4:
     canonical JSON carries no floats, while D41 and E03 are numbers). An OTLP attribute is
     never a map, so the tag cannot collide with an emitted value; a non-finite float is
     never emitted and still raises."""
