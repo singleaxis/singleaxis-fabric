@@ -1,5 +1,6 @@
 {{- $contentFileVolume := include "otel-collector.contentFileVolume" . -}}
 {{- $contentS3Creds := and .Values.content.enabled (eq .Values.content.backend "s3") .Values.content.s3.credentialsSecret.name -}}
+{{- $contentS3CA := and .Values.content.enabled (eq .Values.content.backend "s3") .Values.content.s3.caSecret.name -}}
 {{- $groups := include "otel-collector.groupMode" . -}}
 apiVersion: apps/v1
 kind: {{ ternary "StatefulSet" "Deployment" .Values.exporter.sendingQueue.persistence.enabled }}
@@ -142,7 +143,12 @@ spec:
             - name: content-store
               mountPath: {{ .Values.exporter.sendingQueue.persistence.directory }}
             {{- end }}
-          {{- if or .Values.exporter.auth.secret.name $contentS3Creds }}
+            {{- if $contentS3CA }}
+            - name: content-s3-ca
+              mountPath: /etc/fabric/content-s3-ca
+              readOnly: true
+            {{- end }}
+          {{- if or .Values.exporter.auth.secret.name $contentS3Creds $contentS3CA }}
           env:
             {{- if .Values.exporter.auth.secret.name }}
             - name: FABRIC_EXPORT_AUTH
@@ -165,6 +171,12 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.content.s3.credentialsSecret.name }}
                   key: {{ .Values.content.s3.credentialsSecret.secretAccessKeyKey }}
+            {{- end }}
+            {{- if $contentS3CA }}
+            # The content store's private CA (content.s3.caSecret). Only the
+            # S3 client reads AWS_CA_BUNDLE; the exporter keeps its own trust.
+            - name: AWS_CA_BUNDLE
+              value: /etc/fabric/content-s3-ca/ca.crt
             {{- end }}
           {{- end }}
       volumes:
@@ -247,6 +259,17 @@ spec:
         {{- if eq $contentFileVolume "emptyDir" }}
         - name: content-store
           emptyDir: {}
+        {{- end }}
+        {{- if $contentS3CA }}
+        - name: content-s3-ca
+          projected:
+            defaultMode: 0444
+            sources:
+              - secret:
+                  name: {{ .Values.content.s3.caSecret.name | quote }}
+                  items:
+                    - key: {{ .Values.content.s3.caSecret.key | quote }}
+                      path: ca.crt
         {{- end }}
         {{- if or .Values.exporter.tls.caSecret.name .Values.exporter.tls.clientCertificateSecret.name }}
         - name: exporter-tls

@@ -1,0 +1,73 @@
+{{- /*
+Egress for the customer-deployed host sensors (spec 056 OD-10: the chart
+installs no sensor). The shipped manifests run them in the release namespace
+(deploy/kubernetes/host-emitter-daemonset.yaml,
+deploy/kubernetes/auditd-sensor-collector.yaml), where the umbrella chart's
+deny-default policy also selects them: without these rules a sensor cannot
+reach its ingress group on this Node, nor (eBPF emitter with
+EMIT_AGENT_POD_SELECTOR) the API server. Rendered only when the policy is on
+and a host.ebpf or host.auditd group exists; each sensor may reach its
+groups' ports on these Collector pods, cluster DNS, and, for the emitter,
+the API server.
+*/ -}}
+{{- $np := .Values.networkPolicy -}}
+{{- $se := $np.hostSensorEgress -}}
+{{- if and $np.enabled $se.enabled (include "otel-collector.groupMode" .) -}}
+{{- $ports := dict "host.ebpf" list "host.auditd" list -}}
+{{- range $g := .Values.receiver.sourceBindings -}}
+{{- if hasKey $ports $g.kind -}}
+{{- $_ := set $ports $g.kind (concat (index $ports $g.kind) (include "otel-collector.groupPortNumbers" $g | fromYamlArray)) -}}
+{{- end -}}
+{{- end -}}
+{{- $sensors := list (dict "kind" "host.ebpf" "name" "host-emitter" "selector" $se.ebpfPodSelector "api" true) (dict "kind" "host.auditd" "name" "auditd-sensor" "selector" $se.auditdPodSelector "api" false) -}}
+{{- range $s := $sensors -}}
+{{- $sensorPorts := index $ports $s.kind -}}
+{{- if $sensorPorts }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "otel-collector.fullname" $ | trunc 40 | trimSuffix "-" }}-{{ $s.name }}-egress
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "otel-collector.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    {{- toYaml $s.selector | nindent 4 }}
+  policyTypes:
+    - Egress
+  egress:
+    # The sensor's ingress groups on this Node ({{ $s.kind }}).
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "otel-collector.selectorLabels" $ | nindent 14 }}
+      ports:
+        {{- range $port := $sensorPorts | uniq }}
+        - protocol: TCP
+          port: {{ $port }}
+        {{- end }}
+    # Cluster DNS: the group endpoint is the Node's Service name.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if and $s.api $se.apiServer.enabled }}
+    {{- $api := include "otel-collector.apiServerEgress" $ | fromYaml }}
+    {{- if $api.to }}
+    # The API server, for the pod selector's read-only pod watch
+    # ({{ $api.source }}).
+    - to:
+        {{- toYaml $api.to | nindent 8 }}
+      ports:
+        {{- toYaml $api.ports | nindent 8 }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

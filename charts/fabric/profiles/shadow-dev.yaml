@@ -4,8 +4,13 @@
 profile:
   name: shadow-dev
 
+# Helm stores the release in the release namespace before it creates any
+# object, so that namespace exists first: install with --create-namespace.
+# namespace.create=true renders a Namespace object for a pipeline that
+# applies rendered manifests itself (helm template, GitOps); `helm install`
+# cannot adopt a namespace that already exists.
 namespace:
-  create: true
+  create: false
   name: fabric-system
 
 networkPolicy:

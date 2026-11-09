@@ -342,6 +342,16 @@
                 "accessKeyIdKey": {"type": "string", "minLength": 1},
                 "secretAccessKeyKey": {"type": "string", "minLength": 1}
               }
+            },
+            "caSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "key"],
+              "description": "Secret holding the PEM CA bundle of a private-CA S3-compatible store; mounted and exported as AWS_CA_BUNDLE.",
+              "properties": {
+                "name": {"type": "string", "pattern": "^(?:|[a-z0-9]([-a-z0-9]*[a-z0-9])?)$", "maxLength": 253},
+                "key": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"}
+              }
             }
           }
         },
@@ -412,7 +422,7 @@
     "networkPolicy": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "contentEgress", "monitoringNamespaceSelector"],
+      "required": ["enabled", "requireExplicitIngress", "ingressFrom", "exporterEgress", "egressTo", "contentEgress", "monitoringNamespaceSelector", "hostSensorEgress"],
       "properties": {
         "enabled": {"type": "boolean"},
         "requireExplicitIngress": {"type": "boolean"},
@@ -440,6 +450,27 @@
         "monitoringNamespaceSelector": {
           "$ref": "#/definitions/kubernetesObject",
           "description": "Optional LabelSelector for the monitoring namespace allowed to reach the health port. Empty means no health ingress rule (default deny)."
+        },
+        "hostSensorEgress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "ebpfPodSelector", "auditdPodSelector", "apiServer"],
+          "description": "Egress for the customer-deployed host sensors in the release namespace (rendered only with host.ebpf or host.auditd ingress groups).",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "ebpfPodSelector": {"$ref": "#/definitions/kubernetesObject"},
+            "auditdPodSelector": {"$ref": "#/definitions/kubernetesObject"},
+            "apiServer": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "to", "ports"],
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "to": {"type": "array", "items": {"$ref": "#/definitions/kubernetesObject"}},
+                "ports": {"type": "array", "items": {"$ref": "#/definitions/networkPolicyPort"}}
+              }
+            }
+          }
         }
       }
     }
