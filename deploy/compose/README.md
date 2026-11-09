@@ -371,7 +371,15 @@ only host records (spec 053 §6.2.7).
 ```bash
 make preflight-prod-groups   # also run by up-prod-groups
 make up-prod-groups
+make verify-prod-groups      # or verify-prod: it detects the groups from the env file
 ```
+
+`verify-prod-groups` probes the agent group as `verify-prod` does (under
+`FABRIC_AGENT_SOURCE_ID`), and checks that each host group's listener
+refuses an unauthenticated export (gRPC 4417 with `grpcurl`; HTTP 4428 when
+the auditd group is on). `make verify-prod` switches to these checks when
+the env file names `FABRIC_AGENT_SOURCE_ID` and `FABRIC_EBPF_SOURCE_ID` and
+no `FABRIC_SOURCE_ID`.
 
 `docker-compose.host-ingress.yml` (an overlay on `docker-compose.production.yml`)
 runs `collector-config/collector-production-groups.yaml`:

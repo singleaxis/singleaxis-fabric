@@ -1,8 +1,18 @@
 #!/usr/bin/env sh
-# Post-deploy verification for the client-VM production overlay.
+# Post-deploy verification for the client-VM production overlay, with the
+# single source binding (make up-prod) or ingress groups (make up-prod-groups;
+# `verify-prod.sh --groups`, detected from the env file otherwise).
 # Checks HTTP health/auth acceptance and, when available, gRPC rejection
 # and queue metrics. Does not prove protection or destination delivery.
 set -eu
+
+groups=""
+for arg in "$@"; do
+  case "${arg}" in
+    --groups) groups=1 ;;
+    *) printf 'usage: verify-prod.sh [--groups]\n' >&2; exit 2 ;;
+  esac
+done
 
 fail=0
 note() { printf '  %s %s\n' "$1" "$2"; }
@@ -20,18 +30,60 @@ envget() {
   printf '%s' "${val}"
 }
 
-# The same files `make up-prod` merges: the content overlays only when the
-# opt-in content path is enabled (FABRIC_CONTENT_BACKEND).
-compose="${COMPOSE:-docker compose} -f docker-compose.yml -f docker-compose.production.yml"
-case "$(envget FABRIC_CONTENT_BACKEND)" in
-  s3) compose="${compose} -f docker-compose.content.yml -f docker-compose.content-s3.yml" ;;
-  file) compose="${compose} -f docker-compose.content.yml" ;;
-esac
+# Ingress groups: the env file names the agent group's and the emitter's
+# source ids (FABRIC_AGENT_SOURCE_ID, FABRIC_EBPF_SOURCE_ID) instead of the
+# single binding's FABRIC_SOURCE_ID.
+if [ -z "${groups}" ] && [ -z "$(envget FABRIC_SOURCE_ID)" ] \
+  && [ -n "$(envget FABRIC_AGENT_SOURCE_ID)" ] && [ -n "$(envget FABRIC_EBPF_SOURCE_ID)" ]; then
+  groups=1
+fi
 
-printf 'Fabric Node production verification\n'
+# The same project and files `make up-prod` / `make up-prod-groups` use: the
+# env file (its COMPOSE_PROJECT_NAME names the stack), the content overlays
+# only when the content path is enabled (FABRIC_CONTENT_BACKEND), and the
+# operator's FABRIC_COMPOSE_EXTRA files last. The Makefile passes its own list
+# in FABRIC_COMPOSE_FILES.
+compose="${COMPOSE:-docker compose}"
+[ -f "${ENV_FILE}" ] && compose="${compose} --env-file ${ENV_FILE}"
+backend="$(envget FABRIC_CONTENT_BACKEND)"
+if [ -n "${FABRIC_COMPOSE_FILES:-}" ]; then
+  files="${FABRIC_COMPOSE_FILES}"
+else
+  files="-f docker-compose.yml -f docker-compose.production.yml"
+  if [ -n "${groups}" ]; then
+    files="${files} -f docker-compose.host-ingress.yml"
+    auditd="$(envget FABRIC_AUDITD_TOKEN_FILE)"
+    [ -n "${auditd}" ] && files="${files} -f docker-compose.host-ingress-auditd.yml"
+    if [ "${backend}" = "s3" ]; then
+      files="${files} -f docker-compose.host-ingress-content.yml"
+      [ -n "${auditd}" ] && files="${files} -f docker-compose.host-ingress-auditd-content.yml"
+    fi
+  else
+    case "${backend}" in
+      s3) files="${files} -f docker-compose.content.yml -f docker-compose.content-s3.yml" ;;
+      file) files="${files} -f docker-compose.content.yml" ;;
+    esac
+  fi
+  for extra in $(envget FABRIC_COMPOSE_EXTRA); do
+    files="${files} -f ${extra}"
+  done
+fi
+compose="${compose} ${files}"
+
+if [ -n "${groups}" ]; then
+  # docker-compose.production.yml requires FABRIC_SOURCE_ID; with groups it is
+  # the agent group's id (as `make up-prod-groups` passes it).
+  agent_source="$(envget FABRIC_AGENT_SOURCE_ID)"
+  FABRIC_SOURCE_ID="${FABRIC_SOURCE_ID:-${agent_source}}"
+  export FABRIC_SOURCE_ID
+  printf 'Fabric Node production verification (ingress groups)\n'
+else
+  printf 'Fabric Node production verification\n'
+fi
 
 # --- ingress TLS detection (same rule as preflight-prod.sh) ------------------
 COLLECTOR_CONFIG=collector-config/collector-production.yaml
+[ -n "${groups}" ] && COLLECTOR_CONFIG=collector-config/collector-production-groups.yaml
 scheme=http
 curl_tls=""
 if [ -f "${COLLECTOR_CONFIG}" ] \
@@ -48,6 +100,13 @@ if [ -f "${COLLECTOR_CONFIG}" ] \
     note "WARN" "receiver TLS enabled but no ca.crt/server.crt under ${tlsdir}; probes run unverified"
   fi
 fi
+# grpcurl's TLS option for the same listeners: plaintext, the CA above, or
+# unverified TLS when no CA file was found (as the curl probes).
+grpc_tls_opt="-plaintext"
+if [ "${scheme}" = "https" ]; then
+  grpc_tls_opt="${curl_tls:+-cacert ${curl_tls#--cacert }}"
+  [ -z "${curl_tls}" ] && grpc_tls_opt="-insecure"
+fi
 
 node_addr="$(${compose} port fabric-node 4318 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 content_addr="$(${compose} port fabric-node 4319 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
@@ -56,7 +115,11 @@ health_addr="$(${compose} port fabric-node 13133 2>/dev/null | head -n 1 | sed -
 metrics_addr="$(${compose} port fabric-node 8888 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
 
 if [ -z "${node_addr}" ] || [ -z "${health_addr}" ]; then
-  bad "fabric-node ports not published; is the production overlay up? (make up-prod)"
+  if [ -n "${groups}" ]; then
+    bad "fabric-node ports not published; is the ingress-group Node up? (make up-prod-groups, with the same FABRIC_ENV_FILE)"
+  else
+    bad "fabric-node ports not published; is the production Node up? (make up-prod, or make up-prod-groups for ingress groups; with the same FABRIC_ENV_FILE)"
+  fi
   exit 1
 fi
 
@@ -116,15 +179,21 @@ token=$(head -n 1 "${token_file}" | tr -d '[:space:]')
 # The production Node binds every batch to one tenant and source (spec 049
 # §7.9), so the probe must carry the binding the overlay configures: the
 # same FABRIC_TENANT_ID / FABRIC_SOURCE_ID that docker-compose.production.yml
-# passes to the Node. A probe under any other identity is refused (400).
+# passes to the Node (with groups, the agent group's FABRIC_AGENT_SOURCE_ID
+# on its ports 4317/4318). A probe under any other identity is refused (400).
 tenant_id="$(envget FABRIC_TENANT_ID)"
 source_id="$(envget FABRIC_SOURCE_ID)"
+[ -n "${groups}" ] && source_id="$(envget FABRIC_AGENT_SOURCE_ID)"
 if ! printf '%s' "${tenant_id}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'; then
   bad "FABRIC_TENANT_ID unset or unsafe; set it in .env to the Node's bound tenant"
   exit 1
 fi
 if ! printf '%s' "${source_id}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$'; then
-  bad "FABRIC_SOURCE_ID unset or unsafe; set it in .env to the Node's bound source"
+  if [ -n "${groups}" ]; then
+    bad "FABRIC_AGENT_SOURCE_ID unset or unsafe; set it in .env to the agent group's source"
+  else
+    bad "FABRIC_SOURCE_ID unset or unsafe; set it in .env to the Node's bound source"
+  fi
   exit 1
 fi
 probe_dir="$(mktemp -d)"
@@ -184,9 +253,6 @@ fi
 # --- gRPC ingress auth (same authenticator, second receiver) ------------------
 if [ -n "${grpc_addr}" ]; then
   if command -v grpcurl >/dev/null 2>&1; then
-    grpc_tls_opt="-plaintext"
-    [ "${scheme}" = "https" ] && grpc_tls_opt="${curl_tls:+--cacert ${curl_tls#--cacert }}"
-    [ "${scheme}" = "https" ] && [ -z "${curl_tls}" ] && grpc_tls_opt="-insecure"
     # Invoke a known OTLP method from a local descriptor. `grpcurl list`
     # depends on server reflection, so any reflection-disabled collector would
     # otherwise look like an authentication rejection regardless of auth.
@@ -210,6 +276,45 @@ else
   note "SKIP" "gRPC port 4317 not published; HTTP auth checks above cover the shared authenticator"
 fi
 
+# --- host sensor groups (ingress groups only) -----------------------------------
+# Each host group has its own listener and token; an unauthenticated export
+# there must be refused too. The probe never sends a group token.
+if [ -n "${groups}" ]; then
+  ebpf_addr="$(${compose} port fabric-node 4417 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
+  if [ -z "${ebpf_addr}" ]; then
+    bad "eBPF group port 4417 not published (docker-compose.host-ingress.yml)"
+  elif command -v grpcurl >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    if ebpf_output="$(grpcurl ${grpc_tls_opt} \
+      -import-path fixtures -proto otlp-trace-service.proto -d '{}' \
+      "${ebpf_addr}" opentelemetry.proto.collector.trace.v1.TraceService/Export 2>&1)"; then
+      bad "unauthenticated export was accepted on the eBPF group (${ebpf_addr})"
+    elif printf '%s' "${ebpf_output}" | grep -qi 'Code: Unauthenticated'; then
+      ok "unauthenticated export refused on the eBPF group (${ebpf_addr})"
+    else
+      bad "eBPF group probe failed without proving an authentication rejection: ${ebpf_output}"
+    fi
+  else
+    ok "eBPF group port published on ${ebpf_addr}"
+    note "WARN" "grpcurl not installed; the eBPF group's authentication is not exercised"
+  fi
+  if [ -n "$(envget FABRIC_AUDITD_TOKEN_FILE)" ]; then
+    auditd_addr="$(${compose} port fabric-node 4428 2>/dev/null | head -n 1 | sed -e 's/^0\.0\.0\.0:/127.0.0.1:/' -e 's/^\[::\]:/127.0.0.1:/')"
+    if [ -z "${auditd_addr}" ]; then
+      bad "auditd group port 4428 not published (docker-compose.host-ingress-auditd.yml)"
+    else
+      # shellcheck disable=SC2086
+      code=$(curl ${curl_tls} -s -o /dev/null -w '%{http_code}' -X POST "${scheme}://${auditd_addr}/v1/traces" \
+        -H 'Content-Type: application/json' --data-binary '{}')
+      if [ "${code}" = "401" ] || [ "${code}" = "403" ]; then
+        ok "unauthenticated export refused on the auditd group (${code})"
+      else
+        bad "unauthenticated export on the auditd group returned ${code}, expected 401/403"
+      fi
+    fi
+  fi
+fi
+
 # --- persistent queue + metrics ------------------------------------------------
 if [ -n "${metrics_addr}" ] && curl -fsS "http://${metrics_addr}/metrics" 2>/dev/null | grep -q "otelcol_exporter_queue"; then
   ok "internal metrics exposing exporter queue gauges"
@@ -219,7 +324,11 @@ fi
 
 printf '\n'
 if [ "${fail}" -ne 0 ]; then
-  printf 'Verification FAILED -- inspect: make logs-prod ARGS=fabric-node\n' >&2
+  if [ -n "${groups}" ]; then
+    printf 'Verification FAILED -- inspect: make logs-prod-groups ARGS=fabric-node\n' >&2
+  else
+    printf 'Verification FAILED -- inspect: make logs-prod ARGS=fabric-node\n' >&2
+  fi
   exit 1
 fi
 if [ -n "${content_addr}" ]; then

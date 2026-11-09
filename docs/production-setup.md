@@ -301,6 +301,7 @@ deletes it after the Node is down.
 
 ```bash
 make -C "$FABRIC_REPO/deploy/compose" up-prod-groups   # runs preflight-prod.sh --groups first; refuses on any FAIL
+make -C "$FABRIC_REPO/deploy/compose" verify-prod      # detects the ingress groups from the env file (or: verify-prod-groups)
 ```
 
 It ends by printing the Compose project and the ports it published, read
@@ -317,6 +318,14 @@ and each group's own token, published on `127.0.0.1` unless you set
 containers on its network `fabric-node-production_fabric-node` reach the Node
 as `fabric-node`, and the Node's container is
 `fabric-node-production-fabric-node-1`.
+
+`verify-prod` checks the running Node through the same env file: the
+entrypoint gate, health, an unauthenticated export refused on the agent
+group, a span under `FABRIC_TENANT_ID` and `FABRIC_AGENT_SOURCE_ID` accepted
+and one naming another source refused, unauthenticated content refused, and
+an unauthenticated export refused on the ebpf group's port 4417 (and the
+auditd group's 4428 when it is on). The gRPC checks need `grpcurl`; without
+it they are reported as not exercised.
 
 ### Queue size on a small host
 
