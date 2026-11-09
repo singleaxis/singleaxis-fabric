@@ -222,42 +222,36 @@ def compile_check(  # noqa: PLR0911 - one return per check type
     return _never
 
 
-# A check is a pure function of its value. Most records repeat most of their values (the
-# capture point, step kind, source and run ids, vocabulary values), so each key keeps its
-# recent answers for short scalars: the records path stays inside its 051 §4.11 budget on
-# slower runners, where the repeated pattern matches were most of the caller's cost.
-_MEMO_ENTRIES = 256
+# A check is a pure function of its value. Most records repeat most of their string values
+# (the capture point, step kind, source and run ids, vocabulary values), so a compiled table
+# remembers its recent answers per key for short strings: a repeated value then costs two
+# dict lookups instead of a pattern match. This keeps the records path inside its 051 §4.11
+# budget on slower runners. Keys with a placement condition are never memoised.
+_MEMO_ENTRIES = 256  # per key
 _MEMO_TEXT = 256
+_NO_ANSWERS: dict[str, bool] = {}
 
 
-def _memoized(predicate: Predicate) -> Predicate:
-    """``predicate`` with a bounded memo of its answers for ``str`` (at most
-    ``_MEMO_TEXT`` characters), ``int`` and ``bool`` values, keyed by exact type."""
-    # One memo per exact type, so ``True`` and ``1`` never share an answer.
-    memos: dict[type, dict[Any, bool]] = {str: {}, int: {}, bool: {}}
+class CompiledChecks(dict[str, "Predicate"]):
+    """Rule A's predicates by key, with the bounded per-key memo of string answers that
+    :func:`project_attributes` keeps."""
 
-    def check(value: Any) -> bool:
-        memo = memos.get(type(value))
-        if memo is None or (type(value) is str and len(value) > _MEMO_TEXT):
-            return predicate(value)
-        found = memo.get(value)
-        if found is None:
-            found = bool(predicate(value))
-            if len(memo) >= _MEMO_ENTRIES:
-                memo.clear()  # bounded; a race only recomputes an answer
-            memo[value] = found
-        return found
+    __slots__ = ("memo",)
 
-    return check
+    def __init__(self, items: Mapping[str, Predicate]) -> None:
+        super().__init__(items)
+        # key -> {string value: answer}; ``None`` once a key proved high-cardinality (its
+        # memo filled up: an event id, a sequence-like id), so it is no longer remembered.
+        self.memo: dict[str, dict[str, bool] | None] = {}
 
 
 def compile_checks(
     *, labels: Labels = "pseudonymous", identity: IdentityMode = "pseudonymous",
     table: Mapping[str, Mapping[str, Any]] = RECORD_KEY_CHECKS,
-) -> dict[str, Predicate]:  # fmt: skip
-    """Rule A's table as predicates for one Node configuration (memoized per key)."""
-    return {key: _memoized(compile_check(check, labels=labels, identity=identity))
-            for key, check in table.items()}  # fmt: skip
+) -> CompiledChecks:  # fmt: skip
+    """Rule A's table as predicates for one Node configuration (with a bounded memo)."""
+    return CompiledChecks({key: compile_check(check, labels=labels, identity=identity)
+                           for key, check in table.items()})  # fmt: skip
 
 
 def _condition_holds(condition: Mapping[str, Sequence[str]] | None, point: Any) -> bool:
@@ -304,7 +298,7 @@ def _admitted_value(value: Any) -> tuple[bool, Any]:
     return True, out
 
 
-def project_attributes(
+def project_attributes(  # noqa: PLR0912 - the memo's fast path, then rule A
     attributes: Mapping[str, Any], checks: Mapping[str, Predicate], *,
     conditions: Mapping[str, Mapping[str, Sequence[str]]] = RECORD_KEY_CONDITIONS,
     point: str | None = None,
@@ -317,7 +311,17 @@ def project_attributes(
     kept: dict[str, Any] = {}
     dropped: list[str] = []
     where = point if point is not None else attributes.get("fabric.capture.point")
+    memo = checks.memo if type(checks) is CompiledChecks else None
     for key, raw in attributes.items():
+        if memo is not None and type(raw) is str:
+            answers = memo.get(key, _NO_ANSWERS)
+            found = answers.get(raw) if answers is not None else None
+            if found is not None:  # this key has checked this exact string before
+                if found:
+                    kept[key] = raw
+                else:
+                    dropped.append(key)
+                continue
         # The key is admitted (its table row and placement) before its value is touched.
         check = checks.get(key) if type(key) is str or isinstance(key, str) else None
         if check is None or (
@@ -333,10 +337,19 @@ def project_attributes(
             if not admissible:
                 dropped.append(key)
                 continue
-        if check(value):
+        passed = bool(check(value))
+        if passed:
             kept[key] = value
         else:
             dropped.append(key)
+        if (memo is not None and kind is str and type(key) is str
+                and len(raw) <= _MEMO_TEXT and not conditions.get(key)):  # fmt: skip
+            answers = memo.setdefault(key, {})
+            if answers is not None:
+                if len(answers) >= _MEMO_ENTRIES:
+                    memo[key] = None  # high-cardinality: stop remembering this key
+                else:
+                    answers[raw] = passed
     return kept, sorted(dropped)
 
 

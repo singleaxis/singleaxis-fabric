@@ -71,3 +71,29 @@ def test_the_gate_fails_when_the_records_path_blocks() -> None:
         assert blocked[scenario] > budget, (scenario, blocked[scenario], budget)
         assert blocked[scenario] >= 2 * ON_BUDGET_NS * 0.9, (scenario, blocked[scenario])
     assert MAX_SCALE >= 1.0
+
+
+def test_the_rule_a_memo_never_changes_an_answer() -> None:
+    """The bounded memo the records path keeps (``_records.CompiledChecks``) gives exactly
+    the answers of the plain predicates: repeated, failing and high-cardinality strings,
+    ``True`` beside ``1``, and a key whose placement depends on the capture point."""
+    from fabric import _records  # noqa: PLC0415
+
+    memoised = _records.compile_checks()
+    plain = dict(memoised)  # the same predicates, no memo
+    rows: list[tuple[dict[str, Any], str]] = []
+    for i in range(_records._MEMO_ENTRIES + 40):  # past the bound: the id key goes volatile
+        rows.append(({
+            "fabric.control.kind": "policy", "fabric.control.decision": "deny",
+            "fabric.control.stage": "Bad Stage", "fabric.hook.modified": True if i % 2 else 1,
+            "fabric.event_id": f"{i:08x}-0000-4000-8000-000000000000",
+            "fabric.process.parent_pid": 7, "unknown.key": "x",
+        }, "exec.subprocess@1" if i % 3 else "sdk.records@1"))  # fmt: skip
+    for attrs, point in rows * 2:
+        assert _records.project_attributes(attrs, memoised, point=point) == (
+            _records.project_attributes(attrs, plain, point=point)
+        )
+    assert memoised.memo["fabric.control.kind"] == {"policy": True}
+    assert memoised.memo["fabric.control.stage"] == {"Bad Stage": False}
+    assert memoised.memo["fabric.event_id"] is None  # high-cardinality: no longer kept
+    assert "fabric.process.parent_pid" not in memoised.memo  # conditional: never kept
