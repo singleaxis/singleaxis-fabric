@@ -1088,3 +1088,56 @@ def test_a_resolution_is_never_linked_by_position() -> None:
     by_uid = {c["attempt_uid"]: c for c in found.controls}
     assert by_uid["r1"]["method"] == "none" and "gated" not in by_uid["r1"]
     assert by_uid["o1"]["method"] == "pending_single"
+
+
+# --------------------------------------------------------------------------
+# Export-level checks the fixture list leaves implicit (review additions)
+# --------------------------------------------------------------------------
+
+
+def test_a_request_read_without_its_resolution_is_pending_at_run_end(tmp_path: Path) -> None:
+    """sc-pending-resolved-cross-process, the agent's export alone: with the approver's run
+    absent each request is pending at run end (F4) and the controls chain is partial."""
+    agent = SecurityCapture(tmp_path)
+    segment = begin(agent)
+    loop = Loop(agent)
+    loop.turn(("call_1", "deploy"))
+    agent.control("permission_request", "request", "pending", stage="pre_tool", call="call_1",
+                  control_id="ctl-ask-7", engine="deploy-gate")  # fmt: skip
+    loop.turn(results=(("call_1", "deployed"),))
+    end(agent, segment)
+    report, _, text, _ = read([agent.write()], agent.store)
+    run = only(report)
+    assert run["chains"]["controls"] == {"verdict": "partial",
+                                         "reasons": ["control_pending_at_end"]}  # fmt: skip
+    assert run["verdict"] == "partial"
+    assert facts(run)["control_pending_at_end"] == 1
+    assert "pending at run end" in text
+    assert "F4  request with no resolution at run end: 1 (#2)" in text
+
+
+def test_an_active_security_point_with_no_record_is_observed(tmp_path: Path) -> None:
+    """§6.4: a manifest that declares ``records.grant`` active makes the run annotated and
+    its controls chain observed even with no security record; no declared snapshot gives
+    ``grant_not_recorded`` and F1."""
+    from tests.test_reconstruct_attribute_export import EXEC_ROW  # noqa: PLC0415
+
+    capture = SecurityCapture(tmp_path)
+    grant_row = {**EXEC_ROW, "id": "records.grant", "kind": "R", "process_global": False,
+                 "fields": ["G01", "G12"]}  # fmt: skip
+    capture.manifest(capture_points=[*SecurityCapture._vector_points(), grant_row])
+    segment = capture.new_segment()
+    capture.run_start(RUN, segment_id=segment)
+    loop = Loop(capture)
+    loop.turn(("call_1", "search"))
+    loop.turn(results=(("call_1", "found"),))
+    end(capture, segment)
+    report = reconstruct([capture.write()], store=capture.store, generated_at=GENERATED_AT,
+                         id_key=ID_KEY, actions=ActionReader())  # fmt: skip
+    validate(report)
+    run = only(report)
+    assert run["chains"]["controls"] == {"verdict": "partial",
+                                         "reasons": ["grant_not_recorded"]}  # fmt: skip
+    assert run["security_context"]["facts"] == [
+        {"code": "no_declared_grant", "count": 1, "event_ids": []}
+    ]
