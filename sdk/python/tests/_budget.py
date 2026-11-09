@@ -12,10 +12,12 @@ the spec budgets exactly as written and remove the noise instead:
 - **Warm-up, then batches.** Each operation is warmed up, then timed in ``rounds`` batches
   of ``samples`` calls with the garbage collector paused; a batch's statistic is its
   **median** per-call time (or paired overhead over a baseline).
-- **Calibration per batch.** The machine-speed calibration (``test_wire_passivity``'s
-  fixed workload, spec 047 §4 item 10) runs right before each batch, so a batch is judged
-  against the machine state it ran in: its median is divided by that batch's scale
-  (``scale_for``, at most ``MAX_SCALE``). The result is the cost on reference hardware.
+- **Calibration interleaved with the calls.** After every timed call, a slice of the
+  machine-speed calibration (the fixed workload of spec 047 §4 item 10, 1/50th of it) is
+  timed too, so the calibration meets the same load as the calls: a runner busy with other
+  work for the whole measurement slows both alike. A batch's scale is the median slice
+  times 50 (``scale_for``, at most ``MAX_SCALE``), and its median is divided by it: the
+  cost on reference hardware.
 - **Best batch.** Noise only ever adds time, so the gate takes the best (lowest)
   normalised batch median; :func:`gate` re-measures in a fresh interpreter, at most
   ``ATTEMPTS`` times in all, only while a budget is not met, and keeps the best batch seen.
@@ -38,14 +40,13 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from ._calibration import MAX_SCALE, calibrate, scale_for
+from ._calibration import MAX_SCALE, SLICES, calibration_slice, scale_for
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 ROUNDS = 9
 SAMPLES = 300
 WARMUP = 200
 ATTEMPTS = 3
-CALIBRATION_RUNS = 3
 
 Batch = dict[str, float]  # {"median_ns": ..., "scale": ...}
 
@@ -67,8 +68,8 @@ def batches(
     for _ in range(rounds):
         if between is not None:
             between()
-        scale = scale_for(calibrate(runs=CALIBRATION_RUNS))
         deltas: list[int] = []
+        slices: list[int] = []
         gc.collect()
         gc.disable()
         try:
@@ -81,8 +82,12 @@ def batches(
                 start = time.perf_counter_ns()
                 call()
                 deltas.append(time.perf_counter_ns() - start - bare)
+                start = time.perf_counter_ns()  # the calibration slice, under the same load
+                calibration_slice()
+                slices.append(time.perf_counter_ns() - start)
         finally:
             gc.enable()
+        scale = scale_for(int(statistics.median(slices) * SLICES))
         out.append({"median_ns": float(statistics.median(deltas)), "scale": scale})
     return out
 

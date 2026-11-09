@@ -288,8 +288,9 @@ it never makes, applies, waits for or returns one.
   What is recorded is unchanged.
 - **Latency-budget tests no longer flake on shared CI runners.** Each budget
   test now measures in a fresh interpreter after a warm-up, in several
-  batches, judges each batch against the machine speed measured just before
-  it, and takes the best batch; it measures again only while a budget is
+  batches, judges each batch against the machine speed measured between its
+  own calls (so a runner busy with other work slows both alike), and takes
+  the best batch; it measures again only while a budget is
   missed, at most three times. The budgets themselves are unchanged, and
   each test still runs a deliberately blocking case that must fail.
 - **A record with a fractional number no longer breaks its segment's seal.**

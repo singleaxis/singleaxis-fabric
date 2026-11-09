@@ -52,3 +52,21 @@ def calibrate(runs: int = CALIBRATION_RUNS) -> int:
 def scale_for(calibration_ns: int) -> float:
     """The factor every budget is multiplied by on a machine with this calibration."""
     return min(MAX_SCALE, max(1.0, calibration_ns / REFERENCE_CALIBRATION_NS))
+
+
+# 1/SLICES of the workload: timed right after each timed call of a budget gate, so the
+# calibration meets the same machine load as the call (tests/_budget.py). Its median times
+# SLICES estimates the full workload's time (checked against ``calibrate``: within a few %).
+SLICES = 50
+_SLICE_ITERATIONS = 20_000 // SLICES
+
+
+def calibration_slice() -> int:
+    """One slice of :func:`_calibration_workload` (the same loop body, 1/``SLICES``)."""
+    table: dict[int, int] = {}
+    total = 0
+    for i in range(_SLICE_ITERATIONS):
+        key = i & 255
+        table[key] = table.get(key, 0) + 1
+        total += len(str(i))
+    return total + len(table)
