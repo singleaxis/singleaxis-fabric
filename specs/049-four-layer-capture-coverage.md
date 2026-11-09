@@ -2,7 +2,7 @@
 title: Four-layer capture contract (context, structure, content, decisions and effects)
 status: accepted
 qualification: NO_COVERAGE_CLAIM
-revision: 6.6
+revision: 6.7
 last_updated: 2026-11-09
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
@@ -65,6 +65,12 @@ content roles (`extension.manifest`, `control.exchange.request`,
 `off` (section 3.5a). Spec 057 is the build spec; spec 057 calls this
 amendment "revision 6.5", a number this document had already used for the
 0.11.2 rule above, so it is recorded as 6.6.
+Revision 6.7 (spec 057 P0b, WP7-1) adds `E24`–`E27` (`hook.name`,
+`hook.phase`, `hook.modified`, `hook.input_hash`/`hook.output_hash`): the
+spec 022 decision-line keys, reused with a records `capture_check`, so the
+records-input hook record of spec 057 §5.1 carries the hook's name and phase
+(activity 2.1 `hook.completed` requires both; 6.6 placed only `E01`–`E09` on
+records).
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -1717,7 +1723,8 @@ manifest (section 4).
 Spec 057 records the security context of a monitored agent as observed or
 reported evidence: the grants it was given (`G`), the decisions made about
 its actions (`D36`–`D49`, extending `D01`–`D11`), what hooks did
-(`E01`–`E09`) and which extensions were present (`E10`–`E23`). Fabric
+(`E01`–`E09`, with the reused spec 022 keys `E24`–`E27` of revision 6.7)
+and which extensions were present (`E10`–`E23`). Fabric
 records; it never computes, applies, waits for or returns any of these
 decisions, and every control record carries the `D11` constants. Spec 057
 sections 5 and 6 define the records, joins and mechanical facts; this
