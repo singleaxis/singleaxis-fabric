@@ -97,6 +97,8 @@ _EXT_VIA: Final = frozenset({"mcp_initialize", "mcp_tools_list", "process_launch
                              "reported"})  # fmt: skip
 _SIGNATURES: Final = frozenset({"verified", "invalid", "unsigned", "unverified", "unknown"})
 _TOOL_STAGES: Final = frozenset({"pre_tool", "post_tool"})
+#: The 056 ``effects_not_observed`` reasons F5 moves to ``control_denied`` (rev 3.3 note 6).
+_ABSENCE_REASONS: Final = frozenset({"none_in_window", "no_effect_channel"})
 _GATING_KINDS: Final = frozenset({"approval", "elicitation"})  # F7
 _TARGET_PHASES: Final = {"resolution": frozenset({"request"}),
                          "revocation": frozenset({"request", "resolution"})}  # fmt: skip
@@ -485,8 +487,13 @@ def _link_hook(item: dict[str, Any], *, call_ids: set[str], wire: bool,
         item["unmatched"] = True
 
 
-def _effects_by_call(attribution: Any) -> dict[str, list[dict[str, Any]]]:
-    """Per tool call id, every effect link that names it (056 decisions), in effect order."""
+def _effects_by_call(
+    attribution: Any, inp: Mapping[str, Any]
+) -> dict[str, list[dict[str, Any]]]:
+    """Per tool call id, every effect the 056 result attributes to it: each effect link that
+    names it (ambiguous candidates included, with their state), and each A0 effect whose
+    explicit ``tool_call()`` scope names it (``reported_parent_call``), which 056 counts as
+    attributed without a call link."""
     out: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for uid, decision in attribution.decisions.items():
         for link in decision.links:
@@ -495,6 +502,14 @@ def _effects_by_call(attribution: Any) -> dict[str, list[dict[str, Any]]]:
                     "attempt_uid": uid, "method": link.get("method", "reported"),
                     "confidence": link.get("confidence"), "state": link.get("state"),
                 })  # fmt: skip
+    ids = {call.raw_id: call.id for call in attribution.calls}
+    for effect in inp.get("effects", ()):
+        parent = effect.get("reported_parent_call")
+        if isinstance(parent, str) and parent:
+            out[ids.get(parent, parent)].append({
+                "attempt_uid": effect["attempt_uid"], "method": "reported",
+                "confidence": "certain", "state": "resolved",
+            })  # fmt: skip
     return out
 
 
@@ -545,8 +560,13 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         if index.pending(item):
             item["pending_at_end"] = True
             _fact(facts, "control_pending_at_end", item["event_id"])
-    effects = _effects_by_call(attribution)
-    looked = any(state == "active" for state in (inp.get("effect_channels") or {}).values())
+    effects = _effects_by_call(attribution, inp)
+    # F5 needs the 056 reader's own finding that the call had no effect where a channel
+    # was looking (056 §4.5: absence is evidence only for enabled channels). A call whose
+    # channel was disabled (``channel_disabled``), or that 056 does not know (no wire
+    # capture), states nothing, so F5 and ``attribution.control_denied`` always agree.
+    absent = {call_id for call_id, reason in attribution.trace["tool_calls"].items()
+              if reason in _ABSENCE_REASONS}  # fmt: skip
     denied_calls: dict[str, list[str]] = defaultdict(list)
     deny_with_effect: dict[str, list[dict[str, Any]]] = {}
     allows: dict[str, list[str]] = defaultdict(list)
@@ -560,8 +580,8 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         if not deny or not isinstance(target, str):
             continue
         attributed = effects.get(target, [])
-        if not attributed and not looked:
-            continue  # no effect channel was enabled: absence is no evidence (056 §4.5)
+        if not attributed and target not in absent:
+            continue
         if attributed:
             deny_with_effect[item["attempt_uid"]] = attributed
             later = [uid for uid in allows.get(target, ())

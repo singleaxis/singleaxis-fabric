@@ -1001,3 +1001,80 @@ def test_the_fact_list_is_closed_and_matches_the_contract() -> None:
     assert [code for _, code in _security.FACT_CODES] == codes["code"]["enum"]
     assert set(_security.FACT_TEXT) == set(codes["code"]["enum"])
     assert not any(FORBIDDEN.search(text) for text in _security.FACT_TEXT.values())
+
+
+# --------------------------------------------------------------------------
+# F5 and F6 agree with the spec 056 result for the call (review fixes)
+# --------------------------------------------------------------------------
+
+
+def _wire_input(effect_channels: Mapping[str, str], effects: list[Any] | None = None) -> Any:
+    return {
+        "run": {"run_id": "r", "window": [0, 100]},
+        "agent": {"source_id": "s", "source_epoch": 1},
+        "exchange_verdict": "complete", "effect_channels": dict(effect_channels),
+        "effects": effects or [],
+        "exchanges": [
+            {"exchange_id": "x1", "sequence": 1, "start_ns": 1, "end_ns": 2,
+             "source_id": "s", "source_epoch": 1,
+             "tool_calls": [{"id": "c1", "name": "shell"}], "tool_results": []},
+            {"exchange_id": "x2", "sequence": 9, "start_ns": 9, "end_ns": 10,
+             "source_id": "s", "source_epoch": 1,
+             "tool_calls": [], "tool_results": [{"id": "c1"}]},
+        ],
+    }  # fmt: skip
+
+
+def _control_item(uid: str, sequence: int, **fields: Any) -> dict[str, Any]:
+    item = {
+        "attempt_uid": uid, "event_id": f"ev-{uid}", "source_id": "s", "source_epoch": 1,
+        "sequence": sequence, "start_ns": sequence, "kind": "permission_check",
+        "phase": "observation", "derivation": "reported", "attrs": {},
+        "invariant_conflict": False,
+    }  # fmt: skip
+    item.update(fields)
+    return item
+
+
+def _analyse(inp: Mapping[str, Any], *controls: dict[str, Any]) -> Any:
+    from fabric.reconstruct._attribute import _apply_security, attribute  # noqa: PLC0415
+
+    result = attribute(inp)
+    sec = {"controls": list(controls), "hooks": [], "grants": [], "extensions": [],
+           "side_effects": [], "attempts": [c["attempt_uid"] for c in controls],
+           "active_points": [], "sequence_gaps": []}  # fmt: skip
+    found = _security.analyse(inp, result, sec, _security.ControlIndex())
+    _apply_security(result, found)
+    return found, result
+
+
+def test_f5_is_not_stated_for_a_call_whose_effect_channel_was_disabled() -> None:
+    """remote.sandbox active, exec.subprocess off: 056 gives the call ``channel_disabled``.
+    A deny gating it states no F5, adds no ``no effect observed`` row and leaves the 056
+    reason as it is (absence is evidence only for enabled channels)."""
+    deny = _control_item("d1", 3, decision="deny", gated_tool_call_id="c1")
+    found, result = _analyse(_wire_input({"remote.sandbox": "active"}), deny)
+    assert result.trace["tool_calls"]["c1"] == "channel_disabled"
+    assert "control_denied" not in {f["code"] for f in found.facts}
+    assert found.denied_calls == {}
+    assert result.attribution["effects_not_observed"]["control_denied"] == 0
+    # With exec.subprocess active the same deny is F5 and the reason moves.
+    found, result = _analyse(_wire_input({"exec.subprocess": "active"}), deny)
+    assert {f["code"]: f["count"] for f in found.facts}["control_denied"] == 1
+    assert result.trace["tool_calls"]["c1"] == "control_denied"
+    assert result.attribution["effects_not_observed"]["control_denied"] == 1
+
+
+def test_an_effect_reported_under_the_call_is_f6_never_f5() -> None:
+    """A0: an effect whose explicit ``tool_call()`` scope names the call is attributed to
+    it by 056 with no call link; a deny gating that call co-occurs with the effect (F6)."""
+    effect = {"attempt_uid": "e1", "event_id": "ev-e1", "sequence": 0, "start_ns": 0,
+              "end_ns": 0, "source_id": "s", "source_epoch": 1,
+              "reported_parent_call": "c1"}  # fmt: skip
+    deny = _control_item("d1", 3, decision="deny", gated_tool_call_id="c1")
+    found, result = _analyse(_wire_input({"exec.subprocess": "active"}, [effect]), deny)
+    assert result.trace["tool_calls"]["c1"] == "attributed"
+    codes = {f["code"] for f in found.facts}
+    assert "deny_with_effect" in codes and "control_denied" not in codes
+    assert found.deny_with_effect["d1"][0]["attempt_uid"] == "e1"
+
