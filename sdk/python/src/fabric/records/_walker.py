@@ -113,9 +113,14 @@ def walk(value: Any, max_bytes: int) -> Walked:  # noqa: PLR0915 - the walk is o
 
     try:
         visit(value, 0)
+        text = canonical_json_acyclic(value)
     except _RefusedError as refused:
         return Walked(refused.args[0])
-    return Walked("ok", canonical_json_acyclic(value))
+    except RecursionError:
+        # The caller's own stack was already near the interpreter's limit (the walk adds
+        # at most MAX_DEPTH + 1 frames): a bound exceeded, never a fault of the record.
+        return Walked("too_large")
+    return Walked("ok", text)
 
 
 __all__ = ["MAX_DEPTH", "MAX_NODES", "Walked", "walk"]

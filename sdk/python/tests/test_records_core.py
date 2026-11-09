@@ -474,3 +474,34 @@ def test_context_binds_conversation_and_turn_pseudonyms(
     assert "fabric.conversation_id" not in unbound and "fabric.turn_id" not in unbound
     assert "CANARY" not in json.dumps(spans, default=str)
     assert dropped == 0
+
+
+def test_walker_called_near_the_recursion_limit_refuses_never_raises() -> None:
+    """The bounded walk recurses (at most ``MAX_DEPTH`` + 1 frames). Called from a caller
+    whose own stack is already close to the interpreter's limit, it ends ``too_large``
+    instead of raising ``RecursionError`` into the records path; with room, the same value
+    still serialises."""
+    import sys  # noqa: PLC0415
+
+    value: Any = "leaf"
+    for _ in range(MAX_DEPTH - 1):
+        value = [value]
+    assert walk(value, 1 << 20).outcome == "ok"
+    outcomes: list[str] = []
+
+    def at_depth(remaining: int) -> None:
+        if remaining:
+            at_depth(remaining - 1)
+        else:
+            outcomes.append(walk(value, 1 << 20).outcome)
+
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(400)
+    try:
+        for headroom in (5, 15, 25):  # frames left between the caller and the limit
+            outcomes.clear()
+            depth = 400 - headroom - len(__import__("traceback").extract_stack())
+            at_depth(max(0, depth))
+            assert outcomes == ["too_large"], (headroom, outcomes)
+    finally:
+        sys.setrecursionlimit(limit)
