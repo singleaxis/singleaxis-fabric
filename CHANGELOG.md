@@ -278,7 +278,9 @@ it never makes, applies, waits for or returns one.
   library's C encoder whenever the result is guaranteed identical (no
   fractional numbers, safe integers, ASCII keys), and a document is no
   longer normalised twice or copied when nothing in it needs a pseudonym.
-  Grant ids and stored documents are unchanged.
+  Grant ids and stored documents are unchanged. Its budget is now written down as 50 µs
+  (spec 051 rev 2.1): a grant is recorded once per run or when access
+  changes, never per model call.
 - **Every records call is faster on the calling thread.** CI runners measured
   `record_control` at 21–23 µs against its 20 µs budget (spec 051 §4.11).
   The attribute check every record runs now remembers its recent answers for
