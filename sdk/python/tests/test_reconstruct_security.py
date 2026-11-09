@@ -1141,3 +1141,20 @@ def test_an_active_security_point_with_no_record_is_observed(tmp_path: Path) -> 
     assert run["security_context"]["facts"] == [
         {"code": "no_declared_grant", "count": 1, "event_ids": []}
     ]
+
+
+def test_a_later_allow_from_another_source_is_ordered_by_time() -> None:
+    """F6 lists any later allow for T. Two sources' sequences do not compare: an allow from
+    another process is later when it starts later, whatever its sequence number."""
+    effect = {"attempt_uid": "e1", "event_id": "ev-e1", "sequence": 0, "start_ns": 0,
+              "end_ns": 0, "source_id": "s", "source_epoch": 1,
+              "reported_parent_call": "c1"}  # fmt: skip
+    deny = _control_item("d1", 5, decision="deny", gated_tool_call_id="c1")
+    later = _control_item("a1", 2, decision="allow", gated_tool_call_id="c1",
+                          source_id="s2", start_ns=8)  # fmt: skip
+    earlier = _control_item("a2", 7, decision="allow", gated_tool_call_id="c1",
+                            source_id="s2", start_ns=4)  # fmt: skip
+    found, _ = _analyse(_wire_input({"exec.subprocess": "active"}, [effect]),
+                        deny, later, earlier)  # fmt: skip
+    by_uid = {c["attempt_uid"]: c for c in found.controls}
+    assert by_uid["d1"]["later_allows"] == ["a1"]

@@ -374,6 +374,14 @@ def _place(item: Mapping[str, Any]) -> tuple[Any, str, int]:
     return (item.get("segment_id"), str(item["source_id"]), int(item["source_epoch"]))
 
 
+def _after(item: Mapping[str, Any], other: Mapping[str, Any]) -> bool:
+    """Whether ``item`` is later than ``other``: sequence order on one epoch and segment
+    (050 §3.3), otherwise start time (sequences of two sources do not compare)."""
+    if _place(item) == _place(other):
+        return int(item["sequence"]) > int(other["sequence"])
+    return int(item["start_ns"]) > int(other["start_ns"])
+
+
 def _pending_calls(item: Mapping[str, Any], calls: Sequence[Any]) -> list[Any]:
     """The tool calls outstanding at a record's position (§4.10.3 rule 3)."""
     where, seq = _place(item), int(item["sequence"])
@@ -586,8 +594,7 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
             continue
         if attributed:
             deny_with_effect[item["attempt_uid"]] = attributed
-            later = [uid for uid in allows.get(target, ())
-                     if by_uid[uid]["sequence"] > item["sequence"]]  # fmt: skip
+            later = [uid for uid in allows.get(target, ()) if _after(by_uid[uid], item)]
             if later:
                 item["later_allows"] = later
             _fact(facts, "deny_with_effect", item["event_id"])
