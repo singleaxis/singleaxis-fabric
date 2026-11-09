@@ -131,20 +131,23 @@ class RecordsMisuseError(ValueError):
 
 
 class RecordsCounters:
-    """Process-level fail-open counters, read into ``status()``: ``api_misuse`` and
-    ``internal_errors``. Plain ints (as the other capture counters); never content."""
+    """Process-level fail-open counters, read into ``status()``: ``api_misuse``,
+    ``internal_errors`` and ``unsupported_callable`` (spec 057 §4.10.3). Plain ints (as the
+    other capture counters); never content."""
 
-    __slots__ = ("api_misuse", "internal_errors")
+    __slots__ = ("api_misuse", "internal_errors", "unsupported_callable")
 
     def __init__(self) -> None:
         self.api_misuse = 0
         self.internal_errors = 0
+        self.unsupported_callable = 0  # spec 057 §4.10.3: returned unwrapped, no record
 
     def snapshot(self) -> dict[str, int]:
-        return {"api_misuse": self.api_misuse, "internal_errors": self.internal_errors}
+        return {"api_misuse": self.api_misuse, "internal_errors": self.internal_errors,
+                "unsupported_callable": self.unsupported_callable}  # fmt: skip
 
     def reset(self) -> None:
-        self.api_misuse = self.internal_errors = 0
+        self.api_misuse = self.internal_errors = self.unsupported_callable = 0
 
 
 COUNTERS = RecordsCounters()

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Literal
+from typing import Any, Literal
 
 from .._capture_types import misuse
 
@@ -33,6 +33,40 @@ ActorType = Literal[
 ExecutionMode = Literal["autonomous", "supervised", "approval_required", "read_only", "unknown"]
 ApprovalPolicy = Literal["none", "per_tool", "per_side_effect", "all", "unknown"]
 TimingBasis = Literal["measured", "reported", "not_captured"]
+# Spec 057 §5.2-§5.5 (the registry's vocabularies of the same names).
+ControlStage = Literal[
+    "input", "output", "pre_model", "post_model", "pre_tool", "post_tool", "pre_effect",
+    "post_effect", "effect", "inventory", "run", "other", "unknown",
+]  # fmt: skip
+GatedKind = Literal[
+    "tool_call", "model_call", "side_effect", "mcp_call", "process", "input", "output", "run",
+    "other",
+]  # fmt: skip
+ControlMode = Literal["enforcing", "advisory", "shadow", "unknown"]
+ControlErrorClass = Literal["timeout", "exception", "unavailable", "misconfigured", "other"]
+ControlDerivation = Literal[
+    "literal", "configured_extract", "configured_marker", "configured_exit_map", "reported",
+    "wrapped_check",
+]  # fmt: skip
+GrantTrigger = Literal["run_start", "change", "resume", "requested", "derived", "unknown"]
+GrantBasis = Literal["offered", "listed", "declared"]
+GrantSourceBoundary = Literal["llm_wire", "mcp_wire", "api", "otlp", "operator_snapshot", "other"]
+SandboxKind = Literal["none", "process", "container", "vm", "remote", "unknown"]
+NetworkDefault = Literal["allow", "deny", "unknown"]
+ToolChoiceMode = Literal["auto", "none", "required", "specific", "allowed_subset", "unknown"]
+HookOutcome = Literal["passed", "modified", "blocked", "escalated", "errored", "unknown"]
+HookBasis = Literal["process", "callback", "reported_unknown"]
+ExtensionKind = Literal[
+    "skill", "plugin", "mcp_server", "hook_bundle", "subagent", "tool_pack", "other",
+]  # fmt: skip
+ExtensionSourceKind = Literal[
+    "registry", "marketplace", "git", "local_path", "url", "process", "builtin", "unknown",
+]  # fmt: skip
+ExtensionObservedVia = Literal[
+    "mcp_initialize", "mcp_tools_list", "process_launch", "path_open", "reported",
+]  # fmt: skip
+SignatureStatus = Literal["verified", "invalid", "unsigned", "unverified", "unknown"]
+ExtensionScope = Literal["managed", "user", "project", "local", "session", "unknown"]
 LinkType = Literal[
     "caused_by", "depends_on", "result_of", "emits", "consumes", "continues", "retries",
     "fallback_of", "hedges", "delegates", "resumes", "gates", "resolves", "compensates",
@@ -46,6 +80,30 @@ ACTOR_TYPES: frozenset[str] = frozenset(ActorType.__args__)  # type: ignore[attr
 EXECUTION_MODES: frozenset[str] = frozenset(ExecutionMode.__args__)  # type: ignore[attr-defined]
 APPROVAL_POLICIES: frozenset[str] = frozenset(ApprovalPolicy.__args__)  # type: ignore[attr-defined]
 LINK_TYPES: frozenset[str] = frozenset(LinkType.__args__)  # type: ignore[attr-defined]
+
+
+def _values(alias: Any) -> frozenset[str]:
+    return frozenset(alias.__args__)
+
+
+CONTROL_STAGES = _values(ControlStage)
+GATED_KINDS = _values(GatedKind)
+CONTROL_MODES = _values(ControlMode)
+CONTROL_ERROR_CLASSES = _values(ControlErrorClass)
+CONTROL_DERIVATIONS = _values(ControlDerivation)
+GRANT_TRIGGERS = _values(GrantTrigger)
+GRANT_BASES = _values(GrantBasis)
+GRANT_SOURCE_BOUNDARIES = _values(GrantSourceBoundary)
+SANDBOX_KINDS = _values(SandboxKind)
+NETWORK_DEFAULTS = _values(NetworkDefault)
+TOOL_CHOICE_MODES = _values(ToolChoiceMode)
+HOOK_OUTCOMES = _values(HookOutcome)
+HOOK_BASES = _values(HookBasis)
+EXTENSION_KINDS = _values(ExtensionKind)
+EXTENSION_SOURCE_KINDS = _values(ExtensionSourceKind)
+EXTENSION_OBSERVED_VIA = _values(ExtensionObservedVia)
+SIGNATURE_STATUSES = _values(SignatureStatus)
+EXTENSION_SCOPES = _values(ExtensionScope)
 
 # Spec 052 §4.2.2, with spec 057's `error` (the control ran and failed to decide) admitted
 # where `unknown` is, outside `request` and `revocation`. A combination outside the matrix
@@ -73,8 +131,16 @@ def normalise(value: object, allowed: frozenset[str], what: str) -> str:
 
 
 __all__ = [
-    "ACTOR_TYPES", "APPROVAL_POLICIES", "CONTROL_DECISIONS", "CONTROL_KINDS", "CONTROL_PHASES",
-    "EXECUTION_MODES", "LINK_TYPES", "PHASE_DECISIONS", "ActorType", "ApprovalPolicy",
-    "ControlDecision", "ControlKind", "ControlPhase", "ExecutionMode", "LinkType",
-    "TimingBasis", "normalise",
+    "ACTOR_TYPES", "APPROVAL_POLICIES", "CONTROL_DECISIONS", "CONTROL_DERIVATIONS",
+    "CONTROL_ERROR_CLASSES", "CONTROL_KINDS", "CONTROL_MODES", "CONTROL_PHASES", "CONTROL_STAGES",
+    "EXECUTION_MODES", "EXTENSION_KINDS", "EXTENSION_OBSERVED_VIA", "EXTENSION_SCOPES",
+    "EXTENSION_SOURCE_KINDS", "GATED_KINDS", "GRANT_BASES", "GRANT_SOURCE_BOUNDARIES",
+    "GRANT_TRIGGERS", "HOOK_BASES", "HOOK_OUTCOMES", "LINK_TYPES", "NETWORK_DEFAULTS",
+    "PHASE_DECISIONS", "SANDBOX_KINDS", "SIGNATURE_STATUSES", "TOOL_CHOICE_MODES", "ActorType",
+    "ApprovalPolicy", "ControlDecision", "ControlDerivation", "ControlErrorClass", "ControlKind",
+    "ControlMode", "ControlPhase", "ControlStage", "ExecutionMode", "ExtensionKind",
+    "ExtensionObservedVia", "ExtensionScope", "ExtensionSourceKind", "GatedKind", "GrantBasis",
+    "GrantSourceBoundary", "GrantTrigger", "HookBasis", "HookOutcome", "LinkType",
+    "NetworkDefault", "SandboxKind", "SignatureStatus", "TimingBasis", "ToolChoiceMode",
+    "normalise",
 ]  # fmt: skip
