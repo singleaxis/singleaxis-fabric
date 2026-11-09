@@ -278,7 +278,11 @@
         "E04",
         "E05",
         "E06",
-        "E07"
+        "E07",
+        "E24",
+        "E25",
+        "E26",
+        "E27"
       ]
     },
     {
@@ -457,5 +461,5 @@
   "unsealed_prior_epochs": [],
   "unsealed_prior_epoch_count": 0,
   "source_auth": "unbound",
-  "previous_manifest_sha256": "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7"
+  "previous_manifest_sha256": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221"
 }

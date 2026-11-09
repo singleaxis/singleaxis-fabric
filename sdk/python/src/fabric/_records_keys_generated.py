@@ -659,9 +659,25 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         "pattern": "^p-[0-9a-f]{32}$",
         "examples": ("p-9f86d081884c7d659a2feaa0c55ad015",),
     },
+    "fabric.hook.input_hash": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
     "fabric.hook.latency_ms": {
         "type": "number",
         "min": 0,
+    },
+    "fabric.hook.modified": {
+        "type": "bool",
+    },
+    "fabric.hook.name": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": (
+            "pre-shell-check",
+            "pii-scrub",
+        ),
     },
     "fabric.hook.outcome": {
         "type": "enum",
@@ -674,6 +690,23 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
             "unknown",
         ),
         "source": "field_type",
+    },
+    "fabric.hook.output_hash": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": ("3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",),
+    },
+    "fabric.hook.phase": {
+        "type": "enum",
+        "values": (
+            "pre_model",
+            "post_model",
+            "pre_tool",
+            "post_tool",
+            "pre_decision",
+            "post_decision",
+        ),
+        "source": "validator",
     },
     "fabric.hook.program_label": {
         "type": "string",

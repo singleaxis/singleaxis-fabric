@@ -30,7 +30,7 @@
       "manifests": [
         {
           "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-          "sha256": "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7",
+          "sha256": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221",
           "manifest_seq": 0
         }
       ],
@@ -230,7 +230,7 @@
           "source_id": "wire-3f9a1c2b7d4e5f60",
           "source_epoch": 1791331200000000000,
           "last_sequence": 2,
-          "manifest_digest": "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7",
+          "manifest_digest": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221",
           "terminal": true,
           "predecessors": [
             "fr2/seg-dc036958c70a72cf420903c9385c1051/s-b94f348e8d6890782b2af72c847dc77b/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"

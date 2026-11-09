@@ -18,7 +18,7 @@
     "event_id": "82b9c4bb-0caa-4b84-ab96-5af88bc16971",
     "seal": {
       "last_sequence": 9,
-      "manifest_digest": "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7",
+      "manifest_digest": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221",
       "seal_digest": "sha256:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f"
     }
   }
