@@ -261,6 +261,62 @@ What this run shows: `uname -p` and `file -b` are started by Python's
 tool call explains them. `uname -a` is a background thread of the agent. Row 35 is
 the agent connecting to a host no model call reached.
 
+## Security context in the view and the report (spec 057)
+
+When a run holds control decisions, hook outcomes, grant snapshots or
+extension loads (recorded through `fabric.records`, spec 057 §4.6), the
+reader shows them beside the calls and effects. It never decides whether a
+call was right: it joins records by id, scope or position and states a
+closed list of mechanical facts.
+
+```text
+run r-3f2a…  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  grant   grt-8b53…  declared  api  run_start  allow 2  deny 1  fs 2  (reported)
+  1  model_call   gpt-4o  → tool_call T1 write_file
+  2    control    permission_check · pre_tool · deny  fs-write  path.outside_root  0.04 ms  (wrapped_check)   ← T1  pending_single · certain
+  3      no effect observed for T1 (control_denied: #2)
+  4  model_call   gpt-4o  ← result T1  → tool_call T2 read_file, T3 write_file
+  5    control    permission_check · observation · allow  fs-read  (reported)   ← ambiguous: T2, T3  pending_set
+  facts:
+    F5  deny gates a tool call and no effect is attributed to it: 1 (#2)
+```
+
+- **`controls` chain.** The fifth chain. `not_observed` when the run has
+  no such record (the report is otherwise unchanged); `complete` when every
+  record's reference resolves, no request is pending at the end and every
+  record carries both invariants; else `partial` with
+  `control_unmatched`, `control_pending_at_end`, `ambiguous_attribution`,
+  `grant_not_recorded`, `sequence_gap` or `invariant_conflict`. A partial
+  controls chain makes the run partial. `complete` means the decisions
+  Fabric was told about are consistent and joined, not that every control
+  in your system was recorded.
+- **How a decision is joined to its tool call.** The provider tool-call id
+  (`gated_tool_call_id`) links it `provider_id · certain`; a reported step
+  (`gated_step`) links it `reported_ref · certain`; a resolution joins its
+  request by id across runs (`ref_join`). Otherwise, with wire capture on,
+  the reader takes the tool calls still pending at the record's position:
+  one pending call gives `pending_single · certain`; two or more give
+  `ambiguous` with every candidate and the chain
+  `partial(ambiguous_attribution)`: pass `gated_tool_call_id` to remove the
+  ambiguity. A record with `gated_kind` other than `tool_call` is never
+  linked by position.
+- **Facts.** F1 to F14 of spec 057 §6.3, counted in the report's
+  `security_context` with their first 64 event ids. F5 (`control_denied`)
+  also moves the tool call's `effects_not_observed` reason to
+  `control_denied`; it is stated only for a call the effect channels were
+  watching (spec 056 reason `none_in_window` or `no_effect_channel`), never
+  for one whose channel was disabled.
+  F6 (`deny_with_effect`) is co-occurrence: the row lists the deny's mode
+  and derivation, the effect's attribution and any later allow.
+- **Not yet.** F12 and F14 read the offered tools and the tool-result error
+  flag that the wire derivations of spec 057 P1 add; until then no export
+  states them. Side effects that required approval (F7) are read from
+  records-input `side_effect` records, which the records API does not emit
+  yet.
+  The `path_ref` join (a watched rule file to its operator snapshot) and the
+  `grant_in_force` join of spec 057 §6.1 are not built: their inputs and
+  output shape arrive with later work packages.
+
 ## Production profile (M2)
 
 Released in v0.11.0. Against a production-profile Node, a host sensor is a

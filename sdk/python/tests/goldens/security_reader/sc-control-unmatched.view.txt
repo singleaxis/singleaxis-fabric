@@ -1,0 +1,12 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: partial(control_unmatched)  verdict: partial
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 shell
+  2    control    policy · pre_tool · deny  policy-svc  (reported)   ← p-69c79a87…  provider_id · certain · unresolved (not in this run)
+  3    control    approval · resolution · allow  (reported)   resolves request  ref_join · certain · unresolved
+  4    hook       pre-shell-check · pre_tool · passed  (callback)   ← p-69c79a87…  provider_id · certain · unresolved (not in this run)
+  5  model_call   gpt-4o-2024-08-06  ← result T1
+  6    control    guardrail · post_tool · allow  output-scan  (reported)   (no matching call)
+  tool calls without an effect: 1   (T1 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F3  decision recorded with no matching call: 4 (#2, #3, #4, #6)

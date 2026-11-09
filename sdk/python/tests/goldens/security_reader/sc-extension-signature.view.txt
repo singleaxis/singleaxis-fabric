@@ -1,0 +1,11 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: not_observed  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  ext     mcp_server  ext-609a…  repo-tools  1.4.0  via reported  3 tools  signature verified  (reported)
+  ext     plugin  ext-e31b…  formatter  0.2.0  via reported  signature invalid  (reported)
+  ext     skill  ext-053d…  pdf-reader  via reported  signature unsigned  (reported)
+  ext     hook_bundle  ext-c2a3…  pre-shell-hooks  via reported  signature unverified  (reported)
+  ext     tool_pack  ext-e5d5…  misc  via reported  signature unknown  (reported)
+  1  model_call   gpt-4o-2024-08-06
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F9  extension signature status other than verified: 4

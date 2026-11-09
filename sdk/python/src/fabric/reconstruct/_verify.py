@@ -1102,7 +1102,7 @@ class _Verifier:
             )  # fmt: skip
         except NotImplementedError:
             return None, "seal_rule_unavailable"
-        except (ValueError, TypeError):  # a float or map: never what the emitter sealed
+        except (ValueError, TypeError):  # a map or non-finite float: never what was sealed
             return f"unhashable:{member.source_sequence}", None
         return digest, None
 

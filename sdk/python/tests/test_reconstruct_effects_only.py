@@ -105,6 +105,7 @@ def test_a_worker_with_only_exec_effects_is_a_run(main_capture: ExecCapture) -> 
         "actions": {"verdict": "not_observed"},
         "effects": {"verdict": "partial", "reasons": ["unattributed_effect"]},
         "corroboration": {"verdict": "not_observed", "reasons": ["not_configured"]},
+        "controls": {"verdict": "not_observed"},  # spec 057 §6.4: no security record
     }
     assert run["verdict"] == "partial"
     assert run["attribution"]["unattributed_effects"]["count"] == 2

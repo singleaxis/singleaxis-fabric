@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
@@ -118,6 +119,22 @@ def record_content(
     return [by_id[oid].get("stored_sha256") for oid in object_ids]
 
 
+def _plain(value: Any) -> Any:
+    """A record attribute value in the digest document: tuples as lists, and a finite float
+    as ``{"f64": repr(value)}`` (spec 057 revision 3.4; canonical JSON carries no floats)."""
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    if isinstance(
+        value, Mapping
+    ):  # never emitted; refused so nothing can pose as a tag
+        raise TypeError("a record attribute is never a map")
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("a record attribute is never a non-finite float")
+        return {"f64": repr(value)}
+    return value
+
+
 def record_digest_document(
     *,
     name: str,
@@ -135,9 +152,7 @@ def record_digest_document(
         "end_ns": end_ns,
         "status": status,
         "attributes": {
-            k: list(v) if isinstance(v, tuple) else v
-            for k, v in attributes.items()
-            if k not in RECEIVER_OWNED_KEYS
+            k: _plain(v) for k, v in attributes.items() if k not in RECEIVER_OWNED_KEYS
         },
         "content": list(content),
     }

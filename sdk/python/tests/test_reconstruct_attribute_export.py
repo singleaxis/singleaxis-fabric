@@ -228,6 +228,7 @@ def test_effects_are_attributed_and_the_chains_bound_the_run(capture: ExecCaptur
         "actions": {"verdict": "complete"},
         "effects": {"verdict": "partial", "reasons": ["unattributed_effect"]},
         "corroboration": {"verdict": "not_observed", "reasons": ["not_configured"]},
+        "controls": {"verdict": "not_observed"},  # spec 057 §6.4: no security record
     }
     # Spec 056 §4.5: never complete while an observed chain is partial.
     assert run["verdict"] == "partial"

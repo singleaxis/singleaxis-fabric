@@ -375,7 +375,12 @@ def assert_report_equals_reference(
     run = only_run(report)
     (inp,) = plan.inputs
     expected = REFERENCE.reconstruct(fixture_input(plan, inp), lambda raw: raw)
-    assert run["chains"] == expected["chains"]
+    # Spec 057 §6.4: the reader adds the fifth chain; with no security record it is
+    # not_observed and the four spec 056 chains are the reference's.
+    chains = dict(run["chains"])
+    controls = chains.pop("controls")
+    assert controls == {"verdict": "not_observed"}
+    assert chains == expected["chains"]
     assert run["attribution"] == expected["attribution"]
     assert run["sensor_events"] == expected["sensor_events"]
     assert dict(reader.links) == {

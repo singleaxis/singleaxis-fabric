@@ -1,0 +1,14 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  grant   grt-8b53…  declared  api  run_start  allow 2  deny 1  fs 2  (reported)
+  grant   grt-2352…  offered  api  run_start  tools 4  (reported)
+  grant   grt-2804…  listed  otlp  run_start  tools 3  (reported)
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 read_file
+  2  grant   grt-e788…  declared  api  change  allow 1  previous grt-8b53…  (changed)  (reported)
+  3  grant   grt-9250…  offered  api  change  tools 3  previous grt-2352…  (changed)  (reported)
+  4  grant   grt-8a1c…  listed  otlp  change  tools 2  previous grt-2804…  (changed)  (reported)
+  5  model_call   gpt-4o-2024-08-06  ← result T1
+  6  grant   grt-e788…  declared  api  resume  allow 1  (reported)
+  tool calls without an effect: 1   (T1 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F2  grant changed within the run: 3 (#2, #3, #4)

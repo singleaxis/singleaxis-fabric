@@ -164,7 +164,15 @@ def test_projection_pairs_across_processes_and_runs(
         "--store-root", str(tmp_path / "a" / "store"), "--tenant", TENANT,
         "--out", str(out), "--projection", str(projection),
     ])  # fmt: skip
-    assert code == 0, capsys.readouterr().err
+    # Spec 057 §6.4: run-a's controls chain is partial (a request with no answer, a forged
+    # invariant), which makes its run partial and the exit code 1.
+    assert code == 1, capsys.readouterr().err
+    report = json.loads(out.read_text())
+    chains = {r["run_id"]: r["chains"]["controls"] for r in report["runs"]}
+    assert sorted(map(str, chains.values())) == sorted(map(str, [
+        {"verdict": "complete"},
+        {"verdict": "partial", "reasons": ["control_pending_at_end", "invariant_conflict"]},
+    ]))  # fmt: skip
     document = json.loads(projection.read_text())
     validate_projection(document)
     controls = [s for s in document["steps"] if s["step_kind"] == "control"]
@@ -247,3 +255,94 @@ def test_a_resolution_reusing_its_request_id_pairs_with_the_request_never_itself
     assert "control.decided_by" not in request["layers"]["decisions_effects"]
     state = request["layers"]["decisions_effects"]["control.resolution_state"]
     assert state["value"] == "revoked"
+
+
+def test_a_wrapped_check_record_seals_and_verifies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Spec 057 revision 3.4: a ``control_check`` record carries a measured float latency
+    (D41). Its segment seals in the agent and the reader recomputes the same seal: no
+    ``seal_mismatch`` and no ``unsealed_segment``, and the controls chain is reported."""
+
+    @records.control_check(kind="permission_check", control="fs-write")
+    def can_write(path: str) -> bool:
+        return path.startswith("/work/")
+
+    def body() -> None:
+        assert can_write("/work/out.txt") is True
+        assert can_write("/etc/passwd") is False
+        records.record_control("policy", decision="allow", latency_ms=412.5)
+
+    _process(tmp_path / "a", "host-a", "run-a", body, monkeypatch)
+    (tmp_path / "a" / "store").mkdir(exist_ok=True)
+    out = tmp_path / "report.json"
+    code = main(["--spans", str(tmp_path / "a" / "spans.jsonl"),
+                 "--store-root", str(tmp_path / "a" / "store"), "--tenant", TENANT,
+                 "--out", str(out)])  # fmt: skip
+    assert code == 0, capsys.readouterr().err
+    (run,) = json.loads(out.read_text())["runs"]
+    gap_types = {gap["gap_type"] for gap in run["gaps"]}
+    assert not gap_types & {"seal_mismatch", "unsealed_segment", "digest_mismatch"}, gap_types
+    assert run["chains"]["controls"] == {"verdict": "complete"}
+    context = run["security_context"]
+    assert context["controls"] == [
+        {"kind": "permission_check", "decision": "allow", "derivation": "wrapped_check",
+         "count": 1},
+        {"kind": "permission_check", "decision": "deny", "derivation": "wrapped_check",
+         "count": 1},
+        {"kind": "policy", "decision": "allow", "derivation": "reported", "count": 1},
+    ]  # fmt: skip
+
+
+def _protojson(value: Any) -> dict[str, Any]:
+    """An OTLP/JSON AnyValue as Go's protojson writes it: int64 as a string, and a double
+    with an integral value without a fraction (``412``, never ``412.0``)."""
+    if isinstance(value, bool):
+        return {"boolValue": value}
+    if isinstance(value, int):
+        return {"intValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": int(value) if value.is_integer() else value}
+    if isinstance(value, list):
+        return {"arrayValue": {"values": [_protojson(item) for item in value]}}
+    return {"stringValue": value}
+
+
+def test_an_integral_float_written_by_a_go_exporter_still_verifies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Spec 057 revision 3.4 seals a float attribute as ``{"f64": repr}``. An OTLP/JSON
+    export from the Node (Go protojson) writes the double 412.0 as ``412``; the reader must
+    read it back as the float the agent sealed, not as an int (a seal mismatch)."""
+
+    def body() -> None:
+        records.record_control("policy", decision="allow", latency_ms=412.0)
+        records.record_control("budget", decision="allow", latency_ms=0.5)
+
+    _process(tmp_path / "a", "host-a", "run-a", body, monkeypatch)
+    (tmp_path / "a" / "store").mkdir(exist_ok=True)
+    rows = [json.loads(line) for line in
+            (tmp_path / "a" / "spans.jsonl").read_text().splitlines()]  # fmt: skip
+    assert any(isinstance(r["attributes"].get("fabric.control.latency_ms"), float)
+               and r["attributes"]["fabric.control.latency_ms"] == 412.0 for r in rows)  # fmt: skip
+    spans = [{
+        "traceId": r["trace_id"], "spanId": r["span_id"], "name": r["name"], "kind": 1,
+        "startTimeUnixNano": str(r["start_ns"]), "endTimeUnixNano": str(r["end_ns"]),
+        "attributes": [{"key": k, "value": _protojson(v)} for k, v in r["attributes"].items()],
+        **({"parentSpanId": r["parent_span_id"]} if r.get("parent_span_id") else {}),
+    } for r in rows if r.get("kind") == "span"]  # fmt: skip
+    export = tmp_path / "export.json"
+    export.write_text(json.dumps({"resourceSpans": [{
+        "resource": {"attributes": [{"key": k, "value": _protojson(v)}
+                                    for k, v in rows[0].get("resource", {}).items()]},
+        "scopeSpans": [{"scope": {"name": "fabric"}, "spans": spans}],
+    }]}))  # fmt: skip
+    assert '"doubleValue": 412}' in export.read_text()
+    out = tmp_path / "report.json"
+    code = main(["--spans", str(export), "--store-root", str(tmp_path / "a" / "store"),
+                 "--tenant", TENANT, "--out", str(out)])  # fmt: skip
+    assert code == 0, capsys.readouterr().err
+    (run,) = json.loads(out.read_text())["runs"]
+    gap_types = {gap["gap_type"] for gap in run["gaps"]}
+    assert not gap_types & {"seal_mismatch", "unsealed_segment", "digest_mismatch"}, gap_types
+    assert run["chains"]["controls"] == {"verdict": "complete"}

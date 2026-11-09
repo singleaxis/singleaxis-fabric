@@ -1,0 +1,313 @@
+{
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00010003-0000-4000-8000-000000010003",
+          "records": 2,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  2
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010008-0000-4000-8000-000000010008",
+          "records": 2,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  4,
+                  5
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000d-0000-4000-8000-00000001000d",
+          "records": 2,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  6,
+                  7
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010012-0000-4000-8000-000000010012",
+          "records": 2,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  9,
+                  10
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "no_effect_channel": 0,
+          "none_in_window": 0
+        },
+        "links": {
+          "none": {
+            "ambiguous": 0,
+            "resolved": 0,
+            "unresolved": 1
+          },
+          "output_match": {
+            "ambiguous": 0,
+            "resolved": 3,
+            "unresolved": 0
+          }
+        },
+        "output_match": {
+          "state": "applied"
+        },
+        "unattributed_effects": {
+          "count": 1,
+          "effects": [
+            {
+              "attempt_uid": "00010012-0000-4000-8000-000000010012",
+              "event_id": "00010014-0000-4000-8000-000000010014"
+            }
+          ]
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "complete"
+        },
+        "effects": {
+          "reasons": [
+            "unattributed_effect"
+          ],
+          "verdict": "partial"
+        }
+      },
+      "checks": {
+        "bytes": "passed",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "passed",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 3,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 10,
+            "last_sequence": 10,
+            "scope_id": "00000001-0000-4000-8000-000000000001",
+            "source_epoch": 1791331200000000000,
+            "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [
+        {
+          "api": "openai.chat_completions",
+          "ended_at": "2026-10-07T00:00:00.500000000Z",
+          "exchange_id": "ex-0",
+          "input_message_count": 2,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 239,
+              "object_id": "ex-0-request",
+              "sha256": "sha256:3223eebb6dbc2976494d2010f1c0e9870644b83d87722b944587a9e95ba0f412",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 390,
+              "object_id": "ex-0-response",
+              "sha256": "sha256:2eb6e05594283547442c2a74e3e4b6d19aab6e17b87d86b0fe7435fbeda956d8",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-8116be83ee59b48e6bc0c80466f4073f",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 0,
+          "span_id": "00f067aa0ba90200",
+          "started_at": "2026-10-07T00:00:00.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [
+            "p-3cbf56985230e1a8188449f8ecb35906"
+          ],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "ex-0",
+          "ended_at": "2026-10-07T00:00:03.500000000Z",
+          "exchange_id": "ex-3",
+          "input_message_count": 4,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 562,
+              "object_id": "ex-3-request",
+              "sha256": "sha256:23ac3daa8add986fa9f18836e6a53fbf84cb537a5d7b37584992e3edcad4c2be",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 483,
+              "object_id": "ex-3-response",
+              "sha256": "sha256:e3ee85972a5e41eecea66bb24f44188750d70227b3bffc02d05e582e5f0e6661",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-29efa9673dff568fa35d7bbfa0a39d41",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 3,
+          "span_id": "00f067aa0ba90203",
+          "started_at": "2026-10-07T00:00:03.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-3cbf56985230e1a8188449f8ecb35906"
+          ],
+          "tool_call_ids_emitted": [
+            "p-352a1578c625370c3b4e5f63ec7b98c7",
+            "p-edf4cf77559dd23e46d26db35777b500"
+          ],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "ex-3",
+          "ended_at": "2026-10-07T00:00:08.500000000Z",
+          "exchange_id": "ex-8",
+          "input_message_count": 7,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 992,
+              "object_id": "ex-8-request",
+              "sha256": "sha256:cc3a8436fe0dba40e9d296a5214c78ddc3d7d8d3878f9983535e9615f0b4a2ca",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 278,
+              "object_id": "ex-8-response",
+              "sha256": "sha256:54aecac21f3a7f1bafb7baf4488ff26ae25e28071ee0646b8943251a5b09a588",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-0660d2461ae47f2add5aa112fe1205cd",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 8,
+          "span_id": "00f067aa0ba90208",
+          "started_at": "2026-10-07T00:00:08.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-3cbf56985230e1a8188449f8ecb35906",
+            "p-352a1578c625370c3b4e5f63ec7b98c7",
+            "p-edf4cf77559dd23e46d26db35777b500"
+          ],
+          "tool_call_ids_emitted": [],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        }
+      ],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 10,
+          "exchanges": 3,
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "segments": [
+        {
+          "last_sequence": 10,
+          "manifest_digest": "sha256:74d634e719f99596cce88a744190f937a832cc9f6adc8e5ee4a9bc6c7e4dbe7f",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:ea656e3df8857fc28f9754532197982d12e1dadcbd458960e7c214745d07216b",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [
+        {
+          "exchange_ids": [
+            "ex-0",
+            "ex-3",
+            "ex-8"
+          ],
+          "thread_id": "thread-0"
+        }
+      ],
+      "verdict": "partial"
+    }
+  ]
+}

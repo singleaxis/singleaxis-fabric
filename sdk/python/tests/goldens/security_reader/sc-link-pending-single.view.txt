@@ -1,0 +1,12 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 write_file
+  2    control    permission_check · pre_tool · deny  fs-write  path.outside_root  0.04 ms  (wrapped_check)   ← T1  pending_single · certain
+  3      no effect observed for T1 (control_denied: #2)
+  4  model_call   gpt-4o-2024-08-06  ← result T1  → tool_call T2 read_file
+  5    control    permission_check · pre_tool · allow  fs-read  0.03 ms  (wrapped_check)   ← T2  pending_single · certain
+  6  model_call   gpt-4o-2024-08-06  ← result T2
+  tool calls without an effect: 2   (T1 control_denied, T2 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F5  deny gates a tool call and no effect is attributed to it: 1 (#2)

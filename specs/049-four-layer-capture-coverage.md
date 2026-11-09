@@ -2,7 +2,7 @@
 title: Four-layer capture contract (context, structure, content, decisions and effects)
 status: accepted
 qualification: NO_COVERAGE_CLAIM
-revision: 6.7
+revision: 6.8
 last_updated: 2026-11-09
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
@@ -71,6 +71,14 @@ spec 022 decision-line keys, reused with a records `capture_check`, so the
 records-input hook record of spec 057 §5.1 carries the hook's name and phase
 (activity 2.1 `hook.completed` requires both; 6.6 placed only `E01`–`E09` on
 records).
+Revision 6.8 (spec 057 P0c, WP7-2) amends section 2.12 rule 1: `D41` and
+`E03` are numbers, so a records-input record can carry a float, which
+spec-029 canonical JSON refuses. In the record digest document a finite
+float attribute value (also inside an array) is written as the object
+`{"f64": "<shortest round-trip decimal>"}` (Python `repr`); a map value is
+refused, so nothing an emitter writes can pose as the tag. Before this
+change such a record could not be digested: the agent left its segment
+unsealed and the reader reported it unhashable.
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -1364,7 +1372,9 @@ store and the telemetry can recompute it.
    such as `http.response.status_code`, `error.type`, `gen_ai.*` and
    `fabric.wire.*` — minus receiver-owned keys (registry `owner: receiver`:
    `fabric.source.authenticated`) — and `content` is the `stored_sha256` of
-   each content object the record references, in reference order. The
+   each content object the record references, in reference order. A finite
+   float attribute value is written as `{"f64": "<repr>"}` (revision 6.8);
+   a map value is refused. The
    emitter emits only allowlisted keys, so the agent computes the digest from
    what it emits and the verifier from what it reads; a Node that stripped
    an emitter-owned key causes `seal_mismatch`, as it should.

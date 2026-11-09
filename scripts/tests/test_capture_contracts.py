@@ -57,7 +57,9 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     # + 1.8.0: one destination_rejected loss record
     # + 1.9.0 (spec 057 WP7-0): the mapping-profile schema, two valid and five invalid
     #   fixtures (mapping profiles, the controls chain and security_context counts)
-    assert len(validated) == 165
+    # + spec 057 WP7-2 (1.9.0, unreleased): two refusals (a run verdict a partial controls
+    #   chain does not bound; a fact-backed controls reason without its fact)
+    assert len(validated) == 167
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 

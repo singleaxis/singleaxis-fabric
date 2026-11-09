@@ -163,10 +163,12 @@
     {"path": "fixtures/invalid/otlp-mapping-profile-clear-identifier.json", "sha256": "e9144421919dfe11b62d08a136d89443fc66bc91d1bb72b779466fdc40bc71ad", "expectation": "invalid", "expected_error": "capture.mapping_profile.identity"},
     {"path": "fixtures/invalid/otlp-mapping-profile-invariant-target.json", "sha256": "c230866f035c95bc18dfb87b4808dcb113d5ada16a77328c2276023a8fd31718", "expectation": "invalid", "expected_error": "capture.schema"},
     {"path": "fixtures/invalid/otlp-mapping-profile-keeps-unmapped.json", "sha256": "71cc94097df2e93dc25e93bccf18cf70e623b381fd2ca4af0eafd870ac29dc23", "expectation": "invalid", "expected_error": "capture.schema"},
-    {"path": "fixtures/invalid/run-reconstruction-controls-unknown-reason.json", "sha256": "0143aa6e570fa34e5549b7c79a23d75d81632af41310ced2fd6d9594e89c43bf", "expectation": "invalid", "expected_error": "capture.schema"},
-    {"path": "fixtures/invalid/run-reconstruction-security-context-unknown-fact.json", "sha256": "8ea5439fe7df577b7b93d9086deedd9c666d53c53f25d1c995bfd65cb775cf9b", "expectation": "invalid", "expected_error": "capture.schema"},
+    {"path": "fixtures/invalid/run-reconstruction-controls-unknown-reason.json", "sha256": "e8b4d44136ec6d363db1040a727b0285c345299b53aabba846d9d2e37d619eef", "expectation": "invalid", "expected_error": "capture.schema"},
+    {"path": "fixtures/invalid/run-reconstruction-security-context-unknown-fact.json", "sha256": "5e1fbedefa08359c4b59fe336ab85de7b3f9acf5742b517182afc19449261417", "expectation": "invalid", "expected_error": "capture.schema"},
     {"path": "fixtures/valid/otlp-mapping-profile-example.json", "sha256": "c73195fd430545ad4acdd83053e293e5e9308a847847515674f7c46d7536c4ee", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/valid/run-reconstruction-security-context.json", "sha256": "bf8542f4d2171c020145048012520c4b02f12c0c3d52bf9ab9de31c30d59e434", "expectation": "valid", "expected_error": null},
-    {"path": "schema/otlp-mapping-profile-v1.schema.json", "sha256": "681dd25e5192bb8d2a7a519615c83d3c44ca626dccee4b848c3cf5e5020e0deb", "expectation": "schema", "expected_error": null}
+    {"path": "fixtures/valid/run-reconstruction-security-context.json", "sha256": "e3e68130c8a24181c6abf904c1393621a2001cf466bfba2f8ae0005611168897", "expectation": "valid", "expected_error": null},
+    {"path": "schema/otlp-mapping-profile-v1.schema.json", "sha256": "681dd25e5192bb8d2a7a519615c83d3c44ca626dccee4b848c3cf5e5020e0deb", "expectation": "schema", "expected_error": null},
+    {"path": "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json", "sha256": "6286c35fdc9487255815be99e4591bb4e51133e54d8376e82b812cafa2131490", "expectation": "invalid", "expected_error": "capture.reconstruction.chains"},
+    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "bf8542f4d2171c020145048012520c4b02f12c0c3d52bf9ab9de31c30d59e434", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"}
   ]
 }

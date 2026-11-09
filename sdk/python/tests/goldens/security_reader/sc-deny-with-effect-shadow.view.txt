@@ -1,0 +1,10 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 run_shell
+  2    control    policy · pre_tool · deny  policy-svc  policy.denied  mode shadow  (reported)  effect #4 output_match · certain  later allow #3   ← T1  provider_id · certain
+  3    control    permission_check · pre_tool · allow  shell-acl  (reported)   ← T1  provider_id · certain
+  4    effect     exec ./deploy.sh alpha exit 0        ← T1  output_match · certain
+  5  model_call   gpt-4o-2024-08-06  ← result T1
+  output match: applied
+  facts:
+    F1  no declared grant recorded
+    F6  deny gates a tool call and an effect is attributed to it (co-occurrence): 1 (#2)

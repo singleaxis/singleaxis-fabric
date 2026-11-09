@@ -1454,6 +1454,7 @@ def capture_documents(base_report: Mapping[str, Any]) -> dict[str, Any]:
         "verdict": "partial",
         "reasons": ["ambiguous_attribution", "control_pending_at_end"],
     }
+    run["verdict"] = "partial"  # spec 057 §6.4: a partial controls chain bounds the run
     run["security_context"] = {
         "grants": {"offered": 2, "listed": 1, "declared": 1},
         "controls": [{"kind": "permission_check", "decision": "deny", "derivation": "wrapped_check", "count": 2},
@@ -1473,6 +1474,12 @@ def capture_documents(base_report: Mapping[str, Any]) -> dict[str, Any]:
     bad_fact["runs"][0]["security_context"]["facts"] = [
         {"code": "violation", "count": 1, "event_ids": []}
     ]
+    # Spec 057 §6.4 (WP7-2): the run verdict ignores a partial controls chain; a
+    # fact-backed reason without its fact.
+    unbounded = copy.deepcopy(report)
+    unbounded["runs"][0]["verdict"] = "complete_for_observed_scopes"
+    unbacked = copy.deepcopy(report)
+    unbacked["runs"][0]["chains"]["controls"]["reasons"].append("control_unmatched")
     invariant = _profile()
     invariant["rules"][0]["set"].append(
         {"target": "fabric.control.enforced_by_fabric", "value": False}
@@ -1488,6 +1495,8 @@ def capture_documents(base_report: Mapping[str, Any]) -> dict[str, Any]:
         "fixtures/valid/run-reconstruction-security-context.json": report,
         "fixtures/invalid/run-reconstruction-controls-unknown-reason.json": bad_reason,
         "fixtures/invalid/run-reconstruction-security-context-unknown-fact.json": bad_fact,
+        "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json": unbounded,
+        "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json": unbacked,
     }
 
 
@@ -1497,6 +1506,8 @@ INVALID_CAPTURE = {
     "fixtures/invalid/otlp-mapping-profile-clear-identifier.json": "capture.mapping_profile.identity",
     "fixtures/invalid/run-reconstruction-controls-unknown-reason.json": "capture.schema",
     "fixtures/invalid/run-reconstruction-security-context-unknown-fact.json": "capture.schema",
+    "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json": "capture.reconstruction.verdict",
+    "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json": "capture.reconstruction.chains",
 }
 INVALID_COVERAGE: dict[str, str] = {}
 

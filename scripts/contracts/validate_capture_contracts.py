@@ -871,7 +871,10 @@ def _chains_verdict(run: Mapping[str, Any]) -> str | None:
     chains = run.get("chains")
     if chains is None:
         return None
-    verdicts = {chains[name]["verdict"] for name in _CHAINS}
+    # Spec 057 §6.4: the optional fifth chain, controls, bounds the run like the others.
+    verdicts = {
+        chains[name]["verdict"] for name in (*_CHAINS, "controls") if name in chains
+    }
     if "partial" in verdicts:
         return "partial"
     return "unverified" if "unverified" in verdicts else _COMPLETE
@@ -892,7 +895,9 @@ def _check_chains(run: Mapping[str, Any], path: str) -> None:
                 f"{path}.chains.decisions",
                 "decisions is not_observed only for a run with no captured exchange",
             )
-        for name in _CHAINS:
+        for name in (*_CHAINS, "controls"):
+            if name not in chains:  # controls is optional until the reader emits it
+                continue
             chain = chains[name]
             reasons = bool(chain.get("reasons"))
             if (chain["verdict"] == "complete" and reasons) or (
@@ -940,6 +945,65 @@ def _check_chains(run: Mapping[str, Any], path: str) -> None:
     ids = [event["event_id"] for event in run.get("sensor_events", [])]
     if len(ids) != len(set(ids)):
         raise _chain_fail(f"{path}.sensor_events", "a host event is listed once")
+    _check_security_context(run, path)
+
+
+# Spec 057 §6.4: each controls-chain reason that a fact states, and the fact it needs.
+_CONTROLS_FACTS = (
+    ("control_unmatched", "control_unmatched"),
+    ("control_pending_at_end", "control_pending_at_end"),
+    ("invariant_conflict", "control_invariant_conflict"),
+)
+
+
+def _check_security_context(run: Mapping[str, Any], path: str) -> None:
+    """Spec 057 §6.4: the controls chain and security_context arrive together; a
+    not_observed chain has a zero-count context; the chain's fact-backed reasons agree with
+    the facts; each fact's event ids are at most its count."""
+    controls = (run.get("chains") or {}).get("controls")
+    context = run.get("security_context")
+    if (controls is None) != (context is None):
+        raise _chain_fail(
+            f"{path}.security_context",
+            "chains.controls and security_context are reported together",
+        )
+    if controls is None or context is None:
+        return
+    facts = {fact["code"]: fact for fact in context["facts"]}
+    for fact in context["facts"]:
+        if len(fact["event_ids"]) > fact["count"]:
+            raise _chain_fail(
+                f"{path}.security_context.facts", "event ids exceed the count"
+            )
+    if controls["verdict"] == "not_observed":
+        empty = (
+            not any(context["grants"].values())
+            and not context["controls"]
+            and not context["control_links"]
+            and not context["hooks"]
+            and not context["extensions"]
+            and not facts
+        )
+        if not empty:
+            raise _chain_fail(
+                f"{path}.security_context",
+                "a not_observed controls chain has a zero-count security_context",
+            )
+        return
+    reasons = set(controls.get("reasons", ()))
+    for reason, code in _CONTROLS_FACTS:
+        if (reason in reasons) != (code in facts):
+            raise _chain_fail(
+                f"{path}.chains.controls",
+                f"{reason} is a reason exactly when fact {code} is stated",
+            )
+    if ("ambiguous_attribution" in reasons) != bool(
+        context["control_links"].get("pending_set")
+    ):
+        raise _chain_fail(
+            f"{path}.chains.controls",
+            "ambiguous_attribution is a reason exactly when a control is linked by pending_set",
+        )
 
 
 def _check_chain_reasons(

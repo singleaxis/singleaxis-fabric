@@ -1,0 +1,17 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 deploy
+  2    control    permission_request · pre_tool · pending  deploy-gate  (reported)   ← T1  provider_id · certain
+  3    control    approval · pre_tool · pending  deploy-gate  (reported)   ← T1  provider_id · certain
+  4  model_call   gpt-4o-2024-08-06  ← result T1
+  tool calls without an effect: 1   (T1 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+
+run trace:cccccccccccccccccccccccccccccccc  decisions: not_observed  actions: not_observed  effects: not_observed(not_instrumented)  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1    control    permission_request · pre_tool · allow  (reported)   resolves attempt 00010004…  ref_join · certain
+  2    control    approval · pre_tool · allow  (reported)   resolves attempt 00010006…  ref_join · certain
+  model calls: none recorded in this run (decisions not observed)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded

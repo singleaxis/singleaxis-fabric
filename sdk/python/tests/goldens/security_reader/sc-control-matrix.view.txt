@@ -1,0 +1,22 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1    control    guardrail · input · allow  input-screen  12.5 ms  (reported)
+  2    control    provider_safety · output · deny  azure-openai-prod  violence  (literal)
+  3  model_call   gpt-4o-2024-08-06  → tool_call T1 shell, T2 write_file, T3 delete_branch
+  4    control    policy · pre_tool · deny  policy-svc  policy.denied  412 ms  mode shadow  (reported)   ← T1  provider_id · certain
+  5      no effect observed for T1 (control_denied: #4)
+  6    control    permission_check · pre_tool · allow  fs-write  0.04 ms  (wrapped_check)   ← T2  provider_id · certain
+  7    control    os_access · effect · deny  kernel  errno.eacces  (reported)
+  8    control    approval · pre_tool · escalate  change-board  (reported)   ← T3  provider_id · certain
+  9    control    approval · pre_tool · allow  (reported)   resolves #8  ref_join · certain
+ 10    control    elicitation · pre_tool · escalate  repo-tools  (reported)   ← T3  provider_id · certain
+ 11    control    elicitation · pre_tool · cancelled  (reported)   resolves #10  ref_join · certain
+ 12    control    rate_limit · pre_model · error  quota  timeout  (reported)
+ 13    control    budget · run · modify  spend  (reported)
+ 14    control    other · post_tool · unknown  (reported)   ← T2  provider_id · certain
+ 15  model_call   gpt-4o-2024-08-06  ← result T1, T2, T3
+  tool calls without an effect: 3   (T1 control_denied, T2 none_in_window, T3 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F5  deny gates a tool call and no effect is attributed to it: 1 (#4)
+    F13 OS refusals: 1 (errno.eacces: 1; #7)

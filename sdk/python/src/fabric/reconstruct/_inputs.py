@@ -446,7 +446,16 @@ def _any_value(value: Any, where: str) -> Any:  # noqa: PLR0911 - one return per
         # Signed: a run_start entered before any call has last_sequence -1.
         return _require_int(value["intValue"], where, "intValue", signed=True)
     if "doubleValue" in value:
-        return value["doubleValue"]
+        # A double is always a float: protojson writes an integral one without a fraction
+        # (``412``) and a non-finite one as a string, which the record digest must still
+        # see as the float the emitter sealed (spec 049 revision 6.8, ``{"f64": ...}``).
+        double = value["doubleValue"]
+        if isinstance(double, (int, float, str)) and not isinstance(double, bool):
+            try:
+                return float(double)
+            except ValueError:
+                pass
+        raise ReconstructInputError(f"{where}: doubleValue must be a number")
     if "arrayValue" in value:
         values = _require_mapping(value["arrayValue"], where, "arrayValue").get("values") or []
         if not isinstance(values, list):

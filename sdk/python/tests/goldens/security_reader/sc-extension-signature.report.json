@@ -1,0 +1,305 @@
+{
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00010004-0000-4000-8000-000000010004",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010006-0000-4000-8000-000000010006",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010008-0000-4000-8000-000000010008",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  2,
+                  2
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000a-0000-4000-8000-00000001000a",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  3,
+                  3
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000c-0000-4000-8000-00000001000c",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  4,
+                  4
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000e-0000-4000-8000-00000001000e",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  5,
+                  5
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 0,
+          "no_effect_channel": 0,
+          "none_in_window": 0
+        },
+        "links": {},
+        "output_match": {
+          "reason": "not_exposed",
+          "state": "not_applicable"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "not_observed"
+        },
+        "controls": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "complete"
+        },
+        "effects": {
+          "verdict": "complete"
+        }
+      },
+      "checks": {
+        "bytes": "passed",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "passed",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 1,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 6,
+            "last_sequence": 6,
+            "scope_id": "00000001-0000-4000-8000-000000000001",
+            "source_epoch": 1791331200000000000,
+            "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [
+        {
+          "api": "openai.chat_completions",
+          "ended_at": "2026-10-07T00:00:06.500000000Z",
+          "exchange_id": "ex-6",
+          "input_message_count": 2,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 239,
+              "object_id": "ex-6-request",
+              "sha256": "sha256:3223eebb6dbc2976494d2010f1c0e9870644b83d87722b944587a9e95ba0f412",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 278,
+              "object_id": "ex-6-response",
+              "sha256": "sha256:51232046ef34acf9a9cc2348063bba6f41a35f854c63ee2f21e220e16c727c7a",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-8116be83ee59b48e6bc0c80466f4073f",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 6,
+          "span_id": "00f067aa0ba90206",
+          "started_at": "2026-10-07T00:00:06.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        }
+      ],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 6,
+          "exchanges": 1,
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {},
+        "controls": [],
+        "extensions": [
+          {
+            "count": 1,
+            "kind": "hook_bundle",
+            "observed_via": "reported",
+            "signature_status": "unverified"
+          },
+          {
+            "count": 1,
+            "kind": "mcp_server",
+            "observed_via": "reported",
+            "signature_status": "verified"
+          },
+          {
+            "count": 1,
+            "kind": "plugin",
+            "observed_via": "reported",
+            "signature_status": "invalid"
+          },
+          {
+            "count": 1,
+            "kind": "skill",
+            "observed_via": "reported",
+            "signature_status": "unsigned"
+          },
+          {
+            "count": 1,
+            "kind": "tool_pack",
+            "observed_via": "reported",
+            "signature_status": "unknown"
+          }
+        ],
+        "facts": [
+          {
+            "code": "no_declared_grant",
+            "count": 1,
+            "event_ids": []
+          },
+          {
+            "code": "extension_signature",
+            "count": 4,
+            "event_ids": [
+              "00010005-0000-4000-8000-000000010005",
+              "00010007-0000-4000-8000-000000010007",
+              "00010009-0000-4000-8000-000000010009",
+              "0001000b-0000-4000-8000-00000001000b"
+            ]
+          }
+        ],
+        "grants": {
+          "declared": 0,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": []
+      },
+      "segments": [
+        {
+          "last_sequence": 6,
+          "manifest_digest": "sha256:74d634e719f99596cce88a744190f937a832cc9f6adc8e5ee4a9bc6c7e4dbe7f",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:219951ca265b83985802008e55a7c5c1730b3db95bfe6f3f0c6945e117488820",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [
+        {
+          "exchange_ids": [
+            "ex-6"
+          ],
+          "thread_id": "thread-0"
+        }
+      ],
+      "verdict": "complete_for_observed_scopes"
+    }
+  ]
+}
