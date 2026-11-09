@@ -325,6 +325,7 @@ func (s *diskSpool) quarantinePartial(name string, rejected int64) error {
 // drain retries indefinitely during receiver outages and leaves committed
 // files for replay after restart. It never blocks the BPF ring-buffer reader.
 func (s *diskSpool) drain(ctx context.Context, send func(context.Context, []plog.LogRecord) error) error {
+	retries := newRetryLog(30 * time.Second)
 	for {
 		if ctx.Err() != nil {
 			return nil
@@ -353,8 +354,8 @@ func (s *diskSpool) drain(ctx context.Context, send func(context.Context, []plog
 				log.Printf("fabric-host-emitter: OTLP partial acceptance quarantined batch rejected_records=%d total_records=%d; complete delivery is impossible", partial.rejected, partial.total)
 				continue
 			}
-			// RPC status descriptions are untrusted and may echo content or secrets.
-			log.Printf("fabric-host-emitter: export retry pending, spool entry retained error_type=%T", err)
+			// The status message is untrusted: sanitized and bounded (diag.go).
+			retries.log("fabric-host-emitter: export retry pending, spool entry retained", describeExportError(err))
 			select {
 			case <-ctx.Done():
 				return nil
@@ -362,6 +363,7 @@ func (s *diskSpool) drain(ctx context.Context, send func(context.Context, []plog
 			}
 			continue
 		}
+		retries.reset()
 		if err := s.acknowledge(name); err != nil {
 			return err
 		}

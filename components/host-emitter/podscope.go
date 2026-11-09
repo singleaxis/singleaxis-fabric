@@ -65,6 +65,14 @@ type podScope struct {
 	pods      map[string]*podInfo
 	installed map[string]installedRoot
 	refused   map[string]bool
+	// kubepods are the kubelet pod hierarchies found under cgroupRoot
+	// (kubepods.go); discover re-reads them while a matching pod has no
+	// cgroup, at most once per rediscoverEvery.
+	kubepods     []kubepodsRoot
+	kubepodsGen  uint64
+	discover     func(cgroupRoot string) []kubepodsRoot
+	discoveredAt time.Time
+	now          func() time.Time
 
 	// Health counters, logged with the emitter's status line.
 	apiErrors      atomic.Uint64
@@ -73,8 +81,12 @@ type podScope struct {
 	rootsLate      atomic.Uint64
 }
 
+// rediscoverEvery bounds how often the kubelet hierarchies are searched again
+// while a matching pod has no cgroup.
+const rediscoverEvery = 10 * time.Second
+
 func newPodScope(cgroupRoot string, roots rootTable, statID func(string) (uint64, error), late, overLimit func()) *podScope {
-	return &podScope{
+	s := &podScope{
 		cgroupRoot: cgroupRoot,
 		roots:      roots,
 		statID:     statID,
@@ -83,34 +95,86 @@ func newPodScope(cgroupRoot string, roots rootTable, statID func(string) (uint64
 		pods:       make(map[string]*podInfo),
 		installed:  make(map[string]installedRoot),
 		refused:    make(map[string]bool),
+		discover:   discoverKubepods,
+		now:        time.Now,
 	}
+	s.kubepods = s.discover(cgroupRoot)
+	s.discoveredAt = s.now()
+	return s
 }
 
-// sliceCandidates lists where the kubelet places a pod's slice under either
-// cgroup driver and every QoS class (056 §4.3 "Kubernetes sandbox roots").
-func sliceCandidates(uid string) []string {
-	u := strings.ReplaceAll(uid, "-", "_")
-	return []string{
-		"kubepods.slice/kubepods-burstable.slice/kubepods-burstable-pod" + u + ".slice",
-		"kubepods.slice/kubepods-besteffort.slice/kubepods-besteffort-pod" + u + ".slice",
-		"kubepods.slice/kubepods-pod" + u + ".slice",
-		"kubepods/burstable/pod" + uid,
-		"kubepods/besteffort/pod" + uid,
-		"kubepods/pod" + uid,
-	}
-}
-
-// qosDirs are the directories a new pod slice appears in; the slice watcher
-// listens on them.
-func qosDirs(cgroupRoot string) []string {
+// qosDirs are the directories a new pod cgroup appears in (the slice watcher
+// listens on them) and the generation of the hierarchy list they come from.
+func (s *podScope) qosDirs() ([]string, uint64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var dirs []string
-	for _, d := range []string{
-		"kubepods.slice", "kubepods.slice/kubepods-burstable.slice", "kubepods.slice/kubepods-besteffort.slice",
-		"kubepods", "kubepods/burstable", "kubepods/besteffort",
-	} {
-		dirs = append(dirs, filepath.Join(cgroupRoot, d))
+	for _, r := range s.kubepods {
+		dirs = append(dirs, r.qosDirs()...)
+	}
+	return dirs, s.kubepodsGen
+}
+
+// kubepodsDirs lists the hierarchies searched, for the health report.
+func (s *podScope) kubepodsDirs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	dirs := make([]string, 0, len(s.kubepods))
+	for _, r := range s.kubepods {
+		dirs = append(dirs, r.dir)
 	}
 	return dirs
+}
+
+// rediscoverLocked searches the kubelet hierarchies again when one is due.
+// It reports whether the list changed. s.mu is held.
+func (s *podScope) rediscoverLocked() bool {
+	if s.now().Sub(s.discoveredAt) < rediscoverEvery {
+		return false
+	}
+	s.discoveredAt = s.now()
+	found := s.discover(s.cgroupRoot)
+	if len(found) == len(s.kubepods) {
+		same := true
+		for i := range found {
+			if found[i] != s.kubepods[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return false
+		}
+	}
+	s.kubepods = found
+	s.kubepodsGen++
+	return true
+}
+
+// podScopeMismatch is the health line's warning when the selector matched
+// pods on this node whose cgroups were not found (empty when none). It names
+// the kubelet hierarchies searched, never a pod.
+func podScopeMismatch(matched, found int, searched []string) string {
+	if matched == found {
+		return ""
+	}
+	return fmt.Sprintf("fabric-host-emitter: pod scope: selector matched %d pods on this node, found %d cgroups; "+
+		"the other %d are not captured. Searched kubelet hierarchies: %s. A pod still starting has no cgroup yet; "+
+		"if this persists the kubelet uses a cgroup layout the emitter does not know: set EMIT_AGENT_CGROUP_ROOTS to its pod slices",
+		matched, found, matched-found, strings.Join(searched, ", "))
+}
+
+// scopeReport is what the health line says about pod scoping: the pods the
+// selector matched on this node and how many of them have a cgroup found.
+func (s *podScope) scopeReport() (matched, found int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for uid := range s.pods {
+		if _, ok := s.installed[uid]; ok || s.findSlice(uid) != "" {
+			found++
+		}
+	}
+	return len(s.pods), found
 }
 
 // replace sets the full list of matching pods (after a list call).
@@ -160,15 +224,25 @@ func (s *podScope) remove(uid string) {
 	s.rootsRemoved.Add(1)
 }
 
-// resync installs the root of every known pod whose slice now exists.
+// resync installs the root of every known pod whose slice now exists. While
+// a pod has none, the kubelet hierarchies are searched again (bounded by
+// rediscoverEvery): the kubelet may have created its root after the emitter
+// started.
 func (s *podScope) resync() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	rediscovered := false
 	for uid, pod := range s.pods {
 		if _, ok := s.installed[uid]; ok {
 			continue
 		}
 		path := s.findSlice(uid)
+		if path == "" && !rediscovered {
+			rediscovered = true
+			if s.rediscoverLocked() {
+				path = s.findSlice(uid)
+			}
+		}
 		if path == "" {
 			continue
 		}
@@ -202,11 +276,14 @@ func (s *podScope) resync() {
 	}
 }
 
+// findSlice returns the pod's cgroup in any known kubelet hierarchy. s.mu is
+// held.
 func (s *podScope) findSlice(uid string) string {
-	for _, rel := range sliceCandidates(uid) {
-		path := filepath.Join(s.cgroupRoot, rel)
-		if info, err := os.Stat(path); err == nil && info.IsDir() {
-			return path
+	for _, r := range s.kubepods {
+		for _, path := range r.candidates(uid) {
+			if info, err := os.Stat(path); err == nil && info.IsDir() {
+				return path
+			}
 		}
 	}
 	return ""
@@ -484,6 +561,7 @@ func (k *kubeClient) watch(ctx context.Context, resourceVersion string, scope *p
 // run lists, then watches, until ctx ends. API errors are retried with
 // backoff and counted; they never touch the roots already installed.
 func (k *kubeClient) run(ctx context.Context, scope *podScope) {
+	retries := newRetryLog(time.Minute)
 	backoff := time.Second
 	resourceVersion := ""
 	for ctx.Err() == nil {
@@ -509,8 +587,9 @@ func (k *kubeClient) run(ctx context.Context, scope *podScope) {
 			resourceVersion = ""
 		}
 		scope.apiErrors.Add(1)
-		// API status bodies are not logged: they may echo request details.
-		log.Printf("fabric-host-emitter: pod watch retry pending error_type=%T", err)
+		// API status bodies are never read into an error; the text is
+		// sanitized and bounded all the same (diag.go).
+		retries.log("fabric-host-emitter: pod watch retry pending", describeError(err))
 		select {
 		case <-ctx.Done():
 			return
@@ -524,8 +603,21 @@ func (k *kubeClient) run(ctx context.Context, scope *podScope) {
 
 // watchSlices re-checks pod slices whenever a QoS directory changes, and at
 // least every interval (inotify where available, slicewatch_*.go).
+// When a search finds new kubelet hierarchies, their directories are watched
+// from then on.
 func (s *podScope) watchSlices(ctx context.Context, interval time.Duration) {
-	changes := sliceChanges(ctx, qosDirs(s.cgroupRoot))
+	for ctx.Err() == nil {
+		s.watchGeneration(ctx, interval)
+	}
+}
+
+// watchGeneration watches the QoS directories of the current hierarchy list
+// and returns when that list changes (or ctx ends).
+func (s *podScope) watchGeneration(ctx context.Context, interval time.Duration) {
+	dirs, gen := s.qosDirs()
+	watchCtx, stopWatch := context.WithCancel(ctx)
+	defer stopWatch()
+	changes := sliceChanges(watchCtx, dirs)
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	for {
@@ -536,5 +628,8 @@ func (s *podScope) watchSlices(ctx context.Context, interval time.Duration) {
 		case <-tick.C:
 		}
 		s.resync()
+		if _, next := s.qosDirs(); next != gen {
+			return
+		}
 	}
 }
