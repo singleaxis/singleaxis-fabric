@@ -50,6 +50,12 @@ V2_TYPES: Mapping[str, str] = {
     "trg": "trigger", "dsp": "dispatch", "agt": "agent", "tgt": "target", "hst": "host",
     "sbx": "sandbox", "mcps": "mcp_session", "rpc": "jsonrpc", "dbn": "db_namespace",
     "txn": "db_transaction", "mst": "memory_store", "mkey": "memory_key", "p": "provider",
+    # spec 051 §5.3 and spec 052 (pulled forward by spec 057 OD-15)
+    "ckp": "checkpoint", "eff": "effect", "out": "outcome", "ctl": "control", "axn": "action",
+    "prf": "proof",
+    # spec 057 §3 rule 6
+    "grt": "grant", "crd": "credential", "ext": "extension", "src": "extension_source",
+    "pth": "path_rule", "net": "net_rule",
 }  # fmt: skip
 MIN_ID_KEY_BYTES = 16
 # 050 §3.3: one allocator per process, shared by the wire and records inputs. ``"wire"`` is

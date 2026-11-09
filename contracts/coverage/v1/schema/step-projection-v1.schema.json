@@ -288,7 +288,17 @@
             "output_match",
             "process_anchor",
             "process_lineage",
-            "sandbox_report"
+            "sandbox_report",
+            "provider_id",
+            "exchange_id",
+            "mcp_session",
+            "rpc_id",
+            "reported_ref",
+            "ref_join",
+            "grant_in_force",
+            "pending_single",
+            "pending_set",
+            "path_ref"
           ]
         },
         "confidence": {
@@ -501,7 +511,17 @@
             "output_match",
             "process_anchor",
             "process_lineage",
-            "sandbox_report"
+            "sandbox_report",
+            "provider_id",
+            "exchange_id",
+            "mcp_session",
+            "rpc_id",
+            "reported_ref",
+            "ref_join",
+            "grant_in_force",
+            "pending_single",
+            "pending_set",
+            "path_ref"
           ]
         },
         "confidence": {

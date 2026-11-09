@@ -51,6 +51,7 @@ from contracts import (  # noqa: E402
     host_records,
     ingress_groups,
     p1_reference as ref,
+    security_context,
     validate_coverage_contracts as coverage,
 )
 
@@ -352,7 +353,7 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.manifest.after_source_sequence": integer(-1),
         "fabric.manifest.capture_point_fields": array(
             string(
-                f"^{cp_id}=([XCSND][0-9]{{2}}(,[XCSND][0-9]{{2}}){{0,255}})?$",
+                f"^{cp_id}=([XCSNDGE][0-9]{{2}}(,[XCSNDGE][0-9]{{2}}){{0,255}})?$",
                 "wire.py.httpx=X08,N01,N02",
             ),
             64,
@@ -464,7 +465,9 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.process.pid_ns": string(DECIMAL_U64, "4026531836"),
         "fabric.sandbox.created_id": pseudonym("sbx"),
         # spec 053 §6.2.3 (revisions 3 and 4): host records only (capture-point kind S)
-        "fabric.sensor.event_class": enum(["exec", "connect", "file"], "validator"),
+        "fabric.sensor.event_class": enum(
+            ["exec", "connect", "file", "exit"], "validator"
+        ),
         "fabric.sensor.syscall": enum(
             [
                 "execve",
@@ -597,6 +600,183 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.workflow.iteration": integer(0),
         "fabric.workflow.node": operator_label("plan", "act"),
     }
+    checks.update(security_context_checks(reg))
+    return checks
+
+
+# Spec 057 (security context), with the spec 051 records-core and spec 052 control rows it
+# pulls forward (OD-15).
+PUBLIC_LABEL = "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+REASON_CODE = "^[a-z0-9][a-z0-9._:-]{0,63}$"
+UUID4_CORE = "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+CLEAR_EXISTING = {"clear": "existing"}
+
+
+def security_context_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Checks of the spec 057 keys, the spec 051 records-core keys and the spec 052
+    decision-22 control id validators."""
+    vocab = reg["vocab"]
+    fields = {f["id"]: f for f in reg["fields"]["fields"]}
+
+    def enum_of(values: list[str], source: str) -> dict[str, Any]:
+        return {"type": "enum", "values": list(values), "source": source}
+
+    def field_enum(field_id: str, index: int = 0) -> dict[str, Any]:
+        groups = re.findall(
+            r"enum ([a-z0-9_]+(?:/[a-z0-9_]+)+)", fields[field_id]["type"]
+        )
+        return enum_of(groups[index].split("/"), "field_type")
+
+    def string(pattern: str, *examples: str, **extra: Any) -> dict[str, Any]:
+        return {
+            "type": "string",
+            "pattern": pattern,
+            **extra,
+            "examples": list(examples),
+        }
+
+    def pseudonym(prefix: str, **extra: Any) -> dict[str, Any]:
+        return string(
+            f"^{prefix}-[0-9a-f]{{32}}$",
+            f"{prefix}-9f86d081884c7d659a2feaa0c55ad015",
+            **extra,
+        )
+
+    def count() -> dict[str, Any]:
+        return {"type": "int", "min": 0}
+
+    number = {"type": "number", "min": 0}
+    boolean = {"type": "bool"}
+    int32 = {"type": "int", "min": INT32[0], "max": INT32[1]}
+    label = string(PUBLIC_LABEL, "kernel", "azure-openai-prod", "fs-write")
+    reason = string(
+        REASON_CODE, "errno.eacces", "exception.permissionerror", "violence"
+    )
+    version = string(SOFTWARE_VERSION, "1.4.0", "2025.06.0")
+    link_types = "|".join(
+        r["value"] for r in vocab["link_type"] if r["value"] != "parent"
+    )
+    prefixes = "|".join(
+        ["r", "p", "seg", "lbl", "g", "br", *coverage.PSEUDONYM_V2_TYPES]
+    )
+    link_id = f"(?:{UUID4_CORE}|run:{UUID4_CORE}|(?:{prefixes})-[0-9a-f]{{32}})"
+    links = string(
+        f"^(?:{link_types})/(?:attempt|step|event|run|provider_item|external)/{link_id}$",
+        f"resolves/external/ctl-{'0' * 32}",
+        f"gates/attempt/{EX_UUID}",
+    )
+    checks: dict[str, dict[str, Any]] = {
+        # spec 051 records core (§5.1)
+        "fabric.step.links": {
+            "type": "array",
+            "items": links,
+            "max_items": 16,
+            "examples": [[f"resolves/external/ctl-{'0' * 32}"]],
+        },
+        "fabric.step.update_of": string(
+            f"^(?:{UUID4_CORE}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{{32}})$",
+            EX_UUID,
+            "ctl-9f86d081884c7d659a2feaa0c55ad015",
+        ),
+        "fabric.step.timing_basis": enum_of(
+            ["measured", "reported", "not_captured"], "validator"
+        ),
+        # spec 052 §5 changed validators (decision 22)
+        "fabric.control.id": string(
+            f"^(?:{UUID4_CORE}|ctl-[0-9a-f]{{32}})$",
+            EX_UUID,
+            "ctl-9f86d081884c7d659a2feaa0c55ad015",
+            identity_mode=CLEAR_EXISTING,
+        ),
+        "fabric.control.resolves": string(
+            f"^(?:{UUID4_CORE}|ctl-[0-9a-f]{{32}})$",
+            EX_UUID,
+            "ctl-9f86d081884c7d659a2feaa0c55ad015",
+            identity_mode=CLEAR_EXISTING,
+        ),
+        "fabric.control.action_id": pseudonym("axn", identity_mode=CLEAR_EXISTING),
+        "fabric.control.proof_ref": pseudonym("prf", identity_mode=CLEAR_EXISTING),
+        "fabric.control.gated_step_id": string(
+            f"^(?:{UUID4_CORE}|(?:lbl|g)-[0-9a-f]{{32}})$",
+            EX_UUID,
+            "lbl-9f86d081884c7d659a2feaa0c55ad015",
+            identity_mode=CLEAR_EXISTING,
+        ),
+        # spec 057 §5.3
+        "fabric.control.stage": field_enum("D37"),
+        "fabric.control.engine.name": label,
+        "fabric.control.engine.version": version,
+        "fabric.control.gated_kind": field_enum("D39"),
+        "fabric.control.gated_tool_call_id": pseudonym("p"),
+        "fabric.control.latency_ms": number,
+        "fabric.control.reason_code": reason,
+        "fabric.control.mode": field_enum("D43"),
+        "fabric.control.grant_id": pseudonym("grt"),
+        "fabric.control.error_class": field_enum("D45"),
+        "fabric.control.evidence_event_ids": {
+            "type": "array",
+            "items": string(f"^{UUID4_CORE}$", EX_UUID),
+            "max_items": 8,
+            "unique": True,
+            "examples": [[EX_UUID], [EX_UUID, EX_UUID_2]],
+        },
+        "fabric.control.signal": field_enum("D48"),
+        "fabric.control.derivation": field_enum("D49"),
+        # spec 057 §5.2
+        "fabric.grant.id": pseudonym("grt"),
+        "fabric.grant.trigger": field_enum("G02"),
+        "fabric.grant.previous_id": pseudonym("grt"),
+        "fabric.grant.source_boundary": field_enum("G04"),
+        "fabric.grant.permission_mode": string(
+            "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$", "ask_on_write", "acceptEdits"
+        ),
+        "fabric.grant.sandbox_kind": field_enum("G08"),
+        "fabric.grant.network_default": field_enum("G09"),
+        "fabric.grant.basis": field_enum("G12"),
+        "fabric.grant.tool_choice": field_enum("G13"),
+        "fabric.grant.tool_choice.allowed_count": count(),
+        "fabric.grant.parallel_tools": boolean,
+        # spec 057 §5.4
+        "fabric.hook.outcome": field_enum("E01"),
+        "fabric.hook.event_name": string(PUBLIC_LABEL, "PreToolUse", "before_shell"),
+        "fabric.hook.latency_ms": number,
+        "fabric.hook.gated_tool_call_id": pseudonym("p"),
+        "fabric.hook.extension_id": pseudonym("ext"),
+        "fabric.hook.reason_code": reason,
+        "fabric.hook.basis": field_enum("E07"),
+        "fabric.hook.exit_code": int32,
+        "fabric.hook.signal": {"type": "int", "min": 1},
+        "fabric.hook.program_label": string(PUBLIC_LABEL, "pre-shell-check"),
+        # spec 057 §5.5
+        "fabric.extension.id": pseudonym("ext"),
+        "fabric.extension.kind": field_enum("E11"),
+        "fabric.extension.name": string(
+            "^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$", "repo-tools", "@acme/skills"
+        ),
+        "fabric.extension.version": version,
+        "fabric.extension.source_kind": field_enum("E13"),
+        "fabric.extension.source_ref": pseudonym("src"),
+        "fabric.extension.manifest_hash": string(BARE_SHA256, "3f" * 32),
+        "fabric.extension.signature_status": field_enum("E16"),
+        "fabric.extension.scope": field_enum("E17"),
+        "fabric.extension.enabled": boolean,
+        "fabric.extension.observed_via": field_enum("E23"),
+        "fabric.mcp.server_ref": pseudonym("src"),
+        # spec 053 §6.2.3 amendment (spec 057 OD-13)
+        "fabric.sensor.exit_code": int32,
+        "fabric.sensor.signal": {"type": "int", "min": 1},
+        "fabric.sensor.watch_label": string(PUBLIC_LABEL, "agent-acl", "skills-dir"),
+        "fabric.sensor.watch_class": enum_of(
+            [r["value"] for r in vocab["watch_class"]], "validator"
+        ),
+    }
+    for name in ("tools_allow", "tools_deny", "tools_ask", "tools_offered", "tools_listed",
+                 "mcp_servers", "fs_rules", "net_rules", "credentials", "model_rules"):  # fmt: skip
+        checks[f"fabric.grant.{name}.count"] = count()
+    for name in ("tools", "hooks", "commands", "mcp_servers", "subagents"):
+        checks[f"fabric.extension.contributes.{name}"] = count()
+    for name in ("read_only", "destructive", "open_world", "idempotent"):
+        checks[f"fabric.mcp.tools.{name}_count"] = count()
     return checks
 
 
@@ -706,7 +886,7 @@ def generate_registry(w: Writer) -> None:
             raise SystemExit(f"no check for {key}")
         if key in capture_checks:
             row["capture_check"] = capture_checks[key]
-    keys["registry_revision"] = 12
+    keys["registry_revision"] = 13
     ordered: dict[str, Any] = {}
     for name, value in keys.items():
         if name in {"check_rule", "capture_check_rule"}:
@@ -726,7 +906,7 @@ def generate_registry(w: Writer) -> None:
             row["confidence"] = fixed.group(1)
         else:
             raise ValueError(f"inference method {row['value']!r} states no confidence")
-    vocab["registry_revision"] = 11
+    vocab["registry_revision"] = 12
     w.json(COVERAGE / coverage.REGISTRY["vocab"], vocab)
 
 
@@ -822,7 +1002,7 @@ def coverage_manifests(reg: dict[str, Any]) -> dict[str, Any]:
             "encrypted_store_required": False,
         },
         "content_capture": "enabled",
-        "role_table_version": "fabric.content-role-table/v1@4",
+        "role_table_version": "fabric.content-role-table/v1@5",
         "limits": LIMITS,
         "sequence_unit": "record",
         "clock": {
@@ -1362,6 +1542,20 @@ PSEUDONYM_VALUES = {
     "mst": "vector-store-main",
     "mkey": "user:42:preferences",
     "p": "chatcmpl-9AbCdEfGhIjKlMn",
+    # spec 051 §5.3 / spec 052 (pulled forward by spec 057 OD-15)
+    "ckp": "checkpoint-after-plan",
+    "eff": "refund-REF-1001",
+    "out": "reply-email-77",
+    "ctl": "approval:42",
+    "axn": "delete-branch-feature-x",
+    "prf": "proof:abc123",
+    # spec 057 §3 rule 6 (the grant id is keyed from the digest text)
+    "grt": "sha256:" + "4f" * 32,
+    "crd": "GITHUB_TOKEN",
+    "ext": "mcp_server/repo-tools/src-0",
+    "src": "npx -y @acme/repo-tools-mcp",
+    "pth": "/work/out/**",
+    "net": "api.internal.example",
 }
 
 
@@ -5456,13 +5650,17 @@ INVALID[COVERAGE].update(action_record.INVALID_COVERAGE)
 INVALID[CAPTURE].update(action_record.INVALID_CAPTURE)
 # Spec 056 M2 (WP6-11): the refused host batches (spec 053 §6.2.7).
 INVALID[CAPTURE].update(host_records.INVALID_CAPTURE)
+# Spec 057 WP7-0 (and spec 052 WP3-0): mapping profiles and the controls chain.
+INVALID[CAPTURE].update(security_context.INVALID_CAPTURE)
+INVALID[COVERAGE].update(security_context.INVALID_COVERAGE)
 # Host vectors outside a vectors/ directory (contracts/capture/v1/fixtures/host/).
 HOST_VECTORS = {
     "fixtures/host/id-key-file-v1.json",
     "fixtures/host/host-state-envelope-v1.json",
     "fixtures/ingress-groups/index.json",
 }
-VERSIONS = {COVERAGE: "1.3.0", CAPTURE: "1.8.0", CONTENT: "2.3.0"}
+# Spec 057 WP7-0: coverage 1.4.0, capture 1.9.0, content 2.4.0 (three roles).
+VERSIONS = {COVERAGE: "1.4.0", CAPTURE: "1.9.0", CONTENT: "2.4.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
@@ -5472,6 +5670,8 @@ def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
         return "vectors", None
     if rel.startswith(("schema/", "evidence/")):
         return "schema", None
+    if rel.startswith("registry/"):
+        return "registry", None
     return "valid", None
 
 
@@ -5553,6 +5753,21 @@ GO_BY_KEY = {
     "fabric.run.predecessors": "predecessorPattern",
     "fabric.wire.endpoint_id": "wireEndpointIDPattern",
     "fabric.run.id": "recordRunIDPattern",
+    # spec 051 / 052 / 057 (security context)
+    "fabric.step.links": "stepLinkPattern",
+    "fabric.step.update_of": "updateOfPattern",
+    "fabric.control.id": "controlIDPattern",
+    "fabric.control.resolves": "controlIDPattern",
+    "fabric.control.gated_step_id": "gatedStepIDPattern",
+    "fabric.control.engine.name": "publicLabelPattern",
+    "fabric.control.reason_code": "reasonCodePattern",
+    "fabric.control.evidence_event_ids": "captureObjectIDPattern",
+    "fabric.grant.permission_mode": "permissionModePattern",
+    "fabric.hook.event_name": "publicLabelPattern",
+    "fabric.hook.reason_code": "reasonCodePattern",
+    "fabric.hook.program_label": "publicLabelPattern",
+    "fabric.extension.name": "extensionNamePattern",
+    "fabric.sensor.watch_label": "publicLabelPattern",
 }
 PLACEMENTS = (
     "exchange",
@@ -5618,6 +5833,12 @@ def render_go_table(reg: dict[str, Any]) -> str:
                 f"intIn({check['min']}, {check['max']})"
                 if "max" in check
                 else f"intAtLeast({check['min']})"
+            )
+        if kind == "number":
+            return (
+                f"numberIn({check['min']}, {check['max']})"
+                if "max" in check
+                else f"numberAtLeast({check['min']})"
             )
         if kind == "datetime":
             return "isRFC3339"
@@ -6067,6 +6288,7 @@ def generate(root: Path, *, check: bool) -> list[str]:
     action_record.generate(w)
     host_records.generate(w)
     ingress_groups.generate(w)
+    security_context.generate(w.text, w.read_json, registries(w))
     generate_content(w)
     generate_pins(w)
     generate_go(w)

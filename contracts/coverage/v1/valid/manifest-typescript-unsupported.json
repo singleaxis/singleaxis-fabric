@@ -19,7 +19,7 @@
   "pseudonym_mode": "keyed",
   "key_id": "kid-b2a0080c",
   "content_capture": "metadata_only",
-  "role_table_version": "fabric.content-role-table/v1@4",
+  "role_table_version": "fabric.content-role-table/v1@5",
   "limits": {
     "max_body_bytes": 33554432,
     "max_retain_bytes": 67108864,
@@ -207,7 +207,14 @@
         "D27",
         "D28",
         "D29",
-        "D30"
+        "D30",
+        "E01",
+        "E02",
+        "E03",
+        "E04",
+        "E05",
+        "E06",
+        "E07"
       ],
       "reason": "internal_error"
     }

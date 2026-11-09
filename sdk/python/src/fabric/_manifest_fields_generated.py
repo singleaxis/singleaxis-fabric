@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@12"
+FIELD_REGISTRY_REVISION = "fabric.field-registry/v1@13"
 
 MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
     "fabric.self": (
@@ -28,6 +28,7 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "X35",
         "X36",
         "X47",
+        "D11",
     ),
     "install.config": ("X31",),
     "wire.py.httpx": (
@@ -70,6 +71,10 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "X13",
         "X14",
         "X21",
+        "C30",
+        "C31",
+        "C32",
+        "C33",
         "S02",
         "S05",
         "S10",
@@ -84,6 +89,16 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "N31",
         "N45",
         "N46",
+        "D01",
+        "D02",
+        "D03",
+        "D04",
+        "D05",
+        "D06",
+        "D07",
+        "D08",
+        "D09",
+        "D10",
         "D18",
         "D21",
         "D22",
@@ -95,6 +110,9 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "X14",
         "X21",
     ),
+    "records.control": (),
+    "records.grant": (),
+    "records.extension": (),
     "mcp.wrapper": (
         "C25",
         "C28",
@@ -120,6 +138,7 @@ MANIFEST_FIELDS: Mapping[str, tuple[str, ...]] = {
         "S11",
         "N07",
         "D31",
+        "D36",
     ),
     "reconstruct.infer": (
         "X21",

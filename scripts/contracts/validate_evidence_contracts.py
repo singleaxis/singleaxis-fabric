@@ -1133,7 +1133,7 @@ def validate_contracts(repo_root: Path) -> list[str]:
             )
         if (manifest["contract"], manifest["version"], manifest["digest_scope"]) != (
             f"singleaxis.fabric.{family}",
-            "1.0.0" if family == "evidence" else "2.3.0",
+            "1.0.0" if family == "evidence" else "2.4.0",
             "exact_file_bytes",
         ):
             raise EvidenceContractError(

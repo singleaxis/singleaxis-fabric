@@ -8,6 +8,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Groundwork for recording an agent's security context (spec 057 P0, part
+one): the contracts for permissions, control decisions, hooks and extensions,
+and the first record-only APIs. Fabric records decisions other systems made;
+it never makes, applies, waits for or returns one.
+
+### Added
+
+- **`fabric.records.record_control`** records one decision an external
+  control made (a guardrail, a policy service, a permission request and its
+  answer, an approval, a rate limit, a budget): kind, phase, decision, the
+  request it resolves, the step or action it gated, who decided, the policy
+  and a proof reference, with optional checked/reason/approval content. Every
+  control record carries `enforced_by_fabric=false` and
+  `authentication=unverified_caller_report`. It returns a `ControlRef` with
+  ids only, never raises, never waits, and records a combination outside the
+  phase × decision matrix as `unknown` (never `allow`). A caller's clear
+  control id is pseudonymised (`ctl-`), so a resolution recorded in another
+  process or run with the same clear id joins its request.
+  `Decision.record_control` does the same inside a decision.
+- **`fabric.records.record_run_context`** records the run's declared
+  execution mode, approval policy, permissions (their count on telemetry,
+  the lists only as `run.permissions` content) and agent policy.
+- **The records core** behind both: bounded serialisation that never runs
+  application code, reported links, timing, update records, and handles that
+  expose ids only. `fabric.records.context(...)` binds a default actor and
+  the conversation and turn ids (`conv-`/`turn-` pseudonyms).
+- **The reader** projects control steps (decision, phase, invariants, the
+  `resolves` and `gates` links) and a request's resolution state
+  (`resolved`, `pending`, `revoked`, or `conflict` when answers disagree)
+  across every run of the input, and merges `record_run_context` into the
+  run's fields. A forged or missing invariant is shown as a conflict;
+  `pending` is never turned into a decision.
+- **Contracts** (`contracts/coverage/v1` 1.4.0, `capture/v1` 1.9.0,
+  `content/v2` 2.4.0, `deployment-policy/v1` 1.2.0): field rows, vocabularies
+  and telemetry keys for grants, control decisions, hooks and extensions; the
+  grant-snapshot and control-observation v2 schemas with digest,
+  de-duplication and pseudonym vectors; the provider safety-signal map
+  skeleton; an optional `security_context` section in the capture policy
+  (control hosts, hook programs, watched paths, denial markers); the OTLP
+  mapping-profile schema; activity 2.1.0 beside 2.0.0; and the `controls`
+  chain in the reconstruction report. Spec 049 is amended as revision 6.6.
+- **`ControlObservation` v2**: new optional fields (kind, phase, resolves,
+  the deciding actor, and the spec 057 stage, engine, mode, reason code and
+  derivation); v1 documents and v1 construction keep working.
+
+### Changed
+
+- **`ControlObservation.to_dict()` emits v2**
+  (`fabric.external-control-observation/v2`); the invariant
+  `enforcement_performed_by_fabric` is now spelled `enforced_by_fabric`, and
+  `requires_review` is recorded as `escalate`. `from_dict` reads both.
+- **Behaviour change: `control.checked` content is off by default.** The
+  local default no longer retains what a control checked (usually the prompt
+  or output it flagged). Name the role in the capture policy to keep it.
+- **System and developer instructions in production**
+  (`model.request.instructions`) are retained only when the capture policy
+  names the role. A production policy already omits every role it does not
+  name, so a deployment that relied on it names it in its policy.
+- **Deprecated:** the v1 policy, tool-authorization and escalation verdict
+  shapes (connect `policy_verdict`, `authorization_verdict`, `escalation`;
+  activity v1 `fabric.policy.evaluation`, `fabric.tool.authorization`,
+  `fabric.escalation`) follow the guardrail path and are replaced in v2 by the
+  control decision record (`docs/api-stability.md`).
+
 ### Fixed
 
 - TypeScript SDK tests: the local content-store tests now pass on macOS,

@@ -155,6 +155,8 @@
         },
         "fabric.escalation": {
           "type": "object",
+          "deprecated": true,
+          "description": "Escalation event (route to review). Spec 057 OD-11 (owner, 2026-11-09): replaced in v2 by the record-only control decision record. Deprecated in Fabric v0.9; dropped at Fabric v1.0 by retiring activity contract v1 (superseded by v2), not by editing v1. Fabric records activity and does not evaluate it.",
           "required": [
             "fabric.schema_version",
             "fabric.escalation.reason",
@@ -362,6 +364,8 @@
         },
         "fabric.policy.evaluation": {
           "type": "object",
+          "deprecated": true,
+          "description": "Policy evaluation verdict event. Spec 057 OD-11 (owner, 2026-11-09): replaced in v2 by the record-only control decision record. Deprecated in Fabric v0.9; dropped at Fabric v1.0 by retiring activity contract v1 (superseded by v2), not by editing v1. Fabric records activity and does not evaluate it.",
           "required": [
             "fabric.schema_version",
             "fabric.policy.evaluation_id",
@@ -391,6 +395,8 @@
         },
         "fabric.tool.authorization": {
           "type": "object",
+          "deprecated": true,
+          "description": "Tool authorization verdict event. Spec 057 OD-11 (owner, 2026-11-09): replaced in v2 by the record-only control decision record. Deprecated in Fabric v0.9; dropped at Fabric v1.0 by retiring activity contract v1 (superseded by v2), not by editing v1. Fabric records activity and does not evaluate it.",
           "required": [
             "fabric.schema_version",
             "fabric.tool.name",

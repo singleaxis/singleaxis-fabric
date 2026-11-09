@@ -1,0 +1,17 @@
+{
+  "contract": "singleaxis.fabric.activity",
+  "version": "2.1.0",
+  "digest_scope": "exact_file_bytes",
+  "artifacts": [
+    {"path": "schema/activity-sequence-v2.1.schema.json", "role": "activity-schema", "sha256": "db18dbb98dae5f15ee4ca13cd6e4994e0ce540abca6c314ba69705dce3ef0e88", "expectation": "schema"},
+    {"path": "valid/security-context-sequence.json", "role": "valid-security-context-sequence", "sha256": "710a3dd0351ac677213f12e4a28537cb0678d4308100c78c9a5b418f5d92dfc2", "expectation": "valid"},
+    {"path": "invalid/control-decision-as-2.0.0.json", "role": "invalid-control-decision-as-2.0.0", "sha256": "c7a5bcc9dc0f28098addd398f711852ed694fcb390c805ccb0ba52ff586e0166", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/control-decision-carries-grant.json", "role": "invalid-control-decision-carries-grant", "sha256": "d69a588cb7f5fc1cab5ea439da0572837c1c9ece614089ac67d3dbacec5ec67f", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/control-forged-enforcement.json", "role": "invalid-control-forged-enforcement", "sha256": "2aea5634a13be244c5778466d5eaa8ed788908427a04d911a4ca9827953f0264", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/control-request-allow.json", "role": "invalid-control-request-allow", "sha256": "03c762e794669b9c0f35b18c93d160f92c096d59661f347b2612e7e223930db1", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/extension-loaded-carries-hook.json", "role": "invalid-extension-loaded-carries-hook", "sha256": "646c7afa6d01ee3e15f0539d8c9c04eb2e998604a3ca2ac8e9c60690e2c164e9", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/grant-snapshot-without-grant.json", "role": "invalid-grant-snapshot-without-grant", "sha256": "eef887f51496d10aa945715155f1a7252d22bae68c632863ee63c86753c2187b", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/hook-completed-carries-control.json", "role": "invalid-hook-completed-carries-control", "sha256": "226e018fdaa8f2874c93f3b9f2cce0ac49fa2a1235afbcf3994df2f1cbd1bfa1", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"},
+    {"path": "invalid/tool-request-carries-extension.json", "role": "invalid-tool-request-carries-extension", "sha256": "3b67c5b08420a4992028518900114054d8d2a9b9cfaeeb33ac0de910679a147d", "expectation": "invalid", "expected_error": "data-plane.schema.invalid"}
+  ]
+}

@@ -2,8 +2,8 @@
 title: Four-layer capture contract (context, structure, content, decisions and effects)
 status: accepted
 qualification: NO_COVERAGE_CLAIM
-revision: 6.4
-last_updated: 2026-10-22
+revision: 6.6
+last_updated: 2026-11-09
 owner: recorder-engineering
 depends_on: 029, 035, 043, 047, 048
 related: 030, 031, 036, 038, 040, 041, 042, 044, 045, 046
@@ -54,6 +54,17 @@ v0.8 code and marks P0 and P0-A built (rows R64-*). Revision 6.5 (0.11.2)
 adds one rule to section 7.5: a transformation runs over the decoded
 plaintext, and a side whose `Content-Encoding` cannot be undone is
 withheld; it fixes a 0.11.1 defect, not the design.
+Revision 6.6 (spec 057 WP7-0, owner decision OD-18 of spec 057, accepted
+2026-11-09) adds the security-context rows: grant fields `G01`–`G16`, hook
+and extension fields `E01`–`E23`, control fields `D36` (spec 052) and
+`D37`–`D49`, their vocabularies, telemetry keys and link methods, six v2
+pseudonym types of specs 051/052 (`ckp`, `eff`, `out`, `ctl`, `axn`, `prf`)
+and six of spec 057 (`grt`, `crd`, `ext`, `src`, `pth`, `net`), three
+content roles (`extension.manifest`, `control.exchange.request`,
+`control.exchange.response`, all `off`) and the `control.checked` default
+`off` (section 3.5a). Spec 057 is the build spec; spec 057 calls this
+amendment "revision 6.5", a number this document had already used for the
+0.11.2 rule above, so it is recorded as 6.6.
 It specifies; it does not change runtime code.
 
 How to read it:
@@ -696,6 +707,16 @@ field wrappers, each with its fixed confidence):
 | `process_anchor` | A host-sensor process event with the effect's host, pid namespace, pid and parent pid, or the agent's own pid (spec 056 §4.3 rules H1, H2, H4; `corroborated_by`, `part_of`). Confidence varies: `certain` only when both sides carry the process start time and the times are equal, otherwise `tentative`. |
 | `process_lineage` | A host event whose parent-pid chain reaches a process anchored to an effect, on the same host, pid namespace and boot, at most 16 levels deep (spec 056 §4.3 rule H3; `part_of`). Confidence varies: the confidence of the anchor it extends. |
 | `sandbox_report` | A host event whose sandbox or pod id equals the id the container runtime printed in the effect's output, on any host source; provenance `reported` (spec 056 §4.3 rule H5; `part_of`). Confidence `certain`. |
+| `provider_id` | A record names the provider tool-call id (`p-`) of a tool call in the same run (spec 057 §6.1). Confidence `certain`. |
+| `exchange_id` | A derived row joins the model call whose exchange it came from (spec 057 §6.1). Confidence `certain`. |
+| `mcp_session` | A listed grant or MCP extension joins the MCP session it came from (spec 057 §6.1). Confidence `certain`. |
+| `rpc_id` | An elicitation resolution joins its request by JSON-RPC id in the session (spec 057 §6.1). Confidence `certain`. |
+| `reported_ref` | A reported control or hook joins the step or action it names, or the `decision.tool_call()` scope it ran in (spec 052 §4.9, spec 057 §4.10.3). Confidence `certain`. |
+| `ref_join` | A control resolution or revocation joins its request by `fabric.control.resolves` = `fabric.control.id`, across the runs of the input (spec 052 §4.9 rule 3). Confidence `certain`. |
+| `grant_in_force` | A record joins the grant in force per basis: the one it names, else the latest snapshot of that basis before it in the segment (spec 057 §6.1). Confidence `certain`. |
+| `pending_single` | A reported control with no id and no scope joins the single tool call pending at its position (spec 057 §4.10.3). Confidence `certain`. |
+| `pending_set` | A reported control with no id and no scope while two or more tool calls are pending: `ambiguous`, every pending call a candidate (spec 057 §4.10.3). Confidence `tentative`. |
+| `path_ref` | A watched open of a permission file joins the latest operator snapshot with the same `pth-` id (spec 057 §4.10.2). Confidence `certain`. |
 <!-- generated:vocab:inference_method:end -->
 
 ### 2.6 Per-field coverage status
@@ -975,8 +996,11 @@ point, or if an in-scope field names none:
 | `explicit.byte_boundary` | R | records | Python | no | explicit API | built (043/044); P1: records producer on the shared allocator and spool | bytes at a caller-declared boundary; optional records producer | anything outside the declared boundary | 043/044 acceptance | X32, N01, N32–N34, N47 |
 | `explicit.final_http` | R | records | Python | no | explicit API | built (043); P1: records producer on the shared allocator and spool | final HTTP request/response bodies routed through `FinalHTTPAdapter`; optional records producer | hosts not routed through it | 043 acceptance | N43–N44 |
 | `explicit.subprocess_artifact` | R | records | Python | no | explicit adapter (`adapters/synthetic_evidence.py`) | built (040); optional records producer | no-shell subprocess argv, stdin, stdout, stderr, exit; file before/after bytes, as handed to the adapter | processes and files not routed through the adapter | 040 acceptance | N32–N35, N47 |
-| `sdk.records` | R | records | Python, TypeScript | no | explicit API | built (metadata, unsequenced); P1: records input on the shared allocator and spool; content roles built (P0-A) and P2 | `fabric.decision` records and spans: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill, `tool_call()`, `llm_call()`; new P2/P3 reporting APIs; sequenced on the process source from P1 | anything the application does not report | P2/P3 recording-failure tests | X13–X16, X21–X22, X24, X28, X46, C01–C11, C13–C15, C17–C18, C24, C30–C33, C41–C42, S02–S10, S12–S28, S32–S33, N13–N14, N17–N18, N26–N28, N30–N31, N38, N45–N46, N48–N51, N54–N55, N57–N59, D01–D10, D12–D16, D18–D23, D25–D30 |
+| `sdk.records` | R | records | Python, TypeScript | no | explicit API | built (metadata, unsequenced); P1: records input on the shared allocator and spool; content roles built (P0-A) and P2 | `fabric.decision` records and spans: retrieval, memory, side effect, checkpoint, delegation, interaction, file, hook, skill, `tool_call()`, `llm_call()`; new P2/P3 reporting APIs; sequenced on the process source from P1 | anything the application does not report | P2/P3 recording-failure tests | X13–X16, X21–X22, X24, X28, X46, C01–C11, C13–C15, C17–C18, C24, C30–C33, C41–C42, S02–S10, S12–S28, S32–S33, N13–N14, N17–N18, N26–N28, N30–N31, N38, N45–N46, N48–N51, N54–N55, N57–N59, D01–D10, D12–D16, D18–D23, D25–D30, E01–E07 |
 | `run.scope` | R | wire, records | Python | no | `fabric.wire.run()` | built (048 §6); P1 adds arguments | run id, scope, block exit status, session/parent/resume links, segment ids, predecessors and seals, resumable/terminal flags | work started outside a block (047 run-id fallback applies) | 048 acceptance | X08–X14, X21, X41–X44, X46, X49, S34 |
+| `records.control` | R | records | Python; TypeScript in spec 057 P3 | no | explicit API | spec 057 P0 (contract); API in WP7-1 | `record_control` additions of spec 057 §5.3 and the `control_check` wrapper (stage, engine, gated kind and tool call, latency, reason code, mode, grant, error class, derivation) | anything the application does not report | spec 057 B1-B4 tests | D37–D46, D49 |
+| `records.grant` | R | records | Python; TypeScript in spec 057 P3 | no | explicit API | spec 057 P0 (contract); API in WP7-1 | `record_grant` and the declared grant of `record_run_context(permissions=)` (spec 057 §5.2) | anything the application does not report | spec 057 B1-B4 tests | G01–G14 |
+| `records.extension` | R | records | Python; TypeScript in spec 057 P3 | no | explicit API | spec 057 P0 (contract); API in WP7-1 | `record_extension` and the extension fields of `record_skill` (spec 057 §5.5) | anything the application does not report | spec 057 B1-B4 tests | E10–E19, E22–E23 |
 | `mcp.wrapper` | R | records | Python | no | explicit wrapper | built (hash-only); content P2 | `tools/list` inventory, `tools/call` arguments and results through the wrapper | other MCP methods, notifications, server-to-client requests, unwrapped sessions | P2 | C24–C29, N22, N24–N25 |
 | `mcp.client` | H | records | Python (`mcp` client) | yes | opt-in | P4 | every JSON-RPC message a wrapped client session sends and receives, stdio and Streamable HTTP | server internals, other client libraries | P4-MCP | C25–C29, N22–N25 |
 | `exec.subprocess` | H | records | Python | yes | opt-in | P4 | argv, cwd, pid, exit code/signal; stdout/stderr only as returned by `communicate()` / `run(capture_output=True)` | bytes the caller reads directly from pipes; descendants; PTYs; environment values | P4-EXEC | X21, C41, N32–N35 |
@@ -988,7 +1012,7 @@ point, or if an in-scope field names none:
 | `remote.sandbox` | H | records | Python; `e2b` 2.62.x, `e2b-code-interpreter` 2.11.x | yes | opt-in per provider (`FABRIC_WIRE_REMOTE_SANDBOX`) | P4 (spec 056 M2) | the command or code the agent asked the provider SDK to run and the result the SDK returned | the remote side, other providers, SDK versions outside the pins, streaming callbacks | P4-SANDBOX | C41, N37 |
 | `ui.automation` | H | records | Python (Playwright, Selenium) | yes | opt-in | P5 | automation actions and their results, screenshots the automation already produced | human browser tabs, pages not driven by the library | P5-UI | N54–N55 |
 | `rt.websocket` | W | wire | Python (`websockets`, `aiohttp` client WS) | yes | opt-in | P5 | frames in both directions with timestamps on qualified realtime endpoints | WebRTC media, other clients | P5-RT | N56–N57 |
-| `reconstruct.parse` | P | offline | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); projection P1 | literal fields parsed from stored bytes (provenance inherited from the bytes) | anything not in stored bytes | verifier tests | X27–X28, X30, C11, C19–C22, C36–C39, S01, S03, S11–S12, N03–N15, N18–N21, N51, N53, N55, N60, D31–D33 |
+| `reconstruct.parse` | P | offline | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); projection P1 | literal fields parsed from stored bytes (provenance inherited from the bytes) | anything not in stored bytes | verifier tests | X27–X28, X30, C11, C19–C22, C36–C39, S01, S03, S11–S12, N03–N15, N18–N21, N51, N53, N55, N60, D31–D33, D36–D42, D45, D47–D49, G01–G04, G07, G10–G16, E01, E03–E04, E07–E15, E19–E21, E23 |
 | `reconstruct.infer` | I | offline | offline verifier | n/a | `python -m fabric.reconstruct` | built (stitching); P1 (projection) | inferred links and events by the closed methods of section 2.5 | anything without a listed method | C1-5 | X21, C08, C23, C39, S13, S15, N16, N29, N48, N52, D17 |
 | `host.ebpf` | S | records | Linux nodes | n/a (separate component) | customer-deployed | Built local profile (031); P4 production (spec 056 M2): separate bound source with its own epoch, encrypted state and ingress group; records-class host records; corroboration only. | exec and connect records; used only as `corroborated_by`; host records (053 §6.2.3) on a production ingress group; production mode: pids in the init namespace and in the process's own pid namespace, sensor scope, container and pod ids of sandbox-scope events | in-process content | P4-HOST, P4-BIND, 031 | C41 |
 | `host.auditd` | S | records | Linux nodes | n/a (separate component) | customer-deployed | Built local profile (030); P4 production (spec 056 M2): separate bound source with its own epoch, encrypted state and ingress group; records-class host records; corroboration only. | exec and connect records; used only as `corroborated_by`; host records (053 §6.2.3) on a production ingress group | in-process content | P4-HOST, P4-BIND, 030 | C41 |
@@ -1029,6 +1053,14 @@ registry rows above do not yet state this limit (R64-5).
    | `conv-` | `conversation` | `tgt-` | `target` | `dbn-` | `db_namespace` |
    | `turn-` | `turn` | `hst-` | `host` | `txn-` | `db_transaction` |
    | `mst-` | `memory_store` | `mkey-` | `memory_key` | `p-` | `provider` |
+   | `ckp-` | `checkpoint` | `eff-` | `effect` | `out-` | `outcome` |
+   | `ctl-` | `control` | `axn-` | `action` | `prf-` | `proof` |
+   | `grt-` | `grant` | `crd-` | `credential` | `ext-` | `extension` |
+   | `src-` | `extension_source` | `pth-` | `path_rule` | `net-` | `net_rule` |
+
+   The `ckp`–`prf` rows are specs 051 and 052 (051 §5.3); the `grt`–`net`
+   rows are spec 057 §3 rule 6 (revision 6.6). `grt-` is keyed from the
+   grant digest text (`sha256:` + 64 hex), never from the document.
 
    **Derivation input.** `key` = the bytes of `FABRIC_WIRE_ID_KEY` as UTF-8
    (as `_sequence.py` reads it); `k_type` = HMAC-SHA256(key, UTF-8 of
@@ -1501,10 +1533,10 @@ manifest (section 4).
 | C27 | `mcp.protocol_version` | label YYYY-MM-DD | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | P2 | T `fabric.mcp.protocol_version` | Negotiated protocol version. |
 | C28 | `mcp.transport` | enum stdio/streamable_http/sse/other | `mcp.wrapper`, `mcp.client` | metadata | META | R (mcp_call) | not_captured(not_instrumented) | built | T `fabric.mcp.transport` | Transport. |
 | C29 | `mcp.server.metadata` | json | `mcp.wrapper`, `mcp.client` | content | CONTENT | O | not_captured(not_instrumented) | P2 | C `mcp.server` | Capabilities and instructions exchanged at initialization. |
-| C30 | `execution_mode` | enum autonomous/supervised/approval_required/read_only/unknown | `sdk.records` | metadata | META | O | not_captured(not_instrumented) | P2 | T `fabric.run.execution_mode` | Customer's execution mode. Declared, not proof of enforcement. Via `record_run_context`. |
-| C31 | `approval_policy` | enum none/per_tool/per_side_effect/all/unknown | `sdk.records` | metadata | META | O | not_captured(caller_omitted) | P2 | T `fabric.run.approval_policy` | When approval is required. |
-| C32 | `permissions` | json | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P2 | C `run.permissions`; T `fabric.run.permissions.count` | Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry. |
-| C33 | agent_policy.id, agent_policy.version, agent_policy.digest | label, int, digest | `sdk.records` | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | P2 | T `fabric.run.agent_policy_id`, `.agent_policy_version`, `.agent_policy_digest` | The customer's agent policy identity. Not the recorder capture policy (X31). |
+| C30 | `execution_mode` | enum autonomous/supervised/approval_required/read_only/unknown | `sdk.records` | metadata | META | O | not_captured(not_instrumented) | built (spec 051 record_run_context, pulled forward by spec 057 OD-15) | T `fabric.run.execution_mode` | Customer's execution mode. Declared, not proof of enforcement. Via `record_run_context`. |
+| C31 | `approval_policy` | enum none/per_tool/per_side_effect/all/unknown | `sdk.records` | metadata | META | O | not_captured(caller_omitted) | built (spec 051 record_run_context, pulled forward by spec 057 OD-15) | T `fabric.run.approval_policy` | When approval is required. |
+| C32 | `permissions` | json | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | built (spec 051 record_run_context, pulled forward by spec 057 OD-15) | C `run.permissions` (the declared grant document, G10); T `fabric.run.permissions.count` | Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry. Spec 057: the body is a declared `fabric.grant-snapshot/v1` document (G10); `fabric.run.permissions.count` stays the sum of the declared counts (G07). |
+| C33 | agent_policy.id, agent_policy.version, agent_policy.digest | label, int, digest | `sdk.records` | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | built (spec 051 record_run_context, pulled forward by spec 057 OD-15) | T `fabric.run.agent_policy_id`, `.agent_policy_version`, `.agent_policy_digest` | The customer's agent policy identity. Not the recorder capture policy (X31). |
 | C34 | model.provider, model.api | label, enum | `wire.py.httpx`, `wire.py.aiohttp` | metadata | LABEL/META | R (model_call) | not_captured(not_instrumented) | built | T `gen_ai.provider.name`, `fabric.wire.api` | Provider and API dialect. |
 | C35 | `model.endpoint_id` | label | `wire.py.httpx`, `wire.py.aiohttp` | metadata | LABEL | R (model_call) | not_captured(not_instrumented) | P1 | T `fabric.wire.endpoint_id`; M endpoint set digest | Which configured endpoint matched: a built-in endpoint as `<provider>.default`, a configured one as `lbl-` + the keyed v1 label of its configured name. A hostname is never emitted; the manifest keeps the endpoint-set digest. |
 | C36 | `model.requested` | label | `reconstruct.parse` | metadata | LABEL | R (model_call) | not_captured(not_instrumented) | P1 | P (048 §7 exposure rule) | `model` in the request. |
@@ -1629,17 +1661,17 @@ manifest (section 4).
 <!-- generated:fields:D:begin -->
 | # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
 |---|---|---|---|---|---|---|---|---|---|---|
-| D01 | `control.id` | opaque id | `sdk.records` | metadata | ID | R (control) | not_captured(not_instrumented) | P3 | T `fabric.control.id` | One control observation. Via `record_control`. |
-| D02 | `control.kind` | enum guardrail/policy/permission_request/approval/rate_limit/budget/other | `sdk.records` | metadata | META | R (control) | not_captured(not_instrumented) | P3 | T `fabric.control.kind` | What kind of external control. |
-| D03 | `control.phase` | enum request/resolution/revocation/observation | `sdk.records` | metadata | META | R (control) | unknown | P3 | T `fabric.control.phase` | Approvals are a request and a later resolution, linked by `resolves`. |
-| D04 | `control.decision` | enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown | `sdk.records` | metadata | META | R (control) | unknown | P3 | T `fabric.control.decision` | Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow. |
-| D05 | `control.resolves` | link | `sdk.records` | metadata | ID | R (resolution) | unresolved | P3 | T `fabric.control.resolves` | Request this resolution answers. |
-| D06 | control.gated_step, control.action_id | step ref, opaque id | `sdk.records` | metadata | ID | O | unknown | P3 | T `fabric.control.gated_step_id`, `fabric.control.action_id` | Step or action it applied to. A denied action may have no executed step. |
-| D07 | `control.decided_by` | actor ref | `sdk.records` | metadata | ID | O | unknown | P3 | T `fabric.actor.type`, `fabric.actor.id` on the event | human_approver, system or external_service. |
-| D08 | control.policy_id, policy_version, policy_digest | label, int, digest | `sdk.records` | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | P3 | T `fabric.control.policy_id`, `.policy_version`, `.policy_digest` | Policy the control applied. |
-| D09 | `control.proof_ref` | opaque id | `sdk.records` | metadata | ID | O | absent | P3 | T `fabric.control.proof_ref` | Reference to the external system's own record. Fabric does not verify it. |
-| D10 | control.checked, control.reason, control.approval | bytes | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `control.checked`, `control.reason`, `control.approval` | What was checked, why, and the scope and duration of a grant. |
-| D11 | control.authentication, control.enforced_by_fabric | const `unverified_caller_report`; const `false` | `fabric.self` | metadata | META | R (control) | always | P3 | T `fabric.control.authentication`, `fabric.control.enforced_by_fabric` | Invariants on every control event. |
+| D01 | `control.id` | opaque id | `sdk.records` | metadata | ID | R (control) | not_captured(not_instrumented) | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.id` | One control observation. Via `record_control`. |
+| D02 | `control.kind` | enum guardrail/policy/permission_request/approval/rate_limit/budget/other/provider_safety/elicitation/os_access/permission_check | `sdk.records` | metadata | META | R (control) | not_captured(not_instrumented) | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.kind` | What kind of external control decided. Spec 057 adds `provider_safety` (W), `elicitation` (M), `os_access` (P) and `permission_check` (in-code one-shot check). |
+| D03 | `control.phase` | enum request/resolution/revocation/observation | `sdk.records` | metadata | META | R (control) | unknown | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.phase` | Approvals are a request and a later resolution, linked by `resolves`. |
+| D04 | `control.decision` | enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown/error | `sdk.records` | metadata | META | R (control) | unknown | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.decision` | Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow. `error` (spec 057): the control ran and failed to decide. The phase × decision matrix of spec 052 §4.2.2 applies. |
+| D05 | `control.resolves` | link | `sdk.records` | metadata | ID | R (resolution) | unresolved | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.resolves` | Request this resolution answers. |
+| D06 | control.gated_step, control.action_id | step ref, opaque id | `sdk.records` | metadata | ID | O | unknown | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.gated_step_id`, `fabric.control.action_id` | Step or action it applied to. A denied action may have no executed step. |
+| D07 | `control.decided_by` | actor ref | `sdk.records` | metadata | ID | O | unknown | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.actor.type`, `fabric.actor.id` on the event | human_approver, system or external_service. A control record's actor defaults to `unknown`, not `agent` (spec 052 D-3). |
+| D08 | control.policy_id, policy_version, policy_digest | label, int, digest | `sdk.records` | metadata | LABEL/META/DIGEST | O | not_captured(caller_omitted) | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.policy_id`, `.policy_version`, `.policy_digest` | Policy the control applied. |
+| D09 | `control.proof_ref` | opaque id | `sdk.records` | metadata | ID | O | absent | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.proof_ref` | Reference to the external system's own record. Fabric does not verify it. |
+| D10 | control.checked, control.reason, control.approval | bytes | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | built (spec 052 controls, pulled forward by spec 057 OD-15) | C `control.checked`, `control.reason`, `control.approval` | What was checked, why, and the scope and duration of a grant. |
+| D11 | control.authentication, control.enforced_by_fabric | const `unverified_caller_report`; const `false` | `fabric.self` | metadata | META | R (control) | always | built (spec 052 controls, pulled forward by spec 057 OD-15) | T `fabric.control.authentication`, `fabric.control.enforced_by_fabric` | Invariants on every control event. |
 | D12 | selection.kind, selection.reason | enum model_route/tool_choice/agent_route/branch/fallback/other; enum error/cost/latency/policy/capability/quality/availability/other/unknown | `sdk.records` | metadata | META | R (selection) | not_captured(not_instrumented) | P3 | T `fabric.selection.kind`, `fabric.selection.reason` | An exposed routing choice and its category. Via `record_selection`. |
 | D13 | `selection.decision` | json | `sdk.records` | content | CONTENT | O | not_captured(caller_omitted) | P3 | C `selection.decision` | Candidates, selected option, reason text. |
 | D14 | context_change.kind, context_change.trigger | enum append/remove/replace/truncate/compact/summarise/reset/switch; enum token_limit/turn_limit/time/manual/policy/other/unknown | `sdk.records` | metadata | META | R (context_change) | not_captured(not_instrumented) | P3 | T `fabric.context.change_kind`, `fabric.context.trigger` | Explicit context change. Via `record_context_change`. |
@@ -1664,7 +1696,407 @@ manifest (section 4).
 | D33 | usage.media_units, usage.hosted_tool_calls | int | `reconstruct.parse` | metadata | META | O | absent | P1 | P | Non-token units. |
 | D34 | `usage.basis` | enum provider_reported/estimated/unknown | `fabric.self` | metadata | META | R (model_call) | always | P1 | P | Fabric never estimates in v1: `provider_reported` or `unknown`. |
 | D35 | `cost` | - | — | - | - | - | out of scope | out of scope | - | Pricing and billing are downstream (decision 11). Provider-returned cost fields stay in the stored bytes, unprojected. |
+| D36 | `control.resolution_state` | enum resolved/pending/revoked | `reconstruct.parse` | metadata | META | R (control request) | unknown | built (spec 052 controls, pulled forward by spec 057 OD-15) | P | Spec 052 D-1: the carrier for 049 §6.3 "pending at run end". `resolved` when a resolution is in the input (disagreeing resolutions: `conflict`), `revoked` when a revocation targets the request or a resolution, else `pending`; never mapped to allow or deny. |
+| D37 | `control.stage` | enum input/output/pre_model/post_model/pre_tool/post_tool/pre_effect/post_effect/effect/inventory/run/other/unknown | `records.control`, `reconstruct.parse` | metadata | META | R (control) | unknown | P0 (spec 057) | T `fabric.control.stage` | Where in the agent loop the control sat. Distinct from D03 phase. `effect`: a refusal at the moment of the OS action; `inventory`: decisions on tool listings. |
+| D38 | control.engine.name, control.engine.version | label, label | `records.control`, `reconstruct.parse` | metadata | LABEL | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.control.engine.name`, `fabric.control.engine.version` | What decided: the provider endpoint, a listed endpoint's label, the kernel, the customer's label for an in-code check, or the reported library, service or approver. |
+| D39 | `control.gated_kind` | enum tool_call/model_call/side_effect/mcp_call/process/input/output/run/other | `records.control`, `reconstruct.parse` | metadata | META | R (control) | unknown | P0 (spec 057) | T `fabric.control.gated_kind` | What kind of thing was gated; `process` for an OS refusal. |
+| D40 | `control.gated_tool_call_id` | p-pseudonym | `records.control`, `reconstruct.parse` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.control.gated_tool_call_id` | The provider tool-call id the model issued, keyed (`p-`); joins a record to the tool call parsed from wire bytes. D06 stays for explicit steps and actions. |
+| D41 | `control.latency_ms` | number ≥ 0 | `records.control`, `reconstruct.parse` | metadata | META | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.control.latency_ms` | How long the decision took; timing basis `measured` or `reported`. |
+| D42 | `control.reason_code` | label | `records.control`, `reconstruct.parse` | metadata | LABEL | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.control.reason_code` | Bounded reason category `^[a-z0-9][a-z0-9._:-]{0,63}$`; a value failing the pattern is dropped (`redacted(pattern_rejected)`). Free text goes only to `control.reason` (D10). |
+| D43 | `control.mode` | enum enforcing/advisory/shadow/unknown | `records.control` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.control.mode` | The mode the control declares; never observable from a boundary. A `deny` from a shadow-mode control does not stop the call. |
+| D44 | `control.grant_id` | grt-pseudonym | `records.control` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.control.grant_id` | The grant the deciding system says was in force. |
+| D45 | `control.error_class` | enum timeout/exception/unavailable/misconfigured/other | `records.control`, `reconstruct.parse` | metadata | META | R (decision error) | unknown | P0 (spec 057) | T `fabric.control.error_class` | Why a control failed to decide. |
+| D46 | `control.reason_ref` | content object id | `records.control` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.content.object_ids`; C descriptor of `control.reason` | Governed reference to the reason text. |
+| D47 | `control.evidence_ref` | list of event ids | `reconstruct.parse` | metadata | ID | R (derived rows) | not_captured(not_instrumented) | P1 (spec 057) | P; T `fabric.control.evidence_event_ids` on exported rows | The wire exchange, MCP message, sensor or exec record, or HTTP exchange a derived row came from; at most 8. |
+| D48 | `control.signal` | enum content_filter/refusal/guardrail_intervened/prompt_blocked/safety_stop/moderation_flag/other | `reconstruct.parse` | metadata | META | R (provider_safety) | not_captured(not_instrumented) | P1 (spec 057) | T `fabric.control.signal` | The provider-neutral safety signal from the provider safety-signal map (spec 057 §4.1). |
+| D49 | `control.derivation` | enum literal/configured_extract/configured_marker/configured_exit_map/reported/wrapped_check | `records.control`, `reconstruct.parse` | metadata | META | R (control) | unknown | P0 (spec 057) | T `fabric.control.derivation` | How the decision value was obtained: a literal field, a customer-configured table, a report, or a wrapped check's return value or exception (spec 057 §4.10.3). |
 <!-- generated:fields:D:end -->
+
+### 3.5a Security context (revision 6.6; build spec 057)
+
+Spec 057 records the security context of a monitored agent as observed or
+reported evidence: the grants it was given (`G`), the decisions made about
+its actions (`D36`–`D49`, extending `D01`–`D11`), what hooks did
+(`E01`–`E09`) and which extensions were present (`E10`–`E23`). Fabric
+records; it never computes, applies, waits for or returns any of these
+decisions, and every control record carries the `D11` constants. Spec 057
+sections 5 and 6 define the records, joins and mechanical facts; this
+section holds only the registry rows. `G` rows are context fields and `E`
+rows structure fields in the projection.
+
+<!-- generated:fields:G:begin -->
+| # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
+|---|---|---|---|---|---|---|---|---|---|---|
+| G01 | `grant.id` | grt-pseudonym | `records.grant`, `reconstruct.parse` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.grant.id`; P | Identity of the grant: the keyed `grt-` pseudonym of the grant digest; equal documents give equal ids under one key. Omitted without an id key. |
+| G02 | `grant.trigger` | enum run_start/change/resume/requested/derived/unknown | `records.grant`, `reconstruct.parse` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.grant.trigger` | Why this snapshot exists; `derived` for wire and protocol grants. |
+| G03 | `grant.previous_id` | grt-pseudonym | `records.grant`, `reconstruct.parse` | metadata | ID | O | absent | P0 (spec 057) | T `fabric.grant.previous_id`; P | The grant of the same basis this one replaces. |
+| G04 | `grant.source_boundary` | enum llm_wire/mcp_wire/api/otlp/operator_snapshot/other | `records.grant`, `reconstruct.parse` | metadata | META | R (grant) | unknown | P0 (spec 057) | T `fabric.grant.source_boundary` | Which boundary the grant came from. |
+| G05 | `grant.permission_mode` | label | `records.grant` | metadata | LABEL | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.grant.permission_mode` | The runtime's own permission mode name, verbatim, pattern-validated. |
+| G06 | grant.execution_mode, grant.approval_policy | enum autonomous/supervised/approval_required/read_only/unknown; enum none/per_tool/per_side_effect/all/unknown | `records.grant` | metadata | META | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.run.execution_mode`, `fabric.run.approval_policy` | Reuses C30 and C31: set from a declared snapshot. |
+| G07 | grant.tools_allow.count, grant.tools_deny.count, grant.tools_ask.count, grant.tools_offered.count, grant.tools_listed.count, grant.mcp_servers.count, grant.fs_rules.count, grant.net_rules.count, grant.credentials.count, grant.model_rules.count | int ≥ 0 each | `records.grant`, `reconstruct.parse` | metadata | META | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.grant.tools_allow.count`, `.tools_deny.count`, `.tools_ask.count`, `.tools_offered.count`, `.tools_listed.count`, `.mcp_servers.count`, `.fs_rules.count`, `.net_rules.count`, `.credentials.count`, `.model_rules.count` | Shape of the grant without its content. `fabric.run.permissions.count` (C32) stays the sum of the declared counts. |
+| G08 | `grant.sandbox_kind` | enum none/process/container/vm/remote/unknown | `records.grant` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.grant.sandbox_kind` | Declared sandbox; not proof of isolation. |
+| G09 | `grant.network_default` | enum allow/deny/unknown | `records.grant` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.grant.network_default` | Declared default network posture. |
+| G10 | `grant.document` | json (`fabric.grant-snapshot/v1`) | `records.grant`, `reconstruct.parse` | content | CONTENT | O | not_captured(caller_omitted) | P0 (spec 057) | C `run.permissions` (declared, listed); P ref into `model.exchange.request` (offered) | The full grant document, after structural pseudonymisation (spec 057 §7.2) and PROTECT. |
+| G11 | `grant.digest` | digest | `records.grant`, `reconstruct.parse` | metadata | DIGEST | O | not_captured(caller_omitted) | P0 (spec 057) | C descriptor | Plain sha256 of the JCS (RFC 8785) form of the normalised clear document; never on telemetry. |
+| G12 | `grant.basis` | enum offered/listed/declared | `records.grant`, `reconstruct.parse` | metadata | META | R (grant) | unknown | P0 (spec 057) | T `fabric.grant.basis` | Which question this snapshot answers; the reader keeps one in-force chain per basis. |
+| G13 | `grant.tool_choice.mode` | enum auto/none/required/specific/allowed_subset/unknown | `records.grant`, `reconstruct.parse` | metadata | META | O | unknown | P1 (spec 057) | T `fabric.grant.tool_choice` | The request's tool choice restriction, normalised across dialects from the literal field. |
+| G14 | grant.tool_choice.allowed_count, grant.parallel_tools | int ≥ 0; bool | `records.grant`, `reconstruct.parse` | metadata | META | O | absent | P1 (spec 057) | T `fabric.grant.tool_choice.allowed_count`, `fabric.grant.parallel_tools` | Size of an allowed-tools subset or forced tool; whether parallel tool calls were permitted. |
+| G15 | `grant.instructions_digest` | digest ref (C20) | `reconstruct.parse` | metadata | DIGEST | O | not_captured(not_instrumented) | P1 (spec 057) | P | Which instructions accompanied the offered set (a reference to C20); never the text. |
+| G16 | `model_call.offered_grant_id` | grt-pseudonym | `reconstruct.parse` | metadata | ID | R (model_call) | not_captured(not_instrumented) | P1 (spec 057) | P on the model-call step | The offered grant each model call carried, so de-duplicated snapshots still resolve per call. |
+<!-- generated:fields:G:end -->
+
+<!-- generated:fields:E:begin -->
+| # | Field | Type | Observed by | Policy | Privacy | Req | If hook absent | Phase | Lives in | Definition |
+|---|---|---|---|---|---|---|---|---|---|---|
+| E01 | `hook.outcome` | enum passed/modified/blocked/escalated/errored/unknown | `sdk.records`, `reconstruct.parse` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.hook.outcome` | What the hook did to the call it wrapped; `unknown` for a hook program without an exit map. `modified` implies `fabric.hook.modified=true`. |
+| E02 | `hook.event_name` | label | `sdk.records` | metadata | LABEL | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.hook.event_name` | The runtime's own hook event name, verbatim; `phase` stays the closed cross-runtime vocabulary. |
+| E03 | `hook.latency_ms` | number ≥ 0 | `sdk.records`, `reconstruct.parse` | metadata | META | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.hook.latency_ms` | Time the hook took. |
+| E04 | `hook.gated_tool_call_id` | p-pseudonym | `sdk.records`, `reconstruct.parse` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.hook.gated_tool_call_id`; P | The tool call the hook wrapped, when known. |
+| E05 | `hook.extension_id` | ext-pseudonym | `sdk.records` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.hook.extension_id` | The plugin or bundle that contributed the hook (joins to E10). |
+| E06 | `hook.reason_code` | label | `sdk.records` | metadata | LABEL | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.hook.reason_code` | The hook's bounded reason, as D42. |
+| E07 | `hook.basis` | enum process/callback/reported_unknown | `sdk.records`, `reconstruct.parse` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.hook.basis` | Whether the hook was observed as a separate program or reported as an in-process callback. |
+| E08 | hook.exit_code, hook.signal | int, int | `reconstruct.parse` | metadata | META | O | absent | P2 (spec 057) | T `fabric.hook.exit_code`, `fabric.hook.signal` | The hook program's exit, from the exec hook or the sensor `exit` class; unknown and zero stay distinct. |
+| E09 | `hook.program_label` | label | `reconstruct.parse` | metadata | LABEL | O | absent | P2 (spec 057) | T `fabric.hook.program_label` | The customer's label for the program; never its path. |
+| E10 | `extension.id` | ext-pseudonym | `records.extension`, `reconstruct.parse` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.extension.id` | Keyed pseudonym of (kind, name, source ref); stable across runs under one key. |
+| E11 | `extension.kind` | enum skill/plugin/mcp_server/hook_bundle/subagent/tool_pack/other | `records.extension`, `reconstruct.parse` | metadata | META | R (extension) | unknown | P0 (spec 057) | T `fabric.extension.kind` | What was present. |
+| E12 | extension.name, extension.version | label, label | `records.extension`, `reconstruct.parse` | metadata | LABEL | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.extension.name`, `fabric.extension.version` | As declared by the extension. |
+| E13 | `extension.source_kind` | enum registry/marketplace/git/local_path/url/process/builtin/unknown | `records.extension`, `reconstruct.parse` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.extension.source_kind` | Where it came from. |
+| E14 | `extension.source_ref` | src-pseudonym | `records.extension`, `reconstruct.parse` | metadata | ID | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.extension.source_ref`; clear only in C `extension.manifest` | Which source, without exposing it on telemetry. |
+| E15 | `extension.manifest_hash` | 64 hex | `records.extension`, `reconstruct.parse` | metadata | DIGEST | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.extension.manifest_hash` | Hash of the manifest or inventory as loaded; never an extra file read. |
+| E16 | `extension.signature_status` | enum verified/invalid/unsigned/unverified/unknown | `records.extension` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.extension.signature_status` | Result of the runtime's or caller's signature check. Fabric verifies nothing. |
+| E17 | `extension.scope` | enum managed/user/project/local/session/unknown | `records.extension` | metadata | META | O | unknown | P0 (spec 057) | T `fabric.extension.scope` | Which configuration layer enabled it. |
+| E18 | `extension.enabled` | bool | `records.extension` | metadata | META | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.extension.enabled` | Loaded but disabled is recorded too. |
+| E19 | extension.contributes.tools, extension.contributes.hooks, extension.contributes.commands, extension.contributes.mcp_servers, extension.contributes.subagents | int ≥ 0 each | `records.extension`, `reconstruct.parse` | metadata | META | O | not_captured(caller_omitted) | P0 (spec 057) | T `fabric.extension.contributes.tools`, `.hooks`, `.commands`, `.mcp_servers`, `.subagents` | What the extension adds to the agent. |
+| E20 | mcp.tools.read_only_count, mcp.tools.destructive_count, mcp.tools.open_world_count, mcp.tools.idempotent_count | int ≥ 0 each | `reconstruct.parse` | metadata | META | O | not_captured(not_instrumented) | P1 (spec 057) | T `fabric.mcp.tools.read_only_count`, `.destructive_count`, `.open_world_count`, `.idempotent_count` | Counts of the server's declared hints from `tools/list`; hints are the server's assertion. |
+| E21 | `mcp.server_ref` | src-pseudonym | `reconstruct.parse` | metadata | ID | O | not_captured(not_instrumented) | P1 (spec 057) | T `fabric.mcp.server_ref` | Keyed ref of the server's launch command or URL. |
+| E22 | `extension.manifest` | json | `records.extension` | off | CONTENT | O | not_captured(caller_omitted) | P0 (spec 057) | C `extension.manifest` (default `off`) | Manifest as loaded (names, declared permissions, hooks). |
+| E23 | `extension.observed_via` | enum mcp_initialize/mcp_tools_list/process_launch/path_open/reported | `records.extension`, `reconstruct.parse` | metadata | META | R (extension) | unknown | P0 (spec 057) | T `fabric.extension.observed_via` | Which evidence made the record; `path_open` claims nothing about the folder's contents. |
+<!-- generated:fields:E:end -->
+
+Vocabularies of section 3.5a (`control_kind` and `control_decision` restate
+the `D02` and `D04` enums; the phase × decision matrix of spec 052 §4.2.2
+applies, with `error` admitted where `unknown` is, outside `request` and
+`revocation`):
+
+`control_kind`:
+
+<!-- generated:vocab:control_kind:begin -->
+| Value | Meaning |
+|---|---|
+| `guardrail` | A guardrail the customer runs (049 D02). |
+| `policy` | A policy service or engine the customer runs (049 D02). |
+| `permission_request` | A permission request and its resolution (request/resolution pair, 049 D02). |
+| `approval` | An approval by a person or system; decision `allow` or `deny` (049 D02; `approve`/`reject` are SDK input aliases, spec 057 OD-3). |
+| `rate_limit` | A rate limit hit or passed (049 D02). |
+| `budget` | A budget limit hit or passed (049 D02). |
+| `other` | Another kind of external control (049 D02). |
+| `provider_safety` | A provider-side filter, refusal or safety stop observed on the LLM wire (spec 057 §4.1). |
+| `elicitation` | An MCP server's user-confirmation request and its answer (spec 057 §4.2). |
+| `os_access` | A kernel refusal from the closed errno and signal set (spec 057 §4.3). |
+| `permission_check` | A one-shot check in the agent's own code of whether it may do something, with no request/resolution pair (spec 057 §4.10). |
+<!-- generated:vocab:control_kind:end -->
+
+`control_decision`:
+
+<!-- generated:vocab:control_decision:begin -->
+| Value | Meaning |
+|---|---|
+| `allow` | The control allowed the call. |
+| `deny` | The control refused the call. |
+| `modify` | The control changed what was checked. |
+| `escalate` | The control asked another party; legacy `requires_review` maps here. |
+| `pending` | A request awaiting a resolution. |
+| `timeout` | The control or approver did not answer in time. |
+| `cancelled` | The request was cancelled. |
+| `revoked` | An earlier grant was withdrawn. |
+| `unknown` | Fabric does not know the decision; never mapped to `allow`. |
+| `error` | The control ran and failed to decide (spec 057 §5.3); distinct from `unknown` and `timeout`. |
+<!-- generated:vocab:control_decision:end -->
+
+`control_stage`:
+
+<!-- generated:vocab:control_stage:begin -->
+| Value | Meaning |
+|---|---|
+| `input` | Screens the agent's input. |
+| `output` | Screens the agent's or model's output. |
+| `pre_model` | Before a model call. |
+| `post_model` | After a model call. |
+| `pre_tool` | Before a tool call. |
+| `post_tool` | After a tool call. |
+| `pre_effect` | Before a side effect. |
+| `post_effect` | After a side effect. |
+| `effect` | At the moment of the OS action (a kernel refusal). |
+| `inventory` | On a tool listing or inventory. |
+| `run` | On the run as a whole. |
+| `other` | Another stage. |
+| `unknown` | The stage is not known. |
+<!-- generated:vocab:control_stage:end -->
+
+`gated_kind`:
+
+<!-- generated:vocab:gated_kind:begin -->
+| Value | Meaning |
+|---|---|
+| `tool_call` | A tool call the model issued. |
+| `model_call` | A model call. |
+| `side_effect` | A reported side effect. |
+| `mcp_call` | An MCP call. |
+| `process` | A process or syscall (an OS refusal). |
+| `input` | The agent's input. |
+| `output` | The agent's output. |
+| `run` | The run. |
+| `other` | Something else. |
+<!-- generated:vocab:gated_kind:end -->
+
+`control_mode`:
+
+<!-- generated:vocab:control_mode:begin -->
+| Value | Meaning |
+|---|---|
+| `enforcing` | The control declares that its decision stops the call. |
+| `advisory` | The control declares that its decision is advice only. |
+| `shadow` | The control declares shadow mode: a `deny` does not stop the call. |
+| `unknown` | No mode was declared; never observable from a boundary. |
+<!-- generated:vocab:control_mode:end -->
+
+`control_error_class`:
+
+<!-- generated:vocab:control_error_class:begin -->
+| Value | Meaning |
+|---|---|
+| `timeout` | The control timed out. |
+| `exception` | The control raised. |
+| `unavailable` | The control was unreachable (for example a 5xx). |
+| `misconfigured` | The control reported a configuration error. |
+| `other` | Another failure. |
+<!-- generated:vocab:control_error_class:end -->
+
+`control_signal`:
+
+<!-- generated:vocab:control_signal:begin -->
+| Value | Meaning |
+|---|---|
+| `content_filter` | A provider content filter (spec 057 §4.1 map). |
+| `refusal` | A provider refusal field. |
+| `guardrail_intervened` | A provider-hosted guardrail intervened. |
+| `prompt_blocked` | The provider blocked the prompt. |
+| `safety_stop` | The provider stopped generation for safety. |
+| `moderation_flag` | An inline moderation flag; the provider did not stop the call. |
+| `other` | Another literal safety field. |
+<!-- generated:vocab:control_signal:end -->
+
+`control_derivation`:
+
+<!-- generated:vocab:control_derivation:begin -->
+| Value | Meaning |
+|---|---|
+| `literal` | Copied from a literal field in captured bytes. |
+| `configured_extract` | Extracted by a customer-configured JSON Pointer and literal value map. |
+| `configured_marker` | A customer-configured exact denial marker matched a tool result. |
+| `configured_exit_map` | A hook program's exit code mapped by a customer-configured exit map. |
+| `reported` | Reported by the application or an emitter. |
+| `wrapped_check` | Mapped from a wrapped check's return value or exception by the closed table of spec 057 §4.10.3. |
+<!-- generated:vocab:control_derivation:end -->
+
+`grant_trigger`:
+
+<!-- generated:vocab:grant_trigger:begin -->
+| Value | Meaning |
+|---|---|
+| `run_start` | Reported at run start. |
+| `change` | Reported on a configuration change. |
+| `resume` | Reported on resume. |
+| `requested` | Reported on request. |
+| `derived` | Derived by the reader from wire or protocol bytes. |
+| `unknown` | Not stated. |
+<!-- generated:vocab:grant_trigger:end -->
+
+`grant_basis`:
+
+<!-- generated:vocab:grant_basis:begin -->
+| Value | Meaning |
+|---|---|
+| `offered` | The tools, tool choice and instructions digest one model request carried. |
+| `listed` | The tools and roots an MCP server listed to the client. |
+| `declared` | The permission configuration the customer reports. |
+<!-- generated:vocab:grant_basis:end -->
+
+`grant_source_boundary`:
+
+<!-- generated:vocab:grant_source_boundary:begin -->
+| Value | Meaning |
+|---|---|
+| `llm_wire` | Derived from model-wire bytes. |
+| `mcp_wire` | Derived from MCP messages. |
+| `api` | Reported through the explicit API. |
+| `otlp` | Reported over OTLP. |
+| `operator_snapshot` | An operator-run snapshot outside the agent process (spec 057 OD-8). |
+| `other` | Another boundary. |
+<!-- generated:vocab:grant_source_boundary:end -->
+
+`tool_choice_mode`:
+
+<!-- generated:vocab:tool_choice_mode:begin -->
+| Value | Meaning |
+|---|---|
+| `auto` | The model may call any offered tool or none. |
+| `none` | No tool call allowed. |
+| `required` | Some tool call required. |
+| `specific` | One named tool forced. |
+| `allowed_subset` | Only a subset of the offered tools allowed. |
+| `unknown` | Not determinable. |
+<!-- generated:vocab:tool_choice_mode:end -->
+
+`sandbox_kind`:
+
+<!-- generated:vocab:sandbox_kind:begin -->
+| Value | Meaning |
+|---|---|
+| `none` | No sandbox declared. |
+| `process` | Process-level sandbox. |
+| `container` | Container. |
+| `vm` | Virtual machine. |
+| `remote` | Remote sandbox service. |
+| `unknown` | Not stated. |
+<!-- generated:vocab:sandbox_kind:end -->
+
+`hook_outcome`:
+
+<!-- generated:vocab:hook_outcome:begin -->
+| Value | Meaning |
+|---|---|
+| `passed` | The hook let the call continue unchanged. |
+| `modified` | The hook changed the wrapped value; implies `fabric.hook.modified=true`. |
+| `blocked` | The hook stopped the call. |
+| `escalated` | The hook asked another party. |
+| `errored` | The hook failed. |
+| `unknown` | Not known (a hook program without an exit map). |
+<!-- generated:vocab:hook_outcome:end -->
+
+`hook_basis`:
+
+<!-- generated:vocab:hook_basis:begin -->
+| Value | Meaning |
+|---|---|
+| `process` | Observed as a separate program. |
+| `callback` | Reported as an in-process callback. |
+| `reported_unknown` | Reported without saying which. |
+<!-- generated:vocab:hook_basis:end -->
+
+`extension_kind`:
+
+<!-- generated:vocab:extension_kind:begin -->
+| Value | Meaning |
+|---|---|
+| `skill` | A skill. |
+| `plugin` | A plugin. |
+| `mcp_server` | An MCP server. |
+| `hook_bundle` | A bundle of hooks. |
+| `subagent` | A sub-agent definition. |
+| `tool_pack` | A pack of tools. |
+| `other` | Another extension. |
+<!-- generated:vocab:extension_kind:end -->
+
+`extension_source_kind`:
+
+<!-- generated:vocab:extension_source_kind:begin -->
+| Value | Meaning |
+|---|---|
+| `registry` | A package registry. |
+| `marketplace` | A marketplace. |
+| `git` | A git repository. |
+| `local_path` | A local path. |
+| `url` | A URL. |
+| `process` | A launched process. |
+| `builtin` | Built into the runtime. |
+| `unknown` | Not stated. |
+<!-- generated:vocab:extension_source_kind:end -->
+
+`extension_observed_via`:
+
+<!-- generated:vocab:extension_observed_via:begin -->
+| Value | Meaning |
+|---|---|
+| `mcp_initialize` | An MCP `initialize` exchange. |
+| `mcp_tools_list` | An MCP `tools/list` result. |
+| `process_launch` | The process launch of a listed server command. |
+| `path_open` | Only that a watched extension folder was opened; nothing about its contents. |
+| `reported` | Reported through the API or OTLP. |
+<!-- generated:vocab:extension_observed_via:end -->
+
+`signature_status`:
+
+<!-- generated:vocab:signature_status:begin -->
+| Value | Meaning |
+|---|---|
+| `verified` | The runtime or caller says the signature verified. |
+| `invalid` | The runtime or caller says the signature failed. |
+| `unsigned` | No signature. |
+| `unverified` | Signed but not checked. |
+| `unknown` | Not stated. Fabric verifies nothing. |
+<!-- generated:vocab:signature_status:end -->
+
+`extension_scope`:
+
+<!-- generated:vocab:extension_scope:begin -->
+| Value | Meaning |
+|---|---|
+| `managed` | Managed configuration layer. |
+| `user` | User layer. |
+| `project` | Project layer. |
+| `local` | Local layer. |
+| `session` | This session only. |
+| `unknown` | Not stated. |
+<!-- generated:vocab:extension_scope:end -->
+
+`watch_class`:
+
+<!-- generated:vocab:watch_class:begin -->
+| Value | Meaning |
+|---|---|
+| `permission_config` | A permission or policy file. |
+| `hook_config` | A hook configuration file. |
+| `extension_dir` | An extension folder. |
+| `credential_file` | A credential file (never read). |
+| `other` | Another watched path. |
+<!-- generated:vocab:watch_class:end -->
+
+`controls_chain_reason`:
+
+<!-- generated:vocab:controls_chain_reason:begin -->
+| Value | Meaning |
+|---|---|
+| `control_unmatched` | A control or hook names a call, step or action not in the run. |
+| `control_pending_at_end` | A request has no resolution at run end. |
+| `ambiguous_attribution` | A control linked by `pending_set`. |
+| `grant_not_recorded` | A declared-grant capture point is active but no declared snapshot exists. |
+| `body_not_retained` | An MCP or control host is listed but its bodies are not retained. |
+| `sequence_gap` | A sequence gap in the records the chain depends on. |
+| `invariant_conflict` | A control record without both D11 constants, or with a forged value. |
+<!-- generated:vocab:controls_chain_reason:end -->
+
+`security_fact`:
+
+<!-- generated:vocab:security_fact:begin -->
+| Value | Meaning |
+|---|---|
+| `no_declared_grant` | F1: the run has no declared grant snapshot. |
+| `grant_changed` | F2: more than one snapshot of a basis. |
+| `control_unmatched` | F3: a decision recorded with no matching call. |
+| `control_pending_at_end` | F4: a request with no resolution at run end. |
+| `control_denied` | F5: a deny gates a tool call and no effect is attributed to it. |
+| `deny_with_effect` | F6: a deny gates a tool call and an effect is attributed to it (co-occurrence, OD-10). |
+| `approval_required_without_decision` | F7: an effect with `approval_required=true` and no approval gating it. |
+| `hook_errored` | F8: count of hook outcomes `errored`. |
+| `hook_modified` | F8: count of hook outcomes `modified`. |
+| `extension_signature` | F9: extensions by signature status other than `verified`. |
+| `control_invariant_conflict` | F10: a control record without both D11 constants or with a forged value. |
+| `inventory_changed` | F11: an inventory or manifest digest changed within the run. |
+| `tool_called_not_offered` | F12: a tool called that was not offered in that request. |
+| `os_denied` | F13: OS refusals by syscall class and reason code. |
+| `tool_result_error` | F14: tool results fed back with a structured error flag; not a denial claim. |
+<!-- generated:vocab:security_fact:end -->
 
 ### 3.6 Activity map: every architecture to fields
 
@@ -1818,19 +2250,19 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.context.tokens_after` | new | D15 | META: integer ≥ 0 | P3 |  |  |
 | `fabric.context.tokens_before` | new | D15 | META: integer ≥ 0 | P3 |  |  |
 | `fabric.context.trigger` | new | D14 | META: closed enum (field type) | P3 |  |  |
-| `fabric.control.action_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.action_id` | new | D06 | ID: `axn-` + 32 hex (keyed v2 `action`); clear only under an explicit clear-identity Node | P3 (spec 052 §5; pulled forward by spec 057 OD-15) |  |  |
 | `fabric.control.authentication` | new | D11 | META: const `unverified_caller_report` | P3 |  |  |
 | `fabric.control.decision` | new | D04 | META: closed enum (field type) | P3 |  |  |
 | `fabric.control.enforced_by_fabric` | new | D11 | META: const `false` | P3 |  | A boolean validator would admit `true`. |
-| `fabric.control.gated_step_id` | new | D06 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
-| `fabric.control.id` | new | D01 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.gated_step_id` | new | D06 | ID: uuid4 attempt uid, or a mapped step id (`lbl-` or `g-` + 32 hex); clear only under an explicit clear-identity Node | P3 (spec 052 §5; pulled forward by spec 057 OD-15) |  |  |
+| `fabric.control.id` | new | D01 | ID: uuid4 (minted) or `ctl-` + 32 hex (keyed v2 `control` of a caller id); clear only under an explicit clear-identity Node | P3 (spec 052 §5; pulled forward by spec 057 OD-15) |  |  |
 | `fabric.control.kind` | new | D02 | META: closed enum (field type) | P3 |  |  |
 | `fabric.control.phase` | new | D03 | META: closed enum (field type) | P3 |  |  |
 | `fabric.control.policy_digest` | new | D08 | DIGEST: `sha256:` + 64 hex | P3 |  |  |
 | `fabric.control.policy_id` | new | D08 | LABEL: clear `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`, pseudonymous `^lbl-[0-9a-f]{32}$`; operator label: emitted as `lbl-` + 32 hex (v1 label pseudonym, keyed when `FABRIC_WIRE_ID_KEY` is set) unless `FABRIC_WIRE_LABELS=clear`, then as is | P3 |  |  |
 | `fabric.control.policy_version` | new | D08 | META: integer ≥ 1 | P3 |  |  |
-| `fabric.control.proof_ref` | new | D09 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
-| `fabric.control.resolves` | new | D05 | ID: opaque id `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | P3 |  |  |
+| `fabric.control.proof_ref` | new | D09 | ID: `prf-` + 32 hex (keyed v2 `proof`); the clear value only in `control.checked` content | P3 (spec 052 §5; pulled forward by spec 057 OD-15) |  |  |
+| `fabric.control.resolves` | new | D05 | ID: uuid4 or `ctl-` + 32 hex (the control it resolves); clear only under an explicit clear-identity Node | P3 (spec 052 §5; pulled forward by spec 057 OD-15) |  |  |
 | `fabric.conversation_id` | new | X15 | ID: `conv-` + 32 hex | P2 |  |  |
 | `fabric.db.namespace_id` | new | N38 | ID: `dbn-` + 32 hex | P4 |  |  |
 | `fabric.db.rows_affected` | new | N41 | META: integer ≥ -1 (-1 = unknown) | P4 |  |  |
@@ -1852,7 +2284,7 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.input.kind` | new | C08 | META: closed enum (field type) | P1 (I), P2 (R) |  |  |
 | `fabric.input.state` | new | C09 | META: closed enum (field type) | P2 |  |  |
 | `fabric.manifest.after_source_sequence` | new | X39 | META: integer ≥ -1 | P1 | `after_source_sequence` | Attribute of the `fabric.capture_manifest` span. |
-| `fabric.manifest.capture_point_fields` | new | X34 | META: array (max 64) of `<id>=<field id>,<field id>,…`, field ids `^[XCSND][0-9]{2}$` | P1 | `capture_points/fields` | Attribute of the `fabric.capture_manifest` span. |
+| `fabric.manifest.capture_point_fields` | new | X34 | META: array (max 64) of `<id>=<field id>,<field id>,…`, field ids `^[XCSNDGE][0-9]{2}$` | P1 | `capture_points/fields` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.capture_points` | new | X34 | META: array (max 64) of `<id>@<version>:<kind>:<state>:<process_global 0/1>:<opt_in 0/1>:<reason or ->`, each part closed-validated | P1 | `capture_points` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.capture_policy.encrypted_store_required` | new | X31 | META: boolean | built | `capture_policy/encrypted_store_required` | Attribute of the `fabric.capture_manifest` span. |
 | `fabric.manifest.capture_policy.policy_digest` | new | X31 | DIGEST: `sha256:` + 64 hex | built | `capture_policy/policy_digest` | Attribute of the `fabric.capture_manifest` span. |
@@ -1945,7 +2377,7 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.sensor.boot_time_s` | new | X21 | META: integer ≥ 0 (CLOCK_REALTIME − CLOCK_BOOTTIME at sensor start, seconds) | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). |
 | `fabric.sensor.cgroup_id` | new | X21 | META: decimal uint64, `^[0-9]{1,20}$` | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). |
 | `fabric.sensor.errno` | new | X21 | META: closed enum of the auditd receiver's errno names (`EPERM`, `ENOENT`, `EIO`, `EAGAIN`, `EACCES`, `EINVAL`, `ECONNREFUSED`, `ETIMEDOUT`, `EHOSTUNREACH`, `ENETUNREACH`) plus `other`; only when the result is `failed` | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). |
-| `fabric.sensor.event_class` | new | X21 | META: closed enum `exec`, `connect`, `file` | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). |
+| `fabric.sensor.event_class` | new | X21 | META: closed enum `exec`, `connect`, `file`, `exit` | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 adds `exit` (eBPF `sched_process_exit`). |
 | `fabric.sensor.exe_sha256` | new | X21 | DIGEST: 64 lowercase hex, bare (the Node hash-key rule for keys ending `_sha256`); only under the sensor's and the group's digest permission (053 §6.2.5) | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 053 §6.2.3 writes `sha256:` + 64 hex; fabricguard strips any value of a key ending in sha256 that is not bare 64 hex (processor.go hashAttributeKey), as for today's local-profile digests, so the value is bare hex. |
 | `fabric.sensor.incomplete` | new | X21 | META: closed enum `path`, `args`, `path_and_args` | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). |
 | `fabric.sensor.ns_pid` | new | X21 | META: integer ≥ 1 (eBPF only: the group leader's number in its own pid namespace) | P4 (spec 056 M2) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). |
@@ -2003,6 +2435,78 @@ names): `initialize`, `ping`, `tools/list`, `tools/call`,
 | `fabric.tenant_id` | reused | X04 | existing allowlist key; on a host record (capture-point kind S, spec 053 §6.2.3) the group's bound tenant | P4 (spec 056 M2) |  | Spec 053 §6.2.3, §6.2.7 step 5: a host record carries its tenant, which must equal the group binding. On the records class only for capture-point kind S; agent records keep their tenant in the resource and install configuration (X04). |
 | `http.request.method` | reused | N43 | existing allowlist key (spec 047 wire exchanges keep their own check, `POST`); on an http.nonmodel record the closed N43 enum `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`, `other` | P4 (spec 056 M2) |  | Spec 053 §5.4, §7 (N43): reused by the http.nonmodel hook's records (capture_check, records class only). Wire exchange spans keep carrying the key with their spec 047 check, so the placement names exchange too. |
 | `http.response.status_code` | reused | N43 | existing allowlist key (spec 047 wire exchanges keep their own check); on an http.nonmodel record integer 100..599 | P4 (spec 056 M2) |  | Spec 053 §5.4, §7 (N43): reused by the http.nonmodel hook's records (capture_check, records class only). Wire exchange spans keep carrying the key with their spec 047 check, so the placement names exchange too. |
+| `fabric.step.links` | new | X21 | ID: array (max 16) of `<link_type>/<namespace>/<id>`: a registry link type other than `parent`; namespace `attempt`, `step`, `event`, `run`, `provider_item` or `external`; a Fabric-emitted id only (uuid4, `run:` + uuid4, or a registered prefix + 32 hex); never a clear caller id | P2 (spec 051, pulled forward by spec 057 OD-15) |  |  |
+| `fabric.step.update_of` | new | X19 | ID: uuid4 attempt uid, or `out-`, `eff-`, `ckp-`, `dsp-` or `ctl-` + 32 hex (an entity ref) | P2 (spec 051, pulled forward by spec 057 OD-15) |  |  |
+| `fabric.step.timing_basis` | new | X23 | META: closed enum `measured`, `reported`, `not_captured` | P2 (spec 051, pulled forward by spec 057 OD-15) |  |  |
+| `fabric.control.stage` | new | D37 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.control.engine.name` | new | D38 | LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (a public engine or check label; the kernel, an endpoint id or the customer's label) | P0 (spec 057) |  |  |
+| `fabric.control.engine.version` | new | D38 | LABEL: software version `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$` | P0 (spec 057) |  |  |
+| `fabric.control.gated_kind` | new | D39 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.control.gated_tool_call_id` | new | D40 | ID: `p-` + 32 hex (keyed v2 `provider` of the provider tool-call id); never the clear id | P0 (spec 057) |  |  |
+| `fabric.control.latency_ms` | new | D41 | META: finite number ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.control.reason_code` | new | D42 | LABEL: `^[a-z0-9][a-z0-9._:-]{0,63}$` | P0 (spec 057) |  |  |
+| `fabric.control.mode` | new | D43 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.control.grant_id` | new | D44 | ID: `grt-` + 32 hex | P0 (spec 057) |  |  |
+| `fabric.control.error_class` | new | D45 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.control.evidence_event_ids` | new | D47 | ID: array (max 8, unique) of uuid4 event ids | P1 (spec 057) |  |  |
+| `fabric.control.signal` | new | D48 | META: closed enum (field type) | P1 (spec 057) |  |  |
+| `fabric.control.derivation` | new | D49 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.id` | new | G01 | ID: `grt-` + 32 hex (keyed pseudonym of the grant digest; the plain digest never reaches telemetry) | P0 (spec 057) |  |  |
+| `fabric.grant.trigger` | new | G02 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.previous_id` | new | G03 | ID: `grt-` + 32 hex | P0 (spec 057) |  |  |
+| `fabric.grant.source_boundary` | new | G04 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.permission_mode` | new | G05 | LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$` (the runtime's own mode name, verbatim) | P0 (spec 057) |  |  |
+| `fabric.grant.tools_allow.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.tools_deny.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.tools_ask.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.tools_offered.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.tools_listed.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.mcp_servers.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.fs_rules.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.net_rules.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.credentials.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.model_rules.count` | new | G07 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.grant.sandbox_kind` | new | G08 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.network_default` | new | G09 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.basis` | new | G12 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.grant.tool_choice` | new | G13 | META: closed enum (field type) | P1 (spec 057) |  |  |
+| `fabric.grant.tool_choice.allowed_count` | new | G14 | META: integer ≥ 0 | P1 (spec 057) |  |  |
+| `fabric.grant.parallel_tools` | new | G14 | META: boolean | P1 (spec 057) |  |  |
+| `fabric.hook.outcome` | new | E01 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.hook.event_name` | new | E02 | LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (the runtime's own event name, verbatim) | P0 (spec 057) |  |  |
+| `fabric.hook.latency_ms` | new | E03 | META: finite number ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.hook.gated_tool_call_id` | new | E04 | ID: `p-` + 32 hex | P0 (spec 057) |  |  |
+| `fabric.hook.extension_id` | new | E05 | ID: `ext-` + 32 hex | P0 (spec 057) |  |  |
+| `fabric.hook.reason_code` | new | E06 | LABEL: `^[a-z0-9][a-z0-9._:-]{0,63}$` | P0 (spec 057) |  |  |
+| `fabric.hook.basis` | new | E07 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.hook.exit_code` | new | E08 | META: 32-bit signed integer | P2 (spec 057) |  |  |
+| `fabric.hook.signal` | new | E08 | META: integer ≥ 1 | P2 (spec 057) |  |  |
+| `fabric.hook.program_label` | new | E09 | LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (the customer's label from `hook_programs`; never a path) | P2 (spec 057) |  |  |
+| `fabric.extension.id` | new | E10 | ID: `ext-` + 32 hex | P0 (spec 057) |  |  |
+| `fabric.extension.kind` | new | E11 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.extension.name` | new | E12 | LABEL: `^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$` (as the extension declares it) | P0 (spec 057) |  |  |
+| `fabric.extension.version` | new | E12 | LABEL: software version `^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$` | P0 (spec 057) |  |  |
+| `fabric.extension.source_kind` | new | E13 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.extension.source_ref` | new | E14 | ID: `src-` + 32 hex (keyed; the clear source only in `extension.manifest` content) | P0 (spec 057) |  |  |
+| `fabric.extension.manifest_hash` | new | E15 | DIGEST: bare 64 hex `^[0-9a-f]{64}$` | P0 (spec 057) |  |  |
+| `fabric.extension.signature_status` | new | E16 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.extension.scope` | new | E17 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.extension.enabled` | new | E18 | META: boolean | P0 (spec 057) |  |  |
+| `fabric.extension.contributes.tools` | new | E19 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.extension.contributes.hooks` | new | E19 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.extension.contributes.commands` | new | E19 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.extension.contributes.mcp_servers` | new | E19 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.extension.contributes.subagents` | new | E19 | META: integer ≥ 0 | P0 (spec 057) |  |  |
+| `fabric.extension.observed_via` | new | E23 | META: closed enum (field type) | P0 (spec 057) |  |  |
+| `fabric.mcp.tools.read_only_count` | new | E20 | META: integer ≥ 0 | P1 (spec 057) |  |  |
+| `fabric.mcp.tools.destructive_count` | new | E20 | META: integer ≥ 0 | P1 (spec 057) |  |  |
+| `fabric.mcp.tools.open_world_count` | new | E20 | META: integer ≥ 0 | P1 (spec 057) |  |  |
+| `fabric.mcp.tools.idempotent_count` | new | E20 | META: integer ≥ 0 | P1 (spec 057) |  |  |
+| `fabric.mcp.server_ref` | new | E21 | ID: `src-` + 32 hex | P1 (spec 057) |  |  |
+| `fabric.sensor.exit_code` | new | X21 | META: 32-bit signed integer (event class `exit`) | P2 (spec 057) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment. |
+| `fabric.sensor.signal` | new | X21 | META: integer ≥ 1 (event class `exit`, killed by a signal) | P2 (spec 057) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment. |
+| `fabric.sensor.watch_label` | new | X21 | LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$` (the customer's `watched_paths` label; never the path) | P2 (spec 057) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment. |
+| `fabric.sensor.watch_class` | new | X21 | META: closed enum `permission_config`, `hook_config`, `extension_dir`, `credential_file`, `other` | P2 (spec 057) |  | Spec 053 §6.2.3 (revisions 3 and 4), spec 056 §4.3: host records only (capture-point kind S); fabricguard refuses an agent batch that carries any fabric.sensor.* key (053 §6.2.7). Spec 057 OD-13 amendment. |
 <!-- generated:keys:end -->
 
 `fabric.wire.store_reason` values:
@@ -2091,7 +2595,7 @@ governed store stays supported.
 <!-- generated:roles:begin -->
 | Role | Status | Layer | Boundary | Provenance | Media types | Default policy | Cap | Phase | Holds |
 |---|---|---|---|---|---|---|---|---|---|
-| `model.request.instructions` | existing | context | caller | caller_reported | `text/plain`, `application/json` | content | max_body_bytes | built |  |
+| `model.request.instructions` | existing | context | caller | caller_reported | `text/plain`, `application/json` | content | max_body_bytes | built | System and developer instructions. Spec 057 OD-5: the production profile retains them only when the capture policy names this role (049 §2.7: a configured policy omits every role it does not name); the C20 digest reaches telemetry only as a keyed pseudonym. |
 | `model.request.messages` | existing | content | caller, provider_bound | caller_reported | `application/json` | content | max_body_bytes | built | Built explicit line: `CallRecorder` kind `model` writes these with boundary `provider_bound` (call_recorder.py:41-45). |
 | `model.request.tool_definitions` | existing | context | caller | caller_reported | `application/json` | content | 4 MiB | built |  |
 | `model.request.parameters` | existing | context | caller | caller_reported | `application/json` | content | 1 MiB | built |  |
@@ -2134,7 +2638,7 @@ governed store stays supported.
 | `run.trigger` | new | context | caller | caller_reported | `*` | content | 4 MiB | P2 | Trigger payload. |
 | `run.goal` | new | context | caller | caller_reported | `text/plain`, `application/json` | content | 1 MiB | P2 | Stated goal and constraints, as supplied. |
 | `run.input` | new | context | caller | caller_reported | `*` | content | 4 MiB | P2 | A mid-run input payload. |
-| `run.permissions` | new | context | caller | caller_reported | `application/json` | content | 1 MiB | P2 | Execution policy detail: allowed and denied tools, paths, hosts, scopes. |
+| `run.permissions` | new | context | caller | caller_reported | `application/json` | content | 1 MiB | P2 | The declared grant document (`fabric.grant-snapshot/v1`, spec 057 §5.2), structurally pseudonymised (§7.2): allowed and denied tools, paths, hosts, scopes. |
 | `run.configuration` | new | context | caller | caller_reported | `application/json`, `text/plain`, `application/yaml` | off | 4 MiB | P2 | Agent configuration and prompt templates, as supplied. |
 | `run.environment` | new | context | caller | caller_reported | `application/json` | off | 256 KiB | P2 | Allowlisted environment snapshot; values of non-allowlisted variables never. |
 | `run.outcome` | new | content | caller | caller_reported | `*` | content | max_body_bytes | P2 | The application's final output. |
@@ -2150,7 +2654,7 @@ governed store stays supported.
 | `mcp.server` | new | context | tool | caller_reported, protocol | `application/json` | content | 1 MiB | P2 | Server info, capabilities and instructions from initialization. |
 | `computer.action` | new | content | caller | caller_reported, protocol | `application/json` | content | 256 KiB | P2 | An executed UI action: action, target, coordinates, typed text, navigation. |
 | `computer.snapshot` | new | content | caller | caller_reported, protocol | `image/png`, `image/jpeg`, `image/webp`, `text/html`, `application/json` | content | max_body_bytes | P2 | Screenshot, DOM or accessibility snapshot that already existed. |
-| `control.checked` | new | decisions_effects | service | caller_reported | `*` | content | 1 MiB | P3 | What an external control checked. |
+| `control.checked` | new | decisions_effects | service | caller_reported | `*` | off | 1 MiB | P3 | What an external control checked, plus the reviewed-artifact digest, issuer and clear proof reference of a `ControlObservation` (spec 052 D-12). Default `off` (spec 057 OD-19). |
 | `control.reason` | new | decisions_effects | service | caller_reported | `text/plain`, `application/json` | content | 256 KiB | P3 | Reason text for a control decision. |
 | `control.approval` | new | decisions_effects | service | caller_reported | `application/json` | content | 256 KiB | P3 | Scope and duration of an approval or denial. |
 | `selection.decision` | new | decisions_effects | caller | caller_reported | `application/json` | content | 256 KiB | P3 | Candidates, selection and reason for a routing decision. |
@@ -2163,6 +2667,9 @@ governed store stays supported.
 | `media.transcript` | new | content | provider_bound | protocol, caller_reported | `text/plain`, `application/json` | content | 4 MiB | P5 | Transcripts returned by the provider or reported. |
 | `artifact.locator` | new | content | host | caller_reported, protocol | `application/json` | content | 64 KiB | built | File path and rename target behind `fabric.file.path_hash`. |
 | `record.evidence` | new | cross_cutting | caller, provider_bound, tool, terminal, sandbox, remote, host, service | caller_reported, protocol | `application/vnd.fabric.record-evidence+json` | metadata | 1 MiB | P1 | The record's one `fabric.record-evidence/v1` document (spec 050 §3.4a): closed, registered evidence types; ids only in mapped or Fabric-generated form; no CONTENT-class value. Stored whenever a content destination exists, unless the capture policy maps it to `metadata_only` or `omit`. |
+| `extension.manifest` | new | context | caller | caller_reported | `application/json` | off | 1 MiB | P0 (spec 057) | An extension's manifest as loaded: names, declared permissions, hooks, and its clear source (spec 057 §5.5, E22). |
+| `control.exchange.request` | new | decisions_effects | service | protocol | `*` | off | 1 MiB | P2 (spec 057) | A request body sent to a listed control endpoint (spec 057 §4.4); separate from `network.*` so retaining general HTTP bodies never retains what a control inspected. |
+| `control.exchange.response` | new | decisions_effects | service | protocol | `*` | off | 1 MiB | P2 (spec 057) | A response body from a listed control endpoint (spec 057 §4.4). |
 <!-- generated:roles:end -->
 
 ### 4.4 `fabric.step-projection/v1`

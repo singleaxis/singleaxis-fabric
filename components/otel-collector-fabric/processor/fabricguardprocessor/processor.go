@@ -5,6 +5,7 @@ package fabricguardprocessor
 
 import (
 	"context"
+	"math"
 	"regexp"
 	"strings"
 	"sync/atomic"
@@ -1419,6 +1420,27 @@ func intAtLeast(minimum int64) func(pcommon.Value) bool {
 func intIn(minimum, maximum int64) func(pcommon.Value) bool {
 	return func(value pcommon.Value) bool {
 		return value.Type() == pcommon.ValueTypeInt && value.Int() >= minimum && value.Int() <= maximum
+	}
+}
+
+// numberAtLeast admits a finite number (an OTLP double or int) of at least minimum: the
+// registry "number" check (spec 057 D41, E03 latencies in milliseconds).
+func numberAtLeast(minimum float64) func(pcommon.Value) bool {
+	return numberIn(minimum, math.Inf(1))
+}
+
+func numberIn(minimum, maximum float64) func(pcommon.Value) bool {
+	return func(value pcommon.Value) bool {
+		var number float64
+		switch value.Type() {
+		case pcommon.ValueTypeDouble:
+			number = value.Double()
+		case pcommon.ValueTypeInt:
+			number = float64(value.Int())
+		default:
+			return false
+		}
+		return !math.IsNaN(number) && !math.IsInf(number, 0) && number >= minimum && number <= maximum
 	}
 }
 

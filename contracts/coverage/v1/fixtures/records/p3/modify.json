@@ -1,0 +1,25 @@
+{
+  "schema_version": "fabric.records-golden/v1",
+  "spec": "052 §7.2 (WP3-0)",
+  "scenario": "modify",
+  "records": [
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e84",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e04",
+        "fabric.control.kind": "guardrail",
+        "fabric.control.phase": "observation",
+        "fabric.control.decision": "modify",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown"
+      }
+    }
+  ],
+  "expect": {
+    "decisions": {
+      "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e04": "modify"
+    }
+  }
+}

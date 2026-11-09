@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.content-role-table/v1",
-  "registry_revision": 4,
+  "registry_revision": 5,
   "content_object_schema": "fabric.content-object/v2",
   "media_type_rule": "exact type/subtype, type/* wildcard, or * (any value passing the 047 §7 media rule)",
   "unknown_role": "rejected (destination_rejected)",
@@ -24,7 +24,8 @@
       "default_policy": "content",
       "cap": "max_body_bytes",
       "phase": "built",
-      "telemetry_forbidden": true
+      "telemetry_forbidden": true,
+      "holds": "System and developer instructions. Spec 057 OD-5: the production profile retains them only when the capture policy names this role (049 §2.7: a configured policy omits every role it does not name); the C20 digest reaches telemetry only as a keyed pseudonym."
     },
     {
       "role": "model.request.messages",
@@ -870,7 +871,7 @@
       "cap": "1 MiB",
       "phase": "P2",
       "telemetry_forbidden": true,
-      "holds": "Execution policy detail: allowed and denied tools, paths, hosts, scopes."
+      "holds": "The declared grant document (`fabric.grant-snapshot/v1`, spec 057 §5.2), structurally pseudonymised (§7.2): allowed and denied tools, paths, hosts, scopes."
     },
     {
       "role": "run.configuration",
@@ -1184,11 +1185,11 @@
       "media_types": [
         "*"
       ],
-      "default_policy": "content",
+      "default_policy": "off",
       "cap": "1 MiB",
       "phase": "P3",
       "telemetry_forbidden": true,
-      "holds": "What an external control checked."
+      "holds": "What an external control checked, plus the reviewed-artifact digest, issuer and clear proof reference of a `ControlObservation` (spec 052 D-12). Default `off` (spec 057 OD-19)."
     },
     {
       "role": "control.reason",
@@ -1440,6 +1441,63 @@
         "omit"
       ],
       "holds": "The record's one `fabric.record-evidence/v1` document (spec 050 §3.4a): closed, registered evidence types; ids only in mapped or Fabric-generated form; no CONTENT-class value. Stored whenever a content destination exists, unless the capture policy maps it to `metadata_only` or `omit`."
+    },
+    {
+      "role": "extension.manifest",
+      "status": "new",
+      "layer": "context",
+      "boundary": [
+        "caller"
+      ],
+      "provenance": [
+        "caller_reported"
+      ],
+      "media_types": [
+        "application/json"
+      ],
+      "default_policy": "off",
+      "cap": "1 MiB",
+      "phase": "P0 (spec 057)",
+      "telemetry_forbidden": true,
+      "holds": "An extension's manifest as loaded: names, declared permissions, hooks, and its clear source (spec 057 §5.5, E22)."
+    },
+    {
+      "role": "control.exchange.request",
+      "status": "new",
+      "layer": "decisions_effects",
+      "boundary": [
+        "service"
+      ],
+      "provenance": [
+        "protocol"
+      ],
+      "media_types": [
+        "*"
+      ],
+      "default_policy": "off",
+      "cap": "1 MiB",
+      "phase": "P2 (spec 057)",
+      "telemetry_forbidden": true,
+      "holds": "A request body sent to a listed control endpoint (spec 057 §4.4); separate from `network.*` so retaining general HTTP bodies never retains what a control inspected."
+    },
+    {
+      "role": "control.exchange.response",
+      "status": "new",
+      "layer": "decisions_effects",
+      "boundary": [
+        "service"
+      ],
+      "provenance": [
+        "protocol"
+      ],
+      "media_types": [
+        "*"
+      ],
+      "default_policy": "off",
+      "cap": "1 MiB",
+      "phase": "P2 (spec 057)",
+      "telemetry_forbidden": true,
+      "holds": "A response body from a listed control endpoint (spec 057 §4.4)."
     }
   ],
   "allowed_modes_rule": "A row without allowed_modes admits every privacy mode; a row with it refuses any other mode at policy validation (a malformed policy raises at install). default_policy metadata (record.evidence only): the role carries no CONTENT-class value and is stored whenever a content destination exists, including when content capture is disabled (spec 049 §2.7 rule 0, spec 050 §9 delta 15)."

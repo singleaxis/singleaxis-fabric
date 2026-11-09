@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from contracts import p1_reference as ref  # noqa: E402
 
 ROOT = Path("contracts/capture/v1")
-IDENTITY = ("singleaxis.fabric.capture", "1.8.0")
+IDENTITY = ("singleaxis.fabric.capture", "1.9.0")
 SCHEMAS = {
     "fabric.llm-exchange/v1": "schema/llm-exchange-v1.schema.json",
     "fabric.loss-record/v1": "schema/loss-record-v1.schema.json",
@@ -50,6 +50,8 @@ SCHEMAS = {
     "fabric.wire-spool-record/v1": "schema/spool-record-v1.schema.json",
     "fabric.content-log-record/v1": "schema/content-log-record-v1.schema.json",
     "fabric.capture-manifest-record/v1": "schema/capture-manifest-record-v1.schema.json",
+    # spec 057 §4.5: a customer-supplied OTLP mapping profile (no vendor profile ships)
+    "fabric.otlp-mapping-profile/v1": "schema/otlp-mapping-profile-v1.schema.json",
 }
 # Spec 049 run-marker keys: identical JSON definitions on fabric.loss-record/v1
 # heartbeats and on spool marker records.
@@ -954,6 +956,20 @@ def _check_chain_reasons(
             "schema/run-reconstruction-v1.schema.json",
             "chainReason is the gap types followed by the coverage reasons",
         )
+    # Spec 057 §6.4: the controls chain's reasons and the security-context fact codes are
+    # the registry vocabularies, in order.
+    controls = defs["controlsChainVerdict"]["properties"]["reasons"]["items"]["enum"]
+    facts = defs["securityContext"]["properties"]["facts"]["items"]["properties"][
+        "code"
+    ]
+    if list(controls) != [r["value"] for r in vocab["controls_chain_reason"]] or list(
+        facts["enum"]
+    ) != [r["value"] for r in vocab["security_fact"]]:
+        raise CaptureContractError(
+            "capture.reconstruction.chains",
+            "schema/run-reconstruction-v1.schema.json",
+            "controls reasons and fact codes are the registry vocabularies",
+        )
 
 
 _DEADLINE_STATES = frozenset({"open", "unterminated", "deadline_uncertain"})
@@ -1165,8 +1181,40 @@ def validate_document(
         _validate_content(document)
     elif version == "fabric.run-reconstruction/v1":
         _validate_reconstruction(document)
+    elif version == "fabric.otlp-mapping-profile/v1":
+        _validate_mapping_profile(document)
     # fabric.capture-manifest-record/v1 is closed by its generated schema; its
     # semantics are the coverage manifest's (validate_coverage_contracts.py).
+
+
+# Spec 057 §4.5, B5: the invariants are stamped by the Node, never mapped from an emitter.
+_NEVER_MAPPED = frozenset(
+    {"fabric.control.authentication", "fabric.control.enforced_by_fabric"}
+)
+
+
+def _validate_mapping_profile(document: Mapping[str, Any]) -> None:
+    """Rules a schema cannot state: one target per rule, never an invariant key, and a
+    pseudonymised source names an id key (``*.id``, ``*_id``, ``*_ref``)."""
+    for index, rule in enumerate(document["rules"]):
+        targets = [m["target"] for m in rule["map"]] + [
+            s["target"] for s in rule.get("set", [])
+        ]
+        if len(set(targets)) != len(targets) or _NEVER_MAPPED & set(targets):
+            raise CaptureContractError(
+                "capture.mapping_profile.target",
+                f"$.rules[{index}]",
+                "each target once per rule, never an invariant",
+            )
+        for mapping in rule["map"]:
+            target = mapping["target"]
+            is_id = target.endswith((".id", "_id", "_ref", ".previous_id"))
+            if is_id and "pseudonymise" not in mapping:
+                raise CaptureContractError(
+                    "capture.mapping_profile.identity",
+                    f"$.rules[{index}]",
+                    f"identifier target {target} names its pseudonym type",
+                )
 
 
 def validate_digest_fixture(document: Mapping[str, Any], path: Path) -> None:

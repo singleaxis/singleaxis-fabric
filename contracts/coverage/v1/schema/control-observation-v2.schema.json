@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/control-observation-v2.schema.json",
+  "title": "Fabric external control observation v2 (spec 052 §4.2.4, spec 057 §5.3)",
+  "description": "One decision something other than Fabric made about a call, as the caller reports it (or as the reader derived it from captured bytes). Fabric never decides, verifies, approves or enforces anything: authentication is always unverified_caller_report and enforced_by_fabric is always false. A v1 document (fabric.external-control-observation/v1) maps to v2: requires_review becomes escalate, phase observation, kind policy, issuer_id becomes decided_by_id with decided_by_type external_service.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "control_id", "kind", "phase", "decision", "policy_scope", "authentication", "enforced_by_fabric"],
+  "properties": {
+    "schema_version": {"const": "fabric.external-control-observation/v2"},
+    "control_id": {"$ref": "#/$defs/opaqueId"},
+    "action_id": {"$ref": "#/$defs/opaqueId"},
+    "kind": {"enum": ["guardrail", "policy", "permission_request", "approval", "rate_limit", "budget", "other", "provider_safety", "elicitation", "os_access", "permission_check"]},
+    "phase": {"enum": ["request", "resolution", "revocation", "observation"]},
+    "decision": {"enum": ["allow", "deny", "modify", "escalate", "pending", "timeout", "cancelled", "revoked", "unknown", "error"]},
+    "resolves": {"$ref": "#/$defs/opaqueId"},
+    "gated_step_id": {"$ref": "#/$defs/opaqueId"},
+    "decided_by_type": {"enum": ["user", "agent", "sub_agent", "human_approver", "human_operator", "system", "scheduler", "external_service", "provider", "unknown"]},
+    "decided_by_id": {"$ref": "#/$defs/opaqueId"},
+    "external_policy_id": {"$ref": "#/$defs/opaqueId"},
+    "external_policy_version": {"type": "integer", "minimum": 1, "maximum": 2147483648},
+    "external_policy_digest": {"$ref": "#/$defs/digest"},
+    "reviewed_artifact_digest": {"$ref": "#/$defs/digest"},
+    "issuer_id": {"$ref": "#/$defs/opaqueId"},
+    "proof_ref": {"$ref": "#/$defs/opaqueId"},
+    "stage": {"enum": ["input", "output", "pre_model", "post_model", "pre_tool", "post_tool", "pre_effect", "post_effect", "effect", "inventory", "run", "other", "unknown"]},
+    "engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"},
+        "version": {"type": ["string", "null"], "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"}
+      }
+    },
+    "gated_kind": {"enum": ["tool_call", "model_call", "side_effect", "mcp_call", "process", "input", "output", "run", "other"]},
+    "gated_tool_call_id": {"$ref": "#/$defs/opaqueId"},
+    "latency_ms": {"type": "number", "minimum": 0},
+    "reason_code": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"},
+    "mode": {"enum": ["enforcing", "advisory", "shadow", "unknown"]},
+    "grant_id": {"type": "string", "pattern": "^grt-[0-9a-f]{32}$"},
+    "error_class": {"enum": ["timeout", "exception", "unavailable", "misconfigured", "other"]},
+    "reason_ref": {"$ref": "#/$defs/uuid"},
+    "evidence_event_ids": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"$ref": "#/$defs/uuid"}},
+    "signal": {"enum": ["content_filter", "refusal", "guardrail_intervened", "prompt_blocked", "safety_stop", "moderation_flag", "other"]},
+    "derivation": {"enum": ["literal", "configured_extract", "configured_marker", "configured_exit_map", "reported", "wrapped_check"]},
+    "policy_scope": {"const": "external_action_control"},
+    "authentication": {"const": "unverified_caller_report"},
+    "enforced_by_fabric": {"const": false}
+  },
+  "allOf": [
+    {"if": {"properties": {"phase": {"const": "request"}}}, "then": {"properties": {"decision": {"enum": ["pending", "escalate", "unknown"]}}}},
+    {"if": {"properties": {"phase": {"const": "resolution"}}}, "then": {"properties": {"decision": {"enum": ["allow", "deny", "modify", "escalate", "timeout", "cancelled", "unknown", "error"]}}}},
+    {"if": {"properties": {"phase": {"const": "revocation"}}}, "then": {"properties": {"decision": {"const": "revoked"}}}},
+    {"if": {"properties": {"phase": {"const": "observation"}}}, "then": {"properties": {"decision": {"enum": ["allow", "deny", "modify", "escalate", "timeout", "unknown", "error"]}}}},
+    {"if": {"properties": {"kind": {"const": "provider_safety"}}}, "then": {"required": ["signal"]}},
+    {"if": {"required": ["signal"]}, "then": {"properties": {"kind": {"const": "provider_safety"}}}},
+    {"if": {"properties": {"decision": {"const": "error"}}}, "then": {"required": ["error_class"]}},
+    {"if": {"required": ["error_class"]}, "then": {"properties": {"decision": {"const": "error"}}}},
+    {"if": {"properties": {"derivation": {"enum": ["literal", "configured_extract", "configured_marker", "configured_exit_map"]}}, "required": ["derivation"]}, "then": {"required": ["evidence_event_ids"]}},
+    {"if": {"properties": {"kind": {"const": "os_access"}}}, "then": {"properties": {"gated_kind": {"const": "process"}, "engine": {"properties": {"name": {"const": "kernel"}}}}}}
+  ],
+  "$defs": {
+    "opaqueId": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "uuid": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"}
+  }
+}

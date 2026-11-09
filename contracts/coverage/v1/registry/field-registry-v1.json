@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.field-registry/v1",
-  "registry_revision": 12,
+  "registry_revision": 13,
   "status": "draft",
   "spec": "specs/049-four-layer-capture-coverage.md (revision 3)",
   "profiles": [
@@ -1379,7 +1379,7 @@
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "not_captured(not_instrumented)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.run.execution_mode`",
       "definition": "Customer's execution mode. Declared, not proof of enforcement. Via `record_run_context`."
     },
@@ -1395,7 +1395,7 @@
       "privacy_class": "META",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.run.approval_policy`",
       "definition": "When approval is required."
     },
@@ -1411,9 +1411,9 @@
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P2",
-      "lives_in": "C `run.permissions`; T `fabric.run.permissions.count`",
-      "definition": "Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry."
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
+      "lives_in": "C `run.permissions` (the declared grant document, G10); T `fabric.run.permissions.count`",
+      "definition": "Allowed and denied tools, paths, hosts and scopes. Lists never on telemetry. Spec 057: the body is a declared `fabric.grant-snapshot/v1` document (G10); `fabric.run.permissions.count` stays the sum of the declared counts (G07)."
     },
     {
       "id": "C33",
@@ -1427,7 +1427,7 @@
       "privacy_class": "LABEL/META/DIGEST",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P2",
+      "phase": "built (spec 051 record_run_context, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.run.agent_policy_id`, `.agent_policy_version`, `.agent_policy_digest`",
       "definition": "The customer's agent policy identity. Not the recorder capture policy (X31)."
     },
@@ -3168,7 +3168,7 @@
       "privacy_class": "ID",
       "required": "R (control)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.id`",
       "definition": "One control observation. Via `record_control`."
     },
@@ -3176,7 +3176,7 @@
       "id": "D02",
       "layer": "decisions_effects",
       "name": "control.kind",
-      "type": "enum guardrail/policy/permission_request/approval/rate_limit/budget/other",
+      "type": "enum guardrail/policy/permission_request/approval/rate_limit/budget/other/provider_safety/elicitation/os_access/permission_check",
       "observed_by": [
         "sdk.records"
       ],
@@ -3184,9 +3184,9 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "not_captured(not_instrumented)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.kind`",
-      "definition": "What kind of external control."
+      "definition": "What kind of external control decided. Spec 057 adds `provider_safety` (W), `elicitation` (M), `os_access` (P) and `permission_check` (in-code one-shot check)."
     },
     {
       "id": "D03",
@@ -3200,7 +3200,7 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.phase`",
       "definition": "Approvals are a request and a later resolution, linked by `resolves`."
     },
@@ -3208,7 +3208,7 @@
       "id": "D04",
       "layer": "decisions_effects",
       "name": "control.decision",
-      "type": "enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown",
+      "type": "enum allow/deny/modify/escalate/pending/timeout/cancelled/revoked/unknown/error",
       "observed_by": [
         "sdk.records"
       ],
@@ -3216,9 +3216,9 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.decision`",
-      "definition": "Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow."
+      "definition": "Decision the external control made. Legacy `requires_review` maps to `escalate`. Unknown is never mapped to allow. `error` (spec 057): the control ran and failed to decide. The phase × decision matrix of spec 052 §4.2.2 applies."
     },
     {
       "id": "D05",
@@ -3232,7 +3232,7 @@
       "privacy_class": "ID",
       "required": "R (resolution)",
       "status_if_hook_absent": "unresolved",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.resolves`",
       "definition": "Request this resolution answers."
     },
@@ -3248,7 +3248,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.gated_step_id`, `fabric.control.action_id`",
       "definition": "Step or action it applied to. A denied action may have no executed step."
     },
@@ -3264,9 +3264,9 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "unknown",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.actor.type`, `fabric.actor.id` on the event",
-      "definition": "human_approver, system or external_service."
+      "definition": "human_approver, system or external_service. A control record's actor defaults to `unknown`, not `agent` (spec 052 D-3)."
     },
     {
       "id": "D08",
@@ -3280,7 +3280,7 @@
       "privacy_class": "LABEL/META/DIGEST",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.policy_id`, `.policy_version`, `.policy_digest`",
       "definition": "Policy the control applied."
     },
@@ -3296,7 +3296,7 @@
       "privacy_class": "ID",
       "required": "O",
       "status_if_hook_absent": "absent",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.proof_ref`",
       "definition": "Reference to the external system's own record. Fabric does not verify it."
     },
@@ -3312,7 +3312,7 @@
       "privacy_class": "CONTENT",
       "required": "O",
       "status_if_hook_absent": "not_captured(caller_omitted)",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "C `control.checked`, `control.reason`, `control.approval`",
       "definition": "What was checked, why, and the scope and duration of a grant."
     },
@@ -3328,7 +3328,7 @@
       "privacy_class": "META",
       "required": "R (control)",
       "status_if_hook_absent": "always",
-      "phase": "P3",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
       "lives_in": "T `fabric.control.authentication`, `fabric.control.enforced_by_fabric`",
       "definition": "Invariants on every control event."
     },
@@ -3720,6 +3720,884 @@
       "phase": "out of scope",
       "lives_in": "-",
       "definition": "Pricing and billing are downstream (decision 11). Provider-returned cost fields stay in the stored bytes, unprojected."
+    },
+    {
+      "id": "D36",
+      "layer": "decisions_effects",
+      "name": "control.resolution_state",
+      "type": "enum resolved/pending/revoked",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (control request)",
+      "status_if_hook_absent": "unknown",
+      "phase": "built (spec 052 controls, pulled forward by spec 057 OD-15)",
+      "lives_in": "P",
+      "definition": "Spec 052 D-1: the carrier for 049 §6.3 \"pending at run end\". `resolved` when a resolution is in the input (disagreeing resolutions: `conflict`), `revoked` when a revocation targets the request or a resolution, else `pending`; never mapped to allow or deny."
+    },
+    {
+      "id": "D37",
+      "layer": "decisions_effects",
+      "name": "control.stage",
+      "type": "enum input/output/pre_model/post_model/pre_tool/post_tool/pre_effect/post_effect/effect/inventory/run/other/unknown",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (control)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.stage`",
+      "definition": "Where in the agent loop the control sat. Distinct from D03 phase. `effect`: a refusal at the moment of the OS action; `inventory`: decisions on tool listings."
+    },
+    {
+      "id": "D38",
+      "layer": "decisions_effects",
+      "name": "control.engine.name, control.engine.version",
+      "type": "label, label",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.engine.name`, `fabric.control.engine.version`",
+      "definition": "What decided: the provider endpoint, a listed endpoint's label, the kernel, the customer's label for an in-code check, or the reported library, service or approver."
+    },
+    {
+      "id": "D39",
+      "layer": "decisions_effects",
+      "name": "control.gated_kind",
+      "type": "enum tool_call/model_call/side_effect/mcp_call/process/input/output/run/other",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (control)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.gated_kind`",
+      "definition": "What kind of thing was gated; `process` for an OS refusal."
+    },
+    {
+      "id": "D40",
+      "layer": "decisions_effects",
+      "name": "control.gated_tool_call_id",
+      "type": "p-pseudonym",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.gated_tool_call_id`",
+      "definition": "The provider tool-call id the model issued, keyed (`p-`); joins a record to the tool call parsed from wire bytes. D06 stays for explicit steps and actions."
+    },
+    {
+      "id": "D41",
+      "layer": "decisions_effects",
+      "name": "control.latency_ms",
+      "type": "number ≥ 0",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.latency_ms`",
+      "definition": "How long the decision took; timing basis `measured` or `reported`."
+    },
+    {
+      "id": "D42",
+      "layer": "decisions_effects",
+      "name": "control.reason_code",
+      "type": "label",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.reason_code`",
+      "definition": "Bounded reason category `^[a-z0-9][a-z0-9._:-]{0,63}$`; a value failing the pattern is dropped (`redacted(pattern_rejected)`). Free text goes only to `control.reason` (D10)."
+    },
+    {
+      "id": "D43",
+      "layer": "decisions_effects",
+      "name": "control.mode",
+      "type": "enum enforcing/advisory/shadow/unknown",
+      "observed_by": [
+        "records.control"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.mode`",
+      "definition": "The mode the control declares; never observable from a boundary. A `deny` from a shadow-mode control does not stop the call."
+    },
+    {
+      "id": "D44",
+      "layer": "decisions_effects",
+      "name": "control.grant_id",
+      "type": "grt-pseudonym",
+      "observed_by": [
+        "records.control"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.grant_id`",
+      "definition": "The grant the deciding system says was in force."
+    },
+    {
+      "id": "D45",
+      "layer": "decisions_effects",
+      "name": "control.error_class",
+      "type": "enum timeout/exception/unavailable/misconfigured/other",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (decision error)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.error_class`",
+      "definition": "Why a control failed to decide."
+    },
+    {
+      "id": "D46",
+      "layer": "decisions_effects",
+      "name": "control.reason_ref",
+      "type": "content object id",
+      "observed_by": [
+        "records.control"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.content.object_ids`; C descriptor of `control.reason`",
+      "definition": "Governed reference to the reason text."
+    },
+    {
+      "id": "D47",
+      "layer": "decisions_effects",
+      "name": "control.evidence_ref",
+      "type": "list of event ids",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "R (derived rows)",
+      "status_if_hook_absent": "not_captured(not_instrumented)",
+      "phase": "P1 (spec 057)",
+      "lives_in": "P; T `fabric.control.evidence_event_ids` on exported rows",
+      "definition": "The wire exchange, MCP message, sensor or exec record, or HTTP exchange a derived row came from; at most 8."
+    },
+    {
+      "id": "D48",
+      "layer": "decisions_effects",
+      "name": "control.signal",
+      "type": "enum content_filter/refusal/guardrail_intervened/prompt_blocked/safety_stop/moderation_flag/other",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (provider_safety)",
+      "status_if_hook_absent": "not_captured(not_instrumented)",
+      "phase": "P1 (spec 057)",
+      "lives_in": "T `fabric.control.signal`",
+      "definition": "The provider-neutral safety signal from the provider safety-signal map (spec 057 §4.1)."
+    },
+    {
+      "id": "D49",
+      "layer": "decisions_effects",
+      "name": "control.derivation",
+      "type": "enum literal/configured_extract/configured_marker/configured_exit_map/reported/wrapped_check",
+      "observed_by": [
+        "records.control",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (control)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.control.derivation`",
+      "definition": "How the decision value was obtained: a literal field, a customer-configured table, a report, or a wrapped check's return value or exception (spec 057 §4.10.3)."
+    },
+    {
+      "id": "G01",
+      "layer": "context",
+      "name": "grant.id",
+      "type": "grt-pseudonym",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.id`; P",
+      "definition": "Identity of the grant: the keyed `grt-` pseudonym of the grant digest; equal documents give equal ids under one key. Omitted without an id key."
+    },
+    {
+      "id": "G02",
+      "layer": "context",
+      "name": "grant.trigger",
+      "type": "enum run_start/change/resume/requested/derived/unknown",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.trigger`",
+      "definition": "Why this snapshot exists; `derived` for wire and protocol grants."
+    },
+    {
+      "id": "G03",
+      "layer": "context",
+      "name": "grant.previous_id",
+      "type": "grt-pseudonym",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.previous_id`; P",
+      "definition": "The grant of the same basis this one replaces."
+    },
+    {
+      "id": "G04",
+      "layer": "context",
+      "name": "grant.source_boundary",
+      "type": "enum llm_wire/mcp_wire/api/otlp/operator_snapshot/other",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (grant)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.source_boundary`",
+      "definition": "Which boundary the grant came from."
+    },
+    {
+      "id": "G05",
+      "layer": "context",
+      "name": "grant.permission_mode",
+      "type": "label",
+      "observed_by": [
+        "records.grant"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.permission_mode`",
+      "definition": "The runtime's own permission mode name, verbatim, pattern-validated."
+    },
+    {
+      "id": "G06",
+      "layer": "context",
+      "name": "grant.execution_mode, grant.approval_policy",
+      "type": "enum autonomous/supervised/approval_required/read_only/unknown; enum none/per_tool/per_side_effect/all/unknown",
+      "observed_by": [
+        "records.grant"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.run.execution_mode`, `fabric.run.approval_policy`",
+      "definition": "Reuses C30 and C31: set from a declared snapshot."
+    },
+    {
+      "id": "G07",
+      "layer": "context",
+      "name": "grant.tools_allow.count, grant.tools_deny.count, grant.tools_ask.count, grant.tools_offered.count, grant.tools_listed.count, grant.mcp_servers.count, grant.fs_rules.count, grant.net_rules.count, grant.credentials.count, grant.model_rules.count",
+      "type": "int ≥ 0 each",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.tools_allow.count`, `.tools_deny.count`, `.tools_ask.count`, `.tools_offered.count`, `.tools_listed.count`, `.mcp_servers.count`, `.fs_rules.count`, `.net_rules.count`, `.credentials.count`, `.model_rules.count`",
+      "definition": "Shape of the grant without its content. `fabric.run.permissions.count` (C32) stays the sum of the declared counts."
+    },
+    {
+      "id": "G08",
+      "layer": "context",
+      "name": "grant.sandbox_kind",
+      "type": "enum none/process/container/vm/remote/unknown",
+      "observed_by": [
+        "records.grant"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.sandbox_kind`",
+      "definition": "Declared sandbox; not proof of isolation."
+    },
+    {
+      "id": "G09",
+      "layer": "context",
+      "name": "grant.network_default",
+      "type": "enum allow/deny/unknown",
+      "observed_by": [
+        "records.grant"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.network_default`",
+      "definition": "Declared default network posture."
+    },
+    {
+      "id": "G10",
+      "layer": "context",
+      "name": "grant.document",
+      "type": "json (`fabric.grant-snapshot/v1`)",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "content",
+      "privacy_class": "CONTENT",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "C `run.permissions` (declared, listed); P ref into `model.exchange.request` (offered)",
+      "definition": "The full grant document, after structural pseudonymisation (spec 057 §7.2) and PROTECT."
+    },
+    {
+      "id": "G11",
+      "layer": "context",
+      "name": "grant.digest",
+      "type": "digest",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "DIGEST",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "C descriptor",
+      "definition": "Plain sha256 of the JCS (RFC 8785) form of the normalised clear document; never on telemetry."
+    },
+    {
+      "id": "G12",
+      "layer": "context",
+      "name": "grant.basis",
+      "type": "enum offered/listed/declared",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (grant)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.grant.basis`",
+      "definition": "Which question this snapshot answers; the reader keeps one in-force chain per basis."
+    },
+    {
+      "id": "G13",
+      "layer": "context",
+      "name": "grant.tool_choice.mode",
+      "type": "enum auto/none/required/specific/allowed_subset/unknown",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P1 (spec 057)",
+      "lives_in": "T `fabric.grant.tool_choice`",
+      "definition": "The request's tool choice restriction, normalised across dialects from the literal field."
+    },
+    {
+      "id": "G14",
+      "layer": "context",
+      "name": "grant.tool_choice.allowed_count, grant.parallel_tools",
+      "type": "int ≥ 0; bool",
+      "observed_by": [
+        "records.grant",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P1 (spec 057)",
+      "lives_in": "T `fabric.grant.tool_choice.allowed_count`, `fabric.grant.parallel_tools`",
+      "definition": "Size of an allowed-tools subset or forced tool; whether parallel tool calls were permitted."
+    },
+    {
+      "id": "G15",
+      "layer": "context",
+      "name": "grant.instructions_digest",
+      "type": "digest ref (C20)",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "DIGEST",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(not_instrumented)",
+      "phase": "P1 (spec 057)",
+      "lives_in": "P",
+      "definition": "Which instructions accompanied the offered set (a reference to C20); never the text."
+    },
+    {
+      "id": "G16",
+      "layer": "context",
+      "name": "model_call.offered_grant_id",
+      "type": "grt-pseudonym",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "R (model_call)",
+      "status_if_hook_absent": "not_captured(not_instrumented)",
+      "phase": "P1 (spec 057)",
+      "lives_in": "P on the model-call step",
+      "definition": "The offered grant each model call carried, so de-duplicated snapshots still resolve per call."
+    },
+    {
+      "id": "E01",
+      "layer": "structure",
+      "name": "hook.outcome",
+      "type": "enum passed/modified/blocked/escalated/errored/unknown",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.outcome`",
+      "definition": "What the hook did to the call it wrapped; `unknown` for a hook program without an exit map. `modified` implies `fabric.hook.modified=true`."
+    },
+    {
+      "id": "E02",
+      "layer": "structure",
+      "name": "hook.event_name",
+      "type": "label",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.event_name`",
+      "definition": "The runtime's own hook event name, verbatim; `phase` stays the closed cross-runtime vocabulary."
+    },
+    {
+      "id": "E03",
+      "layer": "structure",
+      "name": "hook.latency_ms",
+      "type": "number ≥ 0",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.latency_ms`",
+      "definition": "Time the hook took."
+    },
+    {
+      "id": "E04",
+      "layer": "structure",
+      "name": "hook.gated_tool_call_id",
+      "type": "p-pseudonym",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.gated_tool_call_id`; P",
+      "definition": "The tool call the hook wrapped, when known."
+    },
+    {
+      "id": "E05",
+      "layer": "structure",
+      "name": "hook.extension_id",
+      "type": "ext-pseudonym",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.extension_id`",
+      "definition": "The plugin or bundle that contributed the hook (joins to E10)."
+    },
+    {
+      "id": "E06",
+      "layer": "structure",
+      "name": "hook.reason_code",
+      "type": "label",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.reason_code`",
+      "definition": "The hook's bounded reason, as D42."
+    },
+    {
+      "id": "E07",
+      "layer": "structure",
+      "name": "hook.basis",
+      "type": "enum process/callback/reported_unknown",
+      "observed_by": [
+        "sdk.records",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.basis`",
+      "definition": "Whether the hook was observed as a separate program or reported as an in-process callback."
+    },
+    {
+      "id": "E08",
+      "layer": "structure",
+      "name": "hook.exit_code, hook.signal",
+      "type": "int, int",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P2 (spec 057)",
+      "lives_in": "T `fabric.hook.exit_code`, `fabric.hook.signal`",
+      "definition": "The hook program's exit, from the exec hook or the sensor `exit` class; unknown and zero stay distinct."
+    },
+    {
+      "id": "E09",
+      "layer": "structure",
+      "name": "hook.program_label",
+      "type": "label",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "absent",
+      "phase": "P2 (spec 057)",
+      "lives_in": "T `fabric.hook.program_label`",
+      "definition": "The customer's label for the program; never its path."
+    },
+    {
+      "id": "E10",
+      "layer": "structure",
+      "name": "extension.id",
+      "type": "ext-pseudonym",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.id`",
+      "definition": "Keyed pseudonym of (kind, name, source ref); stable across runs under one key."
+    },
+    {
+      "id": "E11",
+      "layer": "structure",
+      "name": "extension.kind",
+      "type": "enum skill/plugin/mcp_server/hook_bundle/subagent/tool_pack/other",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (extension)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.kind`",
+      "definition": "What was present."
+    },
+    {
+      "id": "E12",
+      "layer": "structure",
+      "name": "extension.name, extension.version",
+      "type": "label, label",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.name`, `fabric.extension.version`",
+      "definition": "As declared by the extension."
+    },
+    {
+      "id": "E13",
+      "layer": "structure",
+      "name": "extension.source_kind",
+      "type": "enum registry/marketplace/git/local_path/url/process/builtin/unknown",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.source_kind`",
+      "definition": "Where it came from."
+    },
+    {
+      "id": "E14",
+      "layer": "structure",
+      "name": "extension.source_ref",
+      "type": "src-pseudonym",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.source_ref`; clear only in C `extension.manifest`",
+      "definition": "Which source, without exposing it on telemetry."
+    },
+    {
+      "id": "E15",
+      "layer": "structure",
+      "name": "extension.manifest_hash",
+      "type": "64 hex",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "DIGEST",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.manifest_hash`",
+      "definition": "Hash of the manifest or inventory as loaded; never an extra file read."
+    },
+    {
+      "id": "E16",
+      "layer": "structure",
+      "name": "extension.signature_status",
+      "type": "enum verified/invalid/unsigned/unverified/unknown",
+      "observed_by": [
+        "records.extension"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.signature_status`",
+      "definition": "Result of the runtime's or caller's signature check. Fabric verifies nothing."
+    },
+    {
+      "id": "E17",
+      "layer": "structure",
+      "name": "extension.scope",
+      "type": "enum managed/user/project/local/session/unknown",
+      "observed_by": [
+        "records.extension"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.scope`",
+      "definition": "Which configuration layer enabled it."
+    },
+    {
+      "id": "E18",
+      "layer": "structure",
+      "name": "extension.enabled",
+      "type": "bool",
+      "observed_by": [
+        "records.extension"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.enabled`",
+      "definition": "Loaded but disabled is recorded too."
+    },
+    {
+      "id": "E19",
+      "layer": "structure",
+      "name": "extension.contributes.tools, extension.contributes.hooks, extension.contributes.commands, extension.contributes.mcp_servers, extension.contributes.subagents",
+      "type": "int ≥ 0 each",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.contributes.tools`, `.hooks`, `.commands`, `.mcp_servers`, `.subagents`",
+      "definition": "What the extension adds to the agent."
+    },
+    {
+      "id": "E20",
+      "layer": "structure",
+      "name": "mcp.tools.read_only_count, mcp.tools.destructive_count, mcp.tools.open_world_count, mcp.tools.idempotent_count",
+      "type": "int ≥ 0 each",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(not_instrumented)",
+      "phase": "P1 (spec 057)",
+      "lives_in": "T `fabric.mcp.tools.read_only_count`, `.destructive_count`, `.open_world_count`, `.idempotent_count`",
+      "definition": "Counts of the server's declared hints from `tools/list`; hints are the server's assertion."
+    },
+    {
+      "id": "E21",
+      "layer": "structure",
+      "name": "mcp.server_ref",
+      "type": "src-pseudonym",
+      "observed_by": [
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "ID",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(not_instrumented)",
+      "phase": "P1 (spec 057)",
+      "lives_in": "T `fabric.mcp.server_ref`",
+      "definition": "Keyed ref of the server's launch command or URL."
+    },
+    {
+      "id": "E22",
+      "layer": "structure",
+      "name": "extension.manifest",
+      "type": "json",
+      "observed_by": [
+        "records.extension"
+      ],
+      "default_policy": "off",
+      "privacy_class": "CONTENT",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "C `extension.manifest` (default `off`)",
+      "definition": "Manifest as loaded (names, declared permissions, hooks)."
+    },
+    {
+      "id": "E23",
+      "layer": "structure",
+      "name": "extension.observed_via",
+      "type": "enum mcp_initialize/mcp_tools_list/process_launch/path_open/reported",
+      "observed_by": [
+        "records.extension",
+        "reconstruct.parse"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (extension)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.extension.observed_via`",
+      "definition": "Which evidence made the record; `path_open` claims nothing about the folder's contents."
     }
   ],
   "evidence_types": [

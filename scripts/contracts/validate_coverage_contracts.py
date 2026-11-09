@@ -32,6 +32,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import math
 import re
 import sys
 from collections.abc import Mapping, Sequence
@@ -128,6 +129,9 @@ LAYERS = {
     "S": "structure",
     "N": "content",
     "D": "decisions_effects",
+    # spec 057 (049 rev 6.6): grant fields are context, hook and extension fields structure
+    "G": "context",
+    "E": "structure",
 }
 TITLES = {
     "X": "fields:X",
@@ -135,6 +139,8 @@ TITLES = {
     "S": "fields:S",
     "N": "fields:N",
     "D": "fields:D",
+    "G": "fields:G",
+    "E": "fields:E",
 }
 OUT_OF_SCOPE = "out of scope"
 STORE_REASON_MAP = {"no_store": "not_configured"}
@@ -470,7 +476,7 @@ def check_registries(root: Path, reg: Mapping[str, Any]) -> None:
         fid = f.get("id", "?")
         if set(f) != FIELD_KEYS:
             _fail("coverage.fields.shape", fid, f"keys {sorted(set(f) ^ FIELD_KEYS)}")
-        if not re.fullmatch(r"[XCSND][0-9]{2}", fid) or LAYERS[fid[0]] != f["layer"]:
+        if not re.fullmatch(r"[XCSNDGE][0-9]{2}", fid) or LAYERS[fid[0]] != f["layer"]:
             _fail("coverage.fields.id", fid, "id pattern or layer mismatch")
         if not isinstance(f["observed_by"], list):
             _fail(
@@ -884,7 +890,17 @@ def _manifest_leaves(schema: Mapping[str, Any], prefix: str = "") -> list[str]:
 
 
 # ------------------------------------------------------------------ key checks (C0-1, C0-2, C0-4)
-CHECK_TYPES = {"enum", "const", "bool", "int", "string", "datetime", "array", "never"}
+CHECK_TYPES = {
+    "enum",
+    "const",
+    "bool",
+    "int",
+    "number",
+    "string",
+    "datetime",
+    "array",
+    "never",
+}
 ADMISSIONS = {"existing", "never", "P0-A"}
 
 
@@ -925,6 +941,15 @@ def check_value(
             and -INT64_MAX - 1 <= value <= INT64_MAX
             and value >= check["min"]
             and value <= check.get("max", INT64_MAX)
+        )
+    if kind == "number":
+        # spec 057 (D41, E03): a finite JSON number; an integer is a number too
+        return (
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)
+            and value >= check["min"]
+            and value <= check.get("max", float("inf"))
         )
     if kind == "datetime":
         return isinstance(value, str) and _rfc3339(value)
@@ -977,6 +1002,7 @@ def _check_shape(check: Any, where: str) -> None:
         "const": {"type", "value", "span"},
         "bool": {"type"},
         "int": {"type", "min", "max"},
+        "number": {"type", "min", "max"},
         "string": {
             "type",
             "pattern",
@@ -1017,6 +1043,13 @@ def _check_shape(check: Any, where: str) -> None:
         or check.get("max", INT64_MAX) < check["min"]
     ):
         _fail("coverage.keys.check", where, "int needs min <= max")
+    if kind == "number" and (
+        isinstance(check.get("min"), bool)
+        or not isinstance(check.get("min"), (int, float))
+        or not math.isfinite(check["min"])
+        or check.get("max", float("inf")) < check["min"]
+    ):
+        _fail("coverage.keys.check", where, "number needs a finite min <= max")
     if kind == "string":
         try:
             re.compile(check["pattern"])
@@ -1047,7 +1080,7 @@ def check_examples(check: Mapping[str, Any]) -> list[Any]:
         return [check["value"]]
     if kind == "bool":
         return [True, False]
-    if kind == "int":
+    if kind in ("int", "number"):
         return [check["min"]] + ([check["max"]] if "max" in check else [])
     return list(check["examples"])
 
@@ -1884,6 +1917,20 @@ PSEUDONYM_V2_TYPES = {
     "mst": "memory_store",
     "mkey": "memory_key",
     "p": "provider",
+    # spec 051 §5.3 / spec 052 (WP2-0 rows, pulled forward by spec 057 OD-15)
+    "ckp": "checkpoint",
+    "eff": "effect",
+    "out": "outcome",
+    "ctl": "control",
+    "axn": "action",
+    "prf": "proof",
+    # spec 057 §3 rule 6
+    "grt": "grant",
+    "crd": "credential",
+    "ext": "extension",
+    "src": "extension_source",
+    "pth": "path_rule",
+    "net": "net_rule",
 }
 
 
@@ -2327,6 +2374,10 @@ def validate_vectors(
     kind = document.get("schema_version")
     if validate_p1_vectors(document, reg, root):
         return
+    from contracts import security_context  # noqa: PLC0415 - it imports this module
+
+    if security_context.validate_coverage_document(document, reg, root, _fail):
+        return  # spec 057 WP7-0: grant, observation and schema-case vectors
     from contracts import host_records  # noqa: PLC0415 - it imports this module
 
     if host_records.validate_coverage_vector(document, _fail):
@@ -2541,6 +2592,10 @@ def validate_fixture(
     kind = document.get("schema_version")
     if action_record.validate_document(document, reg, root, fail=_fail):
         return
+    from contracts import security_context  # noqa: PLC0415 - it imports this module
+
+    if security_context.validate_coverage_document(document, reg, root, _fail):
+        return  # spec 057 WP7-0, spec 052 WP3-0
     if kind == "fabric.step-projection/v1":
         validate_projection(document, reg, schemas["projection"])
     elif kind == "fabric.capture-manifest/v1":
@@ -2665,6 +2720,9 @@ def validate_coverage_contracts(repo_root: Path, *, write: bool = False) -> list
     check_registries(repo_root, reg)
     check_p1_registries(repo_root, reg)
     check_key_checks(repo_root, reg)
+    from contracts import security_context  # noqa: PLC0415 - it imports this module
+
+    security_context.check_safety_map(repo_root, reg, _fail)  # spec 057 §4.1
     check_manifest_record_schema(repo_root, reg, write=write)
     pinned = check_manifest(repo_root)
     validate_artifacts(repo_root, reg)

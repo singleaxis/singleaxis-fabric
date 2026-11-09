@@ -293,8 +293,10 @@ func (g *guard) admitHostSpan(span ptrace.Span, class hostClass) bool {
 		lossReported = !(lost.Type() == pcommon.ValueTypeInt && lost.Int() == 0)
 	}
 	if class == hostRecord {
+		suppliedClass, _ := attrs.Get("fabric.sensor.event_class")
+		exitRecord := suppliedClass.Type() == pcommon.ValueTypeStr && suppliedClass.Str() == "exit"
 		for _, key := range hostRecordSupplied {
-			if _, ok := attrs.Get(key); !ok {
+			if _, ok := attrs.Get(key); !ok && (!exitRecord || key != "fabric.sensor.syscall") {
 				return false
 			}
 		}
@@ -332,15 +334,22 @@ func (g *guard) admitHostSpan(span ptrace.Span, class hostClass) bool {
 	if class == hostManifest {
 		g.applyManifestProfile(attrs)
 	}
+	eventClass, hasClass := attrs.Get("fabric.sensor.event_class")
+	// Spec 057 OD-13 (053 §6.2.3 amendment): a process exit (event class exit,
+	// sched_process_exit) is no syscall, so it names none and carries no syscall key.
+	exit := class == hostRecord && hasClass && eventClass.Type() == pcommon.ValueTypeStr && eventClass.Str() == "exit"
 	for _, key := range hostRequired[class] {
-		if _, ok := attrs.Get(key); !ok {
+		if _, ok := attrs.Get(key); !ok && (!exit || key != "fabric.sensor.syscall") {
 			return false
 		}
 	}
 	if class == hostRecord {
-		syscall, _ := attrs.Get("fabric.sensor.syscall")
-		eventClass, ok := attrs.Get("fabric.sensor.event_class")
-		if !ok || hostSyscallClass[syscall.Str()] != eventClass.Str() {
+		syscall, hasSyscall := attrs.Get("fabric.sensor.syscall")
+		if exit {
+			if hasSyscall {
+				return false // an exit names no syscall
+			}
+		} else if !hasClass || hostSyscallClass[syscall.Str()] != eventClass.Str() {
 			return false // a syscall of another event class, or none
 		}
 	}

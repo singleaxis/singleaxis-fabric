@@ -462,10 +462,12 @@
             "decisions": {"allOf": [{"$ref": "#/$defs/chainVerdict"}, {"if": {"properties": {"verdict": {"const": "not_observed"}}, "required": ["verdict"]}, "then": {"not": {"required": ["reasons"]}}}]},
             "actions": {"$ref": "#/$defs/chainVerdict"},
             "effects": {"$ref": "#/$defs/chainVerdict"},
-            "corroboration": {"$ref": "#/$defs/chainVerdict"}
+            "corroboration": {"$ref": "#/$defs/chainVerdict"},
+            "controls": {"$ref": "#/$defs/controlsChainVerdict"}
           }
         },
         "attribution": {"$ref": "#/$defs/attribution"},
+        "security_context": {"$ref": "#/$defs/securityContext"},
         "sensor_events": {
           "description": "Spec 053 §6.3, spec 056 §4.3: the host-sensor events a link of this run names (as a target or a candidate of an agent step's corroborated_by link, or as the subject of a part_of link), with the links whose subject they are (H3 process_lineage to an anchored effect, H4 process_anchor to the run, M2 H5 sandbox_report to the effect that reported the event's container or pod id). Never a peer address, path or argv: ids, pids and times only.",
           "type": "array",
@@ -510,6 +512,31 @@
       "properties": {
         "verdict": {"enum": ["complete", "partial", "unverified", "not_observed"]},
         "reasons": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/chainReason"}}
+      }
+    },
+    "controlsChainVerdict": {
+      "description": "Spec 057 §6.4 (OD-17): the fifth chain, reported like the other four and optional until the reader emits it. not_observed: no control, grant, hook or extension capture point or derivation rule is active and the run has none of these records. complete means the controls Fabric observed or was told about are consistent and joined, never that every control in the customer's system was recorded. Reasons are the controls_chain_reason vocabulary.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict"],
+      "properties": {
+        "verdict": {"enum": ["complete", "partial", "unverified", "not_observed"]},
+        "reasons": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"enum": ["control_unmatched", "control_pending_at_end", "ambiguous_attribution", "grant_not_recorded", "body_not_retained", "sequence_gap", "invariant_conflict"]}}
+      }
+    },
+    "count": {"type": "integer", "minimum": 0},
+    "securityContext": {
+      "description": "Spec 057 §6.4: counts only, never a value. Grants by basis; controls by kind, decision and derivation and by link method; hooks by basis and outcome; extensions by kind, observed_via and signature status; the mechanical facts F1-F14 (security_fact vocabulary) with their first 64 event ids. A fact is co-occurrence, never a violation.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["grants", "controls", "control_links", "hooks", "extensions", "facts"],
+      "properties": {
+        "grants": {"type": "object", "additionalProperties": false, "required": ["offered", "listed", "declared"], "properties": {"offered": {"$ref": "#/$defs/count"}, "listed": {"$ref": "#/$defs/count"}, "declared": {"$ref": "#/$defs/count"}}},
+        "controls": {"type": "array", "maxItems": 1024, "items": {"type": "object", "additionalProperties": false, "required": ["kind", "decision", "derivation", "count"], "properties": {"kind": {"enum": ["guardrail", "policy", "permission_request", "approval", "rate_limit", "budget", "other", "provider_safety", "elicitation", "os_access", "permission_check"]}, "decision": {"enum": ["allow", "deny", "modify", "escalate", "pending", "timeout", "cancelled", "revoked", "unknown", "error"]}, "derivation": {"enum": ["literal", "configured_extract", "configured_marker", "configured_exit_map", "reported", "wrapped_check"]}, "count": {"type": "integer", "minimum": 1}}}},
+        "control_links": {"type": "object", "additionalProperties": false, "propertyNames": {"enum": ["provider_id", "exchange_id", "mcp_session", "rpc_id", "reported_ref", "ref_join", "sequence_bracket", "process_anchor", "pending_single", "pending_set", "path_ref", "none"]}, "patternProperties": {"^[a-z_]+$": {"$ref": "#/$defs/count"}}},
+        "hooks": {"type": "array", "maxItems": 64, "items": {"type": "object", "additionalProperties": false, "required": ["basis", "outcome", "count"], "properties": {"basis": {"enum": ["process", "callback", "reported_unknown"]}, "outcome": {"enum": ["passed", "modified", "blocked", "escalated", "errored", "unknown"]}, "count": {"type": "integer", "minimum": 1}}}},
+        "extensions": {"type": "array", "maxItems": 1024, "items": {"type": "object", "additionalProperties": false, "required": ["kind", "observed_via", "signature_status", "count"], "properties": {"kind": {"enum": ["skill", "plugin", "mcp_server", "hook_bundle", "subagent", "tool_pack", "other"]}, "observed_via": {"enum": ["mcp_initialize", "mcp_tools_list", "process_launch", "path_open", "reported"]}, "signature_status": {"enum": ["verified", "invalid", "unsigned", "unverified", "unknown"]}, "count": {"type": "integer", "minimum": 1}}}},
+        "facts": {"type": "array", "maxItems": 15, "items": {"type": "object", "additionalProperties": false, "required": ["code", "count", "event_ids"], "properties": {"code": {"enum": ["no_declared_grant", "grant_changed", "control_unmatched", "control_pending_at_end", "control_denied", "deny_with_effect", "approval_required_without_decision", "hook_errored", "hook_modified", "extension_signature", "control_invariant_conflict", "inventory_changed", "tool_called_not_offered", "os_denied", "tool_result_error"]}, "count": {"type": "integer", "minimum": 1}, "event_ids": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}}}}}
       }
     },
     "hostEventId": {
@@ -603,7 +630,8 @@
           "properties": {
             "channel_disabled": {"type": "integer", "minimum": 0},
             "no_effect_channel": {"type": "integer", "minimum": 0},
-            "none_in_window": {"type": "integer", "minimum": 0}
+            "none_in_window": {"type": "integer", "minimum": 0},
+            "control_denied": {"description": "Spec 057 §6.4: tool calls with no attributed effect that a deny (or hook blocked) gates (fact F5).", "type": "integer", "minimum": 0}
           }
         },
         "output_match": {

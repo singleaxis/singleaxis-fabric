@@ -29,7 +29,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@4",
+      "role_table_version": "fabric.content-role-table/v1@5",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -275,7 +275,14 @@
             "D27",
             "D28",
             "D29",
-            "D30"
+            "D30",
+            "E01",
+            "E02",
+            "E03",
+            "E04",
+            "E05",
+            "E06",
+            "E07"
           ]
         },
         {
@@ -370,7 +377,46 @@
             "N60",
             "D31",
             "D32",
-            "D33"
+            "D33",
+            "D36",
+            "D37",
+            "D38",
+            "D39",
+            "D40",
+            "D41",
+            "D42",
+            "D45",
+            "D47",
+            "D48",
+            "D49",
+            "G01",
+            "G02",
+            "G03",
+            "G04",
+            "G07",
+            "G10",
+            "G11",
+            "G12",
+            "G13",
+            "G14",
+            "G15",
+            "G16",
+            "E01",
+            "E03",
+            "E04",
+            "E07",
+            "E08",
+            "E09",
+            "E10",
+            "E11",
+            "E12",
+            "E13",
+            "E14",
+            "E15",
+            "E19",
+            "E20",
+            "E21",
+            "E23"
           ]
         },
         {
@@ -444,7 +490,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@4",
+      "role_table_version": "fabric.content-role-table/v1@5",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -690,7 +736,14 @@
             "D27",
             "D28",
             "D29",
-            "D30"
+            "D30",
+            "E01",
+            "E02",
+            "E03",
+            "E04",
+            "E05",
+            "E06",
+            "E07"
           ]
         },
         {
@@ -784,7 +837,46 @@
             "N60",
             "D31",
             "D32",
-            "D33"
+            "D33",
+            "D36",
+            "D37",
+            "D38",
+            "D39",
+            "D40",
+            "D41",
+            "D42",
+            "D45",
+            "D47",
+            "D48",
+            "D49",
+            "G01",
+            "G02",
+            "G03",
+            "G04",
+            "G07",
+            "G10",
+            "G11",
+            "G12",
+            "G13",
+            "G14",
+            "G15",
+            "G16",
+            "E01",
+            "E03",
+            "E04",
+            "E07",
+            "E08",
+            "E09",
+            "E10",
+            "E11",
+            "E12",
+            "E13",
+            "E14",
+            "E15",
+            "E19",
+            "E20",
+            "E21",
+            "E23"
           ]
         },
         {
@@ -830,7 +922,7 @@
       "unsealed_prior_epochs": [],
       "unsealed_prior_epoch_count": 0,
       "source_auth": "unbound",
-      "previous_manifest_sha256": "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969"
+      "previous_manifest_sha256": "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7"
     },
     {
       "schema_version": "fabric.capture-manifest/v1",
@@ -859,7 +951,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@4",
+      "role_table_version": "fabric.content-role-table/v1@5",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -1106,7 +1198,14 @@
             "D27",
             "D28",
             "D29",
-            "D30"
+            "D30",
+            "E01",
+            "E02",
+            "E03",
+            "E04",
+            "E05",
+            "E06",
+            "E07"
           ]
         },
         {
@@ -1200,7 +1299,46 @@
             "N60",
             "D31",
             "D32",
-            "D33"
+            "D33",
+            "D36",
+            "D37",
+            "D38",
+            "D39",
+            "D40",
+            "D41",
+            "D42",
+            "D45",
+            "D47",
+            "D48",
+            "D49",
+            "G01",
+            "G02",
+            "G03",
+            "G04",
+            "G07",
+            "G10",
+            "G11",
+            "G12",
+            "G13",
+            "G14",
+            "G15",
+            "G16",
+            "E01",
+            "E03",
+            "E04",
+            "E07",
+            "E08",
+            "E09",
+            "E10",
+            "E11",
+            "E12",
+            "E13",
+            "E14",
+            "E15",
+            "E19",
+            "E20",
+            "E21",
+            "E23"
           ]
         },
         {
@@ -1246,12 +1384,12 @@
       "unsealed_prior_epochs": [],
       "unsealed_prior_epoch_count": 0,
       "source_auth": "unbound",
-      "previous_manifest_sha256": "sha256:fbed6cb3150368d6a95f371280b60c85d0c917ed2d6aa096b2487e1aead381dc"
+      "previous_manifest_sha256": "sha256:32e7754aad9e3c642df0c0214c575306d443c63f66cc93a365e934a856402488"
     }
   ],
   "digests": [
-    "sha256:c96244ab65b3702a3f72235fcd99533b42bae9388f2929f8b1cb6d1527899969",
-    "sha256:fbed6cb3150368d6a95f371280b60c85d0c917ed2d6aa096b2487e1aead381dc",
-    "sha256:7247508623a5d60d87bd012b9fc02154e8935bee558dda358a3685d4b4abfefa"
+    "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7",
+    "sha256:32e7754aad9e3c642df0c0214c575306d443c63f66cc93a365e934a856402488",
+    "sha256:334b9a047c1eda84b2ad590ac93d60c52f5c466f393514322b3619a9655cc5a4"
   ]
 }

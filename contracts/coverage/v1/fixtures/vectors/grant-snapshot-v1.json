@@ -1,0 +1,1103 @@
+{
+  "schema_version": "fabric.grant-snapshot-vectors/v1",
+  "note": "Spec 057 §5.2, §7.2: JCS (RFC 8785) canonical bytes; grant digests over the normalised clear document (lists sorted and de-duplicated, request_ref dropped), so an identical offered set gives one digest whatever the request; keyed grt- ids; structural pseudonymisation of paths (pth-), hosts (net-) and credential names (crd-). The key is a test key.",
+  "jcs": [
+    {
+      "name": "member order",
+      "value": {
+        "b": 1,
+        "a": [
+          3,
+          "x"
+        ],
+        "c": null
+      },
+      "canonical": "{\"a\":[3,\"x\"],\"b\":1,\"c\":null}"
+    },
+    {
+      "name": "utf-16 key order",
+      "value": {
+        "€": 1,
+        "\r": 2,
+        "דּ": 3,
+        "1": 4,
+        "😀": 5,
+        "": 6,
+        "ö": 7
+      },
+      "canonical": "{\"\\r\":2,\"1\":4,\"\":6,\"ö\":7,\"€\":1,\"😀\":5,\"דּ\":3}"
+    },
+    {
+      "name": "string escapes",
+      "value": {
+        "s": "line\nbreak\t\"q\" \\ \u0001 \u001f  é 😀"
+      },
+      "canonical": "{\"s\":\"line\\nbreak\\t\\\"q\\\" \\\\ \\u0001 \\u001f  é 😀\"}"
+    },
+    {
+      "name": "integers",
+      "value": {
+        "n": [
+          0,
+          -1,
+          9007199254740991
+        ]
+      },
+      "canonical": "{\"n\":[0,-1,9007199254740991]}"
+    },
+    {
+      "name": "ecmascript numbers",
+      "value": {
+        "n": [
+          1.5,
+          -0.25,
+          1e+21,
+          1e-07,
+          1e-06,
+          123456789.125,
+          1e+30
+        ]
+      },
+      "canonical": "{\"n\":[1.5,-0.25,1e+21,1e-7,0.000001,123456789.125,1e+30]}"
+    },
+    {
+      "name": "literals",
+      "value": {
+        "t": true,
+        "f": false,
+        "z": null
+      },
+      "canonical": "{\"f\":false,\"t\":true,\"z\":null}"
+    }
+  ],
+  "digests": [
+    {
+      "name": "offered A",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      },
+      "normalised_jcs": "{\"basis\":\"offered\",\"instructions_digest\":\"sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e\",\"schema_version\":\"fabric.grant-snapshot/v1\",\"source\":{\"boundary\":\"llm_wire\",\"endpoint_id\":\"anthropic.default\"},\"tool_choice\":{\"allowed_count\":null,\"mode\":\"auto\",\"parallel\":true},\"tools_offered\":[{\"definition_sha256\":\"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\",\"name\":\"read_file\",\"type\":\"function\"},{\"definition_sha256\":\"4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e\",\"name\":\"shell\",\"type\":\"function\"}]}",
+      "digest": "sha256:57bdd24708f10a3cf75500ef13e8498423593b72ad88e07b369a8e33f0123506",
+      "key": "fabric-test-id-key-not-a-secret",
+      "grant_id": "grt-5367839111efc8212abff351f4b5a063"
+    },
+    {
+      "name": "offered A reordered, duplicated, other request",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          },
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          },
+          {
+            "name": "shell",
+            "type": "function",
+            "definition_sha256": "4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0002",
+          "locator": "/tools"
+        }
+      },
+      "normalised_jcs": "{\"basis\":\"offered\",\"instructions_digest\":\"sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e\",\"schema_version\":\"fabric.grant-snapshot/v1\",\"source\":{\"boundary\":\"llm_wire\",\"endpoint_id\":\"anthropic.default\"},\"tool_choice\":{\"allowed_count\":null,\"mode\":\"auto\",\"parallel\":true},\"tools_offered\":[{\"definition_sha256\":\"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\",\"name\":\"read_file\",\"type\":\"function\"},{\"definition_sha256\":\"4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e\",\"name\":\"shell\",\"type\":\"function\"}]}",
+      "digest": "sha256:57bdd24708f10a3cf75500ef13e8498423593b72ad88e07b369a8e33f0123506",
+      "key": "fabric-test-id-key-not-a-secret",
+      "grant_id": "grt-5367839111efc8212abff351f4b5a063"
+    },
+    {
+      "name": "offered A minus one tool",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "offered",
+        "source": {
+          "boundary": "llm_wire",
+          "endpoint_id": "anthropic.default"
+        },
+        "tools_offered": [
+          {
+            "name": "read_file",
+            "type": "function",
+            "definition_sha256": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+          }
+        ],
+        "tool_choice": {
+          "mode": "auto",
+          "allowed_count": null,
+          "parallel": true
+        },
+        "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+        "request_ref": {
+          "exchange_id": "x-0001",
+          "locator": "/tools"
+        }
+      },
+      "normalised_jcs": "{\"basis\":\"offered\",\"instructions_digest\":\"sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e\",\"schema_version\":\"fabric.grant-snapshot/v1\",\"source\":{\"boundary\":\"llm_wire\",\"endpoint_id\":\"anthropic.default\"},\"tool_choice\":{\"allowed_count\":null,\"mode\":\"auto\",\"parallel\":true},\"tools_offered\":[{\"definition_sha256\":\"3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f\",\"name\":\"read_file\",\"type\":\"function\"}]}",
+      "digest": "sha256:7ae07c7196732a962a2c73fa03c5317c3790302849bd1222b4151dc30a79b7bb",
+      "key": "fabric-test-id-key-not-a-secret",
+      "grant_id": "grt-928ed4dbda64a5572fe98404b2a20733"
+    },
+    {
+      "name": "declared",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "normalised_jcs": "{\"approval_policy\":\"per_tool\",\"basis\":\"declared\",\"credentials\":[{\"kind\":\"env\",\"name\":\"GITHUB_TOKEN\",\"scopes\":[\"repo:read\"]}],\"execution_mode\":\"supervised\",\"filesystem\":{\"deny\":[\"/work/.env\"],\"read\":[\"/work/**\"],\"roots\":[\"/work\"],\"write\":[\"/work/out/**\"]},\"limits\":[{\"kind\":\"tool_calls\",\"limit\":200,\"window\":\"run\"}],\"mcp_servers\":[{\"scope\":\"project\",\"server\":\"repo-tools\",\"server_ref\":\"npx -y @acme/repo-tools-mcp\",\"tools_allow\":[\"search\"],\"tools_deny\":[],\"transport\":\"stdio\"}],\"models\":{\"allow\":[\"model-a\"],\"deny\":[]},\"network\":{\"allow\":[\"api.internal.example\"],\"default\":\"deny\",\"deny\":[]},\"permission_mode\":\"ask_on_write\",\"sandbox\":{\"enabled\":true,\"kind\":\"container\",\"name\":\"agent-sbx\"},\"schema_version\":\"fabric.grant-snapshot/v1\",\"source\":{\"boundary\":\"api\",\"name\":\"acme-agent\",\"version\":\"3.2.0\"},\"tools\":{\"allow\":[{\"rule\":\"read_file\"},{\"rule\":\"shell(git status *)\"}],\"ask\":[{\"rule\":\"write_file\"}],\"deny\":[{\"rule\":\"shell(curl *)\"}]},\"x-acme\":{\"policy_bundle\":\"agents-prod\"}}",
+      "digest": "sha256:b53e226693eadfc6ac59a66129cc48cdc70159d1fe72f7ae730d3b957ad6ea80",
+      "key": "fabric-test-id-key-not-a-secret",
+      "grant_id": "grt-12b999493943c93c0e7240e8c4e5656c"
+    },
+    {
+      "name": "declared shuffled with a duplicate",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "shell(git status *)"
+            },
+            {
+              "rule": "read_file"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**",
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "normalised_jcs": "{\"approval_policy\":\"per_tool\",\"basis\":\"declared\",\"credentials\":[{\"kind\":\"env\",\"name\":\"GITHUB_TOKEN\",\"scopes\":[\"repo:read\"]}],\"execution_mode\":\"supervised\",\"filesystem\":{\"deny\":[\"/work/.env\"],\"read\":[\"/work/**\"],\"roots\":[\"/work\"],\"write\":[\"/work/out/**\"]},\"limits\":[{\"kind\":\"tool_calls\",\"limit\":200,\"window\":\"run\"}],\"mcp_servers\":[{\"scope\":\"project\",\"server\":\"repo-tools\",\"server_ref\":\"npx -y @acme/repo-tools-mcp\",\"tools_allow\":[\"search\"],\"tools_deny\":[],\"transport\":\"stdio\"}],\"models\":{\"allow\":[\"model-a\"],\"deny\":[]},\"network\":{\"allow\":[\"api.internal.example\"],\"default\":\"deny\",\"deny\":[]},\"permission_mode\":\"ask_on_write\",\"sandbox\":{\"enabled\":true,\"kind\":\"container\",\"name\":\"agent-sbx\"},\"schema_version\":\"fabric.grant-snapshot/v1\",\"source\":{\"boundary\":\"api\",\"name\":\"acme-agent\",\"version\":\"3.2.0\"},\"tools\":{\"allow\":[{\"rule\":\"read_file\"},{\"rule\":\"shell(git status *)\"}],\"ask\":[{\"rule\":\"write_file\"}],\"deny\":[{\"rule\":\"shell(curl *)\"}]},\"x-acme\":{\"policy_bundle\":\"agents-prod\"}}",
+      "digest": "sha256:b53e226693eadfc6ac59a66129cc48cdc70159d1fe72f7ae730d3b957ad6ea80",
+      "key": "fabric-test-id-key-not-a-secret",
+      "grant_id": "grt-12b999493943c93c0e7240e8c4e5656c"
+    },
+    {
+      "name": "listed",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "mcp_wire",
+          "name": "repo-tools"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "/work"
+        ]
+      },
+      "normalised_jcs": "{\"basis\":\"listed\",\"roots\":[\"/work\"],\"schema_version\":\"fabric.grant-snapshot/v1\",\"server\":{\"name\":\"repo-tools\",\"version\":\"1.4.0\"},\"source\":{\"boundary\":\"mcp_wire\",\"name\":\"repo-tools\"},\"tools_listed\":[{\"destructive_hint\":true,\"name\":\"delete_branch\"},{\"idempotent_hint\":false,\"name\":\"open_pr\",\"open_world_hint\":true},{\"name\":\"search\",\"read_only_hint\":true}]}",
+      "digest": "sha256:c50870541b8734b4a7787978790fb7c09f4c8670541512f18aea8fab3ac7fd33",
+      "key": "fabric-test-id-key-not-a-secret",
+      "grant_id": "grt-777629c8bd925187d2ed963d268ce85e"
+    }
+  ],
+  "dedup": [
+    {
+      "a": "offered A",
+      "b": "offered A reordered, duplicated, other request",
+      "equal": true
+    },
+    {
+      "a": "offered A",
+      "b": "offered A minus one tool",
+      "equal": false
+    },
+    {
+      "a": "declared",
+      "b": "declared shuffled with a duplicate",
+      "equal": true
+    }
+  ],
+  "pseudonymise": [
+    {
+      "name": "all groups",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "key": "fabric-test-id-key-not-a-secret",
+      "groups": {},
+      "pseudonymised": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "pth-8ae4af3f153f201a4f246c7027fbd795"
+          ],
+          "read": [
+            "pth-c0e588aa241f93a699a2f37bc2214f9b"
+          ],
+          "write": [
+            "pth-875b09fc4634c7e05603363c094de106"
+          ],
+          "deny": [
+            "pth-415366dfa1c25dbf37de48a1e9cf54a7"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "net-dcf01650ae69722190aec02dacdaea24"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "crd-0b4b928ea7995f0a4999f47725956f50",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "hosts clear",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "key": "fabric-test-id-key-not-a-secret",
+      "groups": {
+        "hosts": false
+      },
+      "pseudonymised": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "pth-8ae4af3f153f201a4f246c7027fbd795"
+          ],
+          "read": [
+            "pth-c0e588aa241f93a699a2f37bc2214f9b"
+          ],
+          "write": [
+            "pth-875b09fc4634c7e05603363c094de106"
+          ],
+          "deny": [
+            "pth-415366dfa1c25dbf37de48a1e9cf54a7"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "crd-0b4b928ea7995f0a4999f47725956f50",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "nothing",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "key": "fabric-test-id-key-not-a-secret",
+      "groups": {
+        "paths": false,
+        "hosts": false,
+        "credentials": false
+      },
+      "pseudonymised": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "listed roots",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "mcp_wire",
+          "name": "repo-tools"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "/work"
+        ]
+      },
+      "key": "fabric-test-id-key-not-a-secret",
+      "groups": {},
+      "pseudonymised": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "listed",
+        "source": {
+          "boundary": "mcp_wire",
+          "name": "repo-tools"
+        },
+        "server": {
+          "name": "repo-tools",
+          "version": "1.4.0"
+        },
+        "tools_listed": [
+          {
+            "name": "search",
+            "read_only_hint": true
+          },
+          {
+            "name": "delete_branch",
+            "destructive_hint": true
+          },
+          {
+            "name": "open_pr",
+            "open_world_hint": true,
+            "idempotent_hint": false
+          }
+        ],
+        "roots": [
+          "pth-8ae4af3f153f201a4f246c7027fbd795"
+        ]
+      }
+    }
+  ]
+}

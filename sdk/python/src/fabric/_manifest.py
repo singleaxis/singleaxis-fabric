@@ -127,6 +127,10 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
     "explicit.subprocess_artifact": PointSpec("R", False, False),
     "sdk.records": PointSpec("R", False, False),
     "run.scope": PointSpec("R", False, False),
+    # spec 057 §6.4: the security-context records points (contract in P0; API in WP7-1)
+    "records.control": PointSpec("R", False, False),
+    "records.grant": PointSpec("R", False, False),
+    "records.extension": PointSpec("R", False, False),
     "mcp.wrapper": PointSpec("R", False, False),
     "mcp.client": PointSpec("H", True, True),
     "exec.subprocess": PointSpec("H", True, True),

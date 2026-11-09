@@ -18,7 +18,8 @@ var capturePointKinds = map[string]string{
 	"wire.py.httpx": "W", "wire.py.aiohttp": "W", "wire.ts.undici": "W",
 	"explicit.call_recorder": "R", "explicit.byte_boundary": "R",
 	"explicit.final_http": "R", "explicit.subprocess_artifact": "R",
-	"sdk.records": "R", "run.scope": "R", "mcp.wrapper": "R",
+	"sdk.records": "R", "run.scope": "R", "records.control": "R", "records.grant": "R",
+	"records.extension": "R", "mcp.wrapper": "R",
 	"mcp.client": "H", "exec.subprocess": "H", "exec.audit": "H",
 	"db.dbapi": "H", "http.nonmodel": "W", "file.audit": "H",
 	"remote.ssh_wrapper": "R", "remote.sandbox": "H", "ui.automation": "H", "rt.websocket": "W",
@@ -91,10 +92,12 @@ func capturePointKind(value pcommon.Value) string {
 	return capturePointKinds[id]
 }
 
-// Rule A refuses floats, bytes and nested values instead of rewriting them.
+// Rule A refuses bytes, maps and nested values instead of rewriting them. A scalar
+// double passes the shape check only so its key's validator can decide: a registry
+// "number" check (spec 057 D41, E03) admits it, every other validator refuses it.
 func recordMetadataShape(value pcommon.Value) bool {
 	switch value.Type() {
-	case pcommon.ValueTypeStr, pcommon.ValueTypeInt, pcommon.ValueTypeBool:
+	case pcommon.ValueTypeStr, pcommon.ValueTypeInt, pcommon.ValueTypeBool, pcommon.ValueTypeDouble:
 		return true
 	case pcommon.ValueTypeSlice:
 		values := value.Slice()

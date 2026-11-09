@@ -165,6 +165,114 @@
       "pseudonym": "p-46c753d96c8744369a1800c04ba4ef0b"
     },
     {
+      "name": "ckp- (checkpoint)",
+      "function": "v2",
+      "prefix": "ckp",
+      "type": "checkpoint",
+      "value": "checkpoint-after-plan",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "ckp-ea4985e1636a675aba3b5d67640fffa9"
+    },
+    {
+      "name": "eff- (effect)",
+      "function": "v2",
+      "prefix": "eff",
+      "type": "effect",
+      "value": "refund-REF-1001",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "eff-5f4c99c21f0bc8e3aa5b4f7163965d48"
+    },
+    {
+      "name": "out- (outcome)",
+      "function": "v2",
+      "prefix": "out",
+      "type": "outcome",
+      "value": "reply-email-77",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "out-09f9dfb997772752a83b7f05634b6778"
+    },
+    {
+      "name": "ctl- (control)",
+      "function": "v2",
+      "prefix": "ctl",
+      "type": "control",
+      "value": "approval:42",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "ctl-064651ef4cbf2c7138a6d0d101b50e48"
+    },
+    {
+      "name": "axn- (action)",
+      "function": "v2",
+      "prefix": "axn",
+      "type": "action",
+      "value": "delete-branch-feature-x",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "axn-078165a515ab86c285c78e35ee7b9908"
+    },
+    {
+      "name": "prf- (proof)",
+      "function": "v2",
+      "prefix": "prf",
+      "type": "proof",
+      "value": "proof:abc123",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "prf-79ccd8cfdf2cffebd0ace8fd4e5fd647"
+    },
+    {
+      "name": "grt- (grant)",
+      "function": "v2",
+      "prefix": "grt",
+      "type": "grant",
+      "value": "sha256:4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "grt-73d9a5d57540bd78a31f520240f2010e"
+    },
+    {
+      "name": "crd- (credential)",
+      "function": "v2",
+      "prefix": "crd",
+      "type": "credential",
+      "value": "GITHUB_TOKEN",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "crd-0b4b928ea7995f0a4999f47725956f50"
+    },
+    {
+      "name": "ext- (extension)",
+      "function": "v2",
+      "prefix": "ext",
+      "type": "extension",
+      "value": "mcp_server/repo-tools/src-0",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "ext-b008ab18b95eb548177c582955d73588"
+    },
+    {
+      "name": "src- (extension_source)",
+      "function": "v2",
+      "prefix": "src",
+      "type": "extension_source",
+      "value": "npx -y @acme/repo-tools-mcp",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "src-3efeb3d4f27e1759cf9f3813b2b7d4e2"
+    },
+    {
+      "name": "pth- (path_rule)",
+      "function": "v2",
+      "prefix": "pth",
+      "type": "path_rule",
+      "value": "/work/out/**",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "pth-875b09fc4634c7e05603363c094de106"
+    },
+    {
+      "name": "net- (net_rule)",
+      "function": "v2",
+      "prefix": "net",
+      "type": "net_rule",
+      "value": "api.internal.example",
+      "key": "fabric-test-id-key-not-a-secret",
+      "pseudonym": "net-dcf01650ae69722190aec02dacdaea24"
+    },
+    {
       "name": "user, same value as session",
       "function": "v2",
       "prefix": "usr",

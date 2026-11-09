@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "schema": {
     "path": "schema/fabric-decision-v1.schema.json",
-    "sha256": "4b2c0a856bbbeb153b2551a4969b79ce2749215896b65fe401a91df56c446aca"
+    "sha256": "4c13448bdc61ddf9cf5bfc1d70e39f9980053332a9be9f19a9c63a1d4a498d6b"
   },
   "scenarios": [
     {

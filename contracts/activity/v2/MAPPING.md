@@ -115,3 +115,96 @@ metadata for downstream normalization, not dropped:
   `content.governed_reference`, and `activity` detail beyond `outcome` — are
   populated by schema constants, privacy classification, or typed surface
   attributes rather than by the shared identity attributes above.
+
+## Activity 2.1.0: security context (spec 057 §5.7)
+
+Activity 2.1.0 (`contracts/activity/v2.1`) is additive beside 2.0.0: four
+event types (`grant.snapshot`, `control.decision`, `hook.completed`,
+`extension.loaded`), each with its own `activity` object. A producer emits
+them only to a destination that declares 2.1.0; otherwise it drops them with a
+counted loss, and the OTLP wire still carries the keys below. Every
+`control.decision` carries `enforced_by_fabric=false` and
+`authentication=unverified_caller_report`, set by Fabric, never by a caller.
+Identifiers are keyed pseudonyms on the wire and in the envelope.
+
+| Admitted wire attribute | Envelope 2.1.0 path | Notes |
+|---|---|---|
+| `fabric.control.action_id` | `events[*].activity.control.gated.action_id` |  |
+| `fabric.control.authentication` | `events[*].activity.control.authentication` |  |
+| `fabric.control.decision` | `events[*].activity.control.decision` |  |
+| `fabric.control.enforced_by_fabric` | `events[*].activity.control.enforced_by_fabric` |  |
+| `fabric.control.gated_step_id` | `events[*].activity.control.gated.step_id` |  |
+| `fabric.control.id` | `events[*].activity.control.control_id` |  |
+| `fabric.control.kind` | `events[*].activity.control.kind` |  |
+| `fabric.control.phase` | `events[*].activity.control.phase` |  |
+| `fabric.control.policy_digest` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.control.policy_id` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.control.policy_version` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.control.proof_ref` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.control.resolves` | `events[*].activity.control.resolves` |  |
+| `fabric.control.stage` | `events[*].activity.control.stage` |  |
+| `fabric.control.engine.name` | `events[*].activity.control.engine.name` |  |
+| `fabric.control.engine.version` | `events[*].activity.control.engine.version` |  |
+| `fabric.control.gated_kind` | `events[*].activity.control.gated.kind` |  |
+| `fabric.control.gated_tool_call_id` | `events[*].activity.control.gated.tool_call_id` |  |
+| `fabric.control.latency_ms` | `events[*].activity.control.latency_ms` |  |
+| `fabric.control.reason_code` | `events[*].activity.control.reason_code` |  |
+| `fabric.control.mode` | `events[*].activity.control.mode` |  |
+| `fabric.control.grant_id` | `events[*].activity.control.grant_id` |  |
+| `fabric.control.error_class` | `events[*].activity.control.error_class` |  |
+| `fabric.control.evidence_event_ids` | `events[*].activity.control.evidence_event_ids` |  |
+| `fabric.control.signal` | `events[*].activity.control.signal` |  |
+| `fabric.control.derivation` | `events[*].activity.control.derivation` |  |
+| `fabric.grant.id` | `events[*].activity.grant.grant_id` |  |
+| `fabric.grant.trigger` | `events[*].activity.grant.trigger` |  |
+| `fabric.grant.previous_id` | `events[*].activity.grant.previous_id` |  |
+| `fabric.grant.source_boundary` | `events[*].activity.grant.source_boundary` |  |
+| `fabric.grant.permission_mode` | `events[*].activity.grant.permission_mode` |  |
+| `fabric.grant.tools_allow.count` | `events[*].activity.grant.counts.tools_allow` |  |
+| `fabric.grant.tools_deny.count` | `events[*].activity.grant.counts.tools_deny` |  |
+| `fabric.grant.tools_ask.count` | `events[*].activity.grant.counts.tools_ask` |  |
+| `fabric.grant.tools_offered.count` | `events[*].activity.grant.counts.tools_offered` |  |
+| `fabric.grant.tools_listed.count` | `events[*].activity.grant.counts.tools_listed` |  |
+| `fabric.grant.mcp_servers.count` | `events[*].activity.grant.counts.mcp_servers` |  |
+| `fabric.grant.fs_rules.count` | `events[*].activity.grant.counts.fs_rules` |  |
+| `fabric.grant.net_rules.count` | `events[*].activity.grant.counts.net_rules` |  |
+| `fabric.grant.credentials.count` | `events[*].activity.grant.counts.credentials` |  |
+| `fabric.grant.model_rules.count` | `events[*].activity.grant.counts.model_rules` |  |
+| `fabric.grant.sandbox_kind` | `events[*].activity.grant.sandbox_kind` |  |
+| `fabric.grant.network_default` | `events[*].activity.grant.network_default` |  |
+| `fabric.grant.basis` | `events[*].activity.grant.basis` |  |
+| `fabric.grant.tool_choice` | `events[*].activity.grant.tool_choice` |  |
+| `fabric.grant.tool_choice.allowed_count` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.grant.parallel_tools` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.hook.outcome` | `events[*].activity.hook.outcome` |  |
+| `fabric.hook.event_name` | `events[*].activity.hook.event_name` |  |
+| `fabric.hook.latency_ms` | `events[*].activity.hook.latency_ms` |  |
+| `fabric.hook.gated_tool_call_id` | `events[*].activity.hook.gated_tool_call_id` |  |
+| `fabric.hook.extension_id` | `events[*].activity.hook.extension_id` |  |
+| `fabric.hook.reason_code` | `events[*].activity.hook.reason_code` |  |
+| `fabric.hook.basis` | `events[*].activity.hook.basis` |  |
+| `fabric.hook.exit_code` | `events[*].activity.hook.exit_code` |  |
+| `fabric.hook.signal` | `events[*].activity.hook.signal` |  |
+| `fabric.hook.program_label` | `events[*].activity.hook.program_label` |  |
+| `fabric.extension.id` | `events[*].activity.extension.extension_id` |  |
+| `fabric.extension.kind` | `events[*].activity.extension.kind` |  |
+| `fabric.extension.name` | `events[*].activity.extension.name` |  |
+| `fabric.extension.version` | `events[*].activity.extension.version` |  |
+| `fabric.extension.source_kind` | `events[*].activity.extension.source_kind` |  |
+| `fabric.extension.source_ref` | `events[*].activity.extension.source_ref` |  |
+| `fabric.extension.manifest_hash` | `events[*].activity.extension.manifest_sha256` |  |
+| `fabric.extension.signature_status` | `events[*].activity.extension.signature_status` |  |
+| `fabric.extension.scope` | `events[*].activity.extension.scope` |  |
+| `fabric.extension.enabled` | `events[*].activity.extension.enabled` |  |
+| `fabric.extension.contributes.tools` | `events[*].activity.extension.contributes.tools` |  |
+| `fabric.extension.contributes.hooks` | `events[*].activity.extension.contributes.hooks` |  |
+| `fabric.extension.contributes.commands` | `events[*].activity.extension.contributes.commands` |  |
+| `fabric.extension.contributes.mcp_servers` | `events[*].activity.extension.contributes.mcp_servers` |  |
+| `fabric.extension.contributes.subagents` | `events[*].activity.extension.contributes.subagents` |  |
+| `fabric.extension.observed_via` | `events[*].activity.extension.observed_via` |  |
+| `fabric.mcp.tools.read_only_count` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.mcp.tools.destructive_count` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.mcp.tools.open_world_count` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.mcp.tools.idempotent_count` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.mcp.server_ref` | — | telemetry only (no 2.1.0 envelope field) |
+| `fabric.run.execution_mode`, `fabric.run.approval_policy` | `events[*].activity.grant.execution_mode`, `.approval_policy` | on a declared `grant.snapshot` |

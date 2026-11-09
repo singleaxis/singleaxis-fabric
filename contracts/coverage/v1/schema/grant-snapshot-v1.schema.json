@@ -1,0 +1,244 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/grant-snapshot-v1.schema.json",
+  "title": "Fabric grant snapshot v1 (spec 057 §5.2)",
+  "description": "What a monitored agent was given or allowed, as recorded evidence: offered (the tools one model request carried, derived from wire bytes), listed (what an MCP server listed) or declared (the permission configuration the customer reports). Rules are recorded verbatim in the runtime's own syntax and never interpreted. Credential values are never read. Before PROTECT a declared or listed document is structurally pseudonymised: paths and globs become pth-, hosts net-, credential names crd- (spec 057 §7.2). grant_digest = sha256 of the RFC 8785 (JCS) form of the normalised clear document (every list sorted and de-duplicated, request_ref dropped); it never reaches telemetry in plain form.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "basis", "source"],
+  "properties": {
+    "schema_version": {"const": "fabric.grant-snapshot/v1"},
+    "basis": {"enum": ["offered", "listed", "declared"]},
+    "source": {"$ref": "#/$defs/source"},
+    "execution_mode": {"enum": ["autonomous", "supervised", "approval_required", "read_only", "unknown"]},
+    "approval_policy": {"enum": ["none", "per_tool", "per_side_effect", "all", "unknown"]},
+    "permission_mode": {"$ref": "#/$defs/label64"},
+    "tools": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {"$ref": "#/$defs/rules"},
+        "deny": {"$ref": "#/$defs/rules"},
+        "ask": {"$ref": "#/$defs/rules"}
+      }
+    },
+    "mcp_servers": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["server"],
+        "properties": {
+          "server": {"$ref": "#/$defs/text"},
+          "transport": {"enum": ["stdio", "streamable_http", "sse", "other"]},
+          "server_ref": {"$ref": "#/$defs/text"},
+          "tools_allow": {"$ref": "#/$defs/textList"},
+          "tools_deny": {"$ref": "#/$defs/textList"},
+          "scope": {"enum": ["managed", "user", "project", "local", "session", "unknown"]}
+        }
+      }
+    },
+    "filesystem": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "roots": {"$ref": "#/$defs/textList"},
+        "read": {"$ref": "#/$defs/textList"},
+        "write": {"$ref": "#/$defs/textList"},
+        "deny": {"$ref": "#/$defs/textList"}
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "default": {"enum": ["allow", "deny", "unknown"]},
+        "allow": {"$ref": "#/$defs/textList"},
+        "deny": {"$ref": "#/$defs/textList"}
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {"enum": ["none", "process", "container", "vm", "remote", "unknown"]},
+        "name": {"$ref": "#/$defs/text"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "credentials": {
+      "description": "Names or identifiers and declared scopes only; a value field is refused by the closed object.",
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {"$ref": "#/$defs/text"},
+          "kind": {"enum": ["env", "file", "secret_store", "token", "other"]},
+          "scopes": {"$ref": "#/$defs/textList"}
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": {"$ref": "#/$defs/textList"},
+        "deny": {"$ref": "#/$defs/textList"}
+      }
+    },
+    "limits": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "limit"],
+        "properties": {
+          "kind": {"$ref": "#/$defs/label64"},
+          "limit": {"type": "integer", "minimum": 0},
+          "window": {"$ref": "#/$defs/label64"}
+        }
+      }
+    },
+    "tools_offered": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "type"],
+        "properties": {
+          "name": {"$ref": "#/$defs/text"},
+          "type": {"enum": ["function", "custom", "provider_hosted", "mcp", "computer", "other"]},
+          "definition_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "tool_choice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["auto", "none", "required", "specific", "allowed_subset", "unknown"]},
+        "allowed_count": {"type": ["integer", "null"], "minimum": 0},
+        "parallel": {"type": ["boolean", "null"]}
+      }
+    },
+    "instructions_digest": {"$ref": "#/$defs/digest"},
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/text"}
+      }
+    },
+    "tools_listed": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": {"$ref": "#/$defs/text"},
+          "definition_sha256": {"$ref": "#/$defs/sha256"},
+          "read_only_hint": {"type": "boolean"},
+          "destructive_hint": {"type": "boolean"},
+          "idempotent_hint": {"type": "boolean"},
+          "open_world_hint": {"type": "boolean"}
+        }
+      }
+    },
+    "roots": {"$ref": "#/$defs/textList"},
+    "request_ref": {
+      "description": "Where the derived document points into the stored bytes; dropped by normalisation, so two requests with the same offered set give the same digest.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exchange_id"],
+      "properties": {
+        "exchange_id": {"$ref": "#/$defs/text"},
+        "locator": {"type": "string", "pattern": "^(/[^/]*)*$", "maxLength": 1024}
+      }
+    }
+  },
+  "patternProperties": {
+    "^x-[a-z0-9-]+$": {"description": "Customer extension: kept opaque, never interpreted."}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"basis": {"const": "offered"}}},
+      "then": {
+        "required": ["tools_offered"],
+        "properties": {"source": {"properties": {"boundary": {"enum": ["llm_wire", "api", "otlp", "other"]}}}},
+        "not": {"anyOf": [
+          {"required": ["tools"]}, {"required": ["mcp_servers"]}, {"required": ["filesystem"]},
+          {"required": ["network"]}, {"required": ["sandbox"]}, {"required": ["credentials"]},
+          {"required": ["models"]}, {"required": ["limits"]}, {"required": ["tools_listed"]},
+          {"required": ["roots"]}, {"required": ["server"]}, {"required": ["execution_mode"]},
+          {"required": ["approval_policy"]}, {"required": ["permission_mode"]}
+        ]}
+      }
+    },
+    {
+      "if": {"properties": {"basis": {"const": "listed"}}},
+      "then": {
+        "anyOf": [{"required": ["tools_listed"]}, {"required": ["roots"]}],
+        "properties": {"source": {"properties": {"boundary": {"enum": ["mcp_wire", "otlp", "other"]}}}},
+        "not": {"anyOf": [
+          {"required": ["tools"]}, {"required": ["mcp_servers"]}, {"required": ["filesystem"]},
+          {"required": ["network"]}, {"required": ["sandbox"]}, {"required": ["credentials"]},
+          {"required": ["models"]}, {"required": ["limits"]}, {"required": ["tools_offered"]},
+          {"required": ["tool_choice"]}, {"required": ["instructions_digest"]},
+          {"required": ["execution_mode"]}, {"required": ["approval_policy"]}, {"required": ["permission_mode"]}
+        ]}
+      }
+    },
+    {
+      "if": {"properties": {"basis": {"const": "declared"}}},
+      "then": {
+        "properties": {"source": {"properties": {"boundary": {"enum": ["api", "otlp", "operator_snapshot", "other"]}}}},
+        "not": {"anyOf": [
+          {"required": ["tools_offered"]}, {"required": ["tool_choice"]}, {"required": ["instructions_digest"]},
+          {"required": ["tools_listed"]}, {"required": ["roots"]}, {"required": ["server"]},
+          {"required": ["request_ref"]}
+        ]}
+      }
+    }
+  ],
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 1024},
+    "textList": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/text"}},
+    "label64": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "rules": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule"],
+        "properties": {"rule": {"$ref": "#/$defs/text"}}
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boundary"],
+      "properties": {
+        "boundary": {"enum": ["llm_wire", "mcp_wire", "api", "otlp", "operator_snapshot", "other"]},
+        "name": {"$ref": "#/$defs/text"},
+        "version": {"$ref": "#/$defs/text"},
+        "endpoint_id": {"$ref": "#/$defs/text"},
+        "path_ref": {"type": "string", "pattern": "^pth-[0-9a-f]{32}$"}
+      }
+    }
+  }
+}

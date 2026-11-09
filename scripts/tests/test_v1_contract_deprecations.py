@@ -43,13 +43,28 @@ DEPRECATED_SPAN_ATTRIBUTES = (
     "fabric.judge_queued_count",
     "fabric.judge_rubrics",
 )
-DEPRECATED_EVENTS = ("fabric.guardrail", "fabric.eval", "fabric.judge.queued")
+DEPRECATED_EVENTS = (
+    "fabric.guardrail",
+    "fabric.eval",
+    "fabric.judge.queued",
+    # spec 057 OD-11: the verdict shapes follow the guardrail path
+    "fabric.policy.evaluation",
+    "fabric.tool.authorization",
+    "fabric.escalation",
+)
 DEPRECATED_EVENT_ATTRIBUTES = (
     ("fabric.guardrail", "fabric.guardrail.entities"),
     ("fabric.escalation", "fabric.escalation.rubric_id"),
     ("fabric.escalation", "fabric.escalation.triggering_score"),
 )
-DEPRECATED_SURFACES = ("guardrail_verdict", "evaluation")
+DEPRECATED_SURFACES = (
+    "guardrail_verdict",
+    "evaluation",
+    # spec 057 OD-11
+    "policy_verdict",
+    "authorization_verdict",
+    "escalation",
+)
 FORBIDDEN_EXAMPLE_VALUES = (
     "atlas:",
     "owasp",

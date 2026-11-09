@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.coverage-vocabularies/v1",
-  "registry_revision": 11,
+  "registry_revision": 12,
   "coverage_status": [
     {
       "value": "captured",
@@ -847,6 +847,56 @@
       "value": "sandbox_report",
       "meaning": "A host event whose sandbox or pod id equals the id the container runtime printed in the effect's output, on any host source; provenance `reported` (spec 056 §4.3 rule H5; `part_of`). Confidence `certain`.",
       "confidence": "certain"
+    },
+    {
+      "value": "provider_id",
+      "meaning": "A record names the provider tool-call id (`p-`) of a tool call in the same run (spec 057 §6.1). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "exchange_id",
+      "meaning": "A derived row joins the model call whose exchange it came from (spec 057 §6.1). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "mcp_session",
+      "meaning": "A listed grant or MCP extension joins the MCP session it came from (spec 057 §6.1). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "rpc_id",
+      "meaning": "An elicitation resolution joins its request by JSON-RPC id in the session (spec 057 §6.1). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "reported_ref",
+      "meaning": "A reported control or hook joins the step or action it names, or the `decision.tool_call()` scope it ran in (spec 052 §4.9, spec 057 §4.10.3). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "ref_join",
+      "meaning": "A control resolution or revocation joins its request by `fabric.control.resolves` = `fabric.control.id`, across the runs of the input (spec 052 §4.9 rule 3). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "grant_in_force",
+      "meaning": "A record joins the grant in force per basis: the one it names, else the latest snapshot of that basis before it in the segment (spec 057 §6.1). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "pending_single",
+      "meaning": "A reported control with no id and no scope joins the single tool call pending at its position (spec 057 §4.10.3). Confidence `certain`.",
+      "confidence": "certain"
+    },
+    {
+      "value": "pending_set",
+      "meaning": "A reported control with no id and no scope while two or more tool calls are pending: `ambiguous`, every pending call a candidate (spec 057 §4.10.3). Confidence `tentative`.",
+      "confidence": "tentative"
+    },
+    {
+      "value": "path_ref",
+      "meaning": "A watched open of a permission file joins the latest operator snapshot with the same `pth-` id (spec 057 §4.10.2). Confidence `certain`.",
+      "confidence": "certain"
     }
   ],
   "field_class": [
@@ -979,6 +1029,688 @@
     {
       "value": "none_observed",
       "meaning": "Run level only."
+    }
+  ],
+  "control_kind": [
+    {
+      "value": "guardrail",
+      "meaning": "A guardrail the customer runs (049 D02)."
+    },
+    {
+      "value": "policy",
+      "meaning": "A policy service or engine the customer runs (049 D02)."
+    },
+    {
+      "value": "permission_request",
+      "meaning": "A permission request and its resolution (request/resolution pair, 049 D02)."
+    },
+    {
+      "value": "approval",
+      "meaning": "An approval by a person or system; decision `allow` or `deny` (049 D02; `approve`/`reject` are SDK input aliases, spec 057 OD-3)."
+    },
+    {
+      "value": "rate_limit",
+      "meaning": "A rate limit hit or passed (049 D02)."
+    },
+    {
+      "value": "budget",
+      "meaning": "A budget limit hit or passed (049 D02)."
+    },
+    {
+      "value": "other",
+      "meaning": "Another kind of external control (049 D02)."
+    },
+    {
+      "value": "provider_safety",
+      "meaning": "A provider-side filter, refusal or safety stop observed on the LLM wire (spec 057 §4.1)."
+    },
+    {
+      "value": "elicitation",
+      "meaning": "An MCP server's user-confirmation request and its answer (spec 057 §4.2)."
+    },
+    {
+      "value": "os_access",
+      "meaning": "A kernel refusal from the closed errno and signal set (spec 057 §4.3)."
+    },
+    {
+      "value": "permission_check",
+      "meaning": "A one-shot check in the agent's own code of whether it may do something, with no request/resolution pair (spec 057 §4.10)."
+    }
+  ],
+  "control_decision": [
+    {
+      "value": "allow",
+      "meaning": "The control allowed the call."
+    },
+    {
+      "value": "deny",
+      "meaning": "The control refused the call."
+    },
+    {
+      "value": "modify",
+      "meaning": "The control changed what was checked."
+    },
+    {
+      "value": "escalate",
+      "meaning": "The control asked another party; legacy `requires_review` maps here."
+    },
+    {
+      "value": "pending",
+      "meaning": "A request awaiting a resolution."
+    },
+    {
+      "value": "timeout",
+      "meaning": "The control or approver did not answer in time."
+    },
+    {
+      "value": "cancelled",
+      "meaning": "The request was cancelled."
+    },
+    {
+      "value": "revoked",
+      "meaning": "An earlier grant was withdrawn."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Fabric does not know the decision; never mapped to `allow`."
+    },
+    {
+      "value": "error",
+      "meaning": "The control ran and failed to decide (spec 057 §5.3); distinct from `unknown` and `timeout`."
+    }
+  ],
+  "control_stage": [
+    {
+      "value": "input",
+      "meaning": "Screens the agent's input."
+    },
+    {
+      "value": "output",
+      "meaning": "Screens the agent's or model's output."
+    },
+    {
+      "value": "pre_model",
+      "meaning": "Before a model call."
+    },
+    {
+      "value": "post_model",
+      "meaning": "After a model call."
+    },
+    {
+      "value": "pre_tool",
+      "meaning": "Before a tool call."
+    },
+    {
+      "value": "post_tool",
+      "meaning": "After a tool call."
+    },
+    {
+      "value": "pre_effect",
+      "meaning": "Before a side effect."
+    },
+    {
+      "value": "post_effect",
+      "meaning": "After a side effect."
+    },
+    {
+      "value": "effect",
+      "meaning": "At the moment of the OS action (a kernel refusal)."
+    },
+    {
+      "value": "inventory",
+      "meaning": "On a tool listing or inventory."
+    },
+    {
+      "value": "run",
+      "meaning": "On the run as a whole."
+    },
+    {
+      "value": "other",
+      "meaning": "Another stage."
+    },
+    {
+      "value": "unknown",
+      "meaning": "The stage is not known."
+    }
+  ],
+  "gated_kind": [
+    {
+      "value": "tool_call",
+      "meaning": "A tool call the model issued."
+    },
+    {
+      "value": "model_call",
+      "meaning": "A model call."
+    },
+    {
+      "value": "side_effect",
+      "meaning": "A reported side effect."
+    },
+    {
+      "value": "mcp_call",
+      "meaning": "An MCP call."
+    },
+    {
+      "value": "process",
+      "meaning": "A process or syscall (an OS refusal)."
+    },
+    {
+      "value": "input",
+      "meaning": "The agent's input."
+    },
+    {
+      "value": "output",
+      "meaning": "The agent's output."
+    },
+    {
+      "value": "run",
+      "meaning": "The run."
+    },
+    {
+      "value": "other",
+      "meaning": "Something else."
+    }
+  ],
+  "control_mode": [
+    {
+      "value": "enforcing",
+      "meaning": "The control declares that its decision stops the call."
+    },
+    {
+      "value": "advisory",
+      "meaning": "The control declares that its decision is advice only."
+    },
+    {
+      "value": "shadow",
+      "meaning": "The control declares shadow mode: a `deny` does not stop the call."
+    },
+    {
+      "value": "unknown",
+      "meaning": "No mode was declared; never observable from a boundary."
+    }
+  ],
+  "control_error_class": [
+    {
+      "value": "timeout",
+      "meaning": "The control timed out."
+    },
+    {
+      "value": "exception",
+      "meaning": "The control raised."
+    },
+    {
+      "value": "unavailable",
+      "meaning": "The control was unreachable (for example a 5xx)."
+    },
+    {
+      "value": "misconfigured",
+      "meaning": "The control reported a configuration error."
+    },
+    {
+      "value": "other",
+      "meaning": "Another failure."
+    }
+  ],
+  "control_signal": [
+    {
+      "value": "content_filter",
+      "meaning": "A provider content filter (spec 057 §4.1 map)."
+    },
+    {
+      "value": "refusal",
+      "meaning": "A provider refusal field."
+    },
+    {
+      "value": "guardrail_intervened",
+      "meaning": "A provider-hosted guardrail intervened."
+    },
+    {
+      "value": "prompt_blocked",
+      "meaning": "The provider blocked the prompt."
+    },
+    {
+      "value": "safety_stop",
+      "meaning": "The provider stopped generation for safety."
+    },
+    {
+      "value": "moderation_flag",
+      "meaning": "An inline moderation flag; the provider did not stop the call."
+    },
+    {
+      "value": "other",
+      "meaning": "Another literal safety field."
+    }
+  ],
+  "control_derivation": [
+    {
+      "value": "literal",
+      "meaning": "Copied from a literal field in captured bytes."
+    },
+    {
+      "value": "configured_extract",
+      "meaning": "Extracted by a customer-configured JSON Pointer and literal value map."
+    },
+    {
+      "value": "configured_marker",
+      "meaning": "A customer-configured exact denial marker matched a tool result."
+    },
+    {
+      "value": "configured_exit_map",
+      "meaning": "A hook program's exit code mapped by a customer-configured exit map."
+    },
+    {
+      "value": "reported",
+      "meaning": "Reported by the application or an emitter."
+    },
+    {
+      "value": "wrapped_check",
+      "meaning": "Mapped from a wrapped check's return value or exception by the closed table of spec 057 §4.10.3."
+    }
+  ],
+  "grant_trigger": [
+    {
+      "value": "run_start",
+      "meaning": "Reported at run start."
+    },
+    {
+      "value": "change",
+      "meaning": "Reported on a configuration change."
+    },
+    {
+      "value": "resume",
+      "meaning": "Reported on resume."
+    },
+    {
+      "value": "requested",
+      "meaning": "Reported on request."
+    },
+    {
+      "value": "derived",
+      "meaning": "Derived by the reader from wire or protocol bytes."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not stated."
+    }
+  ],
+  "grant_basis": [
+    {
+      "value": "offered",
+      "meaning": "The tools, tool choice and instructions digest one model request carried."
+    },
+    {
+      "value": "listed",
+      "meaning": "The tools and roots an MCP server listed to the client."
+    },
+    {
+      "value": "declared",
+      "meaning": "The permission configuration the customer reports."
+    }
+  ],
+  "grant_source_boundary": [
+    {
+      "value": "llm_wire",
+      "meaning": "Derived from model-wire bytes."
+    },
+    {
+      "value": "mcp_wire",
+      "meaning": "Derived from MCP messages."
+    },
+    {
+      "value": "api",
+      "meaning": "Reported through the explicit API."
+    },
+    {
+      "value": "otlp",
+      "meaning": "Reported over OTLP."
+    },
+    {
+      "value": "operator_snapshot",
+      "meaning": "An operator-run snapshot outside the agent process (spec 057 OD-8)."
+    },
+    {
+      "value": "other",
+      "meaning": "Another boundary."
+    }
+  ],
+  "tool_choice_mode": [
+    {
+      "value": "auto",
+      "meaning": "The model may call any offered tool or none."
+    },
+    {
+      "value": "none",
+      "meaning": "No tool call allowed."
+    },
+    {
+      "value": "required",
+      "meaning": "Some tool call required."
+    },
+    {
+      "value": "specific",
+      "meaning": "One named tool forced."
+    },
+    {
+      "value": "allowed_subset",
+      "meaning": "Only a subset of the offered tools allowed."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not determinable."
+    }
+  ],
+  "sandbox_kind": [
+    {
+      "value": "none",
+      "meaning": "No sandbox declared."
+    },
+    {
+      "value": "process",
+      "meaning": "Process-level sandbox."
+    },
+    {
+      "value": "container",
+      "meaning": "Container."
+    },
+    {
+      "value": "vm",
+      "meaning": "Virtual machine."
+    },
+    {
+      "value": "remote",
+      "meaning": "Remote sandbox service."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not stated."
+    }
+  ],
+  "hook_outcome": [
+    {
+      "value": "passed",
+      "meaning": "The hook let the call continue unchanged."
+    },
+    {
+      "value": "modified",
+      "meaning": "The hook changed the wrapped value; implies `fabric.hook.modified=true`."
+    },
+    {
+      "value": "blocked",
+      "meaning": "The hook stopped the call."
+    },
+    {
+      "value": "escalated",
+      "meaning": "The hook asked another party."
+    },
+    {
+      "value": "errored",
+      "meaning": "The hook failed."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not known (a hook program without an exit map)."
+    }
+  ],
+  "hook_basis": [
+    {
+      "value": "process",
+      "meaning": "Observed as a separate program."
+    },
+    {
+      "value": "callback",
+      "meaning": "Reported as an in-process callback."
+    },
+    {
+      "value": "reported_unknown",
+      "meaning": "Reported without saying which."
+    }
+  ],
+  "extension_kind": [
+    {
+      "value": "skill",
+      "meaning": "A skill."
+    },
+    {
+      "value": "plugin",
+      "meaning": "A plugin."
+    },
+    {
+      "value": "mcp_server",
+      "meaning": "An MCP server."
+    },
+    {
+      "value": "hook_bundle",
+      "meaning": "A bundle of hooks."
+    },
+    {
+      "value": "subagent",
+      "meaning": "A sub-agent definition."
+    },
+    {
+      "value": "tool_pack",
+      "meaning": "A pack of tools."
+    },
+    {
+      "value": "other",
+      "meaning": "Another extension."
+    }
+  ],
+  "extension_source_kind": [
+    {
+      "value": "registry",
+      "meaning": "A package registry."
+    },
+    {
+      "value": "marketplace",
+      "meaning": "A marketplace."
+    },
+    {
+      "value": "git",
+      "meaning": "A git repository."
+    },
+    {
+      "value": "local_path",
+      "meaning": "A local path."
+    },
+    {
+      "value": "url",
+      "meaning": "A URL."
+    },
+    {
+      "value": "process",
+      "meaning": "A launched process."
+    },
+    {
+      "value": "builtin",
+      "meaning": "Built into the runtime."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not stated."
+    }
+  ],
+  "extension_observed_via": [
+    {
+      "value": "mcp_initialize",
+      "meaning": "An MCP `initialize` exchange."
+    },
+    {
+      "value": "mcp_tools_list",
+      "meaning": "An MCP `tools/list` result."
+    },
+    {
+      "value": "process_launch",
+      "meaning": "The process launch of a listed server command."
+    },
+    {
+      "value": "path_open",
+      "meaning": "Only that a watched extension folder was opened; nothing about its contents."
+    },
+    {
+      "value": "reported",
+      "meaning": "Reported through the API or OTLP."
+    }
+  ],
+  "signature_status": [
+    {
+      "value": "verified",
+      "meaning": "The runtime or caller says the signature verified."
+    },
+    {
+      "value": "invalid",
+      "meaning": "The runtime or caller says the signature failed."
+    },
+    {
+      "value": "unsigned",
+      "meaning": "No signature."
+    },
+    {
+      "value": "unverified",
+      "meaning": "Signed but not checked."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not stated. Fabric verifies nothing."
+    }
+  ],
+  "extension_scope": [
+    {
+      "value": "managed",
+      "meaning": "Managed configuration layer."
+    },
+    {
+      "value": "user",
+      "meaning": "User layer."
+    },
+    {
+      "value": "project",
+      "meaning": "Project layer."
+    },
+    {
+      "value": "local",
+      "meaning": "Local layer."
+    },
+    {
+      "value": "session",
+      "meaning": "This session only."
+    },
+    {
+      "value": "unknown",
+      "meaning": "Not stated."
+    }
+  ],
+  "watch_class": [
+    {
+      "value": "permission_config",
+      "meaning": "A permission or policy file."
+    },
+    {
+      "value": "hook_config",
+      "meaning": "A hook configuration file."
+    },
+    {
+      "value": "extension_dir",
+      "meaning": "An extension folder."
+    },
+    {
+      "value": "credential_file",
+      "meaning": "A credential file (never read)."
+    },
+    {
+      "value": "other",
+      "meaning": "Another watched path."
+    }
+  ],
+  "controls_chain_reason": [
+    {
+      "value": "control_unmatched",
+      "meaning": "A control or hook names a call, step or action not in the run."
+    },
+    {
+      "value": "control_pending_at_end",
+      "meaning": "A request has no resolution at run end."
+    },
+    {
+      "value": "ambiguous_attribution",
+      "meaning": "A control linked by `pending_set`."
+    },
+    {
+      "value": "grant_not_recorded",
+      "meaning": "A declared-grant capture point is active but no declared snapshot exists."
+    },
+    {
+      "value": "body_not_retained",
+      "meaning": "An MCP or control host is listed but its bodies are not retained."
+    },
+    {
+      "value": "sequence_gap",
+      "meaning": "A sequence gap in the records the chain depends on."
+    },
+    {
+      "value": "invariant_conflict",
+      "meaning": "A control record without both D11 constants, or with a forged value."
+    }
+  ],
+  "security_fact": [
+    {
+      "value": "no_declared_grant",
+      "meaning": "F1: the run has no declared grant snapshot."
+    },
+    {
+      "value": "grant_changed",
+      "meaning": "F2: more than one snapshot of a basis."
+    },
+    {
+      "value": "control_unmatched",
+      "meaning": "F3: a decision recorded with no matching call."
+    },
+    {
+      "value": "control_pending_at_end",
+      "meaning": "F4: a request with no resolution at run end."
+    },
+    {
+      "value": "control_denied",
+      "meaning": "F5: a deny gates a tool call and no effect is attributed to it."
+    },
+    {
+      "value": "deny_with_effect",
+      "meaning": "F6: a deny gates a tool call and an effect is attributed to it (co-occurrence, OD-10)."
+    },
+    {
+      "value": "approval_required_without_decision",
+      "meaning": "F7: an effect with `approval_required=true` and no approval gating it."
+    },
+    {
+      "value": "hook_errored",
+      "meaning": "F8: count of hook outcomes `errored`."
+    },
+    {
+      "value": "hook_modified",
+      "meaning": "F8: count of hook outcomes `modified`."
+    },
+    {
+      "value": "extension_signature",
+      "meaning": "F9: extensions by signature status other than `verified`."
+    },
+    {
+      "value": "control_invariant_conflict",
+      "meaning": "F10: a control record without both D11 constants or with a forged value."
+    },
+    {
+      "value": "inventory_changed",
+      "meaning": "F11: an inventory or manifest digest changed within the run."
+    },
+    {
+      "value": "tool_called_not_offered",
+      "meaning": "F12: a tool called that was not offered in that request."
+    },
+    {
+      "value": "os_denied",
+      "meaning": "F13: OS refusals by syscall class and reason code."
+    },
+    {
+      "value": "tool_result_error",
+      "meaning": "F14: tool results fed back with a structured error flag; not a denial claim."
     }
   ]
 }

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal
 
+from ._security_policy import check_security_context
 from .redaction import (
     RedactionClient,
     RedactionService,
@@ -116,7 +117,10 @@ class DeploymentPolicy:
                 "required_integrations",
                 "deployment",
             },
+            {"security_context"},  # spec 057 §8: optional classification lists
         )
+        if "security_context" in data:
+            data["security_context"] = check_security_context(data["security_context"])
         if data["schema_version"] != POLICY_SCHEMA_VERSION:
             raise ValueError("unsupported deployment policy schema version")
         for key in ("policy_id", "tenant_id", "workload_id"):

@@ -234,7 +234,15 @@ var explicitlySafeFields = func() map[string]struct{} {
 // sensitiveAttributeKey prevents configuration extensions from admitting raw
 // content or secrets. Hashes, governed references, counts and status codes are
 // metadata and remain eligible for the exact allowlist.
+// countedSensitiveNames are exact keys whose name trips a sensitive marker but whose
+// value is a closed non-negative count (spec 057 G07: the number of declared credential
+// names; values are never read). Only these exact keys are exempt.
+var countedSensitiveNames = toSet("fabric.grant.credentials.count")
+
 func sensitiveAttributeKey(key string) bool {
+	if _, ok := countedSensitiveNames[key]; ok {
+		return false
+	}
 	lower := strings.ToLower(key)
 	canonical := strings.Map(func(r rune) rune {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {

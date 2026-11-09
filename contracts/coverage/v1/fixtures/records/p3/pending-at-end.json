@@ -1,0 +1,25 @@
+{
+  "schema_version": "fabric.records-golden/v1",
+  "spec": "052 §7.2 (WP3-0)",
+  "scenario": "pending-at-end",
+  "records": [
+    {
+      "attempt_uid": "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e87",
+      "attributes": {
+        "fabric.step.kind": "control",
+        "fabric.control.id": "ctl-b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+        "fabric.control.kind": "permission_request",
+        "fabric.control.phase": "request",
+        "fabric.control.decision": "pending",
+        "fabric.control.authentication": "unverified_caller_report",
+        "fabric.control.enforced_by_fabric": false,
+        "fabric.actor.type": "unknown"
+      }
+    }
+  ],
+  "expect": {
+    "resolution_state": {
+      "ctl-b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2": "pending"
+    }
+  }
+}
