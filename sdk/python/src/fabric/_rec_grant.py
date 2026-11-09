@@ -217,6 +217,18 @@ def pseudonymise_grant(
     return out
 
 
+def _resorted(document: dict[str, Any]) -> dict[str, Any]:
+    """The pseudonymised lists sorted again, by their pseudonyms: a list left in the order
+    of its clear values would reveal how those values sort (§7.2)."""
+    for path in (*PATH_FIELDS, *HOST_FIELDS, ("credentials",)):
+        node: Any = document
+        for part in path[:-1]:
+            node = node.get(part) if type(node) is dict else None
+        if type(node) is dict and type(node.get(path[-1])) is list:
+            node[path[-1]] = sorted(node[path[-1]], key=jcs)
+    return document
+
+
 def _copy(value: Any) -> Any:
     if type(value) is dict:
         return {k: _copy(v) for k, v in value.items()}
@@ -707,8 +719,8 @@ def emit_grant(
     if records.mode_of("run.permissions") != "omit":
         groups = pseudonymise_groups(records)
         if key is not None:
-            bodies.append(Body("run.permissions", pseudonymise_grant(doc, key, **groups),
-                               "application/json"))  # fmt: skip
+            stored = _resorted(pseudonymise_grant(doc, key, **groups))
+            bodies.append(Body("run.permissions", stored, "application/json"))
         elif not needs_key(doc, groups):
             bodies.append(Body("run.permissions", doc, "application/json"))
         # else: no key, nothing to pseudonymise with: withheld, never clear (§7.3)

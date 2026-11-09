@@ -220,3 +220,34 @@ def test_invalid_grants_fail_open_and_strict_raises(
         monkeypatch.setenv(STRICT_ENV, "1")
         with pytest.raises(RecordsMisuseError):
             records.record_grant(document, **kwargs)
+
+
+def test_stored_pseudonyms_never_keep_the_clear_sort_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """§7.2: the stored lists are ordered by pseudonym, so the body does not reveal how the
+    clear paths, hosts or credential names sort against each other."""
+    policy = CapturePolicy("acme", 1, "sha256:" + "3" * 64, {"run.permissions": "retain_original"},
+                           profile="local")  # fmt: skip
+    gate = ContentGate("local", "enabled", None, policy)
+    names = [f"/srv/{chr(97 + i)}" for i in range(12)]
+    creds = [{"name": f"TOKEN_{chr(65 + i)}"} for i in range(12)]
+    hosts = [f"{chr(97 + i)}.example" for i in range(12)]
+    with capture(
+        monkeypatch, gate=gate, protector=Protector(policy, max_body_bytes=1 << 20)
+    ) as handle:
+        records.record_grant({"filesystem": {"read": names}, "network": {"allow": hosts},
+                              "credentials": creds})  # fmt: skip
+        (stored,) = [json.loads(data) for d, data in bodies(handle)
+                     if d["role"] == "run.permissions"]  # fmt: skip
+    in_clear_order = pseudonymise_grant(
+        normalise_grant({"filesystem": {"read": names}, "network": {"allow": hosts},
+                         "credentials": creds}), ID_KEY)  # fmt: skip
+    for got, clear_order in (
+        (stored["filesystem"]["read"], in_clear_order["filesystem"]["read"]),
+        (stored["network"]["allow"], in_clear_order["network"]["allow"]),
+        ([c["name"] for c in stored["credentials"]],
+         [c["name"] for c in in_clear_order["credentials"]]),
+    ):  # fmt: skip
+        assert got == sorted(got) and sorted(got) == sorted(clear_order)
+        assert got != clear_order  # 12 items: the clear order is not the pseudonym order
