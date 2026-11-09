@@ -1,0 +1,291 @@
+{
+  "documents": [
+    {
+      "approval_policy": "per_tool",
+      "basis": "declared",
+      "credentials": [
+        {
+          "kind": "env",
+          "name": "crd-0b4b928ea7995f0a4999f47725956f50",
+          "scopes": [
+            "repo:read"
+          ]
+        }
+      ],
+      "execution_mode": "supervised",
+      "filesystem": {
+        "deny": [
+          "pth-415366dfa1c25dbf37de48a1e9cf54a7"
+        ],
+        "read": [
+          "pth-c0e588aa241f93a699a2f37bc2214f9b"
+        ],
+        "roots": [
+          "pth-8ae4af3f153f201a4f246c7027fbd795"
+        ],
+        "write": [
+          "pth-875b09fc4634c7e05603363c094de106"
+        ]
+      },
+      "limits": [
+        {
+          "kind": "tool_calls",
+          "limit": 200,
+          "window": "run"
+        }
+      ],
+      "mcp_servers": [
+        {
+          "scope": "project",
+          "server": "repo-tools",
+          "server_ref": "npx -y @acme/repo-tools-mcp",
+          "tools_allow": [
+            "search"
+          ],
+          "transport": "stdio"
+        }
+      ],
+      "models": {
+        "allow": [
+          "model-a"
+        ],
+        "deny": []
+      },
+      "network": {
+        "allow": [
+          "net-dcf01650ae69722190aec02dacdaea24"
+        ],
+        "default": "deny",
+        "deny": []
+      },
+      "permission_mode": "ask_on_write",
+      "sandbox": {
+        "enabled": true,
+        "kind": "container",
+        "name": "agent-sbx"
+      },
+      "schema_version": "fabric.grant-snapshot/v1",
+      "source": {
+        "boundary": "api",
+        "name": "acme-agent",
+        "version": "3.2.0"
+      },
+      "tools": {
+        "allow": [
+          {
+            "rule": "read_file"
+          },
+          {
+            "rule": "shell(git status *)"
+          }
+        ],
+        "ask": [
+          {
+            "rule": "write_file"
+          }
+        ],
+        "deny": [
+          {
+            "rule": "shell(curl *)"
+          }
+        ]
+      },
+      "x-acme": {
+        "policy_bundle": "agents-prod"
+      }
+    },
+    {
+      "approval_policy": "per_tool",
+      "basis": "declared",
+      "credentials": [
+        {
+          "kind": "env",
+          "name": "crd-0b4b928ea7995f0a4999f47725956f50",
+          "scopes": [
+            "repo:read"
+          ]
+        }
+      ],
+      "execution_mode": "supervised",
+      "filesystem": {
+        "deny": [
+          "pth-415366dfa1c25dbf37de48a1e9cf54a7"
+        ],
+        "read": [
+          "pth-c0e588aa241f93a699a2f37bc2214f9b"
+        ],
+        "roots": [
+          "pth-8ae4af3f153f201a4f246c7027fbd795"
+        ],
+        "write": [
+          "pth-875b09fc4634c7e05603363c094de106"
+        ]
+      },
+      "limits": [
+        {
+          "kind": "tool_calls",
+          "limit": 200,
+          "window": "run"
+        }
+      ],
+      "mcp_servers": [
+        {
+          "scope": "project",
+          "server": "repo-tools",
+          "server_ref": "npx -y @acme/repo-tools-mcp",
+          "tools_allow": [
+            "search"
+          ],
+          "transport": "stdio"
+        }
+      ],
+      "models": {
+        "allow": [
+          "model-a"
+        ],
+        "deny": []
+      },
+      "network": {
+        "allow": [
+          "net-dcf01650ae69722190aec02dacdaea24"
+        ],
+        "default": "deny",
+        "deny": []
+      },
+      "permission_mode": "ask_on_write",
+      "sandbox": {
+        "enabled": true,
+        "kind": "container",
+        "name": "agent-sbx"
+      },
+      "schema_version": "fabric.grant-snapshot/v1",
+      "source": {
+        "boundary": "api",
+        "name": "acme-agent",
+        "version": "3.2.0"
+      },
+      "tools": {
+        "allow": [
+          {
+            "rule": "read_file"
+          }
+        ]
+      },
+      "x-acme": {
+        "policy_bundle": "agents-prod"
+      }
+    },
+    {
+      "basis": "offered",
+      "instructions_digest": "sha256:9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e9e",
+      "schema_version": "fabric.grant-snapshot/v1",
+      "source": {
+        "boundary": "api"
+      },
+      "tool_choice": {
+        "allowed_count": 1,
+        "mode": "allowed_subset",
+        "parallel": false
+      },
+      "tools_offered": [
+        {
+          "definition_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "name": "read_file",
+          "type": "function"
+        },
+        {
+          "definition_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "name": "shell",
+          "type": "function"
+        }
+      ]
+    }
+  ],
+  "spans": [
+    {
+      "fabric.actor.type": "unknown",
+      "fabric.attempt.uid": "<uuid-1>",
+      "fabric.capture.input": "records",
+      "fabric.capture.point": "sdk.records@<version>",
+      "fabric.capture.source": "reported",
+      "fabric.content.object_ids": [
+        "<uuid-2>"
+      ],
+      "fabric.grant.basis": "declared",
+      "fabric.grant.credentials.count": 1,
+      "fabric.grant.fs_rules.count": 4,
+      "fabric.grant.id": "grt-42fff539c6be566863c42fadfacce609",
+      "fabric.grant.mcp_servers.count": 1,
+      "fabric.grant.model_rules.count": 1,
+      "fabric.grant.net_rules.count": 1,
+      "fabric.grant.network_default": "deny",
+      "fabric.grant.permission_mode": "ask_on_write",
+      "fabric.grant.sandbox_kind": "container",
+      "fabric.grant.source_boundary": "api",
+      "fabric.grant.tools_allow.count": 2,
+      "fabric.grant.tools_ask.count": 1,
+      "fabric.grant.tools_deny.count": 1,
+      "fabric.grant.trigger": "run_start",
+      "fabric.run.approval_policy": "per_tool",
+      "fabric.run.execution_mode": "supervised",
+      "fabric.run.permissions.count": 12,
+      "fabric.step.kind": "run",
+      "fabric.step.lifecycle_state": "completed",
+      "fabric.step.status": "ok",
+      "fabric.step.timing_basis": "not_captured"
+    },
+    {
+      "fabric.actor.type": "unknown",
+      "fabric.attempt.uid": "<uuid-3>",
+      "fabric.capture.input": "records",
+      "fabric.capture.point": "sdk.records@<version>",
+      "fabric.capture.source": "reported",
+      "fabric.content.object_ids": [
+        "<uuid-4>"
+      ],
+      "fabric.grant.basis": "declared",
+      "fabric.grant.credentials.count": 1,
+      "fabric.grant.fs_rules.count": 4,
+      "fabric.grant.id": "grt-7dd2f562f92a0f2f1957d28df00b7aba",
+      "fabric.grant.mcp_servers.count": 1,
+      "fabric.grant.model_rules.count": 1,
+      "fabric.grant.net_rules.count": 1,
+      "fabric.grant.network_default": "deny",
+      "fabric.grant.permission_mode": "ask_on_write",
+      "fabric.grant.previous_id": "grt-42fff539c6be566863c42fadfacce609",
+      "fabric.grant.sandbox_kind": "container",
+      "fabric.grant.source_boundary": "api",
+      "fabric.grant.tools_allow.count": 1,
+      "fabric.grant.trigger": "change",
+      "fabric.run.approval_policy": "per_tool",
+      "fabric.run.execution_mode": "supervised",
+      "fabric.run.permissions.count": 9,
+      "fabric.step.kind": "run",
+      "fabric.step.lifecycle_state": "completed",
+      "fabric.step.status": "ok",
+      "fabric.step.timing_basis": "not_captured"
+    },
+    {
+      "fabric.actor.type": "unknown",
+      "fabric.attempt.uid": "<uuid-5>",
+      "fabric.capture.input": "records",
+      "fabric.capture.point": "sdk.records@<version>",
+      "fabric.capture.source": "reported",
+      "fabric.content.object_ids": [
+        "<uuid-6>"
+      ],
+      "fabric.grant.basis": "offered",
+      "fabric.grant.id": "grt-0cdc28abe31e530ffa024bad87ecebf5",
+      "fabric.grant.parallel_tools": false,
+      "fabric.grant.source_boundary": "api",
+      "fabric.grant.tool_choice": "allowed_subset",
+      "fabric.grant.tool_choice.allowed_count": 1,
+      "fabric.grant.tools_offered.count": 2,
+      "fabric.grant.trigger": "run_start",
+      "fabric.step.kind": "run",
+      "fabric.step.lifecycle_state": "completed",
+      "fabric.step.status": "ok",
+      "fabric.step.timing_basis": "not_captured"
+    }
+  ]
+}
