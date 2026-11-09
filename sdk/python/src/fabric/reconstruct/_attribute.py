@@ -1607,7 +1607,7 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
     ]  # fmt: skip
     extra: dict[str, Any] = {}
     if security is not None:
-        _security.resolve_refs(rows, preamble)
+        _security.resolve_refs(rows)
         if preamble:
             extra["preamble"] = preamble
         if security.facts:

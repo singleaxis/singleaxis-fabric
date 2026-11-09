@@ -858,7 +858,7 @@ def with_no_effect_rows(
     return out
 
 
-def resolve_refs(rows: list[dict[str, Any]], preamble: Sequence[Mapping[str, Any]]) -> None:
+def resolve_refs(rows: list[dict[str, Any]]) -> None:
     """Row numbers for the attempts security rows name (resolved requests, the denies an
     F5 row names, the effects and later allows an F6 row names), in place."""
     numbers = {row["attempt_uid"]: row["n"] for row in rows if "attempt_uid" in row}
@@ -873,7 +873,6 @@ def resolve_refs(rows: list[dict[str, Any]], preamble: Sequence[Mapping[str, Any
                     effect["n"] = numbers[effect["attempt_uid"]]
         if "later_allows" in row:
             row["later_allow_refs"] = [numbers[u] for u in row["later_allows"] if u in numbers]
-    del preamble  # preamble lines are unnumbered: nothing refers to them by number
 
 
 def fact_rows(security: SecurityResult, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
