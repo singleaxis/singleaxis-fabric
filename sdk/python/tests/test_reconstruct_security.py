@@ -1078,3 +1078,13 @@ def test_an_effect_reported_under_the_call_is_f6_never_f5() -> None:
     assert "deny_with_effect" in codes and "control_denied" not in codes
     assert found.deny_with_effect["d1"][0]["attempt_uid"] == "e1"
 
+
+def test_a_resolution_is_never_linked_by_position() -> None:
+    """Rule 3 links observations and requests; a resolution with no ``resolves`` is not
+    linked to the pending call (spec 057 rev 3.3 note 4)."""
+    resolution = _control_item("r1", 3, kind="approval", phase="resolution", decision="allow")
+    observation = _control_item("o1", 4, decision="allow")
+    found, _ = _analyse(_wire_input({}), resolution, observation)
+    by_uid = {c["attempt_uid"]: c for c in found.controls}
+    assert by_uid["r1"]["method"] == "none" and "gated" not in by_uid["r1"]
+    assert by_uid["o1"]["method"] == "pending_single"

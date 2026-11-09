@@ -455,7 +455,9 @@ def _link_control(  # noqa: PLR0912 - one branch per join rule and its outcome
                     if key in request:
                         item[key] = request[key]
         return
-    if gated_kind in (None, "tool_call") and wire:
+    # Rule 3 applies to observations and requests only (rev 3.3 note 4): a resolution or
+    # revocation gates what its request gates, never a call by position.
+    if gated_kind in (None, "tool_call") and wire and item.get("phase") not in _TARGET_PHASES:
         pending = _pending_calls(item, calls)
         if len(pending) == 1:
             item["link"] = _gates(pending[0].id, "pending_single", "inferred", "certain",
