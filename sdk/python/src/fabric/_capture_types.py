@@ -445,8 +445,8 @@ _RUN_MARKERS = frozenset({"run_start", "run_end"})
 # ``_ID_POOL`` ids instead of one per id. ``getrandom`` releases the GIL, and on a
 # recording caller's thread every release lets the capture worker run first (053 §4.4).
 _ID_POOL = 256
-_UUID4_KEEP = ~((0xF000 << 64) | (0xC000 << 48)) & ((1 << 128) - 1)
-_UUID4_SET = (0x4000 << 64) | (0x8000 << 48)
+# A hex digit with its top two bits set to the RFC 9562 variant 10: 8, 9, a or b.
+_UUID4_VARIANT = {digit: "89ab"[int(digit, 16) & 3] for digit in "0123456789abcdef"}
 
 
 class _IdBytes(threading.local):
@@ -465,11 +465,11 @@ def mint_uuid4() -> str:
         data, offset = os.urandom(16 * _ID_POOL), 0
         pool.data = data
     pool.offset = offset + 16
-    # uuid.UUID(bytes=..., version=4) without the object: the version nibble set to 4
-    # and the variant bits to 10.
-    value = int.from_bytes(data[offset : offset + 16], "big") & _UUID4_KEEP | _UUID4_SET
-    text = f"{value:032x}"
-    return f"{text[:8]}-{text[8:12]}-{text[12:16]}-{text[16:20]}-{text[20:]}"
+    # uuid.UUID(bytes=..., version=4) without the object or an integer: the version nibble
+    # (hex digit 12) set to 4 and the variant bits (the top two of hex digit 16) to 10.
+    text = data[offset : offset + 16].hex()
+    return (f"{text[:8]}-{text[8:12]}-4{text[13:16]}-{_UUID4_VARIANT[text[16]]}{text[17:20]}-"
+            f"{text[20:]}")  # fmt: skip
 
 
 def _drop_id_pool_in_child() -> None:
@@ -828,6 +828,12 @@ class RecordJob:
     late: Callable[[], Mapping[str, AttributeValue]] | None = None
 
     def __post_init__(self) -> None:
+        if not self.bodies and self.evidence is None:  # the common record: nothing held
+            if self.otlp_status not in OTLP_STATUSES:
+                raise RecordsMisuseError("records API misuse: unknown otlp_status")
+            if self.provenance not in PROVENANCES:
+                raise RecordsMisuseError("records API misuse: unknown provenance")
+            return
         if len(self.bodies) + (self.evidence is not None) > MAX_RECORD_BODIES:
             raise RecordsMisuseError("records API misuse: more than 8 bodies on one record")
         evidence_bodies = sum(body.role == EVIDENCE_ROLE for body in self.bodies)
@@ -847,8 +853,10 @@ class RecordJob:
     def inflight_charge(self) -> int:
         """Bytes charged to ``max_inflight_bytes`` (§3.4 step 3): the bodies and the
         evidence object held by reference (its bounded :attr:`EvidenceDoc.charge`)."""
-        held = sum(body.inflight_charge for body in self.bodies)
         evidence = self.evidence
+        if not self.bodies and evidence is None:
+            return 0
+        held = sum(body.inflight_charge for body in self.bodies)
         if evidence is not None:
             charge = getattr(evidence, "charge", EVIDENCE_MAX_BYTES)
             held += charge if type(charge) is int and 0 < charge <= EVIDENCE_MAX_BYTES else (

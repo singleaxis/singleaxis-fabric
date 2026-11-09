@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import json.encoder
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -85,6 +86,23 @@ def canonical_json(value: Any) -> str:
     """Spec-029 canonical JSON: UTF-8, sorted keys, no insignificant whitespace."""
 
     return _CANONICAL.encode(value)
+
+
+# The stdlib's C encoder with the same options, built once and without its table of the
+# containers being encoded: ``JSONEncoder.encode`` builds both on every call.
+_C_MAKE_ENCODER: Any = getattr(json.encoder, "c_make_encoder", None)
+_ACYCLIC: Any = (
+    _C_MAKE_ENCODER(None, None, json.encoder.encode_basestring, None, ":", ",", True, False,
+                    True)
+    if _C_MAKE_ENCODER is not None else None
+)  # fmt: skip
+
+
+def canonical_json_acyclic(value: Any) -> str:
+    """:func:`canonical_json`, byte for byte, for a value already known to be plain JSON
+    without a cycle (the bounded walker's, a checked grant document): a cycle is not
+    detected here."""
+    return "".join(_ACYCLIC(value, 0)) if _ACYCLIC is not None else _CANONICAL.encode(value)
 
 
 def sha256_prefixed(data: bytes) -> str:

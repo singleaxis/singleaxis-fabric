@@ -26,7 +26,6 @@ keyed pseudonym. Every call is passive and fails open (051 R9).
 from __future__ import annotations
 
 import hashlib
-import json
 import json.encoder
 import math
 import re
@@ -36,6 +35,7 @@ from decimal import Decimal
 from typing import Any
 
 from ._capture_types import misuse
+from ._content import canonical_json_acyclic
 from ._records_api import Body, current_records, emit, never_raises
 from ._sequence import pseudonym_v2
 from .records._handles import RecordHandle
@@ -154,8 +154,7 @@ def _jcs(value: object) -> str:  # noqa: PLR0911 - one return per JSON type
 # is exactly the stdlib's sorted-key, compact, non-ASCII-keeping JSON: strings escape alike
 # (above), integers print alike, and ASCII keys sort alike by UTF-16 code units and by code
 # points. The C encoder then does the work; anything else takes the exact path above.
-_FAST = json.JSONEncoder(ensure_ascii=False, sort_keys=True, separators=(",", ":"),
-                         check_circular=False).encode  # fmt: skip
+_FAST: Callable[[object], str] = canonical_json_acyclic  # a checked document has no cycle
 _SAFE_INT = 1 << 53
 
 

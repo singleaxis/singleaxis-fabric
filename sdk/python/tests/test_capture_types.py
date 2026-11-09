@@ -636,6 +636,17 @@ def test_minted_ids_are_uuid4_from_a_pooled_draw(monkeypatch: pytest.MonkeyPatch
     assert ct.new_event_id() != ct.new_event_id()
 
 
+def test_a_minted_id_is_uuid_uuid4_of_its_pool_bytes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each id is exactly ``uuid.UUID(bytes=<its 16 pool bytes>, version=4)``: the hex form
+    sets the version and variant bits as the integer form did, for every nibble value."""
+    pool = bytes(range(256)) * (16 * ct._ID_POOL // 256)  # every byte at every position
+    monkeypatch.setattr(os, "urandom", lambda size: pool[:size])
+    monkeypatch.setattr(ct, "_ID_BYTES", ct._IdBytes())
+    for index in range(ct._ID_POOL):
+        chunk = pool[16 * index : 16 * index + 16]
+        assert ct.mint_uuid4() == str(uuid.UUID(bytes=chunk, version=4))
+
+
 def test_minted_ids_differ_across_threads_and_forks() -> None:
     """Each thread has its own pool, and a forked child drops the parent's pending ids."""
     ct.mint_uuid4()  # the parent's pool now holds pending ids

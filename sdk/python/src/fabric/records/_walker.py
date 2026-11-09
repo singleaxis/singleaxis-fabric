@@ -21,7 +21,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .._content import canonical_json
+from .._content import canonical_json_acyclic
 
 MAX_DEPTH = 32
 MAX_NODES = 10_000
@@ -47,57 +47,75 @@ def _int_bytes(value: int) -> int | None:
     return None if digits > _MAX_INT_DIGITS else digits + 1
 
 
-def walk(value: Any, max_bytes: int) -> Walked:  # noqa: PLR0911, PLR0912 - one exit per refusal
+class _RefusedError(Exception):
+    """A bound was exceeded or a value is not plain JSON (internal: ends the walk)."""
+
+
+def walk(value: Any, max_bytes: int) -> Walked:  # noqa: PLR0915 - the walk is one closure
     """Check ``value`` within the bounds, then serialise it (``ok``); ``too_large`` when
-    a bound is exceeded first, ``unsupported`` for a value that is not plain JSON."""
+    a bound is exceeded first, ``unsupported`` for a value that is not plain JSON.
+
+    Depth first, last child first, each container's limits checked before any child is
+    visited: the visiting order, and so which refusal comes first, is the one of an explicit
+    stack. ``pending`` counts the nodes already admitted but not yet visited."""
     budget = max_bytes
     nodes = 0
-    stack: list[tuple[Any, int]] = [(value, 0)]
+    pending = 0
     active: set[int] = set()  # containers on the current path (cycle detection)
-    exits: list[tuple[int, int]] = []  # (stack length, container id) to pop from ``active``
-    while stack:
-        while exits and len(stack) <= exits[-1][0]:
-            active.discard(exits.pop()[1])
-        node, depth = stack.pop()
+
+    def visit(node: Any, depth: int) -> None:  # noqa: PLR0912 - one branch per JSON type
+        nonlocal budget, nodes, pending
         nodes += 1
         if nodes > MAX_NODES or depth > MAX_DEPTH:
-            return Walked("too_large")
+            raise _RefusedError("too_large")
         kind = type(node)
-        if node is None or kind is bool:
+        if kind is str:
+            budget -= 2 + _CHAR_BYTES * len(node)
+        elif node is None or kind is bool:
             budget -= 5
         elif kind is int:
             size = _int_bytes(node)
             if size is None:
-                return Walked("too_large")
+                raise _RefusedError("too_large")
             budget -= size
         elif kind is float:
             if not math.isfinite(node):
-                return Walked("unsupported")
+                raise _RefusedError("unsupported")
             budget -= _FLOAT_BYTES
-        elif kind is str:
-            budget -= 2 + _CHAR_BYTES * len(node)
         elif kind is dict or kind is list or kind is tuple:
             ident = id(node)
             if ident in active:
-                return Walked("unsupported")  # a cycle is never plain JSON
+                raise _RefusedError("unsupported")  # a cycle is never plain JSON
             budget -= 2 + len(node)  # brackets and separators
-            if budget < 0 or nodes + len(stack) + len(node) > MAX_NODES:
-                return Walked("too_large")  # checked before any child is visited
-            active.add(ident)
-            exits.append((len(stack), ident))
+            if budget < 0 or nodes + pending + len(node) > MAX_NODES:
+                raise _RefusedError("too_large")  # checked before any child is visited
             if kind is dict:
-                for key, child in node.items():
+                for key in node:
                     if type(key) is not str:
-                        return Walked("unsupported")
+                        raise _RefusedError("unsupported")
                     budget -= 3 + _CHAR_BYTES * len(key)  # quotes and colon
-                    stack.append((child, depth + 1))
+                children = list(node.values())
             else:
-                stack.extend((child, depth + 1) for child in node)
+                children = node
+            if budget < 0:
+                raise _RefusedError("too_large")
+            active.add(ident)
+            pending += len(children)
+            for child in reversed(children):
+                pending -= 1
+                visit(child, depth + 1)
+            active.discard(ident)
+            return
         else:
-            return Walked("unsupported")
+            raise _RefusedError("unsupported")
         if budget < 0:
-            return Walked("too_large")
-    return Walked("ok", canonical_json(value))
+            raise _RefusedError("too_large")
+
+    try:
+        visit(value, 0)
+    except _RefusedError as refused:
+        return Walked(refused.args[0])
+    return Walked("ok", canonical_json_acyclic(value))
 
 
 __all__ = ["MAX_DEPTH", "MAX_NODES", "Walked", "walk"]

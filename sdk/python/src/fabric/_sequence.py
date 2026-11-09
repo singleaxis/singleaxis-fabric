@@ -275,8 +275,8 @@ class SourceAllocator:
                 note(allocation.epoch, sequence)
             except Exception:
                 self._fork_note = None
-        if segment is not None:
-            allocation = allocation._replace(segment_id=segment)
+        if segment is not None:  # built directly: ``_replace`` costs a Python-level _make
+            allocation = Allocation(allocation.epoch, sequence, scope, segment)
             with contextlib.suppress(Exception):
                 self.seals.note_allocated(segment, sequence)
         return allocation

@@ -381,22 +381,30 @@ KNOWN_NAMES: frozenset[str] = frozenset({
 })  # fmt: skip
 
 
+_TOOL_KEY_SET, _MODEL_KEY_SET = frozenset(_TOOL_KEYS), frozenset(_MODEL_KEYS)
+_DECIDING_KEYS = frozenset(
+    {"fabric.heartbeat.last_sequence", "fabric.loss.reason", *_TOOL_KEYS, *_MODEL_KEYS,
+     *(key for key, _ in _ORDERED)}
+)  # fmt: skip
+
+
 def category(name_hint: str, attribute_keys: Sequence[str] | Mapping[str, Any]) -> str:
     """The exported span name fabricguard derives (``P/processor.go`` activityCategory):
     decided by attribute keys first, then by the name itself when it is a known Fabric
     name, else ``fabric.activity``. Only keys decide, never values."""
-    keys = set(attribute_keys)
-    if "fabric.heartbeat.last_sequence" in keys:
-        return "fabric.capture_heartbeat"
-    if "fabric.loss.reason" in keys:
-        return "fabric.capture_loss"
-    if any(key in keys for key in _TOOL_KEYS):
-        return "fabric.tool_call"
-    if any(key in keys for key in _MODEL_KEYS):
-        return "fabric.model_call"
-    for key, name in _ORDERED:
-        if key in keys:
-            return name
+    keys = _DECIDING_KEYS.intersection(attribute_keys)  # the keys that decide, at C speed
+    if keys:
+        if "fabric.heartbeat.last_sequence" in keys:
+            return "fabric.capture_heartbeat"
+        if "fabric.loss.reason" in keys:
+            return "fabric.capture_loss"
+        if not keys.isdisjoint(_TOOL_KEY_SET):
+            return "fabric.tool_call"
+        if not keys.isdisjoint(_MODEL_KEY_SET):
+            return "fabric.model_call"
+        for key, name in _ORDERED:
+            if key in keys:
+                return name
     return name_hint if name_hint in KNOWN_NAMES else "fabric.activity"
 
 
@@ -512,9 +520,10 @@ class Attempt:
         if end < start:
             misuse("end_ns before start_ns")
             end = start
-        if not isinstance(attributes, Mapping):
+        if type(attributes) is not dict and not isinstance(attributes, Mapping):
             raise RecordsMisuseError("records API misuse: attributes must be a mapping")
-        kept_bodies = records.check_bodies(bodies, evidence, self.provenance)
+        kept_bodies = records.check_bodies(bodies, evidence, self.provenance) if (
+            bodies or type(bodies) not in (tuple, list)) else ()  # fmt: skip
         if evidence is not None and not isinstance(evidence, EvidenceDoc):
             misuse("evidence must be an EvidenceDoc")
             evidence = None
@@ -529,6 +538,9 @@ class Attempt:
             self, minted, status.lifecycle, status.result_status, status.otlp_status,
             name_hint, attributes, start, end, kept_bodies, evidence, span_ids, late,
         )  # fmt: skip
+
+
+_POINTS_KEPT = 256  # checked capture points remembered per records input
 
 
 class RecordsInput:
@@ -557,6 +569,7 @@ class RecordsInput:
             labels=self._labels, identity="clear" if self._clear else "pseudonymous"
         )
         self._point_version = __version__
+        self._points: dict[str, str] = {}  # point id -> emitted point, once checked
         self._modes: tuple[int, dict[str, PrivacyMode]] = (-1, {})
         self.evidence_ids = EvidenceIds(self._evidence_id, clear=self._clear)
         tee = getattr(handle, "_tee_or_none", None)
@@ -600,10 +613,15 @@ class RecordsInput:
             raise RecordsMisuseError("records API misuse: unknown step kind")
         if provenance not in PROVENANCES:
             raise RecordsMisuseError("records API misuse: unknown provenance")
-        if not isinstance(point, str) or not (
-            POINT_ID_RE.fullmatch(point) or POINT_RE.fullmatch(point)
-        ):  # fmt: skip
-            raise RecordsMisuseError("records API misuse: capture point id")
+        emitted = self._points.get(point) if type(point) is str else None
+        if emitted is None:
+            if not isinstance(point, str) or not (
+                POINT_ID_RE.fullmatch(point) or POINT_RE.fullmatch(point)
+            ):  # fmt: skip
+                raise RecordsMisuseError("records API misuse: capture point id")
+            emitted = point if "@" in point else f"{point}@{self._point_version}"
+            if type(point) is str and len(self._points) < _POINTS_KEPT:
+                self._points[point] = emitted  # a checked point id, as emitted
         if aliases is not _NO_ALIASES and (not isinstance(aliases, Mapping) or not all(
             isinstance(k, str) and ALIAS_KEY_RE.fullmatch(k) and isinstance(v, str) and v
             for k, v in aliases.items()
@@ -616,7 +634,6 @@ class RecordsInput:
             base["fabric.step.id"] = self._map(step_id, "step_id")
         if parent_attempt is not None:
             base["fabric.step.parent_id"] = self._map(parent_attempt, "parent_attempt")
-        emitted = point if "@" in point else f"{point}@{self._point_version}"
         uid = self._ids.mint(mint_uuid4())
         return Attempt(self, uid, kind, emitted, provenance, base)
 
@@ -782,11 +799,12 @@ class RecordsInput:
         attrs.setdefault("fabric.actor.type", "agent")
         if dropped + len(refused):
             self.stats.add("keys_dropped", dropped + len(refused))
-        bodies = tuple(
-            replace(body, stream_id=str.__str__(self.map_id(body.stream_id)))
-            if isinstance(body, RecordBody) and body.stream_id is not None else body
-            for body in bodies
-        )  # fmt: skip
+        if bodies:
+            bodies = tuple(
+                replace(body, stream_id=str.__str__(self.map_id(body.stream_id)))
+                if isinstance(body, RecordBody) and body.stream_id is not None else body
+                for body in bodies
+            )  # fmt: skip
         job = RecordJob(
             source_id=allocator.source_id, source_epoch=allocation.epoch,
             source_sequence=allocation.sequence, segment_id=allocation.segment_id,
