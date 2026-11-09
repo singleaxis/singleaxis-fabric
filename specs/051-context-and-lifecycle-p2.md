@@ -38,7 +38,11 @@ rule (R8); items already fixed by the decision-line privacy and passivity
 fixes that shipped in v0.8.0 are marked **landed in v0.8.0** and are not
 redone here (pre-requisite H0, §3).
 
-**Revision 2.1** (2026-11-09, owner decision) adds the `record_grant` row to the §4.11 budgets: 50 µs, the spec 057 B4 limit. A grant document is recorded once per run or when access changes, never per model call, so the plain-JSON-body row (about 31 µs for a typical document) does not apply and its digest stays on the calling thread.
+**Revision 2.1** (2026-11-09, owner decision) adds the `record_grant` row to
+the §4.11 budgets: 50 µs, the spec 057 B4 limit. A grant document is
+recorded once per run or when access changes, never per model call, so the
+plain-JSON-body row (about 31 µs for a typical document) does not apply and
+its digest stays on the calling thread.
 
 ---
 
