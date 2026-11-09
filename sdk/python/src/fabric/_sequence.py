@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import functools
 import hashlib
 import hmac
 import os
@@ -94,8 +95,8 @@ def label_pseudonym(prefix: str, value: str, key: bytes | None = None) -> str:
     without a key: one function for run (``r-``), source (``s-``), service (``svc-``) and
     report tenant (``t-``) labels, pinned by ``run-id-pseudonym-v1.json``."""
     data = value.encode("utf-8", "surrogatepass")
-    digest = hmac.new(key, data, hashlib.sha256) if key else hashlib.sha256(data)
-    return prefix + digest.hexdigest()[:32]
+    digest = hmac.digest(key, data, "sha256") if key else hashlib.sha256(data).digest()
+    return prefix + digest.hex()[:32]
 
 
 def run_pseudonym(run_id: str, key: bytes | None = None) -> str:
@@ -126,9 +127,16 @@ def pseudonym_v2(prefix: str, value: str, key: bytes | None) -> str | None:
     unkeyed hash of a low-entropy id is not a pseudonym, so the id is omitted."""
     if key is None:
         return None
-    k_type = hmac.new(key, f"fabric-id/v2/{V2_TYPES[prefix]}".encode(), hashlib.sha256).digest()
     data = value.encode("utf-8", "surrogatepass")
-    return f"{prefix}-" + hmac.new(k_type, data, hashlib.sha256).hexdigest()[:32]
+    k_type = _type_key(key, prefix) if type(key) is bytes else _type_key.__wrapped__(key, prefix)
+    return f"{prefix}-" + hmac.digest(k_type, data, "sha256").hex()[:32]
+
+
+@functools.lru_cache(maxsize=64)
+def _type_key(key: bytes, prefix: str) -> bytes:
+    """k_type of :func:`pseudonym_v2`, derived once per key and id type (the one-shot
+    ``hmac.digest`` is the C path: the same bytes as ``hmac.new(...).digest()``)."""
+    return hmac.digest(key, f"fabric-id/v2/{V2_TYPES[prefix]}".encode(), "sha256")
 
 
 def key_id(key: bytes) -> str:

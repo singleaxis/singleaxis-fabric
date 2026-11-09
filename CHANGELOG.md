@@ -285,7 +285,14 @@ it never makes, applies, waits for or returns one.
   short repeated values (capture point, kinds, source and run ids), the check
   loop no longer re-wraps plain values, and a record outside a run computes
   its fallback run id once per process epoch instead of once per record.
-  What is recorded is unchanged.
+  Ids are minted without building a big integer, a record without a body
+  skips the body checks, a capture point is validated once, the bounded JSON
+  walker no longer keeps an explicit stack and reuses one C encoder, and a
+  keyed pseudonym derives its per-type key once. With these, `record_control`
+  and `record_grant` meet their budgets on every CI Python version.
+  What is recorded is unchanged: ids, digests, pseudonyms, walker outcomes
+  and stored bytes are the same, and tests compare the new code with the old
+  on the same inputs.
 - **Latency-budget tests no longer flake on shared CI runners.** Each budget
   test now measures in a fresh interpreter after a warm-up, in several
   batches, judges each batch against the machine speed measured between its

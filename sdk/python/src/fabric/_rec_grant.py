@@ -674,27 +674,28 @@ def _plain(value: object) -> Any:
     return value
 
 
-def _count(doc: Mapping[str, Any], *path: str) -> int | None:
-    node: Any = doc
-    for part in path:
-        if type(node) is not dict or part not in node:
-            return None
-        node = node[part]
-    return len(node) if type(node) is list else None
-
-
-def _sum(*counts: int | None) -> int | None:
-    present = [c for c in counts if c is not None]
-    return sum(present) if present else None
-
-
 _DECLARED_COUNTS = (
     "tools_allow", "tools_deny", "tools_ask", "mcp_servers", "fs_rules", "net_rules",
     "credentials", "model_rules",
 )  # fmt: skip
 
 
-def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:
+# Each count attribute, whether it is one of the declared counts C32 sums, and the lists
+# whose lengths it adds up (a path that is missing or not a list adds nothing).
+_COUNT_PATHS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
+    ("tools_allow", (("tools", "allow"),)), ("tools_deny", (("tools", "deny"),)),
+    ("tools_ask", (("tools", "ask"),)), ("tools_offered", (("tools_offered",),)),
+    ("tools_listed", (("tools_listed",),)), ("mcp_servers", (("mcp_servers",),)),
+    ("fs_rules", tuple(("filesystem", n) for n in ("roots", "read", "write", "deny"))),
+    ("net_rules", (("network", "allow"), ("network", "deny"))),
+    ("credentials", (("credentials",),)),
+    ("model_rules", (("models", "allow"), ("models", "deny"))),
+)  # fmt: skip
+_COUNTS = tuple((f"fabric.grant.{name}.count", name in _DECLARED_COUNTS, paths)
+                for name, paths in _COUNT_PATHS)  # fmt: skip
+
+
+def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:  # noqa: PLR0912 - one per field
     """The telemetry shape of a normalised document: basis, boundary, modes, counts."""
     attrs: dict[str, Any] = {
         "fabric.grant.basis": doc["basis"],
@@ -717,27 +718,21 @@ def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:
             attrs["fabric.grant.tool_choice.allowed_count"] = choice["allowed_count"]
         if type(choice.get("parallel")) is bool:
             attrs["fabric.grant.parallel_tools"] = choice["parallel"]
-    counts = {
-        "tools_allow": _count(doc, "tools", "allow"),
-        "tools_deny": _count(doc, "tools", "deny"),
-        "tools_ask": _count(doc, "tools", "ask"),
-        "tools_offered": _count(doc, "tools_offered"),
-        "tools_listed": _count(doc, "tools_listed"),
-        "mcp_servers": _count(doc, "mcp_servers"),
-        "fs_rules": _sum(
-            *(_count(doc, "filesystem", n) for n in ("roots", "read", "write", "deny"))
-        ),
-        "net_rules": _sum(_count(doc, "network", "allow"), _count(doc, "network", "deny")),
-        "credentials": _count(doc, "credentials"),
-        "model_rules": _sum(_count(doc, "models", "allow"), _count(doc, "models", "deny")),
-    }
-    for name, value in counts.items():
-        if value is not None:
-            attrs[f"fabric.grant.{name}.count"] = value
-    if doc["basis"] == "declared":  # C32: the sum of the declared counts
-        total = _sum(*(counts[n] for n in _DECLARED_COUNTS))
-        if total is not None:
-            attrs["fabric.run.permissions.count"] = total
+    total: int | None = None  # C32: the sum of the declared counts
+    for attribute, declared, paths in _COUNTS:
+        count: int | None = None  # the lists' lengths summed; None when no list is present
+        for path in paths:
+            node: Any = doc
+            for part in path:
+                node = node.get(part) if type(node) is dict else None
+            if type(node) is list:
+                count = len(node) if count is None else count + len(node)
+        if count is not None:
+            attrs[attribute] = count
+            if declared:
+                total = count if total is None else total + count
+    if doc["basis"] == "declared" and total is not None:
+        attrs["fabric.run.permissions.count"] = total
     return attrs
 
 
@@ -780,10 +775,11 @@ def emit_grant(
     bodies: list[Body] = []
     if records.mode_of("run.permissions") != "omit":
         groups = pseudonymise_groups(records)
-        if key is not None and needs_key(doc, groups):
+        replaced = needs_key(doc, groups)
+        if key is not None and replaced:
             stored = _resorted(pseudonymise_grant(doc, key, **groups))
             bodies.append(Body("run.permissions", stored, "application/json"))
-        elif not needs_key(doc, groups):  # nothing to replace: the document as it is
+        elif not replaced:  # nothing to replace: the document as it is
             bodies.append(Body("run.permissions", doc, "application/json"))
         # else: no key, nothing to pseudonymise with: withheld, never clear (§7.3)
     handle = emit("run", attrs=out, records=records, name_hint="fabric.activity",
