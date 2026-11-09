@@ -55,6 +55,13 @@ import pytest
 
 from fabric.wire._transport import WireTransport
 
+from ._budget import remeasured, within
+from ._calibration import (
+    MAX_SCALE,
+    REFERENCE_CALIBRATION_NS,
+    calibrate,
+    scale_for,
+)
 from .test_wire_helpers import OPENAI_CHAT, ChunkStream, Rig, make_rig
 
 NON_STREAM_BUDGET_NS = 50_000
@@ -62,11 +69,6 @@ CHUNK_BUDGET_NS = 2_000
 NON_MATCH_BUDGET_NS = 5_000
 BUDGETS = {"non_match": NON_MATCH_BUDGET_NS, "matched": NON_STREAM_BUDGET_NS,
            "chunk": CHUNK_BUDGET_NS}  # fmt: skip
-# The reference hardware's calibration time (minimum of CALIBRATION_RUNS runs), and
-# the largest slowdown the budgets are scaled for (spec 047 §4 item 10).
-REFERENCE_CALIBRATION_NS = 1_030_000
-MAX_SCALE = 4.0
-CALIBRATION_RUNS = 30
 BODY = b'{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}'
 REPLY = b'{"id":"c","choices":[{"index":0,"message":{"role":"assistant","content":"ok"}}]}'
 CHUNKS = [bytes([65 + i % 26]) * 32 for i in range(2000)]
@@ -77,41 +79,6 @@ WARMUP = 50
 
 
 # --- the measurement (runs in a fresh interpreter) ------------------------------------
-
-
-def _calibration_workload() -> int:
-    """Fixed, deterministic interpreter-bound work: the machine's speed reference."""
-    table: dict[int, int] = {}
-    total = 0
-    for i in range(20_000):
-        key = i & 255
-        table[key] = table.get(key, 0) + 1
-        total += len(str(i))
-    return total + len(table)
-
-
-def calibrate(runs: int = CALIBRATION_RUNS) -> int:
-    """Minimum time (ns) of the calibration workload on this machine, right now."""
-    for _ in range(3):
-        _calibration_workload()
-    best = None
-    gc.collect()
-    gc.disable()
-    try:
-        for _ in range(runs):
-            start = time.perf_counter_ns()
-            _calibration_workload()
-            elapsed = time.perf_counter_ns() - start
-            best = elapsed if best is None else min(best, elapsed)
-    finally:
-        gc.enable()
-    assert best is not None
-    return best
-
-
-def scale_for(calibration_ns: int) -> float:
-    """The factor every budget is multiplied by on a machine with this calibration."""
-    return min(MAX_SCALE, max(1.0, calibration_ns / REFERENCE_CALIBRATION_NS))
 
 
 def _round_overheads(
@@ -289,8 +256,6 @@ def calibrate_untraced_and_traced(runs: int = 5) -> tuple[int, int, bool]:
 def measured() -> dict[str, Any]:
     """Re-measured in a fresh interpreter (three attempts at most) only while a budget is
     missed: shared CI runners are noisy, the budgets stay as written (``tests/_budget.py``)."""
-    from ._budget import remeasured, within  # noqa: PLC0415 - _budget imports this suite's calibration
-
     return remeasured(_measured, lambda found: within(found, BUDGETS))
 
 
@@ -315,8 +280,6 @@ def measured_protect() -> Iterator[dict[str, Any]]:
 
     with RedactionServer() as server, pytest.MonkeyPatch.context() as patch:
         patch.setenv("FABRIC_REDACTION_ENDPOINT", server.endpoint)
-        from ._budget import remeasured, within  # noqa: PLC0415
-
         yield remeasured(lambda: _measured(protect=True), lambda found: within(found, BUDGETS))
 
 

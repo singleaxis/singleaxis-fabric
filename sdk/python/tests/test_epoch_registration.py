@@ -425,7 +425,7 @@ _ALLOCATE = textwrap.dedent(
     from fabric.wire import _registration
     from fabric.wire._forks import ForkLedger
     from fabric.wire._spool import Spool
-    from tests.test_wire_passivity import calibrate, scale_for
+    from tests._calibration import calibrate, scale_for
     spool = Spool(sys.argv[1], 1 << 26)
     allocator = SourceAllocator("node-1")
     registration = _registration.register(spool, allocator.source_id, allocator.epoch)

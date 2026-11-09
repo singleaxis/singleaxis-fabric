@@ -44,8 +44,9 @@ from fabric.hooks import _config, _exec
 from fabric.hooks._patches import PatchSet
 from fabric.hooks._producer import HookProducer
 
+from ._calibration import MAX_SCALE, calibrate, scale_for
 from .test_hooks_exec import SH, Rig, _close, _rig
-from .test_wire_passivity import MAX_SCALE, SDK_ROOT, calibrate, scale_for
+from .test_wire_passivity import SDK_ROOT
 
 START_BUDGET_NS = 50_000  # P4-EXEC: per start or outcome
 INACTIVE_BUDGET_NS = 5_000  # P4-EXEC: inactive or nonmatching
@@ -432,7 +433,7 @@ def _measured(sleep_factor: float = 0.0) -> dict[str, Any]:
 def measured() -> dict[str, Any]:
     """Re-measured in a fresh interpreter (three attempts at most) only while a budget is
     missed: shared CI runners are noisy, the budgets stay as written (``tests/_budget.py``)."""
-    from ._budget import remeasured, within  # noqa: PLC0415 - _budget imports this suite's calibration
+    from ._budget import remeasured, within  # noqa: PLC0415
 
     return remeasured(_measured, lambda found: within(found, BUDGETS))
 

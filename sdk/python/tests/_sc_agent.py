@@ -183,7 +183,7 @@ class ToolLoop:
     tool-call id to a ``control_check`` scope (SC-CP's third run)."""
 
     url: str
-    check: Check = can_use
+    check: Check = field(default_factory=lambda: can_use)
     around: Around | None = None
     report_call_id: bool = False
     caught: list[BaseException] = field(default_factory=list)

@@ -23,8 +23,7 @@ from typing import Any
 
 from opentelemetry.sdk.trace import TracerProvider
 
-import fabric
-from fabric import LocalFilesystemContentStore, _records_api, records, wire
+from fabric import Fabric, FabricConfig, LocalFilesystemContentStore, _records_api, records, wire
 from fabric._rec_extension import hook_record
 from fabric.wire import WireConfig
 
@@ -115,8 +114,8 @@ def measure(mode: str) -> dict[str, list[Batch]]:
 
         _records_api.records_input = slow  # type: ignore[attr-defined]
     sizes: dict[str, Any] = {"rounds": 3, "samples": 10, "warmup": 2} if blocked else {}
-    config = fabric.FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
-    client = fabric.Fabric(config, tracer=TracerProvider().get_tracer("bench"))
+    config = FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
+    client = Fabric(config, tracer=TracerProvider().get_tracer("bench"))
     out: dict[str, list[Batch]] = {}
     with client.decision(session_id="s", request_id="r") as decision:
         for name, (_, off, bare) in _scenarios(decision).items():
@@ -127,11 +126,14 @@ def measure(mode: str) -> dict[str, list[Batch]]:
                                          patch_httpx=False, patch_aiohttp=False,
                                          id_key=ID_KEY))  # fmt: skip
         try:
-            for name, (on, _, bare) in _scenarios(decision).items():
-                # On: a records API is timed whole (its record included); the wrapper as
-                # its overhead over the bare check, which is the customer's own cost.
-                out[f"{name}.on"] = batches(on, baseline=bare,
-                                            between=lambda: handle.flush(5.0), **sizes)  # fmt: skip
+            # On: a records API is timed whole (its record included), the wrapper as its
+            # overhead over the bare check (the customer's own cost); inside a run scope, as
+            # an agent's records are (outside one, the run id is a per-epoch constant).
+            with wire.run("bench-run"):
+                for name, (on, _, bare) in _scenarios(decision).items():
+                    out[f"{name}.on"] = batches(on, baseline=bare,
+                                                between=lambda: handle.flush(5.0),
+                                                **sizes)  # fmt: skip
         finally:
             handle.flush(5.0)
             wire.uninstall()

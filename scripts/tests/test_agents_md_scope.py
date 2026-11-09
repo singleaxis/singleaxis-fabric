@@ -26,7 +26,9 @@ AGENTS = ROOT / "AGENTS.md"
 
 # AGENTS.md as it stood before WP7-3 applied section 11.
 PRE_057_SHA256 = "36228eeca97bfba805b004db38e5f33a18f7ec26416ec9e1c040ec42018263f4"
-OTLP_BULLET = "- preservation of OTLP identity and causal correlation supplied by the source;\n"
+OTLP_BULLET = (
+    "- preservation of OTLP identity and causal correlation supplied by the source;\n"
+)
 CONTROL_RUNTIME_BULLET = (
     "- **Optional future customer-side Control Runtime:** Enforce customer-approved\n"
     "  decisions. It is separate from the default recorder and is never enabled by\n"
@@ -62,10 +64,14 @@ def test_section_11_has_the_four_approved_blocks() -> None:
     blocks = _quoted_blocks()
     assert len(blocks) == 4, blocks
     scope, evaluation, enforcement, runtime = blocks
-    assert scope.startswith("- recording, as observed or reported evidence, the security")
+    assert scope.startswith(
+        "- recording, as observed or reported evidence, the security"
+    )
     assert "`enforced_by_fabric=false`" in scope
     assert evaluation.startswith("- continuous evaluation services, judges or finding")
-    assert enforcement.startswith("- advisory recommendations or enforcement orchestration,")
+    assert enforcement.startswith(
+        "- advisory recommendations or enforcement orchestration,"
+    )
     assert runtime.startswith("A separately installed Control Runtime")
     assert "OD-20" in _section_11()
 
@@ -73,9 +79,13 @@ def test_section_11_has_the_four_approved_blocks() -> None:
 def test_agents_md_places_each_block_where_section_11_says() -> None:
     text = AGENTS.read_text(encoding="utf-8")
     scope, evaluation, enforcement, runtime = _quoted_blocks()
-    in_scope = text[text.index("## In scope for the OSS core"):text.index("## Outside the OSS")]
-    outside = text[text.index("## Outside the OSS core"):text.index("## Product and repository")]
-    boundary = text[text.index("## Product and repository boundary"):]
+    in_scope = text[
+        text.index("## In scope for the OSS core") : text.index("## Outside the OSS")
+    ]
+    outside = text[
+        text.index("## Outside the OSS core") : text.index("## Product and repository")
+    ]
+    boundary = text[text.index("## Product and repository boundary") :]
     assert OTLP_BULLET + scope in in_scope
     assert evaluation in outside and enforcement in outside
     assert OLD_EVALUATION not in text and OLD_ENFORCEMENT not in text
@@ -100,5 +110,8 @@ def test_the_agents_md_change_is_exactly_section_11() -> None:
 def test_the_recorder_scope_statement_keeps_record_only_language() -> None:
     """The added scope bullet records decisions; it never makes Fabric the decider."""
     scope = _quoted_blocks()[0]
-    assert "never computes,\n  applies, waits for or returns any of these decisions" in scope
+    assert (
+        "never computes,\n  applies, waits for or returns any of these decisions"
+        in scope
+    )
     assert "never depends on a particular agent framework" in scope

@@ -31,6 +31,7 @@ import pytest
 from fabric.hooks import _sandbox, _sandbox_e2b
 from fabric.hooks._producer import HookProducer, UnsupportedChannel
 
+from ._calibration import MAX_SCALE, calibrate, scale_for
 from .test_hooks_exec_passivity import ROUNDS, _rounds, _SlowOff
 from .test_hooks_sandbox_e2b import (
     ENV_CANARY,
@@ -47,7 +48,7 @@ from .test_hooks_sandbox_e2b import (
 from .test_hooks_sandbox_e2b import (
     _isolated as _isolated,  # noqa: PLC0414 - the e2b suite's isolation, autouse here too
 )
-from .test_wire_passivity import MAX_SCALE, SDK_ROOT, calibrate, scale_for
+from .test_wire_passivity import SDK_ROOT
 
 server_fixture = pytest.fixture(scope="module", name="server")(serve)  # this module's own
 
@@ -279,7 +280,7 @@ def _measured(sleep_factor: float = 0.0) -> dict[str, Any]:
 def measured() -> dict[str, Any]:
     """Re-measured in a fresh interpreter (three attempts at most) only while a budget is
     missed: shared CI runners are noisy, the budgets stay as written (``tests/_budget.py``)."""
-    from ._budget import remeasured, within  # noqa: PLC0415 - _budget imports this suite's calibration
+    from ._budget import remeasured, within  # noqa: PLC0415
 
     return remeasured(_measured, lambda found: within(found, BUDGETS))
 

@@ -51,12 +51,11 @@ from typing import Any
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
 
-import fabric
 import fabric._rec_check as rec_check
 import fabric._rec_controls as rec_controls
 import fabric._rec_extension as rec_extension
 import fabric._rec_grant as rec_grant
-from fabric import records
+from fabric import Fabric, FabricConfig, records
 from fabric._capture_types import COUNTERS, STRICT_ENV
 from fabric.reconstruct._inputs import pseudonym
 
@@ -382,9 +381,9 @@ class Sc0Agent:
     extension it loads). Every line is a passive record; the loop's own logic decides."""
 
     def __init__(self, url: str, tracer_provider: Any) -> None:
-        config = fabric.FabricConfig(tenant_id="tenant-sc", agent_id="workspace-agent",
+        config = FabricConfig(tenant_id="tenant-sc", agent_id="workspace-agent",
                                      profile="permissive")  # fmt: skip
-        self.client = fabric.Fabric(config, tracer=tracer_provider.get_tracer("sc-0"))
+        self.client = Fabric(config, tracer=tracer_provider.get_tracer("sc-0"))
         self.url = url
         self.loop: ToolLoop | None = None
 

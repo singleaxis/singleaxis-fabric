@@ -24,6 +24,7 @@ from typing import Any
 
 import pytest
 
+from ._calibration import calibrate, scale_for
 from .test_wire_passivity import (
     BODY,
     BUDGETS,
@@ -34,8 +35,6 @@ from .test_wire_passivity import (
     WARMUP,
     _fresh_interpreter,
     _round_overheads,
-    calibrate,
-    scale_for,
 )
 
 CHUNK = b"x" * 32
@@ -159,7 +158,7 @@ def _measured(sleep_factor: float = 0.0) -> dict[str, Any]:
 def measured() -> dict[str, Any]:
     """Re-measured in a fresh interpreter (three attempts at most) only while a budget is
     missed: shared CI runners are noisy, the budgets stay as written (``tests/_budget.py``)."""
-    from ._budget import remeasured, within  # noqa: PLC0415 - _budget imports this suite's calibration
+    from ._budget import remeasured, within  # noqa: PLC0415
 
     return remeasured(_measured, lambda found: within(found, BUDGETS))
 

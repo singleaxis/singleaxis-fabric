@@ -52,12 +52,12 @@ from typing import Any
 
 import pytest
 
-import fabric
+import fabric._rec_check as rec_check
 import fabric._rec_controls as rec_controls
 import fabric._rec_extension as rec_extension
 import fabric._rec_grant as rec_grant
 import fabric._rec_run as rec_run
-from fabric import records
+from fabric import Fabric, FabricConfig, records
 from fabric._capture_types import COUNTERS, STRICT_ENV
 from fabric._manifest import DEFAULT_STATES, POINTS, RUNTIME_POINTS
 
@@ -178,8 +178,8 @@ def test_b1_the_scan_finds_a_wait() -> None:
 
 def _handles() -> list[tuple[str, Any]]:
     """One handle of every records API (recorded, under a capture handle)."""
-    config = fabric.FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
-    client = fabric.Fabric(config, tracer=fabric_tracer())
+    config = FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
+    client = Fabric(config, tracer=fabric_tracer())
     out: list[tuple[str, Any]] = [
         ("record_control", records.record_control("policy", decision="deny")),
         ("record_grant", records.record_grant({"basis": "declared",
@@ -257,9 +257,14 @@ def test_b2_wrapper_returns_and_raises_the_same_objects(monkeypatch: pytest.Monk
         assert raised.value is error
         frames = [f.name for f in traceback.extract_tb(raised.value.__traceback__)]
         assert frames[-1] == "refuse"  # the check's own frame, never replaced
-        with pytest.raises(PermissionError) as in_block, records.control_check() as scope:
-            scope.result = value
-            raise error
+
+        def block() -> None:
+            with records.control_check() as scope:
+                scope.result = value
+                refuse()
+
+        with pytest.raises(PermissionError) as in_block:
+            block()
         assert in_block.value is error
         assert len(spans(handle, "control")) == 4
 
@@ -337,8 +342,6 @@ def _inject(fault: str, handle: Any, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(rec_grant, "emit_grant", _boom)
         monkeypatch.setattr(rec_run, "emit_grant", _boom)
         monkeypatch.setattr(rec_extension, "emit_extension", _boom)
-        import fabric._rec_check as rec_check  # noqa: PLC0415
-
         monkeypatch.setattr(rec_check, "emit_control", _boom)
     elif fault == "block":
         monkeypatch.setattr(handle.pipeline, "_queue", _BlockingQueue())
@@ -381,9 +384,7 @@ def test_b5_invariants_are_constants_never_parameters() -> None:
     for fn in (records.record_control, records.control_check, rec_controls.emit_control):
         params = set(inspect.signature(fn).parameters)
         assert not params & {"enforced_by_fabric", "authentication"}, fn
-    from fabric._rec_check import KEYWORDS  # noqa: PLC0415
-
-    assert not KEYWORDS & {"enforced_by_fabric", "authentication"}
+    assert not rec_check.KEYWORDS & {"enforced_by_fabric", "authentication"}
 
 
 def test_b5_every_control_path_records_both_invariants(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -394,8 +395,8 @@ def test_b5_every_control_path_records_both_invariants(monkeypatch: pytest.Monke
         records.control_check(control="acl")(lambda: False)()
         with records.control_check(control="acl", exit_means="allow"):
             pass
-        config = fabric.FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
-        client = fabric.Fabric(config, tracer=fabric_tracer())
+        config = FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
+        client = Fabric(config, tracer=fabric_tracer())
         with client.decision(session_id="s", request_id="r") as decision:
             decision.record_control("guardrail", decision="deny")
         rows = spans(handle, "control")

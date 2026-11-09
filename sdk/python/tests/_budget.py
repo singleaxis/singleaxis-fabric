@@ -38,7 +38,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from .test_wire_passivity import MAX_SCALE, calibrate, scale_for
+from ._calibration import MAX_SCALE, calibrate, scale_for
 
 SDK_ROOT = Path(__file__).resolve().parents[1]
 ROUNDS = 9
