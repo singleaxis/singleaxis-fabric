@@ -332,3 +332,23 @@ def test_status_is_quiet_when_the_policy_masks_nothing(tmp_path: Path) -> None:
     code, status, _ = _status(env)
     assert "content_withheld_roles" not in status["wire"]
     assert code == 0, status["warnings"]
+
+
+def test_unmatched_model_host_warning_never_reaches_agent_stderr_without_logging_config() -> None:
+    """Installed in code, with no logging configured, a diagnostic must not print into the
+    agent's stderr (spec 057 B1-B4); Python's last-resort handler would otherwise do so."""
+    code = (
+        "import logging, fabric.wire as w\n"
+        "from fabric.wire._unmatched import UnmatchedModelHosts\n"
+        "assert not logging.getLogger().handlers\n"
+        "UnmatchedModelHosts().note(\n"
+        "    'POST', 'https', 'llm.example.internal', 443, '/v1/chat/completions'\n"
+        ")\n"
+        "logging.getLogger('fabric.wire').warning('fabric.wire: probe')\n"
+    )
+    out = subprocess.run(  # noqa: S603 - the test's own interpreter and code
+        [sys.executable, "-c", code], check=False, capture_output=True, text=True, timeout=60
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stderr == ""
+    assert out.stdout == ""

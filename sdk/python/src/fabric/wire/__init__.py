@@ -82,6 +82,12 @@ __all__ = [
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.wire")
+# Library logging etiquette and spec 057 B1-B4: with no logging configured by the app,
+# Python's last-resort handler would print these diagnostics into the agent's stderr. A
+# NullHandler stops that; an app that configures logging still receives them, and
+# ``python -m fabric.wire status`` / ``FABRIC_WIRE_DIAGNOSTICS=stderr`` report them.
+if not any(isinstance(h, logging.NullHandler) for h in _LOG.handlers):
+    _LOG.addHandler(logging.NullHandler())
 # Configuration diagnostics, class-only text; ``python -m fabric.wire status`` reports the
 # same lines (``_status.py``) without installing anything.
 _MSG_NOT_INSTALLED = "fabric.wire: capture not installed (%s)"

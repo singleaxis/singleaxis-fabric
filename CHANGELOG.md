@@ -179,8 +179,11 @@ it never makes, applies, waits for or returns one.
   still sent unchanged and not recorded, but it is now counted
   (`stats().unmatched_model_calls`), listed in `handle.status()` as
   `unmatched_model_hosts` with the `FABRIC_WIRE_ENDPOINTS` value that would
-  record it, and logged once per host on Fabric's diagnostics channel, never
-  on the agent's own output under autoload.
+  record it, and logged once per host on Fabric's diagnostics channel. It
+  never prints into the agent's own output: the `fabric.wire` logger now has
+  a `NullHandler`, so with Fabric installed in code and no logging configured,
+  its diagnostics no longer reach stderr through Python's last-resort handler.
+  An app that configures logging still receives them.
 - **`status` says when the policy withholds content.** Content capture can
   be enabled while the capture policy masks roles (`redact`, for example on
   `terminal.argv`) that the autoload cannot transform, so their content is
