@@ -288,8 +288,13 @@ it never makes, applies, waits for or returns one.
   Ids are minted without building a big integer, a record without a body
   skips the body checks, a capture point is validated once, the bounded JSON
   walker no longer keeps an explicit stack and reuses one C encoder, and a
-  keyed pseudonym derives its per-type key once. With these, `record_control`
-  and `record_grant` meet their budgets on every CI Python version.
+  keyed pseudonym derives its per-type key once. Python 3.11 on CI still
+  measured `record_control` at 20.7 µs and `record_grant` at 53 µs, so a
+  record's own attributes are now checked once per distinct set of repeating
+  values (the three that change on every record are still checked each
+  time), the record job is one tuple allocation, and a grant whose document
+  is provably within the walker's limits stores and digests its canonical
+  text without walking it again.
   What is recorded is unchanged: ids, digests, pseudonyms, walker outcomes
   and stored bytes are the same, and tests compare the new code with the old
   on the same inputs.
