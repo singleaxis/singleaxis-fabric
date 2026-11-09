@@ -2,8 +2,8 @@
 title: Agent action reconstruction — linking model decisions, tool calls, effects and host evidence
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 10
-last_updated: 2026-11-08
+revision: 11
+last_updated: 2026-11-09
 owner: recorder-engineering
 depends_on: ["049", "050", "053"]
 related: ["030", "031", "047", "048", "054", "055"]
@@ -11,6 +11,29 @@ related: ["030", "031", "047", "048", "054", "055"]
 
 # 056 — Agent action reconstruction
 
+> **Revision 11** (2026-11-09, integration audit F10/N8): an effect the
+> agent process runs before its first model call of the run is a **startup
+> effect** (rule S0, §4.2), reported in `attribution.startup_effects`
+> (counted, the first 64 listed), never attributed to a call, not counted in
+> `links`, and not a reason of the `effects` chain, so it does not make the
+> run `partial`. The case: an OpenAI-style client library runs `uname -p`
+> at import to describe the platform, so with `FABRIC_WIRE_EXEC=1` every
+> run read `partial(unattributed_effect)` although nothing the model asked
+> for went unexplained. The decision is mechanical, not a guess about
+> intent: S0 applies only when (1) the effect has no reported parent (A0,
+> or an explicit tool-call scope), (2) the run has a captured exchange on
+> the effect's own epoch (one process, one exact sequence order) and the
+> effect's sequence is lower than every such exchange's, and (3) no
+> unverified position (`effect_sequence_gaps`) lies below the effect,
+> because a lost position could have been a model call. Anything else is
+> decided by A1-A4 exactly as before: an effect after the first call with
+> no open window is still A4 and `partial(unattributed_effect)`, and a
+> process with no model call on the effect's epoch (a tool worker, rev 6)
+> has no first call, so its effects stay A4. A startup effect keeps its
+> host anchors (§4.3). Fixtures `edge-startup-effect` and
+> `edge-startup-after-gap` pin it; `a4-no-window` now places its effect
+> after a model call that opened no window, so it still pins A4.
+>
 > **Revision 10** (2026-11-08, after the 0.12.0 acceptance N2): a host
 > event's clock margin is the clock uncertainty of the manifest in force for
 > its record, not the widest value its source's manifests declare. 049 §2.4
@@ -267,6 +290,16 @@ of these hold:
 | A2 Single window | Exactly one candidate | `caused_by` → it | `sequence_bracket` | `inferred` | `tentative` | `resolved` |
 | A3 Several windows | Two or more candidates, and A1 does not single one out | `caused_by` → every candidate | `sequence_bracket` | `inferred` | `tentative` | `ambiguous` |
 | A4 No window | No candidate | none; E is listed in `attribution.unattributed_effects` | — | — | — | `unresolved` |
+
+**Startup effects (rule S0, revision 11).** Before A1-A4 (after A0), an
+effect E is a startup effect when E has no reported parent, the run has a
+captured exchange on E's epoch, `seq(E)` is lower than the sequence of
+every such exchange, and no unverified position lies below `seq(E)`. S0
+makes no link. E is listed in `attribution.startup_effects`, is not
+counted in `links` and is not a reason of any chain. It is the work a
+process does before it first asks the model anything (an SDK's platform
+probe at import); because it comes before every model call, no call can
+have caused it.
 
 Notes:
 - A1 needs both contents in the verifier's input. In metadata-only modes,
@@ -707,6 +740,8 @@ stays the silent-loss run it was (every sequence missing).
 
 `attribution` object: counts of `resolved`, `ambiguous` and `unresolved`
 links by method; `unattributed_effects[]` (event ids, at most 64);
+`startup_effects` (revision 11: `{count, effects[]}`, at most 64, present
+only when there is one; never a chain reason);
 `effects_not_observed` counts by reason; `output_match`
 (`applied`, `not_applicable` with reason); `unexplained_host_events`
 (count and the first 64 event ids).
@@ -733,6 +768,10 @@ run r-3f2a…  decisions: complete  actions: complete  effects: partial(unattrib
   …
   unattributed effects: 1   (exec uname -a, seq 88: no open tool call)
 ```
+
+A startup effect (S0, revision 11) is a row marked
+`(startup: before the first model call)` and a closing line
+`startup effects: N (…: before the first model call; not attributed, not a gap)`.
 
 M2 adds two row kinds (the view stays a rendering; no contract):
 
@@ -859,6 +898,8 @@ M2 adds (WP6-11; file names under `rules/` and `invalid/`):
 | `edge-quiet-host-epoch.json` | A declared host source whose epoch holds only a manifest and heartbeats in the window: a host source (never in `sources[]` gaps), `corroboration` from its heartbeats |
 | `edge-sandbox-peer-port.json` | A model endpoint and a sandbox provider on one address, different ports: `--sandbox-peer ADDRESS:PORT` classifies only the provider's connections |
 | `edge-scope-late.json` | A `scope_late` upstream loss inside the run window: `corroboration` `partial(source_gap)` |
+| `edge-startup-effect.json` | Revision 11: `uname -p` before the first model call is S0 (listed in `startup_effects`, no link, `effects` complete); the tool's own effect is still A1 |
+| `edge-startup-after-gap.json` | Revision 11: the same effect behind an unverified position stays A4 (`partial(sequence_gap, unattributed_effect)`) |
 | `edge-clock-per-manifest.json` | Revision 10: base, widened (67.5 ms) and base manifests of one host epoch; each exec record takes its governing manifest's margin, so only the record under the widened manifest anchors its effect (H2) |
 | `edge-sandbox-unlinked.json` | Sandbox-scope events with no reported id: `sandbox_events_unlinked`, not unexplained; `corroboration` unaffected |
 | `edge-sandbox-before-effect.json` | Events of the created id earlier than the effect start minus the margin: not linked |

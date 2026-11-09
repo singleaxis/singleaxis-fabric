@@ -131,7 +131,11 @@ def test_protected_global_without_endpoint_does_not_install_from_env(
         assert wire.install_from_env(env) is None
     assert wire.current_handle() is None
     messages = [r.getMessage() for r in caplog.records if r.name == "fabric.wire"]
-    assert messages == ["fabric.wire: capture not installed (ProtectedGlobalTracerProvider)"]
+    assert messages == [
+        "fabric.wire: capture not installed (ProtectedGlobalTracerProvider): a Fabric-protected "
+        "global tracer provider cannot carry wire spans. Fix: set OTEL_EXPORTER_OTLP_ENDPOINT: "
+        "capture then delivers through its own private tracer provider"
+    ]
     with pytest.raises(ValueError, match="protected global tracer provider"):
         wire.install(WireConfig(store=LocalFilesystemContentStore(
             root=str(tmp_path / "s2"), tenant_id="tenant-a")))  # fmt: skip
@@ -402,7 +406,8 @@ def test_install_from_env_fails_open_on_a_foreign_spool_directory(
     with caplog.at_level(logging.WARNING, logger="fabric.wire"):
         assert wire.install_from_env() is None
     assert [r.getMessage() for r in caplog.records if r.name == "fabric.wire"] == [
-        "fabric.wire: capture not installed (ValueError)"
+        "fabric.wire: capture not installed (ValueError): FABRIC_WIRE_SPOOL_DIR holds files the "
+        "wire spool does not own"
     ]
     assert sorted(p.name for p in root.iterdir()) == ["state.json"]  # nothing written
 

@@ -152,9 +152,11 @@ def test_every_rule_fixture_named_by_the_task_is_present() -> None:
             "a4-no-window", "edge-parallel-distinct-outputs", "edge-parallel-metadata-only",
             "edge-clock-margin-boundary", "edge-background-thread", "ar1-run",
             "ar1-negative-d-metadata-only", "edge-exec-in-place", "edge-pid-reuse",
-            "edge-same-pid-other-parent"} <= names  # fmt: skip
+            "edge-same-pid-other-parent", "edge-startup-effect",
+            "edge-startup-after-gap"} <= names  # fmt: skip
     # 26 M1 + 21 M2 (WP6-11) + 5 agent identity (v0.11.2) + 1 per-record clock (rev. 10)
-    assert len(RULE_FIXTURES) == 53
+    # + 2 startup effects (rev. 11)
+    assert len(RULE_FIXTURES) == 55
 
 
 @pytest.mark.parametrize("path", RULE_FIXTURES, ids=lambda p: p.stem)

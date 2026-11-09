@@ -107,7 +107,9 @@ def test_node_mode_without_a_traces_endpoint_installs_nothing(
     caplog.set_level(logging.WARNING, logger="fabric.wire")
     assert wire.install_from_env({**NODE, "FABRIC_WIRE_SPOOL_DIR": str(tmp_path)}) is None
     assert [r.getMessage() for r in caplog.records if r.name == "fabric.wire"] == [
-        "fabric.wire: capture not installed (ValueError)"
+        "fabric.wire: capture not installed (ValueError): Fabric capture needs an OTLP traces "
+        "endpoint. Fix: set OTEL_EXPORTER_OTLP_ENDPOINT to the Fabric Node (http://127.0.0.1:4318 "
+        "for a local Node)"
     ]
 
 

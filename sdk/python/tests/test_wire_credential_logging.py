@@ -180,7 +180,7 @@ def test_construction_failures_log_no_secret(
         assert MARK not in str(exc) and exc.__cause__ is None
 
 
-def test_autoload_failure_logs_the_class_only(
+def test_autoload_failure_logs_the_reason_never_a_value(
     captured: Capture, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("sys._fabric_wire_autoload_ran", True, raising=False)
@@ -192,9 +192,10 @@ def test_autoload_failure_logs_the_class_only(
     sitecustomize._install()
     assert wire.current_handle() is None
     assert [r.getMessage() for r in captured.records if r.name == "fabric.wire"] == [
-        "fabric.wire: capture not installed (ValueError)"
+        "fabric.wire: capture not installed (ValueError): node mode needs FABRIC_TENANT_ID, "
+        "FABRIC_WIRE_SPOOL_DIR, no store"
     ]
-    assert captured.leaks() == []
+    assert captured.leaks() == []  # the reason names variables, never their values
 
 
 def test_guarded_export_sanitizes_exporter_logs(captured: Any) -> None:

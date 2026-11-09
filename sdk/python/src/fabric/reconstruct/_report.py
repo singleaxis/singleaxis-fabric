@@ -246,6 +246,7 @@ def attribution_json(
     unexplained: Sequence[str],
     unexplained_count: int | None = None,
     lineage_truncated: int = 0,
+    startup: Sequence[Mapping[str, str]] = (),
 ) -> dict[str, Any]:
     """The run's ``attribution`` object (spec 056 §4.5): link counts by basis in
     :data:`ATTRIBUTION_BASES` order (a basis with no decision is absent), the first
@@ -253,7 +254,9 @@ def attribution_json(
     unexplained host event ids (time order) with their full counts, the tool calls without
     an attributed effect by reason, the output-match state, and ``lineage_truncated`` only
     when nonzero. ``unexplained_count`` is the full count when ``unexplained`` holds only
-    the first ids (``None``: ``len(unexplained)``)."""
+    the first ids (``None``: ``len(unexplained)``). ``startup_effects`` (spec 056 revision
+    11: the effects the process ran before its first model call, ``{attempt_uid,
+    event_id}``, first :data:`LIST_MAX` with the full count) only when there is one."""
 
     out: dict[str, Any] = {
         "links": {
@@ -280,6 +283,14 @@ def attribution_json(
     }
     if lineage_truncated:
         out["lineage_truncated"] = lineage_truncated
+    if startup:
+        out["startup_effects"] = {
+            "count": len(startup),
+            "effects": [
+                {"attempt_uid": entry["attempt_uid"], "event_id": entry["event_id"]}
+                for entry in startup[:LIST_MAX]
+            ],
+        }
     return out
 
 

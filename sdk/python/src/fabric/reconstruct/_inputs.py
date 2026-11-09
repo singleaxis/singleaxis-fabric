@@ -308,6 +308,12 @@ def read_span_file(
             whole = None
         if isinstance(whole, dict) and "resourceSpans" in whole:
             return "otlp_json", _otlp_spans(whole, label)
+        if isinstance(whole, dict) and str(whole.get("schema_version", "")).startswith("fabric."):
+            # A report (``--out``) or another Fabric document left among the span files.
+            raise ReconstructInputError(
+                f"{label}: a Fabric report or document, not a span export; --spans takes "
+                f"{ACCEPTED_INPUTS}"
+            )
     fmt: SpanFormat | None = None
     records: list[SpanRecord] = []
     for lineno, line in enumerate(text.splitlines(), start=1):
@@ -345,9 +351,20 @@ def _otlp_proto_spans(data: bytes, label: str) -> list[SpanRecord]:
     return _otlp_spans(MessageToDict(request), label)
 
 
+#: The span files a ``--spans`` directory stands for: OTLP protobuf requests (``*.otlp``, as
+#: ``make export-spans`` copies them) and OTLP/JSON or sink JSONL (``*.json``, ``*.jsonl``,
+#: as a collector file exporter or the test sink writes them).
+SPAN_FILE_SUFFIXES = (OTLP_PROTO_SUFFIX, ".json", ".jsonl")
+ACCEPTED_INPUTS = (
+    "a sink JSONL, OTLP/JSON (.json, .jsonl) or OTLP protobuf (.otlp) span file, or a "
+    "directory holding such files"
+)
+
+
 def list_span_inputs(paths: Sequence[str | os.PathLike[str]]) -> list[Path]:
-    """Span files in argument order; a directory stands for its ``*.otlp`` files (sorted by
-    name, not recursive). Errors name an input by position only, never by path."""
+    """Span files in argument order; a directory stands for its ``*.otlp``, ``*.json`` and
+    ``*.jsonl`` files (sorted by name, not recursive, hidden files skipped). Errors name an
+    input by position only, never by path."""
 
     files: list[Path] = []
     for index, path in enumerate(paths, start=1):
@@ -359,12 +376,17 @@ def list_span_inputs(paths: Sequence[str | os.PathLike[str]]) -> list[Path]:
             found = sorted(
                 entry
                 for entry in location.iterdir()
-                if entry.suffix.lower() == OTLP_PROTO_SUFFIX and entry.is_file()
+                if entry.suffix.lower() in SPAN_FILE_SUFFIXES
+                and not entry.name.startswith(".")
+                and entry.is_file()
             )
         except OSError:
             raise ReconstructInputError(f"--spans input {index}: cannot be read") from None
         if not found:
-            raise ReconstructInputError(f"--spans input {index}: directory holds no *.otlp files")
+            raise ReconstructInputError(
+                f"--spans input {index}: directory holds no *.otlp, *.json or *.jsonl files; "
+                f"--spans takes {ACCEPTED_INPUTS}"
+            )
         files.extend(found)
     return files
 

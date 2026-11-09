@@ -1,0 +1,175 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "s0-startup-effect-also-unattributed",
+  "rules": [
+    "A1",
+    "S0"
+  ],
+  "description": "Spec 056 revision 11: the process ran uname -p before its first model call (an SDK's platform probe at import). It is a startup effect: listed in startup_effects, never attributed to a call, not counted in links and not a reason; effects is complete. The tool's own effect is attributed by A1.",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 4100,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [],
+    "exchanges": [
+      {
+        "exchange_id": "82d8120a-f997-4c81-ac39-644cae51088c",
+        "sequence": 3,
+        "start_ns": 1791331200200000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_S1",
+            "name": "run_shell"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "8a3b09ea-6dab-476a-aea7-cb74a6498dad",
+        "sequence": 6,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_S1",
+            "text": "Command output:\n6.12.76-linuxkit\n8\n\n(exit 0)"
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "6bc8204f-7aab-4ea3-a2c8-fe375fb7f11f",
+        "event_id": "7483b96a-d8b9-4334-ae18-1f40a5db0880",
+        "label": "exec uname -p (client library probe at import)",
+        "sequence": 1,
+        "start_ns": 1791331200100000000,
+        "stdout": "x86_64\n"
+      },
+      {
+        "attempt_uid": "5e607ecc-10ce-447f-a04d-33a250d5688d",
+        "event_id": "bd9269c5-7c22-4eed-a29c-5c2061c7257d",
+        "label": "exec uname -r; nproc",
+        "sequence": 4,
+        "start_ns": 1791331201000000000,
+        "stdout": "6.12.76-linuxkit\n8\n"
+      }
+    ],
+    "host_events": []
+  },
+  "expected": {
+    "projection_links": [
+      {
+        "attempt_id": "5e607ecc-10ce-447f-a04d-33a250d5688d",
+        "links": [
+          {
+            "type": "caused_by",
+            "target": {
+              "namespace": "call",
+              "id": "p-1a5753d5739bc3bad672a6d3469fff46"
+            },
+            "provenance": "inferred",
+            "method": "output_match",
+            "confidence": "certain",
+            "state": "resolved"
+          }
+        ]
+      }
+    ],
+    "sensor_events": [],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "not_observed",
+        "reasons": [
+          "not_configured"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {
+        "output_match": {
+          "resolved": 1,
+          "ambiguous": 0,
+          "unresolved": 0
+        }
+      },
+      "unattributed_effects": {
+        "count": 1,
+        "effects": [
+          {
+            "attempt_uid": "6bc8204f-7aab-4ea3-a2c8-fe375fb7f11f",
+            "event_id": "7483b96a-d8b9-4334-ae18-1f40a5db0880"
+          }
+        ]
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 0
+      },
+      "output_match": {
+        "state": "applied"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      },
+      "startup_effects": {
+        "count": 1,
+        "effects": [
+          {
+            "attempt_uid": "6bc8204f-7aab-4ea3-a2c8-fe375fb7f11f",
+            "event_id": "7483b96a-d8b9-4334-ae18-1f40a5db0880"
+          }
+        ]
+      }
+    },
+    "trace": {
+      "effects": {
+        "6bc8204f-7aab-4ea3-a2c8-fe375fb7f11f": "S0",
+        "5e607ecc-10ce-447f-a04d-33a250d5688d": "A1"
+      },
+      "anchors": {},
+      "host_events": {},
+      "tool_calls": {
+        "p-1a5753d5739bc3bad672a6d3469fff46": "attributed"
+      }
+    }
+  }
+}

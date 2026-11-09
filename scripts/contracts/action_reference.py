@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reference rules of spec 056 (agent action reconstruction), over normalized inputs.
 
-This module is the executable form of spec 056 §4.2 (effect -> tool call, rules A0-A4),
+This module is the executable form of spec 056 §4.2 (effect -> tool call, rules A0-A4 and
+the startup rule S0 of revision 11),
 §4.3 (host event -> effect, rules H1-H5, the per-source pid-namespace mode and the sensor
 scope; M2 adds H5, the modes and the scope) and §4.5 (chain verdicts and the attribution
 summary). It reads the ``input`` object of a rule fixture
@@ -111,6 +112,38 @@ def _position(inp: Mapping[str, Any], record: Mapping[str, Any]) -> tuple[str, i
         record.get("segment_id", run["segment_id"]),
         record.get("source_epoch", agent["source_epoch"]),
     )
+
+
+def _epoch(inp: Mapping[str, Any], record: Mapping[str, Any]) -> tuple[str, int]:
+    agent = inp["agent"]
+    return (
+        record.get("source_id", agent["source_id"]),
+        record.get("source_epoch", agent["source_epoch"]),
+    )
+
+
+def startup_effects(inp: Mapping[str, Any], effects: Iterable[Mapping[str, Any]]) -> set[str]:
+    """§4.2 rule S0 (revision 11): the effects the agent process ran before its first model
+    call of the run. No reported parent; the run has an exchange on the effect's epoch and
+    the effect's sequence is lower than every such exchange's; no unverified position
+    (``effect_sequence_gaps``) lies below it, because a lost position could have been a
+    model call. Without an exchange on the epoch there is no first call: no S0."""
+    first: dict[tuple[str, int], int] = {}
+    for exchange in inp.get("exchanges", []):
+        key = _epoch(inp, exchange)
+        first[key] = min(first.get(key, exchange["sequence"]), exchange["sequence"])
+    gaps = [gap[0] for gap in inp.get("effect_sequence_gaps", [])]
+    found: set[str] = set()
+    for effect in effects:
+        if effect.get("reported_parent_attempt") or effect.get("reported_parent_call"):
+            continue
+        bound = first.get(_epoch(inp, effect))
+        if bound is None or effect["sequence"] >= bound:
+            continue
+        if any(start < effect["sequence"] for start in gaps):
+            continue
+        found.add(effect["attempt_uid"])
+    return found
 
 
 def candidates(
@@ -793,8 +826,15 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     links: dict[str, list[dict[str, Any]]] = {e["attempt_uid"]: [] for e in effects}
     attributed: set[str] = set()
     unattributed: list[Mapping[str, Any]] = []
+    startup: list[Mapping[str, Any]] = []
+    before_first_call = startup_effects(inp, effects)
     evaluated = ambiguous = False
     for effect in effects:
+        if effect["attempt_uid"] in before_first_call:
+            # S0 (revision 11): listed and counted, never attributed, never a chain reason.
+            trace["effects"][effect["attempt_uid"]] = "S0"
+            startup.append(effect)
+            continue
         rule, made, tried = attribute_effect(inp, effect, calls)
         evaluated = evaluated or tried
         trace["effects"][effect["attempt_uid"]] = rule
@@ -1142,6 +1182,14 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     }
     if truncated:
         attribution["lineage_truncated"] = len(truncated)
+    if startup:
+        attribution["startup_effects"] = {
+            "count": len(startup),
+            "effects": [
+                {"attempt_uid": e["attempt_uid"], "event_id": e["event_id"]}
+                for e in startup[:LIST_MAX]
+            ],
+        }
     # M2 summary objects: present when the input holds production scope facts (a sensor
     # scope on any host event) or declares sandbox peers, so M1 reports are unchanged.
     if any("scope" in e for e in inp.get("host_events", [])):
