@@ -1,0 +1,567 @@
+{
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "<uuid-17>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-18>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-19>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  3,
+                  3
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-20>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  4,
+                  4
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-21>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  5,
+                  5
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-22>",
+          "records": 2,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  6,
+                  7
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-23>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  9,
+                  9
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-24>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  11,
+                  11
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-25>",
+          "records": 2,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  13,
+                  14
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "<uuid-26>",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  15,
+                  15
+                ]
+              ],
+              "source_epoch": "<measured>",
+              "source_id": "s-<hex-2>"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 2,
+          "no_effect_channel": 0,
+          "none_in_window": 0
+        },
+        "links": {
+          "sequence_bracket": {
+            "ambiguous": 0,
+            "resolved": 2,
+            "unresolved": 0
+          }
+        },
+        "output_match": {
+          "state": "applied"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "complete"
+        },
+        "controls": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "complete"
+        },
+        "effects": {
+          "verdict": "complete"
+        }
+      },
+      "checks": {
+        "bytes": "passed",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "passed",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 5,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 16,
+            "last_sequence": 16,
+            "scope_id": "<uuid-1>",
+            "source_epoch": "<measured>",
+            "source_id": "s-<hex-2>"
+          }
+        ]
+      },
+      "evaluated_at": "<measured>",
+      "exchanges": [
+        {
+          "api": "openai.chat_completions",
+          "ended_at": "<measured>",
+          "exchange_id": "<uuid-2>",
+          "input_message_count": 2,
+          "model": "m-<hex-9>",
+          "objects": {
+            "request": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-3>",
+              "sha256": "<hex-4>",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-4>",
+              "sha256": "<hex-5>",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-<hex-8>",
+          "response_state": "complete",
+          "scope_id": "<uuid-1>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "source_sequence": 2,
+          "span_id": "<hex-7>",
+          "started_at": "<measured>",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [
+            "p-<hex-3>"
+          ],
+          "trace_id": "<hex-6>"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "<uuid-2>",
+          "ended_at": "<measured>",
+          "exchange_id": "<uuid-5>",
+          "input_message_count": 4,
+          "model": "m-<hex-9>",
+          "objects": {
+            "request": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-6>",
+              "sha256": "<hex-11>",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-7>",
+              "sha256": "<hex-12>",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-<hex-14>",
+          "response_state": "complete",
+          "scope_id": "<uuid-1>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "source_sequence": 8,
+          "span_id": "<hex-13>",
+          "started_at": "<measured>",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-<hex-3>"
+          ],
+          "tool_call_ids_emitted": [
+            "p-<hex-10>"
+          ],
+          "trace_id": "<hex-6>"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "<uuid-5>",
+          "ended_at": "<measured>",
+          "exchange_id": "<uuid-8>",
+          "input_message_count": 6,
+          "model": "m-<hex-9>",
+          "objects": {
+            "request": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-9>",
+              "sha256": "<hex-16>",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-10>",
+              "sha256": "<hex-17>",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-<hex-19>",
+          "response_state": "complete",
+          "scope_id": "<uuid-1>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "source_sequence": 10,
+          "span_id": "<hex-18>",
+          "started_at": "<measured>",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-<hex-3>",
+            "p-<hex-10>"
+          ],
+          "tool_call_ids_emitted": [
+            "p-<hex-15>"
+          ],
+          "trace_id": "<hex-6>"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "<uuid-8>",
+          "ended_at": "<measured>",
+          "exchange_id": "<uuid-11>",
+          "input_message_count": 8,
+          "model": "m-<hex-9>",
+          "objects": {
+            "request": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-12>",
+              "sha256": "<hex-21>",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-13>",
+              "sha256": "<hex-22>",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-<hex-24>",
+          "response_state": "complete",
+          "scope_id": "<uuid-1>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "source_sequence": 12,
+          "span_id": "<hex-23>",
+          "started_at": "<measured>",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-<hex-3>",
+            "p-<hex-10>",
+            "p-<hex-15>"
+          ],
+          "tool_call_ids_emitted": [
+            "p-<hex-20>"
+          ],
+          "trace_id": "<hex-6>"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "<uuid-11>",
+          "ended_at": "<measured>",
+          "exchange_id": "<uuid-14>",
+          "input_message_count": 10,
+          "model": "m-<hex-9>",
+          "objects": {
+            "request": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-15>",
+              "sha256": "<hex-25>",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": "<measured>",
+              "object_id": "<uuid-16>",
+              "sha256": "<hex-26>",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-<hex-28>",
+          "response_state": "complete",
+          "scope_id": "<uuid-1>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "source_sequence": 16,
+          "span_id": "<hex-27>",
+          "started_at": "<measured>",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-<hex-3>",
+            "p-<hex-10>",
+            "p-<hex-15>",
+            "p-<hex-20>"
+          ],
+          "tool_call_ids_emitted": [],
+          "trace_id": "<hex-6>"
+        }
+      ],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "r-<hex-1>",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 16,
+          "exchanges": 5,
+          "scope_id": "<uuid-1>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {
+          "provider_id": 3
+        },
+        "controls": [
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "permission_request"
+          },
+          {
+            "count": 1,
+            "decision": "escalate",
+            "derivation": "reported",
+            "kind": "permission_request"
+          },
+          {
+            "count": 1,
+            "decision": "deny",
+            "derivation": "reported",
+            "kind": "policy"
+          }
+        ],
+        "extensions": [
+          {
+            "count": 1,
+            "kind": "skill",
+            "observed_via": "reported",
+            "signature_status": "unsigned"
+          }
+        ],
+        "facts": [
+          {
+            "code": "grant_changed",
+            "count": 1,
+            "event_ids": [
+              "<uuid-27>"
+            ]
+          },
+          {
+            "code": "control_denied",
+            "count": 2,
+            "event_ids": [
+              "<uuid-28>",
+              "<uuid-29>"
+            ]
+          },
+          {
+            "code": "hook_errored",
+            "count": 1,
+            "event_ids": [
+              "<uuid-30>"
+            ]
+          },
+          {
+            "code": "extension_signature",
+            "count": 1,
+            "event_ids": [
+              "<uuid-31>"
+            ]
+          }
+        ],
+        "grants": {
+          "declared": 2,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": [
+          {
+            "basis": "reported_unknown",
+            "count": 1,
+            "outcome": "blocked"
+          },
+          {
+            "basis": "reported_unknown",
+            "count": 1,
+            "outcome": "errored"
+          }
+        ]
+      },
+      "segments": [
+        {
+          "last_sequence": 16,
+          "manifest_digest": "<hex-30>",
+          "predecessors": [
+            "none"
+          ],
+          "resumable": false,
+          "seal_digest": "<hex-31>",
+          "segment_id": "seg-<hex-29>",
+          "source_epoch": "<measured>",
+          "source_id": "s-<hex-2>",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [
+        {
+          "exchange_ids": [
+            "<uuid-2>",
+            "<uuid-5>",
+            "<uuid-8>",
+            "<uuid-11>",
+            "<uuid-14>"
+          ],
+          "thread_id": "thread-0"
+        }
+      ],
+      "verdict": "complete_for_observed_scopes"
+    }
+  ]
+}

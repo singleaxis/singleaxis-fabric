@@ -1,0 +1,25 @@
+run r-<hex-1>  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  ext     skill  ext-019f…  workspace-tools  1.0.0  via reported  signature unsigned  (reported)
+  grant   grt-99ed…  declared  api  run_start  allow 1  deny 1  ask 1  (reported)
+  1  model_call   m-<hex-9>  → tool_call T1 run_command
+  2    control    permission_request · pre_tool · escalate  (reported)   ← T1  provider_id · certain
+  3    control    permission_request · resolution · allow  (reported)   ← T1  provider_id · certain
+  4  grant   grt-f631…  declared  api  change  allow 2  deny 1  ask 0  previous grt-99ed…  (changed)  (reported)
+  5    effect     exec printf report exit 0            ← T1  sequence_bracket · tentative
+  6  model_call   m-<hex-9>  ← result T1  → tool_call T2 run_command
+  7    control    policy · pre_tool · deny  egress-policy  network.egress  mode enforcing  (reported)   ← T2  provider_id · certain
+  8      no effect observed for T2 (control_denied: #7)
+  9  model_call   m-<hex-9>  ← result T2  → tool_call T3 run_command
+ 10    hook       pre-shell-check · pre_tool · blocked  3 ms  (reported_unknown)   ← T3  provider_id · certain
+ 11      no effect observed for T3 (control_denied: #10)
+ 12  model_call   m-<hex-9>  ← result T3  → tool_call T4 run_command
+ 13    effect     exec echo status exit 0              ← T4  sequence_bracket · tentative
+ 14    hook       post-output-scan · post_tool · errored  (reported_unknown)   ← T4  provider_id · certain
+ 15  model_call   m-<hex-9>  ← result T4
+  tool calls without an effect: 2   (T2 control_denied, T3 control_denied)
+  output match: applied
+  facts:
+    F2  grant changed within the run: 1 (#4)
+    F5  deny gates a tool call and no effect is attributed to it: 2 (#7, #10)
+    F8  hook outcome errored: 1 (#14)
+    F9  extension signature status other than verified: 1
