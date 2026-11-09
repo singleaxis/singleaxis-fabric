@@ -283,3 +283,74 @@ def test_no_artifact_gains_an_evaluator_policy_or_enforcement_component() -> Non
         lines = dockerfile.read_text(encoding="utf-8", errors="replace").splitlines()
         instructions = [line for line in lines if not line.lstrip().startswith("#")]
         assert not _EVALUATION.search("\n".join(instructions)), dockerfile
+
+
+# Spec 057 B7 and B9 (WP7-3): the security-context records add no control artifact, and no
+# release artifact ships a mapping profile or a classification list.
+
+SPEC_057_MODULES = (
+    "_rec_check.py", "_rec_controls.py", "_rec_extension.py", "_rec_grant.py", "_rec_run.py",
+    "_records_api.py", "_security_policy.py", "records/__init__.py", "records/_handles.py",
+    "records/_vocab.py", "records/_walker.py", "reconstruct/_controls.py",
+    "reconstruct/_security.py",
+)  # fmt: skip
+# Where the mapping-profile schema and its example, the capture policy's security_context
+# section and the classification vocabularies live: never a published contract family.
+_SECURITY_CONTEXT_FAMILIES = ("capture", "coverage", "deployment-policy")
+_LIST_KEYS = ("control_hosts", "control_addresses", "hook_programs", "watched_paths",
+              "tool_result_markers")  # fmt: skip
+
+
+def test_spec_057_modules_and_package_metadata_carry_no_capability_term() -> None:
+    import tomllib
+
+    package = ROOT / "sdk/python/src/fabric"
+    for relative in SPEC_057_MODULES:
+        assert (package / relative).is_file(), relative
+        assert not _EVALUATION.search(relative), relative
+    project = tomllib.loads(
+        (ROOT / "sdk/python/pyproject.toml").read_text(encoding="utf-8")
+    )["project"]
+    fields = [project["description"], *project.get("keywords", ()),
+              *project.get("classifiers", ())]  # fmt: skip
+    npm = json.loads((ROOT / "sdk/typescript/package.json").read_text(encoding="utf-8"))
+    fields += [npm["description"], *npm.get("keywords", ())]
+    for value in fields:
+        assert not _EVALUATION.search(value), value
+
+
+def test_no_release_artifact_ships_a_mapping_profile_or_classification_list() -> None:
+    """B9: classification is customer configuration and mapping profiles are the
+    customer's. The contract families holding the profile schema and its example fixture
+    are not published; no chart, Node build file or image ships a profile or a filled
+    list. (The wheel and sdist are checked by ``qualify_recorder_wheel.py`` in CI.)"""
+    policy = json.loads(
+        (ROOT / "scripts/release/release-policy.json").read_text(encoding="utf-8")
+    )
+    for family in _SECURITY_CONTEXT_FAMILIES:
+        assert family not in policy["contracts"]["public_families"], family
+    assert (
+        ROOT / "contracts/capture/v1/schema/otlp-mapping-profile-v1.schema.json"
+    ).is_file()
+    shipped = [
+        *(p for p in (ROOT / "charts").rglob("*") if p.is_file()),
+        *(ROOT / "components").rglob("Dockerfile*"),
+        ROOT / "components/otel-collector-fabric/ocb-config.yaml",
+        *(ROOT / "components/otel-collector-fabric").glob("*.yaml"),
+        *(ROOT / "scripts/release").rglob("*"),
+        *(ROOT / ".github/workflows").glob("release*.yml"),
+    ]
+    keys = "|".join(_LIST_KEYS)
+    filled = re.compile(rf'"?({keys})"?\s*:\s*(\[\s*[{{"]|\n\s+-)')
+    for path in shipped:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        assert "otlp-mapping-profile" not in text, path
+        assert not filled.search(text), path
+        if path.name.startswith("Dockerfile"):
+            for line in text.splitlines():
+                if line.lstrip().upper().startswith(("COPY", "ADD")):
+                    assert "contracts/capture" not in line and "fixtures" not in line, (
+                        path
+                    )
