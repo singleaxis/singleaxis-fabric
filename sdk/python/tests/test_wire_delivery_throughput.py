@@ -112,14 +112,17 @@ def test_a_span_is_exported_only_after_all_its_bodies_were_accepted(
     node.fail_content_after = 2  # two requests (6 bodies) accepted, then 503
     handle = install_node(node, spool, **config)
     assert wait_for(lambda: len(node.content) >= 6)
-    assert not handle.flush(1.5)
-    accepted = {attrs["object_id"] for attrs, _ in node.content}
-    for refs in _span_refs(node):  # whatever was exported had all its bodies accepted
+    # Observed at the Node, not through flush() (which waits only for this process's own
+    # records): the sender keeps meeting 503s for a while.
+    assert wait_for(lambda: len(node.requests) >= 5)
+    time.sleep(0.5)
+    exported = _span_refs(node)  # spans first: anything exported was accepted before it
+    accepted = {attrs["object_id"] for attrs, _ in list(node.content)}
+    for refs in exported:  # whatever was exported had all its bodies accepted
         assert refs <= accepted
-    assert len(_span_refs(node)) < 12
+    assert len(accepted) == 6 and len(exported) < 12
     node.fail_content_after = None
-    assert handle.flush(40.0)
-    assert len(_span_refs(node)) == 12
+    assert wait_for(lambda: not records(spool) and len(_span_refs(node)) == 12, timeout=60.0)
     # Bodies accepted before the failure were not sent again (idempotent by progress).
     assert len(node.content) == 24
     assert len({attrs["object_id"] for attrs, _ in node.content}) == 24
