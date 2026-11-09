@@ -241,7 +241,8 @@ process or the truth of its reports.
 The persistent sending queue and indefinite retry provide restart-tolerant,
 at-least-once delivery for transient failures. They do **not** provide:
 
-- exactly-once delivery (destinations must deduplicate stable event IDs);
+- exactly-once delivery (destinations must deduplicate by the stable
+  `fabric.event_id`);
 - infinite capacity or protection from disk/storage loss;
 - recovery from permanently invalid records;
 - proof that an arbitrary destination durably persisted an acknowledged batch;

@@ -60,7 +60,7 @@ receivers:
         # Sized for one 64 MiB body over a slow link.
         read_timeout: 120s
         idle_timeout: 120s
-        max_request_body_size: 67108864 # 64 MiB -- one stored body per request
+        max_request_body_size: 67108864 # 64 MiB -- one large body, or several small ones, per request
         # Uncomment together with the telemetry receivers' tls: stanzas in
         # collector-production.yaml (required before 4319 leaves loopback).
         # tls:

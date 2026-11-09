@@ -169,6 +169,42 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **Spooled delivery to a remote Node is much faster.** Each process sent its
+  stored request and response bodies to the Node one per request, one at a
+  time, so it delivered at one round trip per body: about 3 to 14 model
+  calls per second. A busier process built a backlog in its spool. Now it
+  sends several bodies per request (`FABRIC_WIRE_CONTENT_BATCH_BODIES`,
+  default 32) with a few requests in flight
+  (`FABRIC_WIRE_CONTENT_CONCURRENCY`, default 4). The Node writes the bodies
+  of one request in parallel (`write_concurrency`, default 8). At a 50 ms
+  round trip one process went from 9 to about 300 calls per second against
+  a Linux Node. Three processes against a Node with slow disk syncs went
+  from about 4 to about 32 calls per second each. A call's record is still
+  sent only after the Node has accepted its bodies, and a body the Node
+  accepted is never sent again. Nodes that predate this already accept
+  several bodies per request.
+- **A short-lived worker no longer loses its spool backlog silently.** A
+  process waits only 2 seconds at exit by default, and leaves the rest in
+  its spool for the next process that uses it. A serverless function, batch
+  job or scaled-down worker has no next process. When a process exits with
+  records left and no other process draining them, it now notes how many in
+  the spool directory. `python -m fabric.wire status` reports it with what to
+  do, and the count is logged on Fabric's own diagnostics channel
+  (`FABRIC_WIRE_DIAGNOSTICS=stderr`), never on the program's output by
+  default. New opt-in: `FABRIC_WIRE_DRAIN_ON_EXIT_S` lets such a worker wait
+  up to that many seconds at exit until its records are delivered. The
+  default exit is unchanged. See
+  [delivery rate and short-lived workers](docs/wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
+- **The reader counts records delivered twice.** Delivery is at least once,
+  and a Node retry after a slow destination reply can store a whole batch
+  again. `python -m fabric.reconstruct` now reports, per source, how many
+  records repeated a `fabric.event_id` it had already seen
+  (`duplicate_records`). Verdicts do not change. The docs now say that
+  destinations deduplicate by `fabric.event_id`.
+- **Docs:** sizing guidance for `EMIT_FILE_ACCESS` (lossless to about 400
+  exec/s on the measured setup, any loss counted in `upstream_lost`), and a
+  note that a service handling several sessions at once in one process must
+  open a run per session with `fabric.wire.run(...)`.
 - **`python -m fabric.wire status` gives the reason and the fix when capture
   is not installed.** It used to print only the error's class name
   (`ValueError`). Now it says, for example, that plaintext `http://` to a

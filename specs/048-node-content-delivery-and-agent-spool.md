@@ -37,7 +37,8 @@ Decisions F1–F10:
   order by one sender thread (content first, then the span), deleted only
   after every part succeeded, replayed after a restart (§2).
 - **F3 Content transport.** One OTLP/HTTP protobuf `LogRecord` per stored
-  body, posted to `FABRIC_WIRE_CONTENT_ENDPOINT` (§3).
+  body, one or more to a request, posted to `FABRIC_WIRE_CONTENT_ENDPOINT`
+  (§3).
 - **F4 Node content path.** Receiver `otlp/content` (port 4319, HTTP only)
   → pipeline `logs/content` → `memory_limiter` → new exporter
   `fabriccontent`, which verifies and writes body + descriptor with exactly
@@ -569,10 +570,35 @@ in memory after the pump;
 lifetime. Both still wait for delivery first. The exit handler is bounded
 exactly as 047 E9.
 
+**Short-lived workers** (amended for field finding F1). The default exit
+budget is unchanged: a process that exits with records in the spool leaves
+them for the next process capturing to or draining it. Two additions:
+
+- `FABRIC_WIRE_DRAIN_ON_EXIT_S` (`WireConfig.drain_on_exit_s`, default 0,
+  at most 3600) is an explicit opt-in for workers whose spool no later
+  process drains. The exit handler's budget becomes the exit budget plus
+  this value, and the exit then behaves as `close()` does: the drainer
+  delivers every pending record, a worker waits until its own records are
+  settled. It returns as soon as they are. 0 never delays an exit.
+- After the exit close, a slice of the exit budget (at most 0.1 s, never
+  added to it) counts the records left in the spool if no other live process
+  holds the drain lock (a probe on a new open file description, never kept).
+  If any are left, the process writes the spool's exit note
+  `.exit-backlog` (`{"schema": "fabric.wire-exit-backlog/v1",
+  "records_left", "exited_at", "drain_on_exit_s"}`, counts and a UTC time
+  only) and logs one diagnostic on the `fabric.wire` logger (Fabric's
+  channel: never the agent's stderr unless `FABRIC_WIRE_DIAGNOSTICS=stderr`).
+  `python -m fabric.wire status` reports `wire.spool.records` and
+  `wire.spool.left_at_exit`, with a warning naming the remedies. A drainer
+  that finds the spool empty removes the note.
+
 **Delivery semantics.** At-least-once. Duplicates are expected after a
 crash between "sent" and "deleted": the Node treats an identical object as
 success (§4); the verifier deduplicates exchanges by `exchange_id`, losses by
-content and heartbeats by logical identity (§6).
+content and heartbeats by logical identity (§6), and reports how many spans
+of each source repeated a `fabric.event_id` it already saw as
+`duplicate_records` (a count, never a gap). Destinations deduplicate by
+`fabric.event_id`.
 
 **Stats** (`WireStats`, counters only): adds `spooled`, `spool_bytes`,
 `spool_full_drops`, `delivered`, `send_retries`, `content_rejected`,
@@ -582,8 +608,10 @@ processes' ledger slots).
 
 ## 3. Content transport (F3)
 
-One `ExportLogsServiceRequest` per stored body, protobuf over HTTP POST,
-`Content-Type: application/x-protobuf`, to `FABRIC_WIRE_CONTENT_ENDPOINT`,
+One `ExportLogsServiceRequest` carries one or more stored bodies, one
+`LogRecord` each (amended for field finding F1: one body per request, one
+request at a time, delivered at one round trip per body). Protobuf over HTTP
+POST, `Content-Type: application/x-protobuf`, to `FABRIC_WIRE_CONTENT_ENDPOINT`,
 never following a redirect: a 3xx response is a failed attempt (retried
 like a 5xx), and neither the body nor any header is sent to its `Location`
 (H1; the private OTLP trace exporter's HTTP session is configured the same
@@ -622,6 +650,29 @@ One `LogRecord`:
 `source_sha256` ⇔ `source_byte_length > stored_byte_length`. These are the
 SDK's content-v2 descriptor fields minus `encoding` and `ref`, which the
 writer adds (§4).
+
+**Several bodies per request.** The sender groups pending bodies, in spool
+order, into requests of at most `FABRIC_WIRE_CONTENT_BATCH_BODIES` records
+(default 32, at most 256) and about 4 MiB of body bytes (a larger body goes
+alone), with up to `FABRIC_WIRE_CONTENT_CONCURRENCY` requests in flight
+(default 4, at most 16). The Node already handled every record of a request
+before this amendment, so no Node change is needed to receive them, and one
+body per request remains valid. The rules that do not change:
+
+- A request's outcome is every one of its records' outcome: 2xx accepts them
+  all (the Node acknowledges once its durable queue holds the request); a
+  permanent refusal (400/413/415/422, or `partial_success` with rejected
+  records) is followed by one request per body, so only bodies refused on
+  their own count as `content_rejected` and a Node with a lower request size
+  limit still receives every body; anything else is retried.
+- A record's span is exported only after every body of its spool file was
+  accepted (or permanently refused), and spool files are exported in name
+  order: a file whose bodies are not all accepted holds back the files after
+  it.
+- The sender remembers which bodies of a file were accepted and never sends
+  them again; a retried request is idempotent anyway, since the Node stores
+  identical bytes again as a replay (§4 step 6).
+- 1 and 1 restore one body per request, one at a time.
 
 TLS, client certificate/key, CA, headers and timeout are resolved like the
 trace exporter: `OTEL_EXPORTER_OTLP_LOGS_*` first, then
@@ -682,7 +733,12 @@ attribute set itself.
    then the flat name, so stores written flat before sharding stay
    readable. Operators alert on the content filesystem's inode use, not
    only its bytes.
-5. Never overwrite: an existing object or descriptor with identical bytes
+5. Records of one request are written up to `write_concurrency` at a time
+   (default 8, at most 64); each record still writes its body before its
+   descriptor (step 4), and the request completes only when every record
+   is stored or dropped. Records that hit a retryable backend error are
+   retried on their own, in request order.
+6. Never overwrite: an existing object or descriptor with identical bytes
    is success (replay); different bytes → reject (`conflict`). On disk the
    check covers both the shard and the flat, pre-shard name: an id stored
    flat before an upgrade is a replay or a conflict, never written again in

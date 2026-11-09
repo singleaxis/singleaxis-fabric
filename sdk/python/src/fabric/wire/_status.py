@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """``python -m fabric.wire status``: the configuration diagnostics the zero-code autoload
 would log for this environment, as one JSON object, without installing capture, patching a
-client, touching the spool or opening a connection.
+client, writing to the spool or opening a connection. With a spool configured it reads
+(never writes) the spool directory: how many records wait there, and the exit note a process
+left when it exited with records nobody was draining (field finding F1).
 
 The autoload keeps its diagnostics off the monitored process's stdout and stderr (a child
 process an agent's tool starts inherits the autoload, and its output is what the model
@@ -61,6 +63,38 @@ def _check_delivery(config: Any) -> None:
         client = content_client_from_env(os.environ, endpoint=config.content_endpoint)
         with contextlib.suppress(Exception):
             client.close()
+
+
+_MSG_SPOOL_BACKLOG = (
+    "fabric.wire: %d records wait in the spool; a process that exited at %s left %d there "
+    "with no process draining it. They are delivered only when a process captures to or "
+    "drains this spool again. Fix: run `python -m fabric.wire drain --until-empty` with the "
+    "agent's environment; for batch or serverless workers set FABRIC_WIRE_DRAIN_ON_EXIT_S, "
+    "or keep FABRIC_WIRE_SPOOL_DIR on durable storage with a drainer (sidecar)"
+)
+
+
+def _spool_status(config: Any) -> tuple[dict[str, Any] | None, list[str]]:
+    """The spool's backlog, read only: ``({"records": n, "left_at_exit": note?}, warnings)``;
+    ``(None, [])`` without a spool directory."""
+    from ._spool import read_exit_note  # noqa: PLC0415
+
+    directory = config.spool_dir
+    if directory is None or not os.path.isdir(directory):
+        return None, []
+    try:
+        records = sum(1 for name in os.listdir(directory)
+                      if name.endswith(".rec") and not name.startswith("."))  # fmt: skip
+    except OSError:
+        return None, []
+    spool: dict[str, Any] = {"records": records}
+    warnings: list[str] = []
+    if (note := read_exit_note(directory)) is not None:
+        spool["left_at_exit"] = note
+        if records:
+            warnings.append(_MSG_SPOOL_BACKLOG % (records, note["exited_at"],
+                                                  note["records_left"]))  # fmt: skip
+    return spool, warnings
 
 
 def _span_destination(config: Any, mode: str) -> str:
@@ -125,6 +159,10 @@ def _wire_status() -> tuple[dict[str, Any], list[str], bool]:
         warnings.append(_MSG_MIGRATE_IGNORED)
     if _truthy(os.environ.get("FABRIC_CAPTURE_LLM_CONTENT")):
         warnings.append(_MSG_LLM_CONTENT_IGNORED)
+    spool, backlog = _spool_status(config)
+    if spool is not None:
+        wire["spool"] = spool
+        warnings.extend(backlog)
     return wire, warnings, True
 
 

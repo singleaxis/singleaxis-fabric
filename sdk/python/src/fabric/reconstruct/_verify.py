@@ -35,6 +35,7 @@ from fabric.reconstruct._graph import RunGraph, SegmentNode, build_run_graphs
 from fabric.reconstruct._host import split_host_records
 from fabric.reconstruct._ids import report_run_id, report_source_id, report_tenant_id
 from fabric.reconstruct._inputs import (
+    A_EVENT_ID,
     A_OBJECT_IDS,
     A_REQUEST_SHA256,
     A_RESPONSE_SHA256,
@@ -168,6 +169,10 @@ class _Source:
     unsealed_epochs: set[int] = field(default_factory=set)
     manifestless: list[tuple[int, int | None, str]] = field(default_factory=list)
     manifest_conflict: bool = False
+    # Spans of this epoch whose ``fabric.event_id`` was already seen: a record delivered
+    # again (delivery is at-least-once; a Node retry after a slow destination reply resends
+    # a whole batch). Each record counts once everywhere else; reported, never a gap.
+    duplicates: int = 0
 
     def finalize(self) -> None:
         self.top = max(
@@ -240,6 +245,8 @@ class _Source:
         }
         if self.final is not None:
             out["final_heartbeat_sequence"] = self.final
+        if self.duplicates:
+            out["duplicate_records"] = self.duplicates
         if p1:  # spec 050 §3.12; absent for a pre-P1 capture
             out["manifests"] = [
                 {"manifest_id": m.manifest_id, "sha256": m.sha256, "manifest_seq": m.manifest_seq}
@@ -247,6 +254,15 @@ class _Source:
             ]
             out["unsealed_epochs"] = sorted(self.unsealed_epochs)
         return out
+
+
+def _observed_source(obs: Observation) -> SourceKey | None:
+    """The ``(source_id, source_epoch)`` an observation belongs to, if it names one."""
+    if isinstance(obs, MalformedMarkerObs):
+        return None if obs.heartbeat is None else _observed_source(obs.heartbeat)
+    if isinstance(obs, (ExchangeObs, RecordObs, SegmentSealObs, ManifestObs)):
+        return obs.source
+    return (obs.source_id, obs.source_epoch)
 
 
 def _segments(first: int, last: int, losses: Sequence[LossObs]) -> list[Segment]:
@@ -741,6 +757,7 @@ class _Verifier:
         # (run id, source, manifest digest, scope id): a run marker or seal names a manifest.
         self.manifest_refs: set[tuple[str, SourceKey, str, str | None]] = set()
         self.periodic: set[SourceKey] = set()
+        self._event_ids: set[str] = set()  # every fabric.event_id seen (duplicates counted)
         self.unsealed: dict[SourceKey, str] = {}  # epoch -> why it is unsealed
         self.run_gaps: dict[str, list[tuple[Gap, tuple[str, ...]]]] = defaultdict(list)
         self.run_segments: dict[str, list[_Segment]] = defaultdict(list)
@@ -795,6 +812,17 @@ class _Verifier:
         parts[1] = report_source_id(parts[1], self.key)
         return "/".join(parts)
 
+    def _count_repeat(self, obs: Observation, span: SpanRecord) -> None:
+        """Count a span whose ``fabric.event_id`` was already seen (a redelivery) against
+        its source; the observation itself is deduplicated as before."""
+        event = uuid4_value(span.attributes.get(A_EVENT_ID))
+        if event is None:
+            return
+        if event not in self._event_ids:
+            self._event_ids.add(event)
+        elif (key := _observed_source(obs)) is not None:
+            self._source(key).duplicates += 1
+
     def _stamp(self, obs: Observation) -> None:
         """Note whether ``obs`` carries the Node's stamp (049 §7.9); any unstamped copy of a
         record counts, whichever copy the accounting keeps."""
@@ -815,8 +843,10 @@ class _Verifier:
         obs = self._labels(obs)
         if obs is not None:
             self._stamp(obs)
-            if self.projection_sink is not None and span is not None:
-                self.projection_sink.observed(obs, span)
+            if span is not None:
+                if self.projection_sink is not None:
+                    self.projection_sink.observed(obs, span)
+                self._count_repeat(obs, span)
         if isinstance(obs, MalformedMarkerObs):
             self.malformed_scopes.add(obs.scope_id)
             self.add(obs.heartbeat)

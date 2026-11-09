@@ -64,7 +64,9 @@ Agent settings for the local Node with a direct `file://` store (the
 [quickstart](quickstart.md) runs this). With an OTLP endpoint set, file
 mode spools by default at `<store>/.fabric-wire-spool/<tenant>`: a captured
 call survives the process (a crash, SIGKILL or a terminated worker) and the
-next process capturing to the same store delivers it.
+next process capturing to the same store delivers it. A worker that never
+comes back (serverless, batch, autoscaled) needs one of the options in
+[delivery rate and short-lived workers](wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
 `FABRIC_WIRE_SPOOL_DIR=off` restores direct export.
 
 ```bash
@@ -123,7 +125,11 @@ matchers: `endpoint_id`, `dialect` `openai`/`anthropic`, `hosts` or
 the entry cap only bounds per-entry overhead), `FABRIC_WIRE_SPOOL_MAX_BYTES`
 (default 1 GiB), `FABRIC_WIRE_SHUTDOWN_TIMEOUT_S` (the exit budget in
 seconds, default 2, at most 300: what is not spooled by then is a declared
-`shutdown` loss), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
+`shutdown` loss), `FABRIC_WIRE_DRAIN_ON_EXIT_S` (opt-in, default 0, at most
+3600: extra seconds an exiting process may wait until its spool is
+delivered), `FABRIC_WIRE_CONTENT_BATCH_BODIES` (bodies per Node content
+request, default 32, at most 256) and `FABRIC_WIRE_CONTENT_CONCURRENCY`
+(content requests in flight, default 4, at most 16), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
 on by default),
 `FABRIC_WIRE_PROXY` (an explicit CONNECT proxy for Fabric's own delivery),
 `FABRIC_WIRE_LABELS=clear`. `FABRIC_WIRE_STORE_SSE` and

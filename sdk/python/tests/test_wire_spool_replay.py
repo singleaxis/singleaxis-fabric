@@ -112,7 +112,12 @@ def test_sigkill_mid_send_then_restart_replays_exactly_the_undelivered(
 ) -> None:
     spool = tmp_path / "spool"
     node.mode = "down"  # everything is spooled first
-    first = start(agent_env(node, spool, AGENT_THEN="sleep"))
+    # Four bodies per content request, one request at a time: the first request (two
+    # exchanges) is accepted and the second is in flight when the process is killed. With
+    # the defaults all twelve bodies would go in one request, accepted before any hang.
+    first = start(agent_env(node, spool, AGENT_THEN="sleep",
+                            FABRIC_WIRE_CONTENT_BATCH_BODIES="4",
+                            FABRIC_WIRE_CONTENT_CONCURRENCY="1"))  # fmt: skip
     try:
         lines = read_until(first, "SPOOLED")
         assert "BOTO False" in lines  # the wire path imports no boto3/botocore

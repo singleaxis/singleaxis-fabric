@@ -408,6 +408,17 @@ drops it silently:
   `fabric_delivery_lost_positions_total` count what was given up. The
   metrics are on the Node's metrics port (8888).
 
+### Duplicates at the destination
+
+Delivery from the Node to the destination is at least once. When the
+destination stores a request but answers after the Node's export timeout (a
+slow fsync, a busy service), the Node retries and the same batch arrives
+again, byte-identical. Every Fabric record carries a stable
+`fabric.event_id`, the same on every retry. Deduplicate on it at the
+destination, or in whatever reads from it. `python -m fabric.reconstruct`
+counts each record once, and lists how many repeats it saw per source as
+`duplicate_records`. That count changes no verdict.
+
 ## 4. The eBPF emitter
 
 Scope the sensor to the agent's containers with a cgroup **parent**: every
@@ -622,8 +633,10 @@ step 5's flags:
 An agent delivers its spool's backlog while it runs. At exit it waits only
 for its exit budget (`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`, 2 s by default), and
 whatever is left stays on the spool volume until the next process that uses
-it. When no later agent run will use the same volume, drain it once the
-agent exits. Use the same image, env file, mounts and volume:
+it (`python -m fabric.wire status` reports how many records an exit left).
+When no later agent run will use the same volume, drain it once the agent
+exits, or set `FABRIC_WIRE_DRAIN_ON_EXIT_S` to let the agent wait for its own
+backlog at exit (see [short-lived workers][short-lived]). Use the same image, env file, mounts and volume:
 
 ```bash
 docker run --rm --network fabric-node-production_fabric-node --env-file "$M/agent.env" \
@@ -822,3 +835,5 @@ with these differences:
   (0.11.2). Here the agent and the emitter read the same VM clock, so a
   smaller value (for example `FABRIC_CLOCK_UNCERTAINTY_MS=50` in
   `agent.env`) keeps host links from turning ambiguous.
+
+[short-lived]: wire-capture-deployment.md#delivery-rate-and-short-lived-workers

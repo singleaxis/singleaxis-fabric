@@ -78,6 +78,10 @@
             "description": "Highest last_sequence of a final heartbeat for this epoch, when one was seen.",
             "type": "integer", "minimum": -1
           },
+          "duplicate_records": {
+            "description": "Spans of this epoch whose fabric.event_id was already seen: records delivered more than once (delivery is at-least-once; destinations deduplicate by fabric.event_id). Each record counts once everywhere else; this is a count, never a gap or a verdict change. Absent when zero.",
+            "type": "integer", "minimum": 1
+          },
           "missing_sequences": {"type": "array", "items": {"$ref": "#/$defs/range"}},
           "loss_ranges": {
             "type": "array",
