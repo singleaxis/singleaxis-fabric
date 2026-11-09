@@ -151,7 +151,8 @@
             "pseudonymise": {
               "paths": true,
               "hosts": false,
-              "credentials": true
+              "credentials": true,
+              "sources": true
             }
           }
         }

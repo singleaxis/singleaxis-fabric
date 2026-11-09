@@ -48,7 +48,52 @@ it never makes, applies, waits for or returns one.
   skeleton; an optional `security_context` section in the capture policy
   (control hosts, hook programs, watched paths, denial markers); the OTLP
   mapping-profile schema; activity 2.1.0 beside 2.0.0; and the `controls`
-  chain in the reconstruction report. Spec 049 is amended as revision 6.6.
+  chain in the reconstruction report. Spec 049 is amended as revision 6.6,
+  and as revision 6.7 so the hook record carries the hook's name, phase,
+  `modified` flag and hashes.
+- **`fabric.records.record_grant`** records what the agent was given or
+  allowed: a declared permission configuration (tool rules, MCP servers,
+  filesystem and network scopes, sandbox, credential names and scopes,
+  models, limits), or the tools offered to a model call Fabric does not see
+  on the wire. Rules are kept verbatim and never interpreted; credential
+  values are never read. Telemetry carries only the shape (basis, modes,
+  counts) and a keyed `grt-` id; the document is `run.permissions` content
+  in which every path, host, credential name and MCP server launch command
+  or URL (`server_ref`, which can carry an API key or token) is replaced by
+  a keyed pseudonym (`pth-`, `net-`, `crd-`, `src-`). The capture policy can
+  keep a group clear (`security_context.grant.pseudonymise`, e.g.
+  `sources: false`). Without an id key such a document is withheld, never
+  stored in clear. `record_run_context(permissions=...)` now
+  records the same kind of declared grant.
+- **`fabric.records.control_check`** records the outcome of a permission
+  check in your own code without changing it: decorate the check function
+  (sync or `async`) or wrap the block that runs it. `True` is recorded as
+  allow, `False` as deny, a raised `PermissionError` as deny, any other
+  exception as error, anything else as unknown (never allow); a
+  `decision_map` maps other literal return values. The check runs exactly
+  once and its own return value or exception comes back unchanged. A
+  recording failure is counted and never reaches the check, even under
+  `FABRIC_RECORDS_STRICT=1`. Capture off, it is a direct call.
+- **`record_control` additions**: a `control=` label for the check, the
+  stage, engine, gated kind, the provider tool-call id it gated (stored only
+  as a keyed `p-` id), latency, a bounded reason code, the control's mode,
+  the grant in force and an error class. `phase` and `decision` now default
+  to `observation` and `unknown`, so one line records an in-code check;
+  existing calls are unchanged.
+- **`fabric.records.record_extension`** records a skill, plugin, MCP server,
+  hook bundle, subagent or tool pack that was present, with its signature
+  status, scope, enabled state and contribution counts. Its source (URL,
+  path, launch command) is stored only as a keyed `src-` id.
+- **`Decision.record_hook` and `Decision.record_skill`** take new optional
+  keywords: what the hook did (passed, modified, blocked, escalated,
+  errored), its own event name, latency, the tool call it gated, the bundle
+  that contributed it, a reason code and whether it ran as a separate
+  program or a callback; and a skill's kind, source kind, signature status,
+  scope, enabled state and contributions. With capture installed, each call
+  also emits a hook or extension record; the existing span events are
+  unchanged. `record_hook(outcome="modified")` now sets `modified=True`
+  when you do not pass it; a `modified` value that contradicts the outcome
+  is kept and counted as misuse.
 - **`ControlObservation` v2**: new optional fields (kind, phase, resolves,
   the deciding actor, and the spec 057 stage, engine, mode, reason code and
   derivation); v1 documents and v1 construction keep working.

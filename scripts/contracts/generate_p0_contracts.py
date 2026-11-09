@@ -844,6 +844,25 @@ def build_capture_checks() -> dict[str, dict[str, Any]]:
         "fabric.environment": label,
         # spec 053 §6.2.3 (spec 056 M2): a host record's bound tenant
         "fabric.tenant_id": string(OPAQUE, "tenant-a", "acme.prod"),
+        # spec 057 §5.4 (P0b): the spec 022 hook keys on the records-input hook record
+        "fabric.hook.name": string(
+            "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$", "pre-shell-check", "pii-scrub"
+        ),
+        "fabric.hook.phase": {
+            "type": "enum",
+            "values": [
+                "pre_model",
+                "post_model",
+                "pre_tool",
+                "post_tool",
+                "pre_decision",
+                "post_decision",
+            ],
+            "source": "validator",
+        },
+        "fabric.hook.modified": {"type": "bool"},
+        "fabric.hook.input_hash": string("^[0-9a-f]{64}$", "3f" * 32),
+        "fabric.hook.output_hash": string("^[0-9a-f]{64}$", "3f" * 32),
         # spec 053 §5.4 (N43): http.nonmodel records (wire exchanges keep spec 047's check)
         "http.request.method": {
             "type": "enum",

@@ -4368,6 +4368,70 @@
       "definition": "The customer's label for the program; never its path."
     },
     {
+      "id": "E24",
+      "layer": "structure",
+      "name": "hook.name",
+      "type": "label",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "LABEL",
+      "required": "R (hook)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.name`",
+      "definition": "The hook's own name (spec 022 `record_hook`), carried on the records-input hook record beside the decision line's `fabric.hook` event."
+    },
+    {
+      "id": "E25",
+      "layer": "structure",
+      "name": "hook.phase",
+      "type": "enum pre_model/post_model/pre_tool/post_tool/pre_decision/post_decision",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "R (hook)",
+      "status_if_hook_absent": "unknown",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.phase`",
+      "definition": "Where the hook ran, in the closed cross-runtime vocabulary of spec 022 (`HOOK_PHASES`)."
+    },
+    {
+      "id": "E26",
+      "layer": "structure",
+      "name": "hook.modified",
+      "type": "bool",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "META",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.modified`",
+      "definition": "Whether the hook changed the value it wrapped, as reported; E01 `modified` implies true."
+    },
+    {
+      "id": "E27",
+      "layer": "structure",
+      "name": "hook.input_hash, hook.output_hash",
+      "type": "64 hex, 64 hex",
+      "observed_by": [
+        "sdk.records"
+      ],
+      "default_policy": "metadata",
+      "privacy_class": "DIGEST",
+      "required": "O",
+      "status_if_hook_absent": "not_captured(caller_omitted)",
+      "phase": "P0 (spec 057)",
+      "lives_in": "T `fabric.hook.input_hash`, `fabric.hook.output_hash`",
+      "definition": "Caller-supplied SHA-256 of the value entering and leaving the hook; Fabric never sees the hooked content."
+    },
+    {
       "id": "E10",
       "layer": "structure",
       "name": "extension.id",

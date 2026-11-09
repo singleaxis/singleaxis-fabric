@@ -19,7 +19,7 @@
     "resumable": true,
     "open_deadline_s": 259200,
     "manifest_id": "060c7dec-54ce-4c08-ab54-29de104c5bc4",
-    "manifest_digest": "sha256:c87a4b39e84faa5d9e4b847254b48bf253a1c5edac85e4a6a6ae232a6d2addb7",
+    "manifest_digest": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221",
     "manifest_seq": 0,
     "event_id": "4b8cb3a9-93a3-4f9b-a774-023fc5221c6e",
     "id_basis": "caller"

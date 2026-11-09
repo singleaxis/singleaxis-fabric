@@ -341,10 +341,12 @@ def emit(
     attempt: Attempt | None = None, phase: str = "end", lifecycle: str | None = "completed",
     result_status: str | None = "ok", otlp_status: str = "unset", update_of: str | None = None,
     actor: ActorRef | None = None, default_actor: str = "agent", step_id: str | None = None,
+    measured: bool = False,
 ) -> RecordHandle:  # fmt: skip
     """Emit one record of step ``kind`` and return its handle (``recorded=False`` when
     nothing was recorded). Raises only Fabric misuse, which the public APIs' fail-open
-    wrappers count; callers never see an exception from here."""
+    wrappers count; callers never see an exception from here. ``measured`` marks a
+    ``timing`` Fabric measured itself (basis ``measured``, spec 057 D41), never a caller's."""
     records = records or current_records()
     if records is None:
         return RecordHandle.unrecorded()
@@ -355,7 +357,7 @@ def emit(
             return RecordHandle.unrecorded()
     out: dict[str, Any] = dict(attrs)
     start, end, basis = timing_window(timing)
-    out["fabric.step.timing_basis"] = basis
+    out["fabric.step.timing_basis"] = "measured" if measured and basis == "reported" else basis
     if links:
         encoded = encode_links(records, links)
         if encoded:

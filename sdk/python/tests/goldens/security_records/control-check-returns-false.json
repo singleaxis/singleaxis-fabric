@@ -1,0 +1,24 @@
+[
+  {
+    "fabric.actor.type": "unknown",
+    "fabric.attempt.uid": "<uuid-1>",
+    "fabric.capture.input": "records",
+    "fabric.capture.point": "sdk.records@<version>",
+    "fabric.capture.source": "reported",
+    "fabric.control.authentication": "unverified_caller_report",
+    "fabric.control.decision": "deny",
+    "fabric.control.derivation": "wrapped_check",
+    "fabric.control.enforced_by_fabric": false,
+    "fabric.control.engine.name": "fs-write",
+    "fabric.control.id": "<uuid-2>",
+    "fabric.control.kind": "permission_check",
+    "fabric.control.latency_ms": "<measured>",
+    "fabric.control.mode": "unknown",
+    "fabric.control.phase": "observation",
+    "fabric.control.stage": "pre_tool",
+    "fabric.step.kind": "control",
+    "fabric.step.lifecycle_state": "completed",
+    "fabric.step.status": "ok",
+    "fabric.step.timing_basis": "measured"
+  }
+]

@@ -4838,6 +4838,98 @@
       }
     },
     {
+      "key": "fabric.hook.name",
+      "change": "reused",
+      "field": "E24",
+      "validator": "existing allowlist key; on records a LABEL: `^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`",
+      "phase": "P0 (spec 057)",
+      "note": "Spec 057 §5.1, §5.4 (P0b): the spec 022 decision-line key, reused on the records-input hook record so the record carries the hook's identity (capture_check, records class only); the fabric.hook event keeps its existing admission.",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
+        "examples": [
+          "pre-shell-check",
+          "pii-scrub"
+        ]
+      }
+    },
+    {
+      "key": "fabric.hook.phase",
+      "change": "reused",
+      "field": "E25",
+      "validator": "existing allowlist key; on records the closed spec 022 phase enum `pre_model`, `post_model`, `pre_tool`, `post_tool`, `pre_decision`, `post_decision`",
+      "phase": "P0 (spec 057)",
+      "note": "Spec 057 §5.1, §5.4 (P0b): the spec 022 decision-line key, reused on the records-input hook record so the record carries the hook's identity (capture_check, records class only); the fabric.hook event keeps its existing admission.",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "enum",
+        "values": [
+          "pre_model",
+          "post_model",
+          "pre_tool",
+          "post_tool",
+          "pre_decision",
+          "post_decision"
+        ],
+        "source": "validator"
+      }
+    },
+    {
+      "key": "fabric.hook.modified",
+      "change": "reused",
+      "field": "E26",
+      "validator": "existing allowlist key; on records a bool",
+      "phase": "P0 (spec 057)",
+      "note": "Spec 057 §5.1, §5.4 (P0b): the spec 022 decision-line key, reused on the records-input hook record so the record carries the hook's identity (capture_check, records class only); the fabric.hook event keeps its existing admission.",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "bool"
+      }
+    },
+    {
+      "key": "fabric.hook.input_hash",
+      "change": "reused",
+      "field": "E27",
+      "validator": "existing allowlist key; on records 64 lowercase hex `^[0-9a-f]{64}$`",
+      "phase": "P0 (spec 057)",
+      "note": "Spec 057 §5.1, §5.4 (P0b): the spec 022 decision-line key, reused on the records-input hook record so the record carries the hook's identity (capture_check, records class only); the fabric.hook event keeps its existing admission.",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        ]
+      }
+    },
+    {
+      "key": "fabric.hook.output_hash",
+      "change": "reused",
+      "field": "E27",
+      "validator": "existing allowlist key; on records 64 lowercase hex `^[0-9a-f]{64}$`",
+      "phase": "P0 (spec 057)",
+      "note": "Spec 057 §5.1, §5.4 (P0b): the spec 022 decision-line key, reused on the records-input hook record so the record carries the hook's identity (capture_check, records class only); the fabric.hook event keeps its existing admission.",
+      "placement": [
+        "record"
+      ],
+      "capture_check": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{64}$",
+        "examples": [
+          "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
+        ]
+      }
+    },
+    {
       "key": "fabric.extension.id",
       "change": "new",
       "field": "E10",

@@ -2046,6 +2046,12 @@ class Decision(AbstractContextManager["Decision"]):
         tags: Sequence[str] | None = None,
         baseline: BaselineCheck | None = None,
         signature: SignatureCheck | None = None,
+        kind: str = "skill",
+        source_kind: str | None = None,
+        signature_status: str | None = None,
+        scope: str | None = None,
+        enabled: bool | None = None,
+        contributes: Mapping[str, int] | None = None,
     ) -> None:
         """Record that this decision loaded a skill / plugin.
 
@@ -2066,6 +2072,13 @@ class Decision(AbstractContextManager["Decision"]):
             source: optional origin (registry, path, URL).
             manifest_hash: optional hash of the prompt+tools bundle.
             signed: optional — was the manifest signature valid?
+            kind, source_kind, signature_status, scope, enabled, contributes: spec 057
+                §5.5 extension fields (E11, E13, E16-E19). With an installed capture
+                handle an ``extension.loaded`` record (``observed_via=reported``) is
+                emitted beside the ``fabric.skill`` event: ``source`` only as its keyed
+                ``src-`` id, ``signed`` as ``verified``/``invalid`` unless
+                ``signature_status`` is given. These keywords fail open: an invalid value
+                is dropped and counted, never raised.
 
         Raises:
             ValueError: if ``name`` or ``version`` is empty.
@@ -2100,6 +2113,26 @@ class Decision(AbstractContextManager["Decision"]):
                 label=self._identity.label,
             )  # fmt: skip
             span.add_event("fabric.skill", attributes=event_attrs)
+        self._record_extension_beside(
+            kind, name, version=version, source=source, manifest_hash=manifest_hash,
+            signature_status=signature_status if signature_status is not None else (
+                "unknown" if signed is None else "verified" if signed else "invalid"),
+            source_kind=source_kind, scope=scope, enabled=enabled, contributes=contributes,
+        )  # fmt: skip
+
+    def _record_extension_beside(self, kind: str, name: str, **kwargs: Any) -> None:
+        """Spec 057 §5.5: the ``extension.loaded`` record beside a ``fabric.skill`` event,
+        on the records input only (fail open, never under the overlap guard)."""
+        from ._rec_extension import record_extension  # noqa: PLC0415 - lazy records import
+
+        try:
+            record_extension(kind, name, **kwargs)
+        except Exception as exc:  # strict mode only: the records API raised its misuse
+            self._note_internal_error(exc)
+            from ._capture_types import strict  # noqa: PLC0415
+
+            if strict():
+                raise
 
     def _open_delegation(
         self,
@@ -2256,12 +2289,19 @@ class Decision(AbstractContextManager["Decision"]):
         name: str,
         phase: str,
         *,
-        modified: bool = False,
+        modified: bool | None = None,
         input_hash: str | None = None,
         output_hash: str | None = None,
         tags: Sequence[str] | None = None,
         baseline: BaselineCheck | None = None,
         signature: SignatureCheck | None = None,
+        outcome: str = "unknown",
+        event_name: str | None = None,
+        latency_ms: float | None = None,
+        gated_tool_call_id: str | None = None,
+        extension: object = None,
+        reason_code: str | None = None,
+        basis: str = "reported_unknown",
     ) -> None:
         """Record that a hook / middleware ran around a decision step.
 
@@ -2279,14 +2319,31 @@ class Decision(AbstractContextManager["Decision"]):
             name: hook identifier.
             phase: one of ``pre_model`` / ``post_model`` / ``pre_tool`` /
                 ``post_tool`` / ``pre_decision`` / ``post_decision``.
-            modified: did the hook mutate the value it wrapped?
+            modified: did the hook mutate the value it wrapped? Left ``None``, it
+                follows ``outcome``: ``True`` for ``modified``, ``False`` otherwise
+                (spec 057 §5.4 E01). An explicit value that contradicts the outcome
+                (``False`` with ``modified``, ``True`` with ``passed``) is kept as given
+                and counted as records misuse.
             input_hash: optional hash of the value entering the hook.
             output_hash: optional hash of the value leaving the hook.
+            outcome, event_name, latency_ms, gated_tool_call_id, extension, reason_code,
+                basis: spec 057 §5.4 hook outcome fields (E01-E07): what the hook did
+                (``passed``/``modified``/``blocked``/``escalated``/``errored``/
+                ``unknown``), the runtime's own event name, how long it took, the
+                provider tool-call id it gated (emitted only as ``p-``), the
+                ``ExtensionRef`` that contributed it, a bounded reason code and whether
+                it was a ``process`` or an in-process ``callback``. With an installed
+                capture handle they travel on a records-input ``hook`` record emitted
+                beside the ``fabric.hook`` event, whose keys are unchanged. They fail
+                open: an invalid value is dropped and counted, never raised.
 
         Raises:
             ValueError: if ``name`` is empty or ``phase`` is not in
                 :data:`HOOK_PHASES`.
         """
+        from ._rec_extension import hook_modified, hook_record  # noqa: PLC0415 - lazy records import
+
+        modified_value: Any = hook_modified(outcome, modified)
         with self._exclusive():
             if not name:
                 raise ValueError("name is required")
@@ -2302,7 +2359,7 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.schema_version": SCHEMA_VERSION,
                 ATTR_HOOK_NAME: name,
                 ATTR_HOOK_PHASE: phase,
-                ATTR_HOOK_MODIFIED: modified,
+                ATTR_HOOK_MODIFIED: modified_value,
             }
             if input_hash is not None:
                 event_attrs[ATTR_HOOK_INPUT_HASH] = require_sha256_hex("input_hash", input_hash)
@@ -2313,10 +2370,21 @@ class Decision(AbstractContextManager["Decision"]):
                 label=self._identity.label,
             )  # fmt: skip
             span.add_event("fabric.hook", attributes=event_attrs)
+        try:
+            hook_record(
+                name, phase, modified=modified, outcome=outcome, event_name=event_name,
+                latency_ms=latency_ms, gated_tool_call_id=gated_tool_call_id,
+                extension=extension, reason_code=reason_code, basis=basis,
+                input_hash=input_hash, output_hash=output_hash,
+            )  # fmt: skip
+        except Exception as exc:  # strict mode only: the records API raised its misuse
+            self._note_internal_error(exc)
+            from ._capture_types import strict  # noqa: PLC0415
 
-    def record_control(
-        self, kind: str | None, phase: str | None, decision: str | None, **kwargs: Any
-    ) -> Any:
+            if strict():
+                raise
+
+    def record_control(self, kind: str | None, *args: Any, **kwargs: Any) -> Any:
         """Record one decision an external control made (spec 052 §4.2;
         :func:`fabric.records.record_control`). Passive and fail-open: it never takes the
         decision's overlap guard, never waits, never raises, and returns a ``ControlRef``
@@ -2341,12 +2409,14 @@ class Decision(AbstractContextManager["Decision"]):
             PHASE_DECISIONS,
         )
 
-        ref = record_control(kind, phase, decision, **kwargs)
+        ref = record_control(kind, *args, **kwargs)
         if ref.recorded:
             return ref
         try:
             if current_records() is not None:
                 return ref
+            phase = args[0] if args else kwargs.get("phase", "observation")
+            decision = args[1] if len(args) > 1 else kwargs.get("decision", "unknown")
             kind_value = kind if kind in CONTROL_KINDS else "other"
             phase_value = phase if phase in CONTROL_PHASES else None
             decision_value = decision if decision in CONTROL_DECISIONS else "unknown"

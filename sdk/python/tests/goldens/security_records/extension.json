@@ -1,0 +1,41 @@
+[
+  {
+    "fabric.actor.type": "unknown",
+    "fabric.attempt.uid": "<uuid-1>",
+    "fabric.capture.input": "records",
+    "fabric.capture.point": "sdk.records@<version>",
+    "fabric.capture.source": "reported",
+    "fabric.extension.contributes.hooks": 1,
+    "fabric.extension.contributes.tools": 3,
+    "fabric.extension.enabled": true,
+    "fabric.extension.id": "ext-398092832d95f0059f937d0463ede3ca",
+    "fabric.extension.kind": "mcp_server",
+    "fabric.extension.manifest_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fabric.extension.name": "repo-tools",
+    "fabric.extension.observed_via": "reported",
+    "fabric.extension.scope": "project",
+    "fabric.extension.signature_status": "unsigned",
+    "fabric.extension.source_kind": "process",
+    "fabric.extension.source_ref": "src-3efeb3d4f27e1759cf9f3813b2b7d4e2",
+    "fabric.extension.version": "1.4.0",
+    "fabric.step.kind": "run",
+    "fabric.step.lifecycle_state": "completed",
+    "fabric.step.status": "ok",
+    "fabric.step.timing_basis": "not_captured"
+  },
+  {
+    "fabric.actor.type": "unknown",
+    "fabric.attempt.uid": "<uuid-2>",
+    "fabric.capture.input": "records",
+    "fabric.capture.point": "sdk.records@<version>",
+    "fabric.capture.source": "reported",
+    "fabric.extension.id": "ext-c57b7d729bddf0301c97989d1a4945de",
+    "fabric.extension.kind": "plugin",
+    "fabric.extension.observed_via": "reported",
+    "fabric.extension.signature_status": "unknown",
+    "fabric.step.kind": "run",
+    "fabric.step.lifecycle_state": "completed",
+    "fabric.step.status": "ok",
+    "fabric.step.timing_basis": "not_captured"
+  }
+]

@@ -71,7 +71,7 @@ def _api(behaviour: str) -> str | None:
 
 def test_fail_open_returns_the_value_on_success() -> None:
     assert _api("fine") == "ok"
-    assert COUNTERS.snapshot() == {"api_misuse": 0, "internal_errors": 0}
+    assert COUNTERS.snapshot() == {"api_misuse": 0, "internal_errors": 0, "unsupported_callable": 0}
     assert _api.__name__ == "_api"  # functools.wraps
 
 
@@ -79,7 +79,7 @@ def test_fail_open_never_raises_into_the_app_and_counts() -> None:
     assert _api("misuse") is None
     assert _api("bug") is None
     assert _api("bug") is None
-    assert COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 2}
+    assert COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 2, "unsupported_callable": 0}
 
 
 @pytest.mark.parametrize("value", ["0", "", "true", "yes", " 1"])
@@ -95,7 +95,7 @@ def test_strict_mode_raises_misuse_as_value_error(monkeypatch: pytest.MonkeyPatc
         _api("misuse")
     with pytest.raises(KeyError):
         _api("bug")
-    assert COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 1}
+    assert COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 1, "unsupported_callable": 0}
 
 
 @pytest.mark.parametrize("strict", [False, True])
@@ -106,7 +106,7 @@ def test_base_exceptions_always_propagate(monkeypatch: pytest.MonkeyPatch, stric
         _api("interrupt")
     with pytest.raises(asyncio.CancelledError):
         _api("cancel")
-    assert COUNTERS.snapshot() == {"api_misuse": 0, "internal_errors": 0}
+    assert COUNTERS.snapshot() == {"api_misuse": 0, "internal_errors": 0, "unsupported_callable": 0}
 
 
 def test_fail_open_keeps_a_typed_default_on_methods() -> None:
@@ -447,7 +447,11 @@ def test_malformed_evidence_fails_open_and_raises_only_under_strict(
     assert isinstance(got, DescriptorOnlyBody)
     assert (got.role, got.boundary, got.status, got.reason) == (
         ct.EVIDENCE_ROLE, "tool_bound", "not_captured", "parse_failed")  # fmt: skip
-    assert ct.COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 0}
+    assert ct.COUNTERS.snapshot() == {
+        "api_misuse": 1,
+        "internal_errors": 0,
+        "unsupported_callable": 0,
+    }
     monkeypatch.setenv(ct.STRICT_ENV, "1")
     with pytest.raises((RecordsMisuseError, TypeError)):
         EvidenceDoc.build(evidence_type, items, **kwargs)
@@ -465,7 +469,11 @@ def test_evidence_build_contains_a_misbehaving_application_object(
     got = EvidenceDoc.build(TEST_TYPE, [Hostile(name="x")], boundary="")
     assert isinstance(got, DescriptorOnlyBody)
     assert (got.boundary, got.reason) == ("caller", "parse_failed")  # a bad boundary is misuse
-    assert ct.COUNTERS.snapshot() == {"api_misuse": 1, "internal_errors": 1}
+    assert ct.COUNTERS.snapshot() == {
+        "api_misuse": 1,
+        "internal_errors": 1,
+        "unsupported_callable": 0,
+    }
     monkeypatch.setenv(ct.STRICT_ENV, "1")
     with pytest.raises(RuntimeError):
         EvidenceDoc.build(TEST_TYPE, [Hostile(name="x")])
