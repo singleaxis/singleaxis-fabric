@@ -291,6 +291,12 @@ def test_a_data_file_in_the_package_fails_qualification(tmp_path: Path, member: 
         b'LISTS = {"control_hosts": [{"host": "policy.internal", "label": "p"}]}\n',
         b'LISTS = {"hook_programs": [{"basename": "pre-check", "label": "h"}]}\n',
         b'LISTS = {"tool_result_markers": [{"label": "acl", "prefix": "denied"}]}\n',
+        # other spellings of a filled list: compact JSON, a Python literal, multi-line, YAML
+        b'LISTS = {"control_hosts":[{"host":"policy.internal","label":"p"}]}\n',
+        b"LISTS = {'watched_paths': [{'path': '/etc/agent', 'label': 'acl'}]}\n",
+        b'LISTS = {\n    "hook_programs": [\n        {"basename": "pre-check"},\n    ],\n}\n',
+        b'LISTS = {"control_addresses":["10.0.0.0/8"]}\n',
+        b'DEFAULTS = """\ncontrol_hosts:\n  - host: policy.internal\n"""\n',
     ],
 )
 def test_a_shipped_profile_or_classification_list_fails_qualification(
@@ -307,5 +313,6 @@ def test_the_policy_loader_naming_the_keys_still_qualifies(tmp_path: Path) -> No
     path = _wheel(tmp_path / "loader.whl")
     with zipfile.ZipFile(path, "a") as archive:
         archive.writestr("fabric/_security_policy.py",
-                         b'SECTIONS = frozenset({"control_hosts", "hook_programs"})\n')  # fmt: skip
+                         b'SECTIONS = frozenset({"control_hosts", "hook_programs"})\n'
+                         b'EMPTY = {"control_hosts": [], "watched_paths": ()}\n')  # fmt: skip
     assert _qualifier().qualify(path, import_probe=False)["qualified"] is True

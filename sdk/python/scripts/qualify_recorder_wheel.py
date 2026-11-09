@@ -232,6 +232,13 @@ SECURITY_CONTEXT_DATA_MARKERS: tuple[bytes, ...] = (
     ),
     *(f'"{key}": ["'.encode() for key in ("control_addresses",)),
 )
+# The same, in any spelling a filled list takes: either quote, any whitespace (compact JSON,
+# a Python literal, a multi-line literal), an entry that is an object or a string, and the
+# YAML block form (``key:`` followed by a ``- `` item).
+SECURITY_CONTEXT_LIST_PATTERN = re.compile(
+    rb"""["']?(?:control_hosts|control_addresses|hook_programs|watched_paths|"""
+    rb"""tool_result_markers)["']?\s*:\s*(?:\[\s*[{"']|\n[ \t]*-[ \t])"""
+)
 
 
 def _canonical_member(name: str) -> str:
@@ -332,7 +339,10 @@ def _check_no_security_context_data(
         name
         for name, data in canonical_payloads.items()
         if name.startswith("fabric/")
-        and any(marker in data for marker in SECURITY_CONTEXT_DATA_MARKERS)
+        and (
+            any(marker in data for marker in SECURITY_CONTEXT_DATA_MARKERS)
+            or SECURITY_CONTEXT_LIST_PATTERN.search(data) is not None
+        )
     )
     if shipped_lists:
         raise ValueError(f"{kind} ships a mapping profile or classification list: {shipped_lists}")
