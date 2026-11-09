@@ -58,9 +58,12 @@ it never makes, applies, waits for or returns one.
   on the wire. Rules are kept verbatim and never interpreted; credential
   values are never read. Telemetry carries only the shape (basis, modes,
   counts) and a keyed `grt-` id; the document is `run.permissions` content
-  in which every path, host and credential name is replaced by a keyed
-  pseudonym (`pth-`, `net-`, `crd-`). Without an id key such a document is
-  withheld, never stored in clear. `record_run_context(permissions=...)` now
+  in which every path, host, credential name and MCP server launch command
+  or URL (`server_ref`, which can carry an API key or token) is replaced by
+  a keyed pseudonym (`pth-`, `net-`, `crd-`, `src-`). The capture policy can
+  keep a group clear (`security_context.grant.pseudonymise`, e.g.
+  `sources: false`). Without an id key such a document is withheld, never
+  stored in clear. `record_run_context(permissions=...)` now
   records the same kind of declared grant.
 - **`fabric.records.control_check`** records the outcome of a permission
   check in your own code without changing it: decorate the check function
@@ -88,7 +91,9 @@ it never makes, applies, waits for or returns one.
   program or a callback; and a skill's kind, source kind, signature status,
   scope, enabled state and contributions. With capture installed, each call
   also emits a hook or extension record; the existing span events are
-  unchanged.
+  unchanged. `record_hook(outcome="modified")` now sets `modified=True`
+  when you do not pass it; a `modified` value that contradicts the outcome
+  is kept and counted as misuse.
 - **`ControlObservation` v2**: new optional fields (kind, phase, resolves,
   the deciding actor, and the spec 057 stage, engine, mode, reason code and
   derivation); v1 documents and v1 construction keep working.
