@@ -11,9 +11,10 @@
  * than wiring OTel globals by hand.
  *
  * The SDK ships no OTLP exporter itself (exporter choice belongs to the
- * host): pair a `NodeTracerProvider` with a `BatchSpanProcessor` wrapping
- * `OTLPTraceExporter` — or set `OTEL_EXPORTER_OTLP_ENDPOINT` per the
- * README recipe — and register it here.
+ * host): pair a `TracerProvider` from `@opentelemetry/sdk-trace` with a
+ * `BatchSpanProcessor` wrapping `OTLPTraceExporter` (endpoint from
+ * `OTEL_EXPORTER_OTLP_ENDPOINT`), per the README quick start, and register
+ * it here.
  */
 
 import {
@@ -66,11 +67,10 @@ export function getTracer(provider?: TracerProvider): Tracer {
     warnedNoopProvider = true;
     console.warn(
       "singleaxis-fabric: no OpenTelemetry TracerProvider is configured; " +
-        "emitted telemetry will be silently dropped. Install one — e.g. " +
-        "`new NodeTracerProvider({spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())]})`" +
-        " registered with `provider.register({contextManager: new AsyncLocalStorageContextManager()})`, " +
-        "or via `installDefaultProvider({provider, contextManager})` — see the README's " +
-        "OpenTelemetry wiring section.",
+        "emitted telemetry will be silently dropped. Install one with " +
+        "`installDefaultProvider({provider, contextManager})` (a TracerProvider with an " +
+        "OTLPTraceExporter, and an AsyncLocalStorageContextManager): see the README's " +
+        "quick start.",
     );
   }
   return resolved.getTracer(TRACER_NAME, SDK_VERSION, { schemaUrl: GEN_AI_SCHEMA_URL });

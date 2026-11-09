@@ -73,8 +73,10 @@ updates:
     # (dependabot-core Config::IgnoreCondition#ignored_versions). So these
     # rules never block a security update. A `versions` rule would.
     ignore:
-      # The published peer range is ">=1.9.0 <1.10.0". The SDK is tested
-      # against 1.9.x, so 1.10 and later stay out until that range moves.
+      # The published peer range is ">=1.9.0 <1.11.0". The unit suite runs
+      # on the 1.9.x floor (this devDependency); the README fresh-install
+      # test (scripts/fresh-install.mjs) covers 1.10. Version updates stay
+      # on the floor so the floor stays tested.
       - dependency-name: "@opentelemetry/api"
         update-types: ["version-update:semver-minor", "version-update:semver-major"]
       # @opentelemetry/sdk-trace-node 2.x still pins context-async-hooks

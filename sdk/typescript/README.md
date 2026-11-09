@@ -27,77 +27,160 @@ Node then applies its own allowlist before delivery. Unlike Python,
 `installDefaultProvider` does not add a metadata-only export projection: the
 provider and exporters you register are your responsibility.
 
-## Install
+## What it records, and what can be verified from it
+
+Read this before you choose the TypeScript SDK for a production record.
+
+**Recorded today**, as OpenTelemetry spans your provider exports (OTLP to a
+Fabric Node, then the Node's allowlist before delivery):
+
+- a `fabric.decision` span per turn (inside a `fabric.execution` span when
+  you group work), with a child span per model call (GenAI name
+  `{operation} {model}`) and per tool call (`execute_tool`, carrying the tool
+  name as a keyed label when `FABRIC_WIRE_ID_KEY` is set); tenant, agent
+  and correlation ids, timing,
+  status and a bounded error class; and the retrieval, memory, side-effect,
+  checkpoint, delegation, MCP-inventory, skill, hook, file-access and
+  interaction records your code reports on a decision;
+- only what your code passes in. Nothing is intercepted: a model call, tool
+  call or effect your code does not report is not recorded, and Fabric
+  cannot tell that it is missing;
+- model-call metadata you pass (model, token usage, finish reasons, a keyed
+  response id); prompts and responses only when you pass them with content
+  capture switched on (`captureContent`, or governed `contentCapture`);
+- tool arguments and results as hashes by default (raw text only with the
+  opt-in `captureContent`);
+- session, user and other caller-supplied ids as keyed pseudonyms, omitted
+  when no `FABRIC_WIRE_ID_KEY` is set (the one-time warning says so);
+- exact bytes only through the opt-in `ByteEvidenceRecorder` (below), to a
+  store you configure.
+
+**What the verifier can and cannot do with it.** `python -m fabric.reconstruct`
+and `python -m fabric.reconstruct actions` read Python wire capture and
+Python records only. Given spans from this SDK they reconstruct nothing and
+exit 1 with `fabric.reconstruct: no runs reconstructed`. There is no
+completeness or gap verdict, no action view and no corroboration with host
+sensors for a TypeScript agent today. The spans are ordinary OTLP: you can
+read them in the destination the Node delivers to, but Fabric does not
+verify them. See [the verifier's scope](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/reconstruct.md#scope-of-the-verifier)
+and [limitations](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/limitations-and-roadmap.md).
+
+## Quick start
+
+Install the SDK with the OpenTelemetry packages the example imports. These
+versions are tested together in CI (OpenTelemetry JS 3.x):
+
+<!-- fresh-install: install current -->
 
 ```bash
-npm install @singleaxis/fabric @opentelemetry/api
+npm install @singleaxis/fabric @opentelemetry/api@1.10.0 @opentelemetry/sdk-trace@3.1.0 @opentelemetry/context-async-hooks@3.1.0 @opentelemetry/exporter-trace-otlp-http@0.301.0
 ```
 
-Each stable release is published to npm as `latest`; release candidates go to
-the `next` dist-tag. The SDK's maturity is still beta (see its connector
-manifest): the dist-tag says which release you get, not how stable the API is.
+Already on OpenTelemetry JS 2.x? This set is tested too, and is the one to
+use with `@singleaxis/fabric` 0.12.1 or earlier (those releases accept only
+`@opentelemetry/api` 1.9; later releases accept 1.9 and 1.10):
 
-## OpenTelemetry wiring
+<!-- fresh-install: install otel-2 -->
 
-The SDK emits through the OpenTelemetry provider configured by the host
-application — it never installs one silently. With no real provider configured,
-the SDK warns once that telemetry is being dropped.
+```bash
+npm install @singleaxis/fabric @opentelemetry/api@1.9.1 @opentelemetry/sdk-trace@2.12.0 @opentelemetry/context-async-hooks@2.12.0 @opentelemetry/exporter-trace-otlp-http@0.223.0
+```
 
-A working Node setup needs **two** pieces:
+Mixing lines fails: `exporter-trace-otlp-http` 0.300 and later needs
+`@opentelemetry/api` 1.10 and the 3.x SDK packages; 0.223 and the 2.x
+packages need `@opentelemetry/api` 1.9.
 
-```ts
-import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { BatchSpanProcessor } from "@opentelemetry/sdk-trace-node";
+Save as `agent.mjs` (it is also valid TypeScript):
+
+<!-- fresh-install: example agent.mjs -->
+
+```js
+import { BatchSpanProcessor, TracerProvider } from "@opentelemetry/sdk-trace";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { Fabric, installDefaultProvider } from "@singleaxis/fabric";
 
-const provider = new NodeTracerProvider({
-  spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter())],
+// Your provider and exporter: Fabric never installs one silently.
+const provider = new TracerProvider({
+  spanProcessors: [new BatchSpanProcessor({ exporter: new OTLPTraceExporter() })],
 });
+// Registers the provider globally plus the context manager that keeps span
+// parenting correct across `await`.
+installDefaultProvider({ provider, contextManager: new AsyncLocalStorageContextManager() });
 
-// register() sets the global tracer provider AND a context manager. Passing
-// AsyncLocalStorageContextManager explicitly is required — without it, spans
-// opened after an `await` lose their parent.
-provider.register({ contextManager: new AsyncLocalStorageContextManager() });
-```
-
-Equivalently, `installDefaultProvider({ provider, contextManager })` from this
-package performs the same registration and warns if a provider is already
-installed or no context manager is supplied.
-
-`OTLPTraceExporter` honours the standard environment variables
-(`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`), so an OTLP
-endpoint such as a Fabric Node collector can be selected entirely by
-environment.
-
-The same wiring requirement applies to metrics: Fabric surfaces do not emit
-metrics in this version, but if a future version adds them they require a
-`MeterProvider` — `NodeTracerProvider.register` does not install one.
-
-## Capture one agent decision
-
-```ts
-import { Fabric } from "@singleaxis/fabric";
-
-const fabric = new Fabric({ tenantId: "acme", agentId: "support-agent" });
-// or: const fabric = Fabric.fromEnv();  // FABRIC_TENANT_ID / FABRIC_AGENT_ID / FABRIC_PROFILE
+const fabric = Fabric.fromEnv(); // FABRIC_TENANT_ID, FABRIC_AGENT_ID, FABRIC_PROFILE
 
 await fabric.decision({ sessionId: "session-42", requestId: "request-7" }, async (decision) => {
   await decision.llmCall(
     { provider: "provider-example", operationName: "chat", model: "model-example" },
     async (call) => {
-      // Invoke the customer's model client here.
+      // Invoke your model client here.
       call.setResponse({ model: "model-example" });
     },
   );
 
   await decision.toolCall("lookup_order", { callId: "tool-1" }, async (tool) => {
     tool.setArguments('{"order_id":"order-123"}');
-    // Invoke the customer's tool here.
+    // Invoke your tool here.
     tool.setResult('{"status":"shipped"}');
   });
 });
+
+await provider.shutdown(); // flush before the process exits
 ```
+
+Run it against a Fabric Node (the local Node from the
+[quickstart](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/quickstart.md)
+listens on loopback port 4318):
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+export FABRIC_TENANT_ID=acme FABRIC_AGENT_ID=support-agent
+node agent.mjs
+```
+
+`OTLPTraceExporter` reads the standard variables (`OTEL_EXPORTER_OTLP_ENDPOINT`,
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`,
+`OTEL_EXPORTER_OTLP_CERTIFICATE`), so the Node is selected by environment.
+With no provider registered, the SDK warns once that telemetry is dropped.
+`installDefaultProvider` warns if a provider is already installed or no
+context manager is supplied; registering the provider and context manager
+yourself through `@opentelemetry/api` is equivalent.
+
+### Plain HTTP only to loopback
+
+The endpoint those variables select must be `https://`, or plain `http://`
+to a loopback host (`localhost`, `127.0.0.1`, `[::1]`), the same rule as the
+Python SDK ([span delivery rule](https://github.com/singleaxis/singleaxis-fabric/blob/main/docs/privacy-and-security.md#span-delivery-rule)).
+With `http://fabric-node:4318`, for example, the `Fabric` client turns
+capture off: your agent runs unchanged, nothing is thrown, and no Fabric span
+or content object is produced. Fabric does not print this on your agent's
+stdout or stderr. Check it with the agent's environment:
+
+<!-- fresh-install: status -->
+
+```bash
+node --input-type=module -e 'import { captureStatus } from "@singleaxis/fabric"; console.log(JSON.stringify(captureStatus()))'
+```
+
+It prints `{"capture":"enabled"}`, or `{"capture":"disabled","reason":...,"fix":...}`
+naming the variable and the fix (never its value). In code,
+`fabric.captureStatus()` returns the same for that client. Set
+`FABRIC_WIRE_DIAGNOSTICS=stderr` to have the client print it once on stderr.
+To fix it, use `https://` with `OTEL_EXPORTER_OTLP_CERTIFICATE` for a private
+CA, or reach the Node through a loopback address (a port forward or a
+sidecar). The check reads the environment: an exporter you construct with an
+explicit `url` is not checked.
+
+The same wiring requirement applies to metrics: Fabric surfaces do not emit
+metrics in this version, but if a future version adds them they require a
+`MeterProvider`.
+
+Each stable release is published to npm as `latest`; release candidates go to
+the `next` dist-tag. The SDK's maturity is still beta (see its connector
+manifest): the dist-tag says which release you get, not how stable the API is.
+
+## Capture options
 
 Tool payload setters record hashes, not the raw payload — **by default**. The
 opt-in `captureContent` flag (and per-call `{ capture: true }` overrides on

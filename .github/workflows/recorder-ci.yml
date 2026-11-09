@@ -185,6 +185,14 @@ jobs:
           npm test
           npm run test:package
           npm run package:qualified -- --smoke
+      - name: Fresh install from the README with current OpenTelemetry releases
+        # Runs the README's exact npm install lines (the SDK resolved to the
+        # tarball built above) in an empty directory, runs its example
+        # against a loopback OTLP receiver, and checks the plaintext
+        # delivery rule. Fails on a peer conflict (ERESOLVE) or a version
+        # set that crashes at import.
+        working-directory: sdk/typescript
+        run: npm run test:fresh-install
 
   fabric-node:
     name: Fabric Node processor

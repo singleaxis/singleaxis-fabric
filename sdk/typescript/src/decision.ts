@@ -126,6 +126,12 @@ export interface DecisionClientIdentity {
    * from `FABRIC_IDENTITY_MODE` / `FABRIC_WIRE_ID_KEY` at decision open.
    */
   identityPolicy?: IdentityPolicy;
+  /**
+   * True when the client turned capture off under the span delivery rule.
+   * `Fabric.captureStatus()` already reports why, so a `disabled`
+   * captureHealth stays quiet instead of warning on the agent's stderr.
+   */
+  captureOff?: boolean;
 }
 
 /** Per-turn identifiers for one {@link Decision}. */
@@ -688,8 +694,8 @@ export class Decision implements DecisionLike {
       // Diagnostics must not change the monitored application's behavior.
     }
     this.recordingAtStart = recording;
-    void this.captureHealth;
     this.identity = identity;
+    void this.captureHealth;
     this.ids =
       identity.identityPolicy ??
       IdentityPolicy.resolve(
@@ -2155,7 +2161,8 @@ export class Decision implements DecisionLike {
             this.internalErrors > 0
           ? "partial"
           : "unverified";
-    if (status !== "unverified" && !CAPTURE_WARNED.has(status)) {
+    const explained = status === "disabled" && this.identity?.captureOff === true;
+    if (status !== "unverified" && !explained && !CAPTURE_WARNED.has(status)) {
       CAPTURE_WARNED.add(status);
       try {
         console.warn(

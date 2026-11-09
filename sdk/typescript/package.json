@@ -58,11 +58,12 @@
     "format": "prettier --check .",
     "test": "vitest run",
     "test:package": "node --test test/package-artifact.node.mjs",
+    "test:fresh-install": "node scripts/fresh-install.mjs",
     "package:qualified": "node scripts/package-qualified.mjs"
   },
   "peerDependencies": {
     "@aws-sdk/client-s3": ">=3.0.0",
-    "@opentelemetry/api": ">=1.9.0 <1.10.0"
+    "@opentelemetry/api": ">=1.9.0 <1.11.0"
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-s3": {
