@@ -962,7 +962,9 @@ def _check_startup_effects(attribution: Mapping[str, Any], path: str) -> None:
             "the list holds the first min(count, 64) entries",
         )
     startup = {entry["attempt_uid"] for entry in effects}
-    unattributed = {e["attempt_uid"] for e in attribution["unattributed_effects"]["effects"]}
+    unattributed = {
+        e["attempt_uid"] for e in attribution["unattributed_effects"]["effects"]
+    }
     if startup & unattributed:
         raise _chain_fail(
             f"{path}.attribution.startup_effects",

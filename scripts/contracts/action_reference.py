@@ -122,7 +122,9 @@ def _epoch(inp: Mapping[str, Any], record: Mapping[str, Any]) -> tuple[str, int]
     )
 
 
-def startup_effects(inp: Mapping[str, Any], effects: Iterable[Mapping[str, Any]]) -> set[str]:
+def startup_effects(
+    inp: Mapping[str, Any], effects: Iterable[Mapping[str, Any]]
+) -> set[str]:
     """§4.2 rule S0 (revision 11): the effects the agent process ran before its first model
     call of the run. No reported parent; the run has an exchange on the effect's epoch and
     the effect's sequence is lower than every such exchange's; no unverified position

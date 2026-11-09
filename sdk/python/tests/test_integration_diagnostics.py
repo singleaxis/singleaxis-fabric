@@ -36,7 +36,6 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 import fabric._loss
 import fabric._sequence
 from fabric import wire
-from fabric._loss import LossEmitter
 from fabric.wire import WireConfig
 from fabric.wire.__main__ import autoload_path
 from fabric.wire._config import parse_endpoints
@@ -204,7 +203,7 @@ def test_the_readme_own_application_route_has_a_destination_and_an_endpoint(
     assert (code, status["warnings"]) == (0, [])
     assert status["wire"]["span_destination"] == "otlp"
     (matcher,) = parse_endpoints(env["FABRIC_WIRE_ENDPOINTS"])
-    assert "models.example.com" in matcher.hosts
+    assert matcher.hosts == frozenset({"models.example.com"})
 
 
 def test_install_from_env_logs_the_missing_destination(caplog: pytest.LogCaptureFixture) -> None:
@@ -222,7 +221,7 @@ def test_install_from_env_logs_the_missing_destination(caplog: pytest.LogCapture
 
 @pytest.fixture(autouse=True)
 def _isolated_loss_emitter(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    emitter = LossEmitter()
+    emitter = fabric._loss.LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
     monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
     yield
@@ -271,7 +270,12 @@ def test_unmatched_model_host_is_counted_named_and_logged_once(
     assert row["fix"].startswith("export FABRIC_WIRE_ENDPOINTS='")
     messages = [r.getMessage() for r in caplog.records if "model-looking" in r.getMessage()]
     assert len(messages) == 1
-    assert "https://models.example.com" in messages[0] and "FABRIC_WIRE_ENDPOINTS=" in messages[0]
+    assert messages[0] == (
+        "fabric.wire: a model-looking request to https://models.example.com matched no "
+        "configured endpoint and was not recorded. Fix: export FABRIC_WIRE_ENDPOINTS='"
+        '[{"endpoint_id":"my-model","dialect":"openai","hosts":["models.example.com"],'
+        '"ports":[443],"schemes":["https"]}]\''
+    )
     assert all("t0ps3cr3tvalue" not in m for m in messages)
     assert "t0ps3cr3tvalue" not in json.dumps(handle.status())
 

@@ -2466,13 +2466,18 @@ def _check_rule_fixture(doc: Mapping[str, Any], root: Path) -> None:
     startup = attribution.get("startup_effects")
     if startup is not None:
         uids = {entry["attempt_uid"] for entry in startup["effects"]}
-        if startup["count"] != len(startup["effects"]) and len(startup["effects"]) < rules.LIST_MAX:
+        if (
+            startup["count"] != len(startup["effects"])
+            and len(startup["effects"]) < rules.LIST_MAX
+        ):
             _fail(
                 "coverage.action.chains",
                 "$.expected.attribution.startup_effects",
                 "count and list disagree",
             )
-        if uids & {e["attempt_uid"] for e in attribution["unattributed_effects"]["effects"]}:
+        if uids & {
+            e["attempt_uid"] for e in attribution["unattributed_effects"]["effects"]
+        }:
             _fail(
                 "coverage.action.startup",
                 "$.expected.attribution.startup_effects",

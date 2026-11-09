@@ -557,7 +557,7 @@ class Harness:
         projection = json.loads((run.directory / "projection.json").read_text())
         steps = {s["attempt_id"]: s for s in projection.get("steps", ()) if "attempt_id" in s}
         for uid, step in run.steps.items():
-            if step in expect.UNATTRIBUTED_STEPS:
+            if step in expect.UNLINKED_STEPS:
                 continue
             kinds = [
                 (link["type"], link.get("method")) for link in steps.get(uid, {}).get("links", ())

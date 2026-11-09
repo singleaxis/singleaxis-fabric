@@ -35,7 +35,11 @@ CALL_OF_STEP_PRODUCTION = {**CALL_OF_STEP, "8": "T6", "9": "T7"}
 LOCAL_STEPS = ("1", "2", "3a", "3b", "4", "5")
 PRODUCTION_STEPS = (*LOCAL_STEPS, "8", "9")
 SANDBOX_LINK = "sandbox_report · certain"
-UNATTRIBUTED_STEPS = ("5", "sdk")  # step 5, and the OpenAI SDK's own platform probes
+UNATTRIBUTED_STEPS = ("5",)  # step 5: after the first model call, no open tool call
+# The OpenAI SDK's own platform probes, run before the first model call: startup effects
+# (spec 056 revision 11, rule S0), listed in startup_effects and never attributed.
+STARTUP_STEPS = ("sdk",)
+UNLINKED_STEPS = UNATTRIBUTED_STEPS + STARTUP_STEPS
 OUTPUT_MATCH = "output_match · certain"
 BRACKET = "sequence_bracket · tentative"
 ANCHOR = "process_anchor · tentative"
@@ -124,11 +128,11 @@ def attribution(
     without_effect: Collection[tuple[str, str]] = (),
 ) -> None:
     """The caused_by link of every effect (§4.2): A1 for steps 1-4 (step 2 may be A2), A4
-    for step 5 and the SDK probes; with ``metadata_only`` step 3 is A3 over T3 and T4 and
-    the single-window steps are A2. ``production`` adds steps 8 and 9 (A1 to T6 and T7;
-    step 9's output is ``remote.result``, which ``metadata_only`` of the subprocess
-    output leaves as content, so it stays A1). ``without_effect`` lists the expected
-    ``(call, reason)`` of tool calls without an effect (variant f: T7)."""
+    for step 5, S0 (startup, revision 11) for the SDK probes; with ``metadata_only`` step 3
+    is A3 over T3 and T4 and the single-window steps are A2. ``production`` adds steps 8
+    and 9 (A1 to T6 and T7; step 9's output is ``remote.result``, which ``metadata_only``
+    of the subprocess output leaves as content, so it stays A1). ``without_effect`` lists
+    the expected ``(call, reason)`` of tool calls without an effect (variant f: T7)."""
     calls = CALL_OF_STEP_PRODUCTION if production else CALL_OF_STEP
     absent = {call for call, _ in without_effect}
     rows = effect_rows(view)
@@ -153,6 +157,8 @@ def attribution(
         got = links(row)
         if step in UNATTRIBUTED_STEPS:
             checks.equal(f"step {step}: A4, no caused_by", (row.get("rule"), got), ("A4", []))
+        elif step in STARTUP_STEPS:
+            checks.equal(f"step {step}: S0, no caused_by", (row.get("rule"), got), ("S0", []))
         elif metadata_only and step in ("3a", "3b"):
             checks.equal(
                 f"step {step}: A3 over T3 and T4",
@@ -179,7 +185,10 @@ def attribution(
             )
     unattributed = sorted(e["attempt_uid"] for e in view["unattributed_effects"])
     expected = sorted(uid for uid, step in steps.items() if step in UNATTRIBUTED_STEPS)
-    checks.equal("unattributed effects: step 5 and the SDK probes", unattributed, expected)
+    checks.equal("unattributed effects: step 5", unattributed, expected)
+    startup = sorted(e["attempt_uid"] for e in view.get("startup_effects", ()))
+    expected = sorted(uid for uid, step in steps.items() if step in STARTUP_STEPS)
+    checks.equal("startup effects: the SDK probes (spec 056 rev 11)", startup, expected)
     checks.equal(
         "tool calls without an effect",
         sorted((c["call"], c["reason"]) for c in view["tool_calls_without_effect"]),
@@ -289,7 +298,7 @@ def targets_by_step(view: Mapping[str, Any], steps: Mapping[str, str]) -> dict[s
     return {
         step: [t for t, _ in links(rows.get(uid, {}))]
         for uid, step in steps.items()
-        if step not in UNATTRIBUTED_STEPS
+        if step not in UNLINKED_STEPS
     }
 
 
