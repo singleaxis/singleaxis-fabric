@@ -799,14 +799,22 @@ class SpanIds:
     parent_is_remote: bool = False
 
 
-@dataclass(frozen=True, slots=True)
-class RecordJob:
-    """One records-input job (§3.4 step 3), immutable, bodies held by reference. Field names
-    of the source triple match :class:`~fabric.wire._model.CaptureJob`, so the pipeline's
-    loss path serves both. ``attributes`` already passed rule A. ``late`` (spec 056 OD-2)
-    is called once by the capture worker, never the caller, before the span is built: the
-    attributes it returns already passed rule A and never replace a key already set."""
+def _check_held(bodies: tuple[AnyBody, ...], evidence: EvidenceDoc | None,
+                provenance: object) -> None:  # fmt: skip
+    """The bodies and evidence object a record job may hold (§3.4 step 3)."""
+    if len(bodies) + (evidence is not None) > MAX_RECORD_BODIES:
+        raise RecordsMisuseError("records API misuse: more than 8 bodies on one record")
+    evidence_bodies = sum(body.role == EVIDENCE_ROLE for body in bodies)
+    if evidence_bodies + (evidence is not None) > 1:
+        raise RecordsMisuseError("records API misuse: more than one evidence object")
+    if provenance == "reported" and any(
+        isinstance(body, RecordBody) and body.content_provenance == "protocol"
+        for body in bodies
+    ):  # fmt: skip
+        raise RecordsMisuseError("records API misuse: protocol content on a reported record")
 
+
+class _RecordJobFields(NamedTuple):
     source_id: str
     source_epoch: int
     source_sequence: int
@@ -827,27 +835,48 @@ class RecordJob:
     provenance: Provenance = "reported"
     late: Callable[[], Mapping[str, AttributeValue]] | None = None
 
-    def __post_init__(self) -> None:
-        if not self.bodies and self.evidence is None:  # the common record: nothing held
-            if self.otlp_status not in OTLP_STATUSES:
-                raise RecordsMisuseError("records API misuse: unknown otlp_status")
-            if self.provenance not in PROVENANCES:
-                raise RecordsMisuseError("records API misuse: unknown provenance")
-            return
-        if len(self.bodies) + (self.evidence is not None) > MAX_RECORD_BODIES:
-            raise RecordsMisuseError("records API misuse: more than 8 bodies on one record")
-        evidence_bodies = sum(body.role == EVIDENCE_ROLE for body in self.bodies)
-        if evidence_bodies + (self.evidence is not None) > 1:
-            raise RecordsMisuseError("records API misuse: more than one evidence object")
-        if self.otlp_status not in OTLP_STATUSES:
+
+_TUPLE_NEW = tuple.__new__
+
+
+class RecordJob(_RecordJobFields):
+    """One records-input job (§3.4 step 3), immutable, bodies held by reference. Field names
+    of the source triple match :class:`~fabric.wire._model.CaptureJob`, so the pipeline's
+    loss path serves both. ``attributes`` already passed rule A. ``late`` (spec 056 OD-2)
+    is called once by the capture worker, never the caller, before the span is built: the
+    attributes it returns already passed rule A and never replace a key already set.
+
+    A named tuple (one allocation on the calling thread, where a frozen dataclass set each
+    field through ``object.__setattr__``); every construction is checked here, and
+    ``_replace`` builds a changed copy through the same checks."""
+
+    __slots__ = ()
+
+    def __new__(
+        cls, source_id: str, source_epoch: int, source_sequence: int, segment_id: str | None,
+        run_id: str | None, scope_id: str | None, event_id: str, attempt_uid: str, name: str,
+        start_ns: int, end_ns: int, otlp_status: OtlpStatus,
+        attributes: Mapping[str, AttributeValue], bodies: tuple[AnyBody, ...] = (),
+        evidence: EvidenceDoc | None = None, span_ids: SpanIds | None = None,
+        parent_context: Context | None = None, provenance: Provenance = "reported",
+        late: Callable[[], Mapping[str, AttributeValue]] | None = None,
+    ) -> RecordJob:  # fmt: skip
+        if bodies or evidence is not None:
+            _check_held(bodies, evidence, provenance)
+        if otlp_status not in OTLP_STATUSES:
             raise RecordsMisuseError("records API misuse: unknown otlp_status")
-        if self.provenance not in PROVENANCES:
+        if provenance not in PROVENANCES:
             raise RecordsMisuseError("records API misuse: unknown provenance")
-        if self.provenance == "reported" and any(
-            isinstance(body, RecordBody) and body.content_provenance == "protocol"
-            for body in self.bodies
-        ):  # fmt: skip
-            raise RecordsMisuseError("records API misuse: protocol content on a reported record")
+        job: RecordJob = _TUPLE_NEW(cls, (
+            source_id, source_epoch, source_sequence, segment_id, run_id, scope_id, event_id,
+            attempt_uid, name, start_ns, end_ns, otlp_status, attributes, bodies, evidence,
+            span_ids, parent_context, provenance, late,
+        ))  # fmt: skip
+        return job
+
+    def _replace(self, **changes: Any) -> RecordJob:
+        """A copy with ``changes``, checked as a new job is."""
+        return RecordJob(**{**self._asdict(), **changes})
 
     @property
     def inflight_charge(self) -> int:

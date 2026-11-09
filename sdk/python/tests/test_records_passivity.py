@@ -97,3 +97,53 @@ def test_the_rule_a_memo_never_changes_an_answer() -> None:
     assert memoised.memo["fabric.control.stage"] == {"Bad Stage": False}
     assert memoised.memo["fabric.event_id"] is None  # high-cardinality: no longer kept
     assert "fabric.process.parent_pid" not in memoised.memo  # conditional: never kept
+
+
+def test_the_owned_key_answer_never_changes_an_answer() -> None:
+    """The remembered rule A answer for Fabric's own repeating keys
+    (``RecordsInput._owned_pass``) says "every key kept as it is" exactly when the full
+    projection keeps every key unchanged: valid records, each key made invalid in turn
+    (also after its valid form was remembered), ``bool`` and out-of-range sequences."""
+    import uuid  # noqa: PLC0415
+
+    from fabric import _records  # noqa: PLC0415
+
+    records = _records.RecordsInput(None)
+    good: dict[str, Any] = {
+        "fabric.capture.input": "records", "fabric.capture.source": "reported",
+        "fabric.capture.point": "sdk.records@0.12.0", "fabric.source_id": "s-" + "a" * 32,
+        "fabric.source.epoch": 3, "fabric.source.sequence": 7,
+        "fabric.event_id": str(uuid.uuid4()), "fabric.attempt.uid": str(uuid.uuid4()),
+        "fabric.step.kind": "control", "fabric.run.id": "r-" + "b" * 32,
+        "fabric.run.scope_id": str(uuid.uuid4()), "fabric.run.segment_id": "seg-" + "c" * 32,
+        "fabric.step.lifecycle_state": "completed", "fabric.step.status": "ok",
+    }  # fmt: skip
+    bad: dict[str, Any] = {
+        "fabric.capture.source": "invented", "fabric.capture.point": "Not A Point",
+        "fabric.source_id": "", "fabric.source.epoch": -1, "fabric.source.sequence": True,
+        "fabric.event_id": "not-a-uuid", "fabric.attempt.uid": "x" * 40,
+        "fabric.step.kind": "bogus", "fabric.run.id": None, "fabric.run.scope_id": "?",
+        "fabric.run.segment_id": "seg", "fabric.step.lifecycle_state": "nope",
+        "fabric.step.status": "maybe",
+    }  # fmt: skip
+    cases = (
+        [good]
+        + [{**good, key: value} for key, value in bad.items()]
+        + [{**good, "fabric.source.sequence": 2**63}, {**good, "fabric.source.sequence": -5}]
+    )
+    for fabric in cases * 2:  # the second pass answers from what the first remembered
+        static = tuple(v for k, v in fabric.items() if k not in _records._VARYING_KEYS)
+        fast = records._owned_pass(
+            static,
+            fabric,
+            fabric["fabric.source.sequence"],
+            fabric["fabric.event_id"],
+            fabric["fabric.attempt.uid"],
+        )
+        kept, dropped = _records.project_attributes(
+            fabric, records._checks, point=fabric["fabric.capture.point"]
+        )
+        assert fast == (not dropped and kept == fabric), fabric
+    assert records._owned  # answers were remembered
+    static = tuple(v for k, v in good.items() if k not in _records._VARYING_KEYS)
+    assert records._owned_pass(static, good, 7, good["fabric.event_id"], good["fabric.attempt.uid"])

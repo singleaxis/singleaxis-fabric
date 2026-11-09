@@ -541,6 +541,8 @@ class Attempt:
 
 
 _POINTS_KEPT = 256  # checked capture points remembered per records input
+_OWNED_KEPT = 256  # rule A answers for Fabric's own repeating keys, per records input
+_VARYING_KEYS = frozenset({"fabric.source.sequence", "fabric.event_id", "fabric.attempt.uid"})
 
 
 class RecordsInput:
@@ -570,6 +572,14 @@ class RecordsInput:
         )
         self._point_version = __version__
         self._points: dict[str, str] = {}  # point id -> emitted point, once checked
+        # Rule A's answer for Fabric's own repeating keys (see _owned_pass), and the checks
+        # of the three that change per record (none of them has a placement condition).
+        self._owned: dict[tuple[Any, ...], bool] = {}
+        self._varying: tuple[Predicate, Predicate, Predicate] | None = (
+            None if any(k in RECORD_KEY_CONDITIONS or k not in self._checks for k in _VARYING_KEYS)
+            else (self._checks["fabric.source.sequence"], self._checks["fabric.event_id"],
+                  self._checks["fabric.attempt.uid"])
+        )  # fmt: skip
         self._modes: tuple[int, dict[str, PrivacyMode]] = (-1, {})
         self.evidence_ids = EvidenceIds(self._evidence_id, clear=self._clear)
         tee = getattr(handle, "_tee_or_none", None)
@@ -767,6 +777,31 @@ class RecordsInput:
                 return False
             raise
 
+    def _owned_pass(
+        self, static: tuple[Any, ...], fabric: Mapping[str, Any], sequence: object,
+        event_id: object, uid: object,
+    ) -> bool:  # fmt: skip
+        """Whether rule A keeps every one of Fabric's own keys unchanged. The keys whose
+        values repeat from record to record (``static``: all plain ``str``/``int`` or
+        ``None``) are projected once per distinct tuple and the answer remembered; the
+        three that change on every record are checked here. ``False`` sends the record
+        through the full projection, so the outcome is always rule A's."""
+        varying = self._varying
+        if varying is None or type(event_id) is not str or type(uid) is not str or (
+                type(sequence) is not int):  # fmt: skip
+            return False
+        passed = self._owned.get(static)
+        if passed is None:
+            rest = {k: v for k, v in fabric.items() if k not in _VARYING_KEYS}
+            kept, _ = project_attributes(rest, self._checks, point=fabric["fabric.capture.point"])
+            passed = len(kept) == len(rest)
+            if len(self._owned) >= _OWNED_KEPT:
+                self._owned.clear()
+            self._owned[static] = passed
+        sequence_ok, event_ok, uid_ok = varying
+        return passed and bool(sequence_ok(sequence)) and bool(event_ok(event_id)) and bool(
+            uid_ok(uid))  # fmt: skip
+
     def _after_allocation(
         self, tee: Any, allocation: Any, attempt: Attempt, event_id: str,
         lifecycle: Lifecycle | None, result_status: ResultStatus | None,
@@ -778,23 +813,38 @@ class RecordsInput:
         allocator, scope = tee.allocator, allocation.scope
         run_id = scope.run_id if scope is not None else _fallback_run_id(
             allocator.source_id, allocation.epoch, span_ids)  # fmt: skip
+        # Fabric's own keys, every text value a plain ``str`` (as rule A would emit it)
+        plain = str.__str__
+        point, kind, source = plain(attempt.point), plain(attempt.kind), plain(attempt.provenance)
+        source_id, uid = plain(allocator.source_id), plain(attempt.uid)
+        scope_id = plain(scope.scope_id) if scope is not None else None
+        segment_id = plain(allocation.segment_id) if allocation.segment_id is not None else None
+        run_text = plain(run_id) if type(run_id) is not str and isinstance(run_id, str) else run_id
+        state = plain(lifecycle) if lifecycle is not None else None
+        status = plain(result_status) if result_status is not None else None
         fabric: dict[str, Any] = {
-            "fabric.capture.input": CAPTURE_INPUT, "fabric.capture.source": attempt.provenance,
-            "fabric.capture.point": attempt.point, "fabric.source_id": allocator.source_id,
+            "fabric.capture.input": CAPTURE_INPUT, "fabric.capture.source": source,
+            "fabric.capture.point": point, "fabric.source_id": source_id,
             "fabric.source.epoch": allocation.epoch,
             "fabric.source.sequence": allocation.sequence, "fabric.event_id": event_id,
-            "fabric.attempt.uid": str.__str__(attempt.uid), "fabric.step.kind": attempt.kind,
+            "fabric.attempt.uid": uid, "fabric.step.kind": kind,
         }  # fmt: skip
-        fabric["fabric.run.id"] = run_id
-        if scope is not None:
-            fabric["fabric.run.scope_id"] = scope.scope_id
-        if allocation.segment_id is not None:
-            fabric["fabric.run.segment_id"] = allocation.segment_id
-        if lifecycle is not None:
-            fabric["fabric.step.lifecycle_state"] = lifecycle
-        if result_status is not None:
-            fabric["fabric.step.status"] = result_status
-        checked, refused = project_attributes(fabric, self._checks, point=attempt.point)
+        fabric["fabric.run.id"] = run_text
+        if scope_id is not None:
+            fabric["fabric.run.scope_id"] = scope_id
+        if segment_id is not None:
+            fabric["fabric.run.segment_id"] = segment_id
+        if state is not None:
+            fabric["fabric.step.lifecycle_state"] = state
+        if status is not None:
+            fabric["fabric.step.status"] = status
+        static = (source, point, source_id, allocation.epoch, kind, run_text, scope_id,
+                  segment_id, state, status)  # fmt: skip
+        refused: list[str]
+        if self._owned_pass(static, fabric, allocation.sequence, event_id, uid):
+            checked, refused = fabric, []  # rule A keeps every key, values as they are
+        else:
+            checked, refused = project_attributes(fabric, self._checks, point=point)
         attrs = {**kept, **checked}
         attrs.setdefault("fabric.actor.type", "agent")
         if dropped + len(refused):
@@ -828,7 +878,7 @@ class RecordsInput:
                 boundary = next((body.boundary for body in bodies), "caller")
                 refused_bodies += (BudgetRefusedBody(EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE,
                                    boundary, "not_captured", "payload_too_large"),)  # fmt: skip
-            job = replace(job, bodies=refused_bodies, evidence=None)
+            job = job._replace(bodies=refused_bodies, evidence=None)
             self.stats.add("budget_refused")
         if pipeline.submit(job):
             self.stats.add("emitted")
