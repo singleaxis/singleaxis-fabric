@@ -7,7 +7,7 @@ Fabric Node or an OTLP endpoint. They never block, alter or delay the agent.
 | Language | Package | What it provides |
 |----------|---------|------------------|
 | [`python`](python/) | `singleaxis-fabric` | Zero-code wire capture of httpx, httpx2 and aiohttp model calls (`fabric.wire`), durable encrypted spool, PROTECT stage, explicit APIs (`decision()`/`record_*`, `ByteEvidenceRecorder`, `CallRecorder`, byte-boundary adapters), `python -m fabric.reconstruct`, qualified-run mode |
-| [`typescript`](typescript/) | `@singleaxis/fabric` | Explicit APIs only (`decision`/`record*`, `ByteEvidenceRecorder` with redaction-service masking). **No wire capture.** |
+| [`typescript`](typescript/) | `@singleaxis/fabric` | Explicit APIs only (`decision`/`record*`, `ByteEvidenceRecorder` with redaction-service masking). **No wire capture**, and the verifier does not read its records. |
 
 Protection depends on the path. Wire capture and `ByteEvidenceRecorder`
 apply the capture policy before persistence; customer masking is done by
@@ -15,7 +15,9 @@ a redaction service you run (Unix socket or loopback), never by code Fabric
 runs. Python's
 `install_default_provider` adds a metadata-only export projection;
 TypeScript does not sanitize spans from a provider you register. Do not
-assume every export path is metadata-only. See
+assume every export path is metadata-only. Both SDKs apply one
+[span delivery rule](../docs/privacy-and-security.md#span-delivery-rule):
+verified HTTPS, or plain HTTP to a loopback host only. See
 [explicit APIs](../docs/explicit-apis.md) and
 [privacy and security](../docs/privacy-and-security.md).
 

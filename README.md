@@ -98,11 +98,12 @@ is [spec 056](specs/056-agent-action-reconstruction.md).
 pip install "singleaxis-fabric[otlp]"
 ```
 
-```bash
-npm install @singleaxis/fabric
-```
-
-The TypeScript SDK requires Node.js 22.18 or later.
+The TypeScript SDK requires Node.js 22.18 or later and the OpenTelemetry
+packages your agent registers; its
+[README](sdk/typescript/README.md#quick-start) has the complete, CI-tested
+install line. Its records are not read by the verifier
+(`fabric.reconstruct`) today: see
+[what it records](sdk/typescript/README.md#what-it-records-and-what-can-be-verified-from-it).
 
 The Fabric Node installs with the Helm chart
 `oci://ghcr.io/singleaxis/charts/fabric` and a `shadow-dev` or
@@ -191,6 +192,8 @@ More: [architecture](docs/architecture.md).
 
 - Wire capture is Python only. TypeScript agents use the explicit APIs;
   TypeScript wire capture is specified ([spec 055](specs/055-typescript-wire-capture.md)).
+  The verifier reconstructs nothing from TypeScript records
+  (`no runs reconstructed`).
 - Model calls through `requests`/`urllib3` are reported as losses, and
   `boto3`, gRPC and model endpoints beyond the five above are not captured.
 - Host sensors run with a local-profile Node; production ingress is

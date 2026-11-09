@@ -278,14 +278,28 @@ def test_typescript_sdk_holds_never_block_security_updates() -> None:
 
     package = json.loads((ROOT / "sdk/typescript/package.json").read_text())
     dev = package["devDependencies"]
-    # A minor hold on the API is only right while the peer range spans one
-    # minor and the tested devDependency sits inside it.
+    # A minor hold on the API is only right while every minor of the peer
+    # range is tested: the unit suite on the floor (the devDependency) and
+    # the README fresh-install sets (scripts/fresh-install.mjs, run in CI)
+    # on every minor above it, so a widened range never ships untested.
     peer = package["peerDependencies"]["@opentelemetry/api"]
     span = re.fullmatch(r">=(\d+)\.(\d+)\.0 <(\d+)\.(\d+)\.0", peer)
     assert span, peer
     major_v, minor_v, upper_major, upper_minor = map(int, span.groups())
-    assert (upper_major, upper_minor) == (major_v, minor_v + 1), peer
+    assert upper_major == major_v and upper_minor > minor_v, peer
     assert dev["@opentelemetry/api"].startswith(f"{major_v}.{minor_v}.")
+    readme = (ROOT / "sdk/typescript/README.md").read_text()
+    installs = re.findall(
+        r"<!-- fresh-install: install [^>]+ -->\n+```bash\n(npm install [^\n]+)\n```", readme
+    )
+    tested = {
+        tuple(map(int, pin.split(".")[:2]))
+        for line in installs
+        for pin in re.findall(r"@opentelemetry/api@(\d+\.\d+\.\d+)", line)
+    }
+    assert tested == {(major_v, m) for m in range(minor_v, upper_minor)}, (peer, tested)
+    workflow = (ROOT / ".github/workflows/recorder-ci.yml").read_text()
+    assert "npm run test:fresh-install" in workflow
     floor = re.fullmatch(r">=(\d+)\.\d+\.\d+", package["engines"]["node"])
     assert floor, package["engines"]["node"]
     assert dev["@types/node"].split(".")[0] == floor.group(1)

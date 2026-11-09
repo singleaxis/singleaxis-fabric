@@ -286,9 +286,37 @@ production Node serves one agent source.
   redirects, `--feature-gates`, `--set`, connectors, remote configuration,
   and in production any non-HTTPS or debug exporter.
 - Content upload from the agent requires verified HTTPS, or plain HTTP to a
-  loopback host only; redirects are never followed.
+  loopback host only; redirects are never followed. Span delivery follows
+  the same rule (below).
 - Delivery is at least once. The Node does not prove that a destination
   durably stored a record.
+
+## Span delivery rule
+
+Both SDKs apply one rule to the OTLP traces endpoint the standard
+environment selects (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, else
+`OTEL_EXPORTER_OTLP_ENDPOINT`): it must be verified HTTPS (TLS for gRPC), or
+plain HTTP to a loopback host only (`localhost`, `127.0.0.1`, `[::1]`). The
+ingress token and the record never cross a network unencrypted. With gRPC, a
+scheme-less `host:port` counts as plaintext when
+`OTEL_EXPORTER_OTLP_TRACES_INSECURE` (else `OTEL_EXPORTER_OTLP_INSECURE`) is
+`true`.
+
+A refused endpoint turns capture off and the agent runs unchanged. The reason
+names the variable, never its value (an endpoint can carry credentials).
+
+| | Python | TypeScript |
+|---|---|---|
+| Where it applies | the exporter wire capture builds (`fabric.wire`, autoload included, and its spool sender); not `install_default_provider` or an exporter you pass in | the `Fabric` client, at construction, for the same variables your exporter reads |
+| When refused | autoload: capture is not installed (`capture not installed (ValueError)`); an explicit `fabric.wire.install()` raises `ValueError` at setup | nothing is thrown; `fabric.captureStatus()` is `{"capture":"disabled","reason":...,"fix":...}` and no Fabric span or content object is produced |
+| Where to read why | `python -m fabric.wire status` with the agent's environment (it names the exception class) | `node --input-type=module -e 'import { captureStatus } from "@singleaxis/fabric"; console.log(JSON.stringify(captureStatus()))'` with the agent's environment |
+| Printed on the agent's stderr | under autoload only with `FABRIC_WIRE_DIAGNOSTICS=stderr` | only with `FABRIC_WIRE_DIAGNOSTICS=stderr` |
+
+To fix it, use `https://` and point `OTEL_EXPORTER_OTLP_CERTIFICATE` at the
+Node's CA when it is privately issued, or reach the Node over loopback (a port
+forward, a sidecar, or the Compose `make up` Node on `localhost:4318`). In
+TypeScript the check reads the environment; an exporter you construct with an
+explicit `url` is not checked, and its transport is yours.
 
 ## Python managed span export
 

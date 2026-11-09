@@ -19,6 +19,13 @@ export {
   type FabricConfig,
 } from "./client.js";
 export {
+  DIAGNOSTICS_ENV,
+  captureStatus,
+  otlpTraceTransport,
+  type CaptureStatus,
+  type OtlpTraceTransport,
+} from "./otlp-transport.js";
+export {
   getTracer,
   installDefaultProvider,
   type InstallDefaultProviderOptions,

@@ -134,6 +134,18 @@ it never makes, applies, waits for or returns one.
   and the reader's exit code `1`. A tool call that a deny gates and that has
   no effect is counted as `effects_not_observed.control_denied` instead of
   `none_in_window`.
+- **Behaviour change (TypeScript SDK): plain HTTP to a non-loopback OTLP
+  endpoint now turns capture off**, the rule the Python SDK already applies.
+  When `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_ENDPOINT`
+  is `http://` to anything other than `localhost`, `127.0.0.1` or `[::1]`
+  (for example `http://fabric-node:4318`), a new `Fabric` client produces no
+  spans and no content objects instead of sending the record and the ingress
+  token unencrypted. Your agent runs unchanged and nothing is thrown.
+  `fabric.captureStatus()` and the new `captureStatus()` say why and how to
+  fix it (use `https://`, or reach the Node over loopback); set
+  `FABRIC_WIRE_DIAGNOSTICS=stderr` to have it printed once on stderr. The
+  rule for both SDKs is now on one page (privacy and security, "Span
+  delivery rule").
 - **Deprecated:** the v1 policy, tool-authorization and escalation verdict
   shapes (connect `policy_verdict`, `authorization_verdict`, `escalation`;
   activity v1 `fabric.policy.evaluation`, `fabric.tool.authorization`,
@@ -151,6 +163,20 @@ it never makes, applies, waits for or returns one.
   the agent and the reader agree on it, also when an OTLP/JSON export writes
   a whole-number double without a fraction (`412` for 412.0) (spec 057 revision 3.4, spec 049
   revision 6.8).
+- **The TypeScript SDK installs with current OpenTelemetry packages.** Its
+  README installed 2 packages while its example imported 5, and the SDK
+  accepted only `@opentelemetry/api` 1.9, so installing today's OTLP
+  exporter failed with `ERESOLVE` (and forcing an older exporter crashed at
+  import). The SDK now accepts `@opentelemetry/api` 1.9 and 1.10. The README
+  gives one complete install line with versions that are tested together
+  (OpenTelemetry JS 3.x), a second for projects on OpenTelemetry JS 2.x, and
+  an example that runs as written. CI now runs those exact commands in an
+  empty directory on every change, sends the example's spans to a local
+  receiver, and checks them.
+- **The TypeScript README says what the SDK records and what can be
+  verified from it.** The verifier (`fabric.reconstruct`) does not read
+  TypeScript records today and reports `no runs reconstructed` for them; the
+  README, the SDK overview and the top-level README now say so plainly.
 - TypeScript SDK tests: the local content-store tests now pass on macOS,
   where the default temp directory is a symlink. The SDK was already right:
   `LocalFilesystemContentStore` resolves its configured root to the real path

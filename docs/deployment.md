@@ -100,7 +100,7 @@ The application is never blocked.
 |---|---|
 | `FABRIC_WIRE_AUTOLOAD=1` and `PYTHONPATH` | the autoload directory (`python -m fabric.wire --print-autoload-path`), prepended; or call `fabric.wire.install()` |
 | `FABRIC_WIRE_CONTENT_ENDPOINT` | `https://<node>:4319/v1/logs`. Setting it selects node mode. Verified HTTPS, or plain HTTP to a loopback host only. |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) | `https://<node>:4318` (`/v1/traces` is appended to the general variable) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` (or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`) | `https://<node>:4318` (`/v1/traces` is appended to the general variable). Verified HTTPS, or plain HTTP to a loopback host only, in both SDKs ([span delivery rule](privacy-and-security.md#span-delivery-rule)). |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer%20<ingress token>` (covers spans and content) |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | CA bundle of the Node's server certificate |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | agent client certificate (Helm `shadow-production` requires mTLS **and** the token) |

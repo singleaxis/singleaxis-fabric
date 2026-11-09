@@ -11,7 +11,7 @@
  * work so its decisions inherit the same `executionId`/`workflowId`.
  */
 
-import { type Tracer, type TracerProvider } from "@opentelemetry/api";
+import { ProxyTracerProvider, type Tracer, type TracerProvider } from "@opentelemetry/api";
 
 import {
   Decision,
@@ -37,6 +37,7 @@ import {
   identityModeFromEnv,
   type IdentityMode,
 } from "./identity.js";
+import { captureStatus, reportCaptureStatus, type CaptureStatus } from "./otlp-transport.js";
 import { TRACER_NAME, getTracer } from "./tracing.js";
 
 // Re-exported so `import { TRACER_NAME } from "@singleaxis/fabric"` keeps
@@ -125,6 +126,7 @@ export class Fabric {
   private readonly identity: DecisionClientIdentity;
   private readonly contentWriter?: ContentWriter;
   private readonly contentCapture?: ContentCaptureConfig;
+  private readonly status: CaptureStatus;
 
   constructor(config: FabricConfig) {
     const tenantId = config.tenantId?.trim();
@@ -194,7 +196,17 @@ export class Fabric {
     warnIfPiiShaped("agent_id", agentId);
     warnIfPiiShaped("execution_attempt_id", config.executionAttemptId);
     warnIfPiiShaped("execution_retry_previous_attempt_id", config.executionRetryPreviousAttemptId);
-    this.tracer = getTracer(config.tracerProvider);
+    // The span delivery rule shared with Python: the OTLP traces endpoint
+    // the standard environment selects must be verified TLS or loopback
+    // plaintext. A refused endpoint turns Fabric capture off (no Fabric
+    // span, no content object) instead of throwing: the application runs
+    // unchanged and `captureStatus()` says why and how to fix it.
+    this.status = captureStatus(env);
+    reportCaptureStatus(this.status, env);
+    this.tracer =
+      this.status.capture === "enabled"
+        ? getTracer(config.tracerProvider)
+        : new ProxyTracerProvider().getTracer(TRACER_NAME);
     // Governed content capture (spec 028): explicit opt-in. The only
     // environment influence is restrictive — `FABRIC_CONTENT_MODE`
     // set to `metadata` force-disables a configured capture; it can
@@ -202,6 +214,10 @@ export class Fabric {
     let contentCapture = config.contentCapture;
     if ((env[ENV_CONTENT_MODE] ?? "").toLowerCase() === "metadata") {
       contentCapture = undefined;
+    }
+    if (this.status.capture !== "enabled") {
+      contentCapture = undefined;
+      this.identity.captureOff = true;
     }
     if (contentCapture !== undefined) {
       const roles = validateContentCaptureConfig(contentCapture, CONTENT_ROLES);
@@ -271,6 +287,18 @@ export class Fabric {
   /** Record one outer unit of work — a task or workflow attempt. See {@link Execution}. */
   execution<T>(ids: ExecutionOptions, fn: (execution: Execution) => T): T {
     return runExecution(this.tracer, this.identity, ids, fn);
+  }
+
+  /**
+   * Whether this client records, fixed at construction:
+   * `{ capture: "enabled" }`, or `{ capture: "disabled", reason, fix }` when
+   * the OTLP traces endpoint the environment selects breaks the span
+   * delivery rule (verified HTTPS, or plain HTTP to a loopback host only).
+   * The text names the variable, never its value. Fabric prints it on
+   * stderr only when `FABRIC_WIRE_DIAGNOSTICS=stderr`.
+   */
+  captureStatus(): CaptureStatus {
+    return { ...this.status };
   }
 
   /** The configured governed-capture config, or `undefined` (metadata mode). */
