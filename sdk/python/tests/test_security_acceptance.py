@@ -59,7 +59,7 @@ from fabric import Fabric, FabricConfig, records
 from fabric._capture_types import COUNTERS, STRICT_ENV
 from fabric.reconstruct._inputs import pseudonym
 
-from ._sc_agent import REFUSAL, Call, FixtureModel, Ledger, ToolLoop, Turn, can_use
+from ._sc_agent import REFUSAL, USER, Call, FixtureModel, Ledger, ToolLoop, Turn, can_use
 from ._sc_capture import ID_KEY, Normaliser, Read, capture_run, env, read_export
 
 GOLDENS = Path(__file__).resolve().parent / "goldens" / "security_acceptance"
@@ -248,6 +248,20 @@ def test_sc_cp_run_b_one_line_per_check(tmp_path: Path, monkeypatch: pytest.Monk
     (f5,) = [f for f in view_run["facts"] if f["fact"] == "F5"]
     assert f5["count"] == 2
     _assert_no_evaluation_words(read)
+    _assert_check_inputs_never_exported(tmp_path / "capture", ledger)
+
+
+def _assert_check_inputs_never_exported(root: Path, ledger: Ledger) -> None:
+    """§7 canary for the wrapper: it records the decision, never what the check was given
+    or the text of what it raised. The user ``can_use`` checked and the ``PermissionError``
+    message never reach a span or the content store (the agent sends neither to the
+    model, so any copy would be Fabric's)."""
+    message = str(ledger.raised["call_5"]).encode()
+    assert USER.encode() in message  # the canary is the message's own text
+    blobs = [p.read_bytes() for p in root.rglob("*") if p.is_file()]
+    assert any(p.name == "spans.jsonl" for p in root.rglob("*")) and len(blobs) > 2
+    for needle in (message, USER.encode(), b"is not a workspace administrator"):
+        assert not any(needle in blob for blob in blobs), needle
 
 
 def test_sc_cp_third_run_passing_the_id_links_every_check_certain(
@@ -274,6 +288,7 @@ def test_sc_cp_third_run_passing_the_id_links_every_check_certain(
     (f5,) = [f for f in view_run["facts"] if f["fact"] == "F5"]
     assert f5["count"] == 3
     assert agent.caught[0] is ledger.raised["call_5"]
+    _assert_check_inputs_never_exported(tmp_path / "capture", ledger)
 
 
 def test_sc_cp_outputs_are_identical_with_capture_off_run_a_and_run_b(
