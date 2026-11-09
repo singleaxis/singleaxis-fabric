@@ -69,6 +69,7 @@ def batches(
         if between is not None:
             between()
         deltas: list[int] = []
+        cpu: list[int] = []
         slices: list[int] = []
         gc.collect()
         gc.disable()
@@ -79,16 +80,18 @@ def batches(
                     start = time.perf_counter_ns()
                     baseline()
                     bare = time.perf_counter_ns() - start
-                start = time.perf_counter_ns()
+                start, thread = time.perf_counter_ns(), time.thread_time_ns()
                 call()
                 deltas.append(time.perf_counter_ns() - start - bare)
+                cpu.append(time.thread_time_ns() - thread)  # diagnostic: this thread's CPU
                 start = time.perf_counter_ns()  # the calibration slice, under the same load
                 calibration_slice()
                 slices.append(time.perf_counter_ns() - start)
         finally:
             gc.enable()
         scale = scale_for(int(statistics.median(slices) * SLICES))
-        out.append({"median_ns": float(statistics.median(deltas)), "scale": scale})
+        out.append({"median_ns": float(statistics.median(deltas)), "scale": scale,
+                    "cpu_ns": float(statistics.median(cpu))})  # fmt: skip
     return out
 
 
@@ -120,6 +123,10 @@ def fresh(code: str, *args: str, timeout: float = 600) -> Any:
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
+#: Every batch of the last :func:`gate` per scenario, for the failure message.
+LAST: dict[str, list[Batch]] = {}
+
+
 def gate(
     measure: Callable[[], Mapping[str, list[Batch]]], budgets: Mapping[str, float],
     attempts: int = ATTEMPTS,
@@ -131,6 +138,7 @@ def gate(
     for _ in range(attempts):
         for name, rounds in measure().items():
             found[name] = min(found.get(name, float("inf")), best(rounds))
+            LAST.setdefault(name, []).extend(rounds)
         if all(found.get(name, float("inf")) <= budget for name, budget in budgets.items()):
             break
     return found

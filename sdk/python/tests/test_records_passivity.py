@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-from ._budget import MAX_SCALE, Batch, control, fresh, gate
+from ._budget import LAST, MAX_SCALE, Batch, control, fresh, gate
 from ._records_bench import ON_BUDGET_NS, budgets
 
 BUDGETS = budgets()
@@ -46,9 +46,11 @@ def measured() -> dict[str, float]:
 
 @pytest.mark.parametrize("scenario", sorted(BUDGETS))
 def test_records_call_is_within_its_budget(measured: dict[str, float], scenario: str) -> None:
+    seen = [(round(b["median_ns"]), round(b.get("cpu_ns", 0)), round(b["scale"], 2))
+            for b in LAST.get(scenario, [])]  # fmt: skip
     assert measured[scenario] <= BUDGETS[scenario], (
         f"{scenario}: best batch median {measured[scenario]:.0f} ns on reference hardware "
-        f"> {BUDGETS[scenario]:.0f} ns"
+        f"> {BUDGETS[scenario]:.0f} ns; batches (wall ns, thread cpu ns, scale): {seen}"
     )
 
 
