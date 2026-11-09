@@ -27,6 +27,7 @@ v2 identities are omitted, by the run table's :class:`~fabric._segments.Identity
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import math
 import os
@@ -221,12 +222,41 @@ def compile_check(  # noqa: PLR0911 - one return per check type
     return _never
 
 
+# A check is a pure function of its value. Most records repeat most of their values (the
+# capture point, step kind, source and run ids, vocabulary values), so each key keeps its
+# recent answers for short scalars: the records path stays inside its 051 §4.11 budget on
+# slower runners, where the repeated pattern matches were most of the caller's cost.
+_MEMO_ENTRIES = 256
+_MEMO_TEXT = 256
+
+
+def _memoized(predicate: Predicate) -> Predicate:
+    """``predicate`` with a bounded memo of its answers for ``str`` (at most
+    ``_MEMO_TEXT`` characters), ``int`` and ``bool`` values, keyed by exact type."""
+    # One memo per exact type, so ``True`` and ``1`` never share an answer.
+    memos: dict[type, dict[Any, bool]] = {str: {}, int: {}, bool: {}}
+
+    def check(value: Any) -> bool:
+        memo = memos.get(type(value))
+        if memo is None or (type(value) is str and len(value) > _MEMO_TEXT):
+            return predicate(value)
+        found = memo.get(value)
+        if found is None:
+            found = bool(predicate(value))
+            if len(memo) >= _MEMO_ENTRIES:
+                memo.clear()  # bounded; a race only recomputes an answer
+            memo[value] = found
+        return found
+
+    return check
+
+
 def compile_checks(
     *, labels: Labels = "pseudonymous", identity: IdentityMode = "pseudonymous",
     table: Mapping[str, Mapping[str, Any]] = RECORD_KEY_CHECKS,
 ) -> dict[str, Predicate]:  # fmt: skip
-    """Rule A's table as predicates for one Node configuration."""
-    return {key: compile_check(check, labels=labels, identity=identity)
+    """Rule A's table as predicates for one Node configuration (memoized per key)."""
+    return {key: _memoized(compile_check(check, labels=labels, identity=identity))
             for key, check in table.items()}  # fmt: skip
 
 
@@ -289,16 +319,24 @@ def project_attributes(
     where = point if point is not None else attributes.get("fabric.capture.point")
     for key, raw in attributes.items():
         # The key is admitted (its table row and placement) before its value is touched.
-        check = checks.get(key) if isinstance(key, str) else None
-        condition = conditions.get(key) if check is not None else None
-        if check is None or (condition and not _condition_holds(condition, where)):
+        check = checks.get(key) if type(key) is str or isinstance(key, str) else None
+        if check is None or (
+            key in conditions and conditions[key] and not _condition_holds(conditions[key], where)
+        ):  # fmt: skip
             dropped.append(str.__str__(key) if isinstance(key, str) else "<non-str key>")
             continue
-        admissible, value = _admitted_value(raw)
-        if not admissible or not check(value):
-            dropped.append(key)
+        kind = type(raw)
+        if kind is str or kind is int or kind is bool or kind is float:  # the common case
+            value = raw
         else:
+            admissible, value = _admitted_value(raw)
+            if not admissible:
+                dropped.append(key)
+                continue
+        if check(value):
             kept[key] = value
+        else:
+            dropped.append(key)
     return kept, sorted(dropped)
 
 
@@ -553,10 +591,10 @@ class RecordsInput:
             POINT_ID_RE.fullmatch(point) or POINT_RE.fullmatch(point)
         ):  # fmt: skip
             raise RecordsMisuseError("records API misuse: capture point id")
-        if not isinstance(aliases, Mapping) or not all(
+        if aliases is not _NO_ALIASES and (not isinstance(aliases, Mapping) or not all(
             isinstance(k, str) and ALIAS_KEY_RE.fullmatch(k) and isinstance(v, str) and v
             for k, v in aliases.items()
-        ):  # fmt: skip
+        )):  # fmt: skip
             raise RecordsMisuseError("records API misuse: aliases are <input>.<name> -> id")
         if not self.active:
             return None
@@ -781,6 +819,12 @@ def _fallback_run_id(source_id: str, epoch: int, span_ids: SpanIds | None) -> st
         trace_id = context.trace_id if context.is_valid else None
     if isinstance(trace_id, int) and 0 < trace_id < 1 << 128:
         return f"trace:{trace_id:032x}"
+    return _source_run_id(source_id, epoch)
+
+
+@functools.lru_cache(maxsize=64)
+def _source_run_id(source_id: str, epoch: int) -> str:
+    """The epoch's ``source:`` fallback run id: one digest per source epoch, not per record."""
     return encode_opaque_id(f"source:{source_id}:{epoch}")
 
 
