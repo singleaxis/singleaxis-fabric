@@ -2,9 +2,32 @@
 # §7.3.3 (c), (n)): passive eBPF host observation, one source per node.
 #
 # A customer-deployed example, never part of the Helm chart (spec 056 OD-10),
-# and a template to qualify, not a ready install: replace the image digest,
-# EMIT_TENANT_ID and, if needed, EMIT_AGENT_POD_SELECTOR, provision each node,
-# then test the exact manifest you apply.
+# and a template: its image is the zero digest (it cannot pull) and
+# EMIT_TENANT_ID is empty. Do not edit it by hand. host-bindings.py writes the
+# filled copy next to the per-node files:
+#
+#   D=$(docker buildx imagetools inspect ghcr.io/singleaxis/fabric-host-emitter:<version> \
+#         --format '{{json .Manifest.Digest}}' | tr -d '"')   # or: crane digest ...
+#   python3 deploy/kubernetes/host-bindings.py --nodes nodes.txt --tenant <tenant.id> \
+#     --id-key-file id.key --base-port 4417 --out hb \
+#     --emitter-image "ghcr.io/singleaxis/fabric-host-emitter@$D"
+#   kubectl apply -f hb/host-emitter-daemonset.yaml     # after the steps below
+#
+# Change EMIT_AGENT_POD_SELECTOR there if your agent pods carry another label,
+# and test the exact manifest you apply.
+#
+# Before applying, in the namespace (fabric-system):
+#
+#   kubectl -n fabric-system create secret generic fabric-wire-id-key \
+#     --from-file=id_key=id.key                       # the key must be id_key
+#   kubectl -n fabric-system create secret generic fabric-host-emitter-tls \
+#     --from-file=tls.crt=emitter.crt --from-file=tls.key=emitter.key \
+#     --from-file=ca.crt=<CA of the Node's receiver certificate>
+#
+# and copy each node's directory to it (below). With the chart's
+# networkPolicy on, the chart's <release>-otel-collector-host-emitter-egress
+# NetworkPolicy lets these pods reach their groups and the API server; the
+# deny-default policy blocks them otherwise.
 #
 # Each node's emitter is its own source: label $(NODE_NAME)/ebpf, its own token
 # and its own ingress group (and port) on the Node. Provision the nodes with
@@ -25,8 +48,8 @@
 # type Directory, no DirectoryOrCreate), and never falls back. The id key,
 # which every agent and sensor shares (the agents' FABRIC_WIRE_ID_KEY bytes,
 # written with printf %s, no trailing newline), comes from the Secret
-# fabric-wire-id-key; the client certificate and the Node's CA from
-# fabric-host-emitter-tls. Adding a node is a regeneration and a chart upgrade.
+# fabric-wire-id-key (key id_key); the client certificate and the Node's CA
+# from fabric-host-emitter-tls (keys tls.crt, tls.key, ca.crt). Adding a node is a regeneration and a chart upgrade.
 #
 # This is the only Fabric workload that requests elevated capability, and it
 # stays read-only: the BPF programs are tracepoints (observe), never LSM or

@@ -57,6 +57,10 @@ Fails closed at render time unless the recorder has:
   allowed tenants, an s3 backend with server-side encryption (the file
   backend is refused), an `https://` store endpoint when one is set, the
   same mTLS on port 4319 and explicit `networkPolicy.contentEgress` peers.
+  An S3-compatible store whose certificate a private CA signs needs
+  `otel-collector.content.s3.caSecret.name`: an operator-created Secret
+  holding the PEM bundle (key `ca.crt`, or `caSecret.key`), mounted
+  read-only and named by `AWS_CA_BUNDLE` for content-store requests only.
   See [docs/deployment.md](../../docs/deployment.md#helm-shadow-production).
 - the spec 049 production profile (`otel-collector.fabric.profile:
   production`, pinned). Every batch on the workload ingress, spans and
@@ -83,11 +87,15 @@ at render until `sourceId` (and, with content, the key Secret) are set. The
 agents are never affected.
 
 The customer must create the referenced Secrets and identify the exact egress
-peer/port. Example render/install arguments:
+peer/port. The Secrets live in the release namespace, which the chart does
+not create (`namespace.create: false`): create the namespace, then the
+Secrets below, then install. Example render/install arguments:
 
 ```bash
+kubectl create namespace fabric-system
+# ... create the Secrets in the table below in fabric-system ...
 helm upgrade --install fabric-node charts/fabric \
-  --namespace fabric-system --create-namespace \
+  --namespace fabric-system \
   --values charts/fabric/profiles/shadow-production.yaml \
   --set tenant.id=customer-production \
   --set 'otel-collector.image.digest=sha256:<approved-64-lowercase-hex>' \
@@ -206,10 +214,30 @@ same bytes. Legacy values (no `sourceBindings`) keep their exact render.
 A cluster of N nodes has N `host.ebpf` groups: each node's eBPF emitter is its
 own source (label `<node>/ebpf`) with its own token, provisioned on that node
 only. [`deploy/kubernetes/host-bindings.py`](../../deploy/kubernetes/host-bindings.py)
-writes the `sourceBindings` values for a node list and the per-node
-provisioning directories; the DaemonSet example
-[`deploy/kubernetes/host-emitter-daemonset.yaml`](../../deploy/kubernetes/host-emitter-daemonset.yaml)
-reads them. The chart installs no sensor (spec 056 OD-10): the privileged
+writes the `sourceBindings` values for a node list, the per-node
+provisioning directories and, from the template
+[`deploy/kubernetes/host-emitter-daemonset.yaml`](../../deploy/kubernetes/host-emitter-daemonset.yaml),
+`host-emitter-daemonset.yaml` with the tenant, namespace and (with
+`--emitter-image <repository>@sha256:<digest>`) the image filled in, ready
+for `kubectl apply`.
+
+The deny-default policy selects every pod in the release namespace, the
+sensors included. With `networkPolicy.enabled` and a `host.ebpf` or
+`host.auditd` group, the chart renders an egress policy for each sensor
+(`networkPolicy.hostSensorEgress`, on by default): `<fullname>-host-emitter-egress`
+for pods labelled `app.kubernetes.io/name: fabric-host-emitter`, and
+`<fullname>-auditd-sensor-egress` for `fabric-auditd-sensor`. Each may reach
+only its groups' ports on the Collector pods and cluster DNS; the emitter
+also reaches the API server for its pod selector's read-only pod watch. The
+API server's addresses are read from the cluster at install (the
+`kubernetes` Service and its EndpointSlice). `helm template` and GitOps
+renders cannot read them and render no API rule; the install NOTES warn.
+Set `hostSensorEgress.apiServer.to` and `.ports` for such renders, or
+`apiServer.enabled=false` when the emitter scopes by
+`EMIT_AGENT_CGROUP_ROOTS` only. Pod selectors other than the shipped labels
+go in `ebpfPodSelector` / `auditdPodSelector` and must select by label.
+
+The chart installs no sensor (spec 056 OD-10): the privileged
 emitter and the auditd sensor collector
 ([`deploy/kubernetes/auditd-sensor-collector.yaml`](../../deploy/kubernetes/auditd-sensor-collector.yaml))
 are customer-deployed. More nodes than one Node's groups allow means one Node
@@ -220,9 +248,15 @@ process or the truth of its reports.
 
 - Install into a **dedicated namespace**. `networkPolicy.denyDefault`
   selects all pods in the release namespace; unrelated workloads placed
-  there lose pod-to-pod traffic. When `namespace.create=true`,
-  `namespace.name` must equal the release namespace passed to
-  `--namespace`, because all resources render into the release namespace.
+  there lose pod-to-pod traffic. Both profiles set `namespace.create:
+  false`: Helm stores the release in the release namespace before it
+  creates any object, so the namespace must exist (`--create-namespace` or
+  `kubectl create namespace`), and Helm cannot adopt an existing namespace
+  as a release object. `namespace.create=true` renders a Namespace object
+  (with `namespace.labels` / `annotations`) for a pipeline that applies the
+  rendered manifests itself (`helm template`, GitOps); `namespace.name`
+  must then equal the release namespace, because all resources render
+  into it.
 - `helm test` is dev-only: the bundled connection-test pod matches no
   ingress peer under `shadow-production`. Run it under `shadow-dev`.
 - The health extension (default port 13133) is not opened by

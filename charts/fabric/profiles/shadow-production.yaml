@@ -40,8 +40,14 @@
 profile:
   name: shadow-production
 
+# The release namespace exists before the install: the referenced Secrets
+# are created in it first (docs/deployment.md), and Helm cannot adopt a
+# namespace it did not create. Create it (`kubectl create namespace
+# fabric-system`), then the Secrets, then install with --namespace
+# fabric-system. namespace.create=true renders a Namespace object for a
+# pipeline that applies rendered manifests itself (helm template, GitOps).
 namespace:
-  create: true
+  create: false
   name: fabric-system
 
 networkPolicy:

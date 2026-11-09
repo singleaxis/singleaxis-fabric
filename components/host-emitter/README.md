@@ -198,6 +198,29 @@ events: the next heartbeat reports upstream loss `scope_late` with an
 unknown count. API-server errors are retried with backoff and counted in the
 health line; they never remove a root already installed.
 
+**Finding pod cgroups.** The kubelet puts pods under
+`<--cgroup-root>/kubepods`. The emitter searches the cgroup v2 mount for
+every such hierarchy: `kubepods.slice` and `kubepods` at the top, and any
+`kubepods.slice`, `<prefix>-kubepods.slice` (systemd driver) or `kubepods`
+(cgroupfs driver) up to four levels down, which covers a non-default
+`--cgroup-root` such as kind's `kubelet.slice/kubelet-kubepods.slice`. It
+never enters a cgroup v1 hierarchy (on a hybrid host it searches the v2
+one, usually `unified`) or a container's `.scope`. While a matching pod has
+no cgroup it searches again every 10 s, so a kubelet that starts after the
+emitter is found. The health line (every 30 s) reports
+`pod_selector_matched=` (matching pods on this node) and
+`pod_cgroups_found=`; when they differ it adds a line naming the
+hierarchies searched. A pod that is still starting has no cgroup yet; a
+difference that stays means a layout the emitter does not know, and the
+fallback is `EMIT_AGENT_CGROUP_ROOTS`.
+
+**Export failures.** A failed export is logged with its gRPC status code,
+the status message (control characters removed, at most 240 characters,
+bearer credentials and long opaque strings replaced with `[redacted]`) and
+the likely fix, e.g. `grpc_code=Unavailable` when a NetworkPolicy or a wrong
+endpoint blocks the Node's port. The same failure is logged once and then
+at most every 30 s with `repeated=<n>`.
+
 **Records.** Each record carries the init-namespace `pid` and `ppid` (thread
 group ids), the process as numbered in its own pid namespace (`ns_pid`), the
 parent's thread-group id in that namespace (`ns_ppid`, 0 when the parent is

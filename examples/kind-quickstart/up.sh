@@ -59,7 +59,7 @@ fi
 # 2. Fabric Node chart (shadow-dev profile — plaintext, local trials only)
 step "Installing Fabric Node chart (shadow-dev profile)"
 helm upgrade --install fabric "${REPO_ROOT}/charts/fabric" \
-  --namespace "$NS" \
+  --namespace "$NS" --create-namespace \
   --values "${REPO_ROOT}/charts/fabric/profiles/shadow-dev.yaml" \
   --set tenant.id=acme-demo \
   --wait --timeout 5m

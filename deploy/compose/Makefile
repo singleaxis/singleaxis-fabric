@@ -67,7 +67,7 @@ port_for = $(shell $(COMPOSE) port $(1) $(2) 2>/dev/null | head -n 1 | sed -e 's
 OUT ?= $(CURDIR)/fabric-spans
 comma := ,
 
-.PHONY: up down reset logs status build smoke qualify export-spans up-s3-local down-s3-local reset-s3-local up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod preflight-prod-groups up-prod-groups down-prod-groups logs-prod-groups up-sensor-auditd down-sensor-auditd logs-sensor-auditd qualify-sensor-auditd help
+.PHONY: up down reset logs status build smoke qualify export-spans up-s3-local down-s3-local reset-s3-local up-s3-eval down-s3-eval reset-s3-eval up-prod down-prod logs-prod preflight-prod verify-prod preflight-prod-groups up-prod-groups verify-prod-groups down-prod-groups logs-prod-groups up-sensor-auditd down-sensor-auditd logs-sensor-auditd qualify-sensor-auditd help
 
 up: ## Build and start Fabric Node plus the controlled sink.
 	$(COMPOSE) up -d --build --wait
@@ -143,7 +143,7 @@ up-prod: preflight-prod ## Start the production overlay (token auth + durable qu
 	@echo "Internal metrics: http://localhost:$(call setting,FABRIC_METRICS_PORT,8888)/metrics"
 	@echo "Run 'make verify-prod' to check ingress auth and available queue metrics."
 
-verify-prod: ## Check production ingress; destination readback is separate.
+verify-prod: ## Check production ingress (single binding; ingress groups detected from the env file).
 	@chmod +x verify-prod.sh 2>/dev/null || true
 	$(SCRIPT_ENV) ./verify-prod.sh
 
@@ -166,6 +166,10 @@ preflight-prod-groups: ## Check env/secrets/TLS readiness of the ingress-group N
 up-prod-groups: preflight-prod-groups ## Start the production Node with one ingress group per source. Runs preflight first.
 	$(GROUP_ENV) $(PROD_COMPOSE) $(GROUP_FILES) up -d --wait
 	@echo "Project $(call setting,COMPOSE_PROJECT_NAME,fabric-node-production), ingress groups on $(call setting,FABRIC_BIND_ADDR,127.0.0.1): agent $(call setting,FABRIC_OTLP_GRPC_PORT,4317)/$(call setting,FABRIC_OTLP_HTTP_PORT,4318)$(if $(filter s3,$(FABRIC_CONTENT_BACKEND)),$(comma) content $(call setting,FABRIC_OTLP_CONTENT_PORT,4319)), ebpf $(call setting,FABRIC_EBPF_GRPC_PORT,4417)$(if $(FABRIC_AUDITD_TOKEN_FILE),$(comma) auditd $(call setting,FABRIC_AUDITD_HTTP_PORT,4428)) (TLS and each group's own token required)"
+
+verify-prod-groups: ## Check the ingress-group Node: agent group as verify-prod, plus each host group's refusal.
+	@chmod +x verify-prod.sh 2>/dev/null || true
+	$(GROUP_ENV) $(SCRIPT_ENV) FABRIC_COMPOSE_FILES="$(GROUP_FILES)" ./verify-prod.sh --groups
 
 down-prod-groups: ## Stop the ingress-group Node while keeping the queue volume.
 	$(GROUP_ENV) $(PROD_COMPOSE) $(GROUP_FILES) down

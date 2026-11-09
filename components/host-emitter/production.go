@@ -161,13 +161,15 @@ type production struct {
 	src  recordSource
 	send traceSender
 	wake chan struct{}
+	// retries logs a failing export once per change (diag.go).
+	retries *retryLog
 
 	partialBatches  uint64
 	partialRejected uint64
 }
 
 func newProduction(src recordSource, send traceSender) *production {
-	return &production{src: src, send: send, wake: make(chan struct{}, 1)}
+	return &production{src: src, send: send, wake: make(chan struct{}, 1), retries: newRetryLog(30 * time.Second)}
 }
 
 func (p *production) notify() {
@@ -285,6 +287,7 @@ func (p *production) sendPending(ctx context.Context) (bool, error) {
 		var partial *partialExportError
 		switch {
 		case err == nil:
+			p.retries.reset()
 			p.mu.Lock()
 			ackErr := p.src.Acknowledge(b)
 			p.mu.Unlock()
@@ -310,8 +313,8 @@ func (p *production) sendPending(ctx context.Context) (bool, error) {
 			if ctx.Err() != nil {
 				return false, nil
 			}
-			// RPC status descriptions are untrusted and may echo content.
-			log.Printf("fabric-host-emitter: export retry pending, staged batch retained error_type=%T", err)
+			// The status message is untrusted: sanitized and bounded (diag.go).
+			p.retries.log("fabric-host-emitter: export retry pending, staged batch retained", describeExportError(err))
 			return false, nil
 		}
 	}

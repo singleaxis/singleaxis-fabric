@@ -356,3 +356,98 @@ def test_without_the_agent_source_the_render_fails(tmp_path: Path) -> None:
     assert (
         "receiver.sourceBindings[0].sourceId must be s-<32 lowercase hex>" in run.stderr
     )
+
+
+# --------------------------------------------------------------------------
+# The filled DaemonSet (the shipped manifest is a template)
+# --------------------------------------------------------------------------
+
+EMITTER_IMAGE = "ghcr.io/singleaxis/fabric-host-emitter@sha256:" + "ab" * 32
+
+
+def _daemonset(out: Path) -> tuple[str, dict[str, Any]]:
+    text = (out / "host-emitter-daemonset.yaml").read_text(encoding="utf-8")
+    (doc,) = list(yaml.safe_load_all(text))
+    (ds,) = [item for item in doc["items"] if item["kind"] == "DaemonSet"]
+    return text, ds
+
+
+def test_the_daemonset_is_written_ready_to_apply(tmp_path: Path) -> None:
+    """The shipped manifest's zero digest and empty tenant are filled in;
+    nothing else changes."""
+    tmp_path.mkdir(exist_ok=True)
+    out = tmp_path / "out"
+    run = _run(
+        "--nodes", str(_nodes(tmp_path, "node-a")), "--tenant", "tenant-a",
+        "--id-key-file", str(_key(tmp_path)), "--base-port", "4417", "--out", str(out),
+        "--emitter-image", EMITTER_IMAGE,
+    )  # fmt: skip
+    assert run.returncode == 0, run.stderr
+    assert "zero image digest" not in run.stdout
+    text, ds = _daemonset(out)
+    (container,) = ds["spec"]["template"]["spec"]["containers"]
+    assert container["image"] == EMITTER_IMAGE
+    env = {e["name"]: e.get("value") for e in container["env"]}
+    assert env["EMIT_TENANT_ID"] == "tenant-a"
+    assert "0" * 64 not in text
+    shipped = (ROOT / "deploy/kubernetes/host-emitter-daemonset.yaml").read_text(
+        encoding="utf-8"
+    )
+    (shipped_doc,) = list(yaml.safe_load_all(shipped))
+    (shipped_ds,) = [i for i in shipped_doc["items"] if i["kind"] == "DaemonSet"]
+    (shipped_container,) = shipped_ds["spec"]["template"]["spec"]["containers"]
+    shipped_container["image"] = EMITTER_IMAGE
+    for item in shipped_container["env"]:
+        if item["name"] == "EMIT_TENANT_ID":
+            item["value"] = "tenant-a"
+    assert ds == shipped_ds
+    # No credential of any node is in the manifest.
+    for path in (out / "node-secret").iterdir():
+        assert path.read_text() not in text
+
+
+def test_the_daemonset_without_an_image_says_how_to_pin_it(tmp_path: Path) -> None:
+    out, output = _generate(tmp_path, "node-a")
+    _, ds = _daemonset(out)
+    (container,) = ds["spec"]["template"]["spec"]["containers"]
+    assert container["image"].endswith("@sha256:" + "0" * 64)
+    assert "--emitter-image" in output and "cannot pull" in output
+
+
+def test_the_daemonset_follows_the_namespace(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    out = tmp_path / "out"
+    run = _run(
+        "--nodes", str(_nodes(tmp_path, "node-a")), "--tenant", "tenant-a",
+        "--id-key-file", str(_key(tmp_path)), "--base-port", "4417", "--out", str(out),
+        "--namespace", "sensors",
+    )  # fmt: skip
+    assert run.returncode == 0, run.stderr
+    text, _ = _daemonset(out)
+    (doc,) = list(yaml.safe_load_all(text))
+    namespaced = [i for i in doc["items"] if i["kind"] != "ClusterRole"]
+    for item in namespaced:
+        if item["kind"] == "ClusterRoleBinding":
+            assert {s["namespace"] for s in item["subjects"]} == {"sensors"}
+        else:
+            assert item["metadata"]["namespace"] == "sensors"
+    assert "fabric-system" not in yaml.safe_dump(doc)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "ghcr.io/singleaxis/fabric-host-emitter:0.12.1",
+        "ghcr.io/singleaxis/fabric-host-emitter@sha256:" + "AB" * 32,
+        "ghcr.io/singleaxis/fabric-host-emitter@sha256:abc",
+    ],
+)
+def test_an_unpinned_emitter_image_is_refused(tmp_path: Path, image: str) -> None:
+    run = _run(
+        "--nodes", str(_nodes(tmp_path, "node-a")), "--tenant", "tenant-a",
+        "--id-key-file", str(_key(tmp_path)), "--base-port", "4417",
+        "--out", str(tmp_path / "out"), "--emitter-image", image,
+    )  # fmt: skip
+    assert run.returncode == 1
+    assert "--emitter-image must be" in run.stderr
+    assert not (tmp_path / "out").exists()

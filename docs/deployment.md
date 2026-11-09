@@ -280,7 +280,10 @@ context, `fabric.profile: production`, ...) and refuses to render without
 the values below. Validate with `helm template`: `helm lint` reports the
 refusals as informational and still exits 0.
 
-Operator-created Secrets in the Node namespace:
+Operator-created Secrets in the Node namespace. Create the namespace first
+(`kubectl create namespace fabric-system`, as in the commands below): the
+chart does not create it, and Helm cannot take over a namespace that
+already exists.
 
 | Secret | Keys | Purpose |
 |---|---|---|
@@ -289,6 +292,7 @@ Operator-created Secrets in the Node namespace:
 | `fabric-node-export-auth` | `authorization` | `Authorization` value for your destination |
 | your token Secret | `token` | the agents' bearer token (`receiver.workloadAuthentication.tokenSecret.name`) |
 | `fabric-node-content-key` | `key` | Node content key (with content) |
+| `fabric-node-s3-ca` | `ca.crt` | CA of an S3-compatible content store signed by a private CA (`content.s3.caSecret`) |
 
 Values (a file passed after the profile):
 
@@ -345,7 +349,12 @@ bytes. S3 keys are unchanged.
 
 Put the Node's S3 writer role on `otel-collector.serviceAccount.annotations`
 (IRSA), or name a credentials Secret in `content.s3.credentialsSecret` for an
-S3-compatible store. `matchLabels` values must be strings (`"true"`; use
+S3-compatible store. When a private CA signs the store's certificate, name
+a Secret with that CA in `content.s3.caSecret` (`{name: fabric-node-s3-ca,
+key: ca.crt}`): the Node mounts it read-only and sets `AWS_CA_BUNDLE` for
+content-store requests only (the export to your destination keeps its own
+trust). The bundle replaces the system roots for the store, so include
+every CA its certificate may chain to. `matchLabels` values must be strings (`"true"`; use
 `--set-string` on the command line).
 
 Under pseudonymous capture labels (the default) the chart refuses a
@@ -358,6 +367,7 @@ PKI if you have one; keep CA keys off the cluster):
 
 ```bash
 NS=fabric-system
+kubectl create namespace "$NS"
 NODE=fabric-otel-collector.$NS.svc
 openssl req -x509 -newkey rsa:3072 -sha256 -days 730 -nodes \
   -keyout node-ca.key -out node-ca.crt -subj "/CN=fabric-node-ca" \
@@ -404,6 +414,15 @@ needs list or delete. Writes are conditional (`If-None-Match: *`): an object
 is never overwritten. `<prefix>` defaults to `fabric/content/`.
 
 ## Upgrading from earlier releases
+
+- **No profile renders the release namespace any more.** Up to 0.12.1
+  `shadow-dev` and `shadow-production` set `namespace.create: true`, which
+  made a documented `helm install` fail (`namespaces "fabric-system"
+  already exists`, or `not found` without `--create-namespace`). Both now
+  set `false`. If your pipeline renders the chart and applies the output
+  itself (`helm template`, GitOps) and the namespace came from that
+  render, pass `--set namespace.create=true` before upgrading, or the
+  pipeline may prune the namespace and everything in it.
 
 - **Node mode now requires a capture policy and keys.** An agent in node
   mode without `FABRIC_CAPTURE_POLICY`, `FABRIC_WIRE_ID_KEY` and

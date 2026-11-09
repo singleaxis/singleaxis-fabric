@@ -384,6 +384,16 @@ content:
       name: ""
       accessKeyIdKey: AWS_ACCESS_KEY_ID
       secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+    # A private CA for an S3-compatible store whose certificate a public root
+    # does not sign (MinIO, Ceph RGW, SeaweedFS behind an internal CA). Name
+    # an operator-created Secret holding the PEM bundle; it is mounted at
+    # /etc/fabric/content-s3-ca/ca.crt and AWS_CA_BUNDLE points at it. The
+    # bundle replaces the system roots for content-store requests only (not
+    # for the exporter), so include every CA the store's certificate may
+    # chain to.
+    caSecret:
+      name: ""
+      key: ca.crt
   # Node-side customer key (spec 049 §7.8) sealing the persistent content
   # queue and, for backend=file, every stored object and descriptor
   # (AES-256-GCM). Name an operator-created Secret whose key holds 32 random
@@ -504,3 +514,34 @@ networkPolicy:
   #     matchLabels:
   #       kubernetes.io/metadata.name: monitoring
   monitoringNamespaceSelector: {}
+  # Egress for the host sensors with an ingress group on this Node. The
+  # chart installs no sensor (spec 056 OD-10), but the shipped manifests run
+  # them in the release namespace (deploy/kubernetes/), where the umbrella
+  # deny-default policy also selects them. With a host.ebpf group this renders
+  # <fullname>-host-emitter-egress for the eBPF emitter pods, and with a
+  # host.auditd group <fullname>-auditd-sensor-egress for the auditd sensor
+  # collector pods: their groups' ports on these Collector pods and cluster
+  # DNS, and for the emitter the API server (its pod selector reads pods).
+  # Only when networkPolicy.enabled is true.
+  hostSensorEgress:
+    enabled: true
+    ebpfPodSelector:
+      matchLabels:
+        app.kubernetes.io/name: fabric-host-emitter
+    auditdPodSelector:
+      matchLabels:
+        app.kubernetes.io/name: fabric-auditd-sensor
+    apiServer:
+      # Off when the emitter uses static EMIT_AGENT_CGROUP_ROOTS only.
+      enabled: true
+      # Empty: read from the cluster at install (the "kubernetes" Service's
+      # cluster IPs and its EndpointSlice addresses, with their ports; the
+      # installer needs get/list on both in namespace default). An offline
+      # render (helm template, GitOps) cannot read them and renders no API
+      # rule (the install NOTES warn): set both lists, e.g. from
+      #   kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes \
+      #     -o jsonpath='{.items[*].endpoints[*].addresses[*]}'
+      #   kubectl get service -n default kubernetes -o jsonpath='{.spec.clusterIP}'
+      # to: [{ipBlock: {cidr: <each address>/32}}], ports: [{protocol: TCP, port: 443}, {protocol: TCP, port: 6443}]
+      to: []
+      ports: []

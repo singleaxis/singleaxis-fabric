@@ -15,6 +15,15 @@ Workload auth: {{ ternary "required (dedicated bearer credential)" "not enabled"
 {{- with (dig "receiver" "sourceBindings" list $otel) }}
 Ingress groups: {{ len . }} (one source, credential and listener set each, spec 053 §6.1)
 {{- end }}
+{{- $ebpfGroups := 0 }}
+{{- $apiMissing := false }}
+{{- range (dig "receiver" "sourceBindings" list $otel) }}{{ if eq .kind "host.ebpf" }}{{ $ebpfGroups = add1 $ebpfGroups }}{{ end }}{{ end }}
+{{- if and $ebpfGroups (dig "networkPolicy" "enabled" false $otel) (dig "networkPolicy" "hostSensorEgress" "enabled" true $otel) }}
+{{- $apiOn := dig "networkPolicy" "hostSensorEgress" "apiServer" "enabled" true $otel }}
+{{- $api := include "otel-collector.apiServerEgress" (dict "Values" $otel) | fromYaml }}
+{{- $apiMissing = and $apiOn (not $api.to) }}
+Sensor egress: {{ include "fabric.collectorFullname" . | trunc 40 | trimSuffix "-" }}-host-emitter-egress (eBPF emitter pods in {{ .Release.Namespace }}: their groups, DNS{{ if and $apiOn $api.to }}, the API server{{ end }})
+{{- end }}
 Node profile:  {{ dig "fabric" "profile" "local" $otel }}{{ if eq (dig "fabric" "profile" "local" $otel) "production" }} (every batch bound to one tenant and source; content encrypted at rest, spec 049 P0-A){{ end }}
 Sampling:      unavailable in recorder v1 (accepted audit activity is not sampled)
 Debug export:  {{ ternary "ON (development only)" "OFF" (dig "debugExporter" "enabled" false $otel) }}
@@ -39,6 +48,18 @@ Retry limit:   {{ dig "exporter" "retry" "maxElapsedTime" "0s" $otel }}
 An OTLP acknowledgement proves destination acceptance, not durable persistence
 by an arbitrary destination. Delivery is at least once; deduplicate by stable
 event ID.
+{{- end }}
+{{- if $apiMissing }}
+
+WARNING: THE EMITTER EGRESS POLICY HAS NO API SERVER RULE.
+The API server's addresses could not be read (helm template or GitOps render),
+so the emitter's pod selector (EMIT_AGENT_POD_SELECTOR) cannot watch pods
+under the deny-default policy and scopes no pod. Set both
+otel-collector.networkPolicy.hostSensorEgress.apiServer.to and .ports from:
+  kubectl get service -n default kubernetes -o jsonpath='{.spec.clusterIP}'
+  kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes \
+    -o jsonpath='{.items[*].endpoints[*].addresses[*]} {.items[*].ports[*].port}'
+or set apiServer.enabled=false when the emitter uses EMIT_AGENT_CGROUP_ROOTS only.
 {{- end }}
 
 Check health:

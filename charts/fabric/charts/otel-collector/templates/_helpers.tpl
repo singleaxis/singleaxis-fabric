@@ -559,6 +559,9 @@ a profile that requires encryption.
 
 {{- define "otel-collector.validateContent" -}}
 {{- $c := .Values.content -}}
+{{- if and $c.s3.caSecret.name (not (and $c.enabled (eq $c.backend "s3"))) -}}
+{{- fail "content.s3.caSecret applies only with content.enabled=true and content.backend=s3; remove it or enable the s3 content backend" -}}
+{{- end -}}
 {{- if $c.enabled -}}
 {{- $tenantRe := "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$" -}}
 {{- if include "otel-collector.groupMode" . -}}
@@ -692,5 +695,69 @@ then stands in at the queue directory (development only, lost with the pod).
 {{- $c := .Values.content -}}
 {{- if and $c.enabled (eq $c.backend "file") (not .Values.exporter.sendingQueue.persistence.enabled) -}}
 emptyDir
+{{- end -}}
+{{- end -}}
+
+{{/*
+The API server peers and ports of the eBPF emitter's egress rule, as YAML
+{to, ports, source}: networkPolicy.hostSensorEgress.apiServer.to and .ports
+when set; otherwise looked up in the cluster at install time (the
+"kubernetes" Service's cluster IPs on its port, and its EndpointSlice
+addresses on theirs, so CNIs that apply policy before or after the Service
+translation both admit it). An offline render (helm template, GitOps) has no
+cluster to read: it renders no API rule, and NOTES says how to set it.
+*/}}
+{{- define "otel-collector.apiServerEgress" -}}
+{{- $api := .Values.networkPolicy.hostSensorEgress.apiServer -}}
+{{- if $api.to -}}
+{{- dict "to" $api.to "ports" $api.ports "source" "networkPolicy.hostSensorEgress.apiServer.to" | toYaml -}}
+{{- else -}}
+{{- $to := list -}}
+{{- $ports := list -}}
+{{- $svc := lookup "v1" "Service" "default" "kubernetes" -}}
+{{- if $svc -}}
+{{- range $ip := ($svc.spec.clusterIPs | default (list $svc.spec.clusterIP)) -}}
+{{- if and $ip (ne $ip "None") -}}
+{{- $to = append $to (dict "ipBlock" (dict "cidr" (printf "%s/%s" $ip (ternary "128" "32" (contains ":" $ip))))) -}}
+{{- end -}}
+{{- end -}}
+{{- range $p := $svc.spec.ports -}}
+{{- $ports = append $ports (dict "protocol" "TCP" "port" (int $p.port)) -}}
+{{- end -}}
+{{- end -}}
+{{- $slices := lookup "discovery.k8s.io/v1" "EndpointSlice" "default" "" -}}
+{{- range $slice := ($slices.items | default list) -}}
+{{- if eq (index ($slice.metadata.labels | default dict) "kubernetes.io/service-name" | default "") "kubernetes" -}}
+{{- range $e := ($slice.endpoints | default list) -}}
+{{- range $ip := ($e.addresses | default list) -}}
+{{- $to = append $to (dict "ipBlock" (dict "cidr" (printf "%s/%s" $ip (ternary "128" "32" (contains ":" $ip))))) -}}
+{{- end -}}
+{{- end -}}
+{{- range $p := ($slice.ports | default list) -}}
+{{- $ports = append $ports (dict "protocol" "TCP" "port" (int $p.port)) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- dict "to" ($to | uniq) "ports" ($ports | uniq) "source" "looked up at install: the kubernetes Service and its endpoints" | toYaml -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+networkPolicy.hostSensorEgress: the sensor pod selectors must select a
+specific set of pods, and explicit API server peers and ports go together
+and restrict their destinations like every other peer.
+*/}}
+{{- define "otel-collector.validateHostSensorEgress" -}}
+{{- $se := .Values.networkPolicy.hostSensorEgress -}}
+{{- range $field := list "ebpfPodSelector" "auditdPodSelector" -}}
+{{- $sel := index $se $field -}}
+{{- include "otel-collector.validateSelectorTypes" (dict "selector" $sel "field" (printf "networkPolicy.hostSensorEgress.%s" $field)) -}}
+{{- if not (include "otel-collector.selectorRestricts" $sel) -}}
+{{- fail (printf "networkPolicy.hostSensorEgress.%s must name matchLabels or an In/Exists matchExpression: an empty selector would give every pod in the namespace the sensor's egress" $field) -}}
+{{- end -}}
+{{- end -}}
+{{- include "otel-collector.validatePeers" (dict "peers" $se.apiServer.to "field" "networkPolicy.hostSensorEgress.apiServer.to") -}}
+{{- if and (gt (len $se.apiServer.to) 0) (eq (len $se.apiServer.ports) 0) -}}
+{{- fail "networkPolicy.hostSensorEgress.apiServer.to requires apiServer.ports (the API server's Service port and its endpoints' port, e.g. 443 and 6443)" -}}
 {{- end -}}
 {{- end -}}

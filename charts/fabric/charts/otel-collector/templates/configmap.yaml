@@ -5,6 +5,7 @@
 {{- include "otel-collector.validateContent" . -}}
 {{- include "otel-collector.validateProfile" . -}}
 {{- include "otel-collector.validateNetworkPolicy" . -}}
+{{- include "otel-collector.validateHostSensorEgress" . -}}
 {{- $content := .Values.content -}}
 {{- $persist := .Values.exporter.sendingQueue.persistence -}}
 {{- $exporters := include "otel-collector.exporterNames" . -}}
