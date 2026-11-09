@@ -495,13 +495,25 @@ def test_walker_called_near_the_recursion_limit_refuses_never_raises() -> None:
         else:
             outcomes.append(walk(value, 1 << 20).outcome)
 
+    def reachable(depth: int = 0) -> int:
+        """How many ``at_depth``-sized frames fit below the limit (measured, not guessed:
+        what counts toward the limit differs between versions and under a tracer)."""
+        try:
+            return reachable(depth + 1)
+        except RecursionError:
+            return depth
+
     limit = sys.getrecursionlimit()
     sys.setrecursionlimit(400)
     try:
+        deepest = reachable()
+        assert deepest > 5 * MAX_DEPTH + 25
         for headroom in (5, 15, 25):  # frames left between the caller and the limit
             outcomes.clear()
-            depth = 400 - headroom - len(__import__("traceback").extract_stack())
-            at_depth(max(0, depth))
+            at_depth(deepest - headroom)
             assert outcomes == ["too_large"], (headroom, outcomes)
+        outcomes.clear()
+        at_depth(deepest - 5 * MAX_DEPTH)  # room for the walk: it still serialises
+        assert outcomes == ["ok"]
     finally:
         sys.setrecursionlimit(limit)
