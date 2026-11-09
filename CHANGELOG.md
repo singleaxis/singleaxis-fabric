@@ -147,8 +147,9 @@ it never makes, applies, waits for or returns one.
   fraction of a millisecond, and `record_control(latency_ms=...)` can too.
   The record digest refused fractional numbers, so the agent never sealed
   that segment and the reader reported the record as unverifiable. The
-  digest now encodes a finite fractional number as a tagged string, and the
-  agent and the reader agree on it (spec 057 revision 3.3, spec 049
+  digest now encodes a finite floating-point number as a tagged value, and
+  the agent and the reader agree on it, also when an OTLP/JSON export writes
+  a whole-number double without a fraction (`412` for 412.0) (spec 057 revision 3.3, spec 049
   revision 6.8).
 - TypeScript SDK tests: the local content-store tests now pass on macOS,
   where the default temp directory is a symlink. The SDK was already right:

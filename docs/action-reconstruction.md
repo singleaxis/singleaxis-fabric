@@ -303,7 +303,9 @@ run r-3f2a…  decisions: complete  actions: complete  effects: complete  corrob
 - **Facts.** F1 to F14 of spec 057 §6.3, counted in the report's
   `security_context` with their first 64 event ids. F5 (`control_denied`)
   also moves the tool call's `effects_not_observed` reason to
-  `control_denied`; it is stated only when an effect channel was enabled.
+  `control_denied`; it is stated only for a call the effect channels were
+  watching (spec 056 reason `none_in_window` or `no_effect_channel`), never
+  for one whose channel was disabled.
   F6 (`deny_with_effect`) is co-occurrence: the row lists the deny's mode
   and derivation, the effect's attribution and any later allow.
 - **Not yet.** F12 and F14 read the offered tools and the tool-result error
@@ -311,6 +313,9 @@ run r-3f2a…  decisions: complete  actions: complete  effects: complete  corrob
   states them. Side effects that required approval (F7) are read from
   records-input `side_effect` records, which the records API does not emit
   yet.
+  The `path_ref` join (a watched rule file to its operator snapshot) and the
+  `grant_in_force` join of spec 057 §6.1 are not built: their inputs and
+  output shape arrive with later work packages.
 
 ## Production profile (M2)
 
