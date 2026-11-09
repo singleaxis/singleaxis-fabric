@@ -279,6 +279,13 @@ it never makes, applies, waits for or returns one.
   fractional numbers, safe integers, ASCII keys), and a document is no
   longer normalised twice or copied when nothing in it needs a pseudonym.
   Grant ids and stored documents are unchanged.
+- **Every records call is faster on the calling thread.** CI runners measured
+  `record_control` at 21–23 µs against its 20 µs budget (spec 051 §4.11).
+  The attribute check every record runs now remembers its recent answers for
+  short repeated values (capture point, kinds, source and run ids), the check
+  loop no longer re-wraps plain values, and a record outside a run computes
+  its fallback run id once per process epoch instead of once per record.
+  What is recorded is unchanged.
 - **Latency-budget tests no longer flake on shared CI runners.** Each budget
   test now measures in a fresh interpreter after a warm-up, in several
   batches, judges each batch against the machine speed measured just before
