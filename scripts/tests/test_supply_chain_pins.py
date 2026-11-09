@@ -290,7 +290,8 @@ def test_typescript_sdk_holds_never_block_security_updates() -> None:
     assert dev["@opentelemetry/api"].startswith(f"{major_v}.{minor_v}.")
     readme = (ROOT / "sdk/typescript/README.md").read_text()
     installs = re.findall(
-        r"<!-- fresh-install: install [^>]+ -->\n+```bash\n(npm install [^\n]+)\n```", readme
+        r"<!-- fresh-install: install [^>]+ -->\n+```bash\n(npm install [^\n]+)\n```",
+        readme,
     )
     tested = {
         tuple(map(int, pin.split(".")[:2]))
