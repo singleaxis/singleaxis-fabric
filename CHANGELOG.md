@@ -136,6 +136,33 @@ it never makes, applies, waits for or returns one.
   tenant, namespace and image digest filled in, ready to apply. The shipped
   manifest stays a template (zero digest, empty tenant) and its header now
   gives the exact commands, including the id-key Secret's key `id_key`.
+- **Boundary tests for the security-context records (spec 057 B1–B9).**
+  Tests now check that no records API returns a decision or waits, that the
+  `control_check` wrapper hands back the check's own result and exception,
+  that a failing, stalled or full recorder never reaches the agent, that
+  both invariants are on every control record, that the reader can print no
+  word that judges a call, and that no new module depends on or is named
+  after an agent framework, agent SDK or guardrail library. Another test
+  checks that importing, installing or autoloading Fabric leaves an
+  application's own functions exactly as they were: no import hook, no trace
+  or profile function, no wrapping by name.
+- **Acceptance runs for P0 (SC-0 and SC-CP).** A plain tool loop on a
+  fixture model is captured for real and read back. SC-0 reports a grant
+  and a change, an approval, a policy deny, a blocked and a failed hook, and
+  an extension, and must match a golden report and view. SC-CP checks an
+  in-code permission check three ways against the harness's own ledger:
+  unchanged (no decision is recorded, only calls, results and effects),
+  decorated with `control_check` (one row per check, linked to its call), and
+  passing the tool-call id. Tool results, process output and exit codes are
+  the same with capture off and on, also when the recorder fails.
+- **`AGENTS.md` scope wording for security-context recording** (spec 057
+  section 11, approved as OD-20), with a test that the file differs from its
+  previous text by exactly that wording.
+- **Release checks:** the wheel and sdist qualifier now refuses any data file
+  inside the package and any shipped OTLP mapping profile or filled
+  classification list (control hosts, hook programs, watched paths, denial
+  markers). A repository test checks the same for charts, Node build files,
+  images and the published contract families.
 
 ### Changed
 
@@ -245,7 +272,19 @@ it never makes, applies, waits for or returns one.
   directory now stands for its `*.otlp`, `*.json` and `*.jsonl` files (an
   OpenTelemetry Collector file exporter writes `.jsonl`), and the error for
   an empty directory names the forms it accepts.
-
+- **`record_grant` is faster.** A declared grant spent about 60 µs on the
+  calling thread, above the 50 µs budget for an active capture point. The
+  canonical JSON used for the grant digest now runs in the standard
+  library's C encoder whenever the result is guaranteed identical (no
+  fractional numbers, safe integers, ASCII keys), and a document is no
+  longer normalised twice or copied when nothing in it needs a pseudonym.
+  Grant ids and stored documents are unchanged.
+- **Latency-budget tests no longer flake on shared CI runners.** Each budget
+  test now measures in a fresh interpreter after a warm-up, in several
+  batches, judges each batch against the machine speed measured just before
+  it, and takes the best batch; it measures again only while a budget is
+  missed, at most three times. The budgets themselves are unchanged, and
+  each test still runs a deliberately blocking case that must fail.
 - **A record with a fractional number no longer breaks its segment's seal.**
   A `control_check` record always carries its measured latency as a
   fraction of a millisecond, and `record_control(latency_ms=...)` can too.
