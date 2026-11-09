@@ -5,6 +5,7 @@ package fabriccontentexporter
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -219,5 +220,26 @@ func TestWriteConcurrencyDefaultAndBounds(t *testing.T) {
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("write_concurrency %d: %v", good, err)
 		}
+	}
+}
+
+func TestSealedObjectsWrittenConcurrentlyAllOpen(t *testing.T) {
+	// Spec 049 §7.8 envelopes under write_concurrency: every object and
+	// descriptor opens under its own logical key (fresh nonce per seal).
+	dir := filepath.Join(t.TempDir(), "content")
+	cfg := fileConfig(dir)
+	cfg.WriteConcurrency = 16
+	cfg.File.EncryptionKeyFile = keyFile(t, []byte(base64.StdEncoding.EncodeToString(envelopeKey)+"\n"), 0o600)
+	e, _ := observedExporter(t, cfg, nil)
+	records, ids := manyRecords(64)
+	if err := e.pushLogs(context.Background(), makeLogs(t, records...)); err != nil {
+		t.Fatal(err)
+	}
+	s := testSealer(t, envelopeKey)
+	for i, id := range ids {
+		if got := readSealed(t, s, shardedObject(dir, testTenant, id), testTenant+"/evidence/"+id); string(got) != fmt.Sprintf("body %d", i) {
+			t.Fatalf("record %d opened as %q", i, got)
+		}
+		readSealed(t, s, shardedMeta(dir, testTenant, id), testTenant+"/evidence/meta/"+id+".json")
 	}
 }
