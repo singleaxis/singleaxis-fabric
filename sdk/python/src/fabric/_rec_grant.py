@@ -12,7 +12,9 @@ The record is a run annotation (step kind ``run``). Telemetry carries the shape 
 keyed ``grt-`` id (G01), trigger, previous id, source boundary, basis, modes and counts
 (G02-G09, G12-G14). The document itself is ``run.permissions`` content (G10), retained only
 as the capture policy allows, after **structural pseudonymisation** (§7.2): every path or
-glob becomes ``pth-``, every network host ``net-`` and every credential name ``crd-``
+glob becomes ``pth-``, every network host ``net-``, every credential name ``crd-`` and
+every MCP ``server_ref`` (a launch command or URL, which can carry a token or a user path)
+``src-``, the id ``fabric.mcp.server_ref`` and ``fabric.extension.source_ref`` carry
 (keyed v2, deterministic under one key). Without an id key the document cannot be
 pseudonymised and is withheld; it never falls back to clear.
 
@@ -84,7 +86,7 @@ PATH_FIELDS: tuple[tuple[str, ...], ...] = (
     ("filesystem", "deny"), ("roots",),
 )  # fmt: skip
 HOST_FIELDS: tuple[tuple[str, ...], ...] = (("network", "allow"), ("network", "deny"))
-GROUPS = ("paths", "hosts", "credentials")
+GROUPS = ("paths", "hosts", "credentials", "sources")
 
 
 # ===================================================================== JCS (RFC 8785)
@@ -191,11 +193,12 @@ def grant_id(digest: str, key: bytes | None) -> str | None:
 
 def pseudonymise_grant(
     document: Mapping[str, Any], key: bytes, *, paths: bool = True, hosts: bool = True,
-    credentials: bool = True,
+    credentials: bool = True, sources: bool = True,
 ) -> dict[str, Any]:  # fmt: skip
     """§7.2, in place of each value: every path or glob (filesystem rules and MCP roots)
-    becomes ``pth-``, every network host or pattern ``net-`` and every credential name
-    ``crd-``; other fields stay as written. A group switched off stays clear."""
+    becomes ``pth-``, every network host or pattern ``net-``, every credential name
+    ``crd-`` and every MCP ``server_ref`` ``src-`` (the E14/E21 source id); other fields
+    stay as written. A group switched off stays clear."""
     out: dict[str, Any] = _copy(dict(document))
 
     def replace(path: Sequence[str], prefix: str) -> None:
@@ -214,13 +217,17 @@ def pseudonymise_grant(
     if credentials:
         for item in out.get("credentials", ()):
             item["name"] = pseudonym_v2("crd", item["name"], key)
+    if sources:
+        for item in out.get("mcp_servers", ()):
+            if "server_ref" in item:
+                item["server_ref"] = pseudonym_v2("src", item["server_ref"], key)
     return out
 
 
 def _resorted(document: dict[str, Any]) -> dict[str, Any]:
     """The pseudonymised lists sorted again, by their pseudonyms: a list left in the order
     of its clear values would reveal how those values sort (§7.2)."""
-    for path in (*PATH_FIELDS, *HOST_FIELDS, ("credentials",)):
+    for path in (*PATH_FIELDS, *HOST_FIELDS, ("credentials",), ("mcp_servers",)):
         node: Any = document
         for part in path[:-1]:
             node = node.get(part) if type(node) is dict else None
@@ -247,6 +254,10 @@ def needs_key(document: Mapping[str, Any], groups: Mapping[str, bool]) -> bool:
             node = node.get(part) if type(node) is dict else None
         if node:
             return True
+    if groups.get("sources", True) and any(
+        "server_ref" in item for item in document.get("mcp_servers", ())
+    ):  # fmt: skip
+        return True
     return bool(groups.get("credentials", True) and document.get("credentials"))
 
 

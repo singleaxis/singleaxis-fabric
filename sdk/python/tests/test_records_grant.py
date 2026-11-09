@@ -28,6 +28,7 @@ from fabric._rec_grant import (
     normalise_grant,
     pseudonymise_grant,
 )
+from fabric._sequence import pseudonym_v2
 from fabric.deployment_policy import DeploymentPolicy
 from fabric.wire._policy import CapturePolicy, ContentGate
 from fabric.wire._protect import Protector
@@ -155,11 +156,69 @@ def test_the_policy_switches_reach_the_stored_document(monkeypatch: pytest.Monke
     assert stored["credentials"][0]["name"].startswith("crd-")
 
 
+SERVER_REF = "npx -y @acme/mcp --api-key sk-SECRET-CANARY /home/alice/SECRET-CANARY-PATH"
+
+
+def test_an_mcp_server_ref_is_stored_as_its_src_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """spec 057 rev 3.3: ``server_ref`` (a launch command or URL) joins the ``sources``
+    group; the stored value is the ``src-`` id ``fabric.extension.source_ref`` carries."""
+    doc = {"mcp_servers": [{"server": "repo-tools", "server_ref": SERVER_REF},
+                           {"server": "no-ref", "transport": "stdio"}]}  # fmt: skip
+    with capture(monkeypatch) as handle:
+        records.record_grant(doc)
+        records.record_extension("mcp_server", "repo-tools", source=SERVER_REF)
+        (stored,) = [json.loads(data) for d, data in bodies(handle)
+                     if d["role"] == "run.permissions"]  # fmt: skip
+        (_, ext) = spans(handle, "run")
+    refs = {s["server"]: s.get("server_ref") for s in stored["mcp_servers"]}
+    assert refs == {"repo-tools": pseudonym_v2("src", SERVER_REF, ID_KEY), "no-ref": None}
+    assert refs["repo-tools"] == ext["fabric.extension.source_ref"]  # one id, one join
+    assert b"SECRET-CANARY" not in json.dumps(stored).encode()
+    assert list(VALIDATOR.iter_errors(stored)) == []
+
+
+def test_without_a_key_a_server_ref_withholds_the_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    doc = {"mcp_servers": [{"server": "repo-tools", "server_ref": SERVER_REF}]}
+    with capture(monkeypatch, key=None) as handle:
+        ref = records.record_grant(doc)
+        records.record_grant({"mcp_servers": [{"server": "repo-tools"}]})  # no ref: kept
+        (first, second) = spans(handle, "run")
+        stored = bodies(handle)
+    assert ref.recorded and first["fabric.grant.mcp_servers.count"] == 1
+    assert "fabric.content.object_ids" not in first  # withheld: no body at all
+    assert len(second["fabric.content.object_ids"]) == 1
+    assert all(b"SECRET-CANARY" not in data for _, data in stored)
+
+
+def test_a_policy_that_allows_clear_sources_keeps_the_server_ref(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policy = CapturePolicy("acme", 1, "sha256:" + "3" * 64, {"run.permissions": "retain_original"},
+                           profile="local", grant_pseudonymise={"sources": False})  # fmt: skip
+    gate = ContentGate("local", "enabled", None, policy)
+    doc = {"mcp_servers": [{"server": "repo-tools", "server_ref": "npx -y @acme/repo-tools"}],
+           "filesystem": {"read": ["/work/**"]}}  # fmt: skip
+    with capture(
+        monkeypatch, gate=gate, protector=Protector(policy, max_body_bytes=1 << 20)
+    ) as handle:
+        records.record_grant(doc)
+        (stored,) = [json.loads(data) for d, data in bodies(handle)
+                     if d["role"] == "run.permissions"]  # fmt: skip
+    assert stored["mcp_servers"][0]["server_ref"] == "npx -y @acme/repo-tools"
+    assert stored["filesystem"]["read"][0].startswith("pth-")  # the other groups stay on
+    with capture(monkeypatch, key=None, gate=gate,
+                 protector=Protector(policy, max_body_bytes=1 << 20)) as handle:  # fmt: skip
+        records.record_grant({"mcp_servers": doc["mcp_servers"]})
+        assert len(bodies(handle)) == 1  # nothing left to pseudonymise: kept without a key
+
+
 def test_the_deployment_policy_section_sets_the_switches() -> None:
     doc = production_policy()
-    doc["security_context"] = {"grant": {"pseudonymise": {"paths": False}}}
+    doc["security_context"] = {"grant": {"pseudonymise": {"paths": False, "sources": False}}}
     policy = CapturePolicy.from_deployment(DeploymentPolicy(doc))
-    assert dict(policy.grant_pseudonymise) == {"paths": False}
+    assert dict(policy.grant_pseudonymise) == {"paths": False, "sources": False}
     assert dict(CapturePolicy.from_deployment(
         DeploymentPolicy(production_policy())).grant_pseudonymise) == {}  # fmt: skip
 

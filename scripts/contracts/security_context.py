@@ -9,7 +9,8 @@ Reference functions (the SDK and the reader must agree with the vectors they pro
 - :func:`normalise_grant` / :func:`grant_digest`: spec 057 §5.2 (every list sorted and
   de-duplicated, ``request_ref`` dropped; sha256 of the JCS bytes);
 - :func:`pseudonymise_grant`: spec 057 §7.2 structural pseudonymisation (paths and globs
-  ``pth-``, network hosts ``net-``, credential names ``crd-``; keyed v2, 049 §2.9);
+  ``pth-``, network hosts ``net-``, credential names ``crd-``, MCP ``server_ref`` ``src-``;
+  keyed v2, 049 §2.9);
 - :func:`observation_v1_to_v2`: spec 052 §4.2.4 (ControlObservation v1 documents to v2).
 
 Generated here (``generate_p0_contracts.py`` calls :func:`generate`; ``--check`` keeps them
@@ -170,11 +171,12 @@ HOST_FIELDS = (("network", "allow"), ("network", "deny"))
 
 def pseudonymise_grant(
     document: Mapping[str, Any], key: str, *, paths: bool = True, hosts: bool = True,
-    credentials: bool = True,
+    credentials: bool = True, sources: bool = True,
 ) -> Any:  # fmt: skip
     """Spec 057 §7.2: replace, in place of each value, every path or glob with ``pth-``,
-    every network host or pattern with ``net-`` and every credential name with ``crd-``
-    (keyed v2, deterministic under one key). Other fields stay as written."""
+    every network host or pattern with ``net-``, every credential name with ``crd-`` and
+    every MCP ``server_ref`` with ``src-`` (keyed v2, deterministic under one key). Other
+    fields stay as written."""
     out = copy.deepcopy(dict(document))
 
     def replace(field: Sequence[str], prefix: str, id_type: str) -> None:
@@ -195,6 +197,12 @@ def pseudonymise_grant(
     if credentials:
         for item in out.get("credentials", []):
             item["name"] = _pseudonym("crd", "credential", item["name"], key)
+    if sources:
+        for item in out.get("mcp_servers", []):
+            if "server_ref" in item:
+                item["server_ref"] = _pseudonym(
+                    "src", "extension_source", item["server_ref"], key
+                )
     return out
 
 
@@ -566,7 +574,8 @@ def policy_cases() -> list[dict[str, Any]]:
              "reason_code": "path.outside_root"},
             {"label": "approval-gate", "equals": "approval required", "decision": "escalate"},
             {"label": "json-gate", "json": {"pointer": "/status", "values": ["denied", 403]}}],
-        "grant": {"pseudonymise": {"paths": True, "hosts": False, "credentials": True}},
+        "grant": {"pseudonymise": {"paths": True, "hosts": False, "credentials": True,
+                                   "sources": True}},
     }  # fmt: skip
     cases = [
         _case("full security_context", _policy_doc(full), True),
@@ -712,7 +721,11 @@ def grant_vectors() -> dict[str, Any]:
     for name, groups in [
         ("all groups", {}),
         ("hosts clear", {"hosts": False}),
-        ("nothing", {"paths": False, "hosts": False, "credentials": False}),
+        ("sources clear", {"sources": False}),
+        (
+            "nothing",
+            {"paths": False, "hosts": False, "credentials": False, "sources": False},
+        ),
     ]:
         pseudo.append(
             {
@@ -737,8 +750,8 @@ def grant_vectors() -> dict[str, Any]:
         "note": "Spec 057 §5.2, §7.2: JCS (RFC 8785) canonical bytes; grant digests over the "
                 "normalised clear document (lists sorted and de-duplicated, request_ref dropped), "
                 "so an identical offered set gives one digest whatever the request; keyed grt- ids; "
-                "structural pseudonymisation of paths (pth-), hosts (net-) and credential names "
-                "(crd-). The key is a test key.",
+                "structural pseudonymisation of paths (pth-), hosts (net-), credential names "
+                "(crd-) and MCP server_ref launch commands or URLs (src-). The key is a test key.",
         "jcs": jcs_out, "digests": digests, "dedup": dedup, "pseudonymise": pseudo,
     }  # fmt: skip
 

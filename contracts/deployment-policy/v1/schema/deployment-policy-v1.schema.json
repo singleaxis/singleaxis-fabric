@@ -492,7 +492,7 @@
           }
         },
         "grant": {
-          "description": "Structural pseudonymisation of grant documents (spec 057 §7.2): on by default for every field group; false keeps that group clear, and the capture manifest records the setting.",
+          "description": "Structural pseudonymisation of grant documents (spec 057 §7.2): on by default for every field group (paths, hosts, credentials, sources: the MCP server_ref launch command or URL); false keeps that group clear, and the capture manifest records the setting.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -507,6 +507,9 @@
                   "type": "boolean"
                 },
                 "credentials": {
+                  "type": "boolean"
+                },
+                "sources": {
                   "type": "boolean"
                 }
               }

@@ -38,7 +38,7 @@
         {
           "scope": "project",
           "server": "repo-tools",
-          "server_ref": "npx -y @acme/repo-tools-mcp",
+          "server_ref": "src-3efeb3d4f27e1759cf9f3813b2b7d4e2",
           "tools_allow": [
             "search"
           ],
@@ -132,7 +132,7 @@
         {
           "scope": "project",
           "server": "repo-tools",
-          "server_ref": "npx -y @acme/repo-tools-mcp",
+          "server_ref": "src-3efeb3d4f27e1759cf9f3813b2b7d4e2",
           "tools_allow": [
             "search"
           ],

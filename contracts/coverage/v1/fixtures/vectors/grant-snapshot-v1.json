@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.grant-snapshot-vectors/v1",
-  "note": "Spec 057 §5.2, §7.2: JCS (RFC 8785) canonical bytes; grant digests over the normalised clear document (lists sorted and de-duplicated, request_ref dropped), so an identical offered set gives one digest whatever the request; keyed grt- ids; structural pseudonymisation of paths (pth-), hosts (net-) and credential names (crd-). The key is a test key.",
+  "note": "Spec 057 §5.2, §7.2: JCS (RFC 8785) canonical bytes; grant digests over the normalised clear document (lists sorted and de-duplicated, request_ref dropped), so an identical offered set gives one digest whatever the request; keyed grt- ids; structural pseudonymisation of paths (pth-), hosts (net-), credential names (crd-) and MCP server_ref launch commands or URLs (src-). The key is a test key.",
   "jcs": [
     {
       "name": "member order",
@@ -577,7 +577,7 @@
           {
             "server": "repo-tools",
             "transport": "stdio",
-            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "server_ref": "src-3efeb3d4f27e1759cf9f3813b2b7d4e2",
             "tools_allow": [
               "search"
             ],
@@ -774,7 +774,7 @@
           {
             "server": "repo-tools",
             "transport": "stdio",
-            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "server_ref": "src-3efeb3d4f27e1759cf9f3813b2b7d4e2",
             "tools_allow": [
               "search"
             ],
@@ -800,6 +800,203 @@
           "default": "deny",
           "allow": [
             "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "crd-0b4b928ea7995f0a4999f47725956f50",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      }
+    },
+    {
+      "name": "sources clear",
+      "document": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "/work"
+          ],
+          "read": [
+            "/work/**"
+          ],
+          "write": [
+            "/work/out/**"
+          ],
+          "deny": [
+            "/work/.env"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "api.internal.example"
+          ],
+          "deny": []
+        },
+        "sandbox": {
+          "kind": "container",
+          "name": "agent-sbx",
+          "enabled": true
+        },
+        "credentials": [
+          {
+            "name": "GITHUB_TOKEN",
+            "kind": "env",
+            "scopes": [
+              "repo:read"
+            ]
+          }
+        ],
+        "models": {
+          "allow": [
+            "model-a"
+          ],
+          "deny": []
+        },
+        "limits": [
+          {
+            "kind": "tool_calls",
+            "limit": 200,
+            "window": "run"
+          }
+        ],
+        "x-acme": {
+          "policy_bundle": "agents-prod"
+        }
+      },
+      "key": "fabric-test-id-key-not-a-secret",
+      "groups": {
+        "sources": false
+      },
+      "pseudonymised": {
+        "schema_version": "fabric.grant-snapshot/v1",
+        "basis": "declared",
+        "source": {
+          "boundary": "api",
+          "name": "acme-agent",
+          "version": "3.2.0"
+        },
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+        "permission_mode": "ask_on_write",
+        "tools": {
+          "allow": [
+            {
+              "rule": "read_file"
+            },
+            {
+              "rule": "shell(git status *)"
+            }
+          ],
+          "deny": [
+            {
+              "rule": "shell(curl *)"
+            }
+          ],
+          "ask": [
+            {
+              "rule": "write_file"
+            }
+          ]
+        },
+        "mcp_servers": [
+          {
+            "server": "repo-tools",
+            "transport": "stdio",
+            "server_ref": "npx -y @acme/repo-tools-mcp",
+            "tools_allow": [
+              "search"
+            ],
+            "tools_deny": [],
+            "scope": "project"
+          }
+        ],
+        "filesystem": {
+          "roots": [
+            "pth-8ae4af3f153f201a4f246c7027fbd795"
+          ],
+          "read": [
+            "pth-c0e588aa241f93a699a2f37bc2214f9b"
+          ],
+          "write": [
+            "pth-875b09fc4634c7e05603363c094de106"
+          ],
+          "deny": [
+            "pth-415366dfa1c25dbf37de48a1e9cf54a7"
+          ]
+        },
+        "network": {
+          "default": "deny",
+          "allow": [
+            "net-dcf01650ae69722190aec02dacdaea24"
           ],
           "deny": []
         },
@@ -936,7 +1133,8 @@
       "groups": {
         "paths": false,
         "hosts": false,
-        "credentials": false
+        "credentials": false,
+        "sources": false
       },
       "pseudonymised": {
         "schema_version": "fabric.grant-snapshot/v1",

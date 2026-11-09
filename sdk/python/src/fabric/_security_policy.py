@@ -173,7 +173,8 @@ def _marker(entry: object) -> dict[str, Any]:
 def _grant(value: object) -> dict[str, Any]:
     row = _object(value, set(), {"pseudonymise"})
     if "pseudonymise" in row:
-        switches = _object(row["pseudonymise"], set(), {"paths", "hosts", "credentials"})
+        switches = _object(row["pseudonymise"], set(), {"paths", "hosts", "credentials",
+                                                          "sources"})  # fmt: skip
         if not all(isinstance(flag, bool) for flag in switches.values()):
             raise _fail()
     return row

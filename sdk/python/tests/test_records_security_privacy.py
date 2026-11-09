@@ -3,7 +3,8 @@
 """Spec 057 WP7-1 privacy canaries under the production profile (§7.1-§7.3).
 
 A filesystem path, a network host, a credential name, a reason-text marker, an extension
-source and a provider tool-call id, reported through every new records API, never appear
+source, MCP server launch commands and URLs (``server_ref``, carrying a secret-looking token
+and a user path) and a provider tool-call id, reported through every new records API, never appear
 in clear in telemetry (the records spans), in the spool (the bytes written to disk) or in
 the Node export (the OTLP spans and content bodies the Node receives once the spool
 drains). Two policies: the production default (no security role named: the grant document,
@@ -15,6 +16,7 @@ content, never telemetry).
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -31,8 +33,14 @@ CREDENTIAL = "CREDENTIAL_CANARY_7F3A"
 REASON = "REASON-CANARY-7f3a: user bob may not write /etc"
 SOURCE = "https://source-canary-7f3a.example/plugin.git"
 TOOL_CALL = "toolu_CANARY7f3a"
+# spec 057 rev 3.3: a launch command or URL can carry a secret or a user path
+SERVER_CMD = ("npx -y @acme/mcp-server --api-key sk-live-APIKEYCANARY7f3a "
+              "--config /home/user-canary-7f3a/.mcp/config.json")  # fmt: skip
+SERVER_URL = "https://mcp.example/sse?token=tok-URLTOKENCANARY7f3a"
 CANARIES = ("PATH-CANARY-7f3a", "host-canary-7f3a", "CREDENTIAL_CANARY_7F3A",
-            "REASON-CANARY-7f3a", "source-canary-7f3a", "toolu_CANARY7f3a")  # fmt: skip
+            "REASON-CANARY-7f3a", "source-canary-7f3a", "toolu_CANARY7f3a",
+            "APIKEYCANARY7f3a", "user-canary-7f3a", "URLTOKENCANARY7f3a", "@acme/mcp-server",
+            "mcp.example")  # fmt: skip
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +55,10 @@ def _record_everything() -> None:
         "network": {"default": "deny", "allow": [HOST]},
         "credentials": [{"name": CREDENTIAL, "kind": "env", "scopes": ["repo:read"]}],
         "tools": {"allow": [{"rule": "read_file"}]},
+        "mcp_servers": [
+            {"server": "repo-tools", "transport": "stdio", "server_ref": SERVER_CMD},
+            {"server": "remote-tools", "transport": "sse", "server_ref": SERVER_URL},
+        ],
     })  # fmt: skip
     assert grant.recorded
     records.record_run_context(permissions={"filesystem.read": [PATH], "network.deny": [HOST]})
@@ -104,6 +116,9 @@ def test_canaries_never_in_clear_on_telemetry_spool_or_node_export(
             for group in ("roots", "write", "read"):
                 for value in document.get("filesystem", {}).get(group, ()):
                     assert value.startswith("pth-")
+        servers = [s for document in documents for s in document.get("mcp_servers", ())]
+        assert len(servers) == 2  # the test is not vacuous: both refs kept, as src- ids
+        assert all(re.fullmatch(r"src-[0-9a-f]{32}", s["server_ref"]) for s in servers)
         spool_without_reason = spool.replace(REASON.encode(), b"")
         export_without_reason = export.replace(REASON.encode(), b"")
         _assert_no_canary("spool", spool_without_reason)
