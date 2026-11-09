@@ -407,8 +407,12 @@ def test_b5_every_control_path_records_both_invariants(monkeypatch: pytest.Monke
 
 
 # ============================================================================ B6
-_READER = ("reconstruct/__main__.py", "reconstruct/_security.py", "reconstruct/_controls.py",
-           "reconstruct/_attribute.py", "reconstruct/_report.py")  # fmt: skip
+#: Every reader module: any of them can put a string into the report, the projection, the
+#: view or a diagnostic, so the scan never depends on a hand-kept list of the printing ones.
+_READER = tuple(sorted(p.relative_to(SRC).as_posix() for p in (SRC / "reconstruct").glob("*.py")))
+#: Literals that contain a scanned word but are never output: a cloud SDK exception class
+#: name the object reader matches a store error against (``reconstruct/_objects.py``).
+_NOT_OUTPUT = frozenset({"UnauthorizedSSOTokenError"})
 
 
 def _printable_literals(tree: ast.Module) -> list[str]:
@@ -424,9 +428,19 @@ def _printable_literals(tree: ast.Module) -> list[str]:
             and id(n) not in docstrings]  # fmt: skip
 
 
+def test_b6_the_scan_covers_every_reader_module() -> None:
+    assert len(_READER) >= 15
+    for relative in ("reconstruct/__main__.py", "reconstruct/_security.py",
+                     "reconstruct/_controls.py", "reconstruct/_explain.py",
+                     "reconstruct/_verify.py", "reconstruct/_project.py"):  # fmt: skip
+        assert relative in _READER, relative
+
+
 @pytest.mark.parametrize("relative", _READER)
 def test_b6_reader_can_print_no_evaluation_word(relative: str) -> None:
     for literal in _printable_literals(_tree(relative)):
+        if literal in _NOT_OUTPUT:
+            continue
         assert not FORBIDDEN_WORDS.search(literal), (relative, literal)
 
 
