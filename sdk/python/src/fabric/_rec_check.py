@@ -52,15 +52,22 @@ from __future__ import annotations
 import contextvars
 import functools
 import inspect
+import re
 import time
 from collections.abc import Callable, Mapping
 from types import TracebackType
 from typing import Any, Literal
 
-from ._capture_types import COUNTERS, RecordsMisuseError, misuse
+from ._capture_types import COUNTERS, RecordsMisuseError
 from ._rec_controls import REASON_CODE, ControlRef, emit_control
 from ._records_api import Timing, current_records
-from .records._vocab import CONTROL_KINDS, PHASE_DECISIONS
+from .records._vocab import (
+    CONTROL_KINDS,
+    CONTROL_MODES,
+    CONTROL_STAGES,
+    GATED_KINDS,
+    PHASE_DECISIONS,
+)
 
 # The record_control keywords a wrapper may fix. The decision, latency, error class and
 # derivation come from the outcome; a minted control id per call (never a fixed one).
@@ -69,9 +76,16 @@ KEYWORDS = frozenset({
     "decided_by", "policy", "action_id", "proof_ref", "gated_step", "checked", "reason",
     "links",
 })  # fmt: skip
+_CLOSED = {"stage": CONTROL_STAGES, "mode": CONTROL_MODES, "gated_kind": GATED_KINDS}
+_LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
 _LITERALS = (str, int, bool, float, type(None))
 _OBSERVATION = PHASE_DECISIONS["observation"]
 _UNSET: Any = object()  # ``check.result`` never assigned
+
+
+def _bad() -> None:
+    """Count one invalid wrapper argument without raising (strict mode included)."""
+    COUNTERS.api_misuse += 1
 
 
 def _quiet(fn: Callable[[], Any], default: Any = None) -> Any:
@@ -144,31 +158,48 @@ class control_check:  # noqa: N801 - a records API, used as a decorator or a con
         self, kind: object, decision_map: object, deny_on: object, exit_means: object,
         keywords: Mapping[str, Any],
     ) -> None:  # fmt: skip
+        """Each invalid argument is counted (``api_misuse``) and replaced by its fail-open
+        value here, once, so no call of the wrapped check meets it again; nothing raises,
+        strict mode included (§4.10.3)."""
         if not (isinstance(kind, str) and str.__str__(kind) in CONTROL_KINDS):
-            misuse("control_check kind")
+            _bad()
+            self._kind = "other"
+        if self._control is not None and not (
+            isinstance(self._control, str) and _LABEL.fullmatch(self._control)
+        ):
+            _bad()
+            self._control = None
         if decision_map is not None:
             if not isinstance(decision_map, Mapping):
-                misuse("decision_map must be a mapping")
+                _bad()
             else:
                 for value, decision in decision_map.items():
                     if type(value) in _LITERALS and decision in _OBSERVATION:
                         self._map[(type(value), value)] = decision
                     else:
-                        misuse("decision_map entry")
-        if isinstance(deny_on, tuple) and all(isinstance(c, type) and issubclass(
-                c, BaseException) for c in deny_on):  # fmt: skip
+                        _bad()
+        if isinstance(deny_on, tuple) and all(
+            isinstance(c, type) and issubclass(c, BaseException) for c in deny_on
+        ):
             self._deny_on = deny_on
         else:
-            misuse("deny_on must be a tuple of exception classes")
+            _bad()
         if exit_means == "allow":
             self._exit_allow = True
         elif exit_means != "unknown":
-            misuse("exit_means")
+            _bad()
         for name, value in keywords.items():
-            if name in KEYWORDS:
-                self._keywords[name] = value
+            closed = _CLOSED.get(name)
+            if name not in KEYWORDS:
+                _bad()
+            elif closed is not None and not (isinstance(value, str) and value in closed):
+                _bad()  # a closed keyword outside its vocabulary is left at its default
+            elif name == "reason_code" and not (
+                isinstance(value, str) and REASON_CODE.fullmatch(value)
+            ):
+                _bad()
             else:
-                misuse("control_check keyword")
+                self._keywords[name] = value
 
     # ------------------------------------------------------------ the outcome table
     def _from_value(self, value: object) -> str:
