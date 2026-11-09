@@ -98,8 +98,10 @@ It runs as root with all capabilities dropped except `BPF`, `PERFMON`,
 `SYS_RESOURCE` and `DAC_READ_SEARCH`, with `hostPID: true` and read-only
 mounts of BTF, tracefs, debugfs and cgroupfs.
 [`deploy/kubernetes/host-emitter-daemonset.yaml`](../deploy/kubernetes/host-emitter-daemonset.yaml)
-is a qualification template, not an install: its image digest and cgroup
-scope are deliberately unusable until you set them.
+is a template for production mode: its image is the zero digest (it cannot
+pull) and its tenant is empty. `deploy/kubernetes/host-bindings.py
+--emitter-image <repository>@sha256:<digest>` writes the filled copy
+(below).
 
 ## Production mode
 
@@ -139,12 +141,30 @@ staged batch.
   (`make up-prod-groups`): the agent group and the `ebpf` group
   (`FABRIC_EBPF_SOURCE_ID`, `FABRIC_EBPF_TOKEN_FILE`, gRPC 4417); the auditd
   group and the agent's content path are further overlays.
+  `make verify-prod` checks this Node too (it detects the groups from the
+  env file; `make verify-prod-groups` forces it): the agent group under
+  `FABRIC_AGENT_SOURCE_ID`, and an unauthenticated export refused on each
+  host group's port (gRPC needs `grpcurl`).
 - **Kubernetes:** one group per node (spec 056 §7.3.3 (n)). Each node's
   emitter uses the source label `$(NODE_NAME)/ebpf`, reads its token, state
   key and group endpoint from a per-node hostPath directory
-  (`EMIT_ENDPOINT_FILE`), and shares only the id key through a Secret;
-  `deploy/kubernetes/host-bindings.py` generates the chart values. The 64
+  (`EMIT_ENDPOINT_FILE`), and shares only the id key through a Secret
+  (`fabric-wire-id-key`, key `id_key`). `deploy/kubernetes/host-bindings.py`
+  generates the chart values, the per-node directories and, with
+  `--emitter-image`, the DaemonSet ready to apply. With the chart's
+  NetworkPolicy on, the chart also renders the emitter's egress (its group
+  ports, DNS and the API server; see the chart README), because the
+  namespace's deny-default policy selects the emitter pods too. The 64
   group default (256 at most) bounds the nodes one Node serves.
+- **Pod scope on any kubelet layout.** With `EMIT_AGENT_POD_SELECTOR` the
+  emitter finds pod cgroups under every kubelet hierarchy on the node's
+  cgroup v2 mount: `kubepods.slice` / `kubepods` at the top, and nested
+  under a kubelet `--cgroup-root` (kind's
+  `kubelet.slice/kubelet-kubepods.slice`, a `<prefix>-kubepods.slice`, or
+  cgroupfs `.../kubepods`). The health line reports
+  `pod_selector_matched=N pod_cgroups_found=M`, and a warning names the
+  searched hierarchies when a matching pod has no cgroup. cgroup v1-only
+  nodes are not supported (a hybrid node's v2 hierarchy is used).
 
 [AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
 exercises this path in CI.

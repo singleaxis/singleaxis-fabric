@@ -111,6 +111,31 @@ it never makes, applies, waits for or returns one.
   F1–F14, such as "deny gates a tool call and no effect is attributed to it"
   or "decision recorded with no matching call". A fact is co-occurrence, and
   the reader never says whether a call was right.
+- **Helm: trust a private CA for an S3-compatible content store.**
+  `content.s3.caSecret` names a Secret holding the store's CA bundle; the
+  Node mounts it read-only and sets `AWS_CA_BUNDLE` for content-store
+  requests only. Before, a store signed by a private CA (MinIO, Ceph,
+  SeaweedFS) needed a `kubectl set env` that Helm reverted on the next
+  upgrade.
+- **Helm: egress for the host sensors.** With the NetworkPolicy on and a
+  `host.ebpf` or `host.auditd` ingress group, the chart renders an egress
+  policy for the shipped eBPF emitter and auditd sensor pods
+  (`networkPolicy.hostSensorEgress`, on by default): their own group ports
+  on the Node, cluster DNS and, for the emitter's pod selector, the API
+  server. The namespace's deny-default policy blocked the shipped DaemonSet
+  before, so it delivered nothing. The API server's addresses are read at
+  install; the install notes say how to set them for `helm template` or
+  GitOps renders.
+- **`make verify-prod-groups`**, and `make verify-prod` detects ingress
+  groups from the env file: it probes the agent group under
+  `FABRIC_AGENT_SOURCE_ID` and checks that each host group's port refuses an
+  unauthenticated export. Before, the documented ingress-group setup always
+  failed verification with "ports not published ... (make up-prod)".
+- **`host-bindings.py --emitter-image <repository>@sha256:<digest>`** writes
+  `host-emitter-daemonset.yaml` next to the per-node files, with the
+  tenant, namespace and image digest filled in, ready to apply. The shipped
+  manifest stays a template (zero digest, empty tenant) and its header now
+  gives the exact commands, including the id-key Secret's key `id_key`.
 
 ### Changed
 
@@ -166,6 +191,16 @@ it never makes, applies, waits for or returns one.
   to a model call, and not a reason for `partial`. A command after the first
   model call with no open tool call is still unattributed, and so is one
   behind a lost sequence position, which might have been a model call.
+- **Helm: no profile creates the release namespace.** `shadow-dev` and
+  `shadow-production` set `namespace.create: false`. With `true`, the
+  documented installs failed: Helm stores the release in that namespace
+  before creating anything, so it must exist, and then the chart's
+  Namespace object cannot be adopted (`namespaces "fabric-system" already
+  exists`). Install with `--create-namespace`, or create the namespace and
+  its Secrets first (production). A pipeline that applies rendered
+  manifests itself (`helm template`, GitOps) and took the namespace from
+  the render passes `--set namespace.create=true` before upgrading, or it
+  may prune the namespace.
 
 ### Fixed
 
@@ -243,6 +278,18 @@ it never makes, applies, waits for or returns one.
   their temp roots, and the parent-alias test checks that URIs use the real
   path and that a URI spelled through the alias is not owned. SDK behaviour
   is unchanged.
+- **The eBPF emitter finds pods under any kubelet cgroup root.** Its pod
+  selector looked only for `kubepods.slice` or `kubepods` at the top of the
+  cgroup mount, so on kind (`kubelet.slice/kubelet-kubepods.slice`) and
+  other `--cgroup-root` layouts it scoped no pod and said nothing. It now
+  searches every kubelet hierarchy (systemd and cgroupfs drivers; cgroup v2,
+  or the v2 hierarchy of a hybrid host), searches again while a matching
+  pod has no cgroup, and reports `pod_selector_matched` and
+  `pod_cgroups_found` on its health line, with a warning when they differ.
+- **The eBPF emitter says why an export fails.** It logged only
+  `error_type=*status.Error`, once a second. It now logs the gRPC code, the
+  status message (sanitized: no credentials, bounded) and the likely fix,
+  once per change and then every 30 s with a repeat count, in its own log.
 
 ## [0.12.1] - 2026-11-08
 
