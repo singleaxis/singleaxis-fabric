@@ -175,7 +175,9 @@ def _actions_parser() -> argparse.ArgumentParser:
             "Print each run as a timeline: model calls, the effects (subprocesses) each "
             "tool call caused and how that link was established, the host events that "
             "corroborate them, and the decisions, actions, effects and corroboration chain "
-            "verdicts (spec 056 §4.6). Offline and read-only; exits as the report does."
+            "verdicts (spec 056 §4.6); grants, extensions, control decisions and hook "
+            "outcomes under the calls they name, the controls chain and the mechanical facts "
+            "(spec 057 §6.2). Offline and read-only; exits as the report does."
         ),
     )
     parser.add_argument(
@@ -1034,9 +1036,14 @@ def format_actions(view: Mapping[str, Any]) -> str:
     # call): its effects are shown, and no decision can explain them.
     no_model = not any(row["kind"] == "model_call" for row in view["rows"])
     why = "no model call in this process" if no_model else "no open tool call"
+    for row in view.get("preamble", ()):
+        lines.append(f"  {_security_text(row)}".rstrip())
     for row in view["rows"]:
         number = f"{row['n']:>3}"
-        if row["kind"] == "model_call":
+        if row["kind"] in _SECURITY_ROWS:
+            indent = "  " if row["kind"] in ("grant", "extension") else "    "
+            lines.append(f"{number}{indent}{_security_text(row)}".rstrip())
+        elif row["kind"] == "model_call":
             text = f"{number}  model_call   {row.get('model', '-')}"
             if row.get("results"):
                 text += "  ← result " + ", ".join(row["results"])
@@ -1112,7 +1119,117 @@ def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list
     match = view["output_match"]
     reason = f" ({match['reason']})" if "reason" in match else ""
     lines.append(f"  output match: {match['state']}{reason}")
+    facts = view.get("facts") or []
+    if facts:
+        lines.append("  facts:")
+        lines += [f"    {_fact_text(fact)}" for fact in facts]
     return lines
+
+
+# Spec 057 §6.2: the security context rows. The view states what was recorded and the
+# closed facts of §6.3; it never says whether a call was right.
+_SECURITY_ROWS = frozenset({"grant", "extension", "control", "hook", "no_effect"})
+_GRANT_COUNT_WORDS = {
+    "tools_allow": "allow", "tools_deny": "deny", "tools_ask": "ask", "tools_offered": "tools",
+    "tools_listed": "tools", "mcp_servers": "mcp", "fs_rules": "fs", "net_rules": "net",
+    "credentials": "credentials", "model_rules": "models",
+}  # fmt: skip
+
+
+def _ms(value: Any) -> str:
+    return f"{value:g} ms"
+
+
+def _link_tail(row: Mapping[str, Any]) -> str:
+    link = row.get("link")
+    if link is None:
+        return "(no matching call)" if row.get("unmatched") else ""
+    if link["state"] == "ambiguous" and link["method"] == "pending_set":
+        return f"← ambiguous: {', '.join(link.get('candidates', ()))}  {link['method']}"
+    if link["method"] == "ref_join":
+        target = (
+            f"#{row['resolves_n']}"
+            if "resolves_n" in row
+            else (f"attempt {link['target'][:8]}…" if link["state"] == "resolved" else "request")
+        )
+        tail = f"resolves {target}  ref_join · {link['confidence']}"
+        return tail + ("" if link["state"] == "resolved" else f" · {link['state']}")
+    target = link["target"] if link["namespace"] == "call" else f"attempt {link['target'][:8]}…"
+    tail = f"← {target}  {link['method']} · {link['confidence']}"
+    if link["state"] == "unresolved":
+        tail += " · unresolved (not in this run)"
+    return tail
+
+
+def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch per row kind
+    kind = row["kind"]
+    if kind == "grant":
+        parts = ["grant ", _short(row["id"]) if "id" in row else "-", row["basis"]]
+        parts += [row[k] for k in ("source_boundary", "trigger") if k in row]
+        parts += [f"{_GRANT_COUNT_WORDS[k]} {v}" for k, v in row.get("counts", {}).items()]
+        if "tool_choice" in row:
+            parts.append(f"tool_choice {row['tool_choice']}")
+        if "previous_id" in row:
+            parts.append(f"previous {_short(row['previous_id'])}")
+        if row.get("changed"):
+            parts.append("(changed)")
+        return "  ".join(parts) + f"  ({row['provenance']})"
+    if kind == "extension":
+        parts = ["ext   ", row["extension_kind"], _short(row["id"]) if "id" in row else "-"]
+        parts += [str(row[k]) for k in ("name", "version") if k in row]
+        parts.append(f"via {row['observed_via']}")
+        if "tools" in row:
+            parts.append(f"{row['tools']} tools")
+        parts.append(f"signature {row['signature_status']}")
+        if row.get("changed"):
+            parts.append("(manifest changed)")
+        return "  ".join(parts) + f"  ({row['provenance']})"
+    if kind == "no_effect":
+        refs = ",".join(f"#{n}" for n in row.get("refs", ()))
+        return f"  no effect observed for {row['call']} ({row['reason']}: {refs})"
+    if kind == "control":
+        where = row.get("stage") if row.get("stage") not in (None, "unknown") else row.get("phase")
+        what = " · ".join(str(v) for v in (row.get("control_kind", "?"), where or "?",
+                                           row.get("decision", "?")))  # fmt: skip
+        parts = [f"control    {what}"]
+        parts += [str(row[k]) for k in ("engine", "reason_code", "error_class") if k in row]
+        if "latency_ms" in row:
+            parts.append(_ms(row["latency_ms"]))
+        if row.get("mode") not in (None, "unknown"):
+            parts.append(f"mode {row['mode']}")
+        parts.append(f"({row['derivation']})")
+        if row.get("pending_at_end"):
+            parts.append("pending at run end")
+        if "invariant" in row:
+            parts.append(row["invariant"])
+    else:  # hook
+        what = " · ".join(str(v) for v in (row.get("name", "?"), row.get("phase", "?"),
+                                           row["outcome"]))  # fmt: skip
+        parts = [f"hook       {what}"]
+        parts += [str(row[k]) for k in ("event_name", "reason_code") if k in row]
+        if "exit_code" in row:
+            parts.append(f"exit {row['exit_code']}")
+        if "latency_ms" in row:
+            parts.append(_ms(row["latency_ms"]))
+        parts.append(f"({row['basis']})")
+    for effect in row.get("deny_with_effect", ()):  # F6: co-occurrence, with how each is known
+        where = f"#{effect['n']}" if "n" in effect else f"attempt {effect['attempt_uid'][:8]}…"
+        parts.append(f"effect {where} {effect['method']} · {effect['confidence']}")
+    if row.get("later_allow_refs"):
+        parts.append("later allow " + ",".join(f"#{n}" for n in row["later_allow_refs"]))
+    tail = _link_tail(row)
+    return "  ".join(parts) + (f"   {tail}" if tail else "")
+
+
+def _fact_text(fact: Mapping[str, Any]) -> str:
+    refs = ", ".join(f"#{n}" for n in fact.get("refs", ()))
+    detail = refs
+    if fact.get("by_reason"):
+        reasons = ", ".join(f"{k}: {v}" for k, v in fact["by_reason"].items())
+        detail = f"{reasons}{'; ' + refs if refs else ''}"
+    if fact["code"] == "no_declared_grant":
+        return f"{fact['fact']:<4}{fact['text']}"
+    return f"{fact['fact']:<4}{fact['text']}: {fact['count']}" + (f" ({detail})" if detail else "")
 
 
 _UNATTRIBUTED_HOST_WHY = {

@@ -54,6 +54,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from fabric.reconstruct import _security
 from fabric.reconstruct._evidence import EVIDENCE_TYPES, decode_evidence
 from fabric.reconstruct._inputs import pseudonym
 from fabric.reconstruct._report import (
@@ -761,6 +762,25 @@ class ActionRun:
     run_id: str
     input: dict[str, Any]
     result: Attribution
+    security: _security.SecurityResult | None = None
+
+
+def _apply_security(result: Attribution, security: _security.SecurityResult) -> None:
+    """Spec 057 §6.4 on the 056 result, in place: the fifth chain ``controls``; and, when
+    it is observed, ``attribution.effects_not_observed.control_denied`` (F5: a tool call a
+    deny gates, with no attributed effect where the enabled channels would have seen one,
+    takes that reason instead of ``none_in_window`` or ``no_effect_channel``)."""
+    result.chains["controls"] = security.chain
+    if not security.observed:
+        return
+    counts = result.attribution["effects_not_observed"]
+    counts["control_denied"] = 0
+    for call_id in security.denied_calls:
+        reason = result.trace["tool_calls"].get(call_id)
+        if reason in ("none_in_window", "no_effect_channel"):
+            counts[reason] -= 1
+            counts["control_denied"] += 1
+            result.trace["tool_calls"][call_id] = "control_denied"
 
 
 class ActionReader:
@@ -803,6 +823,7 @@ class ActionReader:
         # ``part_of`` run link to it, with the run's attribution and report entry.
         self._run_claims: dict[str, list[tuple[str, dict[str, Any], Attribution, dict[str, Any]]]]
         self._run_claims = defaultdict(list)
+        self._index: tuple[Any, _security.ControlIndex] | None = None
 
     @property
     def declared_host_sources(self) -> tuple[str, ...]:
@@ -834,7 +855,11 @@ class ActionReader:
     ) -> None:
         """Annotate one run's report entry (``run`` is the verifier's ``_Run``)."""
         reader = _RunReader(self, report, run, bodies)
-        annotated = bool(reader.channels) or self._host_configured()
+        sec = reader.security(gaps)
+        # Spec 057 §6.4: a run with a security record or an active security capture point
+        # is annotated too; any other run keeps the report it had (§9.1).
+        annotated = bool(reader.channels) or self._host_configured() or _security.present(sec)
+        annotated = annotated or bool(sec["active_points"])
         if not (self.every_run or annotated):
             return
         inp = reader.build(gaps, checks)
@@ -843,19 +868,30 @@ class ActionReader:
         if host is not None:
             self._note_host_events(host.trace_host_events)
         result = attribute(inp, host=host)
+        security = _security.analyse(inp, result, sec, self._control_index(run.verifier))
+        _apply_security(result, security)
         self._claim_run_links(report, result)
         if self.keep_runs:
-            self.runs.append(ActionRun(report["run_id"], _lean(inp), result))
+            self.runs.append(ActionRun(report["run_id"], _lean(inp), result, security))
         if not annotated:
             return  # shown by the view; the report entry stays the pre-056 one
         report["chains"] = result.chains
         report["attribution"] = result.attribution
         if host is not None:
             report["sensor_events"] = result.sensor_events
+        report["security_context"] = security.context
         report["verdict"] = chained_run_verdict(report["verdict"], result.chains)
         for uid, links in result.projection_links.items():
             if links:
                 self.links[uid] = links
+        for uid, links in security.projection_links.items():
+            self.links[uid] = [*self.links.get(uid, ()), *links]
+
+    def _control_index(self, verifier: Any) -> _security.ControlIndex:
+        """Every control record of the input, once per verifier (052 §4.9 rule 3)."""
+        if self._index is None or self._index[0] is not verifier:
+            self._index = (verifier, _security.ControlIndex.build(verifier.records))
+        return self._index[1]
 
     def _host_events(self) -> list[Any]:
         """The host events a host joiner reads (``_host.HostPlan``), one per event id; the
@@ -1007,6 +1043,30 @@ class _RunReader:
         for record in self.effect_records:
             out[str(_point_id(record.span.attributes))] = "active"
         return out
+
+    def security(self, gaps: Sequence[Gap]) -> dict[str, Any]:
+        """Spec 057: the run's security records (``_security.extract``), the security
+        capture points its manifests declare active, and the position gaps on the epochs
+        that hold its security records (the ``controls`` chain's ``sequence_gap``)."""
+        sec = _security.extract(self.records)
+        active: set[str] = set()
+        for manifest in self._manifests():
+            for row in manifest.document.get("capture_points", ()):
+                if (isinstance(row, Mapping) and row.get("id") in _security.SECURITY_POINTS
+                        and row.get("state") == "active"):  # fmt: skip
+                    active.add(str(row["id"]))
+        sec["active_points"] = sorted(active)
+        keys = {(item["source_id"], item["source_epoch"])
+                for name in ("controls", "hooks", "grants", "extensions")
+                for item in sec[name]}  # fmt: skip
+        if active:
+            keys |= set(self.keys)  # an active point's epoch: a lost record may be one
+        sec["sequence_gaps"] = [
+            [g.first_sequence, g.last_sequence] for g in gaps
+            if g.gap_type in _POSITION_GAPS and (g.source_id, g.source_epoch) in keys
+            and g.first_sequence is not None and g.last_sequence is not None
+        ]  # fmt: skip
+        return sec
 
     def _clock(self, key: tuple[str, int]) -> int:
         declared = self.verifier._clock_uncertainty(key) if key in self.verifier.sources else None
@@ -1506,11 +1566,22 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
             if key in request:
                 row[key] = request[key]
         events.append((request["start_ns"], 1, request["sequence"], row))
+    security = run.security
+    if security is not None:
+        events += _security.view_events(security, labels)
     events.sort(key=lambda item: item[:3])
-    rows = []
+    ordered = [row for *_, row in events]
+    if security is not None:
+        ordered = _security.with_no_effect_rows(ordered, security, labels)
+    rows: list[dict[str, Any]] = []
+    preamble: list[dict[str, Any]] = []
     numbers: dict[str, int] = {}
-    for number, (*_, row) in enumerate(events, start=1):
-        row["n"] = number
+    for row in ordered:
+        # Spec 057 §6.2: grant and extension lines before the first step are a preamble.
+        if not rows and row["kind"] in ("grant", "extension"):
+            preamble.append(row)
+            continue
+        row["n"] = number = len(rows) + 1
         if row["kind"] == "effect":
             numbers[row["attempt_uid"]] = number
         rows.append(row)
@@ -1534,9 +1605,17 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         {"call": labels[call_id], "name": names.get(call_id), "reason": reason}
         for call_id, reason in result.trace["tool_calls"].items() if reason != "attributed"
     ]  # fmt: skip
+    extra: dict[str, Any] = {}
+    if security is not None:
+        _security.resolve_refs(rows, preamble)
+        if preamble:
+            extra["preamble"] = preamble
+        if security.facts:
+            extra["facts"] = _security.fact_rows(security, [*preamble, *rows])
     return {
         "run_id": run.run_id,
         "chains": result.chains,
+        **extra,
         "rows": rows,
         "unattributed_effects": unattributed,
         "tool_calls_without_effect": without,
