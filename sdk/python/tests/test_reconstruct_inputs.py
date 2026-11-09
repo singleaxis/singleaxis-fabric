@@ -549,3 +549,18 @@ def test_an_unscoped_exchange_keeps_its_endpoint_id() -> None:
     assert getattr(observed, "endpoint_id", None) == "lbl-" + "c" * 32
     del attributes["fabric.wire.endpoint_id"]
     assert getattr(observe(record), "endpoint_id", "unset") is None
+
+
+def test_otlp_json_double_values_are_always_floats() -> None:
+    """protojson writes an integral double as ``412`` and a non-finite one as a string; the
+    reader returns the float the emitter had, so the record digest (``{"f64": ...}``, spec
+    049 revision 6.8) is the one the agent sealed."""
+    from fabric.reconstruct._inputs import _any_value as decode  # noqa: PLC0415
+
+    assert type(decode({"doubleValue": 412}, "x")) is float
+    assert decode({"doubleValue": 412}, "x") == 412.0
+    assert decode({"doubleValue": 0.04}, "x") == 0.04
+    assert decode({"doubleValue": "Infinity"}, "x") == float("inf")
+    for bad in (True, "fast", None):
+        with pytest.raises(ReconstructInputError):
+            decode({"doubleValue": bad}, "x")
