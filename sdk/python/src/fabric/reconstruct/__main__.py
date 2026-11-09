@@ -1214,8 +1214,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch
         parts.append(f"({row['basis']})")
     for effect in row.get("deny_with_effect", ()):  # F6: co-occurrence, with how each is known
         where = f"#{effect['n']}" if "n" in effect else f"attempt {effect['attempt_uid'][:8]}…"
-        state = " · ambiguous" if effect.get("state") == "ambiguous" else ""
-        parts.append(f"effect {where} {effect['method']} · {effect['confidence']}{state}")
+        parts.append(f"effect {where} {effect['method']} · {effect['confidence']}"
+                     + (" · ambiguous" if effect.get("state") == "ambiguous" else ""))  # fmt: skip
     if row.get("later_allow_refs"):
         parts.append("later allow " + ",".join(f"#{n}" for n in row["later_allow_refs"]))
     tail = _link_tail(row)

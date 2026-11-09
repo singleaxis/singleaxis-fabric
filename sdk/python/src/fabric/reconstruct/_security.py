@@ -497,9 +497,7 @@ def _link_hook(item: dict[str, Any], *, call_ids: set[str], wire: bool,
         item["unmatched"] = True
 
 
-def _effects_by_call(
-    attribution: Any, inp: Mapping[str, Any]
-) -> dict[str, list[dict[str, Any]]]:
+def _effects_by_call(attribution: Any, inp: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Per tool call id, every effect the 056 result attributes to it: each effect link that
     names it (ambiguous candidates included, with their state), and each A0 effect whose
     explicit ``tool_call()`` scope names it (``reported_parent_call``), which 056 counts as
