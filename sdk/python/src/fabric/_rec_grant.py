@@ -36,7 +36,7 @@ from typing import Any
 
 from ._capture_types import misuse
 from ._content import canonical_json_acyclic
-from ._records_api import Body, current_records, emit, never_raises
+from ._records_api import Body, current_records, emit, never_raises, role_cap
 from ._sequence import pseudonym_v2
 from .records._handles import RecordHandle
 from .records._vocab import (
@@ -48,6 +48,7 @@ from .records._vocab import (
     TOOL_CHOICE_MODES,
     normalise,
 )
+from .records._walker import _CHAR_BYTES, MAX_DEPTH, MAX_NODES
 
 SCHEMA_VERSION = "fabric.grant-snapshot/v1"
 MAX_LIST = 4096
@@ -158,24 +159,35 @@ _FAST: Callable[[object], str] = canonical_json_acyclic  # a checked document ha
 _SAFE_INT = 1 << 53
 
 
-def _simple(value: object) -> bool:
-    stack = [value]
+def _shape(value: object) -> int:
+    """The deepest container's depth (the value itself at 0; a leaf value: 0) when the
+    value takes the fast path (above); ``-1`` when it does not."""
+    deepest = 0
+    stack: list[tuple[Any, int]] = [([value], -1)]  # the value, as the child of a list
     while stack:
-        node = stack.pop()
-        kind = type(node)
-        if kind is dict:
-            for key, child in node.items():  # type: ignore[attr-defined]
+        node, depth = stack.pop()
+        deepest = max(deepest, depth)
+        if type(node) is dict:
+            for key in node:
                 if type(key) is not str or not key.isascii():
-                    return False
-                stack.append(child)
-        elif kind is list or kind is tuple:
-            stack.extend(node)  # type: ignore[arg-type]
-        elif kind is int:
-            if not -_SAFE_INT <= node <= _SAFE_INT:  # type: ignore[operator]
-                return False
-        elif not (kind is str or node is None or kind is bool):
-            return False  # a float, or not JSON: the exact path decides
-    return True
+                    return -1
+            children = node.values()
+        else:
+            children = node
+        for child in children:
+            kind = type(child)
+            if kind is dict or kind is list or kind is tuple:
+                stack.append((child, depth + 1))
+            elif kind is int:
+                if not -_SAFE_INT <= child <= _SAFE_INT:
+                    return -1
+            elif not (kind is str or child is None or kind is bool):
+                return -1  # a float, or not JSON: the exact path decides
+    return deepest
+
+
+def _simple(value: object) -> bool:
+    return _shape(value) >= 0
 
 
 def jcs(value: object) -> bytes:
@@ -183,6 +195,22 @@ def jcs(value: object) -> bytes:
     ``int``/``float``/``bool``/``None`` only; anything else raises)."""
     text = _FAST(value) if _simple(value) else _jcs(value)
     return text.encode("utf-8", "surrogatepass")
+
+
+def _body_text(text: str | None, depth: int, cap: int) -> str | None:
+    """The bounded walker's ``ok`` text for a document that took the fast path (``text``,
+    its canonical JSON; ``depth``, its deepest container), when the walker provably accepts
+    it; ``None`` leaves the decision to the walker (spec 051 §4.2 rule 3).
+
+    With no float and every integer within +-2**53, each node the walker counts prints at
+    least one character, and its byte estimate per node is at most six times the characters
+    that node prints. So ``len(text)`` bounds the node count, ``6 * len(text)`` the estimate,
+    and a leaf sits one level below the deepest container: within all three limits the walk
+    can only end ``ok`` with ``canonical_json_acyclic`` of the document, which is ``text``."""
+    if text is None or depth + 1 > MAX_DEPTH:
+        return None
+    size = len(text)
+    return text if size <= MAX_NODES and _CHAR_BYTES * size <= cap else None
 
 
 def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
@@ -762,11 +790,16 @@ def emit_grant(
         out.setdefault(name, value)  # a run-context key the caller set wins
     out["fabric.grant.trigger"] = normalise(trigger, GRANT_TRIGGERS, "grant trigger")
     key = getattr(records, "_key", None)
-    # ``doc`` is already normalised (its ``source`` holds no list): digest it as is, once
-    digest = (
-        "sha256:"
-        + hashlib.sha256(jcs({k: v for k, v in doc.items() if k != "request_ref"})).hexdigest()
-    )
+    # ``doc`` is already normalised (its ``source`` holds no list): digest it as is, once.
+    # On the fast path its canonical text is its RFC 8785 text, and, without a
+    # ``request_ref``, both the digested text and the body the walker would store.
+    depth = _shape(doc)
+    text = _FAST(doc) if depth >= 0 else None
+    if text is not None and "request_ref" not in doc:
+        clear = text.encode("utf-8", "surrogatepass")
+    else:
+        clear = jcs({k: v for k, v in doc.items() if k != "request_ref"})
+    digest = "sha256:" + hashlib.sha256(clear).hexdigest()
     emitted = grant_id(digest, key)
     if emitted is not None:
         out["fabric.grant.id"] = emitted
@@ -776,11 +809,16 @@ def emit_grant(
     if records.mode_of("run.permissions") != "omit":
         groups = pseudonymise_groups(records)
         replaced = needs_key(doc, groups)
+        cap = role_cap("run.permissions")
         if key is not None and replaced:
             stored = _resorted(pseudonymise_grant(doc, key, **groups))
-            bodies.append(Body("run.permissions", stored, "application/json"))
+            depth = _shape(stored)
+            text = _FAST(stored) if depth >= 0 else None
+            body: object = _body_text(text, depth, cap) or stored
+            bodies.append(Body("run.permissions", body, "application/json"))
         elif not replaced:  # nothing to replace: the document as it is
-            bodies.append(Body("run.permissions", doc, "application/json"))
+            body = _body_text(text, depth, cap) or doc
+            bodies.append(Body("run.permissions", body, "application/json"))
         # else: no key, nothing to pseudonymise with: withheld, never clear (§7.3)
     handle = emit("run", attrs=out, records=records, name_hint="fabric.activity",
                   bodies=bodies, default_actor="unknown")  # fmt: skip

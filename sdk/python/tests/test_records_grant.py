@@ -310,3 +310,137 @@ def test_stored_pseudonyms_never_keep_the_clear_sort_order(
     ):  # fmt: skip
         assert got == sorted(got) and sorted(got) == sorted(clear_order)
         assert got != clear_order  # 12 items: the clear order is not the pseudonym order
+
+
+# ----------------------------------------------------------------- the walker fast path
+def _reference_simple(value: object) -> bool:
+    """The fast-path rule as first written: ASCII ``str`` keys, no float, every integer
+    within +-2**53, plain JSON types only."""
+    kind = type(value)
+    if kind is dict:
+        return all(type(k) is str and k.isascii() and _reference_simple(v)
+                   for k, v in value.items())  # type: ignore[attr-defined]  # fmt: skip
+    if kind is list or kind is tuple:
+        return all(_reference_simple(v) for v in value)  # type: ignore[attr-defined]
+    if kind is int:
+        return -(2**53) <= value <= 2**53  # type: ignore[operator]
+    return kind is str or value is None or kind is bool
+
+
+def _deepest(value: object, depth: int = 0) -> int:
+    kind = type(value)
+    if kind is dict:
+        return max([depth, *(_deepest(v, depth + 1) for v in value.values())])  # type: ignore[attr-defined]
+    if kind is list or kind is tuple:
+        return max([depth, *(_deepest(v, depth + 1) for v in value)])  # type: ignore[attr-defined]
+    return 0
+
+
+def test_the_grant_body_fast_path_is_the_walkers_answer() -> None:
+    """``_body_text`` hands back a body text only where the bounded walker provably ends
+    ``ok`` with that same text: random plain JSON (floats, huge integers, non-ASCII keys,
+    escapes, astral characters), every depth around ``MAX_DEPTH`` and caps from a few bytes
+    up, so both the accepted and the declined side are exercised. ``_shape`` keeps the
+    first rule's verdict and reports the deepest container."""
+    import random  # noqa: PLC0415
+
+    from fabric import _rec_grant  # noqa: PLC0415
+    from fabric.records._walker import MAX_DEPTH, walk  # noqa: PLC0415
+
+    rng = random.Random(5707)  # noqa: S311 - a reproducible property test, not crypto
+
+    def value(depth: int = 0) -> Any:  # noqa: PLR0911 - one return per JSON type
+        pick = rng.randrange(8 if depth < 4 else 5)
+        if pick == 0:
+            return rng.choice([None, True, False])
+        if pick == 1:
+            return rng.choice([0, -1, 7, 2**53, -(2**53), 2**53 + 1, 10**30, -(10**12)])
+        if pick == 2:
+            return rng.choice([0.5, 1e300, -0.0, 3.0]) if rng.random() < 0.2 else "x"
+        if pick in (3, 4):
+            return "".join(rng.choice('ab"\\\n\u0001é\U0001f600') for _ in range(rng.randrange(30)))
+        if pick == 5:
+            return [value(depth + 1) for _ in range(rng.randrange(5))]
+        if pick == 6:
+            return tuple(value(depth + 1) for _ in range(rng.randrange(3)))
+        return {rng.choice(["a", "b", "k1", "é", "z"]) + str(i): value(depth + 1)
+                for i in range(rng.randrange(5))}  # fmt: skip
+
+    def nested(levels: int) -> Any:
+        node: Any = {"leaf": "v"}
+        for i in range(levels):
+            node = [node] if i % 2 else {"n": node}
+        return node
+
+    values = [value() for _ in range(1500)]
+    values += [{"doc": value()} for _ in range(500)]
+    values += [nested(n) for n in range(MAX_DEPTH - 3, MAX_DEPTH + 3)]
+    values += [{"tools": {"allow": [{"rule": f"r{i}"} for i in range(n)]}} for n in (0, 1, 40)]
+    accepted = declined = 0
+    for item in values:
+        depth = _rec_grant._shape(item)
+        assert (depth >= 0) == _reference_simple(item), item
+        if depth < 0:
+            assert _rec_grant._body_text(None, depth, 1 << 20) is None
+            continue
+        assert depth == _deepest(item), item
+        text = _rec_grant._FAST(item)
+        for cap in (8, 64, 6 * len(text) - 1, 6 * len(text), 4096, 1 << 20):
+            fast = _rec_grant._body_text(text, depth, cap)
+            if fast is None:
+                declined += 1
+                continue
+            accepted += 1
+            walked = walk(item, cap)
+            assert (walked.outcome, walked.text) == ("ok", fast), (item, cap)
+    assert accepted > 1000 and declined > 1000  # both sides were exercised
+
+
+GRANT_DOCS: list[dict[str, Any]] = [
+    {
+        "tools": {"allow": [{"rule": "read_file"}], "deny": [{"rule": "shell(curl *)"}]},
+        "execution_mode": "supervised",
+        "approval_policy": "per_tool",
+    },
+    {
+        "filesystem": {"read": ["/work/**", "/etc/passwd"]},
+        "network": {"allow": ["a.example"]},
+        "credentials": [{"name": "TOKEN_A"}],
+    },
+    {
+        "basis": "offered",
+        "source": {"boundary": "caller"},
+        "tools_offered": [
+            {"name": n, "type": "function", "definition_sha256": c * 64}
+            for n, c in (("shell", "e"), ("read_file", "3"))
+        ],
+        "tool_choice": {"mode": "auto", "allowed_count": None, "parallel": True},
+        "request_ref": {"exchange_id": "x-0001", "locator": "/tools"},
+    },
+    {"tools": {"allow": [{"rule": "réad"}]}, "x-acme": {"score": 0.5, "big": 2**60}},
+]
+
+
+@pytest.mark.parametrize("doc", GRANT_DOCS, ids=["declared", "pseudonymised", "offered", "float"])
+def test_the_grant_fast_path_stores_what_the_walker_stores(
+    monkeypatch: pytest.MonkeyPatch, doc: dict[str, Any]
+) -> None:
+    """With the fast path on and forced off, a grant stores the same body bytes and emits
+    the same ``grt-`` id and attributes (the digest shares the fast path's text)."""
+    from fabric import _rec_grant  # noqa: PLC0415
+
+    def recorded() -> tuple[list[bytes], dict[str, Any]]:
+        with capture(monkeypatch) as handle:
+            records.record_grant(doc)
+            (attrs,) = spans(handle, "run")
+            stored = [data for d, data in bodies(handle) if d["role"] == "run.permissions"]
+        kept = {k: v for k, v in attrs.items()
+                if k.startswith(("fabric.grant.", "fabric.run.permissions"))}  # fmt: skip
+        return stored, kept
+
+    fast = recorded()
+    monkeypatch.setattr(_rec_grant, "_body_text", lambda *_: None)
+    assert recorded() == fast
+    assert len(fast[0]) == 1 and fast[1]["fabric.grant.id"].startswith("grt-")
+    clear = {k: v for k, v in check_document(doc).items() if k != "request_ref"}  # type: ignore[union-attr]
+    assert fast[1]["fabric.grant.id"] == grant_id(grant_digest(clear), ID_KEY)
