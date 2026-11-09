@@ -182,7 +182,7 @@ def test_unsupported_callables_come_back_unchanged(
 def test_bad_configuration_never_raises_even_strict(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(STRICT_ENV, "1")
     check = records.control_check(
-        "no-such-kind", 7, decision_map={object(): "allow", "x": "approve"},  # type: ignore[arg-type]
+        "no-such-kind", 7, decision_map={object(): "allow", "x": "approved"},  # type: ignore[arg-type]
         deny_on=("PermissionError",), exit_means="always", control_id="fixed",  # type: ignore[arg-type]
         reason_code="BAD CODE",
     )  # fmt: skip
@@ -200,6 +200,88 @@ def test_a_mapped_literal_never_matches_a_different_type(monkeypatch: pytest.Mon
         for value in (True, 1, "1", 1.0):  # True == 1 == 1.0, but only the type-exact row maps
             assert check(lambda v=value: v)() is value
         assert _decisions(handle) == ["allow", "deny", "allow", "unknown"]
+
+
+@pytest.mark.parametrize("captured", [False, True])
+def test_the_bare_decorator_keeps_the_check(
+    monkeypatch: pytest.MonkeyPatch, captured: bool
+) -> None:
+    """``@records.control_check`` without parentheses wraps the check with the defaults; it
+    must never replace a refusing check with an object that returns its (truthy) argument."""
+    bare: Callable[[Any], Any] = records.control_check  # the bare form, called once
+
+    @bare
+    def can_write(path: str) -> bool:
+        return not path.startswith("/etc")
+
+    @bare
+    async def can_read(path: str) -> bool:
+        return False
+
+    def gen() -> Iterator[int]:
+        yield 1
+
+    if captured:
+        with capture(monkeypatch) as handle:
+            assert can_write("/etc/passwd") is False
+            assert can_write("/work/a") is True
+            assert asyncio.run(can_read("/x")) is False
+            (first, *_) = spans(handle, "control")
+            assert _decisions(handle) == ["deny", "allow", "deny"]
+        assert first["fabric.control.kind"] == "permission_check"
+    else:
+        assert can_write("/etc/passwd") is False and can_write("/work/a") is True
+    assert can_write.__name__ == "can_write" and can_write.__wrapped__ is not None
+    assert bare(gen) is gen  # unsupported, bare: unchanged and counted
+    assert COUNTERS.unsupported_callable == 1 and COUNTERS.api_misuse == 0
+
+
+def test_inline_scopes_leave_the_context_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh ``with records.control_check(...)`` per call must not add an entry to the
+    agent's context each time (a per-instance context variable did, without bound)."""
+    import contextvars  # noqa: PLC0415
+
+    with capture(monkeypatch) as handle:
+        with records.control_check() as warm:
+            warm.result = True
+        before = len(contextvars.copy_context())
+        for _ in range(500):
+            with records.control_check(control="inline") as scope:
+                scope.result = True
+        assert len(contextvars.copy_context()) == before
+        assert len(spans(handle, "control")) == 501
+    assert rec_check._SCOPES.get() == ()
+
+
+def test_scopes_of_two_wrappers_close_in_any_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    first, second = records.control_check(control="a"), records.control_check(control="b")
+    with capture(monkeypatch) as handle:
+        a = first.__enter__()
+        b = second.__enter__()
+        a.result, b.result = True, False
+        first.__exit__(None, None, None)  # closed out of order: still its own scope
+        second.__exit__(None, None, None)
+        rows = spans(handle, "control")
+    assert [(r["fabric.control.engine.name"], r["fabric.control.decision"]) for r in rows] == [
+        ("a", "allow"), ("b", "deny")]  # fmt: skip
+
+
+def test_one_bad_map_entry_keeps_the_rest_of_the_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    check = records.control_check(
+        decision_map={"x": ["deny"], "granted": "approve", "refused": "reject"},  # type: ignore[dict-item]
+        exit_means="allow", stage="pre_tool",
+    )  # fmt: skip
+    with capture(monkeypatch) as handle:
+        with check:
+            pass
+        assert check(lambda: "granted")() == "granted"
+        assert check(lambda: "refused")() == "refused"
+        rows = spans(handle, "control")
+    assert [r["fabric.control.decision"] for r in rows] == ["allow", "allow", "deny"]
+    assert all(r["fabric.control.stage"] == "pre_tool" for r in rows)
+    assert COUNTERS.api_misuse == 1 and COUNTERS.internal_errors == 0
 
 
 def test_the_scope_names_the_gated_tool_call(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -59,7 +59,7 @@ from types import TracebackType
 from typing import Any, Literal
 
 from ._capture_types import COUNTERS, RecordsMisuseError
-from ._rec_controls import REASON_CODE, ControlRef, emit_control
+from ._rec_controls import _ALIASES, REASON_CODE, ControlRef, emit_control
 from ._records_api import Timing, current_records
 from .records._vocab import (
     CONTROL_KINDS,
@@ -81,6 +81,12 @@ _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
 _LITERALS = (str, int, bool, float, type(None))
 _OBSERVATION = PHASE_DECISIONS["observation"]
 _UNSET: Any = object()  # ``check.result`` never assigned
+# The open context-manager scopes of this context, innermost last, as (wrapper, scope)
+# pairs. One module-level variable: a variable per wrapper instance would add one entry to
+# the agent's context for every ``with control_check(...)`` it ever runs, and never remove it.
+_SCOPES: contextvars.ContextVar[tuple[tuple[object, CheckScope], ...]] = contextvars.ContextVar(
+    "fabric_control_check_scopes", default=()
+)
 
 
 def _bad() -> None:
@@ -97,6 +103,17 @@ def _quiet(fn: Callable[[], Any], default: Any = None) -> Any:
     except Exception:
         COUNTERS.internal_errors += 1
         return default
+
+
+def _bare_target(value: object) -> bool:
+    """Whether ``control_check(value)`` is the bare decorator form: the one positional
+    argument is the object being decorated, never a ``kind`` label."""
+    try:
+        return not isinstance(value, str) and (
+            callable(value) or isinstance(value, (staticmethod, classmethod))
+        )
+    except Exception:
+        return False
 
 
 def _class_name(cls: type) -> str | None:
@@ -133,9 +150,20 @@ class control_check:  # noqa: N801 - a records API, used as a decorator or a con
     (``str``/``int``/``bool``/``float``/``None``) to decisions; ``deny_on`` lists the
     exception classes that mean a refusal; ``exit_means="allow"`` makes a context block
     that exits normally an ``allow``. Any other ``record_control`` keyword in
-    :data:`KEYWORDS` is fixed on every record. Construction never raises."""
+    :data:`KEYWORDS` is fixed on every record. Construction never raises.
 
-    __slots__ = ("_control", "_deny_on", "_exit_allow", "_keywords", "_kind", "_map", "_scopes")
+    Used bare (``@records.control_check`` with no parentheses) it wraps the function with
+    the defaults, exactly as ``@records.control_check()`` does: the decorated name must
+    stay the customer's check, never become a wrapper object that returns its argument."""
+
+    __slots__ = ("_control", "_deny_on", "_exit_allow", "_keywords", "_kind", "_map")
+
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        if len(args) == 1 and not kwargs and _bare_target(args[0]):
+            instance = super().__new__(cls)
+            instance.__init__()  # type: ignore[misc]
+            return instance(args[0])  # the wrapped check (or the unsupported callable)
+        return super().__new__(cls)
 
     def __init__(
         self, kind: str = "permission_check", control: str | None = None, *,
@@ -150,17 +178,19 @@ class control_check:  # noqa: N801 - a records API, used as a decorator or a con
         self._deny_on: tuple[type, ...] = (PermissionError,)
         self._exit_allow = False
         self._keywords: dict[str, Any] = {}
-        self._scopes: contextvars.ContextVar[tuple[CheckScope, ...]] | None = None
-        _quiet(lambda: self._configure(kind, decision_map, deny_on, exit_means,
-                                       record_control_keywords))  # fmt: skip
+        # Each argument is checked on its own, so a fault in one (an exotic mapping, an
+        # object whose comparison raises) never discards the others.
+        _quiet(lambda: self._configure_kind(kind))
+        _quiet(lambda: self._configure_map(decision_map))
+        _quiet(lambda: self._configure_deny_on(deny_on))
+        _quiet(lambda: self._configure_exit(exit_means))
+        for name, value in record_control_keywords.items():
+            _quiet(functools.partial(self._configure_keyword, name, value))
 
-    def _configure(  # noqa: PLR0912 - one branch per argument check
-        self, kind: object, decision_map: object, deny_on: object, exit_means: object,
-        keywords: Mapping[str, Any],
-    ) -> None:  # fmt: skip
-        """Each invalid argument is counted (``api_misuse``) and replaced by its fail-open
-        value here, once, so no call of the wrapped check meets it again; nothing raises,
-        strict mode included (§4.10.3)."""
+    # Each invalid argument is counted (``api_misuse``) and replaced by its fail-open value
+    # here, once, so no call of the wrapped check meets it again; nothing raises, strict
+    # mode included (§4.10.3).
+    def _configure_kind(self, kind: object) -> None:
         if not (isinstance(kind, str) and str.__str__(kind) in CONTROL_KINDS):
             _bad()
             self._kind = "other"
@@ -169,37 +199,50 @@ class control_check:  # noqa: N801 - a records API, used as a decorator or a con
         ):
             _bad()
             self._control = None
-        if decision_map is not None:
-            if not isinstance(decision_map, Mapping):
-                _bad()
+
+    def _configure_map(self, decision_map: object) -> None:
+        if decision_map is None:
+            return
+        if not isinstance(decision_map, Mapping):
+            _bad()
+            return
+        for value, decision in decision_map.items():
+            # OD-3: ``approve``/``reject`` are input aliases, mapped as record_control maps them
+            text = str.__str__(decision) if isinstance(decision, str) else None
+            text = _ALIASES.get(text, text) if text is not None else None
+            if type(value) in _LITERALS and text is not None and text in _OBSERVATION:
+                self._map[(type(value), value)] = text
             else:
-                for value, decision in decision_map.items():
-                    if type(value) in _LITERALS and decision in _OBSERVATION:
-                        self._map[(type(value), value)] = decision
-                    else:
-                        _bad()
+                _bad()
+
+    def _configure_deny_on(self, deny_on: object) -> None:
         if isinstance(deny_on, tuple) and all(
             isinstance(c, type) and issubclass(c, BaseException) for c in deny_on
         ):
             self._deny_on = deny_on
         else:
             _bad()
-        if exit_means == "allow":
+
+    def _configure_exit(self, exit_means: object) -> None:
+        if not isinstance(exit_means, str):
+            _bad()
+        elif exit_means == "allow":
             self._exit_allow = True
         elif exit_means != "unknown":
             _bad()
-        for name, value in keywords.items():
-            closed = _CLOSED.get(name)
-            if name not in KEYWORDS:
-                _bad()
-            elif closed is not None and not (isinstance(value, str) and value in closed):
-                _bad()  # a closed keyword outside its vocabulary is left at its default
-            elif name == "reason_code" and not (
-                isinstance(value, str) and REASON_CODE.fullmatch(value)
-            ):
-                _bad()
-            else:
-                self._keywords[name] = value
+
+    def _configure_keyword(self, name: str, value: object) -> None:
+        closed = _CLOSED.get(name)
+        if name not in KEYWORDS:
+            _bad()
+        elif closed is not None and not (isinstance(value, str) and value in closed):
+            _bad()  # a closed keyword outside its vocabulary is left at its default
+        elif name == "reason_code" and not (
+            isinstance(value, str) and REASON_CODE.fullmatch(value)
+        ):
+            _bad()
+        else:
+            self._keywords[name] = value
 
     # ------------------------------------------------------------ the outcome table
     def _from_value(self, value: object) -> str:
@@ -343,9 +386,7 @@ class control_check:  # noqa: N801 - a records API, used as a decorator or a con
     def __enter__(self) -> CheckScope:
         scope = CheckScope()
         try:
-            if self._scopes is None:
-                self._scopes = contextvars.ContextVar("fabric_control_check")
-            self._scopes.set((*self._scopes.get(()), scope))
+            _SCOPES.set((*_SCOPES.get(), (self, scope)))
             scope._records = current_records()
             if scope._records is not None:
                 scope._wall_ns, scope._started_ns = time.time_ns(), time.perf_counter_ns()
@@ -360,10 +401,12 @@ class control_check:  # noqa: N801 - a records API, used as a decorator or a con
         """Records the block's outcome; never suppresses the block's exception."""
         scope = None
         try:
-            stack = self._scopes.get(()) if self._scopes is not None else ()
-            if stack:
-                scope = stack[-1]
-                self._scopes.set(stack[:-1])  # type: ignore[union-attr]
+            stack = _SCOPES.get()
+            for index in range(len(stack) - 1, -1, -1):  # this wrapper's innermost scope
+                if stack[index][0] is self:
+                    scope = stack[index][1]
+                    _SCOPES.set(stack[:index] + stack[index + 1 :])
+                    break
         except Exception:
             COUNTERS.internal_errors += 1
         if scope is None or scope._records is None:
