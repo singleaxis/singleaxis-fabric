@@ -229,6 +229,7 @@ def test_decision_hook_and_skill_records(monkeypatch: pytest.MonkeyPatch) -> Non
                                  reason_code="exit.2", basis="callback",
                                  input_hash=SHA_A, output_hash=SHA_A)  # fmt: skip
             decision.record_hook("pii-scrub", "post_model", modified=True, outcome="modified")
+            decision.record_hook("arg-rewrite", "pre_tool", outcome="modified")  # modified inferred
             decision.record_hook("legacy", "pre_model")  # no new keywords: outcome unknown
             decision.record_skill("triage", "1.2.0", source="git+https://example/skills",
                                   manifest_hash=SHA_B, signed=True, scope="user",

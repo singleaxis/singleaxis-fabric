@@ -206,21 +206,49 @@ def record_extension(
     )  # fmt: skip
 
 
+# E01: ``modified`` implies ``fabric.hook.modified=true`` and ``passed`` means the call
+# continued unchanged; the ``modified`` value that contradicts each (other outcomes take
+# either value).
+_HOOK_CONTRADICTION = {"modified": False, "passed": True}
+
+
+def hook_modified(outcome: object, modified: object) -> object:
+    """The ``modified`` flag a hook record carries: the caller's value when given, else
+    ``True`` for outcome ``modified`` and ``False`` for any other. Never raises."""
+    if modified is not None:
+        return modified
+    return isinstance(outcome, str) and str.__str__(outcome) == "modified"
+
+
+def _modified_flag(outcome: str, modified: object) -> bool | None:
+    """The record's ``modified`` flag for a normalised outcome; a caller value that
+    contradicts it is kept as given (the verifier sees it, §5.4 E01) and counted."""
+    flag = hook_modified(outcome, modified)
+    if type(flag) is not bool:
+        return None
+    if _HOOK_CONTRADICTION.get(outcome) is flag:
+        misuse("hook modified contradicts the outcome")
+    return flag
+
+
 @never_raises(RecordHandle.unrecorded)
 def hook_record(
-    name: object, phase: object, *, modified: object = False, outcome: object = "unknown",
+    name: object, phase: object, *, modified: object = None, outcome: object = "unknown",
     event_name: object = None, latency_ms: object = None, gated_tool_call_id: object = None,
     extension: object = None, reason_code: object = None, basis: object = "reported_unknown",
     input_hash: object = None, output_hash: object = None,
 ) -> RecordHandle:  # fmt: skip
     """The records-input hook record (step kind ``hook``, an instant record): E01-E07 with
-    the hook's name, phase, ``modified`` flag and caller-supplied hashes. Never raises
-    (counted; ``FABRIC_RECORDS_STRICT=1`` raises, as every records API)."""
+    the hook's name, phase, ``modified`` flag and caller-supplied hashes. ``modified`` left
+    ``None`` follows the outcome (:func:`hook_modified`); an explicit value that contradicts
+    it is kept as given and counted. Never raises (counted; ``FABRIC_RECORDS_STRICT=1``
+    raises, as every records API)."""
     records = current_records()
     if records is None:
         return RecordHandle.unrecorded()
+    outcome_value = normalise(outcome, HOOK_OUTCOMES, "hook outcome")
     attrs: dict[str, Any] = {
-        "fabric.hook.outcome": normalise(outcome, HOOK_OUTCOMES, "hook outcome"),
+        "fabric.hook.outcome": outcome_value,
         "fabric.hook.basis": normalise(basis, HOOK_BASES, "hook basis"),
     }
     if (label := _pattern(name, _LABEL, "hook name")) is not None:
@@ -229,8 +257,8 @@ def hook_record(
         attrs["fabric.hook.phase"] = str.__str__(phase)
     else:
         misuse("hook phase")
-    if type(modified) is bool:
-        attrs["fabric.hook.modified"] = modified
+    if (flag := _modified_flag(outcome_value, modified)) is not None:
+        attrs["fabric.hook.modified"] = flag
     for key, value in (("fabric.hook.input_hash", input_hash),
                        ("fabric.hook.output_hash", output_hash)):  # fmt: skip
         if (digest := _manifest_hash(value)) is not None:
@@ -250,6 +278,6 @@ def hook_record(
 
 
 __all__ = [
-    "CONTRIBUTIONS", "ExtensionRef", "emit_extension", "extension_id_of", "hook_record",
-    "record_extension", "source_ref_of",
+    "CONTRIBUTIONS", "ExtensionRef", "emit_extension", "extension_id_of", "hook_modified",
+    "hook_record", "record_extension", "source_ref_of",
 ]  # fmt: skip

@@ -2289,7 +2289,7 @@ class Decision(AbstractContextManager["Decision"]):
         name: str,
         phase: str,
         *,
-        modified: bool = False,
+        modified: bool | None = None,
         input_hash: str | None = None,
         output_hash: str | None = None,
         tags: Sequence[str] | None = None,
@@ -2319,7 +2319,11 @@ class Decision(AbstractContextManager["Decision"]):
             name: hook identifier.
             phase: one of ``pre_model`` / ``post_model`` / ``pre_tool`` /
                 ``post_tool`` / ``pre_decision`` / ``post_decision``.
-            modified: did the hook mutate the value it wrapped?
+            modified: did the hook mutate the value it wrapped? Left ``None``, it
+                follows ``outcome``: ``True`` for ``modified``, ``False`` otherwise
+                (spec 057 §5.4 E01). An explicit value that contradicts the outcome
+                (``False`` with ``modified``, ``True`` with ``passed``) is kept as given
+                and counted as records misuse.
             input_hash: optional hash of the value entering the hook.
             output_hash: optional hash of the value leaving the hook.
             outcome, event_name, latency_ms, gated_tool_call_id, extension, reason_code,
@@ -2337,6 +2341,9 @@ class Decision(AbstractContextManager["Decision"]):
             ValueError: if ``name`` is empty or ``phase`` is not in
                 :data:`HOOK_PHASES`.
         """
+        from ._rec_extension import hook_modified, hook_record  # noqa: PLC0415 - lazy records import
+
+        modified_value: Any = hook_modified(outcome, modified)
         with self._exclusive():
             if not name:
                 raise ValueError("name is required")
@@ -2352,7 +2359,7 @@ class Decision(AbstractContextManager["Decision"]):
                 "fabric.schema_version": SCHEMA_VERSION,
                 ATTR_HOOK_NAME: name,
                 ATTR_HOOK_PHASE: phase,
-                ATTR_HOOK_MODIFIED: modified,
+                ATTR_HOOK_MODIFIED: modified_value,
             }
             if input_hash is not None:
                 event_attrs[ATTR_HOOK_INPUT_HASH] = require_sha256_hex("input_hash", input_hash)
@@ -2363,8 +2370,6 @@ class Decision(AbstractContextManager["Decision"]):
                 label=self._identity.label,
             )  # fmt: skip
             span.add_event("fabric.hook", attributes=event_attrs)
-        from ._rec_extension import hook_record  # noqa: PLC0415 - lazy records import
-
         try:
             hook_record(
                 name, phase, modified=modified, outcome=outcome, event_name=event_name,

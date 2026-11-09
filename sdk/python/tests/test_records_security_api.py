@@ -22,6 +22,8 @@ from typing import Any
 
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 import fabric
 import fabric._rec_controls as rec_controls
@@ -125,6 +127,8 @@ def test_record_extension_fails_open(
 
 HOOK_BAD: list[tuple[str, dict[str, Any]]] = [
     ("outcome", {"outcome": "vetoed"}),
+    ("modified contradicts outcome modified", {"outcome": "modified", "modified": False}),
+    ("modified contradicts outcome passed", {"outcome": "passed", "modified": True}),
     ("event name", {"event_name": "has spaces"}),
     ("latency", {"latency_ms": "18"}),
     ("tool call id", {"gated_tool_call_id": ""}),
@@ -147,6 +151,52 @@ def test_record_hook_keywords_fail_open(
         monkeypatch.setenv(STRICT_ENV, "1")
         with pytest.raises(RecordsMisuseError), _decision() as decision:
             decision.record_hook("pre-shell-check", "pre_tool", **kwargs)
+
+
+HOOK_MODIFIED: list[tuple[dict[str, Any], bool]] = [
+    ({"outcome": "modified"}, True),  # §5.4 E01: inferred, never the conflicting False
+    ({"outcome": "passed"}, False),
+    ({"outcome": "blocked"}, False),
+    ({"outcome": "escalated"}, False),
+    ({"outcome": "errored"}, False),
+    ({}, False),  # the spec 022 call: outcome unknown, modified False as before
+    ({"modified": True}, True),  # the spec 022 call with modified: outcome unknown
+    ({"outcome": "modified", "modified": True}, True),
+    ({"outcome": "blocked", "modified": True}, True),  # a hook may rewrite, then block
+    ({"outcome": "errored", "modified": True}, True),
+    ({"outcome": "passed", "modified": False}, False),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize("kwargs,expected", HOOK_MODIFIED, ids=str)
+def test_record_hook_modified_follows_the_outcome(
+    monkeypatch: pytest.MonkeyPatch, kwargs: dict[str, Any], expected: bool
+) -> None:
+    monkeypatch.setenv(STRICT_ENV, "1")  # a consistent call is never misuse, even strict
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    config = fabric.FabricConfig(tenant_id="t", agent_id="a", profile="permissive")
+    client = fabric.Fabric(config, tracer=provider.get_tracer("test"))
+    with capture(monkeypatch) as handle:
+        with client.decision(session_id="s", request_id="r") as decision:
+            decision.record_hook("pre-shell-check", "pre_tool", **kwargs)
+        (attrs,) = spans(handle, "hook")
+    (event,) = [dict(e.attributes or {}) for s in exporter.get_finished_spans()
+                for e in s.events if e.name == "fabric.hook"]  # fmt: skip
+    assert attrs["fabric.hook.modified"] is expected
+    assert event["fabric.hook.modified"] is expected  # the decision line agrees
+    assert COUNTERS.api_misuse == COUNTERS.internal_errors == 0
+
+
+def test_record_hook_contradiction_is_kept_as_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    with capture(monkeypatch) as handle:
+        with _decision() as decision:
+            decision.record_hook("pii-scrub", "post_model", outcome="modified", modified=False)
+        (attrs,) = spans(handle, "hook")
+    assert attrs["fabric.hook.outcome"] == "modified"
+    assert attrs["fabric.hook.modified"] is False  # never rewritten: the verifier sees it
+    assert COUNTERS.api_misuse == 1
 
 
 @pytest.mark.parametrize("kwargs", [{"scope": "global"}, {"enabled": 1},
