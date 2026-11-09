@@ -27,6 +27,17 @@ CAPTURE -> PROTECT -> DELIVER
 - optional SDK instrumentation and adapters;
 - authenticated telemetry/event ingestion;
 - preservation of OTLP identity and causal correlation supplied by the source;
+- recording, as observed or reported evidence, the security context of a
+  monitored agent: the tools and permissions it was given, decisions made
+  about its actions by the model provider, the operating system, the
+  customer's own controls and people, what hooks did, and which tool
+  servers, plugins and skills were present. Capture attaches to the
+  boundaries every agent crosses (the model wire, tool-protocol messages,
+  processes and the operating system, network connections and OTLP
+  telemetry), with an explicit API for decisions that cross none of
+  them. It never depends on a particular agent framework. Every recorded
+  decision carries `enforced_by_fabric=false`; Fabric never computes,
+  applies, waits for or returns any of these decisions;
 - a public Activity Envelope contract for downstream normalization, without
   claiming that recorder v1 materializes that envelope;
 - export allowlisting and privacy protection;
@@ -42,10 +53,15 @@ CAPTURE -> PROTECT -> DELIVER
 Do not add these to the default OSS runtime, installer or primary product
 story:
 
-- continuous evaluation services, judges or finding generation;
+- continuous evaluation services, judges or finding generation (recording
+  a decision another system already made is in scope; producing, scoring
+  or judging one is not);
 - red-team campaign orchestration;
 - proprietary PII, clinical, policy or regulatory packs;
-- advisory recommendations or enforcement orchestration;
+- advisory recommendations or enforcement orchestration, including
+  running a guardrail, policy engine, permission check, judge or approval
+  flow, or any code path that can block, delay, modify or approve the
+  monitored system;
 - Decision Graph analytics, incidents, evidence workflows or underwriting;
 - enterprise fleet management, approvals, policy authoring or rollout UI;
 - SingleAxis private topology, customer overlays, business plans or roadmaps.
@@ -68,6 +84,10 @@ defaults. Do not reintroduce them.
 - **Optional future customer-side Control Runtime:** Enforce customer-approved
   decisions. It is separate from the default recorder and is never enabled by
   installing Fabric OSS.
+
+A separately installed Control Runtime, if any, reports its decisions to
+the recorder through the same public control decision record as any other
+external control. The recorder never depends on it.
 
 When a document or older specification conflicts with this boundary, do not
 silently implement the older direction. Flag the conflict and reconcile it
