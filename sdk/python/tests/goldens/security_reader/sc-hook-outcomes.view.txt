@@ -1,0 +1,17 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 run_shell, T2 write_file
+  2    hook       pre-shell-check · pre_tool · blocked  before_shell  exit.2  18 ms  (callback)   ← T1  provider_id · certain
+  3      no effect observed for T1 (control_denied: #2)
+  4    hook       pre-write-check · pre_tool · passed  4 ms  (callback)   ← T2  provider_id · certain
+  5    hook       pii-scrub · post_model · modified  (reported_unknown)
+  6    hook       escalate-review · pre_model · escalated  (callback)
+  7    hook       lint · post_tool · errored  exit.1  (callback)   ← T2  provider_id · certain
+  8    hook       legacy · pre_model · unknown  (reported_unknown)
+  9  model_call   gpt-4o-2024-08-06  ← result T1, T2
+  tool calls without an effect: 2   (T1 control_denied, T2 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F5  deny gates a tool call and no effect is attributed to it: 1 (#2)
+    F8  hook outcome errored: 1 (#7)
+    F8  hook outcome modified: 1 (#5)

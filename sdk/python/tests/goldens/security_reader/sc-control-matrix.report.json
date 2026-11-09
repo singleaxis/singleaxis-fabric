@@ -1,0 +1,496 @@
+{
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00010005-0000-4000-8000-000000010005",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010008-0000-4000-8000-000000010008",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000b-0000-4000-8000-00000001000b",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  3,
+                  3
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000e-0000-4000-8000-00000001000e",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  4,
+                  4
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010011-0000-4000-8000-000000010011",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  5,
+                  5
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010013-0000-4000-8000-000000010013",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  6,
+                  6
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010015-0000-4000-8000-000000010015",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  7,
+                  7
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010017-0000-4000-8000-000000010017",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  8,
+                  8
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010019-0000-4000-8000-000000010019",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  9,
+                  9
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001001c-0000-4000-8000-00000001001c",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  10,
+                  10
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001001f-0000-4000-8000-00000001001f",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  11,
+                  11
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010022-0000-4000-8000-000000010022",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  12,
+                  12
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 1,
+          "no_effect_channel": 0,
+          "none_in_window": 2
+        },
+        "links": {},
+        "output_match": {
+          "reason": "not_exposed",
+          "state": "not_applicable"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "complete"
+        },
+        "controls": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "complete"
+        },
+        "effects": {
+          "verdict": "complete"
+        }
+      },
+      "checks": {
+        "bytes": "passed",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "passed",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 2,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 13,
+            "last_sequence": 13,
+            "scope_id": "00000001-0000-4000-8000-000000000001",
+            "source_epoch": 1791331200000000000,
+            "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [
+        {
+          "api": "openai.chat_completions",
+          "ended_at": "2026-10-07T00:00:02.500000000Z",
+          "exchange_id": "ex-2",
+          "input_message_count": 2,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 239,
+              "object_id": "ex-2-request",
+              "sha256": "sha256:3223eebb6dbc2976494d2010f1c0e9870644b83d87722b944587a9e95ba0f412",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 574,
+              "object_id": "ex-2-response",
+              "sha256": "sha256:6af6aabff4a04e5bbe78f2d4e9d7cef8af8c3fa78134a09c4a63e93e442476d9",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-8116be83ee59b48e6bc0c80466f4073f",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 2,
+          "span_id": "00f067aa0ba90202",
+          "started_at": "2026-10-07T00:00:02.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [
+            "p-36f3e96ee9b3ace528d7896193f0bf1a",
+            "p-41f144d77ef96d66b99d92d4096aadd0",
+            "p-05a70069a800e58b6a3b106c028cafed"
+          ],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "ex-2",
+          "ended_at": "2026-10-07T00:00:13.500000000Z",
+          "exchange_id": "ex-13",
+          "input_message_count": 6,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 755,
+              "object_id": "ex-13-request",
+              "sha256": "sha256:1905e3e8989dddf37fe518e195bba9bde0383d2e6c0ee5a01ba502a9ac3f0033",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 278,
+              "object_id": "ex-13-response",
+              "sha256": "sha256:69141152701ad30b5a27cb71c1b1e70f861d2b2166f4404deb458c191fc78657",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-29efa9673dff568fa35d7bbfa0a39d41",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 13,
+          "span_id": "00f067aa0ba9020d",
+          "started_at": "2026-10-07T00:00:13.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-36f3e96ee9b3ace528d7896193f0bf1a",
+            "p-41f144d77ef96d66b99d92d4096aadd0",
+            "p-05a70069a800e58b6a3b106c028cafed"
+          ],
+          "tool_call_ids_emitted": [],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        }
+      ],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 13,
+          "exchanges": 2,
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {
+          "none": 5,
+          "provider_id": 5,
+          "ref_join": 2
+        },
+        "controls": [
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "approval"
+          },
+          {
+            "count": 1,
+            "decision": "escalate",
+            "derivation": "reported",
+            "kind": "approval"
+          },
+          {
+            "count": 1,
+            "decision": "modify",
+            "derivation": "reported",
+            "kind": "budget"
+          },
+          {
+            "count": 1,
+            "decision": "cancelled",
+            "derivation": "reported",
+            "kind": "elicitation"
+          },
+          {
+            "count": 1,
+            "decision": "escalate",
+            "derivation": "reported",
+            "kind": "elicitation"
+          },
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "guardrail"
+          },
+          {
+            "count": 1,
+            "decision": "deny",
+            "derivation": "reported",
+            "kind": "os_access"
+          },
+          {
+            "count": 1,
+            "decision": "unknown",
+            "derivation": "reported",
+            "kind": "other"
+          },
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "wrapped_check",
+            "kind": "permission_check"
+          },
+          {
+            "count": 1,
+            "decision": "deny",
+            "derivation": "reported",
+            "kind": "policy"
+          },
+          {
+            "count": 1,
+            "decision": "deny",
+            "derivation": "literal",
+            "kind": "provider_safety"
+          },
+          {
+            "count": 1,
+            "decision": "error",
+            "derivation": "reported",
+            "kind": "rate_limit"
+          }
+        ],
+        "extensions": [],
+        "facts": [
+          {
+            "code": "no_declared_grant",
+            "count": 1,
+            "event_ids": []
+          },
+          {
+            "code": "control_denied",
+            "count": 1,
+            "event_ids": [
+              "0001000a-0000-4000-8000-00000001000a"
+            ]
+          },
+          {
+            "code": "os_denied",
+            "count": 1,
+            "event_ids": [
+              "00010010-0000-4000-8000-000000010010"
+            ]
+          }
+        ],
+        "grants": {
+          "declared": 0,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": []
+      },
+      "segments": [
+        {
+          "last_sequence": 13,
+          "manifest_digest": "sha256:74d634e719f99596cce88a744190f937a832cc9f6adc8e5ee4a9bc6c7e4dbe7f",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:2c2b553b11945dc26b56ad549edc188298e7f030da23f49ae22f4ea5bfe51078",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [
+        {
+          "exchange_ids": [
+            "ex-2",
+            "ex-13"
+          ],
+          "thread_id": "thread-0"
+        }
+      ],
+      "verdict": "complete_for_observed_scopes"
+    }
+  ]
+}

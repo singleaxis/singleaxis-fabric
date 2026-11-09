@@ -1,0 +1,9 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: partial(ambiguous_attribution)  verdict: partial
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 read_file, T2 write_file
+  2    control    permission_check · observation · allow  fs-read  (reported)   ← ambiguous: T1, T2  pending_set
+  3    control    permission_check · observation · deny  fs-write  (reported)   ← ambiguous: T1, T2  pending_set
+  4  model_call   gpt-4o-2024-08-06  ← result T1, T2
+  tool calls without an effect: 2   (T1 none_in_window, T2 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded

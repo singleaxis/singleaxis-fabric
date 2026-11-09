@@ -1,0 +1,10 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 search
+  2    control    guardrail · input · allow  input-screen  (reported)
+  3    control    budget · run · allow  (reported)
+  4    control    permission_check · observation · allow  search-acl  (reported)   ← T1  pending_single · certain
+  5  model_call   gpt-4o-2024-08-06  ← result T1
+  tool calls without an effect: 1   (T1 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded

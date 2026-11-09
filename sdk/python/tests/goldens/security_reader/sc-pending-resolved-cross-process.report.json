@@ -1,0 +1,427 @@
+{
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00010004-0000-4000-8000-000000010004",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010006-0000-4000-8000-000000010006",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  2,
+                  2
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 0,
+          "no_effect_channel": 0,
+          "none_in_window": 1
+        },
+        "links": {},
+        "output_match": {
+          "reason": "not_exposed",
+          "state": "not_applicable"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "complete"
+        },
+        "controls": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "complete"
+        },
+        "effects": {
+          "verdict": "complete"
+        }
+      },
+      "checks": {
+        "bytes": "passed",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "passed",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 2,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 3,
+            "last_sequence": 3,
+            "scope_id": "00000001-0000-4000-8000-000000000001",
+            "source_epoch": 1791331200000000000,
+            "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [
+        {
+          "api": "openai.chat_completions",
+          "ended_at": "2026-10-07T00:00:00.500000000Z",
+          "exchange_id": "ex-0",
+          "input_message_count": 2,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 239,
+              "object_id": "ex-0-request",
+              "sha256": "sha256:3223eebb6dbc2976494d2010f1c0e9870644b83d87722b944587a9e95ba0f412",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 386,
+              "object_id": "ex-0-response",
+              "sha256": "sha256:2b68742735edcc3c775607eb3ae02c1a05b63bdf17f5c11516ad78423cb63ed1",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-8116be83ee59b48e6bc0c80466f4073f",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 0,
+          "span_id": "00f067aa0ba90200",
+          "started_at": "2026-10-07T00:00:00.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [
+            "p-36f3e96ee9b3ace528d7896193f0bf1a"
+          ],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "ex-0",
+          "ended_at": "2026-10-07T00:00:03.500000000Z",
+          "exchange_id": "ex-3",
+          "input_message_count": 4,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 451,
+              "object_id": "ex-3-request",
+              "sha256": "sha256:368809fd13233b93764cf2fe3d2f01b34c5b85138bbfe48d0baee0015a381ac4",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 278,
+              "object_id": "ex-3-response",
+              "sha256": "sha256:69141152701ad30b5a27cb71c1b1e70f861d2b2166f4404deb458c191fc78657",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-29efa9673dff568fa35d7bbfa0a39d41",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 3,
+          "span_id": "00f067aa0ba90203",
+          "started_at": "2026-10-07T00:00:03.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-36f3e96ee9b3ace528d7896193f0bf1a"
+          ],
+          "tool_call_ids_emitted": [],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        }
+      ],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 3,
+          "exchanges": 2,
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {
+          "provider_id": 2
+        },
+        "controls": [
+          {
+            "count": 1,
+            "decision": "pending",
+            "derivation": "reported",
+            "kind": "approval"
+          },
+          {
+            "count": 1,
+            "decision": "pending",
+            "derivation": "reported",
+            "kind": "permission_request"
+          }
+        ],
+        "extensions": [],
+        "facts": [
+          {
+            "code": "no_declared_grant",
+            "count": 1,
+            "event_ids": []
+          }
+        ],
+        "grants": {
+          "declared": 0,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": []
+      },
+      "segments": [
+        {
+          "last_sequence": 3,
+          "manifest_digest": "sha256:74d634e719f99596cce88a744190f937a832cc9f6adc8e5ee4a9bc6c7e4dbe7f",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:1bf33324ccca1edcb7cd8b44aaf5850ebd66328ada2757abe7289c137ec82b8a",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [
+        {
+          "exchange_ids": [
+            "ex-0",
+            "ex-3"
+          ],
+          "thread_id": "thread-0"
+        }
+      ],
+      "verdict": "complete_for_observed_scopes"
+    },
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00110005-0000-4000-8000-000000110005",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "source_epoch": 7,
+              "source_id": "s-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00110008-0000-4000-8000-000000110008",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": 7,
+              "source_id": "s-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 0,
+          "no_effect_channel": 0,
+          "none_in_window": 0
+        },
+        "links": {},
+        "output_match": {
+          "reason": "not_exposed",
+          "state": "not_applicable"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "not_observed"
+        },
+        "controls": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "not_observed"
+        },
+        "effects": {
+          "reasons": [
+            "not_instrumented"
+          ],
+          "verdict": "not_observed"
+        }
+      },
+      "checks": {
+        "bytes": "not_applicable",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "not_applicable",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 0,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 1,
+            "last_sequence": 1,
+            "scope_id": "00000101-0000-4000-8000-000000000101",
+            "source_epoch": 7,
+            "source_id": "s-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "trace:cccccccccccccccccccccccccccccccc",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 1,
+          "exchanges": 0,
+          "scope_id": "00000101-0000-4000-8000-000000000101",
+          "source_epoch": 7,
+          "source_id": "s-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {
+          "ref_join": 2
+        },
+        "controls": [
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "approval"
+          },
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "permission_request"
+          }
+        ],
+        "extensions": [],
+        "facts": [
+          {
+            "code": "no_declared_grant",
+            "count": 1,
+            "event_ids": []
+          }
+        ],
+        "grants": {
+          "declared": 0,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": []
+      },
+      "segments": [
+        {
+          "last_sequence": 1,
+          "manifest_digest": "sha256:5307240cf92a01c11207cc1bb3e2b8adb6ccfc84cdb84069f229f504a8ce5de8",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:8bd87ab9a94e92ceb0c8688c1840172faa4ea1c2f0a2830b56e06b3963c66408",
+          "segment_id": "seg-00000000000000000000000000001001",
+          "source_epoch": 7,
+          "source_id": "s-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [],
+      "verdict": "complete_for_observed_scopes"
+    }
+  ]
+}

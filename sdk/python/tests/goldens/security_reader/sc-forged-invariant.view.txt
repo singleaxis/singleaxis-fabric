@@ -1,0 +1,13 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: partial(invariant_conflict)  verdict: partial
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 shell
+  2    control    guardrail · pre_tool · deny  (reported)  invariant conflict (enforced_by_fabric)   ← T1  provider_id · certain
+  3      no effect observed for T1 (control_denied: #2)
+  4    control    policy · pre_tool · allow  (reported)  invariant conflict (authentication)   ← T1  provider_id · certain
+  5    control    permission_check · pre_tool · allow  (reported)   ← T1  provider_id · certain
+  6  model_call   gpt-4o-2024-08-06  ← result T1
+  tool calls without an effect: 1   (T1 control_denied)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F5  deny gates a tool call and no effect is attributed to it: 1 (#2)
+    F10 control record without both invariant constants: 2 (#2, #4)

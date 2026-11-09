@@ -1,0 +1,8 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: not_observed  actions: not_observed  effects: not_observed(not_instrumented)  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1    control    permission_check · observation · allow  shell  (reported)   ← attempt 00010004…  reported_ref · certain
+  2    control    permission_check · observation · deny  fs-write  (reported)   ← p-bbd1a93b…  provider_id · certain
+  3    control    permission_check · observation · allow  fs-read  (reported)
+  model calls: none recorded in this run (decisions not observed)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded

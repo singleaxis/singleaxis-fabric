@@ -1,0 +1,315 @@
+{
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00010005-0000-4000-8000-000000010005",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010008-0000-4000-8000-000000010008",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  2,
+                  2
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000a-0000-4000-8000-00000001000a",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  3,
+                  3
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "0001000d-0000-4000-8000-00000001000d",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  5,
+                  5
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 0,
+          "no_effect_channel": 0,
+          "none_in_window": 1
+        },
+        "links": {},
+        "output_match": {
+          "reason": "not_exposed",
+          "state": "not_applicable"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "complete"
+        },
+        "controls": {
+          "reasons": [
+            "control_unmatched"
+          ],
+          "verdict": "partial"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "verdict": "complete"
+        },
+        "effects": {
+          "verdict": "complete"
+        }
+      },
+      "checks": {
+        "bytes": "passed",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "passed",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 2,
+        "gaps_by_type": {}
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 5,
+            "last_sequence": 5,
+            "scope_id": "00000001-0000-4000-8000-000000000001",
+            "source_epoch": 1791331200000000000,
+            "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [
+        {
+          "api": "openai.chat_completions",
+          "ended_at": "2026-10-07T00:00:00.500000000Z",
+          "exchange_id": "ex-0",
+          "input_message_count": 2,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 239,
+              "object_id": "ex-0-request",
+              "sha256": "sha256:3223eebb6dbc2976494d2010f1c0e9870644b83d87722b944587a9e95ba0f412",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 385,
+              "object_id": "ex-0-response",
+              "sha256": "sha256:b31f0610e13ab412fcc32861c843b0701795efaed2bd53b053716522cb266eac",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-8116be83ee59b48e6bc0c80466f4073f",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 0,
+          "span_id": "00f067aa0ba90200",
+          "started_at": "2026-10-07T00:00:00.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [],
+          "tool_call_ids_emitted": [
+            "p-36f3e96ee9b3ace528d7896193f0bf1a"
+          ],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        },
+        {
+          "api": "openai.chat_completions",
+          "continues_exchange_id": "ex-0",
+          "ended_at": "2026-10-07T00:00:04.500000000Z",
+          "exchange_id": "ex-4",
+          "input_message_count": 4,
+          "model": "gpt-4o-2024-08-06",
+          "objects": {
+            "request": {
+              "byte_length": 444,
+              "object_id": "ex-4-request",
+              "sha256": "sha256:2c2e9f29fac5a9024d198ec28b663fe05727f495d621edb438ea8adb5a2632ea",
+              "verification": "verified"
+            },
+            "response": {
+              "byte_length": 278,
+              "object_id": "ex-4-response",
+              "sha256": "sha256:69141152701ad30b5a27cb71c1b1e70f861d2b2166f4404deb458c191fc78657",
+              "verification": "verified"
+            }
+          },
+          "output_message_count": 1,
+          "parse_status": "ok",
+          "response_id": "p-29efa9673dff568fa35d7bbfa0a39d41",
+          "response_state": "complete",
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "source_sequence": 4,
+          "span_id": "00f067aa0ba90204",
+          "started_at": "2026-10-07T00:00:04.000000000Z",
+          "thread_id": "thread-0",
+          "tool_call_ids_consumed": [
+            "p-36f3e96ee9b3ace528d7896193f0bf1a"
+          ],
+          "tool_call_ids_emitted": [],
+          "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+        }
+      ],
+      "gaps": [],
+      "run_aliases": [],
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "run_state": "terminated",
+      "scopes": [
+        {
+          "end_sequence": 5,
+          "exchanges": 2,
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {
+          "none": 1,
+          "provider_id": 1,
+          "ref_join": 1
+        },
+        "controls": [
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "approval"
+          },
+          {
+            "count": 1,
+            "decision": "allow",
+            "derivation": "reported",
+            "kind": "guardrail"
+          },
+          {
+            "count": 1,
+            "decision": "deny",
+            "derivation": "reported",
+            "kind": "policy"
+          }
+        ],
+        "extensions": [],
+        "facts": [
+          {
+            "code": "no_declared_grant",
+            "count": 1,
+            "event_ids": []
+          },
+          {
+            "code": "control_unmatched",
+            "count": 4,
+            "event_ids": [
+              "00010004-0000-4000-8000-000000010004",
+              "00010007-0000-4000-8000-000000010007",
+              "00010009-0000-4000-8000-000000010009",
+              "0001000c-0000-4000-8000-00000001000c"
+            ]
+          }
+        ],
+        "grants": {
+          "declared": 0,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": [
+          {
+            "basis": "callback",
+            "count": 1,
+            "outcome": "passed"
+          }
+        ]
+      },
+      "segments": [
+        {
+          "last_sequence": 5,
+          "manifest_digest": "sha256:74d634e719f99596cce88a744190f937a832cc9f6adc8e5ee4a9bc6c7e4dbe7f",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:dfd8dfdd35dfe5cf6293af49890f3d20b9b5f697d1244549ff58a99f853e9d41",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [
+        {
+          "exchange_ids": [
+            "ex-0",
+            "ex-4"
+          ],
+          "thread_id": "thread-0"
+        }
+      ],
+      "verdict": "partial"
+    }
+  ]
+}

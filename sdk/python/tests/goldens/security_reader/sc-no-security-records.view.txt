@@ -1,0 +1,10 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: partial(unattributed_effect)  corroboration: not_observed(not_configured)  controls: not_observed  verdict: partial
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 run_shell
+  2    effect     exec ls /data && sha256sum /data/a.txt exit 0 ← T1  output_match · certain
+  3  model_call   gpt-4o-2024-08-06  ← result T1  → tool_call T2 run_shell, T3 run_shell
+  4    effect     exec echo first exit 0               ← T2  output_match · certain
+  5    effect     exec echo second exit 0              ← T3  output_match · certain
+  6  model_call   gpt-4o-2024-08-06  ← result T2, T3
+  7    effect     exec uname -a exit 0                 (no open tool call)
+  unattributed effects: 1   (exec uname -a, seq 9: no open tool call)
+  output match: applied
