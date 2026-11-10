@@ -27,7 +27,21 @@ dependencies = [
   "pydantic>=2.8,<3.0",
 ]
 
+# Spec 058 §5.1: the operator CLI, `fabric` with the always-installed alias `singleaxis-fabric`
+# (OQ-1). Its module ships in the base package; its extra dependencies (the [cli] extra) are
+# never loaded into an agent process: autoload never imports fabric.cli.
+[project.scripts]
+fabric = "fabric.cli:main"
+singleaxis-fabric = "fabric.cli:main"
+
 [project.optional-dependencies]
+# Spec 058 §11.1 / OQ-2: the operator CLI's dependencies (fabric.yaml parsing, generated
+# secrets and certificates). `pipx install "singleaxis-fabric[cli]"`. Never a capture
+# dependency: base agent installs gain nothing.
+cli = [
+  "PyYAML>=6.0.2,<7.0",
+  "cryptography>=49",
+]
 # Wire-capture node mode (spec 048) needs no extra entry: this exporter
 # already depends on `requests` and `opentelemetry-proto`, which the content
 # client uses. boto3 is never a wire-capture dependency (the Node writes S3).

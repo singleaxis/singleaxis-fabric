@@ -41,7 +41,11 @@ def test_release_policy_is_recorder_only() -> None:
         "third_party_app_charts": [],
     }
     assert policy["images"] == ["fabric-otelcol", "fabric-host-emitter"]
-    assert policy["python_distribution"]["required_console_scripts"] == {}
+    # Spec 058 §5.1 (I1, OQ-1): the operator CLI and its alias, exactly; nothing else.
+    assert policy["python_distribution"]["required_console_scripts"] == {
+        "fabric": "fabric.cli:main",
+        "singleaxis-fabric": "fabric.cli:main",
+    }
     forbidden = set(policy["python_distribution"]["forbidden_wheel_paths"])
     assert {
         "fabric/_coverage_canary.py",
