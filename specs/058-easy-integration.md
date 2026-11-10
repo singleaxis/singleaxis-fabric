@@ -1,9 +1,9 @@
 ---
 title: Easy integration — near one-click setup, a launcher for zero-code capture, and checked paths to production (install, configuration and verification tooling only)
-status: draft
+status: accepted
 qualification: NO_COVERAGE_CLAIM
-revision: 1
-last_updated: 2026-11-09
+revision: 2
+last_updated: 2026-11-10
 owner: recorder-engineering
 depends_on: ["047", "048", "049", "053", "055", "056", "057"]
 related: ["027", "030", "031", "050", "051", "052", "054"]
@@ -16,11 +16,13 @@ related: ["027", "030", "031", "050", "051", "052", "054"]
 | Rev | Date | Change |
 |---|---|---|
 | 1 | 2026-11-09 | First draft, from the owner's direction of 2026-11-09 ("the ease of integration ... make it an easy one click set up (not literally but let us get as close to that as possible)"), the lead engineer's proposed plan, and the friction audit of the same day. Answers the owner's question on integration touch points (section 1). |
+| 2 | 2026-11-10 | Accepted. The owner accepted every section 17 recommendation as written (OQ-1 to OQ-14). OQ-11 is applied to `AGENTS.md`. New section 16.8 marks the parts of E1-E3 that PRs merged on 2026-11-09/10 already did (#286, #287, #288), so the build does not redo them; OQ-10 is closed by spec 056 revision 11 (#287). No target, rule or work package changes otherwise. |
 
-**Status: draft; not built.** This spec changes no code, no contract and
-no other spec. Proposed contract additions are listed in section 15 and
-are applied only by the work packages of section 16. Open questions for
-the owner are in section 17, each with a recommendation.
+**Status: accepted (revision 2, owner decisions of 2026-11-10); not
+built.** This spec changes no code and no contract by itself. Contract
+additions are listed in section 15 and are applied only by the work
+packages of section 16. The owner accepted every recommendation of
+section 17 as written; section 16.8 lists work already done on main.
 
 **Evidence.** Every target and every fix below cites the integration
 friction audit of 2026-11-09 (an engineer with no prior Fabric context,
@@ -1293,8 +1295,10 @@ has no unused ids.
 The OpenAI Python client runs `uname -p` at import; with the exec hook on
 this is an `unattributed_effect` in every run, so a normal run reads
 `partial`. Fabric must not guess an attribution. This spec asks spec 056
-for a decision (OQ-10); until it is made, `verify` and `show` explain the
-reason in words (12.4) and the TTFR tests accept it explicitly.
+for a decision (OQ-10). **Done** (revision 2): spec 056 revision 11 rule
+S0 reports such effects as `attribution.startup_effects`, never attributed
+and not a reason of the `effects` chain (#287). `verify` and `show` word
+the startup-effects list (12.4); the TTFR tests need no exception.
 
 ---
 
@@ -1521,28 +1525,46 @@ S1–S7 → 13.2 (S1, S2, S6), 10.5 (S3, S4), 13.3 (S5), 10.4 and 5.7 (S7).
 Documentation defects D1–D21 → 14.3 (the false statements, E1) and 14.1
 (the rest, E3).
 
+### 16.8 Already done on main (revision 2)
+
+The friction-audit fixes merged on 2026-11-09 and 2026-11-10 already
+deliver part of E1-E3. Build units skip these parts and keep their tests
+green; the rest of each work package is unchanged.
+
+| WP | Done by | What is done | Still to build |
+|---|---|---|---|
+| WP8-6 | #287 | Capture-off reasons that name the fix (F3); `span_destination` and the no-destination warning (F2); the unmatched model-shaped request counter in `stats()`; `content_withheld_roles` (S6) | Status file, `FABRIC_OTLP_*`, `FABRIC_WIRE_ID_KEY_FILE`, `fabric.wire.status()`, the 13.2 catalogue codes |
+| WP8-8 | #287, #288 | Reader `--spans` accepts `*.otlp`, `*.json`, `*.jsonl` (F17); one summary line per run, `--json` for the full report (F25); `no runs reconstructed` says why (F1); `make verify-prod-groups` (F14/N7, #288) | `--latest`; the remaining 13.4 input forms |
+| WP8-10 | #287, #286 | README "record your own application" route with a destination and endpoints, run as a test; TypeScript README states what is recorded and verified (F1) | The rest of 14.3; Get started pages; TTFR harness |
+| WP8-11 | #288 | Namespace ownership fix (F15); `content.s3.caSecret` (F6); `networkPolicy.hostSensorEgress` (F5) | `preset` values; host-ingress + content example |
+| WP8-14 | #288 | Emitter finds pods under any kubelet cgroup root, incl. kind (F4/N4); health line `pod_selector_matched`/`pod_cgroups_found`; gRPC code and hint on export errors (F5); `host-bindings.py --emitter-image` (F19) | Sensor DaemonSet in the chart; unscoped-pod reasons; RuntimeClass detection |
+| WP8-19 | #286 | `@opentelemetry/api` peer range and pinned install lines with a fresh-install CI test (F7/N2); plaintext OTLP rule parity (F23) | `FABRIC_OTLP_*`; reader and `show` support for reported TS records; `ttfr-laptop-node` |
+| 13.5 / OQ-10 | #287 | Startup effects rule S0 (spec 056 revision 11) | Wording in `verify` and `show` |
+
 ---
 
 ## 17. Open questions for the owner
 
 Each has a recommendation. Ordered by how much they change the build.
+**Answered 2026-11-10:** the owner accepted every recommendation as
+written.
 
-| # | Question | Recommendation |
-|---|---|---|
-| OQ-1 | **Command name.** `fabric` is short and matches the product, but other tools ship a `fabric` command (an unrelated AI prompt CLI is widely installed under that name; the Python Fabric SSH library uses `fab`). | Keep `fabric` in the docs and always install the alias `singleaxis-fabric`. `doctor` and the install docs explain the alias when `fabric --version` is not ours. |
-| OQ-2 | **Where the CLI lives.** In the Python distribution, a separate distribution, or a static Go binary (extending `fabricctl`)? | In `singleaxis-fabric` with a `[cli]` extra, plus the `fabric-cli` container image, plus a thin npm `run`/`doctor` launcher (1.4, 11.1). A Go binary would have to duplicate or shell out to the Python reader. |
-| OQ-3 | **`fabricctl`.** Its declaration is read by nothing. Keep, fold into `fabric`, or deprecate? Where does 057 WP7-17 land? | Keep it unchanged through v1.0 and move its page to Reference. Land WP7-17 as `fabric snapshot`. Decide `fabricctl`'s deprecation at v1.0 with its users. |
-| OQ-4 | **Endpoint table default for plain autoload.** New qualified rows widen what an existing autoload user captures. | On by default everywhere from the release that ships each row, listed in the CHANGELOG and recorded by table version in the manifest; `FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy` pins today's three. Loopback rows never on by default. |
-| OQ-5 | **Kubernetes secrets.** Hook Job, Helm template randomness, or CLI only? | Hook Job using the CLI image (values never in the Helm release), with `fabric init --kubernetes` and `--render` for clusters that forbid hook Jobs. No template randomness. |
-| OQ-6 | **Pod injection of the SDK itself.** Inject env and mounts only, or also copy the SDK into pods whose image lacks it? | Env, mounts and the stdlib-only shim only. Injecting packages into an unknown interpreter risks dependency conflicts in the agent; one dependency line in the image is cleaner. Revisit after E2 with field data. |
-| OQ-7 | **Should the SDK read `fabric.yaml` directly?** | No. The CLI compiles it into the inputs the SDK and Node already read. One runtime configuration surface per component, and nothing existing changes. |
-| OQ-8 | **`fabric run` borrowing its own SDK** when the agent's interpreter lacks it. | No in E1: print the one install line for that interpreter. Revisit with E1 data; borrowing across environments is fragile. |
-| OQ-9 | **Readback for destinations Fabric cannot read** (`otlp`). | Add the canary tap in E4 (canary-bound spans only, bounded local file). User runs on such destinations are read with `--spans`. |
-| OQ-10 | **Startup effects (N8).** Commands before the first model call make every exec-hook run `partial`. | Ask spec 056 for a reason `before_first_decision` that is reported as a fact and not counted against `effects` completeness, with no attribution guessed. Until decided, `verify` explains it in words. |
-| OQ-11 | **AGENTS.md wording.** | Add to "In scope": "an operator CLI that plans, configures, starts, launches capture for and verifies the recorder on customer infrastructure, with no fleet management, rollout or phone-home". This keeps retired spec 026's lifecycle out. |
-| OQ-12 | **Homebrew and `curl \| sh`.** | No `curl \| sh`, ever. Homebrew deferred until users ask; `pipx` and `uv` cover macOS. |
-| OQ-13 | **Multi-tenant processes.** `FABRIC_TENANT_ID` is process-wide; no page covers one process serving many tenants (audit P5). | Out of 058's scope: a per-run tenant is a 050/051 contract change. 058 makes `plan` report it as `invisible (not_configured)` and documents the limit on the shape page. Ask the 050 owner for a decision. |
-| OQ-14 | **cgroup join by `fabric run`.** It moves the agent into a cgroup with no limits so the sensor scopes it. | Yes when a delegated cgroup exists, fail-open otherwise; `plan` and `verify` say whether the agent was scoped. |
+| # | Question | Recommendation | Owner decision |
+|---|---|---|---|
+| OQ-1 | **Command name.** `fabric` is short and matches the product, but other tools ship a `fabric` command (an unrelated AI prompt CLI is widely installed under that name; the Python Fabric SSH library uses `fab`). | Keep `fabric` in the docs and always install the alias `singleaxis-fabric`. `doctor` and the install docs explain the alias when `fabric --version` is not ours. | Accepted as recommended (2026-11-10) |
+| OQ-2 | **Where the CLI lives.** In the Python distribution, a separate distribution, or a static Go binary (extending `fabricctl`)? | In `singleaxis-fabric` with a `[cli]` extra, plus the `fabric-cli` container image, plus a thin npm `run`/`doctor` launcher (1.4, 11.1). A Go binary would have to duplicate or shell out to the Python reader. | Accepted as recommended (2026-11-10) |
+| OQ-3 | **`fabricctl`.** Its declaration is read by nothing. Keep, fold into `fabric`, or deprecate? Where does 057 WP7-17 land? | Keep it unchanged through v1.0 and move its page to Reference. Land WP7-17 as `fabric snapshot`. Decide `fabricctl`'s deprecation at v1.0 with its users. | Accepted as recommended (2026-11-10) |
+| OQ-4 | **Endpoint table default for plain autoload.** New qualified rows widen what an existing autoload user captures. | On by default everywhere from the release that ships each row, listed in the CHANGELOG and recorded by table version in the manifest; `FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy` pins today's three. Loopback rows never on by default. | Accepted as recommended (2026-11-10) |
+| OQ-5 | **Kubernetes secrets.** Hook Job, Helm template randomness, or CLI only? | Hook Job using the CLI image (values never in the Helm release), with `fabric init --kubernetes` and `--render` for clusters that forbid hook Jobs. No template randomness. | Accepted as recommended (2026-11-10) |
+| OQ-6 | **Pod injection of the SDK itself.** Inject env and mounts only, or also copy the SDK into pods whose image lacks it? | Env, mounts and the stdlib-only shim only. Injecting packages into an unknown interpreter risks dependency conflicts in the agent; one dependency line in the image is cleaner. Revisit after E2 with field data. | Accepted as recommended (2026-11-10) |
+| OQ-7 | **Should the SDK read `fabric.yaml` directly?** | No. The CLI compiles it into the inputs the SDK and Node already read. One runtime configuration surface per component, and nothing existing changes. | Accepted as recommended (2026-11-10) |
+| OQ-8 | **`fabric run` borrowing its own SDK** when the agent's interpreter lacks it. | No in E1: print the one install line for that interpreter. Revisit with E1 data; borrowing across environments is fragile. | Accepted as recommended (2026-11-10) |
+| OQ-9 | **Readback for destinations Fabric cannot read** (`otlp`). | Add the canary tap in E4 (canary-bound spans only, bounded local file). User runs on such destinations are read with `--spans`. | Accepted as recommended (2026-11-10) |
+| OQ-10 | **Startup effects (N8).** Commands before the first model call make every exec-hook run `partial`. | Ask spec 056 for a reason `before_first_decision` that is reported as a fact and not counted against `effects` completeness, with no attribution guessed. Until decided, `verify` explains it in words. | Accepted as recommended (2026-11-10) |
+| OQ-11 | **AGENTS.md wording.** | Add to "In scope": "an operator CLI that plans, configures, starts, launches capture for and verifies the recorder on customer infrastructure, with no fleet management, rollout or phone-home". This keeps retired spec 026's lifecycle out. | Accepted as recommended (2026-11-10) |
+| OQ-12 | **Homebrew and `curl \| sh`.** | No `curl \| sh`, ever. Homebrew deferred until users ask; `pipx` and `uv` cover macOS. | Accepted as recommended (2026-11-10) |
+| OQ-13 | **Multi-tenant processes.** `FABRIC_TENANT_ID` is process-wide; no page covers one process serving many tenants (audit P5). | Out of 058's scope: a per-run tenant is a 050/051 contract change. 058 makes `plan` report it as `invisible (not_configured)` and documents the limit on the shape page. Ask the 050 owner for a decision. | Accepted as recommended (2026-11-10) |
+| OQ-14 | **cgroup join by `fabric run`.** It moves the agent into a cgroup with no limits so the sensor scopes it. | Yes when a delegated cgroup exists, fail-open otherwise; `plan` and `verify` say whether the agent was scoped. | Accepted as recommended (2026-11-10) |
 
 ---
 
