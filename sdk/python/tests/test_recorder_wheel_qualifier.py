@@ -273,3 +273,46 @@ def test_import_probe_rejects_import_side_effects(
     wheel = _wheel(tmp_path / "noisy.whl", root_init=root_init)
     with pytest.raises(ValueError, match=problem):
         _qualifier().qualify(wheel)
+
+
+# Spec 057 B7/B9 (WP7-3): no mapping profile or classification list ships in an artifact.
+@pytest.mark.parametrize(
+    "member", ["fabric/profiles/runtime-x.json", "fabric/classify/hosts.yaml", "fabric/data.toml"]
+)
+def test_a_data_file_in_the_package_fails_qualification(tmp_path: Path, member: str) -> None:
+    with pytest.raises(ValueError, match="ships data files in the package"):
+        _qualifier().qualify(_wheel(tmp_path / "data.whl", member=member), import_probe=False)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'PROFILE = {"schema_version": "otlp-mapping-profile/v1", "rules": []}\n',
+        b'LISTS = {"control_hosts": [{"host": "policy.internal", "label": "p"}]}\n',
+        b'LISTS = {"hook_programs": [{"basename": "pre-check", "label": "h"}]}\n',
+        b'LISTS = {"tool_result_markers": [{"label": "acl", "prefix": "denied"}]}\n',
+        # other spellings of a filled list: compact JSON, a Python literal, multi-line, YAML
+        b'LISTS = {"control_hosts":[{"host":"policy.internal","label":"p"}]}\n',
+        b"LISTS = {'watched_paths': [{'path': '/etc/agent', 'label': 'acl'}]}\n",
+        b'LISTS = {\n    "hook_programs": [\n        {"basename": "pre-check"},\n    ],\n}\n',
+        b'LISTS = {"control_addresses":["10.0.0.0/8"]}\n',
+        b'DEFAULTS = """\ncontrol_hosts:\n  - host: policy.internal\n"""\n',
+    ],
+)
+def test_a_shipped_profile_or_classification_list_fails_qualification(
+    tmp_path: Path, payload: bytes
+) -> None:
+    path = _wheel(tmp_path / "lists.whl")
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.writestr("fabric/_builtin_lists.py", payload)
+    with pytest.raises(ValueError, match="mapping profile or classification list"):
+        _qualifier().qualify(path, import_probe=False)
+
+
+def test_the_policy_loader_naming_the_keys_still_qualifies(tmp_path: Path) -> None:
+    path = _wheel(tmp_path / "loader.whl")
+    with zipfile.ZipFile(path, "a") as archive:
+        archive.writestr("fabric/_security_policy.py",
+                         b'SECTIONS = frozenset({"control_hosts", "hook_programs"})\n'
+                         b'EMPTY = {"control_hosts": [], "watched_paths": ()}\n')  # fmt: skip
+    assert _qualifier().qualify(path, import_probe=False)["qualified"] is True

@@ -13,6 +13,7 @@ full, not installed) never reaches the caller; strict mode raises.
 from __future__ import annotations
 
 import json
+import math
 import random
 import time
 from datetime import UTC, datetime
@@ -23,6 +24,7 @@ import pytest
 
 from fabric import _records, records
 from fabric._capture_types import COUNTERS, STRICT_ENV, RecordsMisuseError
+from fabric._content import canonical_json
 from fabric._records import compile_check
 from fabric._records_api import (
     ActorRef,
@@ -144,6 +146,107 @@ def test_walker_output_never_exceeds_the_cap_property() -> None:
             assert walked.text is not None
             assert len(walked.text.encode("utf-8")) <= cap
             assert json.loads(walked.text) == json.loads(json.dumps(candidate))
+
+
+def _stack_walk(value: Any, max_bytes: int) -> tuple[str, str | None]:  # noqa: PLR0911, PLR0912
+    """The walker as first written, with an explicit stack (the reference the recursive
+    walker must equal: same outcome, same text, for every value)."""
+    from fabric.records import _walker  # noqa: PLC0415
+
+    budget, nodes = max_bytes, 0
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    active: set[int] = set()
+    exits: list[tuple[int, int]] = []
+    while stack:
+        while exits and len(stack) <= exits[-1][0]:
+            active.discard(exits.pop()[1])
+        node, depth = stack.pop()
+        nodes += 1
+        if nodes > MAX_NODES or depth > MAX_DEPTH:
+            return "too_large", None
+        kind = type(node)
+        if node is None or kind is bool:
+            budget -= 5
+        elif kind is int:
+            size = _walker._int_bytes(node)
+            if size is None:
+                return "too_large", None
+            budget -= size
+        elif kind is float:
+            if not math.isfinite(node):
+                return "unsupported", None
+            budget -= _walker._FLOAT_BYTES
+        elif kind is str:
+            budget -= 2 + _walker._CHAR_BYTES * len(node)
+        elif kind is dict or kind is list or kind is tuple:
+            ident = id(node)
+            if ident in active:
+                return "unsupported", None
+            budget -= 2 + len(node)
+            if budget < 0 or nodes + len(stack) + len(node) > MAX_NODES:
+                return "too_large", None
+            active.add(ident)
+            exits.append((len(stack), ident))
+            if kind is dict:
+                for key, child in node.items():
+                    if type(key) is not str:
+                        return "unsupported", None
+                    budget -= 3 + _walker._CHAR_BYTES * len(key)
+                    stack.append((child, depth + 1))
+            else:
+                stack.extend((child, depth + 1) for child in node)
+        else:
+            return "unsupported", None
+        if budget < 0:
+            return "too_large", None
+    return "ok", canonical_json(value)
+
+
+def test_walker_equals_the_explicit_stack_walk() -> None:
+    """The recursive walker (and its reused C encoder) gives exactly the outcome and text of
+    the explicit-stack walk for every value: random plain JSON at every cap, values mixing a
+    refusal with an exceeded bound (which comes first depends on the visiting order), deep,
+    wide, cyclic, shared and hostile values."""
+    rng = random.Random(5701)  # noqa: S311 - a reproducible property test, not crypto
+    shared: dict[str, Any] = {"s": [1, "x"]}
+
+    def value(depth: int = 0) -> Any:  # noqa: PLR0911 - one return per JSON type
+        pick = rng.randrange(10 if depth < 6 else 5)
+        if pick == 0:
+            return rng.choice([None, True, False, 0, -1, 10**30, 10**4100, 1.5, float("nan")])
+        if pick == 1:
+            return rng.randrange(-(10**12), 10**12)
+        if pick == 2:
+            return rng.random() * 10 ** rng.randrange(-8, 8)
+        if pick == 3:
+            return "".join(rng.choice('ab"\\\n\u0001é😀') for _ in range(rng.randrange(60)))
+        if pick == 4:
+            return rng.choice([b"bytes", {1, 2}, Hostile, shared, "k" * rng.randrange(300)])
+        if pick in (5, 6):
+            return [value(depth + 1) for _ in range(rng.randrange(8))]
+        if pick == 7:
+            return tuple(value(depth + 1) for _ in range(rng.randrange(5)))
+        keys: list[Any] = [f"k{rng.randrange(40)}" for _ in range(rng.randrange(7))]
+        if rng.random() < 0.05:
+            keys.append(rng.randrange(3))  # a non-str key
+        return {k: value(depth + 1) for k in keys}
+
+    cases: list[Any] = [value() for _ in range(3000)]
+    deep: Any = "leaf"
+    for _ in range(MAX_DEPTH + 1):
+        deep = [deep]
+    cyclic: list[Any] = [1, {"a": "b"}]
+    cyclic.append(cyclic)
+    cases += [deep, deep[0], cyclic, [shared, shared], [deep, float("inf")],
+              [float("inf"), deep], list(range(MAX_NODES)), [list(range(MAX_NODES // 2))] * 2,
+              {str(i): i for i in range(50)}]  # fmt: skip
+    Hostile.calls.clear()
+    for case in cases:
+        for cap in (16, 64, 256, 1024, 1 << 14, 1 << 22):
+            walked = walk(case, cap)
+            assert (walked.outcome, walked.text) == _stack_walk(case, cap), (case, cap)
+    assert Hostile.calls == []
+    assert {walk(c, 1 << 22).outcome for c in cases} == {"ok", "too_large", "unsupported"}
 
 
 # ----------------------------------------------------------------- links
@@ -371,3 +474,46 @@ def test_context_binds_conversation_and_turn_pseudonyms(
     assert "fabric.conversation_id" not in unbound and "fabric.turn_id" not in unbound
     assert "CANARY" not in json.dumps(spans, default=str)
     assert dropped == 0
+
+
+def test_walker_called_near_the_recursion_limit_refuses_never_raises() -> None:
+    """The bounded walk recurses (at most ``MAX_DEPTH`` + 1 frames). Called from a caller
+    whose own stack is already close to the interpreter's limit, it ends ``too_large``
+    instead of raising ``RecursionError`` into the records path; with room, the same value
+    still serialises."""
+    import sys  # noqa: PLC0415
+
+    value: Any = "leaf"
+    for _ in range(MAX_DEPTH - 1):
+        value = [value]
+    assert walk(value, 1 << 20).outcome == "ok"
+    outcomes: list[str] = []
+
+    def at_depth(remaining: int) -> None:
+        if remaining:
+            at_depth(remaining - 1)
+        else:
+            outcomes.append(walk(value, 1 << 20).outcome)
+
+    def reachable(depth: int = 0) -> int:
+        """How many ``at_depth``-sized frames fit below the limit (measured, not guessed:
+        what counts toward the limit differs between versions and under a tracer)."""
+        try:
+            return reachable(depth + 1)
+        except RecursionError:
+            return depth
+
+    limit = sys.getrecursionlimit()
+    sys.setrecursionlimit(400)
+    try:
+        deepest = reachable()
+        assert deepest > 5 * MAX_DEPTH + 25
+        for headroom in (5, 15, 25):  # frames left between the caller and the limit
+            outcomes.clear()
+            at_depth(deepest - headroom)
+            assert outcomes == ["too_large"], (headroom, outcomes)
+        outcomes.clear()
+        at_depth(deepest - 5 * MAX_DEPTH)  # room for the walk: it still serialises
+        assert outcomes == ["ok"]
+    finally:
+        sys.setrecursionlimit(limit)

@@ -154,7 +154,7 @@ _SCALE_SCRIPT = textwrap.dedent(
     """
     import json, resource, sys, time
     from tests.test_reconstruct_scale import EPOCH, SOURCE, _exchange, _run_id
-    from tests.test_wire_passivity import calibrate, scale_for
+    from tests._calibration import calibrate, scale_for
     from fabric.reconstruct._inputs import HeartbeatObs, LossObs
     from fabric.reconstruct.__main__ import _report_chunks
     from fabric.reconstruct._verify import _Verifier

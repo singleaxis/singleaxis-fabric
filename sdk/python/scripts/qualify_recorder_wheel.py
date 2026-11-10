@@ -214,6 +214,33 @@ FORBIDDEN_DECISION_METHODS = {
 }
 
 
+# Markers of a shipped OTLP mapping profile (spec 057 §4.5) or a filled classification list
+# (§4.3-§4.4, §4.10.1): a profile's schema id, or a list key followed by a JSON array with
+# an entry. The SDK's policy loader names the keys only as strings it checks, never with
+# entries, so it passes.
+SECURITY_CONTEXT_DATA_MARKERS: tuple[bytes, ...] = (
+    b'"otlp-mapping-profile/v1"',
+    *(
+        f'"{key}": [{{'.encode()
+        for key in (
+            "control_hosts",
+            "control_addresses",
+            "hook_programs",
+            "watched_paths",
+            "tool_result_markers",
+        )
+    ),
+    *(f'"{key}": ["'.encode() for key in ("control_addresses",)),
+)
+# The same, in any spelling a filled list takes: either quote, any whitespace (compact JSON,
+# a Python literal, a multi-line literal), an entry that is an object or a string, and the
+# YAML block form (``key:`` followed by a ``- `` item).
+SECURITY_CONTEXT_LIST_PATTERN = re.compile(
+    rb"""["']?(?:control_hosts|control_addresses|hook_programs|watched_paths|"""
+    rb"""tool_result_markers)["']?\s*:\s*(?:\[\s*[{"']|\n[ \t]*-[ \t])"""
+)
+
+
 def _canonical_member(name: str) -> str:
     """Map wheel and sdist package paths to one comparable namespace."""
     marker = "/src/fabric/"
@@ -296,6 +323,31 @@ def _check_capture_imports(payloads: dict[str, bytes], kind: str) -> None:
         raise ValueError(f"{kind} wire capture imports a cloud SDK: {cloud_imports}")
 
 
+def _check_no_security_context_data(
+    canonical_members: set[str], canonical_payloads: dict[str, bytes], kind: str
+) -> None:
+    """Spec 057 B7/B9: classification is customer configuration and mapping profiles are
+    the customer's; no artifact ships either (nor any other data file in the package)."""
+    shipped_data = sorted(
+        name
+        for name in canonical_members
+        if name.startswith("fabric/") and not name.endswith((".py", ".pyi", "/py.typed"))
+    )
+    if shipped_data:
+        raise ValueError(f"{kind} ships data files in the package: {shipped_data}")
+    shipped_lists = sorted(
+        name
+        for name, data in canonical_payloads.items()
+        if name.startswith("fabric/")
+        and (
+            any(marker in data for marker in SECURITY_CONTEXT_DATA_MARKERS)
+            or SECURITY_CONTEXT_LIST_PATTERN.search(data) is not None
+        )
+    )
+    if shipped_lists:
+        raise ValueError(f"{kind} ships a mapping profile or classification list: {shipped_lists}")
+
+
 def qualify(path: Path, *, import_probe: bool = True) -> dict[str, object]:
     artifact_bytes = path.read_bytes()
     members, payloads, kind = _read_artifact(path)
@@ -370,6 +422,7 @@ def qualify(path: Path, *, import_probe: bool = True) -> dict[str, object]:
     if startup_hooks:
         raise ValueError(f"{kind} contains interpreter startup hooks: {startup_hooks}")
     _check_capture_imports(canonical_payloads, kind)
+    _check_no_security_context_data(canonical_members, canonical_payloads, kind)
     if any(name.endswith(".dist-info/entry_points.txt") for name in members):
         raise ValueError("recorder SDK artifact must not publish a console entry point")
 

@@ -138,3 +138,56 @@ def test_readme_describes_the_actual_recorder_cli() -> None:
         "in v0.8 neither the SDK nor the Node reads it"
     ) in readme
     assert "deployment receipts" not in readme
+
+
+# Spec 057 (WP7-3): the security-context modules and their documentation describe
+# recording, never Fabric deciding. Positive claims only: "Fabric decides nothing" passes.
+SPEC_057_SOURCES = (
+    "sdk/python/src/fabric/_rec_check.py",
+    "sdk/python/src/fabric/_rec_controls.py",
+    "sdk/python/src/fabric/_rec_extension.py",
+    "sdk/python/src/fabric/_rec_grant.py",
+    "sdk/python/src/fabric/_rec_run.py",
+    "sdk/python/src/fabric/_records_api.py",
+    "sdk/python/src/fabric/_security_policy.py",
+    "sdk/python/src/fabric/records/__init__.py",
+    "sdk/python/src/fabric/reconstruct/_controls.py",
+    "sdk/python/src/fabric/reconstruct/_security.py",
+    "docs/action-reconstruction.md",
+    "docs/explicit-apis.md",
+    "docs/reconstruct.md",
+)
+DECIDER_CLAIMS = (
+    "Fabric blocks",
+    "Fabric enforces",
+    "Fabric approves",
+    "Fabric denies",
+    "Fabric evaluates",
+    "Fabric judges",
+    "enforced_by_fabric=true",
+    "enforced_by_fabric: true",
+    "fabric.blocked=true",
+    "guardrail sidecar",
+)
+
+
+def _module_docstring_and_comments(text: str) -> str:
+    import ast
+
+    tree = ast.parse(text)
+    docs = [ast.get_docstring(node) or "" for node in ast.walk(tree)
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef,
+                                 ast.ClassDef))]  # fmt: skip
+    comments = [line.split("#", 1)[1] for line in text.splitlines() if "#" in line]
+    return "\n".join(docs + comments)
+
+
+def test_spec_057_sources_and_docs_never_claim_fabric_decides() -> None:
+    for relative in SPEC_057_SOURCES:
+        text = (ROOT / relative).read_text(encoding="utf-8")
+        prose = (
+            _module_docstring_and_comments(text) if relative.endswith(".py") else text
+        )
+        assert prose.strip(), relative
+        for claim in (*STALE_POSITIVE_CLAIMS, *DECIDER_CLAIMS):
+            assert claim.lower() not in prose.lower(), f"{relative} contains {claim!r}"

@@ -26,15 +26,17 @@ keyed pseudonym. Every call is passive and fails open (051 R9).
 from __future__ import annotations
 
 import hashlib
+import json.encoder
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, fields
 from decimal import Decimal
 from typing import Any
 
 from ._capture_types import misuse
-from ._records_api import Body, current_records, emit, never_raises
+from ._content import canonical_json_acyclic
+from ._records_api import Body, current_records, emit, never_raises, role_cap
 from ._sequence import pseudonym_v2
 from .records._handles import RecordHandle
 from .records._vocab import (
@@ -46,6 +48,7 @@ from .records._vocab import (
     TOOL_CHOICE_MODES,
     normalise,
 )
+from .records._walker import _CHAR_BYTES, MAX_DEPTH, MAX_NODES
 
 SCHEMA_VERSION = "fabric.grant-snapshot/v1"
 MAX_LIST = 4096
@@ -121,21 +124,11 @@ def _number(value: int | float) -> str:  # noqa: PLR0911 - RFC 8785 §3.2.2.3 ca
     return f"{sign}{mantissa}e{'+' if power > 0 else '-'}{abs(power)}"
 
 
-_ESCAPES = {8: "\\b", 9: "\\t", 10: "\\n", 12: "\\f", 13: "\\r"}
-
-
-def _string(value: str) -> str:
-    out = ['"']
-    for char in value:
-        code = ord(char)
-        if char in ('"', "\\"):
-            out.append("\\" + char)
-        elif code < 0x20:  # noqa: PLR2004 - control characters
-            out.append(_ESCAPES.get(code, f"\\u{code:04x}"))
-        else:
-            out.append(char)
-    out.append('"')
-    return "".join(out)
+# RFC 8785 §3.2.2.2 escapes exactly what the stdlib's JSON string encoder escapes when it
+# keeps non-ASCII text (``"``, ``\\``, the short forms \b \t \n \f \r, and every other
+# control character as a lower-case ``\u00xx``); its C form keeps a grant record inside the
+# B4 budget (spec 057 §2.1), where a per-character loop did not.
+_string: Callable[[str], str] = json.encoder.encode_basestring
 
 
 def _jcs(value: object) -> str:  # noqa: PLR0911 - one return per JSON type
@@ -158,10 +151,66 @@ def _jcs(value: object) -> str:  # noqa: PLR0911 - one return per JSON type
     raise _NotJsonError
 
 
+# For a value with no float, no integer beyond +-2**53 and only ASCII object keys, RFC 8785
+# is exactly the stdlib's sorted-key, compact, non-ASCII-keeping JSON: strings escape alike
+# (above), integers print alike, and ASCII keys sort alike by UTF-16 code units and by code
+# points. The C encoder then does the work; anything else takes the exact path above.
+_FAST: Callable[[object], str] = canonical_json_acyclic  # a checked document has no cycle
+_SAFE_INT = 1 << 53
+
+
+def _shape(value: object) -> int:
+    """The deepest container's depth (the value itself at 0; a leaf value: 0) when the
+    value takes the fast path (above); ``-1`` when it does not."""
+    deepest = 0
+    stack: list[tuple[Any, int]] = [([value], -1)]  # the value, as the child of a list
+    while stack:
+        node, depth = stack.pop()
+        deepest = max(deepest, depth)
+        if type(node) is dict:
+            for key in node:
+                if type(key) is not str or not key.isascii():
+                    return -1
+            children = node.values()
+        else:
+            children = node
+        for child in children:
+            kind = type(child)
+            if kind is dict or kind is list or kind is tuple:
+                stack.append((child, depth + 1))
+            elif kind is int:
+                if not -_SAFE_INT <= child <= _SAFE_INT:
+                    return -1
+            elif not (kind is str or child is None or kind is bool):
+                return -1  # a float, or not JSON: the exact path decides
+    return deepest
+
+
+def _simple(value: object) -> bool:
+    return _shape(value) >= 0
+
+
 def jcs(value: object) -> bytes:
     """The RFC 8785 canonical UTF-8 bytes of a JSON value (plain ``dict``/``list``/``str``/
     ``int``/``float``/``bool``/``None`` only; anything else raises)."""
-    return _jcs(value).encode("utf-8", "surrogatepass")
+    text = _FAST(value) if _simple(value) else _jcs(value)
+    return text.encode("utf-8", "surrogatepass")
+
+
+def _body_text(text: str | None, depth: int, cap: int) -> str | None:
+    """The bounded walker's ``ok`` text for a document that took the fast path (``text``,
+    its canonical JSON; ``depth``, its deepest container), when the walker provably accepts
+    it; ``None`` leaves the decision to the walker (spec 051 §4.2 rule 3).
+
+    With no float and every integer within +-2**53, each node the walker counts prints at
+    least one character, and its byte estimate per node is at most six times the characters
+    that node prints. So ``len(text)`` bounds the node count, ``6 * len(text)`` the estimate,
+    and a leaf sits one level below the deepest container: within all three limits the walk
+    can only end ``ok`` with ``canonical_json_acyclic`` of the document, which is ``text``."""
+    if text is None or depth + 1 > MAX_DEPTH:
+        return None
+    size = len(text)
+    return text if size <= MAX_NODES and _CHAR_BYTES * size <= cap else None
 
 
 def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
@@ -172,6 +221,8 @@ def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
         if type(value) is dict:
             return {k: walk(v) for k, v in value.items()}
         if type(value) is list:
+            if len(value) == 1:  # one item: nothing to sort or de-duplicate
+                return [walk(value[0])]
             items = {jcs(item): item for item in (walk(v) for v in value)}
             return [items[k] for k in sorted(items)]
         return value
@@ -179,6 +230,24 @@ def normalise_grant(document: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = walk(dict(document))
     out.pop("request_ref", None)
     return out
+
+
+def _normalised_in_place(value: Any) -> Any:
+    """:func:`normalise_grant`'s list rule applied to a document Fabric owns (a checked
+    copy), mutating its objects instead of rebuilding them; ``request_ref`` is kept."""
+    kind = type(value)
+    if kind is dict:
+        for key, child in value.items():
+            if type(child) is dict or type(child) is list:
+                value[key] = _normalised_in_place(child)
+        return value
+    if kind is list:
+        items = [_normalised_in_place(v) for v in value]
+        if len(items) <= 1:
+            return items
+        keyed = {jcs(item): item for item in items}
+        return [keyed[k] for k in sorted(keyed)]
+    return value
 
 
 def grant_digest(document: Mapping[str, Any]) -> str:
@@ -621,25 +690,16 @@ class GrantRef:
 def _plain(value: object) -> Any:
     """A caller mapping as plain ``dict``/``list`` values (``Mapping``/``Sequence`` copied),
     so the shape checks never call back into application objects beyond iteration."""
+    kind = type(value)
+    if kind is str or kind is int or kind is bool or value is None:
+        return value  # the common leaves, without the ABC checks below
+    if kind is dict:
+        return {k: _plain(v) for k, v in value.items()}  # type: ignore[attr-defined]
     if isinstance(value, Mapping):
         return {k: _plain(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_plain(v) for v in value]
     return value
-
-
-def _count(doc: Mapping[str, Any], *path: str) -> int | None:
-    node: Any = doc
-    for part in path:
-        if type(node) is not dict or part not in node:
-            return None
-        node = node[part]
-    return len(node) if type(node) is list else None
-
-
-def _sum(*counts: int | None) -> int | None:
-    present = [c for c in counts if c is not None]
-    return sum(present) if present else None
 
 
 _DECLARED_COUNTS = (
@@ -648,7 +708,22 @@ _DECLARED_COUNTS = (
 )  # fmt: skip
 
 
-def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:
+# Each count attribute, whether it is one of the declared counts C32 sums, and the lists
+# whose lengths it adds up (a path that is missing or not a list adds nothing).
+_COUNT_PATHS: tuple[tuple[str, tuple[tuple[str, ...], ...]], ...] = (
+    ("tools_allow", (("tools", "allow"),)), ("tools_deny", (("tools", "deny"),)),
+    ("tools_ask", (("tools", "ask"),)), ("tools_offered", (("tools_offered",),)),
+    ("tools_listed", (("tools_listed",),)), ("mcp_servers", (("mcp_servers",),)),
+    ("fs_rules", tuple(("filesystem", n) for n in ("roots", "read", "write", "deny"))),
+    ("net_rules", (("network", "allow"), ("network", "deny"))),
+    ("credentials", (("credentials",),)),
+    ("model_rules", (("models", "allow"), ("models", "deny"))),
+)  # fmt: skip
+_COUNTS = tuple((f"fabric.grant.{name}.count", name in _DECLARED_COUNTS, paths)
+                for name, paths in _COUNT_PATHS)  # fmt: skip
+
+
+def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:  # noqa: PLR0912 - one per field
     """The telemetry shape of a normalised document: basis, boundary, modes, counts."""
     attrs: dict[str, Any] = {
         "fabric.grant.basis": doc["basis"],
@@ -671,27 +746,21 @@ def grant_attributes(doc: Mapping[str, Any]) -> dict[str, Any]:
             attrs["fabric.grant.tool_choice.allowed_count"] = choice["allowed_count"]
         if type(choice.get("parallel")) is bool:
             attrs["fabric.grant.parallel_tools"] = choice["parallel"]
-    counts = {
-        "tools_allow": _count(doc, "tools", "allow"),
-        "tools_deny": _count(doc, "tools", "deny"),
-        "tools_ask": _count(doc, "tools", "ask"),
-        "tools_offered": _count(doc, "tools_offered"),
-        "tools_listed": _count(doc, "tools_listed"),
-        "mcp_servers": _count(doc, "mcp_servers"),
-        "fs_rules": _sum(
-            *(_count(doc, "filesystem", n) for n in ("roots", "read", "write", "deny"))
-        ),
-        "net_rules": _sum(_count(doc, "network", "allow"), _count(doc, "network", "deny")),
-        "credentials": _count(doc, "credentials"),
-        "model_rules": _sum(_count(doc, "models", "allow"), _count(doc, "models", "deny")),
-    }
-    for name, value in counts.items():
-        if value is not None:
-            attrs[f"fabric.grant.{name}.count"] = value
-    if doc["basis"] == "declared":  # C32: the sum of the declared counts
-        total = _sum(*(counts[n] for n in _DECLARED_COUNTS))
-        if total is not None:
-            attrs["fabric.run.permissions.count"] = total
+    total: int | None = None  # C32: the sum of the declared counts
+    for attribute, declared, paths in _COUNTS:
+        count: int | None = None  # the lists' lengths summed; None when no list is present
+        for path in paths:
+            node: Any = doc
+            for part in path:
+                node = node.get(part) if type(node) is dict else None
+            if type(node) is list:
+                count = len(node) if count is None else count + len(node)
+        if count is not None:
+            attrs[attribute] = count
+            if declared:
+                total = count if total is None else total + count
+    if doc["basis"] == "declared" and total is not None:
+        attrs["fabric.run.permissions.count"] = total
     return attrs
 
 
@@ -712,16 +781,26 @@ def emit_grant(
     Raises only misuse and faults."""
     from ._rec_controls import grant_id_of  # noqa: PLC0415 - the controls module imports none
 
-    doc = normalise_grant(document)
+    # ``document`` is the checked copy (check_document): normalised in place, its ``source``
+    # and ``request_ref`` as given
+    doc = _normalised_in_place(dict(document))
     doc["source"] = document["source"]
-    if "request_ref" in document:
-        doc["request_ref"] = document["request_ref"]
     out: dict[str, Any] = dict(attrs or {})
     for name, value in grant_attributes(doc).items():
         out.setdefault(name, value)  # a run-context key the caller set wins
     out["fabric.grant.trigger"] = normalise(trigger, GRANT_TRIGGERS, "grant trigger")
     key = getattr(records, "_key", None)
-    emitted = grant_id(grant_digest(doc), key)
+    # ``doc`` is already normalised (its ``source`` holds no list): digest it as is, once.
+    # On the fast path its canonical text is its RFC 8785 text, and, without a
+    # ``request_ref``, both the digested text and the body the walker would store.
+    depth = _shape(doc)
+    text = _FAST(doc) if depth >= 0 else None
+    if text is not None and "request_ref" not in doc:
+        clear = text.encode("utf-8", "surrogatepass")
+    else:
+        clear = jcs({k: v for k, v in doc.items() if k != "request_ref"})
+    digest = "sha256:" + hashlib.sha256(clear).hexdigest()
+    emitted = grant_id(digest, key)
     if emitted is not None:
         out["fabric.grant.id"] = emitted
     if previous is not None and (previous_id := grant_id_of(previous)) is not None:
@@ -729,11 +808,17 @@ def emit_grant(
     bodies: list[Body] = []
     if records.mode_of("run.permissions") != "omit":
         groups = pseudonymise_groups(records)
-        if key is not None:
+        replaced = needs_key(doc, groups)
+        cap = role_cap("run.permissions")
+        if key is not None and replaced:
             stored = _resorted(pseudonymise_grant(doc, key, **groups))
-            bodies.append(Body("run.permissions", stored, "application/json"))
-        elif not needs_key(doc, groups):
-            bodies.append(Body("run.permissions", doc, "application/json"))
+            depth = _shape(stored)
+            text = _FAST(stored) if depth >= 0 else None
+            body: object = _body_text(text, depth, cap) or stored
+            bodies.append(Body("run.permissions", body, "application/json"))
+        elif not replaced:  # nothing to replace: the document as it is
+            body = _body_text(text, depth, cap) or doc
+            bodies.append(Body("run.permissions", body, "application/json"))
         # else: no key, nothing to pseudonymise with: withheld, never clear (§7.3)
     handle = emit("run", attrs=out, records=records, name_hint="fabric.activity",
                   bodies=bodies, default_actor="unknown")  # fmt: skip

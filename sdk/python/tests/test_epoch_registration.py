@@ -425,7 +425,7 @@ _ALLOCATE = textwrap.dedent(
     from fabric.wire import _registration
     from fabric.wire._forks import ForkLedger
     from fabric.wire._spool import Spool
-    from tests.test_wire_passivity import calibrate, scale_for
+    from tests._calibration import calibrate, scale_for
     spool = Spool(sys.argv[1], 1 << 26)
     allocator = SourceAllocator("node-1")
     registration = _registration.register(spool, allocator.source_id, allocator.epoch)
@@ -449,7 +449,18 @@ _ALLOCATE = textwrap.dedent(
 
 @POSIX
 def test_allocation_takes_at_most_3_microseconds(tmp_path: Path) -> None:
-    got = _fresh_interpreter(_ALLOCATE, str(tmp_path / "spool"))
+    from ._budget import remeasured  # noqa: PLC0415 - shared noise rule of the budget gates
+
+    attempt = iter(range(3))
+
+    def measure() -> dict[str, Any]:  # a fresh spool per attempt: the mirror counts 25 x 2000
+        found: dict[str, Any] = _fresh_interpreter(
+            _ALLOCATE, str(tmp_path / f"spool-{next(attempt)}")
+        )
+        return found
+
+    # Re-measured (three attempts at most) only while over budget; the budget stays 3 us.
+    got = remeasured(measure, lambda g: g["median_ns"] <= ALLOCATION_BUDGET_NS * g["scale"])
     assert got["status"] == "registered" and got["mirrored"] == 25 * 2000
     budget = ALLOCATION_BUDGET_NS * got["scale"]
     assert got["median_ns"] <= budget, (

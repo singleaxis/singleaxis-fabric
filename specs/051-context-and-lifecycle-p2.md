@@ -2,8 +2,8 @@
 title: P2 build spec — run context and lifecycle reporting (records input)
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 2
-last_updated: 2026-10-22
+revision: 2.1
+last_updated: 2026-11-09
 owner: recorder-engineering
 depends_on: 049 (rev 6.3/6.4), 050 (P1 emitters, shared allocator, records input), 047, 048
 related: 052 (P3 decisions and effects), 053 (P4 execution channels), 055 (TypeScript wire track), 022, 023, 028, 029
@@ -37,6 +37,12 @@ run-level hook (R4); one integration owner for `decision.py` and
 rule (R8); items already fixed by the decision-line privacy and passivity
 fixes that shipped in v0.8.0 are marked **landed in v0.8.0** and are not
 redone here (pre-requisite H0, §3).
+
+**Revision 2.1** (2026-11-09, owner decision) adds the `record_grant` row to
+the §4.11 budgets: 50 µs, the spec 057 B4 limit. A grant document is
+recorded once per run or when access changes, never per model call, so the
+plain-JSON-body row (about 31 µs for a typical document) does not apply and
+its digest stays on the calling thread.
 
 ---
 
@@ -754,6 +760,7 @@ routes through the records input.
 | CM enter + exit (side_effect, workflow_node, delegate) | ≤ 40 µs |
 | update record | ≤ 20 µs |
 | automatic `step.error` capture (class names, ≤ 64 frames, no application code) | ≤ 60 µs |
+| `record_grant` (spec 057 declared-grant document; recorded once per run or on a grant change, never per model call) | ≤ 50 µs (057 B4); the plain-JSON-body row does not apply |
 
 6. **Bounded memory.** Bodies charge `max_inflight_bytes`; updates are
    capped per handle; the bounded walker caps snapshot size and work.

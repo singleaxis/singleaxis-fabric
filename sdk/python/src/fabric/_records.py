@@ -27,6 +27,7 @@ v2 identities are omitted, by the run table's :class:`~fabric._segments.Identity
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import math
 import os
@@ -221,13 +222,36 @@ def compile_check(  # noqa: PLR0911 - one return per check type
     return _never
 
 
+# A check is a pure function of its value. Most records repeat most of their string values
+# (the capture point, step kind, source and run ids, vocabulary values), so a compiled table
+# remembers its recent answers per key for short strings: a repeated value then costs two
+# dict lookups instead of a pattern match. This keeps the records path inside its 051 §4.11
+# budget on slower runners. Keys with a placement condition are never memoised.
+_MEMO_ENTRIES = 256  # per key
+_MEMO_TEXT = 256
+_NO_ANSWERS: dict[str, bool] = {}
+
+
+class CompiledChecks(dict[str, "Predicate"]):
+    """Rule A's predicates by key, with the bounded per-key memo of string answers that
+    :func:`project_attributes` keeps."""
+
+    __slots__ = ("memo",)
+
+    def __init__(self, items: Mapping[str, Predicate]) -> None:
+        super().__init__(items)
+        # key -> {string value: answer}; ``None`` once a key proved high-cardinality (its
+        # memo filled up: an event id, a sequence-like id), so it is no longer remembered.
+        self.memo: dict[str, dict[str, bool] | None] = {}
+
+
 def compile_checks(
     *, labels: Labels = "pseudonymous", identity: IdentityMode = "pseudonymous",
     table: Mapping[str, Mapping[str, Any]] = RECORD_KEY_CHECKS,
-) -> dict[str, Predicate]:  # fmt: skip
-    """Rule A's table as predicates for one Node configuration."""
-    return {key: compile_check(check, labels=labels, identity=identity)
-            for key, check in table.items()}  # fmt: skip
+) -> CompiledChecks:  # fmt: skip
+    """Rule A's table as predicates for one Node configuration (with a bounded memo)."""
+    return CompiledChecks({key: compile_check(check, labels=labels, identity=identity)
+                           for key, check in table.items()})  # fmt: skip
 
 
 def _condition_holds(condition: Mapping[str, Sequence[str]] | None, point: Any) -> bool:
@@ -274,7 +298,7 @@ def _admitted_value(value: Any) -> tuple[bool, Any]:
     return True, out
 
 
-def project_attributes(
+def project_attributes(  # noqa: PLR0912 - the memo's fast path, then rule A
     attributes: Mapping[str, Any], checks: Mapping[str, Predicate], *,
     conditions: Mapping[str, Mapping[str, Sequence[str]]] = RECORD_KEY_CONDITIONS,
     point: str | None = None,
@@ -287,18 +311,45 @@ def project_attributes(
     kept: dict[str, Any] = {}
     dropped: list[str] = []
     where = point if point is not None else attributes.get("fabric.capture.point")
+    memo = checks.memo if type(checks) is CompiledChecks else None
     for key, raw in attributes.items():
+        if memo is not None and type(raw) is str:
+            answers = memo.get(key, _NO_ANSWERS)
+            found = answers.get(raw) if answers is not None else None
+            if found is not None:  # this key has checked this exact string before
+                if found:
+                    kept[key] = raw
+                else:
+                    dropped.append(key)
+                continue
         # The key is admitted (its table row and placement) before its value is touched.
-        check = checks.get(key) if isinstance(key, str) else None
-        condition = conditions.get(key) if check is not None else None
-        if check is None or (condition and not _condition_holds(condition, where)):
+        check = checks.get(key) if type(key) is str or isinstance(key, str) else None
+        if check is None or (
+            key in conditions and conditions[key] and not _condition_holds(conditions[key], where)
+        ):  # fmt: skip
             dropped.append(str.__str__(key) if isinstance(key, str) else "<non-str key>")
             continue
-        admissible, value = _admitted_value(raw)
-        if not admissible or not check(value):
-            dropped.append(key)
+        kind = type(raw)
+        if kind is str or kind is int or kind is bool or kind is float:  # the common case
+            value = raw
         else:
+            admissible, value = _admitted_value(raw)
+            if not admissible:
+                dropped.append(key)
+                continue
+        passed = bool(check(value))
+        if passed:
             kept[key] = value
+        else:
+            dropped.append(key)
+        if (memo is not None and kind is str and type(key) is str
+                and len(raw) <= _MEMO_TEXT and not conditions.get(key)):  # fmt: skip
+            answers = memo.setdefault(key, {})
+            if answers is not None:
+                if len(answers) >= _MEMO_ENTRIES:
+                    memo[key] = None  # high-cardinality: stop remembering this key
+                else:
+                    answers[raw] = passed
     return kept, sorted(dropped)
 
 
@@ -330,22 +381,30 @@ KNOWN_NAMES: frozenset[str] = frozenset({
 })  # fmt: skip
 
 
+_TOOL_KEY_SET, _MODEL_KEY_SET = frozenset(_TOOL_KEYS), frozenset(_MODEL_KEYS)
+_DECIDING_KEYS = frozenset(
+    {"fabric.heartbeat.last_sequence", "fabric.loss.reason", *_TOOL_KEYS, *_MODEL_KEYS,
+     *(key for key, _ in _ORDERED)}
+)  # fmt: skip
+
+
 def category(name_hint: str, attribute_keys: Sequence[str] | Mapping[str, Any]) -> str:
     """The exported span name fabricguard derives (``P/processor.go`` activityCategory):
     decided by attribute keys first, then by the name itself when it is a known Fabric
     name, else ``fabric.activity``. Only keys decide, never values."""
-    keys = set(attribute_keys)
-    if "fabric.heartbeat.last_sequence" in keys:
-        return "fabric.capture_heartbeat"
-    if "fabric.loss.reason" in keys:
-        return "fabric.capture_loss"
-    if any(key in keys for key in _TOOL_KEYS):
-        return "fabric.tool_call"
-    if any(key in keys for key in _MODEL_KEYS):
-        return "fabric.model_call"
-    for key, name in _ORDERED:
-        if key in keys:
-            return name
+    keys = _DECIDING_KEYS.intersection(attribute_keys)  # the keys that decide, at C speed
+    if keys:
+        if "fabric.heartbeat.last_sequence" in keys:
+            return "fabric.capture_heartbeat"
+        if "fabric.loss.reason" in keys:
+            return "fabric.capture_loss"
+        if not keys.isdisjoint(_TOOL_KEY_SET):
+            return "fabric.tool_call"
+        if not keys.isdisjoint(_MODEL_KEY_SET):
+            return "fabric.model_call"
+        for key, name in _ORDERED:
+            if key in keys:
+                return name
     return name_hint if name_hint in KNOWN_NAMES else "fabric.activity"
 
 
@@ -461,9 +520,10 @@ class Attempt:
         if end < start:
             misuse("end_ns before start_ns")
             end = start
-        if not isinstance(attributes, Mapping):
+        if type(attributes) is not dict and not isinstance(attributes, Mapping):
             raise RecordsMisuseError("records API misuse: attributes must be a mapping")
-        kept_bodies = records.check_bodies(bodies, evidence, self.provenance)
+        kept_bodies = records.check_bodies(bodies, evidence, self.provenance) if (
+            bodies or type(bodies) not in (tuple, list)) else ()  # fmt: skip
         if evidence is not None and not isinstance(evidence, EvidenceDoc):
             misuse("evidence must be an EvidenceDoc")
             evidence = None
@@ -478,6 +538,11 @@ class Attempt:
             self, minted, status.lifecycle, status.result_status, status.otlp_status,
             name_hint, attributes, start, end, kept_bodies, evidence, span_ids, late,
         )  # fmt: skip
+
+
+_POINTS_KEPT = 256  # checked capture points remembered per records input
+_OWNED_KEPT = 256  # rule A answers for Fabric's own repeating keys, per records input
+_VARYING_KEYS = frozenset({"fabric.source.sequence", "fabric.event_id", "fabric.attempt.uid"})
 
 
 class RecordsInput:
@@ -506,6 +571,15 @@ class RecordsInput:
             labels=self._labels, identity="clear" if self._clear else "pseudonymous"
         )
         self._point_version = __version__
+        self._points: dict[str, str] = {}  # point id -> emitted point, once checked
+        # Rule A's answer for Fabric's own repeating keys (see _owned_pass), and the checks
+        # of the three that change per record (none of them has a placement condition).
+        self._owned: dict[tuple[Any, ...], bool] = {}
+        self._varying: tuple[Predicate, Predicate, Predicate] | None = (
+            None if any(k in RECORD_KEY_CONDITIONS or k not in self._checks for k in _VARYING_KEYS)
+            else (self._checks["fabric.source.sequence"], self._checks["fabric.event_id"],
+                  self._checks["fabric.attempt.uid"])
+        )  # fmt: skip
         self._modes: tuple[int, dict[str, PrivacyMode]] = (-1, {})
         self.evidence_ids = EvidenceIds(self._evidence_id, clear=self._clear)
         tee = getattr(handle, "_tee_or_none", None)
@@ -549,14 +623,19 @@ class RecordsInput:
             raise RecordsMisuseError("records API misuse: unknown step kind")
         if provenance not in PROVENANCES:
             raise RecordsMisuseError("records API misuse: unknown provenance")
-        if not isinstance(point, str) or not (
-            POINT_ID_RE.fullmatch(point) or POINT_RE.fullmatch(point)
-        ):  # fmt: skip
-            raise RecordsMisuseError("records API misuse: capture point id")
-        if not isinstance(aliases, Mapping) or not all(
+        emitted = self._points.get(point) if type(point) is str else None
+        if emitted is None:
+            if not isinstance(point, str) or not (
+                POINT_ID_RE.fullmatch(point) or POINT_RE.fullmatch(point)
+            ):  # fmt: skip
+                raise RecordsMisuseError("records API misuse: capture point id")
+            emitted = point if "@" in point else f"{point}@{self._point_version}"
+            if type(point) is str and len(self._points) < _POINTS_KEPT:
+                self._points[point] = emitted  # a checked point id, as emitted
+        if aliases is not _NO_ALIASES and (not isinstance(aliases, Mapping) or not all(
             isinstance(k, str) and ALIAS_KEY_RE.fullmatch(k) and isinstance(v, str) and v
             for k, v in aliases.items()
-        ):  # fmt: skip
+        )):  # fmt: skip
             raise RecordsMisuseError("records API misuse: aliases are <input>.<name> -> id")
         if not self.active:
             return None
@@ -565,7 +644,6 @@ class RecordsInput:
             base["fabric.step.id"] = self._map(step_id, "step_id")
         if parent_attempt is not None:
             base["fabric.step.parent_id"] = self._map(parent_attempt, "parent_attempt")
-        emitted = point if "@" in point else f"{point}@{self._point_version}"
         uid = self._ids.mint(mint_uuid4())
         return Attempt(self, uid, kind, emitted, provenance, base)
 
@@ -699,6 +777,31 @@ class RecordsInput:
                 return False
             raise
 
+    def _owned_pass(
+        self, static: tuple[Any, ...], fabric: Mapping[str, Any], sequence: object,
+        event_id: object, uid: object,
+    ) -> bool:  # fmt: skip
+        """Whether rule A keeps every one of Fabric's own keys unchanged. The keys whose
+        values repeat from record to record (``static``: all plain ``str``/``int`` or
+        ``None``) are projected once per distinct tuple and the answer remembered; the
+        three that change on every record are checked here. ``False`` sends the record
+        through the full projection, so the outcome is always rule A's."""
+        varying = self._varying
+        if varying is None or type(event_id) is not str or type(uid) is not str or (
+                type(sequence) is not int):  # fmt: skip
+            return False
+        passed = self._owned.get(static)
+        if passed is None:
+            rest = {k: v for k, v in fabric.items() if k not in _VARYING_KEYS}
+            kept, _ = project_attributes(rest, self._checks, point=fabric["fabric.capture.point"])
+            passed = len(kept) == len(rest)
+            if len(self._owned) >= _OWNED_KEPT:
+                self._owned.clear()
+            self._owned[static] = passed
+        sequence_ok, event_ok, uid_ok = varying
+        return passed and bool(sequence_ok(sequence)) and bool(event_ok(event_id)) and bool(
+            uid_ok(uid))  # fmt: skip
+
     def _after_allocation(
         self, tee: Any, allocation: Any, attempt: Attempt, event_id: str,
         lifecycle: Lifecycle | None, result_status: ResultStatus | None,
@@ -710,32 +813,48 @@ class RecordsInput:
         allocator, scope = tee.allocator, allocation.scope
         run_id = scope.run_id if scope is not None else _fallback_run_id(
             allocator.source_id, allocation.epoch, span_ids)  # fmt: skip
+        # Fabric's own keys, every text value a plain ``str`` (as rule A would emit it)
+        plain = str.__str__
+        point, kind, source = plain(attempt.point), plain(attempt.kind), plain(attempt.provenance)
+        source_id, uid = plain(allocator.source_id), plain(attempt.uid)
+        scope_id = plain(scope.scope_id) if scope is not None else None
+        segment_id = plain(allocation.segment_id) if allocation.segment_id is not None else None
+        run_text = plain(run_id) if type(run_id) is not str and isinstance(run_id, str) else run_id
+        state = plain(lifecycle) if lifecycle is not None else None
+        status = plain(result_status) if result_status is not None else None
         fabric: dict[str, Any] = {
-            "fabric.capture.input": CAPTURE_INPUT, "fabric.capture.source": attempt.provenance,
-            "fabric.capture.point": attempt.point, "fabric.source_id": allocator.source_id,
+            "fabric.capture.input": CAPTURE_INPUT, "fabric.capture.source": source,
+            "fabric.capture.point": point, "fabric.source_id": source_id,
             "fabric.source.epoch": allocation.epoch,
             "fabric.source.sequence": allocation.sequence, "fabric.event_id": event_id,
-            "fabric.attempt.uid": str.__str__(attempt.uid), "fabric.step.kind": attempt.kind,
+            "fabric.attempt.uid": uid, "fabric.step.kind": kind,
         }  # fmt: skip
-        fabric["fabric.run.id"] = run_id
-        if scope is not None:
-            fabric["fabric.run.scope_id"] = scope.scope_id
-        if allocation.segment_id is not None:
-            fabric["fabric.run.segment_id"] = allocation.segment_id
-        if lifecycle is not None:
-            fabric["fabric.step.lifecycle_state"] = lifecycle
-        if result_status is not None:
-            fabric["fabric.step.status"] = result_status
-        checked, refused = project_attributes(fabric, self._checks, point=attempt.point)
+        fabric["fabric.run.id"] = run_text
+        if scope_id is not None:
+            fabric["fabric.run.scope_id"] = scope_id
+        if segment_id is not None:
+            fabric["fabric.run.segment_id"] = segment_id
+        if state is not None:
+            fabric["fabric.step.lifecycle_state"] = state
+        if status is not None:
+            fabric["fabric.step.status"] = status
+        static = (source, point, source_id, allocation.epoch, kind, run_text, scope_id,
+                  segment_id, state, status)  # fmt: skip
+        refused: list[str]
+        if self._owned_pass(static, fabric, allocation.sequence, event_id, uid):
+            checked, refused = fabric, []  # rule A keeps every key, values as they are
+        else:
+            checked, refused = project_attributes(fabric, self._checks, point=point)
         attrs = {**kept, **checked}
         attrs.setdefault("fabric.actor.type", "agent")
         if dropped + len(refused):
             self.stats.add("keys_dropped", dropped + len(refused))
-        bodies = tuple(
-            replace(body, stream_id=str.__str__(self.map_id(body.stream_id)))
-            if isinstance(body, RecordBody) and body.stream_id is not None else body
-            for body in bodies
-        )  # fmt: skip
+        if bodies:
+            bodies = tuple(
+                replace(body, stream_id=str.__str__(self.map_id(body.stream_id)))
+                if isinstance(body, RecordBody) and body.stream_id is not None else body
+                for body in bodies
+            )  # fmt: skip
         job = RecordJob(
             source_id=allocator.source_id, source_epoch=allocation.epoch,
             source_sequence=allocation.sequence, segment_id=allocation.segment_id,
@@ -759,7 +878,7 @@ class RecordsInput:
                 boundary = next((body.boundary for body in bodies), "caller")
                 refused_bodies += (BudgetRefusedBody(EVIDENCE_ROLE, EVIDENCE_MEDIA_TYPE,
                                    boundary, "not_captured", "payload_too_large"),)  # fmt: skip
-            job = replace(job, bodies=refused_bodies, evidence=None)
+            job = job._replace(bodies=refused_bodies, evidence=None)
             self.stats.add("budget_refused")
         if pipeline.submit(job):
             self.stats.add("emitted")
@@ -781,6 +900,12 @@ def _fallback_run_id(source_id: str, epoch: int, span_ids: SpanIds | None) -> st
         trace_id = context.trace_id if context.is_valid else None
     if isinstance(trace_id, int) and 0 < trace_id < 1 << 128:
         return f"trace:{trace_id:032x}"
+    return _source_run_id(source_id, epoch)
+
+
+@functools.lru_cache(maxsize=64)
+def _source_run_id(source_id: str, epoch: int) -> str:
+    """The epoch's ``source:`` fallback run id: one digest per source epoch, not per record."""
     return encode_opaque_id(f"source:{source_id}:{epoch}")
 
 
