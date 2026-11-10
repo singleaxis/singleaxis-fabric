@@ -46,6 +46,9 @@ CAPTURE -> PROTECT -> DELIVER
   automatically emit or obtain those receipts;
 - local recorder initialization, configuration validation, digesting and
   offline verification;
+- an operator CLI that plans, configures, starts, launches capture for and
+  verifies the recorder on customer infrastructure, with no fleet
+  management, rollout or phone-home;
 - customer-selected destinations, with no required SingleAxis connection.
 
 ## Outside the OSS core

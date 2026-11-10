@@ -9,9 +9,14 @@ right after the OTLP-identity bullet, the two clarified "Outside the OSS core" i
 place of the short ones, and the Control Runtime paragraph right after the Control
 Runtime bullet.
 
-It then undoes exactly those four changes and compares the result with the file as it was
-before WP7-3 (its SHA-256, pinned below), so the change set is section 11 and nothing
-else. A later, deliberate edit of ``AGENTS.md`` elsewhere updates the pin.
+Spec 058 OQ-11 (accepted by the owner on 2026-11-10) adds one more in-scope bullet, the
+operator CLI, right after the local-initialization bullet; its text must match the OQ-11
+recommendation word for word.
+
+It then undoes exactly those changes and compares the result with the file as it was
+before WP7-3 (its SHA-256, pinned below), so the change set is 057 section 11 plus 058
+OQ-11 and nothing else. A later, deliberate edit of ``AGENTS.md`` elsewhere updates the
+pin.
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "specs/057-security-context-recording.md"
 AGENTS = ROOT / "AGENTS.md"
+SPEC_058 = ROOT / "specs/058-easy-integration.md"
 
 # AGENTS.md as it stood before WP7-3 applied section 11.
 PRE_057_SHA256 = "36228eeca97bfba805b004db38e5f33a18f7ec26416ec9e1c040ec42018263f4"
@@ -37,6 +43,16 @@ CONTROL_RUNTIME_BULLET = (
 # The two "Outside the OSS core" items section 11 clarifies, as they read before.
 OLD_EVALUATION = "- continuous evaluation services, judges or finding generation;\n"
 OLD_ENFORCEMENT = "- advisory recommendations or enforcement orchestration;\n"
+# Spec 058 OQ-11: the operator CLI bullet, after the local-initialization bullet.
+LOCAL_INIT_BULLET = (
+    "- local recorder initialization, configuration validation, digesting and\n"
+    "  offline verification;\n"
+)
+CLI_BULLET = (
+    "- an operator CLI that plans, configures, starts, launches capture for and\n"
+    "  verifies the recorder on customer infrastructure, with no fleet\n"
+    "  management, rollout or phone-home;\n"
+)
 
 
 def _section_11() -> str:
@@ -58,6 +74,26 @@ def _quoted_blocks() -> list[str]:
             blocks[-1].append(re.sub(r"^> ?", "", line))
         previous_quoted = quoted
     return ["\n".join(block) + "\n" for block in blocks]
+
+
+def _oq_11_row() -> str:
+    text = SPEC_058.read_text(encoding="utf-8")
+    return next(line for line in text.splitlines() if line.startswith("| OQ-11 |"))
+
+
+def test_agents_md_carries_the_accepted_058_operator_cli_bullet() -> None:
+    text = AGENTS.read_text(encoding="utf-8")
+    in_scope = text[
+        text.index("## In scope for the OSS core") : text.index("## Outside the OSS")
+    ]
+    assert LOCAL_INIT_BULLET + CLI_BULLET in in_scope
+    row = _oq_11_row()
+    assert "Accepted" in row
+    sentence = re.search(r'"(an operator CLI[^"]+)"', row)
+    assert sentence is not None, row
+    assert " ".join(CLI_BULLET[2:].split()) == sentence.group(1) + ";"
+    # The CLI is tooling only: it never manages fleets, rolls out or phones home.
+    assert "no fleet management, rollout or phone-home" in sentence.group(1)
 
 
 def test_section_11_has_the_four_approved_blocks() -> None:
@@ -100,10 +136,11 @@ def test_the_agents_md_change_is_exactly_section_11() -> None:
         .replace(evaluation, OLD_EVALUATION, 1)
         .replace(enforcement, OLD_ENFORCEMENT, 1)
         .replace(CONTROL_RUNTIME_BULLET + "\n" + runtime, CONTROL_RUNTIME_BULLET, 1)
+        .replace(LOCAL_INIT_BULLET + CLI_BULLET, LOCAL_INIT_BULLET, 1)
     )
     digest = hashlib.sha256(reverted.encode("utf-8")).hexdigest()
     assert digest == PRE_057_SHA256, (
-        "AGENTS.md differs from its pre-057 text by more than the section 11 wording"
+        "AGENTS.md differs from its pre-057 text by more than 057 section 11 and 058 OQ-11"
     )
 
 

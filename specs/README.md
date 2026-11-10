@@ -18,7 +18,7 @@ stays in the index with status `superseded` or moves to
 scope (see [`../AGENTS.md`](../AGENTS.md)) is deleted, not archived; its
 history lives in git and its number is retired.
 
-Numbers 013-018 and 024 were never used. The next unused number is 058.
+Numbers 013-018 and 024 were never used. The next unused number is 059.
 
 **Current work:** spec [056](056-agent-action-reconstruction.md) —
 reconstructing everything an agent did in a run: the model decisions, the
@@ -115,6 +115,7 @@ otherwise current spec.
 | [055](055-typescript-wire-capture.md) | TypeScript model-call wire capture for Node.js agents (TS-1) | draft; NO_COVERAGE_CLAIM |
 | [056](056-agent-action-reconstruction.md) | **Agent action reconstruction** — linking model decisions, tool calls, effects and host evidence (current work) | draft; M1 implemented (v0.10, [action reconstruction](../docs/action-reconstruction.md)); AR-1 passes in CI, hermetic and live (Linux, eBPF); M2, the production profile, implemented (v0.11); AR-1 production passes in CI (replay, live, auditd); NO_COVERAGE_CLAIM |
 | [057](057-security-context-recording.md) | Security context recording — permissions, control decisions, hooks and extensions, captured at the boundaries every agent crosses (model wire, tool protocols, process and OS, network, OTLP; record-only; extends 049 D01–D11 and C30–C33) | accepted (rev 3, owner 2026-11-09); not built; NO_COVERAGE_CLAIM |
+| [058](058-easy-integration.md) | Easy integration — the `fabric` operator CLI (plan, init, up, run, verify, doctor, show), zero-code launch, generated secrets, endpoint table, destination presets, Kubernetes presets and opt-in pod injection, coverage report, docs as tests (install, configuration and verification tooling only) | accepted (rev 2, owner 2026-11-10); not built; NO_COVERAGE_CLAIM |
 
 Specs 036 and 040–046 are the design of record for the explicit evidence
 line (`CallRecorder`, byte-boundary adapters, qualified-run mode), which
