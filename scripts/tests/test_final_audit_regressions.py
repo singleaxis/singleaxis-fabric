@@ -53,9 +53,8 @@ def _archive(tmp_path: Path, kind: str, missing: str | None) -> Path:
         path = tmp_path / "singleaxis_fabric-1.2.3-py3-none-any.whl"
         paths["singleaxis_fabric-1.2.3.dist-info/METADATA"] = METADATA
         scripts = POLICY["python_distribution"]["required_console_scripts"]
-        if (
-            scripts
-        ):  # spec 058: the operator CLI's console scripts, as the build writes them
+        # Spec 058: the operator CLI's console scripts, as the build writes them.
+        if scripts:
             paths["singleaxis_fabric-1.2.3.dist-info/entry_points.txt"] = (
                 "[console_scripts]\n"
                 + "".join(f"{name} = {target}\n" for name, target in scripts.items())
