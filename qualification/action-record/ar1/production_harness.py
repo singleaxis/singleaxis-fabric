@@ -105,6 +105,34 @@ def _container_id() -> str:
     return os.urandom(32).hex()
 
 
+# A clear peer address is searched for as it would be written. A short one (the IPv6
+# loopback ``::1`` is 3 bytes) also occurs by chance inside sealed or compressed bytes:
+# about one 35 KB sensor batch in 500 holds ``::1`` somewhere, which failed the canary
+# check on an unchanged tree. Below 8 bytes the address must stand between delimiters
+# (text, JSON, ``[::1]:port``) or follow its protobuf length byte; longer addresses are
+# plain substrings, as before.
+_SHORT_ADDRESS = 8  # bytes; below this an address needs delimiters
+_ADDRESS_LEADS = frozenset(b"\"'[ =:,/(\t\n")
+_ADDRESS_TAILS = frozenset(b"\"'] :,/)}\t\n\r")
+
+
+def holds_clear_address(blob: bytes, address: str) -> bool:
+    needle = address.encode()
+    if len(needle) >= _SHORT_ADDRESS:
+        return needle in blob
+    i = blob.find(needle)
+    while i != -1:
+        end = i + len(needle)
+        if i > 0 and blob[i - 1] == len(needle):
+            return True
+        lead = i == 0 or blob[i - 1] in _ADDRESS_LEADS
+        tail = end == len(blob) or blob[end] in _ADDRESS_TAILS
+        if lead and tail:
+            return True
+        i = blob.find(needle, i + 1)
+    return False
+
+
 class ProductionHarness:
     def __init__(self, options: Options) -> None:
         self.o = options
@@ -944,7 +972,7 @@ class ProductionHarness:
         reports = [p for p in files if p.name.startswith(("report", "projection", "actions"))]
         peers = sorted(
             {f"{p.relative_to(self.o.out)}:{a}" for p in [*sensor, *reports]
-             for a in self.peer_addresses if a.encode() in content[p]}
+             for a in self.peer_addresses if holds_clear_address(content[p], a)}
             | {f"host span:{a}" for s in host_spans for a in self.peer_addresses if a in s}
         )  # fmt: skip
         checks.equal("clear peer addresses in no sensor state, host span or report", peers, [])
