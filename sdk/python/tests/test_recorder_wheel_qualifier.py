@@ -316,3 +316,39 @@ def test_the_policy_loader_naming_the_keys_still_qualifies(tmp_path: Path) -> No
                          b'SECTIONS = frozenset({"control_hosts", "hook_programs"})\n'
                          b'EMPTY = {"control_hosts": [], "watched_paths": ()}\n')  # fmt: skip
     assert _qualifier().qualify(path, import_probe=False)["qualified"] is True
+
+
+# Spec 058 §5.1 (I1): the wheel's entry points are exactly the operator CLI's two scripts.
+_EP = "singleaxis_fabric-0.0.0.dist-info/entry_points.txt"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "[console_scripts]\nfabric = fabric.cli:main\nsingleaxis-fabric = fabric.cli:main\n",
+        "[console_scripts]\nsingleaxis-fabric=fabric.cli:main\nfabric=fabric.cli:main\n",
+    ],
+)
+def test_entry_points_accept_exactly_the_cli_scripts(text: str) -> None:
+    _qualifier()._check_entry_points([_EP], {_EP: text.encode()})
+
+
+@pytest.mark.parametrize(
+    ("text", "match"),
+    [
+        ("[console_scripts]\nfabric = fabric.cli:main\n", "console scripts"),
+        ("[console_scripts]\nfabric = fabric.cli:main\nsingleaxis-fabric = fabric.cli:main\n"
+         "fabricctl = fabric.cli:main\n", "console scripts"),
+        ("[console_scripts]\nfabric = fabric.judge:main\nsingleaxis-fabric = fabric.cli:main\n",
+         "console scripts"),
+        ("[console_scripts]\nfabric = fabric.cli:main\nsingleaxis-fabric = fabric.cli:main\n"
+         "[opentelemetry_distro]\nfabric = fabric.wire:install\n", "entry point groups"),
+    ],
+)  # fmt: skip
+def test_entry_points_refuse_anything_else(text: str, match: str) -> None:
+    with pytest.raises(ValueError, match=match):
+        _qualifier()._check_entry_points([_EP], {_EP: text.encode()})
+
+
+def test_an_sdist_has_no_entry_points_file() -> None:
+    _qualifier()._check_entry_points(["singleaxis_fabric-0.0.0/pyproject.toml"], {})

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 from typing import Any
 
 from .. import hooks
@@ -32,7 +33,8 @@ from . import (
     _otel_disabled,
     _truthy,
 )
-from ._diagnose import describe, not_installed_message
+from ._config import ENDPOINT_TABLE_VERSION
+from ._diagnose import describe, not_installed_message, reason_id
 
 DIAGNOSTICS_ENV = "FABRIC_WIRE_DIAGNOSTICS"
 # Modes whose content needs a customer transformation (spec 049 §7.7), which the
@@ -43,7 +45,7 @@ _MSG_CONTENT_WITHHELD = (
     "autoload has no transformation for them: their content is withheld "
     "(store_reason=protection_failed), so a command reads as 'exec pid N' and output "
     "matching cannot apply. Fix: give those roles retain_original or metadata_only in the "
-    "policy, or install in code with transformations= and FABRIC_REDACTION_ENDPOINT"
+    "policy, or install in code with transformations= and FABRIC_REDACTION_ENDPOINT [FW-004]"
 )
 
 
@@ -53,7 +55,7 @@ def _check_delivery(config: Any) -> None:
     at construction. Nothing is sent."""
     from .. import tracing  # noqa: PLC0415
 
-    if config.spool_dir is not None or tracing.otlp_endpoint_configured():
+    if config.spool_dir is not None or tracing.capture_otlp_configured():
         exporter = tracing.build_capture_span_exporter()
         with contextlib.suppress(Exception):
             exporter.shutdown()
@@ -70,7 +72,7 @@ _MSG_SPOOL_BACKLOG = (
     "with no process draining it. They are delivered only when a process captures to or "
     "drains this spool again. Fix: run `python -m fabric.wire drain --until-empty` with the "
     "agent's environment; for batch or serverless workers set FABRIC_WIRE_DRAIN_ON_EXIT_S, "
-    "or keep FABRIC_WIRE_SPOOL_DIR on durable storage with a drainer (sidecar)"
+    "or keep FABRIC_WIRE_SPOOL_DIR on durable storage with a drainer (sidecar) [FW-009]"
 )
 
 
@@ -103,12 +105,12 @@ def _span_destination(config: Any, mode: str) -> str:
     command cannot see) or ``none`` (the private provider has no exporter: dropped)."""
     from .. import tracing  # noqa: PLC0415
 
-    if config.spool_dir is not None or tracing.otlp_endpoint_configured():
+    if config.spool_dir is not None or tracing.capture_otlp_configured():
         return "otlp"
     return "application" if mode == "global" else "none"
 
 
-def _withheld_roles(config: Any, gate: Any) -> list[tuple[str, str]]:
+def withheld_roles(config: Any, gate: Any) -> list[tuple[str, str]]:
     """``(role, mode)`` of each role the policy masks with no transformation configured."""
     policy = gate.policy
     if gate.content_capture != "enabled" or policy is None:
@@ -136,7 +138,7 @@ def _wire_status() -> tuple[dict[str, Any], list[str], bool]:
         error = type(exc).__name__
         why, hint = describe(exc)  # scrubbed: never a value from the environment
         invalid = {"configuration": "invalid", "error": error, "capture": "not_installed",
-                   "reason": why}  # fmt: skip
+                   "reason": why, "reason_id": reason_id(why)}  # fmt: skip
         if hint:
             invalid["fix"] = hint
         return invalid, [not_installed_message(error, why, hint)], False
@@ -144,13 +146,16 @@ def _wire_status() -> tuple[dict[str, Any], list[str], bool]:
     wire: dict[str, Any] = {
         "configuration": "valid", "capture": "enabled", "profile": gate.profile,
         "content_capture": gate.content_capture, "span_destination": destination,
+        # 058 §8.1 / §13.2 endpoint_set: the endpoints recorded and the table they came from.
+        "endpoint_set": [m.endpoint_id for m in config.all_endpoints],
+        "endpoint_table_version": ENDPOINT_TABLE_VERSION,
     }  # fmt: skip
     if destination == "none":
         warnings.append(_MSG_NO_DESTINATION)
     if gate.content_capture == "disabled":
         wire["content_capture_reason"] = gate.reason
         warnings.append(_MSG_CONTENT_DISABLED % (gate.reason, gate.profile))
-    if withheld := _withheld_roles(config, gate):
+    if withheld := withheld_roles(config, gate):
         wire["content_withheld_roles"] = [role for role, _ in withheld]
         roles = ", ".join(role for role, _ in withheld)
         modes = ", ".join(sorted({mode for _, mode in withheld}))
@@ -173,7 +178,19 @@ def env_status() -> dict[str, Any]:
     wire, warnings, capturing = _wire_status()
     hook_status = hooks.env_status(os.environ, capturing=capturing)
     warnings.extend(hook_status.pop("warnings"))
+    # 058 §13.1: the catalogue id of each warning that carries one, and the facts that are
+    # not problems (they never change the exit code): the endpoint set, metadata-only.
+    ids = [m.group(1) for w in warnings if (m := _ID_RE.search(w))]
+    notices = []
+    if capturing:
+        notices.append("FW-005")
+        if wire.get("content_capture") == "metadata_only":
+            notices.append("FW-003")
     return {
         "autoload": autoload, "diagnostics": "stderr" if diagnostics else "silent",
-        "wire": wire, "hooks": hook_status, "warnings": warnings,
+        "wire": wire, "hooks": hook_status, "warnings": warnings, "warning_ids": ids,
+        "notice_ids": notices,
     }  # fmt: skip
+
+
+_ID_RE = re.compile(r"\[(F[CWERN]-[0-9]{3})\]$")

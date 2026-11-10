@@ -97,7 +97,10 @@
       "fabric/queue_transports/",
       "fabric/taxonomies/"
     ],
-    "required_console_scripts": {},
+    "required_console_scripts": {
+      "fabric": "fabric.cli:main",
+      "singleaxis-fabric": "fabric.cli:main"
+    },
     "required_sdist_paths": [
       "pyproject.toml",
       "README.md",

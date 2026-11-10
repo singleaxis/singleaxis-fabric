@@ -134,7 +134,11 @@ def test_recorder_distribution_has_no_legacy_extras_or_python_cli() -> None:
     extras = project["optional-dependencies"]
     assert isinstance(extras, dict)
     assert FORBIDDEN_EXTRAS.isdisjoint(extras)
-    assert "scripts" not in project
+    # Spec 058 §5.1 (I1, OQ-1): the operator CLI and its alias, and no other script.
+    assert project["scripts"] == {
+        "fabric": "fabric.cli:main",
+        "singleaxis-fabric": "fabric.cli:main",
+    }
 
 
 def test_wheel_and_sdist_exclude_independent_legacy_modules() -> None:

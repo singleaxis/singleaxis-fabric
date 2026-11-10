@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/diagnostics/v1/messages-v1.schema.json",
+  "title": "Fabric diagnostics catalogue (spec 058 section 13.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "docs", "messages"],
+  "properties": {
+    "schema": {"const": "fabric.diagnostics/v1"},
+    "docs": {"type": "string", "pattern": "^docs/[a-z0-9/_-]+\\.md$"},
+    "comment": {"type": "string"},
+    "messages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "severity", "text", "fix"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^F[CWERN]-[0-9]{3}$"},
+          "name": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$"},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "text": {"type": "string", "minLength": 1, "maxLength": 200},
+          "fix": {"type": "string", "minLength": 1, "maxLength": 300},
+          "retired": {"type": "boolean"}
+        }
+      }
+    }
+  }
+}

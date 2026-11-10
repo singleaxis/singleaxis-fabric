@@ -30,7 +30,7 @@ _MAX_HOSTS = 16  # hosts tracked by name; requests to further hosts are still co
 _DEFAULT_PORTS = {"https": 443, "http": 80}
 MSG_UNMATCHED = (
     "fabric.wire: a model-looking request to %s matched no configured endpoint and was not "
-    "recorded. Fix: export FABRIC_WIRE_ENDPOINTS='%s'"
+    "recorded. Fix: export FABRIC_WIRE_ENDPOINTS='%s' [FW-006]"
 )
 
 

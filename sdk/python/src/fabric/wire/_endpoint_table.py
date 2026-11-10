@@ -1,0 +1,98 @@
+# Copyright 2026 AI5Labs Research OPC Private Limited
+# SPDX-License-Identifier: Apache-2.0
+"""The built-in model endpoint table (spec 058 §8.1).
+
+Generated from contracts/providers/v1/builtin-endpoints.json by
+sdk/python/scripts/sync_contract_data.py; do not edit (a test keeps it equal)."""
+
+from __future__ import annotations
+
+from typing import Any
+
+TABLE: dict[str, Any] = {
+    "schema": "fabric.builtin-endpoints/v1",
+    "table_version": 1,
+    "comment": "Spec 058 section 8. The model endpoints Fabric records with no configuration. A "
+    "row ships only with a qualification fixture that passes wire parsing and "
+    "reconstruction for its dialect (sdk/python/tests/test_builtin_endpoints.py). "
+    "Loopback rows are never on by default. FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy pins "
+    "the rows listed in legacy_endpoint_ids.",
+    "legacy_endpoint_ids": ["openai", "anthropic", "azure-openai"],
+    "rows": [
+        {
+            "endpoint_id": "openai",
+            "provider_name": "openai",
+            "dialect": "openai",
+            "hosts": ["api.openai.com"],
+            "schemes": ["https"],
+            "path_prefix": "",
+            "default": True,
+            "qualification": ["openai-chat", "openai-chat-stream"],
+        },
+        {
+            "endpoint_id": "anthropic",
+            "provider_name": "anthropic",
+            "dialect": "anthropic",
+            "hosts": ["api.anthropic.com"],
+            "schemes": ["https"],
+            "path_prefix": "",
+            "default": True,
+            "qualification": ["anthropic-messages"],
+        },
+        {
+            "endpoint_id": "azure-openai",
+            "provider_name": "azure.ai.openai",
+            "dialect": "openai",
+            "host_suffixes": [".openai.azure.com"],
+            "schemes": ["https"],
+            "path_prefix": "",
+            "default": True,
+            "qualification": ["openai-chat"],
+        },
+    ],
+    "candidates": [
+        {
+            "endpoint_id": "gemini-openai",
+            "hosts": ["generativelanguage.googleapis.com"],
+            "path_prefix": "/v1beta/openai",
+            "dialect": "openai",
+        },
+        {
+            "endpoint_id": "mistral",
+            "hosts": ["api.mistral.ai"],
+            "path_prefix": "/v1",
+            "dialect": "openai",
+        },
+        {
+            "endpoint_id": "groq",
+            "hosts": ["api.groq.com"],
+            "path_prefix": "/openai/v1",
+            "dialect": "openai",
+        },
+        {
+            "endpoint_id": "together",
+            "hosts": ["api.together.xyz"],
+            "path_prefix": "/v1",
+            "dialect": "openai",
+        },
+        {
+            "endpoint_id": "fireworks",
+            "hosts": ["api.fireworks.ai"],
+            "path_prefix": "/inference/v1",
+            "dialect": "openai",
+        },
+        {
+            "endpoint_id": "deepseek",
+            "hosts": ["api.deepseek.com"],
+            "path_prefix": "",
+            "dialect": "openai",
+        },
+        {
+            "endpoint_id": "openrouter",
+            "hosts": ["openrouter.ai"],
+            "path_prefix": "/api/v1",
+            "dialect": "openai",
+        },
+        {"endpoint_id": "xai", "hosts": ["api.x.ai"], "path_prefix": "/v1", "dialect": "openai"},
+    ],
+}

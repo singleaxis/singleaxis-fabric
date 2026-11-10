@@ -193,7 +193,7 @@ def test_autoload_failure_logs_the_reason_never_a_value(
     assert wire.current_handle() is None
     assert [r.getMessage() for r in captured.records if r.name == "fabric.wire"] == [
         "fabric.wire: capture not installed (ValueError): node mode needs FABRIC_TENANT_ID, "
-        "FABRIC_WIRE_SPOOL_DIR, no store"
+        "FABRIC_WIRE_SPOOL_DIR, no store [FW-001]"
     ]
     assert captured.leaks() == []  # the reason names variables, never their values
 

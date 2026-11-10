@@ -36,6 +36,8 @@ in git.
   specs use.
 - [GenAI semantic conventions](genai-semantic-conventions.md): span and
   attribute names emitted by the decision API.
+- [Diagnostics](diagnostics.md): every message id (`FC-`, `FW-`), what it
+  means and its fix.
 - [API stability](api-stability.md): compatibility commitments.
 - [Verify a release](verify-release.md): signatures, provenance and release
   qualification.

@@ -47,13 +47,71 @@ QUEUE_MAX_ITEMS = 16384
 # content request and content requests in flight.
 MAX_DRAIN_ON_EXIT_S, MAX_CONTENT_BATCH_BODIES, MAX_CONTENT_CONCURRENCY = 3600, 256, 16
 
-DEFAULT_ENDPOINTS: tuple[EndpointMatcher, ...] = (
+# The three built-in endpoints of releases before the endpoint table (spec 058 §8.1), which
+# FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy pins; also the fallback should the table not load.
+LEGACY_ENDPOINTS: tuple[EndpointMatcher, ...] = (
     EndpointMatcher("openai", "openai", hosts=frozenset({"api.openai.com"})),
     EndpointMatcher("anthropic", "anthropic", hosts=frozenset({"api.anthropic.com"}),
                     provider_name="anthropic"),
     EndpointMatcher("azure-openai", "openai", host_suffixes=frozenset({".openai.azure.com"}),
                     provider_name="azure.ai.openai"),
 )  # fmt: skip
+BUILTIN_ENDPOINTS_ENV = "FABRIC_WIRE_BUILTIN_ENDPOINTS"
+
+
+def table_matchers(table: Mapping[str, Any], *, defaults_only: bool = True
+                   ) -> tuple[EndpointMatcher, ...]:  # fmt: skip
+    """The matchers of a ``fabric.builtin-endpoints/v1`` table's rows (only the rows on by
+    default unless ``defaults_only`` is false); ``ValueError`` for a malformed row."""
+    matchers = []
+    for row in table["rows"]:
+        if defaults_only and row.get("default") is not True:
+            continue
+        ports = row.get("ports")
+        matcher = EndpointMatcher(
+            endpoint_id=row["endpoint_id"], dialect=row["dialect"],
+            hosts=frozenset(row.get("hosts", ())),
+            host_suffixes=frozenset(row.get("host_suffixes", ())),
+            ports=frozenset(ports) if ports else None, path_prefix=row["path_prefix"],
+            provider_name=row["provider_name"], schemes=frozenset(row["schemes"]),
+        )  # fmt: skip
+        validate_endpoint(matcher)
+        matchers.append(matcher)
+    return tuple(matchers)
+
+
+def _load_table(table: Mapping[str, Any] | None = None) -> tuple[int, tuple[EndpointMatcher, ...]]:
+    """``(table_version, default rows)`` of ``table`` (default: the packaged copy of
+    ``contracts/providers/v1/builtin-endpoints.json``); ``(0, LEGACY_ENDPOINTS)`` should it be
+    malformed (capture never fails for it: the three rows of earlier releases)."""
+    try:
+        if table is None:
+            from ._endpoint_table import TABLE  # noqa: PLC0415
+
+            table = TABLE
+        if table.get("schema") != "fabric.builtin-endpoints/v1":
+            raise ValueError("unknown table schema")
+        version = table["table_version"]
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("bad table version")
+        table_matchers(table, defaults_only=False)  # every row must be a usable matcher
+        defaults = table_matchers(table)
+        if not defaults:
+            raise ValueError("no default rows")  # never an empty set: nothing would be recorded
+        return version, defaults
+    except Exception:
+        return 0, LEGACY_ENDPOINTS
+
+
+def builtin_endpoints_from_env(environ: Mapping[str, str]) -> tuple[EndpointMatcher, ...]:
+    """``FABRIC_WIRE_BUILTIN_ENDPOINTS``: ``table`` (default, every qualified row on by
+    default, OQ-4) or ``legacy`` (the three rows of earlier releases)."""
+    value = (environ.get(BUILTIN_ENDPOINTS_ENV) or "table").strip().lower()
+    if value == "table":
+        return DEFAULT_ENDPOINTS
+    if value == "legacy":
+        return LEGACY_ENDPOINTS
+    raise ValueError(f"{BUILTIN_ENDPOINTS_ENV} must be 'table' or 'legacy'")
 
 
 def _int(name: str, value: Any, low: int, high: int = 1 << 62) -> None:
@@ -80,6 +138,9 @@ def validate_endpoint(matcher: EndpointMatcher) -> None:
     )
     if not valid:
         raise ValueError(f"invalid endpoint matcher {getattr(m, 'endpoint_id', m)!r}")
+
+
+ENDPOINT_TABLE_VERSION, DEFAULT_ENDPOINTS = _load_table()
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,8 +371,9 @@ def default_file_spool(
         import fcntl  # noqa: F401, PLC0415
     except ImportError:
         return None
-    if not (environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
-            or environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")):  # fmt: skip
+    from ..tracing import capture_otlp_configured  # noqa: PLC0415
+
+    if not capture_otlp_configured(environ):
         return None
     parsed = urlsplit(store_uri)
     root = unquote(parsed.path)
@@ -389,6 +451,7 @@ def config_from_env(
         "redaction": RedactionService.from_env(environ),
     }  # fmt: skip
     kwargs["patch_aiohttp"] = aiohttp_from_env(environ)
+    kwargs["endpoints"] = builtin_endpoints_from_env(environ)
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
     kwargs.update(_numeric_settings(environ))

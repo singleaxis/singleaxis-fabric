@@ -1,0 +1,3 @@
+# expect: FC-004 profile
+schema: fabric.config/v1
+profile: staging

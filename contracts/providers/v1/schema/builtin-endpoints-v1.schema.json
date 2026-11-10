@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/providers/v1/builtin-endpoints-v1.schema.json",
+  "title": "Fabric built-in model endpoint table (spec 058 section 8)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "table_version", "legacy_endpoint_ids", "rows", "candidates"],
+  "properties": {
+    "schema": {"const": "fabric.builtin-endpoints/v1"},
+    "table_version": {"type": "integer", "minimum": 1},
+    "comment": {"type": "string"},
+    "legacy_endpoint_ids": {"type": "array", "items": {"$ref": "#/$defs/id"}, "uniqueItems": true},
+    "rows": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/row"}},
+    "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "host": {"type": "string", "pattern": "^[A-Za-z0-9.:\\[\\]_-]{1,253}$"},
+    "dialect": {"enum": ["openai", "anthropic"]},
+    "path_prefix": {"type": "string", "pattern": "^(/[A-Za-z0-9._~/-]*)?$"},
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint_id", "provider_name", "dialect", "schemes", "path_prefix", "default", "qualification"],
+      "anyOf": [{"required": ["hosts"]}, {"required": ["host_suffixes"]}],
+      "properties": {
+        "endpoint_id": {"$ref": "#/$defs/id"},
+        "provider_name": {"$ref": "#/$defs/id"},
+        "dialect": {"$ref": "#/$defs/dialect"},
+        "hosts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/host"}, "uniqueItems": true},
+        "host_suffixes": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^\\.[A-Za-z0-9.-]{1,252}$"}, "uniqueItems": true},
+        "ports": {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 1, "maximum": 65535}, "uniqueItems": true},
+        "schemes": {"type": "array", "minItems": 1, "items": {"enum": ["http", "https"]}, "uniqueItems": true},
+        "path_prefix": {"$ref": "#/$defs/path_prefix"},
+        "default": {"type": "boolean"},
+        "qualification": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[a-z0-9-]+$"}, "uniqueItems": true}
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint_id", "hosts", "path_prefix", "dialect"],
+      "properties": {
+        "endpoint_id": {"$ref": "#/$defs/id"},
+        "hosts": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/host"}},
+        "path_prefix": {"$ref": "#/$defs/path_prefix"},
+        "dialect": {"$ref": "#/$defs/dialect"}
+      }
+    }
+  }
+}

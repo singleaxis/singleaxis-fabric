@@ -1,0 +1,5 @@
+# expect: FC-004 destination.bucket
+schema: fabric.config/v1
+destination:
+  preset: local-dir
+  bucket: not-for-local

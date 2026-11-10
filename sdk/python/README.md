@@ -79,8 +79,11 @@ wire.flush()                      # optional; capture also drains at exit
 `content_endpoint=`, `transformations=`, ...) and raises on an invalid
 configuration.
 
-Matched by default: `api.openai.com`, `api.anthropic.com`,
-`*.openai.azure.com`; add other hosts with `FABRIC_WIRE_ENDPOINTS`. Matched
+Matched by default: the built-in endpoint table
+(`contracts/providers/v1/builtin-endpoints.json`): `api.openai.com`,
+`api.anthropic.com`, `*.openai.azure.com`; add other hosts with
+`FABRIC_WIRE_ENDPOINTS`. `fabric.wire.status()` returns the installed capture's state,
+including the endpoint set. Matched
 APIs: chat completions, responses, completions, embeddings, messages.
 `aiohttp` calls are captured too (`FABRIC_WIRE_AIOHTTP=0` turns that off).
 A model call through `requests` or `urllib3` is not captured; it is

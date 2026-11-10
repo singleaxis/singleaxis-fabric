@@ -2602,6 +2602,10 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+cli = [
+    { name = "cryptography" },
+    { name = "pyyaml" },
+]
 hooks-sandbox-e2b = [
     { name = "e2b" },
     { name = "e2b-code-interpreter" },
@@ -2655,6 +2659,7 @@ license = [
 [package.metadata]
 requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
+    { name = "cryptography", marker = "extra == 'cli'", specifier = ">=49" },
     { name = "cryptography", marker = "extra == 'otlp'", specifier = ">=49" },
     { name = "cryptography", marker = "extra == 'signing'", specifier = ">=49" },
     { name = "e2b", marker = "extra == 'hooks-sandbox-e2b'", specifier = "==2.62.*" },
@@ -2665,9 +2670,10 @@ requires-dist = [
     { name = "opentelemetry-sdk", specifier = ">=1.41" },
     { name = "pydantic", specifier = ">=2.8,<3.0" },
     { name = "pyjwt", marker = "extra == 'mcp'", specifier = ">=2.15.0" },
+    { name = "pyyaml", marker = "extra == 'cli'", specifier = ">=6.0.2,<7.0" },
     { name = "urllib3", marker = "extra == 'otlp'", specifier = ">=2.8.0" },
 ]
-provides-extras = ["hooks-sandbox-e2b", "mcp", "otlp", "s3", "signing"]
+provides-extras = ["cli", "hooks-sandbox-e2b", "mcp", "otlp", "s3", "signing"]
 
 [package.metadata.requires-dev]
 ci = [

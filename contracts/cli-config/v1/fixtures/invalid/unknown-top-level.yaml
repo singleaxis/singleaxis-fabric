@@ -1,0 +1,4 @@
+# expect: FC-003 provider
+schema: fabric.config/v1
+provider:
+  builtin: true

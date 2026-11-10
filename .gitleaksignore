@@ -82,3 +82,6 @@ e7f51825264e116a36e00ce4b29d26e8fbb4f975:components/otel-collector-fabric/proces
 067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:49
 067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:57
 067de5aeb83e463137df4c20b8e7f10b23fb7d29:contracts/capture/v1/fixtures/host/id-key-file-v1.json:generic-api-key:73
+# Spec 058 E1a feature-branch test id keys (PR #291); see triage document.
+1f740709ce2085fe5367f521d96ef82dfee9d02c:sdk/python/tests/test_wire_status_file.py:generic-api-key:164
+1f740709ce2085fe5367f521d96ef82dfee9d02c:sdk/python/tests/test_wire_status_file.py:generic-api-key:171

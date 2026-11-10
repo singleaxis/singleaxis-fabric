@@ -44,7 +44,7 @@ FABRIC_GATE_ARGS=()
 # Each published optional install surface is scanned in its own environment,
 # installed from sdk/python/uv.lock with pip --require-hashes (as CI does). The
 # SDK itself is not installed: license_check.py ignores singleaxis-fabric.
-for extra in otlp s3 mcp signing; do
+for extra in otlp s3 mcp signing cli; do
   FABRIC_PYTHON_VENV="${FABRIC_RAW_DIR}/python-venv-${extra}"
   "${FABRIC_PYTHON_BIN}" -m venv "${FABRIC_PYTHON_VENV}"
   FABRIC_PYTHON="${FABRIC_PYTHON_VENV}/bin/python" "${BASH}" scripts/ci/install-python-locked.sh \

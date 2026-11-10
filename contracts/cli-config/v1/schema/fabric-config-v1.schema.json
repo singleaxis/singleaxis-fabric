@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/cli-config/v1/fabric-config-v1.schema.json",
+  "title": "fabric.yaml (fabric.config/v1, spec 058 section 6.1)",
+  "description": "A source the fabric CLI compiles into the inputs the SDK, the Node and the chart already read. The SDK and the Node never read it. Strict: unknown keys are refused. sdk/python/src/fabric/cli/_config.py applies the same rules (and suggests the nearest key).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema"],
+  "properties": {
+    "schema": {"const": "fabric.config/v1"},
+    "project": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"},
+    "profile": {"enum": ["local", "production"]},
+    "shape": {"enum": ["laptop", "linux-host", "container", "kubernetes"]},
+    "tenant": {"$ref": "#/$defs/id"},
+    "agent": {"$ref": "#/$defs/id"},
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "builtin": {"type": "boolean"},
+        "from_environment": {"type": "boolean"},
+        "custom": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["url"],
+            "properties": {
+              "url": {"$ref": "#/$defs/http_url"},
+              "dialect": {"enum": ["openai", "anthropic"]},
+              "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}
+            }
+          }
+        }
+      }
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content": {"type": "boolean"},
+        "privacy": {"$ref": "#/$defs/path"},
+        "exec": {"type": "boolean"},
+        "http_hosts": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$"}},
+        "mcp": {"type": "boolean"},
+        "security_context": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/path"}]}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"enum": ["docker", "helm", "external"]},
+        "endpoint": {"oneOf": [{"const": "auto"}, {"$ref": "#/$defs/http_url"}]},
+        "queue_size": {"oneOf": [{"const": "auto"}, {"type": "integer", "minimum": 1}]}
+      }
+    },
+    "destination": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preset"],
+      "properties": {
+        "preset": {"enum": ["local-dir", "trial", "s3", "s3-compatible", "otlp"]},
+        "path": {"$ref": "#/$defs/path"},
+        "bucket": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"},
+        "region": {"type": "string", "pattern": "^[a-z0-9-]{1,32}$"},
+        "sse_kms_key": {"type": "string", "pattern": "^[A-Za-z0-9:/_-]{1,2048}$"},
+        "endpoint": {"type": "string", "pattern": "^https://[^@?#]+$"},
+        "ca_file": {"$ref": "#/$defs/path"},
+        "credentials_file": {"$ref": "#/$defs/path"},
+        "otlp_endpoint": {"$ref": "#/$defs/http_url"},
+        "otlp_ca_file": {"$ref": "#/$defs/path"},
+        "otlp_headers_file": {"$ref": "#/$defs/path"}
+      },
+      "allOf": [
+        {"if": {"properties": {"preset": {"enum": ["local-dir", "trial"]}}},
+         "then": {"propertyNames": {"enum": ["preset", "path"]}}},
+        {"if": {"properties": {"preset": {"const": "s3"}}},
+         "then": {"required": ["bucket", "region"], "propertyNames": {"enum": ["preset", "bucket", "region", "sse_kms_key"]}}},
+        {"if": {"properties": {"preset": {"const": "s3-compatible"}}},
+         "then": {"required": ["endpoint", "bucket"], "propertyNames": {"enum": ["preset", "endpoint", "bucket", "ca_file", "credentials_file", "region"]}}},
+        {"if": {"properties": {"preset": {"const": "otlp"}}},
+         "then": {"required": ["otlp_endpoint"], "propertyNames": {"enum": ["preset", "otlp_endpoint", "otlp_ca_file", "otlp_headers_file"]}}}
+      ]
+    },
+    "sensor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"kind": {"enum": ["auto", "ebpf", "auditd", "off"]}}
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {"dir": {"$ref": "#/$defs/path"}}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]*\\S[^\\u0000]*$"},
+    "http_url": {"type": "string", "pattern": "^https?://[^@?#/\\s]+(/[^?#\\s]*)?$"}
+  }
+}

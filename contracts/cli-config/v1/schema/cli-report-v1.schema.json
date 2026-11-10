@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/schemas/fabric/cli-config/v1/cli-report-v1.schema.json",
+  "title": "fabric --json report (fabric.cli-report/v1, spec 058 sections 5.1 and 15)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "command", "cli_version", "exit_code", "config", "findings", "data"],
+  "properties": {
+    "schema": {"const": "fabric.cli-report/v1"},
+    "command": {"enum": ["fabric", "plan", "init", "up", "down", "run", "verify", "doctor", "show", "version", "help"]},
+    "cli_version": {"type": "string", "minLength": 1},
+    "exit_code": {"enum": [0, 1, 2, 3]},
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "source"],
+      "properties": {
+        "path": {"type": ["string", "null"]},
+        "source": {"enum": ["flag", "env", "cwd", "parent", "none"]}
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "severity", "text", "fix"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^F[CWERN]-[0-9]{3}$"},
+          "name": {"type": "string"},
+          "severity": {"enum": ["error", "warning", "info"]},
+          "text": {"type": "string"},
+          "fix": {"type": "string"},
+          "detail": {"type": "string"}
+        }
+      }
+    },
+    "data": {"type": "object"}
+  }
+}

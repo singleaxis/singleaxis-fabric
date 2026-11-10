@@ -166,3 +166,14 @@ lines 17, 25, 33, 49, 57 and 73. Decoded, the values are:
 All are published test vectors that a conformance test must reproduce; none
 is a deployment or service key. Only these exact commit/path/rule/line
 fingerprints are baselined.
+
+## Spec 058 E1a id-key-file test keys (2026-11-10)
+
+PR #291 added `FABRIC_WIRE_ID_KEY_FILE` tests whose first version used the
+digit-and-letter run `0123456789abcdef0123` (and its 16-byte prefix) as a test
+pseudonym key, which the scan flags (rule `generic-api-key`) in the
+feature-branch commit `1f74070…`, `sdk/python/tests/test_wire_status_file.py`
+lines 164 and 171. They are the same minimum-length test vector classified
+above, never a deployment or service key. A later commit on the branch replaced
+them with the low-entropy `b"k" * 20`, so the squash merge does not carry them.
+Only these exact commit/path/rule/line fingerprints are baselined.

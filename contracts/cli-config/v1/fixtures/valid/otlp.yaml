@@ -1,0 +1,6 @@
+schema: fabric.config/v1
+destination:
+  preset: otlp
+  otlp_endpoint: https://collector.example.com:4318
+  otlp_ca_file: /etc/fabric/collector-ca.pem
+  otlp_headers_file: /etc/fabric/collector-headers

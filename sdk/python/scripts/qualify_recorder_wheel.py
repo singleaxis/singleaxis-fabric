@@ -173,7 +173,7 @@ if not os.path.realpath(fabric.__file__).startswith(root + os.sep):
 for name in ("httpx", "httpx2", "fabric._autoload", "fabric._autoload.sitecustomize",
              "fabric.wire._transport", "fabric.reconstruct", "fabric.wire._spool",
              "fabric.wire._sender", "fabric.wire._content", "requests",
-             "opentelemetry.proto", "boto3", "botocore"):
+             "opentelemetry.proto", "boto3", "botocore", "fabric.cli", "yaml"):
     if name in sys.modules:
         problems.append("import fabric/fabric.wire loaded " + name)
 if threading.active_count() != threads:
@@ -192,6 +192,31 @@ for flavor in ("httpx", "httpx2"):
             problems.append(flavor + " transport is patched after import")
 print(json.dumps(problems))
 """
+
+# Spec 058 §5.1 (I1): the operator CLI's two console scripts, exactly; no other entry point
+# (no plugin group, no other script) ships.
+EXPECTED_CONSOLE_SCRIPTS = {"fabric": "fabric.cli:main", "singleaxis-fabric": "fabric.cli:main"}
+
+
+def _check_entry_points(members: list[str], payloads: dict[str, bytes]) -> None:
+    """A wheel's ``entry_points.txt`` holds exactly :data:`EXPECTED_CONSOLE_SCRIPTS`."""
+    import configparser  # noqa: PLC0415
+
+    names = [name for name in members if name.endswith(".dist-info/entry_points.txt")]
+    if not names:
+        return  # an sdist: its entry points live in pyproject.toml
+    if len(names) > 1:
+        raise ValueError("recorder SDK artifact has more than one entry_points.txt")
+    parser = configparser.ConfigParser(interpolation=None, delimiters=("=",))
+    parser.optionxform = str  # type: ignore[assignment, method-assign]
+    parser.read_string(payloads[names[0]].decode("utf-8"))
+    if parser.sections() != ["console_scripts"]:
+        raise ValueError(f"recorder SDK artifact publishes entry point groups {parser.sections()}")
+    scripts = {key: value.strip() for key, value in parser.items("console_scripts")}
+    if scripts != EXPECTED_CONSOLE_SCRIPTS:
+        raise ValueError(f"recorder SDK console scripts are {scripts}, expected "
+                         f"{EXPECTED_CONSOLE_SCRIPTS}")  # fmt: skip
+
 
 FORBIDDEN_DECISION_METHODS = {
     "aauthorize_tool_call",
@@ -423,8 +448,7 @@ def qualify(path: Path, *, import_probe: bool = True) -> dict[str, object]:
         raise ValueError(f"{kind} contains interpreter startup hooks: {startup_hooks}")
     _check_capture_imports(canonical_payloads, kind)
     _check_no_security_context_data(canonical_members, canonical_payloads, kind)
-    if any(name.endswith(".dist-info/entry_points.txt") for name in members):
-        raise ValueError("recorder SDK artifact must not publish a console entry point")
+    _check_entry_points(members, payloads)
 
     metadata_names = [
         name for name in members if name.endswith((".dist-info/METADATA", "/PKG-INFO"))
