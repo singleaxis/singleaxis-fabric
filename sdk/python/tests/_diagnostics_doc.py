@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 
 CATALOGUE = Path(__file__).resolve().parents[3] / "contracts/diagnostics/v1/messages-v1.json"
@@ -16,6 +17,10 @@ _PREFIXES = (
     ("FR", "The reader"),
     ("FN", "The Fabric Node"),
 )
+
+
+def _wrap(text: str) -> list[str]:
+    return textwrap.wrap(text, width=100, break_long_words=False, break_on_hyphens=False)
 
 
 def render() -> str:
@@ -42,9 +47,9 @@ def render() -> str:
             lines += [
                 f"### {entry['id']}",
                 "",
-                f"`{entry['name']}`, {entry['severity']}{retired}: {entry['text']}.",
+                *_wrap(f"`{entry['name']}`, {entry['severity']}{retired}: {entry['text']}."),
                 "",
-                f"Fix: {entry['fix']}.",
+                *_wrap(f"Fix: {entry['fix']}."),
                 "",
             ]
     return "\n".join(lines).rstrip("\n") + "\n"

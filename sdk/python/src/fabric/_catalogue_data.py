@@ -172,8 +172,7 @@ CATALOGUE: dict[str, Any] = {
             "name": "secret_file_unreadable",
             "severity": "error",
             "text": "a key, certificate or headers file is missing, unreadable or malformed",
-            "fix": "check the path and the permissions of the *_FILE / FABRIC_OTLP_* file "
-            "the reason names",
+            "fix": "check the path and the permissions of the file the reason names",
         },
         {
             "id": "FW-020",

@@ -59,7 +59,7 @@
      "fix": "set either the variable or its _FILE variant, not both"},
     {"id": "FW-019", "name": "secret_file_unreadable", "severity": "error",
      "text": "a key, certificate or headers file is missing, unreadable or malformed",
-     "fix": "check the path and the permissions of the *_FILE / FABRIC_OTLP_* file the reason names"},
+     "fix": "check the path and the permissions of the file the reason names"},
     {"id": "FW-020", "name": "builtin_endpoints_invalid", "severity": "error",
      "text": "FABRIC_WIRE_BUILTIN_ENDPOINTS has an unknown value",
      "fix": "use table (the default: every qualified built-in row) or legacy (the three rows of releases before 0.13)"},

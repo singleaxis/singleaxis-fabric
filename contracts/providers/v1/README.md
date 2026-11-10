@@ -2,7 +2,8 @@
 
 `builtin-endpoints.json` is the table of model endpoints Fabric records with no configuration (spec 058 §8.1),
 shipped in the Python SDK as the generated module `sdk/python/src/fabric/wire/_endpoint_table.py` (the wheel
-ships code only; `sdk/python/scripts/sync_contract_data.py` regenerates it and a test keeps it equal) and read by the `fabric` CLI.
+ships code only; `sdk/python/scripts/sync_contract_data.py` regenerates it and a test keeps it equal) and read
+by the `fabric` CLI.
 
 - `rows`: the endpoints in force. A row ships only with qualification fixtures (`fixtures/<name>.json`, recorded
   request and response bytes in the row's dialect) that pass wire parsing and reconstruction
