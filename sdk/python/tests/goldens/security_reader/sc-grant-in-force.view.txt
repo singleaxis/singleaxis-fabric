@@ -1,0 +1,16 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1    control    permission_check · observation · allow  startup  (reported)  in force none
+  2  grant   grt-1111…  declared  api  run_start  allow 2  (reported)
+  3  grant   grt-f59b…  offered  llm_wire  derived  tools 4  tool_choice auto  instr sha256:b9f72b3b…  (observed)
+  4  model_call   gpt-4o-2024-08-06  → tool_call T1 read_file   in force grt-f59b… (observed)
+  5    control    permission_check · observation · allow  fs-read  (reported)  in force grt-f59b… (observed)   ← T1  pending_single · certain
+  6  grant   grt-2222…  declared  api  change  allow 1  previous grt-1111…  (changed)  (reported)
+  7    control    permission_check · observation · deny  fs-read  (reported)  in force grt-2222… (reported)   ← T1  provider_id · certain
+  8      no effect observed for T1 (control_denied: #7)
+  9  model_call   gpt-4o-2024-08-06  ← result T1  → tool_call T2 shell   in force grt-2222… (reported)
+ 10  model_call   gpt-4o-2024-08-06  ← result T2
+  tool calls without an effect: 2   (T1 control_denied, T2 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F2  grant changed within the run: 1 (#6)
+    F5  deny gates a tool call and no effect is attributed to it: 1 (#7)

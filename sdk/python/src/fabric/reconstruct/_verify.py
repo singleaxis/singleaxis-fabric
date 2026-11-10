@@ -465,7 +465,7 @@ def reconstruct(
     return document
 
 
-def reconstruct_with_graphs(
+def reconstruct_with_graphs(  # noqa: PLR0915 - one statement per reader input
     span_paths: Sequence[str | os.PathLike[str]],
     *,
     store: Any | None = None,
@@ -558,6 +558,10 @@ def reconstruct_with_graphs(
     if reader is not None:
         tenant = report_tenant_id(reader.tenant_id, id_key)
         inputs["store"] = {"kind": reader.kind, "tenant_id": tenant}
+    derivation = getattr(verifier.actions, "derivation", None)
+    derived = derivation.inputs() if derivation is not None else None
+    if derived is not None:  # spec 057 P1: the wire derivation rules the reader applied
+        inputs["derivation"] = derived
     wanted = None if run_ids is None else {report_run_id(value, id_key) for value in run_ids}
     runs, scopes = verifier.build_runs(wanted)
     document = {

@@ -26,7 +26,16 @@ and states only the closed facts of §6.3; every inference is a mechanical join 
    post-tool stage). Without wire capture there is no pending set.
 
 A hook links by ``fabric.hook.gated_tool_call_id`` (E04) as rule 1; it is never linked by
-position (spec 057 §4.10.3 links controls only).
+position (spec 057 §4.10.3 links controls only). A row the reader derived from wire bytes
+(``_derive``, spec 057 P1) comes with its link: a provider safety row gates its model call
+by ``exchange_id``, a denial-marker row the call its result answers by ``provider_id``.
+
+**Grant in force** (§6.1 ``grant_in_force``; owner-approved shape, rev 3.6): in a run that
+holds a grant snapshot, every control row and every tool call names the latest snapshot
+(reported, or derived from the wire) recorded before it: ``id``, ``grant_basis`` (``reported``,
+``observed`` or ``none``) and ``certainty`` (``certain``; ``ambiguous`` with the
+candidates when the snapshots before it come from more than one source epoch, whose
+order is only a wall-clock order). A run without a snapshot carries no such field.
 
 "Gates T" (F5-F7) means a link to T that is not ``ambiguous``: a ``pending_set`` row gates
 no call until the caller passes the id.
@@ -362,6 +371,9 @@ class SecurityResult:
     #: F6 details: deny attempt uid -> the effects attributed to the call it gates.
     deny_with_effect: dict[str, list[dict[str, Any]]]
     observed: bool
+    #: The grant in force at each tool call (call id -> ``grant_in_force``), when the run
+    #: holds a grant snapshot.
+    call_grants: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def zero_context() -> dict[str, Any]:
@@ -410,7 +422,7 @@ def _gates(target: str, method: str, provenance: str, confidence: str, state: st
     return link
 
 
-def _link_control(  # noqa: PLR0912 - one branch per join rule and its outcome
+def _link_control(  # noqa: PLR0912, PLR0915 - one branch per join rule and its outcome
     item: dict[str, Any], *, call_ids: set[str], wire: bool, calls: Sequence[Any],
     attempts: set[str], index: ControlIndex, by_uid: Mapping[str, dict[str, Any]],
 ) -> None:  # fmt: skip
@@ -418,6 +430,17 @@ def _link_control(  # noqa: PLR0912 - one branch per join rule and its outcome
     ``method``, ``gated`` (the call it gates, never for an ambiguous link) and
     ``unmatched`` (F3)."""
     item.update(method="none", unmatched=False)
+    preset = item.get("preset_link")
+    if preset is not None:  # a row derived from wire bytes comes with its join (_derive)
+        item.update(link=dict(preset), method=preset["method"])
+        if preset["target"]["namespace"] == "call":
+            found = preset["target"]["id"] in call_ids
+            item["unmatched"] = not found
+            if found:
+                item["gated"] = preset["target"]["id"]
+            else:
+                item["link"]["state"] = "unresolved"
+        return
     gated_kind = item.get("gated_kind")
     call = item.get("gated_tool_call_id")
     if isinstance(call, str):
@@ -647,10 +670,9 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     for item in controls:
         if item.get("kind") == "os_access":
             _fact(facts, "os_denied", item["event_id"])
-    for exchange in inp.get("exchanges", ()):
-        for result in exchange.get("tool_results", ()):
-            if result.get("is_error") is True:  # wire.tool_result_flag (spec 057 WP7-6)
-                _fact(facts, "tool_result_error", str(exchange["exchange_id"]))
+    for call in calls:  # wire.tool_result_flag (WP7-6): once per call, where first fed back
+        if call.fed is not None and call.result is not None and call.result.get("is_error") is True:
+            _fact(facts, "tool_result_error", str(call.fed["exchange_id"]))
 
     fact_list = []
     for _, code in FACT_CODES:
@@ -694,18 +716,93 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         ][:1024]
         context["facts"] = fact_list
 
+    call_grants: dict[str, dict[str, Any]] = {}
+    if grants:
+        for item in controls:
+            item["grant_in_force"] = grant_in_force(item, grants)
+        for call in calls:
+            call_grants[call.id] = grant_in_force(call.issued, grants)
+        if observed:  # the report's counts: rows by basis, and how many are ambiguous
+            found = [c["grant_in_force"] for c in controls] + list(call_grants.values())
+            tally = {basis: sum(1 for f in found if f["grant_basis"] == basis)
+                     for basis in ("reported", "observed", "none")}  # fmt: skip
+            tally["ambiguous"] = sum(1 for f in found if f.get("certainty") == "ambiguous")
+            context["grant_in_force"] = tally
+
     projection_links: dict[str, list[dict[str, Any]]] = {}
     for item in [*controls, *hooks]:
+        if item.get("derived"):
+            continue  # a derived row is no record: it has no step to carry a link
+        links: list[dict[str, Any]] = []
         link = item.get("link")
         # 052 already projects D06 ``gates`` and D05 ``resolves`` links on control steps.
         if link is not None and item["method"] not in ("reported_ref", "ref_join"):
-            projection_links[item["attempt_uid"]] = [dict(link)]
+            links.append(dict(link))
+        in_force = item.get("grant_in_force")
+        # An ambiguous answer stays in the view and the report's counts: the projection's
+        # ``grant_in_force`` method has one fixed confidence, ``certain``.
+        if in_force is not None and "id" in in_force and in_force["certainty"] == "certain":
+            links.append(_grant_link(in_force))
+        if links:
+            projection_links[item["attempt_uid"]] = links
     return SecurityResult(
         chain=controls_chain, context=context, projection_links=projection_links,
         controls=controls, hooks=hooks, grants=grants, extensions=extensions,
         facts=fact_list if observed else [], denied_calls=dict(denied_calls),
-        deny_with_effect=deny_with_effect, observed=observed,
+        deny_with_effect=deny_with_effect, observed=observed, call_grants=call_grants,
     )  # fmt: skip
+
+
+def _epoch_of(item: Mapping[str, Any]) -> tuple[str, int]:
+    return (str(item["source_id"]), int(item["source_epoch"]))
+
+
+def _precedes(grant: Mapping[str, Any], item: Mapping[str, Any]) -> bool:
+    """Whether a grant snapshot was recorded before ``item``: sequence order on one source
+    epoch (a snapshot derived from a request is in force for that request's own response,
+    so an equal position precedes), else start time."""
+    if grant is item:
+        return False
+    if _epoch_of(grant) == _epoch_of(item):
+        return int(grant["sequence"]) <= int(item["sequence"]) if grant.get("derived") else (
+            int(grant["sequence"]) < int(item["sequence"]))  # fmt: skip
+    return int(grant["start_ns"]) <= int(item["start_ns"])
+
+
+def grant_in_force(item: Mapping[str, Any], grants: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The latest grant snapshot recorded before ``item`` (§6.1 ``grant_in_force``): its
+    id, basis (``observed`` for a snapshot derived from wire bytes, else ``reported``) and
+    certainty. Snapshots of one source epoch are ordered by sequence; when the ones before
+    ``item`` come from more than one epoch, which is latest rests on wall clocks of
+    different processes, so the answer is ``ambiguous`` with the latest of each epoch as
+    candidates. ``{"grant_basis": "none"}`` when none precedes."""
+    before = [g for g in grants if _precedes(g, item)]
+    if not before:
+        return {"grant_basis": "none"}
+    latest: dict[tuple[str, int], Mapping[str, Any]] = {}
+    for grant in sorted(before, key=lambda g: (int(g["sequence"]), int(g["start_ns"]))):
+        latest[_epoch_of(grant)] = grant
+    ordered = sorted(latest.values(), key=lambda g: (int(g["start_ns"]), int(g["sequence"])),
+                     reverse=True)  # fmt: skip
+    top = ordered[0]
+    out: dict[str, Any] = {
+        "grant_basis": "observed" if top.get("derived") else "reported",
+        "certainty": "certain" if len(ordered) == 1 else "ambiguous",
+    }
+    if isinstance(top.get("id"), str):
+        out["id"] = top["id"]
+    if len(ordered) > 1:
+        out["candidates"] = [str(g.get("id", "-")) for g in ordered][:LIST_MAX]
+    return out
+
+
+def _grant_link(in_force: Mapping[str, Any]) -> dict[str, Any]:
+    """The step projection's form of a control step's grant in force (certain only)."""
+    return {
+        "type": "depends_on", "target": {"namespace": "external", "id": in_force["id"]},
+        "provenance": "inferred", "method": "grant_in_force",
+        "confidence": "certain", "state": "resolved",
+    }  # fmt: skip
 
 
 def invariant_text(item: Mapping[str, Any]) -> str | None:
@@ -769,19 +866,32 @@ def _link_view(item: Mapping[str, Any], labels: Mapping[str, str]) -> dict[str, 
     return out
 
 
+def _in_force_view(in_force: Mapping[str, Any]) -> dict[str, Any]:
+    return {key: list(value) if isinstance(value, list) else value
+            for key, value in in_force.items()}  # fmt: skip
+
+
 def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
-    security: SecurityResult, labels: Mapping[str, str]
+    security: SecurityResult,
+    labels: Mapping[str, str],
+    exchanges: Mapping[str, tuple[int, int]] | None = None,
 ) -> list[tuple[int, int, int, dict[str, Any]]]:
-    """Grant, extension, control and hook rows, keyed for the view's time order."""
+    """Grant, extension, control and hook rows, keyed for the view's time order. A grant
+    derived from a request comes just before its model call; a derived control just after
+    the model call it is shown under (``exchanges``: start and sequence per exchange id)."""
+    exchanges = exchanges or {}
     out: list[tuple[int, int, int, dict[str, Any]]] = []
     for grant in security.grants:
         row: dict[str, Any] = {"kind": "grant", "event_id": grant["event_id"],
-                               "basis": grant["basis"], "provenance": "reported"}  # fmt: skip
+                               "basis": grant["basis"],
+                               "provenance": grant.get("provenance", "reported")}  # fmt: skip
         for key in ("id", "trigger", "previous_id", "source_boundary", "counts", "changed",
-                    "tool_choice", "permission_mode"):  # fmt: skip
+                    "tool_choice", "allowed_count", "parallel", "instructions_digest",
+                    "permission_mode", "exchange_id"):  # fmt: skip
             if key in grant:
                 row[key] = grant[key]
-        out.append((grant["start_ns"], 1, grant["sequence"], row))
+        order = -1 if grant.get("derived") else 1  # before the model call it came from
+        out.append((grant["start_ns"], order, grant["sequence"], row))
     for ext in security.extensions:
         row = {"kind": "extension", "event_id": ext["event_id"], "extension_kind": ext["kind"],
                "observed_via": ext["observed_via"], "signature_status": ext["signature_status"],
@@ -798,10 +908,13 @@ def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
                           ("decision", "decision"), ("engine_name", "engine"),
                           ("reason_code", "reason_code"), ("latency_ms", "latency_ms"),
                           ("mode", "mode"), ("decided_by", "decided_by"),
-                          ("gated_kind", "gated_kind"),
-                          ("error_class", "error_class")):  # fmt: skip
+                          ("gated_kind", "gated_kind"), ("error_class", "error_class"),
+                          ("signal", "signal"), ("evidence_ref", "evidence"),
+                          ("map_row", "map_row")):  # fmt: skip
             if key in item:
-                row[name] = item[key]
+                row[name] = list(item[key]) if isinstance(item[key], list) else item[key]
+        if "grant_in_force" in item:
+            row["grant_in_force"] = _in_force_view(item["grant_in_force"])
         link = _link_view(item, labels)
         if link is not None:
             row["link"] = link
@@ -817,7 +930,11 @@ def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
             row["deny_with_effect"] = security.deny_with_effect[item["attempt_uid"]]
         if item.get("later_allows"):
             row["later_allows"] = list(item["later_allows"])
-        out.append((item["start_ns"], 1, item["sequence"], row))
+        under = exchanges.get(str(item.get("view_after")))
+        if under is not None:  # a derived row: just after the model call it is shown under
+            out.append((under[0], 0, under[1], row))
+        else:
+            out.append((item["start_ns"], 1, item["sequence"], row))
     for item in security.hooks:
         row = {"kind": "hook", "attempt_uid": item["attempt_uid"], "event_id": item["event_id"],
                "sequence": item["sequence"], "basis": item["basis"],
@@ -862,7 +979,12 @@ def resolve_refs(rows: list[dict[str, Any]]) -> None:
     """Row numbers for the attempts security rows name (resolved requests, the denies an
     F5 row names, the effects and later allows an F6 row names), in place."""
     numbers = {row["attempt_uid"]: row["n"] for row in rows if "attempt_uid" in row}
+    calls = {row["exchange_id"]: row["n"] for row in rows if row["kind"] == "model_call"}
     for row in rows:
+        link = row.get("link")  # a host row's ``link`` is its method name, not a join
+        if (isinstance(link, dict) and link.get("namespace") == "exchange"
+                and link["target"] in calls):  # fmt: skip
+            link["target_n"] = calls[link["target"]]
         if "resolves_attempt" in row and row["resolves_attempt"] in numbers:
             row["resolves_n"] = numbers[row["resolves_attempt"]]
         if row["kind"] == "no_effect":

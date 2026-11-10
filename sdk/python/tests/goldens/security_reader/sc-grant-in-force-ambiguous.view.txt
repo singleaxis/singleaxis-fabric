@@ -1,0 +1,8 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: partial(segment_conflict)  actions: not_observed  effects: not_observed(not_instrumented)  corroboration: not_observed(not_configured)  controls: complete  verdict: partial
+  grant   grt-aaaa…  declared  api  run_start  (reported)
+  grant   grt-bbbb…  declared  api  run_start  (changed)  (reported)
+  1    control    permission_check · observation · deny  startup  (reported)  in force ambiguous: grt-aaaa…, grt-bbbb…
+  model calls: none recorded in this run (decisions not observed)
+  output match: not_applicable (not_exposed)
+  facts:
+    F2  grant changed within the run: 1
