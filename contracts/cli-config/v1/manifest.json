@@ -1,0 +1,75 @@
+{
+  "contract": "singleaxis.fabric.cli-config",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "schema": {
+    "path": "schema/fabric-config-v1.schema.json",
+    "sha256": "93ed75a77d35335bdae8699ab7e787f5633688369a29a2c5d7639ff386bce03a"
+  },
+  "files": [
+    {
+      "path": "fixtures/invalid/bad-profile.yaml",
+      "sha256": "5564950fd012edcb21d9cf46c7c529ac8f254e82f717a614816a109d2673c41d"
+    },
+    {
+      "path": "fixtures/invalid/bad-project-name.yaml",
+      "sha256": "ab9b280bfa279bd985dbcf80470c6a38715dd6c251cd89b465391a6a2210ccb7"
+    },
+    {
+      "path": "fixtures/invalid/exec-not-bool.yaml",
+      "sha256": "ad5881eb601c4221c30e9860580897871de39a703f39197987aff53b52c0f816"
+    },
+    {
+      "path": "fixtures/invalid/local-dir-with-bucket.yaml",
+      "sha256": "b173180159aa861cb0251ab9373b77c2bc1fc68a4025a8479eb16e9036d11a3e"
+    },
+    {
+      "path": "fixtures/invalid/missing-schema.yaml",
+      "sha256": "9a623ddd2d1ab8d67b705adf30dfcc1a11ce830327814b0b8f7ef3b39f1cd114"
+    },
+    {
+      "path": "fixtures/invalid/other-schema.yaml",
+      "sha256": "71326dc6b7558dbc544847920a728265c08c6ed4f2f1de27a606e8211fde2c31"
+    },
+    {
+      "path": "fixtures/invalid/provider-url-with-credentials.yaml",
+      "sha256": "86910bda9a410d89af59efd635cb5c23eef8bd54bcd3a1108a955a98a0ce204a"
+    },
+    {
+      "path": "fixtures/invalid/queue-size-zero.yaml",
+      "sha256": "ee11a62eb7d993c27ec7ee4787fb2fabcfe149a79498597c0bd76205a19e4c82"
+    },
+    {
+      "path": "fixtures/invalid/s3-without-bucket.yaml",
+      "sha256": "1866a1d4af413653594826644160ff6216ce635ffc9fcdab8e83144798401d8f"
+    },
+    {
+      "path": "fixtures/invalid/unknown-key.yaml",
+      "sha256": "59458cf72aac63078282ba5d29a85c480548d41d9dde2a3042844e51d7e8d70e"
+    },
+    {
+      "path": "fixtures/invalid/unknown-top-level.yaml",
+      "sha256": "1ebacae21348d060d5655460f74b60230ba97a5f3e97bc631f4a4ab3bd9d22e0"
+    },
+    {
+      "path": "fixtures/valid/full-local.yaml",
+      "sha256": "2a450516372c55fd035af07615d08ff2f5759e4fbf8c3a1922b9426f97799b47"
+    },
+    {
+      "path": "fixtures/valid/minimal.yaml",
+      "sha256": "ed931d54a3808b8c3813c79f25463232dfaf7514267ef7f6fc5e3765a161f8d9"
+    },
+    {
+      "path": "fixtures/valid/otlp.yaml",
+      "sha256": "f1d7546c94336e305cad05fdd4280643d996b3656da61fd8ac4d28de6002a3a9"
+    },
+    {
+      "path": "fixtures/valid/production-s3.yaml",
+      "sha256": "299b8ba1afbd384909c56fb25835a5b3066d925e9b4097021a420f363908a897"
+    },
+    {
+      "path": "schema/cli-report-v1.schema.json",
+      "sha256": "c0ca6bd77a527577aa4d6826220b03cdfb94121121612f0762ba062c6b94ae1a"
+    }
+  ]
+}

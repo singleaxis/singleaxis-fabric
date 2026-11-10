@@ -52,6 +52,12 @@ def _archive(tmp_path: Path, kind: str, missing: str | None) -> Path:
     if kind == "wheel":
         path = tmp_path / "singleaxis_fabric-1.2.3-py3-none-any.whl"
         paths["singleaxis_fabric-1.2.3.dist-info/METADATA"] = METADATA
+        scripts = POLICY["python_distribution"]["required_console_scripts"]
+        if scripts:  # spec 058: the operator CLI's console scripts, as the build writes them
+            paths["singleaxis_fabric-1.2.3.dist-info/entry_points.txt"] = (
+                "[console_scripts]\n"
+                + "".join(f"{name} = {target}\n" for name, target in scripts.items())
+            ).encode()
         with zipfile.ZipFile(path, "w") as archive:
             for name, body in paths.items():
                 archive.writestr(name, body)

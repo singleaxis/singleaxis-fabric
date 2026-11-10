@@ -1,0 +1,27 @@
+{
+  "contract": "singleaxis.fabric.providers",
+  "version": "1.0.0",
+  "digest_scope": "exact_file_bytes",
+  "schema": {
+    "path": "schema/builtin-endpoints-v1.schema.json",
+    "sha256": "63366bbe7cee01792bd970fe58b2916505aa092d938a19dc7cb0401f3295321e"
+  },
+  "files": [
+    {
+      "path": "builtin-endpoints.json",
+      "sha256": "74884e62381f036c6d1da1ae9bd54a2963ef74fd65e199e7a3ea3d35b9665f3a"
+    },
+    {
+      "path": "fixtures/anthropic-messages.json",
+      "sha256": "27e877774a9742ca2a55279db81416fcc0c208a6acae28ce922a0eb41c6fa226"
+    },
+    {
+      "path": "fixtures/openai-chat-stream.json",
+      "sha256": "5b6697a7c082d89b8c14d908a44aa0b06e9ae6b96026aea220c05650321e6fde"
+    },
+    {
+      "path": "fixtures/openai-chat.json",
+      "sha256": "5d08f0aeecb4707e2fd4b1d1db4ab2effb9a362c3d0e0ce9dcccdbf1c06df173"
+    }
+  ]
+}
