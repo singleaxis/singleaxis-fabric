@@ -57,7 +57,12 @@ from .._sequence import (
     source_label,
 )
 from ..redaction import RedactionService, Transformation
-from ._config import DEFAULT_ENDPOINTS, WireConfig, migrate_plaintext_from_env
+from ._config import (
+    DEFAULT_ENDPOINTS,
+    ENDPOINT_TABLE_VERSION,
+    WireConfig,
+    migrate_plaintext_from_env,
+)
 from ._diagnose import describe, fix, not_installed_message
 from ._keys import SPOOL_KEY_BYTES, TOKEN_KEY_MIN_BYTES, key_from_env
 from ._model import CapturedBody, CaptureJob, EndpointMatcher, ExchangeSink
@@ -78,7 +83,7 @@ __all__ = [
     "WireStats", "WireTransport",
     "current_handle",
     "end_run", "flush", "install", "install_from_env", "resume_token", "resume_tokens", "run",
-    "uninstall",
+    "status", "uninstall",
 ]  # fmt: skip
 
 _LOG = logging.getLogger("fabric.wire")
@@ -96,18 +101,20 @@ _MSG_NO_DESTINATION = (
     "fabric.wire: spans have no destination (no OTEL_EXPORTER_OTLP_ENDPOINT or "
     "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT): captured spans are dropped. Fix: export "
     "OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 (a local Fabric Node), or an https:// "
-    "endpoint with a CA"
+    "endpoint with a CA [FW-002]"
 )
 # A Fabric-protected global provider with no OTLP endpoint (D3): the reason, in words.
 _REASON_PROTECTED_GLOBAL = "a Fabric-protected global tracer provider cannot carry wire spans"
-_MSG_OTEL_DISABLED = "fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is recorded"
+_MSG_OTEL_DISABLED = (
+    "fabric.wire: capture disabled (OTEL_SDK_DISABLED); nothing is recorded [FW-007]"
+)
 _MSG_MIGRATE_IGNORED = ("fabric.wire: spool plaintext migration is ignored in the production "
-                   "profile; plaintext spool records are quarantined")  # fmt: skip
+                   "profile; plaintext spool records are quarantined [FW-022]")  # fmt: skip
 _MSG_CONTENT_DISABLED = (
-    "fabric.wire: content capture disabled (%s, %s profile); metadata capture continues"
+    "fabric.wire: content capture disabled (%s, %s profile); metadata capture continues [FW-008]"
 )
 _MSG_LLM_CONTENT_IGNORED = ("fabric.wire: FABRIC_CAPTURE_LLM_CONTENT does not affect wire capture; "
-                       "wire already stores content off telemetry")  # fmt: skip
+                       "wire already stores content off telemetry [FW-021]")  # fmt: skip
 _LOCK = threading.RLock()
 _HANDLE: WireHandle | None = None
 _DRAIN_SHARE = 0.75  # of the close budget; the rest delivers the shutdown loss records
@@ -120,7 +127,7 @@ _MSG_EXIT_BACKLOG = (
     "batch or autoscaled worker may never come back). Fix: set FABRIC_WIRE_DRAIN_ON_EXIT_S "
     "(seconds this process may wait at exit to deliver them), run `python -m fabric.wire "
     "drain --until-empty` as the job's last step, or keep FABRIC_WIRE_SPOOL_DIR on durable "
-    "storage with a drainer (sidecar)"
+    "storage with a drainer (sidecar) [FW-009]"
 )
 
 
@@ -278,6 +285,8 @@ class WireHandle:
         # (``None`` until WP-10 and WP-11a build them).
         self.registration: Registration | None = None
         self.records: RecordsInput | None = None
+        # FABRIC_WIRE_STATUS_FILE (058 §13.2), set by install_from_env; rewritten at exit.
+        self.status_file: str | None = None
 
     @property
     def _tee(self) -> WireTee:
@@ -307,6 +316,9 @@ class WireHandle:
             status["spool_plaintext_records"] = plaintext
             status["spool_encrypted"] = bool(status["spool_encrypted"]) and plaintext == 0
         status.update(_p1_status(self))
+        # 058 §8.1/§13.2: the endpoints recorded, and the built-in table they came from.
+        status["endpoint_set"] = [m.endpoint_id for m in self.config.all_endpoints]
+        status["endpoint_table_version"] = ENDPOINT_TABLE_VERSION
         with contextlib.suppress(Exception):
             if unmatched := self._tee.unmatched.status():
                 # The hosts a model-looking request went to that no endpoint matched, each
@@ -429,6 +441,10 @@ class WireHandle:
             for target in targets if closed else ():  # else presumed blocked: skipped
                 shutdown = lambda t=target: t.shutdown() or True  # noqa: E731
                 _loss.run_bounded(shutdown, deadline, "fabric-shutdown")
+            if self.status_file is not None:  # 058 §13.2: final counters, in the budget
+                from . import _statusfile  # noqa: PLC0415
+
+                _statusfile.at_exit(self, self.status_file, bool(closed), deadline)
 
 
 def install(
@@ -472,11 +488,11 @@ def install(
             # carries wire spans (its metadata-only projection would erase them).
             from ..tracing import (  # noqa: PLC0415
                 build_private_provider,
+                capture_otlp_configured,
                 capture_service_name,
-                otlp_endpoint_configured,
             )
 
-            if not otlp_endpoint_configured():
+            if not capture_otlp_configured():
                 raise ValueError(
                     "a Fabric-protected tracer provider cannot carry wire spans"
                     if explicit
@@ -760,16 +776,16 @@ def _fallback_provider(config: WireConfig, loss: Any) -> Any:
     when it is private, else a new one when an OTLP endpoint is set, else ``None``."""
     from ..tracing import (  # noqa: PLC0415
         build_private_provider,
+        capture_otlp_configured,
         capture_service_name,
         is_private_provider,
-        otlp_endpoint_configured,
     )
 
     if is_private_provider(current := loss.tracer_provider):
         return current
     if config.tracer_provider is not None and is_private_provider(config.tracer_provider):
         return config.tracer_provider
-    if not otlp_endpoint_configured():
+    if not capture_otlp_configured():
         return None
     return build_private_provider(service_name=capture_service_name(
         id_key=config.id_key, clear=config.labels == "clear"))  # fmt: skip
@@ -814,12 +830,15 @@ def install_from_env(
     redaction service ``FABRIC_REDACTION_ENDPOINT`` names: the one thing the environment
     cannot express. Zero-code autoload passes none, so those roles are withheld."""
     _prime_fork_safety()  # before the private provider starts its export thread
+    from . import _statusfile  # noqa: PLC0415
+
+    status_file = _statusfile.path_from_env(os.environ if environ is None else environ)
     try:
         from .._loss import get_loss_emitter  # noqa: PLC0415
         from ..tracing import (  # noqa: PLC0415
             build_private_provider,
+            capture_otlp_configured,
             capture_service_name,
-            otlp_endpoint_configured,
         )
         from ._config import config_from_env  # noqa: PLC0415
 
@@ -828,19 +847,26 @@ def install_from_env(
         if transformations:
             config = dataclasses.replace(config, transformations=dict(transformations))
         if _otel_disabled():
-            return install(config)  # disabled: nothing is built
+            disabled = install(config)  # disabled: nothing is built
+            if status_file is not None:
+                disabled.status_file = status_file
+                _statusfile.at_install(disabled, status_file)
+            return disabled
         if config.spool_dir is None and tracer_mode == "global" and _protected_global():
             # D3: a Fabric-protected global provider never carries wire spans.
-            if not otlp_endpoint_configured():
+            if not capture_otlp_configured():
+                hint = fix(_REASON_PROTECTED_GLOBAL)
                 _LOG.warning(not_installed_message(
-                    "ProtectedGlobalTracerProvider", _REASON_PROTECTED_GLOBAL,
-                    fix(_REASON_PROTECTED_GLOBAL)))  # fmt: skip
+                    "ProtectedGlobalTracerProvider", _REASON_PROTECTED_GLOBAL, hint))  # fmt: skip
+                if status_file is not None:
+                    _statusfile.at_failure(status_file, "ProtectedGlobalTracerProvider",
+                                           _REASON_PROTECTED_GLOBAL, hint)  # fmt: skip
                 return None
             tracer_mode = "private"
         # Spans with nowhere to go (audit F2): warned only once capture is installed.
         dropped = config.spool_dir is None and tracer_mode == "private"
-        dropped = dropped and not otlp_endpoint_configured()
-        if config.spool_dir is None and (tracer_mode == "private" or otlp_endpoint_configured()):
+        dropped = dropped and not capture_otlp_configured()
+        if config.spool_dir is None and (tracer_mode == "private" or capture_otlp_configured()):
             private = build_private_provider(service_name=capture_service_name(
                 id_key=config.id_key, clear=config.labels == "clear"))  # fmt: skip
             get_loss_emitter().set_tracer_provider(private)
@@ -853,11 +879,16 @@ def install_from_env(
         _hooks_from_env(env)
         if dropped:
             _LOG.warning(_MSG_NO_DESTINATION)
+        if status_file is not None:
+            handle.status_file = status_file
+            _statusfile.at_install(handle, status_file)
         return handle
     except Exception as exc:
         # The reason and the fix, scrubbed (_diagnose.py): never a value from the environment.
         why, hint = describe(exc)
         _LOG.warning(not_installed_message(type(exc).__name__, why, hint))
+        if status_file is not None:
+            _statusfile.at_failure(status_file, type(exc).__name__, why, hint)
         return None
 
 
@@ -881,6 +912,16 @@ _HOOK_ENV_NAMES = (
 
 def current_handle() -> WireHandle | None:
     return _HANDLE
+
+
+def status() -> dict[str, Any]:
+    """The installed handle's :meth:`WireHandle.status` (spec 058 §13.2, D6), or
+    ``{"capture": "not_installed"}`` when this process installed no capture. Values only,
+    never a key, header or content."""
+    handle = _HANDLE
+    if handle is None:
+        return {"capture": "not_installed"}
+    return handle.status()
 
 
 def uninstall() -> None:

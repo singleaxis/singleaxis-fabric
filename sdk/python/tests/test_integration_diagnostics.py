@@ -274,7 +274,7 @@ def test_unmatched_model_host_is_counted_named_and_logged_once(
         "fabric.wire: a model-looking request to https://models.example.com matched no "
         "configured endpoint and was not recorded. Fix: export FABRIC_WIRE_ENDPOINTS='"
         '[{"endpoint_id":"my-model","dialect":"openai","hosts":["models.example.com"],'
-        '"ports":[443],"schemes":["https"]}]\''
+        '"ports":[443],"schemes":["https"]}]\' [FW-006]'
     )
     assert all("t0ps3cr3tvalue" not in m for m in messages)
     assert "t0ps3cr3tvalue" not in json.dumps(handle.status())

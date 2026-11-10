@@ -31,7 +31,7 @@ UNSUPPORTED = (
 INVALID_HOOKS = "fabric.hooks: invalid hook configuration (ValueError); every hook is disabled"
 INVALID_WIRE = (
     "fabric.wire: capture not installed (ValueError): FABRIC_WIRE_TRACER must be 'private' "
-    "or 'global'"
+    "or 'global' [FW-001]"
 )
 
 # Each configuration the autoload diagnoses, with capture otherwise working (global tracer,
@@ -138,7 +138,7 @@ def test_status_reports_invalid_configurations() -> None:
     assert code == 1 and INVALID_WIRE in status["warnings"]
     assert status["wire"] == {
         "configuration": "invalid", "error": "ValueError", "capture": "not_installed",
-        "reason": "FABRIC_WIRE_TRACER must be 'private' or 'global'",
+        "reason": "FABRIC_WIRE_TRACER must be 'private' or 'global'", "reason_id": "FW-001",
     }  # fmt: skip
     # Hooks are not installed without capture: the status says so too.
     assert "fabric.hooks: no capture handle is installed; nothing is patched" in status["warnings"]

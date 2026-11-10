@@ -139,7 +139,7 @@ class WireEnrichment:
     def build(cls, config: WireConfig, environ: Mapping[str, str] | None = None) -> WireEnrichment:
         """From the install's configuration and environment (``os.environ`` by default)."""
         from .._manifest import point_version  # noqa: PLC0415 - _manifest imports fabric.wire
-        from ._config import DEFAULT_ENDPOINTS  # noqa: PLC0415 - keeps this module light
+        from ._config import DEFAULT_ENDPOINTS, LEGACY_ENDPOINTS  # noqa: PLC0415 - light module
 
         env = os.environ if environ is None else environ
         key, clear = config.id_key, config.labels == "clear"
@@ -147,8 +147,9 @@ class WireEnrichment:
         for point in (POINT_HTTPX, POINT_AIOHTTP):
             if _POINT_RE.fullmatch(value := f"{point}@{point_version(point)}"):
                 points[point] = value
+        builtin = (*DEFAULT_ENDPOINTS, *LEGACY_ENDPOINTS)  # a pinned legacy row stays built-in
         endpoints = {
-            m.endpoint_id: endpoint_label(m, builtin=m in DEFAULT_ENDPOINTS, key=key)
+            m.endpoint_id: endpoint_label(m, builtin=m in builtin, key=key)
             for m in config.all_endpoints
         }  # fmt: skip
         opted_in = _truthy(env.get(PROVIDER_REQUEST_ID_ENV))

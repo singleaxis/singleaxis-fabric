@@ -169,11 +169,30 @@ def check_id_key(key: bytes | None) -> bytes | None:
     return key
 
 
+_MAX_ID_KEY_FILE_BYTES = 4096
+
+
 def id_key_from_env(environ: Mapping[str, str], name: str = ID_KEY_ENV) -> bytes | None:
-    """The run-id pseudonym key named by ``name`` (unset or empty: ``None``); a secret, never
-    logged or echoed."""
-    value = environ.get(name) or ""
-    return check_id_key(value.encode("utf-8", "surrogatepass")) if value else None
+    """The run-id pseudonym key named by ``name``, or held by the file ``<name>_FILE`` names
+    (spec 058 §7: secrets as files; one trailing newline is ignored). Unset or empty: ``None``.
+    A secret, never logged or echoed; ``ValueError`` (fixed text) when both are set or the
+    file is unreadable."""
+    value, path = environ.get(name) or "", environ.get(f"{name}_FILE") or ""
+    if value and path:
+        raise ValueError(f"set {name} or {name}_FILE, not both")
+    if value:
+        return check_id_key(value.encode("utf-8", "surrogatepass"))
+    if not path:
+        return None
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(_MAX_ID_KEY_FILE_BYTES + 1)
+    except OSError:
+        raise ValueError(f"{name}_FILE is not readable") from None
+    if len(raw) > _MAX_ID_KEY_FILE_BYTES:
+        raise ValueError(f"{name}_FILE must hold a key of at most {_MAX_ID_KEY_FILE_BYTES} bytes")
+    key = raw[:-2] if raw.endswith(b"\r\n") else raw[:-1] if raw.endswith(b"\n") else raw
+    return check_id_key(key)  # an empty file is too short: ValueError
 
 
 def _new_epoch() -> int:

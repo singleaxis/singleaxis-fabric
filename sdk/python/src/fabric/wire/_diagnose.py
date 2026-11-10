@@ -25,35 +25,57 @@ _URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]{0,15}://[^\s'\"<>]+")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9+/=_-]{24,}")
 _REDACTED = "<redacted>"
 
-# (substring of a Fabric configuration message, the one-line fix)
-_FIXES: tuple[tuple[str, str], ...] = (
-    ("requires verified HTTPS or loopback HTTP",
+# (substring of a Fabric configuration message, its catalogue id, the one-line fix). The
+# ids are contracts/diagnostics/v1/messages-v1.json's (spec 058 §13.1); the first match wins.
+_FIXES: tuple[tuple[str, str, str], ...] = (
+    ("requires verified HTTPS or loopback HTTP", "FW-012",
      "plaintext HTTP to a non-loopback host is refused: use https:// with a CA the process "
-     "trusts (OTEL_EXPORTER_OTLP_CERTIFICATE), or a loopback address (127.0.0.1, localhost, "
-     "[::1]), for example by publishing the Fabric Node's port on this host"),
-    ("requires verified TLS or loopback plaintext",
+     "trusts (FABRIC_OTLP_CERTIFICATE or OTEL_EXPORTER_OTLP_CERTIFICATE), or a loopback "
+     "address (127.0.0.1, localhost, [::1]), for example by publishing the Fabric Node's "
+     "port on this host"),
+    ("requires verified TLS or loopback plaintext", "FW-012",
      "plaintext OTLP to a non-loopback host is refused: use https:// with a CA the process "
      "trusts (OTEL_EXPORTER_OTLP_CERTIFICATE), or a loopback address (127.0.0.1, localhost, "
      "[::1])"),
-    ("must not carry credentials, a query or a fragment",
+    ("must not carry credentials, a query or a fragment", "FW-010",
      "remove user:password@, ?query and #fragment from the URL; send credentials as "
-     "OTEL_EXPORTER_OTLP_HEADERS"),
-    ("needs opentelemetry-exporter-otlp-proto",
+     "OTEL_EXPORTER_OTLP_HEADERS (or in FABRIC_OTLP_HEADERS_FILE)"),
+    ("needs opentelemetry-exporter-otlp-proto", "FW-011",
      'install the exporter: pip install "singleaxis-fabric[otlp]"'),
-    ("Fabric capture needs an OTLP traces endpoint",
-     "set OTEL_EXPORTER_OTLP_ENDPOINT to the Fabric Node (http://127.0.0.1:4318 for a local "
-     "Node)"),
-    ("FABRIC_WIRE_ENDPOINTS",
+    ("Fabric capture needs an OTLP traces endpoint", "FW-013",
+     "set OTEL_EXPORTER_OTLP_ENDPOINT (or FABRIC_OTLP_ENDPOINT) to the Fabric Node "
+     "(http://127.0.0.1:4318 for a local Node)"),
+    ("needs FABRIC_OTLP_ENDPOINT", "FW-017",
+     "set FABRIC_OTLP_ENDPOINT to the Fabric Node's base URL, or remove the other "
+     "FABRIC_OTLP_* variables"),
+    ("FABRIC_WIRE_BUILTIN_ENDPOINTS", "FW-020",
+     "set FABRIC_WIRE_BUILTIN_ENDPOINTS to table (the default) or legacy (the three rows of "
+     "releases before 0.13)"),
+    ("FABRIC_WIRE_ENDPOINTS", "FW-014",
      'FABRIC_WIRE_ENDPOINTS is a JSON array such as [{"endpoint_id":"my-model",'
      '"dialect":"openai","hosts":["models.example.com"]}] (see docs/quickstart.md)'),
-    ("invalid endpoint matcher",
+    ("invalid endpoint matcher", "FW-015",
      "each FABRIC_WIRE_ENDPOINTS entry needs an endpoint_id and provider_name of lowercase "
      "letters, digits and ._-, dialect openai or anthropic, hosts or host_suffixes, schemes "
      "http/https and ports 1-65535"),
-    ("cannot carry wire spans",
-     "set OTEL_EXPORTER_OTLP_ENDPOINT: capture then delivers through its own private "
-     "tracer provider"),
+    ("cannot carry wire spans", "FW-016",
+     "set OTEL_EXPORTER_OTLP_ENDPOINT (or FABRIC_OTLP_ENDPOINT): capture then delivers "
+     "through its own private tracer provider"),
+    ("_FILE, not both", "FW-018",
+     "set either the variable or its _FILE variant, not both"),
+    ("is not readable", "FW-019",
+     "check the path and the permissions of the file the reason names"),
+    ("_FILE must hold", "FW-019",
+     "check the contents of the file the reason names"),
+    ("must hold k=v pairs", "FW-019",
+     "the headers file holds k=v pairs separated by commas or newlines"),
+    ("must be k=v pairs", "FW-024",
+     "headers are k=v pairs separated by commas"),
+    ("client key and client certificate", "FW-024",
+     "set the client key and the client certificate together, or neither"),
 )  # fmt: skip
+#: The catalogue id of a configuration error no specific rule describes.
+GENERIC_REASON_ID = "FW-001"
 
 
 def _raised_by_fabric(exc: BaseException) -> bool:
@@ -110,7 +132,12 @@ def reason(exc: BaseException) -> str:
 
 def fix(text: str) -> str | None:
     """The one-line fix for a reason Fabric knows, else ``None``."""
-    return next((hint for needle, hint in _FIXES if needle in text), None)
+    return next((hint for needle, _, hint in _FIXES if needle in text), None)
+
+
+def reason_id(text: str) -> str:
+    """The catalogue id of a reason (spec 058 §13.2), ``FW-001`` when no rule matches."""
+    return next((rid for needle, rid, _ in _FIXES if needle in text), GENERIC_REASON_ID)
 
 
 def describe(exc: BaseException) -> tuple[str, str | None]:
@@ -121,10 +148,10 @@ def describe(exc: BaseException) -> tuple[str, str | None]:
 
 def not_installed_message(error: str, why: str, hint: str | None) -> str:
     """The ``capture not installed`` diagnostic: the class name, then the reason and fix
-    when they say more than the class name."""
+    when they say more than the class name, then the catalogue id."""
     text = f"fabric.wire: capture not installed ({error})"
     if why != error:
         text += f": {why}"
     if hint:
         text += f". Fix: {hint}"
-    return text
+    return f"{text} [{reason_id(why)}]"

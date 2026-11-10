@@ -362,6 +362,86 @@ def otlp_endpoint_configured() -> bool:
     return any(os.environ.get(name) for name in names)
 
 
+# Spec 058 §6.4: Fabric's own OTLP settings, read before the OTEL_* ones. When any is set,
+# Fabric's capture delivery uses these and nothing from OTEL_EXPORTER_OTLP_*, so `fabric
+# run` never redirects the agent's own OpenTelemetry export, and the agent's own export
+# headers and client certificates never reach the Fabric Node. With none set, capture reads
+# OTEL_EXPORTER_OTLP_* exactly as before.
+FABRIC_OTLP_ENDPOINT = "FABRIC_OTLP_ENDPOINT"
+FABRIC_OTLP_NAMES = (
+    FABRIC_OTLP_ENDPOINT, "FABRIC_OTLP_CERTIFICATE", "FABRIC_OTLP_CLIENT_CERTIFICATE",
+    "FABRIC_OTLP_CLIENT_KEY", "FABRIC_OTLP_HEADERS_FILE",
+)  # fmt: skip
+_SIGNAL_PATHS = {"traces": "/v1/traces", "logs": "/v1/logs"}
+_MAX_HEADERS_FILE_BYTES = 64 * 1024
+
+
+def fabric_otlp_selected(environ: Mapping[str, str] = os.environ) -> bool:
+    """Whether any ``FABRIC_OTLP_*`` variable is set (Fabric's own OTLP route, 058 §6.4)."""
+    return any((environ.get(name) or "").strip() for name in FABRIC_OTLP_NAMES)
+
+
+def capture_otlp_configured(environ: Mapping[str, str] = os.environ) -> bool:
+    """Whether capture has an OTLP traces endpoint: ``FABRIC_OTLP_ENDPOINT``, else the
+    standard ``OTEL_EXPORTER_OTLP_[TRACES_]ENDPOINT``."""
+    if fabric_otlp_selected(environ):
+        return bool((environ.get(FABRIC_OTLP_ENDPOINT) or "").strip())
+    names = ("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT")
+    return any(environ.get(name) for name in names)
+
+
+def _headers_from_file(path: str) -> dict[str, str]:
+    """``FABRIC_OTLP_HEADERS_FILE``: ``k=v`` pairs separated by commas or newlines (the
+    OTLP header syntax). The file holds the ingress credential: never logged or echoed."""
+    name = "FABRIC_OTLP_HEADERS_FILE"
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(_MAX_HEADERS_FILE_BYTES + 1)
+    except OSError:
+        raise ValueError(f"the file named by {name} is not readable") from None
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(f"{name} must hold k=v pairs separated by commas") from None
+    joined = ",".join(line.strip() for line in text.splitlines() if line.strip())
+    if len(raw) > _MAX_HEADERS_FILE_BYTES or not _headers_well_formed(joined):
+        raise ValueError(f"{name} must hold k=v pairs separated by commas")
+    headers: dict[str, str] = {}
+    for item in filter(None, re.split(r"[ \t]*,[ \t]*", joined)):
+        key, _, value = item.partition("=")
+        headers[unquote(key).strip().lower()] = unquote(value).strip()
+    return headers
+
+
+def _fabric_signal_settings(signal: Literal["traces", "logs"], environ: Mapping[str, str]
+                            ) -> OtlpSettings:  # fmt: skip
+    """The ``FABRIC_OTLP_*`` route: ``FABRIC_OTLP_ENDPOINT`` is the Node's base URL (the
+    signal path is appended, as for ``OTEL_EXPORTER_OTLP_ENDPOINT``), http/protobuf, the
+    10 s timeout, and only the TLS files and headers file named by ``FABRIC_OTLP_*``."""
+
+    def get(name: str) -> str | None:
+        return (environ.get(name) or "").strip() or None
+
+    base = get(FABRIC_OTLP_ENDPOINT)
+    if base is None:
+        raise ValueError("a FABRIC_OTLP_* setting needs FABRIC_OTLP_ENDPOINT")
+    check_endpoint_url(FABRIC_OTLP_ENDPOINT, base)
+    files = {name: get(f"FABRIC_OTLP_{name}") for name in
+             ("CERTIFICATE", "CLIENT_CERTIFICATE", "CLIENT_KEY")}  # fmt: skip
+    for suffix, path in files.items():
+        if path is not None:
+            _read_tls_file(f"FABRIC_OTLP_{suffix}", path)
+    if (files["CLIENT_KEY"] is None) is not (files["CLIENT_CERTIFICATE"] is None):
+        raise ValueError("OTLP client key and client certificate must be configured together")
+    headers_file = get("FABRIC_OTLP_HEADERS_FILE")
+    headers = _headers_from_file(headers_file) if headers_file else {}
+    endpoint = base.rstrip("/") + _SIGNAL_PATHS[signal]
+    return OtlpSettings(
+        endpoint, headers, files["CERTIFICATE"], files["CLIENT_CERTIFICATE"],
+        files["CLIENT_KEY"], 10.0, "http/protobuf", FABRIC_OTLP_ENDPOINT, route="fabric",
+    )  # fmt: skip
+
+
 _OTLP_COMPRESSIONS = frozenset({"gzip", "deflate", "none"})
 
 
@@ -378,14 +458,19 @@ class OtlpSettings:
     protocol: str
     # The variable the endpoint came from, so a diagnostic names the one the user set.
     endpoint_name: str | None = None
+    # "fabric": FABRIC_OTLP_* (058 §6.4), nothing read from OTEL_EXPORTER_OTLP_*; "otel".
+    route: Literal["fabric", "otel"] = "otel"
 
 
 def otlp_signal_settings(
     signal: Literal["traces", "logs"], environ: Mapping[str, str] = os.environ
 ) -> OtlpSettings:
-    """Resolve ``OTEL_EXPORTER_OTLP_<SIGNAL>_*`` > ``OTEL_EXPORTER_OTLP_*`` (048 §3);
-    ``ValueError`` naming only the variable for an endpoint with userinfo, query or fragment
-    (047 E8), malformed headers, an unreadable TLS file, a lone key/cert or a bad timeout."""
+    """Resolve ``FABRIC_OTLP_*`` when any is set (058 §6.4: then nothing else), else
+    ``OTEL_EXPORTER_OTLP_<SIGNAL>_*`` > ``OTEL_EXPORTER_OTLP_*`` (048 §3); ``ValueError``
+    naming only the variable for an endpoint with userinfo, query or fragment (047 E8),
+    malformed headers, an unreadable TLS file, a lone key/cert or a bad timeout."""
+    if fabric_otlp_selected(environ):
+        return _fabric_signal_settings(signal, environ)
 
     def pick(suffix: str) -> tuple[str, str] | None:
         names = (f"OTEL_EXPORTER_OTLP_{signal.upper()}_{suffix}", f"OTEL_EXPORTER_OTLP_{suffix}")
@@ -660,6 +745,8 @@ def _otlp_exporter() -> SpanExporter | None:
         raise ValueError("OTLP protocol must be http/protobuf or grpc for Fabric capture")
     if settings.endpoint is None:
         return None
+    if settings.route == "fabric":
+        return _fabric_otlp_exporter(settings)
     name = "http" if settings.protocol == "http/protobuf" else "grpc"
     # Fabric-owned trace delivery follows the content rule: verified TLS, or plaintext to a
     # loopback host only (the ingress credential never crosses a network unencrypted).
@@ -687,6 +774,80 @@ def _otlp_exporter() -> SpanExporter | None:
             if name == "http":  # its own (or a credential plugin's) session, never redirecting
                 _harden_exporter_session(exporter)
                 pin_delivery_proxies(exporter_session(exporter), settings.endpoint, proxy)
+    except Exception as exc:
+        raise ValueError(f"OTLP span exporter construction failed ({type(exc).__name__})") from None
+    return exporter
+
+
+# Request headers Fabric's own OTLP/HTTP export keeps (058 §6.4): the exporter's transport
+# headers. Every other header the exporter adds (OTEL_EXPORTER_OTLP_*_HEADERS, which belong
+# to the agent's own export) is dropped; FABRIC_OTLP_HEADERS_FILE's headers are added.
+_TRANSPORT_HEADERS = frozenset({
+    "accept", "accept-encoding", "connection", "content-encoding", "content-length",
+    "content-type", "host", "transfer-encoding", "user-agent",
+})  # fmt: skip
+
+
+def _pinned_adapter(settings: OtlpSettings) -> Any:
+    """A ``requests`` adapter that sends with exactly the ``FABRIC_OTLP_*`` CA, client
+    certificate and headers, whatever the exporter resolved from ``OTEL_EXPORTER_OTLP_*``
+    (its constructor merges those environment settings in). Public ``requests`` API only,
+    so it holds for every exporter release the ``>=1.41`` floor admits."""
+    from requests.adapters import (  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
+        HTTPAdapter,
+    )
+    from requests.structures import (  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
+        CaseInsensitiveDict,
+    )
+
+    ca = settings.certificate
+    client_cert = ((settings.client_certificate, settings.client_key)
+                   if settings.client_certificate and settings.client_key else None)  # fmt: skip
+    extra = dict(settings.headers)
+
+    class _FabricOtlpAdapter(HTTPAdapter):  # type: ignore[misc, unused-ignore]
+        def send(self, request: Any, stream: bool = False, timeout: Any = None,
+                 verify: Any = True, cert: Any = None, proxies: Any = None,
+                 **kwargs: Any) -> Any:  # fmt: skip
+            kept = {k: v for k, v in request.headers.items() if k.lower() in _TRANSPORT_HEADERS}
+            request.headers = CaseInsensitiveDict(kept)
+            request.headers.update(extra)
+            trust: Any = ca or os.environ.get("REQUESTS_CA_BUNDLE") or (
+                os.environ.get("CURL_CA_BUNDLE") or True)  # fmt: skip
+            return super().send(request, stream=stream, timeout=timeout, verify=trust,
+                                cert=client_cert, proxies=proxies)  # fmt: skip
+
+    return _FabricOtlpAdapter()
+
+
+def _fabric_otlp_exporter(settings: OtlpSettings) -> SpanExporter:
+    """The OTLP/HTTP exporter for the ``FABRIC_OTLP_*`` route (058 §6.4): the same transport
+    rule (verified TLS, or plaintext to loopback only), its own redirect-refusing session
+    with the pinned adapter, the delivery proxy rule. ``ValueError`` (fixed text)."""
+    assert settings.endpoint is not None  # noqa: S101 - _fabric_signal_settings sets it
+    check_content_endpoint_url(FABRIC_OTLP_ENDPOINT, settings.endpoint)
+    proxy = delivery_proxy_from_env()
+    try:
+        module = importlib.import_module("opentelemetry.exporter.otlp.proto.http.trace_exporter")
+        import requests  # type: ignore[import-untyped, unused-ignore]  # noqa: PLC0415
+    except ImportError:
+        raise ValueError("OTLP http needs opentelemetry-exporter-otlp-proto-http") from None
+    try:
+        with sanitized_export_diagnostics():
+            session = no_redirect_session(requests.Session())
+            adapter = _pinned_adapter(settings)
+            session.mount("https://", adapter)
+            session.mount("http://", adapter)
+            exporter: SpanExporter = module.OTLPSpanExporter(
+                endpoint=settings.endpoint, certificate_file=settings.certificate,
+                client_key_file=settings.client_key,
+                client_certificate_file=settings.client_certificate,
+                headers=dict(settings.headers), timeout=settings.timeout_s, session=session,
+            )  # fmt: skip
+            _harden_exporter_session(exporter)
+            if exporter_session(exporter) is not session:
+                raise ValueError("the OTLP exporter does not use the session it was given")
+            pin_delivery_proxies(session, settings.endpoint, proxy)
     except Exception as exc:
         raise ValueError(f"OTLP span exporter construction failed ({type(exc).__name__})") from None
     return exporter
