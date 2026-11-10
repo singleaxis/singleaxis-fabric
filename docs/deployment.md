@@ -106,12 +106,13 @@ The application is never blocked.
 | `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer%20<ingress token>` (covers spans and content) |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | CA bundle of the Node's server certificate |
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE`, `OTEL_EXPORTER_OTLP_CLIENT_KEY` | agent client certificate (Helm `shadow-production` requires mTLS **and** the token) |
+| `FABRIC_OTLP_ENDPOINT`, `FABRIC_OTLP_CERTIFICATE`, `FABRIC_OTLP_CLIENT_CERTIFICATE`, `FABRIC_OTLP_CLIENT_KEY`, `FABRIC_OTLP_HEADERS_FILE` | optional, instead of the four `OTEL_EXPORTER_OTLP_*` rows: Fabric's own OTLP settings. When any is set, capture delivers with these and reads nothing from `OTEL_EXPORTER_OTLP_*`, so an agent that exports its own OpenTelemetry keeps its endpoint, headers and certificates to itself. `FABRIC_OTLP_ENDPOINT` is the Node's base URL (`/v1/traces` is appended); the headers file holds `k=v` pairs, one per line or comma separated (`Authorization=Bearer%20<ingress token>`); http/protobuf only. |
 | `FABRIC_TENANT_ID` | the Node's single allowed tenant; must equal the policy's `tenant_id` |
 | `FABRIC_SOURCE_ID` | this source's id; the Node is bound to its `s-` pseudonym (below) |
 | `FABRIC_WIRE_SPOOL_DIR` | absolute directory for the durable spool (created `0700`, must be owned by the agent's uid) |
 | `FABRIC_WIRE_SPOOL_KEY` or `FABRIC_WIRE_SPOOL_KEY_FILE` | 32-byte AES-256-GCM key (base64, or raw/base64 in the file) |
 | `FABRIC_CAPTURE_POLICY` | path to a deployment-policy/v1 JSON file (below) |
-| `FABRIC_WIRE_ID_KEY` | secret of at least 16 bytes (used as given, not base64) for pseudonyms |
+| `FABRIC_WIRE_ID_KEY` or `FABRIC_WIRE_ID_KEY_FILE` | secret of at least 16 bytes (used as given, not base64) for pseudonyms; the file holds the same bytes (one trailing newline is ignored) |
 | `FABRIC_TOKENIZATION_KEY` | only for `tokenize`: base64 of at least 32 bytes, distinct from the id key |
 | `FABRIC_REDACTION_ENDPOINT`, `FABRIC_REDACTION_TOKEN_FILE` | only for `redact`, `masked_only` and `original_plus_masked`: your [redaction service](privacy-and-security.md#redaction-service) (Unix socket or loopback port) and its optional `0600` token file |
 | `OTEL_SERVICE_NAME` | optional; emitted as an `svc-` pseudonym |
@@ -132,6 +133,10 @@ request, default 32, at most 256) and `FABRIC_WIRE_CONTENT_CONCURRENCY`
 (content requests in flight, default 4, at most 16), `FABRIC_WIRE_AIOHTTP=0` (stop capturing `aiohttp` calls;
 on by default),
 `FABRIC_WIRE_PROXY` (an explicit CONNECT proxy for Fabric's own delivery),
+`FABRIC_WIRE_STATUS_FILE` (a path: the process writes its capture status there at install
+and its final counters at exit, mode `0600`, never to the agent's own output),
+`FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy` (pin the three built-in endpoints of releases before
+the endpoint table, `contracts/providers/v1`),
 `FABRIC_WIRE_LABELS=clear`. `FABRIC_WIRE_STORE_SSE` and
 `FABRIC_WIRE_STORE_KMS_KEY_ID` are refused: encryption is configured on the
 Node. Source: `sdk/python/src/fabric/wire/_config.py`.

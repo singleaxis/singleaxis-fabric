@@ -2,7 +2,7 @@
 title: Easy integration — near one-click setup, a launcher for zero-code capture, and checked paths to production (install, configuration and verification tooling only)
 status: accepted
 qualification: NO_COVERAGE_CLAIM
-revision: 2
+revision: 2.1
 last_updated: 2026-11-10
 owner: recorder-engineering
 depends_on: ["047", "048", "049", "053", "055", "056", "057"]
@@ -17,8 +17,10 @@ related: ["027", "030", "031", "050", "051", "052", "054"]
 |---|---|---|
 | 1 | 2026-11-09 | First draft, from the owner's direction of 2026-11-09 ("the ease of integration ... make it an easy one click set up (not literally but let us get as close to that as possible)"), the lead engineer's proposed plan, and the friction audit of the same day. Answers the owner's question on integration touch points (section 1). |
 | 2 | 2026-11-10 | Accepted. The owner accepted every section 17 recommendation as written (OQ-1 to OQ-14). OQ-11 is applied to `AGENTS.md`. New section 16.8 marks the parts of E1-E3 that PRs merged on 2026-11-09/10 already did (#286, #287, #288), so the build does not redo them; OQ-10 is closed by spec 056 revision 11 (#287). No target, rule or work package changes otherwise. |
+| 2.1 | 2026-11-10 | Build notes from unit E1a (WP8-1, WP8-6, WP8-7); no target or rule changes. (a) The built-in rows keep today's matcher ids (`openai`, `anthropic`, `azure-openai`); the emitted C35 label of a built-in row is `<id>.default`, the form 8.1 names, so nothing a reader or an operator's `--endpoint-id` already uses changes (I8). (b) Only those three rows ship in table version 1; the other candidate rows stay in the table's `candidates` list until a response recorded from that provider qualifies them (8.1: an unqualified row is not shipped). The qualification fixtures were recorded from an OpenAI- and Anthropic-compatible server; they qualify each row's dialect, not provider-specific behaviour. (c) The manifest property `endpoint_table_version` (15) is deferred to its own unit: the Node checks manifest keys against an allowlist, so the Python, schema and Go change must land together with a version-skew test; until then `status()`, the status file and `fabric version` report the table version. (d) `no_store` and `endpoint_set` (13.2) are notices, not warnings, so `python -m fabric.wire status` keeps its exit code for metadata-only users. (e) The unmatched-host fix names `FABRIC_WIRE_ENDPOINTS` until `fabric init --provider` ships (WP8-2). (f) The `FABRIC_OTLP_*` route is http/protobuf. (g) The catalogue's docs page is `docs/diagnostics.md` until the 14.1 restructure moves it. (h) The commands not built yet in a release report `FC-010` and exit 2. |
 
-**Status: accepted (revision 2, owner decisions of 2026-11-10); not
+**Status: accepted (revision 2, owner decisions of 2026-11-10); E1a
+built (WP8-1, WP8-6, WP8-7; build notes in revision 2.1), the rest not
 built.** This spec changes no code and no contract by itself. Contract
 additions are listed in section 15 and are applied only by the work
 packages of section 16. The owner accepted every recommendation of

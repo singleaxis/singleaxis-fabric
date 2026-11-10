@@ -15,6 +15,47 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **The `fabric` command (spec 058, first part).** `pip install
+  "singleaxis-fabric[cli]"` installs `fabric` and its alias `singleaxis-fabric`
+  (also `python -m fabric.cli`). This release ships `fabric version` and
+  `fabric help`; `plan`, `init`, `up`, `down`, `run`, `verify`, `doctor` and
+  `show` say they are not built yet and point at the quickstart. Underneath:
+  `fabric.yaml` (`contracts/cli-config/v1`) with strict validation that names
+  the nearest valid key, discovery (`--config`, `FABRIC_CONFIG`, the current
+  directory, then parents up to the git root or home), and one precedence rule
+  (flag, then an environment variable, then `fabric.yaml`, then the default),
+  with every variable that overrides the file named. `--json` prints the
+  `fabric.cli-report/v1` report; exit codes are 0 ok, 1 a check failed, 2 usage
+  or configuration error, 3 a missing prerequisite. The CLI runs outside the
+  agent: autoload never imports it or the `[cli]` extra's dependencies, and no
+  command opens a network connection.
+- **A diagnostics catalogue** (`contracts/diagnostics/v1`,
+  [docs/diagnostics.md](docs/diagnostics.md)): every message the CLI and the
+  Python SDK print now ends with a stable id such as `[FW-012]`, each with a
+  fixed text and fix. `python -m fabric.wire status` adds `warning_ids`,
+  `notice_ids` and, for an invalid configuration, `reason_id`; its `warnings`
+  list and exit code are unchanged.
+- **`FABRIC_OTLP_ENDPOINT`, `FABRIC_OTLP_CERTIFICATE`,
+  `FABRIC_OTLP_CLIENT_CERTIFICATE`, `FABRIC_OTLP_CLIENT_KEY`,
+  `FABRIC_OTLP_HEADERS_FILE`**: Fabric's own OTLP settings for capture
+  delivery. When any is set, capture reads nothing from
+  `OTEL_EXPORTER_OTLP_*`: an agent that exports its own OpenTelemetry keeps its
+  endpoint, and its export headers and client certificate are never sent to the
+  Fabric Node. Without them, capture reads `OTEL_EXPORTER_OTLP_*` as before.
+- **`FABRIC_WIRE_STATUS_FILE`**: a path where an autoloaded process writes its
+  capture status at install (or why capture was not installed, with the fix)
+  and its final counters at exit, mode `0600`, inside the existing exit budget
+  and never on the agent's stdout or stderr. **`fabric.wire.status()`** returns
+  the installed capture's status (the accessor the docs already named).
+- **`FABRIC_WIRE_ID_KEY_FILE`**: the pseudonym id key from a file, like the
+  spool and tokenization keys.
+- **The built-in endpoint table** (`contracts/providers/v1/builtin-endpoints.json`,
+  table version 1) replaces the hard-coded list. It holds the same three rows
+  as before (`api.openai.com`, `api.anthropic.com`, `*.openai.azure.com`), each
+  with recorded qualification fixtures that pass capture and reconstruction.
+  New rows will be on by default from the release that adds them, listed here;
+  `FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy` pins today's three. `status()` reports
+  `endpoint_set` and `endpoint_table_version`.
 - **`fabric.records.record_control`** records one decision an external
   control made (a guardrail, a policy service, a permission request and its
   answer, an approval, a rate limit, a budget): kind, phase, decision, the
