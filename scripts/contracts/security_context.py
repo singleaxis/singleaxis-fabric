@@ -1011,7 +1011,9 @@ def check_safety_map(root: Path, reg: Mapping[str, Any], fail: Fail) -> None:
         seen.add(row["id"])
 
 
-def validate_safety_fixture(document: Mapping[str, Any], root: Path, fail: Fail) -> None:
+def validate_safety_fixture(
+    document: Mapping[str, Any], root: Path, fail: Fail
+) -> None:
     """A provider safety-map row's response fixture (spec 057 WP7-5): it names a confirmed
     row of the map and that row's dialect, and lists response cases with the rows each
     projects: at least one case yields the row, at least one (the field absent or benign)
@@ -1020,38 +1022,69 @@ def validate_safety_fixture(document: Mapping[str, Any], root: Path, fail: Fail)
     run against every case by ``sdk/python/tests/test_reconstruct_wire_derivation.py``."""
     rows = {
         row["id"]: row
-        for row in json.loads((root / COVERAGE / SAFETY_MAP).read_text(encoding="utf-8"))["rows"]
+        for row in json.loads(
+            (root / COVERAGE / SAFETY_MAP).read_text(encoding="utf-8")
+        )["rows"]
     }
     where = f"fixture {document.get('row_id')}"
     if set(document) != {"schema_version", "row_id", "api", "dialect", "provenance", "source",
                          "note", "request", "cases"}:  # fmt: skip
         fail("coverage.safety_fixture", where, "closed fixture")
     row = rows.get(document["row_id"])
-    if row is None or row["status"] != "confirmed" or row["dialect"] != document["dialect"]:
-        fail("coverage.safety_fixture", where, "names a confirmed map row and its dialect")
+    if (
+        row is None
+        or row["status"] != "confirmed"
+        or row["dialect"] != document["dialect"]
+    ):
+        fail(
+            "coverage.safety_fixture",
+            where,
+            "names a confirmed map row and its dialect",
+        )
     if row["fixture_id"] != f"fixtures/provider-safety/{document['row_id']}.json":
         fail("coverage.safety_fixture", where, "the map row names this fixture")
     if document["provenance"] not in ("recorded", "documented_shape"):
-        fail("coverage.safety_fixture", where, "provenance recorded or documented_shape")
+        fail(
+            "coverage.safety_fixture", where, "provenance recorded or documented_shape"
+        )
     yields = empty = False
     for case in document["cases"]:
-        if set(case) - {"name", "response", "stream", "rows"} or not isinstance(case["rows"], list):
+        if set(case) - {"name", "response", "stream", "rows"} or not isinstance(
+            case["rows"], list
+        ):
             fail("coverage.safety_fixture", where, "closed case")
         empty = empty or not case["rows"]
         for item in case["rows"]:
             mapped = rows.get(item.get("row"))
-            if mapped is None or mapped["dialect"].split("_", 1)[-1] != row["dialect"].split("_", 1)[-1]:
-                fail("coverage.safety_fixture", where, "a projected row of the same dialect")
+            if (
+                mapped is None
+                or mapped["dialect"].split("_", 1)[-1]
+                != row["dialect"].split("_", 1)[-1]
+            ):
+                fail(
+                    "coverage.safety_fixture",
+                    where,
+                    "a projected row of the same dialect",
+                )
             assert mapped is not None
             decisions = {mapped["decision"], "modify"} if "modify" in mapped["match"] else {
                 mapped["decision"]}  # fmt: skip
-            if (item["signal"], item["stage"]) != (mapped["signal"], mapped["stage"]) or (
-                item["decision"] not in decisions
-            ):
-                fail("coverage.safety_fixture", where, "signal, stage and decision of the map")
+            if (item["signal"], item["stage"]) != (
+                mapped["signal"],
+                mapped["stage"],
+            ) or (item["decision"] not in decisions):
+                fail(
+                    "coverage.safety_fixture",
+                    where,
+                    "signal, stage and decision of the map",
+                )
             yields = yields or item["row"] == document["row_id"]
     if not (yields and empty):
-        fail("coverage.safety_fixture", where, "a case with the row and a case without it")
+        fail(
+            "coverage.safety_fixture",
+            where,
+            "a case with the row and a case without it",
+        )
 
 
 # ===================================================================== dispatch from the validators
