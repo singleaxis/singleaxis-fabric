@@ -22,7 +22,7 @@ lists both.
 
 | Rev | Date | Change |
 |---|---|---|
-| 3 | 2026-11-10 | Prepared for build against main `dcbe2e23`. §2 refreshed with current `file:line` anchors (TypeScript SDK after #256 and #286, the Python P1 runtime, spec 057 P0 records, the delivery fix #289). §10 settles R1–R16: confirmed where Python has built them as written; only open items remain in §14. §9.5 replaces the parallel waves with 22 build units, one PR each, stacked, ordered so a Node agent using global `fetch` or the official `openai` / `@anthropic-ai/sdk` clients gets a verified, replayable record first (TS-1U + TS-1D), then core HTTP (TS-1H). §9.2 names the CI jobs that measure the passivity and privacy gates. §7.1 follows #289 (several content records per request, with a one-per-request fallback). §9.3 drops matrix rows named after agent frameworks. §13 aligns with spec 058 (preload name, `fabric run`, injector, npm launcher, G2) and names the interface spec 057 WP7-16 uses. |
+| 3 | 2026-11-10 | Prepared for build against main `be39aca6`. §2 refreshed with current `file:line` anchors (TypeScript SDK after #256 and #286, the Python P1 runtime, spec 057 P0 records, the delivery fix #289, and spec 058 E1a #291: diagnostics catalogue, endpoint table, status file, `FABRIC_OTLP_*`). §3.4 and §4.7 bind TypeScript to the shared endpoint table and diagnostics catalogue of #291. §10 settles R1–R16: confirmed where Python has built them as written; only open items remain in §14. §9.5 replaces the parallel waves with 22 build units, one PR each, stacked, ordered so a Node agent using global `fetch` or the official `openai` / `@anthropic-ai/sdk` clients gets a verified, replayable record first (TS-1U + TS-1D), then core HTTP (TS-1H). §9.2 names the CI jobs that measure the passivity and privacy gates. §7.1 follows #289 (several content records per request, with a one-per-request fallback). §9.3 drops matrix rows named after agent frameworks. §13 aligns with spec 058 (preload name, `fabric run`, injector, npm launcher, G2) and names the interface spec 057 WP7-16 uses. |
 | 2 | 2026-10-22 | Applied the cross-spec revision decisions R1–R16 (defined in the introduction of [050](050-run-structure-and-records-p1.md)); bound TypeScript to 050's P1 run, records, seal and delivery contract; froze the native addon ABI; moved every Python edit to its Python owner; split the oversized runtime work package. §12 maps every review finding to its resolution. |
 
 ## 1. Scope and release gates
@@ -116,9 +116,10 @@ nodes, memory, retrieval, side effects or task success. `D30` comes only
 from `endRun` in TS-1 (§4.3). `D35` cost remains downstream; `X37`
 delivery receipts remain a contract, not automatic proof.
 
-## 2. Current state at main `dcbe2e23`
+## 2. Current state at main `be39aca6`
 
-Paths and line numbers were read from main at `dcbe2e23` (2026-11-10).
+Paths and line numbers were read from main at `be39aca6` (2026-11-10,
+after #291).
 TypeScript paths are relative to `sdk/typescript/`; Python paths are
 relative to `sdk/python/src/fabric/`. No TypeScript wire directory,
 preload, native addon or Node sender exists: `sdk/typescript/src/` has no
@@ -149,16 +150,20 @@ code below, not the historical 047/048 limits.
 | Area | Reference on main | TypeScript port |
 |---|---|---|
 | Matching | `wire/_match.py:31` `EndpointIndex`, `:42` `match`; `wire/_routes.py` route table (`internal`, `owned`, `model`, `nonmodel`, `none`) | `wire/match.ts` ports `EndpointIndex` and the `internal`, `owned` and `model` routes. No non-model route in this build |
-| Capture | `wire/_stream.py:191` `Exchange`, `:394` finish-once, `:98` `adopt`; `wire/_transport.py:117` `WireTee`; `_capture_scope.py:56` `ExplicitScope` | Bounded retention, finish-once, provisional explicit ownership. Sticky withholding (050 WP-40) is not built in Python either; TypeScript implements 049's rule directly (§4.6) |
-| Limits | `wire/_config.py:42–48` (1 MiB reserve, 16,384 queue entries, batch 256 / concurrency 16 maxima), `:86–103` `WireConfig` (32 MiB object, retained bytes, queue), `:108` drain on exit | Same defaults and maxima (§4.2) |
+| Capture | `wire/_stream.py:191` `Exchange`, `:394` finish-once, `:98` `adopt`; `wire/_transport.py:117` `WireTee`; `_capture_scope.py:45` `ExplicitScope` | Bounded retention, finish-once, provisional explicit ownership. Sticky withholding (050 WP-40) is not built in Python either; TypeScript implements 049's rule directly (§4.6) |
+| Limits | `wire/_config.py:41–48` (64 MiB side cap, 63 MiB Node object cap, 1 MiB reserve, 16,384 queue entries, batch 256 / concurrency 16 maxima), `:147–176` `WireConfig` (32 MiB object, retained bytes, 256 MiB in flight, queue, `drain_on_exit_s`, content batch 32 / concurrency 4) | Same defaults and maxima (§4.2) |
 | Protection | `wire/_protect.py:129` `find_parts`, `:179` `skeleton_of`, `:200` `Protector`; `wire/_pipeline.py:141` `Budget`, `:242` `CapturePipeline`, `:394` `submit` | `wire/protect.ts`, `parts.ts`, `worker.ts` |
 | Spool | `wire/_spool.py:61–66` magics (`FWSPOOL1`, `FWSPOOLB`, `FWSPENC1`), `:67–75` reserve, lock names, 5 s admission deadline, `:118` `MAX_BODIES = 260`, `:181` `frame`, `:247` `unseal`; `wire/_keys.py:65` spool key id; `wire/_ledger.py:50–58`, `:96` `LossLedger` | `wire/spool-codec.ts`, `spool.ts`, `ledger.ts`; byte-identical frames (§6.2) |
 | Epochs | `wire/_registration.py:61–72` (`FWEPOCH1`, 4,096-byte file, offsets, 8 redraws), `:84` `Registration`; `_sequence.py` allocator and pseudonyms | `wire/registration.ts`, allocator in `runtime.ts` (§4.5, §6.1) |
 | Records input | `_records.py:479–497` `Attempt.emit` (three status inputs), `:548` `RecordsInput`, `:610` `begin`; `_capture_types.py:43–123` vocabularies and bounds | `wire/p1-types.ts`, `wire/records-input.ts` |
-| Runs | `_segments.py:96` token prefixes, `:158–183` token grammar, `:210–241` identity rules; `_seal.py:157` `record_digest`, `:175` `seal_digest`, `:229` `SegmentSeals`; `_loss.py:69` segment-keyed losses, `:349` aggregation; `_manifest.py:753` `build_manifest`, `:789` `emit_initial`; `wire/__init__.py:919` `run`, `:1020` `resume_token`, `:1029` `resume_tokens`, `:1037` `end_run` | `wire/scope.ts`, `segments.ts`, `seal.ts`, `loss.ts`, `manifest.ts`, `run-api.ts` |
+| Runs | `_segments.py:96` token prefixes, `:158–183` token grammar, `:210–241` identity rules; `_seal.py:157` `record_digest`, `:175` `seal_digest`, `:229` `SegmentSeals`; `_loss.py:69` segment-keyed losses, `:349` aggregation; `_manifest.py:753` `build_manifest`, `:789` `emit_initial`; `wire/__init__.py:960` `run`, `:1061` `resume_token`, `:1070` `resume_tokens`, `:1078` `end_run` | `wire/scope.ts`, `segments.ts`, `seal.ts`, `loss.ts`, `manifest.ts`, `run-api.ts` |
 | Exchange span | `wire/_attrs.py:45–81` (C40 opt-in `FABRIC_WIRE_PROVIDER_REQUEST_ID`, `fabric.capture.point`, `fabric.capture.source`, `fabric.wire.endpoint_id`) | `wire/worker.ts` span build (§7.1) |
-| Delivery (#289) | `wire/_content.py:21` result classes, `:83` `NodeContentClient`, `:127` `send`, `:140` `send_many` (several bodies per request, one-per-request fallback); `wire/_sender.py:102` `Sender`, `:613–656` progress and `content_rejected`; `tracing.py:469–493` delivery proxy rules | `wire/node-content.ts`, `sender.ts`, `delivery.ts` (§7.1) |
-| Status and diagnostics (#287) | `wire/_status.py` (`python -m fabric.wire status`), `wire/_diagnose.py` (reason and fix per configuration error), `wire/__init__.py:120` exit-backlog message | Same status document and reasons (§4.7) |
+| Delivery (#289) | `wire/_content.py:21` result classes, `:83` `NodeContentClient`, `:127` `send`, `:140` `send_many` (several bodies per request, one-per-request fallback); `wire/_sender.py:102` `Sender`, `:613–656` progress and `content_rejected`; `tracing.py:557` `delivery_proxy_from_env`, `:578` `pin_delivery_proxies` | `wire/node-content.ts`, `sender.ts`, `delivery.ts` (§7.1) |
+| Status and diagnostics (#287, #291) | `wire/_status.py:174` `env_status` (`python -m fabric.wire status`); `wire/__init__.py:917` `status()`; `wire/_diagnose.py:122–143` (reason, catalogue id and fix per configuration error); `wire/_statusfile.py:34–35` (`FABRIC_WIRE_STATUS_FILE`, schema `fabric.wire-status/v1`), `:116–145` install, failure and exit documents with `warning_ids` / `notice_ids`; `wire/__init__.py:134` exit-backlog note | Same status document, ids and reasons (§4.7) |
+| Diagnostics catalogue (058 §13.1, #291) | `contracts/diagnostics/v1/messages-v1.json`: `FW-001`–`FW-024` (SDK) and `FC-001`–`FC-010` (CLI), each a stable id, fixed text and fix with no interpolated value; packaged in Python as the generated `_catalogue_data.py`; `sdk/python/tests/test_diagnostics_catalogue.py` requires every catalogued id to be emitted by Python code; docs page `docs/diagnostics.md` is generated from it | TypeScript emits catalogue ids, never its own message table (§4.7). `055-t2` adds the TypeScript-only entries |
+| Built-in endpoint table (058 §8.1, #291) | `contracts/providers/v1/builtin-endpoints.json` (table version 1: `openai`, `anthropic`, `azure-openai`; other providers are `candidates`, not shipped); generated `wire/_endpoint_table.py`; `wire/_config.py:52` `LEGACY_ENDPOINTS`, `:106` `builtin_endpoints_from_env` (`FABRIC_WIRE_BUILTIN_ENDPOINTS=table\|legacy`) | TypeScript's defaults are generated from the same table (§3.4) |
+| `FABRIC_OTLP_*` route (058 WP8-6, #291) | `tracing.py:379` `fabric_otlp_selected`, `:416` `_fabric_signal_settings`, `:465` `otlp_signal_settings` (Fabric's own variables win over `OTEL_EXPORTER_OTLP_*`; http/protobuf) | `wire/config.ts` and `delivery.ts` apply the same precedence |
+| Operator CLI (058 E1a, #291) | `cli/__init__.py:37–38` command table; only `version` and `help` are built, the rest report `FC-010`; `cli/_config.py` (`fabric.yaml`), `cli/_providers.py` | `055-t18` adds the Node branch to `run` when 058 WP8-4 is in its base (§13.1) |
 | Security context (057 P0, #277–#280) | `_rec_grant.py:829` `record_grant`, `_rec_controls.py:271` `record_control`, `_rec_extension.py:187` `record_extension`, `_rec_check.py` (`control_check`), reader `reconstruct/_security.py`, `_controls.py` | Not in 055. WP7-16 adds the TypeScript APIs on the seam of §13.2 |
 
 ### 2.3 Contracts and vectors
@@ -319,7 +324,15 @@ Port `EndpointIndex` semantics from `wire/_match.py:31–61` and 047 §2 exactly
 POST only; allowed scheme; lowercase exact host or configured suffix;
 optional port; configured path prefix and one of `/chat/completions`,
 `/responses`, `/completions`, `/embeddings`, `/messages` for its dialect.
-Defaults are `api.openai.com`, `api.anthropic.com`, `.openai.azure.com`.
+The built-in matchers come from the shared endpoint table
+`contracts/providers/v1/builtin-endpoints.json` (058 §8.1): `055-t2`
+generates `src/wire/endpoint-table.generated.ts` from it, with a test
+that keeps it equal, as Python's `wire/_endpoint_table.py` is. Only rows
+with `default: true` are on; `FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy` pins
+`legacy_endpoint_ids`. Table version 1 holds `api.openai.com`,
+`api.anthropic.com` and `.openai.azure.com`; a row added to the table
+later reaches both languages by regeneration, with no 055 change. The
+status document reports the table version.
 Only explicitly configured matchers allow HTTP. Preserve Azure/custom
 base-path behavior. Queries are ignored for matching and never retained.
 Endpoint hosts, paths and proxy URLs never appear in manifests: only the
@@ -341,7 +354,7 @@ HTTPS; only `FABRIC_WIRE_PROXY` may select an HTTP(S) CONNECT proxy, with
 end-to-end Node certificate verification. Ingress authorization stays
 inside the TLS tunnel; proxy credentials go only to the proxy. Never
 mutate `process.env`, global agents or application trust settings. This
-ports Python `tracing.py:469–552` (`delivery_proxy_from_env`,
+ports Python `tracing.py:557–606` (`delivery_proxy_from_env`,
 `pin_delivery_proxies`) and 047/048 redirect hardening.
 
 ## 4. Modules, APIs and the passive handoff
@@ -350,7 +363,7 @@ ports Python `tracing.py:469–552` (`delivery_proxy_from_env`,
 
 | New area | Responsibility |
 |---|---|
-| `src/wire/config.ts`, `types.ts`, `p1-types.ts`, `match.ts`, `codec.ts` | Validated wire configuration, immutable internal DTOs, TS port of 050's P1 interface types, matching, exact int64/canonical JSON/OTLP encoding |
+| `src/wire/config.ts`, `types.ts`, `p1-types.ts`, `match.ts`, `codec.ts`; generated `endpoint-table.generated.ts`, `catalogue.generated.ts` | Validated wire configuration, immutable internal DTOs, TS port of 050's P1 interface types, matching, exact int64/canonical JSON/OTLP encoding; the built-in endpoint table (§3.4) and the diagnostics catalogue (§4.7), generated from their contracts |
 | `src/wire/native.ts`; `native/fabric_wire.c`, `native/fabric_wire_abi.h`, `binding.gyp` | Loader and the Node-API addon of §4.4: kernel lock, fd and mmap primitives plus isolate-teardown notification; nothing else |
 | `src/wire/runtime.ts`, `arena.ts`, `queue.ts`, `isolate.ts`, `exchange.ts`, `registration.ts` | JavaScript shared runtime of §4.5: SharedArrayBuffer control block, allocator, byte arenas, completed-job ring, isolate attach, exchange slots and finish-once state; epoch registration files (050 §3.2) |
 | `src/wire/scope.ts`, `segments.ts`, `seal.ts`, `manifest.ts`, `loss.ts`, `run-api.ts` | ALS scopes and D2 ownership; 050 run table, segments, tokens, `endRun`; seal accumulator; manifests; segment-attributed losses |
@@ -358,7 +371,7 @@ ports Python `tracing.py:469–552` (`delivery_proxy_from_env`,
 | `src/wire/worker.ts`, `protect.ts`, `parts.ts`, `writer.ts` | Fabric-owned worker; extraction, existing protector/redaction client, descriptor construction, unified content writer |
 | `src/wire/spool.ts`, `ledger.ts`, `spool-codec.ts` | 048 durable spool, accounting, encrypted frames, recovery and metadata-only emergency ledger (locks through §4.4 only) |
 | `src/wire/sender.ts`, `node-content.ts`, `delivery.ts`, `otlp.ts` | Private bound-source OTLP delivery, retry, permanent rejection and retirement; the pinned OTLP protobuf encoder |
-| `src/wire/status.ts` | Content-free status snapshot, reasons with fixes and the status file (§4.7) |
+| `src/wire/status.ts` | Content-free status snapshot, catalogue ids with fixes and the status file (§4.7) |
 | `src/wire/records-input.ts` | TS port of 050's records input (`RecordsInput`, `Attempt`, `RecordBody`); the seam existing explicit producers call (§6.1) |
 | `src/wire/index.ts`, `src/register.ts` | Explicit API (`@singleaxis/fabric/wire`) and the synchronous ESM/CJS preload (`@singleaxis/fabric/register`, the name spec 058 §5.5 uses) |
 
@@ -424,7 +437,7 @@ The run API is specified in §4.3. Reuse Python environment names and units:
 `FABRIC_WIRE_CONTENT_BATCH_BODIES`, `FABRIC_WIRE_CONTENT_CONCURRENCY`,
 `FABRIC_WIRE_DRAIN_ON_EXIT_S` (#289), `FABRIC_WIRE_DIAGNOSTICS`, and the
 existing OTLP endpoint/auth settings in 048. The variables spec 058 WP8-6
-and WP8-7 add to Python (`FABRIC_OTLP_*`, `FABRIC_WIRE_ID_KEY_FILE`,
+and WP8-7 added to Python in #291 (`FABRIC_OTLP_*`, `FABRIC_WIRE_ID_KEY_FILE`,
 `FABRIC_WIRE_STATUS_FILE`, `FABRIC_WIRE_BUILTIN_ENDPOINTS`) are read by
 TypeScript under the same names and rules from `055-t2` on, so the
 compiled environment file `fabric init` writes (058 §6.5) configures a
@@ -777,42 +790,85 @@ suppression of nested calls: a nested independent send is a new exchange.
 
 Ease of integration is a release requirement: a Node agent that records
 nothing must be able to say why in one command, without reading this
-spec.
+spec. TypeScript uses the diagnostics catalogue and the status file that
+spec 058 E1a built for Python (#291, §2.2); it defines no message table
+of its own.
 
-- `capture.status()` and the status file (`FABRIC_WIRE_STATUS_FILE`,
-  written by the Fabric worker, never by a hook) carry the same
-  content-free document as Python's `python -m fabric.wire status`
-  (`wire/_status.py`): per capture point its state and reason, the
-  qualification tuple (Node patch, undici version, platform), counters
-  (matched, captured, lost by reason, unmatched model-shaped requests,
-  spooled, delivered, `content_rejected`), spool backlog and the
-  exit-backlog note of #289. A shared fixture validates both languages'
-  documents against one schema.
-- Every disabled or degraded state has a fixed reason id and a fixed
-  message that names the cause and the fix. Messages carry no value,
-  path, URL, id or environment dump. The table below is normative;
-  `055-t2` commits it as data (`src/wire/reasons.ts`) with a test that
-  every reason the code can produce has a row.
+**Status document.** `capture.status()`, `envStatus()` and the status
+file (`FABRIC_WIRE_STATUS_FILE`, written by the Fabric worker at install
+and at exit, never by a hook; atomic rename, mode 0600) carry the
+document Python writes (`wire/_statusfile.py`): `schema`
+(`fabric.wire-status/v1`), `phase`, `written_at`, `pid`, `sdk_version`,
+`capture` (`installed`, `disabled`, `not_installed` or `closed`),
+`warning_ids` and `notice_ids` (catalogue ids), and a content-free
+`status` object. TypeScript's `status` object adds, per capture point,
+its state and reason, the qualification tuple (Node patch, undici
+version, platform) and the endpoint table version, next to the counters
+Python reports (matched, captured, lost by reason, unmatched
+model-shaped requests, spooled, delivered, `content_rejected`), the
+spool backlog and the exit-backlog note of #289. The document has no
+schema file on main; `055-t1` adds
+`contracts/diagnostics/v1/schema/wire-status-v1.schema.json` with
+fixtures, and a test under `scripts/tests/` validates documents produced
+by Python and (from `055-t14`) by TypeScript against it.
 
-| Reason | Message (cause, then fix) |
-|---|---|
-| `unsupported_version` | "Model-call capture is off: this Node.js or undici build is not qualified. Fix: run the agent on a Node.js version listed in the Fabric compatibility table (24.x), then start it again." |
-| `platform_unsupported` | "Model-call capture is off: Fabric has no native lock module for this operating system or CPU. Fix: run the agent on Linux or macOS (x64 or arm64)." |
-| `native_missing`, `native_digest_mismatch`, `native_load_failed`, `native_abi_mismatch`, `native_selftest_failed` | "Model-call capture is off: Fabric's native lock module could not be used (`<reason>`). Fix: reinstall `@singleaxis/fabric` without `--ignore-scripts`-style pruning of `prebuilds/`, and keep the spool directory on a local disk." |
-| `missing_capture_policy`, `missing_id_key`, `missing_spool_key` | "Model calls are recorded without content: `<variable>` is not set. Fix: set `<variable>` (run `fabric init`, or see the production setup page)." |
-| `no_destination` | "Model calls are captured but not delivered: no Fabric Node endpoint is configured. Fix: set `FABRIC_OTLP_ENDPOINT` (or run through `fabric run`)." |
-| `hook_disabled` | "Capture point `<point>` is switched off by `<variable>`=0." |
-| `worker_without_process_runtime` | "This worker thread records nothing: Fabric was not loaded in the main thread before the worker started. Fix: load Fabric with `NODE_OPTIONS=--import=@singleaxis/fabric/register` so every thread inherits it." |
-| `autoload_off` | "`@singleaxis/fabric/register` was loaded but did nothing: `FABRIC_WIRE_AUTOLOAD` is not `1`. Fix: set `FABRIC_WIRE_AUTOLOAD=1`." |
-| `config_invalid` | "Fabric capture is off: `<setting>` is not valid (`<fixed class>`). Fix: `<the accepted form>`." |
+**The one command.** With the agent's environment:
 
-- Diagnostics go to Fabric's own channel as in Python: silent on the
-  agent's stdout and stderr by default, printed once per epoch to stderr
-  only with `FABRIC_WIRE_DIAGNOSTICS=stderr`, and always available in
-  the status document. The first unmatched model-shaped request (a POST
-  whose path ends in one of §3.4's suffixes on a host no matcher
-  covers) is counted and reported with the fix "add the host with
-  `FABRIC_WIRE_ENDPOINTS`", without recording the host.
+```sh
+node -p "require('@singleaxis/fabric/wire').envStatus()"
+```
+
+`envStatus()` is the TypeScript form of Python's `env_status`
+(`python -m fabric.wire status`): it reads the configuration, installs
+no hook, sends nothing and returns the status document with every
+warning's text and fix. `fabric doctor` (058) reads the status file and
+needs no Node-specific code.
+
+**Catalogue ids.** Every disabled or degraded state maps to one entry
+of `contracts/diagnostics/v1/messages-v1.json`: a stable `FW-` id, a
+fixed text and a fix. Texts and fixes carry no interpolated value (the
+catalogue's rule); the variable, capture point or reason code a message
+is about appears beside it in local output only (the status document
+and stderr), never on telemetry.
+
+- TypeScript reuses an existing entry when its text and fix are true for
+  a Node agent as written: `FW-002` (no destination), `FW-003` (no
+  store), `FW-005` (endpoint set), `FW-006` (unmatched model host),
+  `FW-007` (`OTEL_SDK_DISABLED`), `FW-008` (content capture disabled:
+  `missing_capture_policy`, `missing_id_key`, `missing_spool_key`),
+  `FW-010`, `FW-012`–`FW-020`, `FW-022`–`FW-024` (endpoint, key, file
+  and setting errors).
+- Entries whose fix names a Python command or package (`FW-001`,
+  `FW-004`, `FW-009`, `FW-011`) get a TypeScript counterpart, and the
+  Node-only states get new entries. `055-t1` adds the rows below with
+  the next free `FW-` ids at the time it lands; ids are never reused.
+- Each entry gains an optional `sdk` list (`python`, `typescript`;
+  absent means `python`, today's meaning). Python's catalogue test
+  keeps its rule for entries that include `python`; a TypeScript test
+  (`055-t2` for configuration reasons, completed in `055-t14`) requires
+  every `typescript` entry to be emitted by TypeScript code and every
+  id TypeScript emits to be catalogued. `docs/diagnostics.md` is
+  regenerated (§14 OQ-10).
+
+| New entry (`name`) | Reason codes it covers | Text | Fix |
+|---|---|---|---|
+| `node_capture_not_installed` | `config_invalid` | "wire capture is not installed in this Node.js process: the configuration is invalid" | "run the status command (node -p with require('@singleaxis/fabric/wire').envStatus()) with the agent's environment; it names the setting and the fix" |
+| `node_runtime_unqualified` | `unsupported_version` | "model-call capture is off: this Node.js or undici build is not in the Fabric compatibility table" | "run the agent on a Node.js 24 build listed in the compatibility table of the release notes, then start it again" |
+| `node_platform_unsupported` | `platform_unsupported` | "model-call capture is off: Fabric has no native lock module for this operating system or CPU" | "run the agent on Linux or macOS, x64 or arm64" |
+| `node_native_unusable` | `native_missing`, `native_digest_mismatch`, `native_load_failed`, `native_abi_mismatch`, `native_selftest_failed` | "model-call capture is off: Fabric's native lock module could not be used" | "reinstall @singleaxis/fabric so its prebuilds directory is complete, and keep the spool directory on a local disk; the status names the reason" |
+| `node_hook_disabled` (info) | `hook_disabled` | "a capture point is switched off by its FABRIC_WIRE_UNDICI or FABRIC_WIRE_NODE_HTTP setting" | "set the variable to 1 to record through that capture point" |
+| `node_worker_unattached` | `worker_without_process_runtime`; uncaptured class `node_worker_unattached` | "a worker thread records nothing: Fabric was not loaded in the main thread before the worker started, or the worker did not inherit the preload" | "load Fabric with NODE_OPTIONS=--import=@singleaxis/fabric/register so every thread inherits it" |
+| `node_autoload_off` (info) | `autoload_off` | "@singleaxis/fabric/register was loaded but did nothing: FABRIC_WIRE_AUTOLOAD is not 1" | "set FABRIC_WIRE_AUTOLOAD=1, or start the agent with `fabric run`" |
+| `node_redacted_roles` | `protection_failed` for a role with no redaction service | "the capture policy masks some content roles and no redaction service is configured: their content is withheld" | "set FABRIC_REDACTION_ENDPOINT, or give those roles retain_original or metadata_only in the capture policy" |
+| `node_spool_backlog` | exit backlog | "records wait in the spool and no process is draining it" | "start the agent again, or set FABRIC_WIRE_DRAIN_ON_EXIT_S for batch or serverless workers; `python -m fabric.wire drain --until-empty` also drains a Node.js spool" |
+
+**Where messages go.** Diagnostics go to Fabric's own channel as in
+Python: silent on the agent's stdout and stderr by default, printed once
+per epoch to stderr only with `FABRIC_WIRE_DIAGNOSTICS=stderr`, and
+always available in the status document. The first unmatched
+model-shaped request (a POST whose path ends in one of §3.4's suffixes
+on a host no matcher covers) is counted and reported as `FW-006`; the
+host appears only in the local status document, as in Python.
 
 ## 5. PROTECT before persistence
 
@@ -1124,8 +1180,8 @@ note (`.exit-backlog`, schema `fabric.wire-exit-backlog/v1`,
 `wire/_spool.py:102–104`), and the status document reports it with the
 remedies.
 
-**Outcome classes**, matching `_content.py:127–175` and
-`_sender.py:613–656`:
+**Outcome classes**, matching `wire/_content.py:127–205` and
+`wire/_sender.py:613–656`:
 
 | Response | Class | Agent behavior |
 |---|---|---|
@@ -1282,17 +1338,23 @@ are the PRs: each unit builds one WP or a named part of one. Each WP owns
 tests in a matching `sdk/typescript/test/wire/<area>/` directory unless
 another path is named.
 
-**Python files (R13).** No unit edits a file under `sdk/python/src/`,
-with one exception that spec 058 §16.6 assigns to this spec: unit
-`055-t18` adds the Node branch to the `fabric` CLI (`fabric.cli`), which
-is tooling, not the SDK's capture code. Units may add new Python test
+**Python files (R13).** No unit hand-edits a file under
+`sdk/python/src/`, with one exception that spec 058 §16.6 assigns to
+this spec: unit `055-t18` adds the Node branch to the `fabric` CLI
+(`fabric.cli`), which is tooling, not the SDK's capture code. Generated
+Python modules that mirror a contract (`_catalogue_data.py`,
+`_manifest_fields_generated.py`, `_records_keys_generated.py`) are
+regenerated by their existing generators when a 055 unit changes that
+contract; their tests require it. `055-t1` also changes one Python test,
+`sdk/python/tests/test_diagnostics_catalogue.py`, for the `sdk` field of
+§4.7. Units may add new Python test
 helpers and vector generators under `scripts/` and
 `qualification/node-wire/`. **Python exit gates never depend on a 055
 unit.**
 
 External dependencies (owned elsewhere), with their state on main:
 
-| Id | Owner | What TS needs | State at `dcbe2e23` | Effect on the build |
+| Id | Owner | What TS needs | State at `be39aca6` | Effect on the build |
 |---|---|---|---|---|
 | E1 | 050 WP-00 | Shared contract rows and vectors (§2.3) | Built | None |
 | E2 | 050 WP-01 | Frozen P1 interface names | Built (`_capture_types.py`, `_records.py`) | `p1-types.ts` ports them as they are |
@@ -1303,7 +1365,7 @@ External dependencies (owned elsewhere), with their state on main:
 | E6b | 050 WP-50 | LR-1 harness `qualification/run-structure/` | Not built (an end-to-end test exists) | `055-t22` runs the model-call part of LR-1 in `qualification/node-wire/` with a Python continuation; it does not wait for the harness |
 | E7 | R16 | `test/agent-matrix` and `test/chaos` merged to main | **Not done** | TS qualification is self-contained (§9.3, OQ-7) |
 | E8 | H0 | Decision-line privacy fixes | Shipped in v0.8.0 | None |
-| E9 | 058 WP8-4, WP8-9, WP8-13 | `fabric run`, the npm launcher, the injector | Not built (058 E1 in progress) | `055-t18` builds the Node branch on whatever is in its base and records the rest (§13.1) |
+| E9 | 058 WP8-4, WP8-9, WP8-13 | `fabric run`, the npm launcher, the injector | Not built. 058 E1a is built (#291): the `fabric.cli` command table, where `run` still reports `FC-010`, the diagnostics catalogue, the endpoint table and the status file | `055-t18` builds the Node branch on whatever is in its base and records the rest (§13.1) |
 
 Request R-TS-1 to the reader owner (050 reader WPs; spec 057 P1a for the
 wire-derivation rules): the reader resolves capture points from the
@@ -1314,7 +1376,7 @@ fixture and the owner fixes it; a 055 unit does not edit the reader.
 
 | WP / owner area | Deliverables | Built by units |
 |---|---|---|
-| WP-01 contracts and interfaces: §8's rows and fixtures; `native/fabric_wire_abi.h`; `wire/{types,p1-types,config,match,codec,reasons}.ts`; TS-0 audit; compatibility table | Frozen DTOs, P1 port types, §4.4 ABI header, environment mapping, exact int64/canonical vectors, version/boundary qualification table | `055-t1`, `055-t2` |
+| WP-01 contracts and interfaces: §8's rows and fixtures; the catalogue entries and status schema of §4.7; `native/fabric_wire_abi.h`; `wire/{types,p1-types,config,match,codec}.ts` and the generated endpoint table and catalogue modules; TS-0 audit; compatibility table | Frozen DTOs, P1 port types, §4.4 ABI header, environment mapping, exact int64/canonical vectors, version/boundary qualification table | `055-t1`, `055-t2` |
 | WP-02a native addon: `native/**`, `binding.gyp`, `wire/native.ts`, `scripts/typescript/prebuild/**`, `.github/workflows/typescript-native-prebuilds.yml` | §4.4 exactly | `055-t3` |
 | WP-02b JS shared runtime: `wire/{runtime,arena,queue,exchange,registration,isolate}.ts` | §4.5; epoch registration (050 §3.2) | `055-t4`, `055-t5`; isolate attach in `055-t19` |
 | WP-02c run structure: `wire/{scope,segments,seal,manifest,loss,run-api}.ts` | §4.3, §7.2 | `055-t9`, `055-t10`, `055-t11` |
@@ -1576,8 +1638,8 @@ reader can see after the unit that they could not see before.
 
 | Unit | Builds | Exact acceptance tests (all must pass in CI) | Newly visible |
 |---|---|---|---|
-| `055-t1` contracts, ABI header, runtime audit | WP-01 (contract part): every row of §8; `native/fabric_wire_abi.h`; `sdk/typescript/wire-qualification.json` with audited candidate tuples; `scripts/typescript/audit-undici-channels.mjs` | `scripts/contracts/validate_coverage_contracts.py`, `validate_capture_contracts.py` and `pytest scripts/tests/test_coverage_contracts.py scripts/tests/test_capture_contracts.py scripts/tests/test_contract_generators.py` pass with the new rows; valid and invalid fixtures of §8 each accepted or refused; 049 generated blocks regenerate with no diff; the audit script, run in CI on Node 22.x, 24.0.0, the candidate minimum and the newest 24.x, records which body-chunk channels each build publishes for one local `fetch` POST, and the table matches its output; a header test compiles `fabric_wire_abi.h` and checks every name and value of §4.4 | The registry describes both TypeScript points and their limits; a checked-in table says which Node builds publish request and response bytes. No runtime change |
-| `055-t2` codec, configuration, matcher, P1 pure functions | WP-01 (code part): `wire/{types,p1-types,config,match,codec,reasons}.ts`; record digest, seal digest, token parse/issue and run-identity rules as pure functions; `contracts/capture/v1/fixtures/vectors/spool-bytes-v1.json` and its generator `scripts/contracts/generate_ts_wire_vectors.py`; TS-0 audit | `test/wire/codec/`: canonical JSON and int64 vectors through 2^63−1 (escaping, surrogatepass ids, integral floats, ordering); every case of `resume-token-v1/v2`, `seal-digest-v1`, `seal-parity-v1`, `manifest-chain-v1`, `manifest-span-v1`, `run-marker-v1`, `records-span-v1`, `span-category-v1` and `pseudonym-v2` byte for byte; `test/wire/match/`: property tests against a table generated from `wire/_match.py`; `test/wire/config/`: the Python-to-TS environment mapping fixture (unset versus empty, `*_FILE` variants, 058 names), malformed values produce §4.7 reasons; `test/wire/ts0/`: identity and new-key parity, the inventory of automatic `String()`/`JSON.stringify` of application objects (R9), cross-language id privacy canaries; `pytest scripts/tests/test_capture_contracts.py` regenerates `spool-bytes-v1.json` from the Python writer with no diff | TypeScript computes Python's digests, tokens and ids byte for byte. No runtime change |
+| `055-t1` contracts, ABI header, runtime audit | WP-01 (contract part): every row of §8; the diagnostics catalogue entries, `sdk` field and `wire-status-v1.schema.json` of §4.7; `native/fabric_wire_abi.h`; `sdk/typescript/wire-qualification.json` with audited candidate tuples; `scripts/typescript/audit-undici-channels.mjs` | `scripts/contracts/validate_coverage_contracts.py`, `validate_capture_contracts.py` and `pytest scripts/tests/test_coverage_contracts.py scripts/tests/test_capture_contracts.py scripts/tests/test_contract_generators.py` pass with the new rows; valid and invalid fixtures of §8 each accepted or refused; `sdk/python/tests/test_diagnostics_catalogue.py` passes with the `sdk` field (Python entries still all emitted, `typescript`-only entries exempt there), `_catalogue_data.py` and `docs/diagnostics.md` regenerate with no diff, and a new `scripts/tests/test_wire_status_schema.py` validates Python's install, failure and exit status documents against the status schema; 049 generated blocks regenerate with no diff; the audit script, run in CI on Node 22.x, 24.0.0, the candidate minimum and the newest 24.x, records which body-chunk channels each build publishes for one local `fetch` POST, and the table matches its output; a header test compiles `fabric_wire_abi.h` and checks every name and value of §4.4 | The registry describes both TypeScript points and their limits; a checked-in table says which Node builds publish request and response bytes. No runtime change |
+| `055-t2` codec, configuration, matcher, P1 pure functions | WP-01 (code part): `wire/{types,p1-types,config,match,codec}.ts`; generated `wire/endpoint-table.generated.ts` and `wire/catalogue.generated.ts` with their generator `scripts/typescript/sync-contract-data.mjs`; record digest, seal digest, token parse/issue and run-identity rules as pure functions; `contracts/capture/v1/fixtures/vectors/spool-bytes-v1.json` and its generator `scripts/contracts/generate_ts_wire_vectors.py`; TS-0 audit | `test/wire/codec/`: canonical JSON and int64 vectors through 2^63−1 (escaping, surrogatepass ids, integral floats, ordering); every case of `resume-token-v1/v2`, `seal-digest-v1`, `seal-parity-v1`, `manifest-chain-v1`, `manifest-span-v1`, `run-marker-v1`, `records-span-v1`, `span-category-v1` and `pseudonym-v2` byte for byte; `test/wire/match/`: property tests against a table generated from `wire/_match.py`; `test/wire/config/`: the Python-to-TS environment mapping fixture (unset versus empty, `*_FILE` variants, 058 names, `FABRIC_OTLP_*` precedence over `OTEL_EXPORTER_OTLP_*`), every malformed value produces the catalogue id Python produces for it (a shared table generated from `wire/_diagnose.py`); both generated modules equal their contracts; the built-in matchers equal Python's for `table` and `legacy`; every id the code can produce is in the catalogue; `test/wire/ts0/`: identity and new-key parity, the inventory of automatic `String()`/`JSON.stringify` of application objects (R9), cross-language id privacy canaries; `pytest scripts/tests/test_capture_contracts.py` regenerates `spool-bytes-v1.json` from the Python writer with no diff | TypeScript computes Python's digests, tokens and ids byte for byte. No runtime change |
 | `055-t3` native addon | WP-02a: `native/**`, `binding.gyp`, `wire/native.ts`, prebuild scripts, CI job `typescript-native` | C unit tests; one JS test per function and code of §4.4; two-process `flock` and `recordLock` conflict; Python `fcntl.flock`/`lockf` interop both ways; a fork/exec child holds no inherited lock after the parent is SIGKILLed; Worker terminate reaches `takeDetachedEnvs`; each disabled reason of §4.4 from a missing, corrupt, wrong-ABI and self-test-failing prebuild; no symbol beyond §4.4 exported; all six targets green | `wire/native.ts` loads or names why not. No capture yet |
 | `055-t4` shared runtime (one isolate) and Fabric worker | WP-02b part 1: `wire/{runtime,arena,queue,exchange}.ts`, worker bootstrap in `worker.ts` | `test/wire/runtime/`: allocation uniqueness and monotonic order under 8 concurrent producers (simulated isolates on one control block); slab, chunk-vector, exchange-slot and ring exhaustion each produce the named loss and never a partial body labelled exact; finish-once under every race of §4.6; no `Atomics.wait` on the installing isolate (trip-wire); try-lock timeout yields `internal_error` loss; Fabric worker starts with `execArgv: []`, `env: {}`, is `unref`'d, never loads the preload (checked with `NODE_OPTIONS` set) and is recreated after a crash without resetting the counter | Internal only |
 | `055-t5` epoch registration and allocator binding | WP-02b part 2: `wire/registration.ts`; `store64` mirror; orphan scan | `test/wire/registration/`: the registration file is byte-identical with Python's for the same inputs (`spool-bytes-v1.json`); a Python process reads a live TS registration as live and a killed one as orphan, and the reverse; forced epoch collision redraws (8 at most); the mirror holds the next sequence after SIGKILL; registration never happens in a hook | A Python drainer or reader sees a Node process's epoch, including one that was killed |
@@ -1589,7 +1651,7 @@ reader can see after the unit that they could not see before.
 | `055-t11` run scopes, segments, tokens and the run API | WP-02c part 3: `wire/{scope,segments,run-api}.ts` | `test/wire/run/`: one test per seal-trigger row of 050 §3.6; the five identity rules with `id_basis`; token accept/reject vectors; `endRun` statuses (each literal of §4.3); fan-in conflict; `FABRIC_RUN_ID` and `FABRIC_RUN_RESUME_TOKEN`; ALS propagation through promises, timers and `queueMicrotask`; thrown and rejected object identity through `run()`; caller-id and environment canaries; strict mode throws, default fails open | Model calls are grouped into runs that another process, Python or Node, can continue |
 | `055-t12` delivery clients | WP-07 part 1: `wire/otlp.ts` (pinned protobuf encoder for the OTLP trace and logs requests, exact int64), `wire/node-content.ts`, `wire/delivery.ts` (private agents, no redirect, proxy rules); `ts-wire-privacy` network step | `test/wire/delivery/`: encoder output equals the Python exporter's bytes for the shared span and content fixtures; mock status matrix for every code of §7.1; batch refused as a whole is resent one record per request; `Retry-After` bounded; loopback always direct; `FABRIC_WIRE_PROXY` CONNECT with certificate verification; the network privacy step passes | Internal only |
 | `055-t13` sender and the first verified record | WP-07 part 2: `wire/sender.ts` (drain order, progress, retirement, flush/close, exit note); the fixture replayer `test/wire/fixtures/replay.ts` (§13.2); CI job `ts-wire-parity`; sustained and stalled-recorder passivity steps | `test/wire/sender/`: restart delivers every admitted record with the same ids and bytes; a rejected record retires and the reader reports `not_captured(store_failed)`; `scripts/tests/test_node_wire_capture_e2e.py`: a Node script calling global `fetch` (explicit `install()`), a scripted provider and the recording sink; **`python -m fabric.reconstruct` reports the run `complete` and `terminated`, exit code 0, and replays the request and response bytes**; the same fixtures through Python produce identical frames after substitution | **First verified, replayable record of a Node agent** (in CI, with `install()` from the source build) |
-| `055-t14` packaging and preload | WP-08b: `wire/index.ts`, `src/register.ts`, `wire/status.ts`, `package.json` exports `./wire`, `./register`, `./wire-qualification.json`, one CJS wire core, prebuilds in the tarball, README and `docs/` Node page; `ts-wire-privacy` artifact step | `test/package-artifact.node.mjs` extended: root import installs no hook; `--import` and `--require` preloads from the packed tarball in ESM and CJS apps; duplicate preload plus `install()` is one runtime; missing prebuild is a status, never a throw; no install script; `autoload_off` without the variable; **unmodified scripts using global `fetch`, the official `openai` client and the official `@anthropic-ai/sdk` client, started only with `NODE_OPTIONS` and environment variables, each produce a run the Python reader verifies**; behaviour-identity step extended to these three; the status document validates against the shared schema | **Zero-code capture for `fetch`, `openai` and `@anthropic-ai/sdk` from the packed package**, with a status command that names every reason. Not yet releasable (gates not passed) |
+| `055-t14` packaging and preload | WP-08b: `wire/index.ts`, `src/register.ts`, `wire/status.ts`, `package.json` exports `./wire`, `./register`, `./wire-qualification.json`, one CJS wire core, prebuilds in the tarball, README and `docs/` Node page; `ts-wire-privacy` artifact step | `test/package-artifact.node.mjs` extended: root import installs no hook; `--import` and `--require` preloads from the packed tarball in ESM and CJS apps; duplicate preload plus `install()` is one runtime; missing prebuild is a status, never a throw; no install script; `autoload_off` without the variable; `envStatus()` and the status file validate against `wire-status-v1.schema.json` for each disabled reason of §4.4 and §4.7, and every `typescript` catalogue entry is emitted by some code path; **unmodified scripts using global `fetch`, the official `openai` client and the official `@anthropic-ai/sdk` client, started only with `NODE_OPTIONS` and environment variables, each produce a run the Python reader verifies**; behaviour-identity step extended to these three | **Zero-code capture for `fetch`, `openai` and `@anthropic-ai/sdk` from the packed package**, and one command (`envStatus()`, §4.7) that names every reason and its fix. Not yet releasable (gates not passed) |
 | `055-t15` PROTECT II: split parts and review copies | WP-05 part 2: `wire/parts.ts`; `original_plus_masked`; large shapes | `test/wire/parts/`: byte-offset scan equals Python's `find_parts` on the shared split fixtures; a 40 MiB request with one inline image keeps its text and reassembles to `source_sha256`; a 70 MiB side is `truncated(body_cap)`; a part beyond the object cap is descriptor-only `part_cap`; a failed review withholds both objects; an exchange above 260 objects is an `internal_error` loss; large-shape passivity report within the stall ceiling | Large multimodal requests keep their text and reassemble; review copies exist |
 | `055-t16` durable spool II | WP-06 part 2: `wire/ledger.ts`; `.ack` receipts for other writers; ancestor directory barrier; unknown-key retention; plaintext migration rule | `test/wire/ledger/`: `FWLEDGR1`/`FWLSLOT1` layout equals Python's (`spool-bytes-v1.json`); dead-owner slot recovery; ledger exhaustion and torn slots leave coverage partial, never complete; receipt cap, TTL and conservative accounting under fault at every create/rename/truncate/unlink; barrier walk and `spool_undurable`; ENOSPC/EDQUOT → `disk_full`; Python drains a spool TS wrote under disk-full and reports the same losses | Losses under a full disk or a crash are durable and visible; several processes can share one spool safely |
 | `055-t17` TS-1U and TS-1D qualification and claim | WP-09 part 1: `qualification/node-wire/` matrix rows for TS-1U and TS-1D, chaos cases except worker and core-HTTP ones, bound-source e2e against the real Fabric Node (the collector image, as `scripts/tests/test_wire_capture_node_e2e.py` does), committed result reports; registry state of `wire.ts.undici`; `gates` flipped; release workflow check; docs and CHANGELOG | Every TS-1U and TS-1D row of §9.3 on each claimed tuple; every CI gate of §9.2 green on each claimed tuple with reports committed; chaos suite; production-profile e2e through the Node with store readback (`complete`, authenticated source); C0-1..5, C0A-1..4, C1-1..5 mapping table filled with test names; `scripts/tests/test_npm_release_workflow.py` refuses a tarball with an unpassed gate | **`wire.ts.undici` is qualified**: the manifest reports it `active` on listed builds and the package may be released with the undici-only claim |
@@ -1675,7 +1737,7 @@ that are a product choice are in §14.
 
 Do not edit 049's prose in this lane, except through the registries and
 their generator (`055-t1`, `055-t22`). References are lines of 049
-rev 6.8 on main `dcbe2e23`. Registry-derived lines must be changed in
+rev 6.8 on main `be39aca6`. Registry-derived lines must be changed in
 their registries and regenerated, not hand-edited inside generated
 blocks.
 
@@ -1706,7 +1768,7 @@ revision 3 sections of the same number; "TS-OD" ids are mapped in §10.2.
 | WP-06/WP-07 own Python `wire/_spool.py` and `reconstruct/**` | Removed; dependencies E1–E6 and request R-TS-1 in §9.1 |
 | WP-08 edits the same TS files as 051 WP2-11 and 052 WP3-6 | Integration owners and handoff table in §9.1; TS-OD-10 |
 | 260-object bound fix belongs in the shared foundation | §5 and §8 reference 050 WP-00/WP-11b; TS only checks the bound |
-| TS content sender batches records; one bad record would 400 the batch | One content record per request, §4.2 and §7.1 |
+| TS content sender batches records; one bad record would 400 the batch | Revision 2: one content record per request. Superseded in revision 3 by #289's design: batches with a one-record-per-request resend when a batch is refused (§4.2, §7.1) |
 | Post-ack validation listed as fixed while 050 builds pre-ack | §7.1 and §10 bind to R10 / 050 WP-21 |
 | Caller-id rule differs across specs; 055 rejected clear mode | R8 applied in §4.3 and §5; TS-OD-7 |
 | Marker event ids uuid5 versus uuid4 | R2 in §4.3 and §7.2 |
@@ -1731,17 +1793,18 @@ Rejected or not adopted:
 
 ### 13.1 Spec 058 (easy integration)
 
-Spec 058 is accepted and on main. It does not build Node capture; its
+Spec 058 is accepted and on main (revision 2.1; E1a built in #291). It
+does not build Node capture; its
 §16.6 says "when 055 TS-1U ships, `run`, the injector and G2 switch to
 the zero-code Node path with no CLI interface change". This section is
 the contract between the two specs. Unit `055-t18` builds the switch.
 
 | 058 item | What 055 provides | Who builds the switch |
 |---|---|---|
-| `fabric run` Node branch (058 §5.5 step 3) | The preload specifier is exactly 058's: `--import=@singleaxis/fabric/register`. `fabric run` **appends** it to `NODE_OPTIONS` and sets `FABRIC_WIRE_AUTOLOAD=1` when all three hold: the command's runtime is Node; `@singleaxis/fabric/wire-qualification.json` resolves from the agent's working directory with `gates.TS-1U` and `gates.TS-1D` both `passed`; the Node version is in a listed tuple for this platform. Otherwise it changes nothing and reports the reason (`FC-RUN-*` catalogue ids, added by `055-t18`): package not installed (with the `npm i @singleaxis/fabric` line), Node not qualified (with the versions that are), platform unsupported | `055-t18`, in `fabric.cli`, if 058 WP8-4 is in its base |
+| `fabric run` Node branch (058 §5.5 step 3) | The preload specifier is exactly 058's: `--import=@singleaxis/fabric/register`. `fabric run` **appends** it to `NODE_OPTIONS` and sets `FABRIC_WIRE_AUTOLOAD=1` when all three hold: the command's runtime is Node; `@singleaxis/fabric/wire-qualification.json` resolves from the agent's working directory with `gates.TS-1U` and `gates.TS-1D` both `passed`; the Node version is in a listed tuple for this platform. Otherwise it changes nothing and reports the reason (new `FC-` entries in `contracts/diagnostics/v1/messages-v1.json`, the next free ids when `055-t18` lands): package not installed (with the `npm i @singleaxis/fabric` line), Node not qualified (with the versions that are), platform unsupported | `055-t18`, in `fabric.cli` (`sdk/python/src/fabric/cli/`), if 058 WP8-4 is in its base |
 | Environment (058 §5.5 "All", §6.5) | TypeScript reads the same variable names as Python, including the `*_FILE` key variants and `FABRIC_OTLP_*` (§4.2), so `.fabric/compiled.env` needs no Node-specific entries | `055-t2` (configuration) |
 | `fabric plan` / `verify` coverage rows (058 §12) | Registry rows `wire.ts.undici` and `wire.ts.node_http` with runtime, state, cannot-observe and a `fix` (the preload line; `FABRIC_WIRE_NODE_HTTP=1`). "Model calls" becomes `recorded` for a qualified Node, `fix` when the preload is absent, `invisible` with reason below Node 24. After TS-1H, `wire.ts.node_http` joins the row's capture points | `055-t1` (registry); `055-t18` (the `integration-rows-v1.json` entries, if that registry exists); `055-t22` (TS-1H) |
-| `fabric doctor`, `verify` reasons (058 §13.1, §13.2) | The status document and reasons of §4.7, at `FABRIC_WIRE_STATUS_FILE`, in the same schema as Python's | `055-t14` |
+| `fabric doctor`, `verify` reasons (058 §13.1, §13.2) | The status document of §4.7 at `FABRIC_WIRE_STATUS_FILE`: schema `fabric.wire-status/v1`, `warning_ids` and `notice_ids` holding catalogue ids, as Python writes it | `055-t2` (schema, catalogue entries); `055-t14` (writer) |
 | npm launcher (058 §1.4, WP8-9) | 058 WP8-9 owns the `bin` key and the launcher file; 055 WP-08b owns `exports`, `files` and the preload. The launcher's `run` applies the same three-condition rule as `fabric run`, tested with the shared `--print-env` goldens | `055-t18` adds the Node branch to the launcher if WP8-9 is in its base; otherwise WP8-9's unit adds it from this table |
 | Injector annotation `fabric.singleaxis.ai/inject: "node"` (058 §10.4) | The injector adds `FABRIC_WIRE_AUTOLOAD=1` and `NODE_OPTIONS=--import=@singleaxis/fabric/register` only when the pod sets no `NODE_OPTIONS` (058's rule: never override a variable the pod already sets). A pod that sets `NODE_OPTIONS` is left unchanged and `doctor` names the fix (`fabric run --print-env --format k8s`). The SDK must be in the agent image (058 OQ-6); nothing is copied into the pod | `055-t18`, if 058 WP8-13 is in its base |
 | G2 and `ttfr-laptop-node` (058 §3.2, §3.3) | After `055-t17`: G1's targets with `node` in place of `python`, measured in a `node:24` container with no Python, with a plain `fetch` tool loop | `055-t18` switches the job to the after-TS-1U form if the TTFR harness is in its base |
@@ -1847,3 +1910,4 @@ lane starts when the owner accepts this table (program hold
 | OQ-7 | **Where TS qualification lives (R16 not done).** The agent-matrix and chaos harnesses are still on unmerged branches | **A self-contained `qualification/node-wire/` tree**, reusing the sink and e2e helpers already on main. Whoever merges the old branches later may fold it in | Waiting for R16 blocks `055-t17` on work no unit in the program owns |
 | OQ-8 | **No agent-framework rows in the qualification matrix.** Revision 2 named rows after agent frameworks; `AGENTS.md` and the build rules forbid tests or fixtures that depend on or are named after one | **Rows are transports and model clients only** (§9.3): global `fetch`, external undici, the two official provider clients, custom `fetch`, plain tool-loop and fan-out scripts, core HTTP. Framework-driven traffic is exercised by the field harness outside this repository, as a supplement | Keeping framework rows would put framework names and dependencies into the repository's tests |
 | OQ-9 | **Order of the later units.** After the undici claim and the 058 switch: worker threads (`055-t19`), then the records bridge that 057 WP7-16 needs (`055-t20`), then core HTTP (`055-t21`, `055-t22`) | **Keep this order.** Worker threads close a declared gap for the clients already claimed; the records bridge unblocks 057's TypeScript unit; core HTTP serves clients that do not use `fetch` and is the largest remaining passivity risk | Moving the records bridge first lets `057-p1d` start one unit earlier at the cost of leaving worker-thread calls uncaptured longer; moving core HTTP first delays `057-p1d` by two units |
+| OQ-10 | **One diagnostics catalogue for both SDKs.** Spec 058's catalogue (`contracts/diagnostics/v1/messages-v1.json`, built in #291) lists Python's messages, and Python's test requires every entry to be emitted by Python code. Node needs nine entries of its own (§4.7) | **Add the Node entries to the same catalogue** with an optional `sdk` list on each entry, so `fabric doctor`, the docs page and the status file use one id space for both languages. This is a small additive change to a 058 contract and to one Python test, made by `055-t1` | A separate TypeScript message table would give the same failure two ids and two texts, and `fabric doctor` would need a second lookup |
