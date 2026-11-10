@@ -1,0 +1,32 @@
+schema: fabric.config/v1
+project: support-agent
+profile: local
+shape: laptop
+tenant: default
+agent: support-agent
+providers:
+  builtin: true
+  from_environment: true
+  custom:
+    - url: https://my-llm.example.modal.run/v1
+      dialect: openai
+    - url: http://127.0.0.1:11434/v1
+      name: ollama
+capture:
+  content: true
+  privacy: profile-default
+  exec: false
+  http_hosts: [api.example.com, tools.internal:8443]
+  mcp: false
+  security_context: null
+node:
+  mode: docker
+  endpoint: auto
+  queue_size: auto
+destination:
+  preset: local-dir
+  path: ./fabric-data
+sensor:
+  kind: auto
+secrets:
+  dir: auto

@@ -1,0 +1,3 @@
+# expect: FC-004 project
+schema: fabric.config/v1
+project: Support Agent

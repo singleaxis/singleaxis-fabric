@@ -1,0 +1,6 @@
+# expect: FC-004 destination.bucket
+schema: fabric.config/v1
+profile: production
+destination:
+  preset: s3
+  region: eu-west-1

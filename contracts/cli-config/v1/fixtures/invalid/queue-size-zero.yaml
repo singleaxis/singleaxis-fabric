@@ -1,0 +1,4 @@
+# expect: FC-004 node.queue_size
+schema: fabric.config/v1
+node:
+  queue_size: 0

@@ -1,0 +1,20 @@
+schema: fabric.config/v1
+profile: production
+shape: kubernetes
+tenant: acme
+providers:
+  custom:
+    - url: https://claude-proxy.internal.example/v1
+      dialect: anthropic
+capture:
+  privacy: ./capture-policy.json
+  security_context: ./security-context.yaml
+node:
+  mode: helm
+  endpoint: https://fabric-node.fabric.svc:4318
+  queue_size: 2147483648
+destination:
+  preset: s3
+  bucket: acme-fabric-records
+  region: eu-west-1
+  sse_kms_key: arn:aws:kms:eu-west-1:111122223333:key/abcd-1234

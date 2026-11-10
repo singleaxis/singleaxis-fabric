@@ -1,0 +1,4 @@
+# expect: FC-003 capture.exek
+schema: fabric.config/v1
+capture:
+  exek: true
