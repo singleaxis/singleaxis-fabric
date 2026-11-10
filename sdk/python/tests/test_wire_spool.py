@@ -61,7 +61,12 @@ def any_value(value: Any) -> Any:
 
 class FakeNode:
     """Loopback Fabric Node stand-in. ``mode``: ``ok``, ``down`` (503), ``reject`` (400 on
-    content) or ``hang`` (content requests block until ``release`` is set)."""
+    content) or ``hang`` (content requests block until ``release`` is set). ``delay_s``
+    holds every request that long before answering (a round trip); ``max_records`` refuses
+    (413) a content request carrying more records; ``fail_content_after`` answers 503 to
+    content requests after that many. ``records_per_request``, ``peak`` (most requests in
+    flight) and ``timeline`` (content object ids and span names, in arrival order) observe
+    delivery."""
 
     def __init__(self) -> None:
         self.content: list[tuple[dict[str, Any], bytes]] = []
@@ -70,6 +75,12 @@ class FakeNode:
         self.mode, self.entered, self.release = "ok", threading.Event(), threading.Event()
         self.lock = threading.Lock()
         self.hang_after: int | None = None  # content requests accepted before hanging
+        self.delay_s = 0.0
+        self.max_records: int | None = None
+        self.fail_content_after: int | None = None
+        self.records_per_request: list[int] = []
+        self.timeline: list[tuple[str, Any]] = []
+        self.inflight = self.peak = 0
         node = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -77,10 +88,34 @@ class FakeNode:
                 return
 
             def do_POST(self) -> None:
+                with node.lock:
+                    node.inflight += 1
+                    node.peak = max(node.peak, node.inflight)
+                try:
+                    self._post()
+                finally:
+                    with node.lock:
+                        node.inflight -= 1
+
+            def _post(self) -> None:
                 data = self.rfile.read(int(self.headers["Content-Length"]))
+                if node.delay_s:
+                    time.sleep(node.delay_s)
                 with node.lock:
                     node.requests.append((self.path, dict(self.headers)))
+                    served = sum(1 for path, _ in node.requests if path == "/v1/logs")
                 mode = node.mode
+                if self.path == "/v1/logs":
+                    count = sum(len(sl.log_records) for rl in ExportLogsServiceRequest.FromString(
+                        data).resource_logs for sl in rl.scope_logs)  # fmt: skip
+                    if node.max_records is not None and count > node.max_records:
+                        self.send_response(413)
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+                        return
+                    limit = node.fail_content_after
+                    if mode == "ok" and limit is not None and served > limit:
+                        mode = "down"
                 with node.lock:
                     limit = node.hang_after
                     if limit is not None and self.path == "/v1/logs" and len(node.content) >= limit:
@@ -110,11 +145,15 @@ class FakeNode:
         with self.lock:
             if path == "/v1/logs":
                 request = ExportLogsServiceRequest.FromString(data)
+                count = 0
                 for rl in request.resource_logs:
                     for sl in rl.scope_logs:
                         for record in sl.log_records:
                             attrs = {kv.key: any_value(kv.value) for kv in record.attributes}
                             self.content.append((attrs, record.body.bytes_value))
+                            self.timeline.append(("content", attrs.get("object_id")))
+                            count += 1
+                self.records_per_request.append(count)
                 return
             request_t = ExportTraceServiceRequest.FromString(data)
             for rs in request_t.resource_spans:
@@ -123,6 +162,7 @@ class FakeNode:
                     for span in ss.spans:
                         attrs = {kv.key: any_value(kv.value) for kv in span.attributes}
                         self.spans.append((span.name, attrs, resource))
+                        self.timeline.append(("span", attrs))
 
     def named(self, name: str) -> list[dict[str, Any]]:
         with self.lock:

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
 import fabric.wire._content as content_module
 from fabric.tracing import otlp_signal_settings
 from fabric.wire import WireConfig
+from fabric.wire._config import MAX_CONTENT_CONCURRENCY
 from fabric.wire._content import NodeContentClient, content_client_from_env, encode_content_request
 
 from .test_wire_helpers import CAPTURE, capture_schemas, load_validator
@@ -230,3 +232,77 @@ def test_the_content_client_is_never_teed(node: FakeNode, tmp_path: Path) -> Non
     """``requests`` is not httpx: an installed tee (patching httpx) never sees Node traffic."""
     assert "httpx" not in content_module.__dict__
     assert type(_client(node)._session).__module__.startswith("requests")
+
+
+def _bodies(count: int) -> list[tuple[dict[str, Any], bytes]]:
+    descriptor = _descriptor("content-log-record-request.json")
+    items = []
+    for index in range(count):
+        body = f"body {index}".encode()
+        items.append(({**descriptor, "object_id": str(uuid.UUID(int=index + 1, version=4)),
+                       "stored_byte_length": len(body), "source_byte_length": len(body),
+                       "stored_sha256": "sha256:" + hashlib.sha256(body).hexdigest(),
+                       "source_sha256": "sha256:" + hashlib.sha256(body).hexdigest()},
+                      body))  # fmt: skip
+    return items
+
+
+def test_send_many_puts_several_bodies_in_one_request(node: FakeNode) -> None:
+    """Field finding F1: one request per body cost one round trip per body."""
+    client = _client(node)
+    items = _bodies(5)
+    assert client.send_many(items) == ["ok"] * 5
+    assert node.records_per_request == [5]
+    assert [body for _, body in node.content] == [body for _, body in items]  # in order
+    client.close()
+
+
+def test_send_many_rejects_an_unencodable_record_alone(node: FakeNode) -> None:
+    client = _client(node)
+    items = _bodies(3)
+    items[1] = ({**items[1][0], "stored_byte_length": True}, items[1][1])  # not encodable
+    assert client.send_many(items) == ["ok", "rejected", "ok"]
+    assert sorted(body for _, body in node.content) == [b"body 0", b"body 2"]
+    client.close()
+
+
+def test_send_many_resends_a_refused_request_one_body_at_a_time(node: FakeNode) -> None:
+    node.max_records = 1  # e.g. a Node whose request size limit is below a batch
+    client = _client(node)
+    assert client.send_many(_bodies(3)) == ["ok"] * 3
+    assert node.records_per_request == [1, 1, 1]
+    client.close()
+
+
+def test_send_many_retries_every_body_when_the_node_is_down(node: FakeNode) -> None:
+    node.mode = "down"
+    client = _client(node)
+    assert client.send_many(_bodies(3)) == ["retry"] * 3
+    assert node.content == []
+    client.close()
+
+
+def test_the_content_session_pools_a_connection_per_request_in_flight(node: FakeNode) -> None:
+    client = _client(node)
+    for scheme in ("https://", "http://"):
+        assert client._session.get_adapter(scheme + "node")._pool_maxsize >= MAX_CONTENT_CONCURRENCY
+    client.close()
+
+
+def test_send_many_falls_back_to_one_body_per_request_when_a_batch_cannot_be_encoded(
+    node: FakeNode, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every record encoded on its own, yet the request holding them did not: each body is
+    sent alone, never retried as a batch forever."""
+    original = content_module._request
+
+    def batch_fails(records: Any, service_name: str) -> bytes:
+        if len(records) > 1:
+            raise ValueError("cannot encode")
+        return original(records, service_name)
+
+    monkeypatch.setattr(content_module, "_request", batch_fails)
+    client = _client(node)
+    assert client.send_many(_bodies(3)) == ["ok"] * 3
+    assert node.records_per_request == [1, 1, 1]
+    client.close()

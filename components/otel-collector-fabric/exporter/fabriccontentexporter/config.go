@@ -102,6 +102,14 @@ type Config struct {
 	// MaxBodyBytes is the role table's max_body_bytes (spec 049 §4.3 rule 4):
 	// default 32 MiB, never above 63 MiB (one record fits the 64 MiB request).
 	MaxBodyBytes int64 `mapstructure:"max_body_bytes"`
+	// WriteConcurrency is how many records of one request are written to the
+	// store at the same time (default 8, at most 64). An agent sends several
+	// bodies per request; written one after another, each costing the
+	// backend's fsyncs or round trips, they bound the Node's content rate
+	// (field finding F1). Each record still writes its body before its
+	// descriptor, and a request is acknowledged to the queue only once every
+	// record in it is stored or dropped.
+	WriteConcurrency int `mapstructure:"write_concurrency"`
 
 	TimeoutConfig exporterhelper.TimeoutConfig                             `mapstructure:",squash"`
 	QueueConfig   configoptional.Optional[exporterhelper.QueueBatchConfig] `mapstructure:"sending_queue"`
@@ -125,6 +133,10 @@ const (
 	// request bound (spec 049 §7.4).
 	nodeMaxBodyBytes = 63 << 20
 
+	// defaultWriteConcurrency and maxWriteConcurrency bound write_concurrency.
+	defaultWriteConcurrency = 8
+	maxWriteConcurrency     = 64
+
 	// envelopeStorageType is the queue storage extension that encrypts the
 	// persistent queue (extension/fabricenvelopeextension).
 	envelopeStorageType = "fabricenvelope"
@@ -134,8 +146,9 @@ var _ component.Config = (*Config)(nil)
 
 func createDefaultConfig() component.Config {
 	queue := exporterhelper.NewDefaultQueueConfig()
-	// One request carries at most one 64 MiB body: bound the queue by
-	// requests, apply backpressure instead of dropping when it is full.
+	// One request carries at most 64 MiB (one large body, or several small
+	// ones): bound the queue by requests, apply backpressure instead of
+	// dropping when it is full.
 	queue.QueueSize = 64
 	queue.NumConsumers = 4
 	queue.BlockOnOverflow = true
@@ -143,12 +156,13 @@ func createDefaultConfig() component.Config {
 	// Content is evidence: retry until the store accepts it.
 	retry.MaxElapsedTime = 0
 	return &Config{
-		Profile:       profileLocal,
-		MaxBodyBytes:  defaultMaxBodyBytes,
-		S3:            S3Config{Prefix: defaultS3Prefix},
-		TimeoutConfig: exporterhelper.TimeoutConfig{Timeout: 60 * time.Second},
-		QueueConfig:   configoptional.Some(queue),
-		RetryConfig:   retry,
+		Profile:          profileLocal,
+		MaxBodyBytes:     defaultMaxBodyBytes,
+		WriteConcurrency: defaultWriteConcurrency,
+		S3:               S3Config{Prefix: defaultS3Prefix},
+		TimeoutConfig:    exporterhelper.TimeoutConfig{Timeout: 60 * time.Second},
+		QueueConfig:      configoptional.Some(queue),
+		RetryConfig:      retry,
 	}
 }
 
@@ -176,6 +190,9 @@ func (c *Config) Validate() error {
 	}
 	if c.MaxBodyBytes < 1 || c.MaxBodyBytes > nodeMaxBodyBytes {
 		return errors.New("max_body_bytes must be between 1 and 66060288 (63 MiB)")
+	}
+	if c.WriteConcurrency < 1 || c.WriteConcurrency > maxWriteConcurrency {
+		return errors.New("write_concurrency must be between 1 and 64")
 	}
 	if b := c.SourceBinding; b != nil {
 		if !tenantPattern.MatchString(b.TenantID) || !opaqueIDPattern.MatchString(b.SourceID) {

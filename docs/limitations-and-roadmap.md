@@ -101,8 +101,9 @@ ledger); and `fabric.reconstruct` exhausting memory under heavy loss
     a ClusterRole that reads every pod in the cluster, inline environment
     values included; use static cgroup roots or a dedicated node pool where
     that is not acceptable.
-- **Delivery is at least once.** Destinations must deduplicate. Fabric does
-  not prove that a destination durably persisted a record.
+- **Delivery is at least once.** Destinations must deduplicate by
+  `fabric.event_id` (the reader counts repeats as `duplicate_records`).
+  Fabric does not prove that a destination durably persisted a record.
 - **Host sensors are corroboration only** and are not enterprise-qualified
   ([host sensors](host-sensors.md)).
 

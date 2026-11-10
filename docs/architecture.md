@@ -114,7 +114,7 @@ file store. Details: [privacy and security](privacy-and-security.md).
   once (`If-None-Match: *`) under `<prefix><tenant>/evidence/<object-id>`
   with a JSON descriptor beside each (a Node directory store shards these
   into hash-named subdirectories).
-- Delivery is at least once; destinations deduplicate.
+- Delivery is at least once; destinations deduplicate by `fabric.event_id`.
 
 ### Verify
 

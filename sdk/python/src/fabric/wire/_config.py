@@ -43,6 +43,9 @@ SPOOL_RESERVE_BYTES = 1024 * 1024
 # Default capture-queue entry cap (agent matrix D3: 256 entries overflowed on an asyncio
 # fan-out of 408 calls while the host's busy thread starved the capture worker).
 QUEUE_MAX_ITEMS = 16384
+# Bounds of the delivery settings (WireConfig): the drain-on-exit opt-in, bodies per
+# content request and content requests in flight.
+MAX_DRAIN_ON_EXIT_S, MAX_CONTENT_BATCH_BODIES, MAX_CONTENT_CONCURRENCY = 3600, 256, 16
 
 DEFAULT_ENDPOINTS: tuple[EndpointMatcher, ...] = (
     EndpointMatcher("openai", "openai", hosts=frozenset({"api.openai.com"})),
@@ -102,6 +105,14 @@ class WireConfig:
     # wire.py.aiohttp (049 §2.8): tee aiohttp client requests too (FABRIC_WIRE_AIOHTTP=0: off).
     patch_aiohttp: bool = True
     shutdown_timeout_s: float = 2.0
+    # Opt-in for short-lived workers (FABRIC_WIRE_DRAIN_ON_EXIT_S): at exit, wait up to this
+    # long, on top of the exit budget, until this process's spooled records are delivered
+    # (the spool's drainer delivers them all). 0, the default, never delays an exit: what
+    # is left is delivered by the next process that drains the same spool.
+    drain_on_exit_s: float = 0.0
+    # Node content delivery (spec 048 §3): bodies per request and requests in flight.
+    content_batch_bodies: int = 32
+    content_concurrency: int = 4
     tenant_id: str | None = None
     content_endpoint: str | None = None  # node mode: bodies go to the Fabric Node (spec 048)
     spool_dir: str | None = None
@@ -154,6 +165,13 @@ class WireConfig:
         timeout = self.shutdown_timeout_s
         if not isinstance(timeout, (int, float)) or not 0 <= timeout <= 300:  # noqa: PLR2004
             raise ValueError("shutdown_timeout_s must be between 0 and 300 seconds")
+        drain = self.drain_on_exit_s
+        if isinstance(drain, bool) or not isinstance(drain, (int, float)) or not (
+            0 <= drain <= MAX_DRAIN_ON_EXIT_S
+        ):  # fmt: skip
+            raise ValueError("drain_on_exit_s must be between 0 and 3600 seconds")
+        _int("content_batch_bodies", self.content_batch_bodies, 1, MAX_CONTENT_BATCH_BODIES)
+        _int("content_concurrency", self.content_concurrency, 1, MAX_CONTENT_CONCURRENCY)
         if self.source_id is not None and not OPAQUE_ID_RE.fullmatch(str(self.source_id)):
             raise ValueError("source_id must match ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
         for matcher in self.all_endpoints:
@@ -307,6 +325,32 @@ def migrate_plaintext_from_env(environ: Mapping[str, str]) -> bool:
     return (environ.get(MIGRATE_PLAINTEXT_ENV) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
+def _numeric_settings(environ: Mapping[str, str]) -> dict[str, Any]:
+    """The integer and seconds settings ``FABRIC_WIRE_*`` sets (``ValueError`` if not a
+    number; the bounds are checked by :class:`WireConfig`)."""
+    kwargs: dict[str, Any] = {}
+    for name in ("MAX_BODY_BYTES", "MAX_RETAIN_BYTES", "PART_MIN_BYTES", "QUEUE_MAX_ITEMS",
+                 "SPOOL_MAX_BYTES", "SPOOL_MAX_RECEIPTS", "CONTENT_BATCH_BODIES",
+                 "CONTENT_CONCURRENCY"):  # fmt: skip
+        if value := environ.get(f"FABRIC_WIRE_{name}"):
+            try:
+                kwargs[name.lower()] = int(value)
+            except ValueError:
+                raise ValueError(f"FABRIC_WIRE_{name} must be an integer") from None
+    # The exit budget (WireConfig.shutdown_timeout_s): a short-lived process on a slow disk
+    # raises it so the capture queue reaches the spool before exit; what misses it is a
+    # declared ``shutdown`` loss. A close returns as soon as everything is delivered.
+    # The opt-in for batch and serverless workers: wait at exit until the spool's backlog
+    # is delivered, up to this many seconds (WireConfig.drain_on_exit_s).
+    for name in ("SHUTDOWN_TIMEOUT_S", "DRAIN_ON_EXIT_S"):
+        if value := environ.get(f"FABRIC_WIRE_{name}"):
+            try:
+                kwargs[name.lower()] = float(value)
+            except ValueError:
+                raise ValueError(f"FABRIC_WIRE_{name} must be a number of seconds") from None
+    return kwargs
+
+
 def config_from_env(
     environ: Mapping[str, str],
 ) -> tuple[WireConfig, Literal["private", "global"]]:
@@ -347,19 +391,5 @@ def config_from_env(
     kwargs["patch_aiohttp"] = aiohttp_from_env(environ)
     if environ.get("FABRIC_WIRE_ENDPOINTS"):
         kwargs["extra_endpoints"] = parse_endpoints(environ["FABRIC_WIRE_ENDPOINTS"])
-    for name in ("MAX_BODY_BYTES", "MAX_RETAIN_BYTES", "PART_MIN_BYTES", "QUEUE_MAX_ITEMS",
-                 "SPOOL_MAX_BYTES", "SPOOL_MAX_RECEIPTS"):  # fmt: skip
-        if value := environ.get(f"FABRIC_WIRE_{name}"):
-            try:
-                kwargs[name.lower()] = int(value)
-            except ValueError:
-                raise ValueError(f"FABRIC_WIRE_{name} must be an integer") from None
-    # The exit budget (WireConfig.shutdown_timeout_s): a short-lived process on a slow disk
-    # raises it so the capture queue reaches the spool before exit; what misses it is a
-    # declared ``shutdown`` loss. A close returns as soon as everything is delivered.
-    if value := environ.get("FABRIC_WIRE_SHUTDOWN_TIMEOUT_S"):
-        try:
-            kwargs["shutdown_timeout_s"] = float(value)
-        except ValueError:
-            raise ValueError("FABRIC_WIRE_SHUTDOWN_TIMEOUT_S must be a number of seconds") from None
+    kwargs.update(_numeric_settings(environ))
     return WireConfig(**kwargs), cast(Literal["private", "global"], tracer_mode)

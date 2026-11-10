@@ -177,11 +177,18 @@ its closing heartbeat did not reach the Node within the 2-second exit budget
 (we saw this once, on the first run after starting the Node). With an OTLP
 endpoint set, `file://` mode spools every record first, in
 `store/.fabric-wire-spool/demo`: the next process capturing to the same
-store (run `python app.py` again) delivers what is left. The verifier never
-reads that directory.
+store (run `python app.py` again) delivers what is left, and
+`python -m fabric.wire status` says how many records an exit left there. The
+verifier never reads that directory. A worker that never runs again
+(serverless, batch, autoscaled) needs one of the options in
+[delivery rate and short-lived workers](wire-capture-deployment.md#delivery-rate-and-short-lived-workers).
 
 Without `fabric.wire.run(...)` each process is one run, named after its
-source and epoch. Stop the stack with `make -C deploy/compose reset`
+source and epoch. A service that handles several sessions or users at once
+in one process must open a run per session, with
+`fabric.wire.run(run_id, session_id=...)` around each session's work.
+Without it, every session lands in the one process run, and each session's
+start reads as a grant change within that run. Stop the stack with `make -C deploy/compose reset`
 and the fake server with `kill %1`.
 
 Real providers (`api.openai.com`, `api.anthropic.com`,

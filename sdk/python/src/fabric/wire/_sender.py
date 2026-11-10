@@ -8,6 +8,12 @@ order (an exchange's or a record's bodies to the Node, then its span via
 ``SpanExporter.export``), retiring each only after every part succeeded; failures retry
 with capped backoff.
 
+Throughput (field finding F1): a drain pass gathers the pending bodies of up to 64 record
+files, sends several bodies per content request (bounded by count and bytes) with a few
+requests in flight on short-lived daemon threads, then exports the spans of the files
+whose bodies were all accepted, in name order. One body per request, one at a time, ran
+at one round trip per body (and one Node queue commit per body): ~3-14 exchanges/s.
+
 Spec 050 §3.5: records-input entries (``record``) are written and drained as exchanges
 are; typed markers export with their persisted ``fabric.event_id`` (R2), loss spans with
 ``fabric.run.segment_id`` (R3), a manifest as its ``fabric.capture_manifest`` span. The
@@ -57,6 +63,11 @@ from ._spool import (
 _LOG = logging.getLogger("fabric.wire")
 _BATCH, _RESCAN_S, _LOCK_RETRY_S, _BACKOFF_S, _BACKOFF_CAP_S = 64, 5.0, 5.0, 0.5, 30.0
 _EXPORT_SPANS = 512  # a drain exports at most about this many spans per request
+# A content request carries at most this many body bytes, unless one body alone is larger
+# (it then goes alone: the Node's request limit is sized for one body), and a drain pass
+# reads at most about this many pending body bytes before sending them.
+_REQUEST_BYTES, _DRAIN_BYTES = 4 * 1024 * 1024, 32 * 1024 * 1024
+_Job = tuple[str, int, Mapping[str, Any], memoryview]  # (file, body index, descriptor, bytes)
 _STATS = ("spooled", "spool_full_drops", "delivered", "send_retries", "content_rejected",
           "quarantined", "markers_dropped", "spool_undecryptable", "spool_migrated",
           "disk_full_drops", "ledger_recovered", "over_bound_refused", "markers_invalid",
@@ -95,10 +106,14 @@ class Sender:
         self, spool: Spool, exporter: SpanExporter, loss: LossEmitter, *,
         content: NodeContentClient | None, service_name: str,
         exporter_factory: Callable[[], SpanExporter] | None = None,
+        batch_bodies: int = 32, concurrency: int = 4,
     ) -> None:  # fmt: skip
         """``exporter_factory`` marks ``exporter`` as Fabric-owned: a forked child builds
-        its own from it before delivering (a host-supplied exporter is the host's)."""
+        its own from it before delivering (a host-supplied exporter is the host's).
+        ``batch_bodies``: bodies per content request; ``concurrency``: content requests in
+        flight (1 and 1: one body at a time, as before)."""
         self.spool, self.content, self.loss = spool, content, loss
+        self.batch_bodies, self.concurrency = max(1, batch_bodies), max(1, concurrency)
         self._exporter, self.service_name = tracing.guarded_exporter(exporter), service_name
         self._exporter_factory, self._forked = exporter_factory, False
         self._resource = Resource({"service.name": service_name})
@@ -116,12 +131,14 @@ class Sender:
         # Drain passes that found nothing to deliver while holding the spool lock (after the
         # holder's orphan recovery and epoch scan ran): the standalone drainer's "empty".
         self.idle_passes = 0
-        self._progress: dict[str, int] = {}  # bodies the Node already accepted, per record
+        # Body indexes (per record file) the Node already accepted (or rejected for good).
+        self._progress: dict[str, set[int]] = {}
         # Delivered records whose retirement failed (ENOSPC, EIO ...): still on disk, never
         # exported again by this drainer; retried before anything new is exported.
         self._retiring: dict[str, None] = {}  # names, in delivery order
         # Records sealed under another key: left for a process holding it (049 §7.8).
         self._sealed_elsewhere: set[str] = set()
+        self._note_cleared = False  # an exit note was cleared since the spool last held records
         # Run markers not spooled yet (a full spool or disk): retried on every pump and,
         # with the loss ranges still in memory, mirrored to the spool's loss ledger (D1).
         self._held: list[Marker] = []
@@ -494,20 +511,57 @@ class Sender:
                 self._wake.clear()
         self.spool.release()  # stopped: another process (or a later install) may drain
 
-    def _drain(self) -> str:  # noqa: PLR0912 - per-record outcomes of a drain
+    def _drain(self) -> str:
         """Deliver up to 64 ready record files (a batch file holds several records):
         ``more``, ``idle`` or ``retry``. A file is exported and retired only once every
-        body of every record in it was accepted."""
+        body of every record in it was accepted; files are exported in name order, so a
+        file whose bodies are not all accepted holds back the files after it (their
+        accepted bodies are remembered and not sent again)."""
         if not self._retire_delivered():
             return "retry"
         if self.spool.migrate:  # 049 §7.8: the explicit local migration, before any read
             self._stats["spool_migrated"] += self.spool.migrate_plaintext()
             self.spool.migrate = False
         skip = self._sealed_elsewhere
-        names, batch, state = [n for n in self.spool.names() if n not in skip][:_BATCH], [], "idle"
-        spans = 0
+        names = [n for n in self.spool.names() if n not in skip][:_BATCH]
+        if not names and not skip and not self._note_cleared:  # empty: no backlog left
+            self.spool.clear_exit_note()
+        self._note_cleared = not names and not skip
+        files, jobs = self._read_ready(names)
+        failed = self._send_jobs(jobs)
+        batch, state = [], "idle"
+        for name, records in files:
+            if name in failed:
+                state = "retry"
+                break
+            batch.append((name, [self._span(doc) for doc, _ in records]))
+        del files, jobs  # the bodies: not held while the spans are exported
+        if batch:
+            if self.exporter.export([span for _, file in batch for span in file]) is not (
+                SpanExportResult.SUCCESS
+            ):  # fmt: skip
+                return "retry"
+            for name, file in batch:
+                self._retiring[name] = None
+                self._progress.pop(name, None)
+                self._stats["delivered"] += len(file)
+            if not self._retire_delivered():
+                return "retry"
+        return state if state == "retry" or not names else "more"
+
+    def _read_ready(self, names: Sequence[str]) -> tuple[
+        list[tuple[str, list[tuple[dict[str, Any], memoryview]]]], list[_Job]
+    ]:  # fmt: skip
+        """Read ready record files in order, up to about :data:`_EXPORT_SPANS` records and
+        :data:`_DRAIN_BYTES` of bodies not yet accepted (always at least one file):
+        ``(files, jobs)``, a job per body still to send. Unreadable files are quarantined
+        or left, as before."""
+        skip = self._sealed_elsewhere
+        files: list[tuple[str, list[tuple[dict[str, Any], memoryview]]]] = []
+        jobs: list[_Job] = []
+        spans = pending = 0
         for name in names:
-            if spans >= _EXPORT_SPANS:
+            if spans >= _EXPORT_SPANS or pending >= _DRAIN_BYTES:
                 break
             try:
                 records = unframe_all(self.spool.read(name))
@@ -522,30 +576,104 @@ class Sender:
             except CorruptRecordError as corrupt:
                 self._quarantine(name, corrupt.docs)
                 continue
-            sent, base = True, 0
+            done, index = self._progress.get(name, ()), 0
             for doc, blob in records:
-                if doc["record_kind"] in ("exchange", "record"):
-                    sent = self._send_bodies(name, doc, blob, base)
-                    base += len(doc.get("bodies", ()))
-                if not sent:
-                    break
-            if not sent:
-                state = "retry"
-                break
-            batch.append((name, [self._span(doc) for doc, _ in records]))
+                if doc["record_kind"] not in ("exchange", "record"):
+                    continue
+                for body in doc.get("bodies", ()):
+                    if index not in done:
+                        data = blob[body["offset"] : body["offset"] + body["length"]]
+                        jobs.append((name, index, body["descriptor"], data))
+                        pending += len(data)
+                    index += 1
+            files.append((name, records))
             spans += len(records)
-        if batch:
-            if self.exporter.export([span for _, file in batch for span in file]) is not (
-                SpanExportResult.SUCCESS
+        return files, jobs
+
+    def _requests(self, jobs: Sequence[_Job]) -> list[list[_Job]]:
+        """Group jobs, in order, into content requests of at most ``batch_bodies`` bodies
+        and :data:`_REQUEST_BYTES` (a larger body goes alone)."""
+        groups: list[list[_Job]] = []
+        size = 0
+        for job in jobs:
+            length = len(job[3])
+            if not groups or len(groups[-1]) >= self.batch_bodies or (
+                size + length > _REQUEST_BYTES
             ):  # fmt: skip
-                return "retry"
-            for name, file in batch:
-                self._retiring[name] = None
-                self._progress.pop(name, None)
-                self._stats["delivered"] += len(file)
-            if not self._retire_delivered():
-                return "retry"
-        return state if state == "retry" or not names else "more"
+                groups.append([])
+                size = 0
+            groups[-1].append(job)
+            size += length
+        return groups
+
+    def _send_group(self, group: Sequence[_Job]) -> list[str]:
+        """One content request (or, for a client without ``send_many``, one per body)."""
+        content = self.content
+        if content is None:
+            return ["rejected"] * len(group)
+        many = getattr(content, "send_many", None)
+        items = [(descriptor, data) for _, _, descriptor, data in group]
+        if many is not None and len(items) > 1:
+            return list(many(items))
+        results: list[str] = []
+        for descriptor, data in items:
+            results.append(content.send(descriptor, data))
+            if results[-1] == "retry":  # the Node is not taking bodies now: stop here
+                results += ["retry"] * (len(items) - len(results))
+                break
+        return results
+
+    def _send_jobs(self, jobs: Sequence[_Job]) -> set[str]:
+        """Send the bodies, up to ``concurrency`` requests in flight; record each accepted
+        (or permanently rejected) body in ``_progress``. Returns the files with a body
+        still to retry. Once a request must be retried no new one starts (the Node is
+        down or slow). Worker threads are daemons started for this pass only: none
+        outlives it, a forked child inherits none, and none delays an exit."""
+        groups = self._requests(jobs)
+        if not groups:
+            return set()
+        lock, failed = threading.Lock(), set()
+        queue = list(reversed(groups))
+        stop = threading.Event()
+
+        def work() -> None:
+            while not stop.is_set():
+                with lock:
+                    if not queue:
+                        return
+                    group = queue.pop()
+                try:
+                    results = self._send_group(group)
+                except Exception as exc:  # never let a worker die silently
+                    _LOG.debug("fabric.wire: content delivery error (%s)", type(exc).__name__)
+                    results = ["retry"] * len(group)
+                with lock:
+                    for (name, index, _, _), result in zip(group, results, strict=True):
+                        if result == "retry":
+                            failed.add(name)
+                            stop.set()
+                            continue
+                        self._stats["content_rejected"] += result == "rejected"
+                        self._progress.setdefault(name, set()).add(index)
+
+        workers = [threading.Thread(target=work, name="fabric-spool-content", daemon=True)
+                   for _ in range(min(self.concurrency, len(groups)) - 1)]  # fmt: skip
+        for worker in workers:
+            worker.start()
+        work()
+        for worker in workers:
+            worker.join()
+        with lock:  # files with bodies never sent (stopped early) are retried too
+            unsent = {name for group in queue for name, *_ in group}
+        return failed | unsent
+
+    def exit_backlog(self) -> int:
+        """At exit, after :meth:`close`: the records left in the spool (any writer's) that no
+        live process is draining; ``0`` while another process holds the drain lock (it
+        delivers them), so only the last process to leave reports a backlog."""
+        if self.spool.drained_elsewhere():
+            return 0
+        return len(self.spool.names())
 
     def backlog(self) -> tuple[int, int]:
         """``(deliverable, undecryptable)``: records this sender can still deliver (on disk,
@@ -588,22 +716,6 @@ class Sender:
                     self.loss.retain(
                         ((source, epoch, "internal_error", segment), (sequence, sequence, 1))
                     )
-
-    def _send_bodies(
-        self, name: str, doc: Mapping[str, Any], blob: memoryview, base: int = 0
-    ) -> bool:
-        """Post a record's bodies; ``base``: how many bodies the file's earlier records
-        hold (progress is counted per file)."""
-        for index, body in enumerate(doc.get("bodies", ()), base):
-            if index < self._progress.get(name, 0):
-                continue  # already accepted by the Node in an earlier attempt
-            data = blob[body["offset"] : body["offset"] + body["length"]]  # copied once, to send
-            result = self.content.send(body["descriptor"], data) if self.content else "rejected"
-            if result == "retry":
-                return False
-            self._stats["content_rejected"] += result == "rejected"
-            self._progress[name] = index + 1
-        return True
 
     def _root(self, name: str, attrs: Mapping[str, Any], at: int, seed: str) -> ReadableSpan:
         """A loss or heartbeat span; its ids derive from ``seed``, so a replay is identical."""
@@ -764,7 +876,8 @@ def build_sender(
     factory = None if exporter is not None else tracing.build_capture_span_exporter
     exporter = exporter if exporter is not None else tracing.build_capture_span_exporter()
     return Sender(spool, exporter, loss, content=content, service_name=service,
-                  exporter_factory=factory)  # fmt: skip
+                  exporter_factory=factory, batch_bodies=config.content_batch_bodies,
+                  concurrency=config.content_concurrency)  # fmt: skip
 
 
 def _after_fork_in_child() -> None:

@@ -96,6 +96,12 @@ _IOV_MAX = _iov_max()
 # from the spool's parent up to the durable boundary (see Spool.establish_barrier).
 BARRIER_MARKER = ".barrier"
 _BARRIER_CONTENT = b"fabric wire spool barrier v1\n"
+# Field finding F1: written by a process that exited leaving records in the spool while no
+# other process was draining it (they wait for the next one), removed by a drainer that
+# finds the spool empty. Counts and a time only: ``python -m fabric.wire status`` reads it.
+EXIT_NOTE = ".exit-backlog"
+EXIT_NOTE_SCHEMA = "fabric.wire-exit-backlog/v1"
+_EXIT_NOTE_MAX = 4096
 _REFUSED = (errno.EACCES, errno.EPERM, errno.EROFS)  # this process may not sync that dir
 _HEX = {n: re.compile(rf"^(?!0{{{n}}}$)[0-9a-f]{{{n}}}$") for n in (16, 32)}
 # Per kind: the keys a header must have, and those it may have (capture/v1 1.3.0).
@@ -541,10 +547,33 @@ def _mount_point(path: str) -> bool:
 def _own_name(name: str) -> bool:
     """Whether ``name`` is one the wire spool itself creates."""
     return (
-        name in (".lock", ADMIT_LOCK, BARRIER_MARKER, LEDGER, EPOCHS_DIR)
+        name in (".lock", ADMIT_LOCK, BARRIER_MARKER, LEDGER, EPOCHS_DIR, EXIT_NOTE)
         or name.startswith((".tmp-", NEW_PREFIX))
         or name.endswith((".rec", ACK_SUFFIX, QUARANTINE_SUFFIX))
     )
+
+
+def read_exit_note(directory: str) -> dict[str, Any] | None:
+    """The spool's exit note (:data:`EXIT_NOTE`), validated: ``{"records_left": int,
+    "exited_at": str, "drain_on_exit_s": float}``; ``None`` when absent or not one. Read only,
+    never followed through a symlink."""
+    try:
+        fd = os.open(os.path.join(directory, EXIT_NOTE), os.O_RDONLY | _NOFOLLOW)
+    except OSError:
+        return None
+    try:
+        with os.fdopen(fd, "rb") as stream:
+            doc = json.loads(stream.read(_EXIT_NOTE_MAX + 1)[:_EXIT_NOTE_MAX])
+    except (OSError, ValueError):
+        return None
+    if not isinstance(doc, dict) or doc.get("schema") != EXIT_NOTE_SCHEMA:
+        return None
+    left, at, drain = doc.get("records_left"), doc.get("exited_at"), doc.get("drain_on_exit_s")
+    if type(left) is not int or left < 0 or not isinstance(at, str) or len(at) > 40:  # noqa: PLR2004
+        return None
+    if isinstance(drain, bool) or not isinstance(drain, (int, float)):
+        return None
+    return {"records_left": left, "exited_at": at, "drain_on_exit_s": float(drain)}
 
 
 def _refuse_foreign(path: str) -> None:
@@ -1082,6 +1111,46 @@ class Spool:
             return
         else:
             self._move(name, ".tmp-" + name)
+
+    def drained_elsewhere(self) -> bool:
+        """Whether another live process holds the drain lock (it delivers what is pending);
+        ``False`` for the holder itself, or when nobody holds it. A probe on a new open file
+        description: it never takes or keeps the lock."""
+        if self.holder:
+            return False
+        try:
+            fd = os.open(self._path(".lock"), os.O_RDWR | _NOFOLLOW)
+        except OSError:
+            return False
+        try:
+            self._fcntl.flock(fd, self._fcntl.LOCK_EX | self._fcntl.LOCK_NB)
+        except OSError:
+            return True
+        finally:
+            os.close(fd)  # releases the probe's lock, if it took it
+        return False
+
+    def write_exit_note(self, records_left: int, drain_on_exit_s: float) -> None:
+        """Record that this process exits leaving ``records_left`` records with no drainer
+        (:data:`EXIT_NOTE`, replaced atomically; best effort, the caller bounds it)."""
+        at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        doc = {"schema": EXIT_NOTE_SCHEMA, "records_left": int(records_left), "exited_at": at,
+               "drain_on_exit_s": float(drain_on_exit_s)}  # fmt: skip
+        tmp = self._path(f".tmp-exit-{os.getpid()}")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | _NOFOLLOW, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(json.dumps(doc, sort_keys=True).encode("ascii"))
+            os.replace(tmp, self._path(EXIT_NOTE))
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+
+    def clear_exit_note(self) -> None:
+        """Drainer: the spool is empty, so a previous exit's backlog was delivered."""
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(self._path(EXIT_NOTE))
 
     def names(self) -> list[str]:
         """Pending records in drain order; never an own write still in flight."""

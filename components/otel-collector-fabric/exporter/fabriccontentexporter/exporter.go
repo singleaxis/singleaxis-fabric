@@ -6,6 +6,7 @@ package fabriccontentexporter
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 
 	"go.opentelemetry.io/collector/component"
@@ -103,28 +104,62 @@ func (e *contentExporter) start(ctx context.Context, _ component.Host) error {
 
 // pushLogs writes every valid record. Invalid records (steps 1-3) and
 // conflicts are dropped permanently; records that hit a backend error are
-// returned for retry on their own, so already stored and dropped records are
-// neither rewritten nor recounted.
+// returned for retry on their own, in request order, so already stored and
+// dropped records are neither rewritten nor recounted. Up to
+// write_concurrency records are written at the same time; the request
+// completes only when every one of them has.
 func (e *contentExporter) pushLogs(ctx context.Context, ld plog.Logs) error {
-	var retry plog.Logs
-	var firstErr error
+	type located struct {
+		rl plog.ResourceLogs
+		sl plog.ScopeLogs
+		lr plog.LogRecord
+	}
+	var records []located
 	rls := ld.ResourceLogs()
 	for i := 0; i < rls.Len(); i++ {
 		sls := rls.At(i).ScopeLogs()
 		for j := 0; j < sls.Len(); j++ {
 			lrs := sls.At(j).LogRecords()
 			for k := 0; k < lrs.Len(); k++ {
-				err := e.exportRecord(ctx, lrs.At(k))
-				if err == nil {
-					continue
-				}
-				if firstErr == nil {
-					firstErr = err
-					retry = plog.NewLogs()
-				}
-				appendRecord(retry, rls.At(i), sls.At(j), lrs.At(k))
+				records = append(records, located{rls.At(i), sls.At(j), lrs.At(k)})
 			}
 		}
+	}
+	errs := make([]error, len(records))
+	workers := min(max(e.cfg.WriteConcurrency, 1), len(records))
+	if workers <= 1 {
+		for n, rec := range records {
+			errs[n] = e.exportRecord(ctx, rec.lr)
+		}
+	} else {
+		var next atomic.Int64
+		var wg sync.WaitGroup
+		for range workers {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for {
+					n := int(next.Add(1) - 1)
+					if n >= len(records) {
+						return
+					}
+					errs[n] = e.exportRecord(ctx, records[n].lr)
+				}
+			}()
+		}
+		wg.Wait()
+	}
+	var retry plog.Logs
+	var firstErr error
+	for n, err := range errs {
+		if err == nil {
+			continue
+		}
+		if firstErr == nil {
+			firstErr = err
+			retry = plog.NewLogs()
+		}
+		appendRecord(retry, records[n].rl, records[n].sl, records[n].lr)
 	}
 	if firstErr == nil {
 		return nil

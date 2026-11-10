@@ -111,6 +111,27 @@ _MSG_LLM_CONTENT_IGNORED = ("fabric.wire: FABRIC_CAPTURE_LLM_CONTENT does not af
 _LOCK = threading.RLock()
 _HANDLE: WireHandle | None = None
 _DRAIN_SHARE = 0.75  # of the close budget; the rest delivers the shutdown loss records
+_EXIT_NOTE_S = 0.1  # of the exit budget (at most a tenth): counting what is left spooled
+# Records left in the spool at exit with no process draining it (field finding F1). Counts
+# only: never a path, URL or id.
+_MSG_EXIT_BACKLOG = (
+    "fabric.wire: %d records left in the spool at exit and no process is draining it; they "
+    "are delivered only when a process captures to or drains this spool again (a serverless, "
+    "batch or autoscaled worker may never come back). Fix: set FABRIC_WIRE_DRAIN_ON_EXIT_S "
+    "(seconds this process may wait at exit to deliver them), run `python -m fabric.wire "
+    "drain --until-empty` as the job's last step, or keep FABRIC_WIRE_SPOOL_DIR on durable "
+    "storage with a drainer (sidecar)"
+)
+
+
+def _note_exit_backlog(sender: Any, drain_on_exit_s: float) -> bool:
+    """At exit: count the records no process is left to deliver; if any, write the spool's
+    exit note and log the diagnostic (only to Fabric's own logger)."""
+    left = sender.exit_backlog()
+    if left:
+        sender.spool.write_exit_note(left, drain_on_exit_s)
+        _LOG.warning(_MSG_EXIT_BACKLOG, left)
+    return True
 
 
 def _after_fork_in_child() -> None:
@@ -374,16 +395,30 @@ class WireHandle:
     def _atexit_close(self) -> None:
         """At exit (atexit, or a multiprocessing worker's finalizer), bounded: close, then
         shut Fabric's exporter/providers down on a helper thread unless delivery failed
-        (the exporter is then presumed blocked)."""
+        (the exporter is then presumed blocked).
+
+        The budget is ``shutdown_timeout_s``; a worker only makes its records durable in
+        the spool for the drainer. ``drain_on_exit_s`` (an explicit opt-in for batch and
+        serverless workers, whose spool no later process drains) adds that much, and the
+        exit then waits, as a ``close()`` does, until the spool's pending records are
+        delivered: it returns as soon as they are. Records still spooled with no process
+        left to drain them are counted in the spool's exit note and logged (field finding
+        F1); that accounting takes a small slice of the budget, never more time."""
         if not self.capturing:
             return
         with contextlib.suppress(BaseException):  # interpreter shutdown
             from .. import _loss  # noqa: PLC0415
             from ..tracing import is_private_provider  # noqa: PLC0415
 
-            deadline = time.monotonic() + max(0.0, self.config.shutdown_timeout_s)
-            closed = self._close(None, exiting=True)
+            drain = self.config.drain_on_exit_s
+            budget = max(0.0, self.config.shutdown_timeout_s) + drain
+            deadline = time.monotonic() + budget
+            reserve = min(_EXIT_NOTE_S, budget / 10)
+            closed = self._close(budget - reserve, exiting=not drain)
             loss, sender = self._tee.loss, self._tee.sender
+            if sender is not None:
+                _loss.run_bounded(lambda: _note_exit_backlog(sender, drain), deadline,
+                                  "fabric-exit-note")  # fmt: skip
             if sender is None:  # the direct path: the loss emitter's thread and provider
                 closed = loss.close(max(0.0, deadline - time.monotonic())) and closed
             providers = {self.config.tracer_provider, loss.tracer_provider,

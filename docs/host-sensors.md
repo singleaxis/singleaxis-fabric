@@ -90,7 +90,11 @@ Configured entirely by environment variables
 ([`components/host-emitter/README.md`](../components/host-emitter/README.md)):
 `EMIT_ENDPOINT` (Node OTLP/gRPC, default `localhost:4317`, TLS by default),
 `EMIT_CGROUP_PATH` or `EMIT_ALL_HOST=true` (it refuses to start with
-neither), `EMIT_EXEC`/`EMIT_CONNECT` (on), `EMIT_FILE_ACCESS` (off),
+neither), `EMIT_EXEC`/`EMIT_CONNECT` (on), `EMIT_FILE_ACCESS` (off; about
+six file events per exec: lossless to about 400 exec/s on the measured
+setup, against about 7,000 exec/s without it, with any loss counted in
+`fabric.sensor.upstream_lost` as `ring_buffer_full`; see the
+[sizing note](../components/host-emitter/README.md#configuration-env)),
 `EMIT_SPOOL_DIR` and `EMIT_SPOOL_MAX_BYTES` (1 GiB; a full spool stops the
 emitter visibly), `EMIT_BEARER_TOKEN_FILE`, and TLS/mTLS file variables.
 

@@ -26,14 +26,75 @@ behaviour) is in
 [privacy and security](privacy-and-security.md#redaction-service). Error
 messages from the SDKs point to this anchor.
 
+## Delivery rate and short-lived workers
+
+Each capturing process delivers its spool on one sender thread. It reads the
+pending records, sends their bodies to the Node several to a request
+(`FABRIC_WIRE_CONTENT_BATCH_BODIES`, default 32, at most 256 bodies and
+about 4 MiB per request) with a few requests in flight
+(`FABRIC_WIRE_CONTENT_CONCURRENCY`, default 4, at most 16), then exports the
+spans of the records whose bodies were all accepted. A record's span is never
+exported before its bodies, and a body the Node accepted is not sent again.
+The Node writes the records of one request up to `write_concurrency` at a
+time (`fabriccontent` exporter setting, default 8, at most 64).
+
+Measured on one machine with a sealed, fsync'd Node content queue and file
+store, and 2 KB to 3 KB bodies. Each figure is model exchanges delivered and
+stored per second:
+
+| setup | before (one body per request, serial) | now |
+|---|---|---|
+| sender alone, 50 ms round trip | 9 per process | 750 per process |
+| Node on Linux (Docker), 50 ms round trip, 1 process | 9 | 310 at the agent, 237 stored |
+| same, 3 processes | 9 each, 26 stored | 120 each, 231 stored |
+| Node on a disk with slow fsync, 3 processes | 4.3 each, 12 stored | 32 each, 64 stored |
+
+The last row matches what the field harness measured against a hosted
+Node (4.3 per process, about 13 in total). The Node's storage is then the
+limit. Its content queue absorbs bursts, and agents finish delivering long
+before the store catches up. A process that captures faster than it
+delivers builds a spool backlog. Size the Node's storage for the aggregate
+rate, or use the S3 backend.
+
+**At exit**, a process waits only for its exit budget
+(`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`, 2 s by default). Capture never delays the
+monitored program beyond that unless you ask it to. Records still in the
+spool stay on disk, and the next process that captures to or drains the same
+spool delivers them. If no next process comes (a serverless function, a batch
+job, an autoscaled worker that is scaled down, a container whose disk is
+discarded), the backlog is never delivered. The reader then reports the
+missing sequence numbers and the run as `partial`.
+
+Fabric makes that case visible. When a process exits with records left and
+no other live process is draining the spool, it writes a note into the spool
+directory and logs a diagnostic on Fabric's own logger. Like every Fabric
+diagnostic, that log goes to stderr only with `FABRIC_WIRE_DIAGNOSTICS=stderr`.
+`python -m fabric.wire status`, run with the agent's environment, reports
+`wire.spool.records` (records waiting now) and `wire.spool.left_at_exit`
+(how many records the last such exit left, and when), plus a warning that
+says what to do. A drainer that empties the spool removes the note.
+
+Choose one of these for workers that do not come back:
+
+- **Drain on exit (opt-in).** `FABRIC_WIRE_DRAIN_ON_EXIT_S=SECONDS` (at most
+  3600) lets the process wait up to that much longer at exit, on top of the
+  exit budget, until its spool is delivered. It returns as soon as the spool
+  is delivered. This delays the program's exit, so set it only where that is
+  acceptable, such as a batch job or a serverless function with time left.
+- **Drain as the last step.** Run
+  `python -m fabric.wire drain --until-empty` after the agent (below).
+- **Durable shared spool with a drainer.** Put `FABRIC_WIRE_SPOOL_DIR` on
+  storage that outlives the worker (a PersistentVolumeClaim, a shared volume)
+  and run the drainer as a sidecar or a separate long-lived process.
+
 ## Draining a spool with no agent running
 
 An agent delivers its spool's backlog only while it runs. At exit it waits
-only for its exit budget (`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`, 2 s by default),
-so after a Node or destination outage, thousands of records can be left on
-the spool volume. A later agent process on the same volume delivers them. If
-none comes, as with a one-shot container or a scaled-down job, run the
-drainer:
+only for its exit budget (`FABRIC_WIRE_SHUTDOWN_TIMEOUT_S`, 2 s by default,
+plus `FABRIC_WIRE_DRAIN_ON_EXIT_S` if you set it), so after a Node or
+destination outage, thousands of records can be left on the spool volume. A
+later agent process on the same volume delivers them. If none comes, as with
+a one-shot container or a scaled-down job, run the drainer:
 
 ```text
 python -m fabric.wire drain [--spool DIR] [--until-empty] [--timeout SECONDS]

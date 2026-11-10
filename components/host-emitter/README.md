@@ -52,6 +52,17 @@ privilege and already approved.
 | `EMIT_TLS_CA_FILE` | system roots | PEM CA bundle for the Node server certificate |
 | `EMIT_TLS_CERT_FILE` / `EMIT_TLS_KEY_FILE` | — | client certificate and key for mTLS; must be supplied together |
 
+**Sizing `EMIT_FILE_ACCESS`.** File-open events are about six per exec, so
+they fill the kernel ring buffer long before exec and connect do. Measured on
+Docker Desktop (linuxkit 6.12, arm64): with file access on, capture was
+lossless up to about 400 exec/s and lost events from about 800 exec/s; with
+it off, nothing was lost up to about 7,000 exec/s. Loss is never silent: the
+emitter's heartbeats carry it in `fabric.sensor.upstream_lost` with
+`ring_buffer_full`, and the reader marks corroboration incomplete for runs
+whose window it covers. Turn file access on only for a scoped cgroup whose
+exec rate stays well under that ceiling, and check `upstream_lost` after a
+representative load.
+
 The default transport is TLS. Production deployments must configure a trusted
 Node certificate and, when required by the Node ingress, a client certificate
 and key. `EMIT_INSECURE=true` is only for an isolated development receiver.

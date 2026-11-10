@@ -155,6 +155,11 @@ def unseal_store(sealed: Path, plain: Path) -> None:
         target = plain / rel
         if path.name.startswith(".fabric-root-barrier"):
             continue
+        # A write in flight: the Node writes each object to ".<name>.<random>.tmp" and links
+        # it into place only once fsync'd (spec 048 §4). A snapshot copied while it writes
+        # holds part of it; that is not a stored object and no reader opens it.
+        if path.name.startswith(".") and path.name.endswith(".tmp"):
+            continue
         data = path.read_bytes()
         assert data.startswith(NODE_MAGIC), f"{rel} is not sealed at rest"
         aad = json.dumps(
