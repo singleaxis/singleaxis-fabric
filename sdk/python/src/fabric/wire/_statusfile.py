@@ -38,7 +38,7 @@ MSG_UNWRITABLE = (
     "fabric.wire: the status file could not be written (%s). Fix: point "
     "FABRIC_WIRE_STATUS_FILE at a writable path in a directory that exists [FW-023]"
 )
-_warned = False
+_STATE = {"warned": False}  # the unwritable-file diagnostic is logged once per process
 # The install document is written on a thread; once a process wrote its exit document, a
 # late install write never replaces it.
 _ORDER = threading.Lock()
@@ -64,7 +64,6 @@ def _head(phase: str) -> dict[str, Any]:
 def write(path: str, document: Mapping[str, Any]) -> bool:
     """Write ``document`` to ``path`` atomically (mode 0600); ``False`` on any failure
     (logged once, by error class only)."""
-    global _warned  # noqa: PLW0603
     tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
         data = (json.dumps(document, sort_keys=True, default=str) + "\n").encode("utf-8")
@@ -79,8 +78,8 @@ def write(path: str, document: Mapping[str, Any]) -> bool:
     except Exception as exc:
         with contextlib.suppress(Exception):
             os.unlink(tmp)
-        if not _warned:
-            _warned = True
+        if not _STATE["warned"]:
+            _STATE["warned"] = True
             with contextlib.suppress(Exception):
                 _LOG.warning(MSG_UNWRITABLE, type(exc).__name__)
         return False

@@ -124,10 +124,10 @@ def _help(parser: _Parser, topic: str | None) -> str:
     lines = ["usage: fabric COMMAND [options]", "", "commands:"]
     lines += [f"  {name:<8} {_SUMMARIES[name]}" + ("" if name in BUILT else " (not built yet)")
               for name in COMMANDS]  # fmt: skip
-    lines += ["", "options on every command: --config PATH, --project NAME, --json, --quiet, "
-              "--no-color", "exit codes: 0 ok, 1 a check did not pass, 2 usage or configuration "
-              "error, 3 a prerequisite is missing", "",
-              "Run `fabric COMMAND --help` for a command's options."]  # fmt: skip
+    options = "options on every command: --config PATH, --project NAME, --json, --quiet, --no-color"
+    exits = ("exit codes: 0 ok, 1 a check did not pass, 2 usage or configuration error, "
+             "3 a prerequisite is missing")  # fmt: skip
+    lines += ["", options, exits, "", "Run `fabric COMMAND --help` for a command's options."]
     return "\n".join(lines)
 
 

@@ -19,12 +19,12 @@ import pytest
 import fabric._loss
 import fabric._sequence
 from fabric import wire
-from fabric._loss import LossEmitter
-from fabric._sequence import id_key_from_env
 from fabric.wire import _diagnose, _statusfile
 from fabric.wire._config import config_from_env
 from fabric.wire._status import env_status
 
+# A test-only pseudonym key: 20 bytes, deliberately low-entropy (not a secret).
+TEST_KEY = b"k" * 20
 _ENV = (
     "FABRIC_WIRE_STATUS_FILE", "FABRIC_WIRE_STORE", "FABRIC_WIRE_CONTENT_ENDPOINT",
     "FABRIC_WIRE_SPOOL_DIR", "FABRIC_WIRE_TRACER", "FABRIC_TENANT_ID", "FABRIC_OTLP_ENDPOINT",
@@ -37,7 +37,7 @@ _ENV = (
 def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for name in _ENV:
         monkeypatch.delenv(name, raising=False)
-    emitter = LossEmitter()
+    emitter = fabric._loss.LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
     monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
     monkeypatch.setattr(_statusfile, "_EXITED", set())
@@ -103,11 +103,12 @@ def test_invalid_configuration_writes_the_reason_and_fix(
 def test_an_unwritable_status_file_never_reaches_the_agent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(_statusfile, "_warned", False)
+    monkeypatch.setitem(_statusfile._STATE, "warned", False)
     monkeypatch.setenv("FABRIC_WIRE_STATUS_FILE", str(tmp_path / "missing-dir" / "status.json"))
     with caplog.at_level(logging.WARNING, logger="fabric.wire"):
-        assert _statusfile.write(str(tmp_path / "missing-dir" / "status.json"), {"a": 1}) is False
-        assert _statusfile.write(str(tmp_path / "missing-dir" / "status.json"), {"a": 1}) is False
+        first = _statusfile.write(str(tmp_path / "missing-dir" / "status.json"), {"a": 1})
+        second = _statusfile.write(str(tmp_path / "missing-dir" / "status.json"), {"a": 1})
+    assert (first, second) == (False, False)
     unwritable = [r for r in caplog.records if "[FW-023]" in r.getMessage()]
     assert len(unwritable) == 1  # logged once, by error class only
     assert "missing-dir" not in unwritable[0].getMessage()
@@ -156,25 +157,25 @@ def test_not_installed_message_ends_with_its_id() -> None:
 
 def test_id_key_file(tmp_path: Path) -> None:
     key = tmp_path / "id-key"
-    key.write_bytes(b"0123456789abcdef0123\n")
-    assert id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)}) == b"0123456789abcdef0123"
-    key.write_bytes(b"0123456789abcdef0123\r\n")
-    assert id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)}) == b"0123456789abcdef0123"
+    key.write_bytes(TEST_KEY + b"\n")
+    assert fabric._sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)}) == TEST_KEY
+    key.write_bytes(TEST_KEY + b"\r\n")
+    assert fabric._sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)}) == TEST_KEY
     # The same key by value or by file pseudonymises identically.
-    assert id_key_from_env({"FABRIC_WIRE_ID_KEY": "0123456789abcdef0123"}) == (
-        id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)}))  # fmt: skip
+    assert fabric._sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY": TEST_KEY.decode()}) == (
+        fabric._sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)}))  # fmt: skip
 
 
 @pytest.mark.parametrize(
     ("environ", "reason_id"),
     [
-        ({"FABRIC_WIRE_ID_KEY": "0123456789abcdef", "FABRIC_WIRE_ID_KEY_FILE": "/x"}, "FW-018"),
+        ({"FABRIC_WIRE_ID_KEY": "k" * 16, "FABRIC_WIRE_ID_KEY_FILE": "/x"}, "FW-018"),
         ({"FABRIC_WIRE_ID_KEY_FILE": "/nonexistent/id-key"}, "FW-019"),
     ],
 )  # fmt: skip
 def test_id_key_file_errors(environ: dict[str, str], reason_id: str) -> None:
     with pytest.raises(ValueError) as caught:
-        id_key_from_env(environ)
+        fabric._sequence.id_key_from_env(environ)
     assert _diagnose.reason_id(str(caught.value)) == reason_id
 
 
@@ -182,14 +183,14 @@ def test_id_key_file_too_short(tmp_path: Path) -> None:
     key = tmp_path / "id-key"
     key.write_bytes(b"short\n")
     with pytest.raises(ValueError, match="at least 16 bytes"):
-        id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)})
+        fabric._sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)})
     key.write_bytes(b"")
     with pytest.raises(ValueError, match="at least 16 bytes"):
-        id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)})
+        fabric._sequence.id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)})
 
 
 def test_wire_config_reads_the_id_key_file(tmp_path: Path) -> None:
     key = tmp_path / "id-key"
-    key.write_bytes(b"0123456789abcdef0123")
+    key.write_bytes(TEST_KEY)
     config, _ = config_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)})
-    assert config.id_key == b"0123456789abcdef0123"
+    assert config.id_key == TEST_KEY

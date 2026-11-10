@@ -265,16 +265,20 @@ def test_unusable_provider_urls_are_fc_008(text: str) -> None:
 
 
 class _NoKeyValues(dict[str, str]):
-    """An environment whose key variables may be tested by name but never read."""
+    """An environment that records every key variable whose value was read."""
+
+    def __init__(self, values: dict[str, str]) -> None:
+        super().__init__(values)
+        self.read: list[str] = []
 
     def __getitem__(self, name: str) -> str:
         if name in _providers.KEY_VARIABLES:
-            raise AssertionError(f"read the value of {name}")
+            self.read.append(name)
         return super().__getitem__(name)
 
     def get(self, name: str, default: Any = None) -> Any:
         if name in _providers.KEY_VARIABLES:
-            raise AssertionError(f"read the value of {name}")
+            self.read.append(name)
         return super().get(name, default)
 
 
@@ -292,6 +296,7 @@ def test_base_url_variables_add_only_uncovered_hosts() -> None:
         ("OPENAI_BASE_URL", "openai", ["serve.models.example.net"])
     ]
     assert _providers.providers_in_use(environ) == ["anthropic", "openai"]
+    assert environ.read == [], "a key variable's value was read"
 
 
 def test_two_variables_naming_one_host_add_it_once() -> None:

@@ -24,7 +24,6 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 import fabric._loss
 import fabric._sequence
 from fabric import wire
-from fabric._loss import LossEmitter
 from fabric.content_store import LocalFilesystemContentStore
 from fabric.reconstruct import reconstruct
 from fabric.wire import _config, _diagnose, _endpoint_table
@@ -51,7 +50,7 @@ def _fixture(name: str) -> dict[str, Any]:
 @pytest.fixture(autouse=True)
 def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
-    emitter = LossEmitter()
+    emitter = fabric._loss.LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
     monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
     yield
