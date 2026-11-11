@@ -1,0 +1,110 @@
+{
+  "schema_version": "fabric.provider-safety-fixture/v1",
+  "row_id": "anthropic.stop_reason.refusal",
+  "api": "anthropic.messages",
+  "dialect": "anthropic_messages",
+  "provenance": "documented_shape",
+  "source": "Anthropic Messages API reference: stop_reason refusal",
+  "note": "Spec 057 WP7-5: the response shapes of this map row, built from the provider's published response reference (no live provider returns a filtered or refused response on demand); each case lists the rows the reader projects. A live recording replaces a case when one is captured.",
+  "request": {
+    "model": "claude-x",
+    "max_tokens": 256,
+    "messages": [
+      {
+        "role": "user",
+        "content": "Tell me about it."
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "stop_reason refusal",
+      "response": {
+        "id": "msg_safety",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-x",
+        "content": [],
+        "stop_reason": "refusal",
+        "stop_sequence": null,
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 0
+        }
+      },
+      "rows": [
+        {
+          "row": "anthropic.stop_reason.refusal",
+          "signal": "refusal",
+          "stage": "output",
+          "decision": "deny"
+        }
+      ]
+    },
+    {
+      "name": "streamed, message_delta stop_reason refusal",
+      "stream": true,
+      "response": [
+        {
+          "type": "message_start",
+          "message": {
+            "id": "msg_safety",
+            "type": "message",
+            "role": "assistant",
+            "model": "claude-x",
+            "content": [],
+            "stop_reason": null,
+            "stop_sequence": null,
+            "usage": {
+              "input_tokens": 12,
+              "output_tokens": 0
+            }
+          }
+        },
+        {
+          "type": "message_delta",
+          "delta": {
+            "stop_reason": "refusal",
+            "stop_sequence": null
+          },
+          "usage": {
+            "output_tokens": 0
+          }
+        },
+        {
+          "type": "message_stop"
+        }
+      ],
+      "rows": [
+        {
+          "row": "anthropic.stop_reason.refusal",
+          "signal": "refusal",
+          "stage": "output",
+          "decision": "deny"
+        }
+      ]
+    },
+    {
+      "name": "stop_reason end_turn",
+      "response": {
+        "id": "msg_safety",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-x",
+        "content": [
+          {
+            "type": "text",
+            "text": "It is a city."
+          }
+        ],
+        "stop_reason": "end_turn",
+        "stop_sequence": null,
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 0
+        }
+      },
+      "rows": []
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: not_observed  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  1  model_call   m-55566f4e0c7dd95f
+  2    control    provider_safety · output · deny  refusal  anthropic  (literal)   ← model_call #1  exchange_id · certain
+  3  model_call   gpt-4o-2024-08-06
+  4    control    provider_safety · output · deny  content_filter  azure  violence  (literal)   ← model_call #3  exchange_id · certain
+  5  model_call   gpt-4o-2024-08-06
+  6    control    provider_safety · input · deny  content_filter  azure  hate  (literal)   ← model_call #5  exchange_id · certain
+  7    control    provider_safety · input · deny  content_filter  azure  jailbreak  (literal)   ← model_call #5  exchange_id · certain
+  8  model_call   gpt-3.5-turbo-instruct
+  9    control    provider_safety · output · deny  content_filter  openai  (literal)   ← model_call #8  exchange_id · certain
+ 10  model_call   gpt-4o-2024-08-06
+ 11    control    provider_safety · output · deny  content_filter  openai  (literal)   ← model_call #10  exchange_id · certain
+ 12  model_call   gpt-4o-2024-08-06
+ 13    control    provider_safety · output · deny  refusal  openai  (literal)   ← model_call #12  exchange_id · certain
+ 14  model_call   gpt-4.1-2025-04-14
+ 15    control    provider_safety · output · deny  content_filter  openai  (literal)   ← model_call #14  exchange_id · certain
+ 16  model_call   gpt-4.1-2025-04-14
+ 17    control    provider_safety · output · deny  refusal  openai  (literal)   ← model_call #16  exchange_id · certain
+ 18  model_call   gpt-4o-2024-08-06
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded

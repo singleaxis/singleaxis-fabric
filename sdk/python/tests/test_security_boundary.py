@@ -68,12 +68,14 @@ SRC = SDK / "src" / "fabric"
 TESTS = SDK / "tests"
 ROOT = SDK.parents[1]
 
-#: Every module spec 057 (P0a-P0c) added to the SDK.
+#: Every module spec 057 (P0a-P0c, P1a) added to the SDK.
 NEW_MODULES = (
     "_rec_check.py", "_rec_controls.py", "_rec_extension.py", "_rec_grant.py", "_rec_run.py",
     "_records_api.py", "_security_policy.py", "records/__init__.py", "records/_handles.py",
     "records/_vocab.py", "records/_walker.py", "reconstruct/_controls.py",
-    "reconstruct/_security.py",
+    "reconstruct/_security.py", "reconstruct/_derive.py", "reconstruct/dialects/__init__.py",
+    "reconstruct/dialects/offered_grant.py", "reconstruct/dialects/safety_map.py",
+    "reconstruct/dialects/tool_result.py",
 )  # fmt: skip
 #: The ones on the agent's request path (everything but the offline reader).
 REQUEST_PATH = tuple(m for m in NEW_MODULES if not m.startswith("reconstruct/"))
@@ -124,7 +126,7 @@ def test_the_new_module_list_is_complete() -> None:
         assert (SRC / relative).is_file(), relative
     found = {p.relative_to(SRC).as_posix() for p in SRC.rglob("*.py")}
     for relative in found:
-        if re.fullmatch(r"_rec_[a-z_]+\.py|records/.*\.py", relative):
+        if re.fullmatch(r"_rec_[a-z_]+\.py|records/.*\.py|reconstruct/dialects/.*\.py", relative):
             assert relative in NEW_MODULES, relative
 
 
@@ -409,7 +411,7 @@ def test_b5_every_control_path_records_both_invariants(monkeypatch: pytest.Monke
 # ============================================================================ B6
 #: Every reader module: any of them can put a string into the report, the projection, the
 #: view or a diagnostic, so the scan never depends on a hand-kept list of the printing ones.
-_READER = tuple(sorted(p.relative_to(SRC).as_posix() for p in (SRC / "reconstruct").glob("*.py")))
+_READER = tuple(sorted(p.relative_to(SRC).as_posix() for p in (SRC / "reconstruct").rglob("*.py")))
 #: Literals that contain a scanned word but are never output: a cloud SDK exception class
 #: name the object reader matches a store error against (``reconstruct/_objects.py``).
 _NOT_OUTPUT = frozenset({"UnauthorizedSSOTokenError"})
@@ -432,7 +434,9 @@ def test_b6_the_scan_covers_every_reader_module() -> None:
     assert len(_READER) >= 15
     for relative in ("reconstruct/__main__.py", "reconstruct/_security.py",
                      "reconstruct/_controls.py", "reconstruct/_explain.py",
-                     "reconstruct/_verify.py", "reconstruct/_project.py"):  # fmt: skip
+                     "reconstruct/_verify.py", "reconstruct/_project.py",
+                     "reconstruct/_derive.py", "reconstruct/dialects/safety_map.py",
+                     "reconstruct/dialects/tool_result.py"):  # fmt: skip
         assert relative in _READER, relative
 
 
@@ -521,6 +525,7 @@ def _identifiers(tree: ast.Module) -> Iterator[str]:
 
 def _spec_057_tests() -> list[Path]:
     names = ("test_records_*.py", "test_reconstruct_security.py", "test_reconstruct_controls.py",
+             "test_reconstruct_wire_derivation.py",
              "test_security_*.py", "_sc_*.py", "_security_capture.py", "_records_*.py",
              "_budget.py")  # fmt: skip
     return sorted({p for pattern in names for p in TESTS.glob(pattern)})

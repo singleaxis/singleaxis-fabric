@@ -47,6 +47,7 @@ from urllib.parse import urlsplit
 from fabric._model_names import parse_model_allowlist
 from fabric._sequence import label_pseudonym, pseudonym_v2
 from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
+from fabric.reconstruct._derive import DERIVE_CHOICES, Derivation
 from fabric.reconstruct._explain import explain_no_runs
 from fabric.reconstruct._graph import RunGraph
 from fabric.reconstruct._host import (
@@ -312,6 +313,28 @@ def _evaluation_options(parser: argparse.ArgumentParser) -> None:
         help="a tool name that runs inside the agent process (repeatable): a call to it "
         "without an effect is reported as no_effect_channel, not none_in_window (spec 056 "
         "§4.2)",
+    )
+    parser.add_argument(
+        "--derive",
+        action="append",
+        dest="derive",
+        default=[],
+        choices=DERIVE_CHOICES,
+        metavar="RULE",
+        help="apply a spec 057 wire derivation rule to the stored model-call bytes "
+        "(repeatable): wire.offered_grant (the tools each request offered, F12), "
+        "wire.safety_map (provider safety signals), wire.tool_result_flag (structured "
+        "tool-result error flags, F14), or wire for all three. Off by default: without it "
+        "every run is reported as before",
+    )
+    parser.add_argument(
+        "--tool-result-markers",
+        dest="tool_result_markers",
+        metavar="FILE",
+        help="a JSON file with the customer's exact tool-result denial markers (spec 057 "
+        "§4.10.1): a deployment policy with security_context.tool_result_markers, an object "
+        "with tool_result_markers, or the list itself. Applies wire.tool_result_marker; an "
+        "entry that declares allow, or is malformed, is refused and counted in the report",
     )
     _host_options(parser)
 
@@ -782,7 +805,27 @@ def _action_reader(
         clock_uncertainty_ns=clock_uncertainty_ns,
         every_run=view,
         keep_runs=view,
+        derivation=Derivation.build(args.derive, _markers_file(args.tool_result_markers)),
     )
+
+
+def _markers_file(path: str | None) -> object:
+    """The ``tool_result_markers`` list of ``--tool-result-markers`` (``None`` without the
+    option). The entries are checked when the table loads, which never fails the run; an
+    unreadable file, or one without such a list, is a usage error (fixed text)."""
+    if path is None:
+        return None
+    try:
+        document = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError, RecursionError):
+        raise ReconstructInputError("--tool-result-markers takes a readable JSON file") from None
+    if isinstance(document, dict):
+        section = document.get("security_context", document)
+        if isinstance(section, dict) and "tool_result_markers" in section:
+            return section["tool_result_markers"]
+    elif isinstance(document, list):
+        return document
+    raise ReconstructInputError("--tool-result-markers: the file holds no tool_result_markers list")
 
 
 def _host_declarations(args: argparse.Namespace) -> list[tuple[str, str | None]]:
@@ -1076,15 +1119,7 @@ def format_actions(view: Mapping[str, Any]) -> str:
             indent = "  " if row["kind"] in ("grant", "extension") else "    "
             lines.append(f"{number}{indent}{_security_text(row)}".rstrip())
         elif row["kind"] == "model_call":
-            text = f"{number}  model_call   {row.get('model', '-')}"
-            if row.get("results"):
-                text += "  ← result " + ", ".join(row["results"])
-            if row.get("tool_calls"):
-                text += "  → tool_call " + ", ".join(
-                    f"{c['call']} {c['name']}" if c.get("name") else c["call"]
-                    for c in row["tool_calls"]
-                )
-            lines.append(text)
+            lines.append(f"{number}  model_call   {row.get('model', '-')}" + _model_call_text(row))
         elif row["kind"] == "effect":
             effect = f"{number}    effect     {_effect_text(row):<36} {_caused_text(row, why)}"
             lines.append(effect.rstrip())
@@ -1180,6 +1215,37 @@ def _ms(value: Any) -> str:
     return f"{value:g} ms"
 
 
+def _in_force_text(in_force: Mapping[str, Any]) -> str:
+    """Spec 057 §6.1 ``grant_in_force``: the latest grant snapshot before the row."""
+    if in_force["grant_basis"] == "none":
+        return "in force none"
+    if in_force.get("certainty") == "ambiguous":
+        return "in force ambiguous: " + ", ".join(_short(c) for c in in_force["candidates"])
+    named = _short(in_force["id"]) if "id" in in_force else "-"
+    return f"in force {named} ({in_force['grant_basis']})"
+
+
+def _model_call_text(row: Mapping[str, Any]) -> str:
+    text = ""
+    if row.get("results"):
+        text += "  ← result " + ", ".join(row["results"])
+        if row.get("result_errors"):  # F14: the structured error flag, never a denial claim
+            text += f" (is_error: {', '.join(row['result_errors'])})"
+    calls = row.get("tool_calls") or []
+    if calls:
+        text += "  → tool_call " + ", ".join(
+            f"{c['call']} {c['name']}" if c.get("name") else c["call"] for c in calls
+        )
+        missing = [c["call"] for c in calls if c.get("not_offered")]
+        if missing:
+            offered = row.get("offered_grant_id")
+            where = f" offered {_short(offered)}" if isinstance(offered, str) else " offered"
+            text += f"   (F12: {', '.join(missing)} not in{where})"
+        if "grant_in_force" in calls[0]:  # one position: every call of the row shares it
+            text += f"   {_in_force_text(calls[0]['grant_in_force'])}"
+    return text
+
+
 def _link_tail(row: Mapping[str, Any]) -> str:
     link = row.get("link")
     if link is None:
@@ -1194,14 +1260,19 @@ def _link_tail(row: Mapping[str, Any]) -> str:
         )
         tail = f"resolves {target}  ref_join · {link['confidence']}"
         return tail + ("" if link["state"] == "resolved" else f" · {link['state']}")
-    target = link["target"] if link["namespace"] == "call" else f"attempt {link['target'][:8]}…"
+    if link["namespace"] == "exchange":  # a provider safety row: the model call it came from
+        target = f"model_call #{link['target_n']}" if "target_n" in link else "model_call"
+    elif link["namespace"] == "call":
+        target = link["target"]
+    else:
+        target = f"attempt {link['target'][:8]}…"
     tail = f"← {target}  {link['method']} · {link['confidence']}"
     if link["state"] == "unresolved":
         tail += " · unresolved (not in this run)"
     return tail
 
 
-def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch per row kind
+def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - one branch per row kind
     kind = row["kind"]
     if kind == "grant":
         parts = ["grant ", _short(row["id"]) if "id" in row else "-", row["basis"]]
@@ -1209,6 +1280,12 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch
         parts += [f"{_GRANT_COUNT_WORDS[k]} {v}" for k, v in row.get("counts", {}).items()]
         if "tool_choice" in row:
             parts.append(f"tool_choice {row['tool_choice']}")
+        if "allowed_count" in row:
+            parts.append(f"allowed {row['allowed_count']}")
+        if "parallel" in row:
+            parts.append(f"parallel {'yes' if row['parallel'] else 'no'}")
+        if "instructions_digest" in row:  # G15: the C20 digest, never the text
+            parts.append(f"instr {row['instructions_digest'][:15]}…")
         if "previous_id" in row:
             parts.append(f"previous {_short(row['previous_id'])}")
         if row.get("changed"):
@@ -1232,7 +1309,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch
         what = " · ".join(str(v) for v in (row.get("control_kind", "?"), where or "?",
                                            row.get("decision", "?")))  # fmt: skip
         parts = [f"control    {what}"]
-        parts += [str(row[k]) for k in ("engine", "reason_code", "error_class") if k in row]
+        parts += [str(row[k]) for k in ("signal", "engine", "reason_code", "error_class")
+                  if k in row]  # fmt: skip
         if "latency_ms" in row:
             parts.append(_ms(row["latency_ms"]))
         if row.get("mode") not in (None, "unknown"):
@@ -1258,6 +1336,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch
                      + (" · ambiguous" if effect.get("state") == "ambiguous" else ""))  # fmt: skip
     if row.get("later_allow_refs"):
         parts.append("later allow " + ",".join(f"#{n}" for n in row["later_allow_refs"]))
+    if "grant_in_force" in row:
+        parts.append(_in_force_text(row["grant_in_force"]))
     tail = _link_tail(row)
     return "  ".join(parts) + (f"   {tail}" if tail else "")
 

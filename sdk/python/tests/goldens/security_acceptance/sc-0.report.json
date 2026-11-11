@@ -515,6 +515,12 @@
             ]
           }
         ],
+        "grant_in_force": {
+          "ambiguous": 0,
+          "none": 0,
+          "observed": 0,
+          "reported": 7
+        },
         "grants": {
           "declared": 2,
           "listed": 0,
