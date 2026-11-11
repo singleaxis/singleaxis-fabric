@@ -655,3 +655,85 @@ def test_packaged_templates_are_code_not_data_files() -> None:
     assert _templates.sink_source().startswith("# Copyright")
     package = Path(_templates.__file__).parent
     assert {p.suffix for p in package.iterdir() if p.is_file()} == {".py"}
+
+
+# ---------------------------------------------------------------- review fixes (058-e1b)
+
+
+def test_a_sensor_that_does_not_stay_up_is_removed_and_is_not_a_change_next_time(
+    project: Path,
+) -> None:
+    """The sensor service restarts unless stopped: reporting "off" while its container
+    restarts in the background would be a silent failure. It is taken out of the project,
+    and the next `up` (which tries again) reports no change."""
+    docker = FakeDocker(running=set())
+    report, _ = _up_once(docker)
+    assert "FC-045" in _ids(report) and report.data["sensor"]["state"] == "off"
+    ups = docker.compose_calls("up")
+    assert len(ups) == 2 and all("--remove-orphans" in call for call in ups)
+    assert "fabric-sensor" not in _compose(project)["services"]
+    assert "volumes" not in _compose(project)
+    state = json.loads((project / ".fabric/state/up.json").read_text("utf-8"))
+    assert state["sensor"] == "off" and state["sensor_image"] is None
+    again, _ = _up_once(docker)
+    assert again.data["changes"] == [] and "FC-026" not in _ids(again)
+    assert "FC-045" in _ids(again), "the reason is reported every time, never only once"
+    # The agent cgroup that was created for it is still removed by `down --purge`.
+    _down(docker, "--purge")
+    assert docker.calls[-1][-3:-1] == ["rmdir", "/sys/fs/cgroup/fabric.slice/agent-support-agent"]
+
+
+def test_purge_never_runs_an_image_or_removes_a_path_the_state_file_names(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`.fabric/state/up.json` lives in the project directory, which can be a checkout of
+    somebody else's repository. `down --purge` starts a privileged helper container: its
+    image is this release's pinned one, and the cgroup is this project's own, whatever
+    the file says."""
+    state = project / ".fabric/state/up.json"
+    own = "/sys/fs/cgroup/fabric.slice/agent-support-agent"
+
+    def purge_with(content: dict[str, Any]) -> list[list[str]]:
+        docker = FakeDocker()
+        _up_once(docker, "--no-sensor")
+        state.write_text(json.dumps(content))
+        _down(docker, "--purge")
+        return [call for call in docker.calls if call[0] == "run"]
+
+    (helper,) = purge_with({"sensor_cgroup": own, "sensor_cgroup_created": "vm",
+                            "sink_image": "evil.example/rootkit:latest"})  # fmt: skip
+    assert "evil.example/rootkit:latest" not in helper and _images.SINK in helper
+    assert helper[-3:] == ["rmdir", own, "/sys/fs/cgroup/fabric.slice"]
+    for cgroup in ("/sys/fs/cgroup/fabric.slice/agent-another-project",
+                   "/sys/fs/cgroup/system.slice/docker.service",
+                   "/sys/fs/cgroup/../../etc/fabric.slice/agent-support-agent",
+                   "/etc/fabric.slice/agent-support-agent"):  # fmt: skip
+        assert purge_with({"sensor_cgroup": cgroup, "sensor_cgroup_created": "vm",
+                           "sink_image": _images.SINK}) == [], cgroup  # fmt: skip
+    removed: list[str] = []
+    real_rmdir = os.rmdir
+
+    def rmdir(path: Any, **kwargs: Any) -> None:
+        if kwargs:  # shutil.rmtree deleting .fabric/state
+            real_rmdir(path, **kwargs)
+        else:
+            removed.append(str(path))
+
+    monkeypatch.setattr(os, "rmdir", rmdir)
+    escaping = "/sys/fs/cgroup/user.slice/../../../etc/fabric.slice/agent-support-agent"
+    for cgroup in ("/sys/fs/cgroup/system.slice/docker.service", escaping):
+        purge_with({"sensor_cgroup": cgroup, "sensor_cgroup_created": "direct"})
+    assert removed == []
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-1", "soon"])
+def test_wait_must_be_a_finite_number_of_seconds(
+    value: str, project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--wait nan` would never time out: `up` would hang instead of reporting FC-023."""
+    from fabric import cli  # noqa: PLC0415
+
+    assert cli.main(["up", "--wait", value]) == 2
+    err = capsys.readouterr().err
+    assert "FC-006" in err and "number of seconds" in err
+    assert not (project / "fabric.yaml").exists()

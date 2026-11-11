@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import json
+import math
 import os
 import shutil
 import socket
@@ -38,12 +40,23 @@ STATE_FILE = "up.json"
 _PORT_BUSY = ("port is already allocated", "address already in use", "ports are not available")
 
 
+def _seconds(text: str) -> float:
+    """``--wait``: a finite number of seconds, zero or more (``nan`` would never time out)."""
+    try:
+        value = float(text)
+    except ValueError:
+        value = math.nan
+    if not math.isfinite(value) or value < 0:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number of seconds (0 or more)")
+    return value
+
+
 def add_up_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-sensor", action="store_true",
                         help="do not start the host sensor")  # fmt: skip
     parser.add_argument(
         "--wait",
-        type=float,
+        type=_seconds,
         default=DEFAULT_WAIT_S,
         metavar="SECONDS",
         help="how long to wait for the Node to answer (default 60)",
@@ -352,6 +365,21 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     layout = _layout(project, facts, port, sensor)
     compose_file, node_digest, fingerprint = _render(project, images, layout)
 
+    # The agent cgroup that now exists (removed by `down --purge`), whatever the sensor does.
+    cgroup_made = (sensor.cgroup, sensor.create) if sensor.start else (None, None)
+    _start(docker, project, compose_file, layout, options.wait, probe, sleep, findings)
+    if sensor.start:
+        _confirm_sensor(sensor, docker, project, compose_file, sleep)
+        if not sensor.start:
+            # It did not stay up: take it out of the project, so no container is left
+            # restarting in the background while the report says "off".
+            layout = dataclasses.replace(layout, sensor_cgroup=None)
+            compose_file, node_digest, fingerprint = _render(project, images, layout)
+            docker.compose(project.compose_project, compose_file, "up", "--detach",
+                           "--remove-orphans", "--quiet-pull")  # fmt: skip
+
+    # Compared after the sensor is confirmed: one that could not start or stay up is
+    # stored as "off" and is not a change the next `up` reports.
     state_path = project.state_dir / "state" / STATE_FILE
     applied: dict[str, Any] = {
         "node_image": images.node, "sink_image": images.sink,
@@ -360,14 +388,8 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
         "data_dir": str(project.data_dir)}  # fmt: skip
     changes = _changes(_read_state(state_path), applied)
     findings.extend(Finding("FC-026", change) for change in changes)
-    _start(docker, project, compose_file, layout, options.wait, probe, sleep, findings)
-    _confirm_sensor(sensor, docker, project, compose_file, sleep)
     findings.extend(sensor.findings)
-    # The same words `applied` was compared with above, so a sensor that could not start
-    # is not reported as a change by the next `up`.
-    applied.update(sensor=sensor.state(),
-                   sensor_cgroup=sensor.cgroup if sensor.start else None,
-                   sensor_cgroup_created=sensor.create if sensor.start else None)  # fmt: skip
+    applied.update(sensor_cgroup=cgroup_made[0], sensor_cgroup_created=cgroup_made[1])
     _write_if_changed(state_path, json.dumps(applied, indent=2, sort_keys=True) + "\n")
 
     report.data.update({
@@ -399,22 +421,30 @@ def _remove_tree(path: Path, findings: list[Finding]) -> None:
         findings.append(Finding("FC-029", str(path)))
 
 
-def _remove_agent_cgroup(state: Mapping[str, Any], docker: Docker) -> None:
+def _remove_agent_cgroup(state: Mapping[str, Any], docker: Docker, project: str,
+                         images: _images.Images) -> None:  # fmt: skip
     """Remove the empty agent cgroup `up` created (best effort; a cgroup with a running
-    process is left alone by the kernel)."""
-    cgroup, created = state.get("sensor_cgroup"), state.get("sensor_cgroup_created")
-    if not cgroup or not str(cgroup).startswith(str(_sensor.CGROUP_ROOT) + "/"):
+    process is left alone by the kernel).
+
+    ``.fabric/state/up.json`` sits in the project directory, which may be a checkout of
+    somebody else's repository: it only says *whether* a cgroup was made. The path must be
+    this project's own agent cgroup, and the privileged helper is always this release's
+    pinned image, never one the file names."""
+    cgroup, created = str(state.get("sensor_cgroup") or ""), state.get("sensor_cgroup_created")
+    name = _sensor.cgroup_name(project)
+    root = str(_sensor.CGROUP_ROOT)
+    if ".." in Path(cgroup).parts or not cgroup.startswith(root + "/"):
         return
     # The slice above it goes too when this was its last project (rmdir refuses otherwise).
-    parent = str(Path(str(cgroup)).parent)
-    if created == "direct":
-        for path in (str(cgroup), parent):
+    parent = str(Path(cgroup).parent)
+    if created == "direct" and cgroup.endswith("/" + name):
+        for path in (cgroup, parent):
             with contextlib.suppress(OSError):
                 os.rmdir(path)
-    elif created == "vm" and state.get("sink_image"):
+    elif created == "vm" and cgroup == f"{root}/{name}":
         docker.run("run", "--rm", "--privileged", "--cgroupns=host", "--network=none",
-                   "-v", "/sys/fs/cgroup:/sys/fs/cgroup", str(state["sink_image"]),
-                   "rmdir", str(cgroup), parent)  # fmt: skip
+                   "-v", "/sys/fs/cgroup:/sys/fs/cgroup", images.sink,
+                   "rmdir", cgroup, parent)  # fmt: skip
 
 
 def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = None,
@@ -446,7 +476,7 @@ def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = No
     lines = [f"stopped {project.compose_project}; state, secrets and recorded data are kept"]
     if options.purge:
         state = _read_state(project.state_dir / "state" / STATE_FILE)
-        _remove_agent_cgroup(state, docker)
+        _remove_agent_cgroup(state, docker, project.name, _images.resolve(environ))
         _remove_tree(project.state_dir / "state", report.findings)
         report.data["purged"] = True
         lines = [f"stopped {project.compose_project} and deleted its volumes and "
