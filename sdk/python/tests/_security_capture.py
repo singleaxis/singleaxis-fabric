@@ -47,7 +47,7 @@ def capture(
     monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
     handle = Handle(id_key=key, **handle_options)
     if "gate" in handle_options:  # the records input reads the gate's policy (§7.2 switches)
-        handle.gate = handle_options["gate"]  # type: ignore[attr-defined]
+        handle.gate = handle_options["gate"]
         handle.records = type(handle.input)(handle)  # type: ignore[arg-type]
     monkeypatch.setattr(api, "_WIRE", types.SimpleNamespace(current_handle=lambda: handle))
     try:
