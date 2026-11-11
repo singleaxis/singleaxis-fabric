@@ -194,9 +194,9 @@ def check_secret_file(path: Path, *, public: bool = False) -> bool:
     if _POSIX and not public:
         if info.st_uid != os.geteuid():
             raise _unsafe_file(path, "is owned by another user")
-        # Group read is allowed only for the Node's key when root shares it with the
+        # Group read is allowed only for the Node's key, which root shares with the
         # image's group (the production overlay's root:65532 0440 rule).
-        if info.st_mode & 0o037:
+        if info.st_mode & (0o037 if path.name == NODE_KEY else 0o077):
             raise _unsafe_file(path, "is open to group or others")
     return True
 

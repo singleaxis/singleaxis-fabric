@@ -336,3 +336,19 @@ def test_import_file_stores_exclusively_and_never_replaces(tmp_path: Path) -> No
     assert path.read_bytes() == b"first-imported-key"
     _secrets.import_file(directory, "id.key", b"second")
     assert path.read_bytes() == b"first-imported-key"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+def test_group_read_is_accepted_on_the_node_key_only(tmp_path: Path) -> None:
+    """Root shares the Node's key with the image's group (0440). No other secret may be
+    group-readable: the id key and the CA key are the operator's alone."""
+    directory = tmp_path / "secrets"
+    _secrets.ensure_local(directory, "p")
+    (directory / _secrets.NODE_KEY).chmod(0o440)
+    assert _secrets.check_secret_file(directory / _secrets.NODE_KEY) is True
+    for name in (_secrets.ID_KEY, _secrets.CA_KEY):
+        (directory / name).chmod(0o440)
+        with pytest.raises(CliError) as caught:
+            _secrets.check_secret_file(directory / name)
+        assert caught.value.findings[0].id == "FC-013"
+        (directory / name).chmod(0o600)
