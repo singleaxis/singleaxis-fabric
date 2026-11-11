@@ -2,7 +2,7 @@ run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: comple
   grant   grt-8b53…  declared  api  run_start  allow 2  deny 1  fs 2  (reported)
   grant   grt-2352…  offered  api  run_start  tools 4  (reported)
   grant   grt-2804…  listed  otlp  run_start  tools 3  (reported)
-  1  model_call   gpt-4o-2024-08-06  → tool_call T1 read_file
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 read_file   in force grt-2804… (reported)
   2  grant   grt-e788…  declared  api  change  allow 1  previous grt-8b53…  (changed)  (reported)
   3  grant   grt-9250…  offered  api  change  tools 3  previous grt-2352…  (changed)  (reported)
   4  grant   grt-8a1c…  listed  otlp  change  tools 2  previous grt-2804…  (changed)  (reported)

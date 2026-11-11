@@ -1,6 +1,6 @@
 {
   "schema_version": "fabric.provider-safety-map/v1",
-  "note": "Spec 057 \u00a74.1: the closed map from a literal provider response field to a provider-neutral control.signal (D48), stage and decision, projected offline by the reader as kind provider_safety, derivation literal. Skeleton: a row ships (status confirmed) only after it is confirmed against a recorded response fixture for its dialect (WP7-5); until then status is pending_fixture and the reader projects nothing for it. A missing field produces no row, never allow. Severity scores and probabilities stay in the protected response bytes. engine is the endpoint id; reason_code is the category literal, lower-cased and pattern-validated.",
+  "note": "Spec 057 \u00a74.1: the closed map from a literal provider response field to a provider-neutral control.signal (D48), stage and decision, projected offline by the reader as kind provider_safety, derivation literal. A row ships (status confirmed) only after it is confirmed against a response fixture for its dialect (WP7-5); until then status is pending_fixture and the reader projects nothing for it. Rows of dialects the wire parser does not read (Bedrock Converse, Gemini) and the gateway moderation row (no fixed literal field) stay pending_fixture. A missing field produces no row, never allow. Severity scores and probabilities stay in the protected response bytes. engine is the endpoint id; reason_code is the category literal, lower-cased and pattern-validated. One fact, one row: a choice whose content_filter_results name a filtered category gives the azure.choice_filter_results rows and no separate finish_reason row.",
   "rows": [
     {
       "id": "openai.finish_reason.content_filter",
@@ -11,7 +11,7 @@
       "stage": "output",
       "decision": "deny",
       "fixture_id": "fixtures/provider-safety/openai.finish_reason.content_filter.json",
-      "status": "pending_fixture"
+      "status": "confirmed"
     },
     {
       "id": "azure.prompt_filter_results.filtered",
@@ -22,7 +22,7 @@
       "stage": "input",
       "decision": "deny",
       "fixture_id": "fixtures/provider-safety/azure.prompt_filter_results.filtered.json",
-      "status": "pending_fixture"
+      "status": "confirmed"
     },
     {
       "id": "azure.choice_filter_results.filtered",
@@ -33,7 +33,7 @@
       "stage": "output",
       "decision": "deny",
       "fixture_id": "fixtures/provider-safety/azure.choice_filter_results.filtered.json",
-      "status": "pending_fixture"
+      "status": "confirmed"
     },
     {
       "id": "openai.message.refusal",
@@ -44,7 +44,7 @@
       "stage": "output",
       "decision": "deny",
       "fixture_id": "fixtures/provider-safety/openai.message.refusal.json",
-      "status": "pending_fixture"
+      "status": "confirmed"
     },
     {
       "id": "openai.responses.refusal_part",
@@ -55,7 +55,18 @@
       "stage": "output",
       "decision": "deny",
       "fixture_id": "fixtures/provider-safety/openai.responses.refusal_part.json",
-      "status": "pending_fixture"
+      "status": "confirmed"
+    },
+    {
+      "id": "openai.responses.incomplete.content_filter",
+      "dialect": "openai_responses",
+      "field": "incomplete_details.reason",
+      "match": "equals \"content_filter\"",
+      "signal": "content_filter",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/openai.responses.incomplete.content_filter.json",
+      "status": "confirmed"
     },
     {
       "id": "anthropic.stop_reason.refusal",
@@ -66,7 +77,18 @@
       "stage": "output",
       "decision": "deny",
       "fixture_id": "fixtures/provider-safety/anthropic.stop_reason.refusal.json",
-      "status": "pending_fixture"
+      "status": "confirmed"
+    },
+    {
+      "id": "openai.completions.finish_reason.content_filter",
+      "dialect": "openai_completions",
+      "field": "choices[].finish_reason",
+      "match": "equals \"content_filter\"",
+      "signal": "content_filter",
+      "stage": "output",
+      "decision": "deny",
+      "fixture_id": "fixtures/provider-safety/openai.completions.finish_reason.content_filter.json",
+      "status": "confirmed"
     },
     {
       "id": "bedrock.stop_reason.guardrail_intervened",

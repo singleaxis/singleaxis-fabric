@@ -57,6 +57,44 @@
         "profile": {
           "description": "Spec 049 \u00a77.3: the deployment profile the verifier evaluated; production requires every record to carry the Node's source stamp.",
           "enum": ["local", "production"]
+        },
+        "derivation": {
+          "description": "Spec 057 P1 (WP7-4 to WP7-6): the opt-in wire derivation rules the reader applied to the stored model-call bytes (--derive, --tool-result-markers). Absent when none was asked; every run is then reported as without them (spec 057 §9.1). The denial-marker list is described by its size, digest and refusals only, never by its strings (§7.1, §7.3).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["rules"],
+          "properties": {
+            "rules": {
+              "type": "array",
+              "uniqueItems": true,
+              "maxItems": 4,
+              "items": {"enum": ["wire.offered_grant", "wire.safety_map", "wire.tool_result_flag", "wire.tool_result_marker"]}
+            },
+            "tool_result_markers": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "count", "loaded"],
+              "properties": {
+                "status": {"enum": ["active", "refused"]},
+                "count": {"type": "integer", "minimum": 0},
+                "loaded": {"type": "integer", "minimum": 0, "maximum": 256},
+                "sha256": {"$ref": "#/$defs/digest"},
+                "refused": {
+                  "type": "array",
+                  "maxItems": 257,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["index", "reason"],
+                    "properties": {
+                      "index": {"type": "integer", "minimum": 0},
+                      "reason": {"enum": ["decision_allow", "invalid", "over_limit"]}
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -540,6 +578,7 @@
         "control_links": {"type": "object", "additionalProperties": false, "propertyNames": {"enum": ["provider_id", "exchange_id", "mcp_session", "rpc_id", "reported_ref", "ref_join", "sequence_bracket", "process_anchor", "pending_single", "pending_set", "path_ref", "none"]}, "patternProperties": {"^[a-z_]+$": {"$ref": "#/$defs/count"}}},
         "hooks": {"type": "array", "maxItems": 64, "items": {"type": "object", "additionalProperties": false, "required": ["basis", "outcome", "count"], "properties": {"basis": {"enum": ["process", "callback", "reported_unknown"]}, "outcome": {"enum": ["passed", "modified", "blocked", "escalated", "errored", "unknown"]}, "count": {"type": "integer", "minimum": 1}}}},
         "extensions": {"type": "array", "maxItems": 1024, "items": {"type": "object", "additionalProperties": false, "required": ["kind", "observed_via", "signature_status", "count"], "properties": {"kind": {"enum": ["skill", "plugin", "mcp_server", "hook_bundle", "subagent", "tool_pack", "other"]}, "observed_via": {"enum": ["mcp_initialize", "mcp_tools_list", "process_launch", "path_open", "reported"]}, "signature_status": {"enum": ["verified", "invalid", "unsigned", "unverified", "unknown"]}, "count": {"type": "integer", "minimum": 1}}}},
+        "grant_in_force": {"description": "Spec 057 §6.1 (revision 3.6): present only when the run holds a grant snapshot. Of the run's control rows and tool calls, how many have their latest earlier snapshot reported (records API or telemetry), observed (derived from model-wire bytes) or none before them; ambiguous counts the rows, among reported and observed, whose earlier snapshots come from sources that cannot be ordered.", "type": "object", "additionalProperties": false, "required": ["reported", "observed", "none", "ambiguous"], "properties": {"reported": {"$ref": "#/$defs/count"}, "observed": {"$ref": "#/$defs/count"}, "none": {"$ref": "#/$defs/count"}, "ambiguous": {"$ref": "#/$defs/count"}}},
         "facts": {"type": "array", "maxItems": 15, "items": {"type": "object", "additionalProperties": false, "required": ["code", "count", "event_ids"], "properties": {"code": {"enum": ["no_declared_grant", "grant_changed", "control_unmatched", "control_pending_at_end", "control_denied", "deny_with_effect", "approval_required_without_decision", "hook_errored", "hook_modified", "extension_signature", "control_invariant_conflict", "inventory_changed", "tool_called_not_offered", "os_denied", "tool_result_error"]}, "count": {"type": "integer", "minimum": 1}, "event_ids": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}}}}}
       }
     },

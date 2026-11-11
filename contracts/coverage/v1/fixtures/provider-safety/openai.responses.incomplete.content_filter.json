@@ -1,0 +1,90 @@
+{
+  "schema_version": "fabric.provider-safety-fixture/v1",
+  "row_id": "openai.responses.incomplete.content_filter",
+  "api": "openai.responses",
+  "dialect": "openai_responses",
+  "provenance": "documented_shape",
+  "source": "OpenAI Responses API reference: incomplete_details.reason content_filter",
+  "note": "Spec 057 WP7-5: the response shapes of this map row, built from the provider's published response reference (no live provider returns a filtered or refused response on demand); each case lists the rows the reader projects. A live recording replaces a case when one is captured.",
+  "request": {
+    "model": "gpt-4.1",
+    "input": "Tell me about it."
+  },
+  "cases": [
+    {
+      "name": "incomplete, content_filter",
+      "response": {
+        "id": "resp_safety",
+        "object": "response",
+        "created_at": 1791331200,
+        "status": "incomplete",
+        "model": "gpt-4.1-2025-04-14",
+        "output": [
+          {
+            "type": "message",
+            "id": "msg_1",
+            "status": "completed",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "It is a",
+                "annotations": []
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 9,
+          "total_tokens": 21
+        },
+        "incomplete_details": {
+          "reason": "content_filter"
+        }
+      },
+      "rows": [
+        {
+          "row": "openai.responses.incomplete.content_filter",
+          "signal": "content_filter",
+          "stage": "output",
+          "decision": "deny"
+        }
+      ]
+    },
+    {
+      "name": "incomplete, max_output_tokens",
+      "response": {
+        "id": "resp_safety",
+        "object": "response",
+        "created_at": 1791331200,
+        "status": "incomplete",
+        "model": "gpt-4.1-2025-04-14",
+        "output": [
+          {
+            "type": "message",
+            "id": "msg_1",
+            "status": "completed",
+            "role": "assistant",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "It is a",
+                "annotations": []
+              }
+            ]
+          }
+        ],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 9,
+          "total_tokens": 21
+        },
+        "incomplete_details": {
+          "reason": "max_output_tokens"
+        }
+      },
+      "rows": []
+    }
+  ]
+}

@@ -242,7 +242,7 @@ class Capture:
         self.store.put_bytes_object(descriptor, data)
         return object_id
 
-    def exchange(
+    def exchange(  # noqa: PLR0912 - one branch per optional capture attribute
         self,
         request: Any,
         response: Any = None,
@@ -256,6 +256,7 @@ class Capture:
         store_status: str | None = None,
         http_status: int | None = 200,
         scope_id: Any = _INNERMOST,
+        endpoint_id: str | None = None,
     ) -> Exchange:
         """Capture one exchange. Dict bodies are JSON-encoded; bytes are stored as-is.
 
@@ -305,6 +306,8 @@ class Capture:
         }
         if http_status is not None:
             attrs["http.response.status_code"] = http_status
+        if endpoint_id is not None:
+            attrs["fabric.wire.endpoint_id"] = endpoint_id
         attrs.update({} if scope_id is None else {"fabric.run.scope_id": scope_id})
         attrs.update(self._wire_segment(run_id))
         if response_bytes is not None:

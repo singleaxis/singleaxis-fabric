@@ -1,0 +1,143 @@
+{
+  "schema_version": "fabric.provider-safety-fixture/v1",
+  "row_id": "openai.message.refusal",
+  "api": "openai.chat_completions",
+  "dialect": "openai_chat",
+  "provenance": "documented_shape",
+  "source": "OpenAI Chat Completions API reference: choices[].message.refusal",
+  "note": "Spec 057 WP7-5: the response shapes of this map row, built from the provider's published response reference (no live provider returns a filtered or refused response on demand); each case lists the rows the reader projects. A live recording replaces a case when one is captured.",
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You answer questions."
+      },
+      {
+        "role": "user",
+        "content": "Tell me about it."
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "message.refusal present",
+      "response": {
+        "id": "chatcmpl-safety",
+        "object": "chat.completion",
+        "created": 1791331200,
+        "model": "gpt-4o-2024-08-06",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": null,
+              "refusal": "I'm sorry, I can't help with that."
+            },
+            "finish_reason": "stop",
+            "logprobs": null
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 0,
+          "total_tokens": 12
+        }
+      },
+      "rows": [
+        {
+          "row": "openai.message.refusal",
+          "signal": "refusal",
+          "stage": "output",
+          "decision": "deny"
+        }
+      ]
+    },
+    {
+      "name": "streamed refusal deltas",
+      "stream": true,
+      "response": [
+        {
+          "id": "chatcmpl-safety",
+          "object": "chat.completion.chunk",
+          "created": 1791331200,
+          "model": "gpt-4o-2024-08-06",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "role": "assistant",
+                "refusal": ""
+              },
+              "finish_reason": null
+            }
+          ]
+        },
+        {
+          "id": "chatcmpl-safety",
+          "object": "chat.completion.chunk",
+          "created": 1791331200,
+          "model": "gpt-4o-2024-08-06",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {
+                "refusal": "I'm sorry, I can't help with that."
+              },
+              "finish_reason": null
+            }
+          ]
+        },
+        {
+          "id": "chatcmpl-safety",
+          "object": "chat.completion.chunk",
+          "created": 1791331200,
+          "model": "gpt-4o-2024-08-06",
+          "choices": [
+            {
+              "index": 0,
+              "delta": {},
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      ],
+      "rows": [
+        {
+          "row": "openai.message.refusal",
+          "signal": "refusal",
+          "stage": "output",
+          "decision": "deny"
+        }
+      ]
+    },
+    {
+      "name": "refusal null",
+      "response": {
+        "id": "chatcmpl-safety",
+        "object": "chat.completion",
+        "created": 1791331200,
+        "model": "gpt-4o-2024-08-06",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "It is a city.",
+              "refusal": null
+            },
+            "finish_reason": "stop",
+            "logprobs": null
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 0,
+          "total_tokens": 12
+        }
+      },
+      "rows": []
+    }
+  ]
+}

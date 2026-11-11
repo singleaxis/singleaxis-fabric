@@ -57,6 +57,8 @@ Source: `sdk/python/src/fabric/reconstruct/`. Report schema:
 | `--endpoint-peer ID=ADDRESS`, `--known-peer ADDRESS` (repeatable) | Since v0.10.0. Addresses of a model endpoint, or of Fabric's own delivery and infrastructure: the agent's connections to them are not unexplained. |
 | `--agent-pid PID` | Since v0.10.0. The agent's pid, for H4 when no effect names it. |
 | `--host-coverage-declared` | Since v0.10.0. Declares that local records cover the run; refused for production records, whose heartbeats prove coverage. |
+| `--derive RULE` (repeatable) | Unreleased (spec 057 P1). Applies a wire derivation rule to the stored model-call bytes: `wire.offered_grant`, `wire.safety_map`, `wire.tool_result_flag`, or `wire` for all three ([what the reader derives from the model wire](action-reconstruction.md#what-the-reader-derives-from-the-model-wire---derive)). Off by default: without it every run is reported as before. |
+| `--tool-result-markers FILE` | Unreleased (spec 057 P1). A JSON file with your exact tool-result denial markers; a matching tool result gives one `configured_marker` control row. An entry that declares `allow`, or is malformed, is refused and named by index and reason in the report's `inputs.derivation`. |
 
 Diagnostics never echo an argument value, path, key or exception message.
 

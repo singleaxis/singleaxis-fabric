@@ -1,0 +1,249 @@
+{
+  "inputs": {
+    "derivation": null
+  },
+  "runs": [
+    {
+      "attempts": [
+        {
+          "attempt_uid": "00010004-0000-4000-8000-000000010004",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00010007-0000-4000-8000-000000010007",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  1,
+                  1
+                ]
+              ],
+              "source_epoch": 1791331200000000000,
+              "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+            }
+          ]
+        },
+        {
+          "attempt_uid": "00110004-0000-4000-8000-000000110004",
+          "records": 1,
+          "sequences": [
+            {
+              "ranges": [
+                [
+                  0,
+                  0
+                ]
+              ],
+              "source_epoch": 9,
+              "source_id": "s-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            }
+          ]
+        }
+      ],
+      "attribution": {
+        "effects_not_observed": {
+          "channel_disabled": 0,
+          "control_denied": 0,
+          "no_effect_channel": 0,
+          "none_in_window": 0
+        },
+        "links": {},
+        "output_match": {
+          "reason": "not_exposed",
+          "state": "not_applicable"
+        },
+        "unattributed_effects": {
+          "count": 0,
+          "effects": []
+        },
+        "unexplained_host_events": {
+          "count": 0,
+          "event_ids": []
+        }
+      },
+      "chains": {
+        "actions": {
+          "verdict": "not_observed"
+        },
+        "controls": {
+          "verdict": "complete"
+        },
+        "corroboration": {
+          "reasons": [
+            "not_configured"
+          ],
+          "verdict": "not_observed"
+        },
+        "decisions": {
+          "reasons": [
+            "segment_conflict"
+          ],
+          "verdict": "partial"
+        },
+        "effects": {
+          "reasons": [
+            "not_instrumented"
+          ],
+          "verdict": "not_observed"
+        }
+      },
+      "checks": {
+        "bytes": "not_applicable",
+        "loss": "passed",
+        "sequence": "passed",
+        "stitching": "not_applicable",
+        "tail": "passed"
+      },
+      "counts": {
+        "exchanges": 0,
+        "gaps_by_type": {
+          "segment_conflict": 2
+        }
+      },
+      "declared_scope": {
+        "windows": [
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 1,
+            "last_sequence": 1,
+            "scope_id": "00000001-0000-4000-8000-000000000001",
+            "source_epoch": 1791331200000000000,
+            "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+          },
+          {
+            "closed_by": "run_markers",
+            "first_sequence": 0,
+            "heartbeat_sequence": 0,
+            "last_sequence": 0,
+            "scope_id": "00000101-0000-4000-8000-000000000101",
+            "source_epoch": 9,
+            "source_id": "s-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ]
+      },
+      "evaluated_at": "2026-10-08T09:10:00Z",
+      "exchanges": [],
+      "gaps": [
+        {
+          "effect": "partial",
+          "gap_type": "segment_conflict",
+          "reason": "multiple_roots",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16"
+        },
+        {
+          "effect": "partial",
+          "gap_type": "segment_conflict",
+          "reason": "multiple_roots",
+          "segment_id": "seg-00000000000000000000000000001001",
+          "source_epoch": 9,
+          "source_id": "s-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "run_aliases": [],
+      "run_id": "trace:4bf92f3577b34da6a3ce929d0e0e4736",
+      "run_state": "conflicted",
+      "scopes": [
+        {
+          "end_sequence": 1,
+          "exchanges": 0,
+          "scope_id": "00000001-0000-4000-8000-000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "start_sequence": -1,
+          "state": "closed"
+        },
+        {
+          "end_sequence": 0,
+          "exchanges": 0,
+          "scope_id": "00000101-0000-4000-8000-000000000101",
+          "source_epoch": 9,
+          "source_id": "s-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "start_sequence": -1,
+          "state": "closed"
+        }
+      ],
+      "security_context": {
+        "control_links": {
+          "none": 1
+        },
+        "controls": [
+          {
+            "count": 1,
+            "decision": "deny",
+            "derivation": "reported",
+            "kind": "permission_check"
+          }
+        ],
+        "extensions": [],
+        "facts": [
+          {
+            "code": "grant_changed",
+            "count": 1,
+            "event_ids": [
+              "00110003-0000-4000-8000-000000110003"
+            ]
+          }
+        ],
+        "grant_in_force": {
+          "ambiguous": 1,
+          "none": 0,
+          "observed": 0,
+          "reported": 1
+        },
+        "grants": {
+          "declared": 2,
+          "listed": 0,
+          "offered": 0
+        },
+        "hooks": []
+      },
+      "segments": [
+        {
+          "last_sequence": 1,
+          "manifest_digest": "sha256:a7fb94e6ef4be7f4629b6d6bfdf1d8335a7d7ecff0e200c8f7dbd54f8c483e26",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:b3189946e3aa5787b04046e7b18da820e6216968a90f28ef5894ba83ddc420bf",
+          "segment_id": "seg-00000000000000000000000000000001",
+          "source_epoch": 1791331200000000000,
+          "source_id": "s-a6dfb9b60582347487be1a894eae6a16",
+          "state": "sealed",
+          "terminal": true
+        },
+        {
+          "last_sequence": 0,
+          "manifest_digest": "sha256:acc3ac10b95e9ed74c79c305d29cc4bc5b138744d9a469498f8d39b595e1e757",
+          "predecessors": [
+            "none"
+          ],
+          "seal_digest": "sha256:60206fd9068e3048605dbab41c2c5f5a80d4c0161c35775518fa9f941722c63e",
+          "segment_id": "seg-00000000000000000000000000001001",
+          "source_epoch": 9,
+          "source_id": "s-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "state": "sealed",
+          "terminal": true
+        }
+      ],
+      "threads": [],
+      "verdict": "partial"
+    }
+  ]
+}
