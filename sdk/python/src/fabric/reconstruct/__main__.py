@@ -44,8 +44,10 @@ from pathlib import Path
 from typing import Any, NoReturn
 from urllib.parse import urlsplit
 
+from fabric import _classify
 from fabric._model_names import parse_model_allowlist
 from fabric._sequence import label_pseudonym, pseudonym_v2
+from fabric.deployment_policy import DeploymentPolicy
 from fabric.reconstruct._attribute import ActionReader, ActionRun, action_rows
 from fabric.reconstruct._explain import explain_no_runs
 from fabric.reconstruct._graph import RunGraph
@@ -302,6 +304,17 @@ def _evaluation_options(parser: argparse.ArgumentParser) -> None:
         metavar="DURATION",
         help="the largest total clock uncertainty accepted before ordering is "
         "clock_uncertain (default 300s)",
+    )
+    parser.add_argument(
+        "--capture-policy",
+        dest="capture_policy",
+        metavar="PATH",
+        help="the capture policy (deployment-policy/v1 JSON, the agent's "
+        "FABRIC_CAPTURE_POLICY file) whose security_context lists the reader applies "
+        "offline: a control_hosts decision_pointer and decision_map are read from a "
+        "retained control.exchange.response body, and hook_programs paths and "
+        "control_addresses are matched against host records. It applies only to runs whose "
+        "capture manifest names this policy's digest; list contents are never printed",
     )
     parser.add_argument(
         "--in-process-tool",
@@ -776,13 +789,54 @@ def _action_reader(
     names = [str(name) for name in args.in_process_tools]
     if any(not name or len(name) > _TOOL_NAME_MAX for name in names):
         raise ReconstructInputError(f"--in-process-tool takes a name of 1-{_TOOL_NAME_MAX} chars")
+    classification, digest = _capture_policy(getattr(args, "capture_policy", None))
     return ActionReader(
         in_process_tools=names,
         host_joiner=_host_joiner(args, key),
         clock_uncertainty_ns=clock_uncertainty_ns,
         every_run=view,
         keep_runs=view,
+        classification=classification,
+        policy_digest=digest,
+        id_key=key,
     )
+
+
+_MAX_POLICY_BYTES = 1 << 20
+
+
+def _capture_policy(path: str | None) -> tuple[_classify.Classification | None, str | None]:
+    """``--capture-policy``: the policy's classification tables and its digest. Errors name
+    the cause and the fix, never the path's contents or a list value."""
+    if not path:
+        return None, None
+    try:
+        with open(path, "rb") as handle:
+            raw = handle.read(_MAX_POLICY_BYTES + 1)
+    except OSError as exc:
+        raise ReconstructInputError(
+            f"--capture-policy cannot be read ({type(exc).__name__}): pass the path of the "
+            "deployment-policy/v1 JSON file the agent ran with (its FABRIC_CAPTURE_POLICY)"
+        ) from None
+    if len(raw) > _MAX_POLICY_BYTES:
+        raise ReconstructInputError("--capture-policy is larger than 1 MiB: pass the "
+                                    "deployment-policy/v1 JSON file, not an export")  # fmt: skip
+    try:
+        policy = DeploymentPolicy(json.loads(raw))
+    except ValueError:
+        raise ReconstructInputError(
+            "--capture-policy is not a valid deployment-policy/v1 document: pass the same "
+            "file the agent ran with (FABRIC_CAPTURE_POLICY); validate it with "
+            "fabric.deployment_policy.DeploymentPolicy"
+        ) from None
+    classification = _classify.from_policy(policy)
+    if classification is None:
+        raise ReconstructInputError(
+            "--capture-policy has no security_context section, so there is nothing for the "
+            "reader to apply: add security_context (control_hosts, control_addresses or "
+            "hook_programs) to the policy, or drop the option"
+        )
+    return classification, policy.digest
 
 
 def _host_declarations(args: argparse.Namespace) -> list[tuple[str, str | None]]:
@@ -1196,12 +1250,15 @@ def _link_tail(row: Mapping[str, Any]) -> str:
         return tail + ("" if link["state"] == "resolved" else f" · {link['state']}")
     target = link["target"] if link["namespace"] == "call" else f"attempt {link['target'][:8]}…"
     tail = f"← {target}  {link['method']} · {link['confidence']}"
+    if link["state"] == "ambiguous":
+        tail = (f"← ambiguous: {', '.join(link.get('candidates', ()))}  {link['method']}"
+                f" · {link['confidence']}")  # fmt: skip
     if link["state"] == "unresolved":
         tail += " · unresolved (not in this run)"
     return tail
 
 
-def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch per row kind
+def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - one branch per row kind
     kind = row["kind"]
     if kind == "grant":
         parts = ["grant ", _short(row["id"]) if "id" in row else "-", row["basis"]]
@@ -1238,10 +1295,29 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912 - one branch
         if row.get("mode") not in (None, "unknown"):
             parts.append(f"mode {row['mode']}")
         parts.append(f"({row['derivation']})")
+        if "status" in row:
+            parts.append(f"http {row['status']}")
+        if row.get("body_not_retained"):
+            parts.append("response body not retained")
+        if "via" in row:
+            parts.append(f"connect seen by {row['via']}")
+        if row.get("host_connects"):
+            parts.append(f"host connects {row['host_connects']}")
         if row.get("pending_at_end"):
             parts.append("pending at run end")
         if "invariant" in row:
             parts.append(row["invariant"])
+    elif "program_label" in row:  # a classified hook program (spec 057 §4.3)
+        parts = [f"hook       program {row['program_label']}"]
+        if "exit_code" in row:
+            parts.append(f"exit {row['exit_code']}")
+        if "signal" in row:
+            parts.append(f"signal {row['signal']}")
+        parts.append(f"outcome {row['outcome']}"
+                     + (f" ({row['derivation']})" if "derivation" in row else ""))  # fmt: skip
+        if "latency_ms" in row:
+            parts.append(_ms(row["latency_ms"]))
+        parts.append(f"({row['basis']}" + (f", {row['via']})" if "via" in row else ")"))
     else:  # hook
         what = " · ".join(str(v) for v in (row.get("name", "?"), row.get("phase", "?"),
                                            row["outcome"]))  # fmt: skip
