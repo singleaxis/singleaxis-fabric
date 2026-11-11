@@ -41,7 +41,7 @@ def _assert_only_configured_endpoints(outcome: dict[str, Any]) -> None:
     assert attempts["send"] == []
     # Docker is reached through its own command: Compose on this project, nothing else.
     kinds = {command[0] for command in outcome["docker"]}
-    assert kinds == {"compose", "info", "run"}
+    assert kinds == {"compose", "info", "ps", "run"}
     for command in outcome["docker"]:
         if command[0] == "compose" and command[1] != "version":
             assert command[1:3] == ["-p", "fabric-agent"]

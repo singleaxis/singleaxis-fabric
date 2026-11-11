@@ -437,6 +437,17 @@ CATALOGUE: dict[str, Any] = {
             "container running as root need sudo)",
         },
         {
+            "id": "FC-030",
+            "name": "compose_project_not_this_projects",
+            "severity": "error",
+            "text": "the Compose project this command would act on holds containers of "
+            "another project, so nothing was started, stopped or removed",
+            "fix": "two projects with the same name share one Compose project: set a "
+            "different `project:` in this directory's fabric.yaml and run the "
+            "command again, or run `fabric down` in the directory named in the "
+            "detail first",
+        },
+        {
             "id": "FC-040",
             "name": "sensor_started",
             "severity": "info",

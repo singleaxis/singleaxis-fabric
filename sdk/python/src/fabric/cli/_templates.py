@@ -25,6 +25,9 @@ COMPOSE_FILE = "docker-compose.yml"
 NODE_CONFIG_FILE = "node.yaml"
 SINK_FILE = "otlp_sink.py"
 PROJECT_LABEL = "ai.singleaxis.fabric.project"
+#: The project directory a container was started from: `up` and `down` refuse a Compose
+#: project whose containers belong to another directory (two projects with one name).
+PROJECT_DIR_LABEL = "ai.singleaxis.fabric.project-dir"
 NODE_IMAGE_GID = 65532  # the Node image's nonroot user and group
 _TLS_DIR = "/run/fabric-node/tls"
 _SINK_HEALTH = (
@@ -99,10 +102,11 @@ def _digest(text: str) -> str:
 
 
 def compose(project: str, compose_project: str, images: Images, layout: Layout,
-            node_config_text: str, cert_fingerprint: str) -> dict[str, Any]:  # fmt: skip
+            node_config_text: str, cert_fingerprint: str,
+            directory: Path) -> dict[str, Any]:  # fmt: skip
     """The Compose document. Labels carry the digests of what a container mounts, so a
     changed Node configuration or certificate recreates the Node on the next ``up``."""
-    labels = {PROJECT_LABEL: project}
+    labels = {PROJECT_LABEL: project, PROJECT_DIR_LABEL: str(directory)}
     user = {"user": layout.user} if layout.user else {}
     sink: dict[str, Any] = {
         "image": images.sink, "command": ["python", f"/app/{SINK_FILE}"], **user,

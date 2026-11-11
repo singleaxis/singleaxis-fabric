@@ -35,6 +35,8 @@ with open({log!r}, "a") as handle:
 if args[:1] == ["info"]:
     print(json.dumps({{"OperatingSystem": "Docker Desktop", "KernelVersion": "6.12.0",
                       "CgroupVersion": "2", "SecurityOptions": []}}))
+elif args[:1] == ["ps"]:
+    pass
 elif "ps" in args:
     print(json.dumps({{"Service": args[-1]}}))
 """

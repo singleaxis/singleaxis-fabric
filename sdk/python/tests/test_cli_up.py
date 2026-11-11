@@ -203,7 +203,9 @@ def test_every_docker_command_targets_this_project_and_nothing_else(project: Pat
             assert call[1:5] == ["-p", "fabric-support-agent", "-f", compose_file], call
             assert call[5] in _docker.COMPOSE_COMMANDS
         else:
-            assert call[0] in ("compose", "info", "run"), call
+            assert call[0] in ("compose", "info", "ps", "run"), call
+            if call[0] == "ps":  # read-only, and only this Compose project's containers
+                assert "label=com.docker.compose.project=fabric-support-agent" in call
     forbidden = {"rm", "stop", "kill", "restart", "scale", "exec", "system", "prune", "push",
                  "login", "rollout", "update", "service", "stack", "swarm"}  # fmt: skip
     for call in docker.calls:
@@ -737,3 +739,45 @@ def test_wait_must_be_a_finite_number_of_seconds(
     err = capsys.readouterr().err
     assert "FC-006" in err and "number of seconds" in err
     assert not (project / "fabric.yaml").exists()
+
+
+def test_a_compose_project_holding_another_projects_containers_is_refused(
+    project: Path, tmp_path: Path
+) -> None:
+    """Two checkouts with the same directory name get the same Compose project. `up` in the
+    second would recreate the first's Node with its own certificate, and `down --purge`
+    would delete its volumes, both silently (I5). Each is refused before anything is
+    applied, naming the other directory; a directory that is gone (moved) is not another
+    project, and neither are this project's own containers."""
+    other = tmp_path / "elsewhere" / "support-agent"
+    other.mkdir(parents=True)
+    docker = FakeDocker(containers=[("fabric-support-agent-fabric-node-1", str(other))])
+    for command in (["up"], ["down"], ["down", "--purge"]):
+        with pytest.raises(CliError) as refused:
+            _up_once(docker) if command == ["up"] else _down(docker, *command[1:])
+        (finding,) = [f for f in refused.value.findings if f.id == "FC-030"]
+        assert str(other) in str(finding.detail) and refused.value.exit_code == 1
+    assert not docker.compose_calls("up") and not docker.compose_calls("down")
+    assert not [call for call in docker.calls if call[0] == "run"]
+
+    # A container in the Compose project that `fabric up` did not start is not ours either.
+    docker = FakeDocker(containers=[("fabric-support-agent-db-1", "")])
+    with pytest.raises(CliError) as refused:
+        _up_once(docker)
+    assert "fabric-support-agent-db-1" in str(refused.value.findings[-1].detail)
+    assert not docker.compose_calls("up")
+
+    # This project's own containers, a project directory that no longer exists, and a
+    # `docker ps` that fails (Compose then reports the daemon itself) do not refuse.
+    own = FakeDocker(containers=[("fabric-support-agent-fabric-node-1", str(project.resolve())),
+                                 ("fabric-support-agent-fabric-sink-1",
+                                  str(tmp_path / "moved-away"))])  # fmt: skip
+    _up_once(own)
+    _down(own)
+    assert own.compose_calls("up") and own.compose_calls("down")
+    failing = FakeDocker(fail={"docker-ps": Result(1, "", "boom")})
+    _up_once(failing)
+    assert failing.compose_calls("up")
+    # Every container `up` starts carries the label the check reads.
+    for service in _compose(project)["services"].values():
+        assert service["labels"]["ai.singleaxis.fabric.project-dir"] == str(project.resolve())

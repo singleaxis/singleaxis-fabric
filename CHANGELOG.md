@@ -66,6 +66,11 @@ it never makes, applies, waits for or returns one.
   - `fabric down` stops the project; `--purge` also deletes its volumes and
     `.fabric/state`. Neither touches the secrets directory, recorded data, or
     any container that is not this project's.
+  - Two projects with the same name in different directories (two checkouts
+    called `app`) would share one Compose project. `fabric up` and
+    `fabric down` now refuse to act on a Compose project that holds another
+    directory's containers (`FC-030`), name that directory, and say how to
+    give this project its own name; nothing is started, stopped or removed.
   - `fabric.yaml` refuses a value that looks like a secret (`FC-017`), and
     gains `secrets.id_key_file` and `secrets.ca_file` for a setup that keeps
     its own files.

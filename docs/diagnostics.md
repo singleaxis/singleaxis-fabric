@@ -197,6 +197,15 @@ built image.
 Fix: remove the directory named in the detail by hand (files written by a container running as root
 need sudo).
 
+### FC-030
+
+`compose_project_not_this_projects`, error: the Compose project this command would act on holds
+containers of another project, so nothing was started, stopped or removed.
+
+Fix: two projects with the same name share one Compose project: set a different `project:` in this
+directory's fabric.yaml and run the command again, or run `fabric down` in the directory named in
+the detail first.
+
 ### FC-040
 
 `sensor_started`, info: the host sensor is running and scoped to this project's agent cgroup.

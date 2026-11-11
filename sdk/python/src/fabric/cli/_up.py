@@ -116,6 +116,32 @@ def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: 
     return project, located, findings, lines, secrets_now
 
 
+def _refuse_another_projects_containers(docker: Docker, project: _project.Project) -> None:
+    """I5: the Compose project ``fabric-<project>`` is this directory's alone. Two projects
+    with the same name (two checkouts called ``app``) would share it, and ``up`` or ``down``
+    in one would recreate, stop or purge the other's containers without saying so. Every
+    container `up` starts is labelled with its project directory; one that carries another
+    directory that still exists, or no such label at all, is not this project's."""
+    result = docker.run(
+        "ps", "--all", "--filter", f"label=com.docker.compose.project={project.compose_project}",
+        "--format", '{{.Names}}\t{{.Label "' + _templates.PROJECT_DIR_LABEL + '"}}')  # fmt: skip
+    if result.code != 0:
+        return  # Compose reports a daemon that stopped answering, with Docker's own words
+    own = str(project.directory)
+    for line in result.stdout.splitlines():
+        name, _, directory = line.partition("\t")
+        if not name.strip() or directory == own:
+            continue
+        if not directory:
+            raise CliError([Finding("FC-030", f"Compose project {project.compose_project}: "
+                                    f"container {name.strip()} was not started by `fabric up`")],
+                           EXIT_FINDINGS)  # fmt: skip
+        if Path(directory).is_dir():  # a directory that is gone was moved or deleted: ours
+            raise CliError([Finding("FC-030", f"Compose project {project.compose_project} "
+                                    f"belongs to the project in {directory}")],
+                           EXIT_FINDINGS)  # fmt: skip
+
+
 def _container_user(facts: _sensor.HostFacts) -> tuple[str | None, bool]:
     """Who the Node and the sink run as, so they read the operator's 0600 files and write
     files the operator owns: the operator (``uid:gid``); container root under rootless
@@ -255,7 +281,7 @@ def _render(project: _project.Project, images: _images.Images, layout: _template
     fingerprint, _ = _secrets.certificate_info(layout.node_cert)
     compose_text = _templates.dump(
         _templates.compose(project.name, project.compose_project, images, layout, node_text,
-                           fingerprint), _templates.RENDER_HEADER)  # fmt: skip
+                           fingerprint, project.directory), _templates.RENDER_HEADER)  # fmt: skip
     compose_file = layout.compose_dir / _templates.COMPOSE_FILE
     _write_if_changed(layout.compose_dir / _templates.NODE_CONFIG_FILE, node_text)
     _write_if_changed(layout.compose_dir / _templates.SINK_FILE, _templates.sink_source())
@@ -353,6 +379,7 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     port = _project.node_port(project.resolved)
     docker = docker or Docker(environ, echo=interactive_echo(options.json, options.quiet))
     facts = _sensor.probe(docker.require())
+    _refuse_another_projects_containers(docker, project)
     images = _images.resolve(environ)
     findings.extend(Finding("FC-028", name) for name in images.overridden)
     renewed = _secrets.renew_node_certificate(project.secrets_dir)
@@ -467,6 +494,7 @@ def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = No
         return report, []
     docker = docker or Docker(environ, echo=interactive_echo(options.json, options.quiet))
     docker.require()
+    _refuse_another_projects_containers(docker, project)
     compose_file = project.state_dir / "compose" / _templates.COMPOSE_FILE
     args = ["--remove-orphans", *(["--volumes"] if options.purge else [])]
     result = docker.compose(project.compose_project, compose_file if compose_file.is_file()

@@ -172,6 +172,19 @@ def test_init_up_capture_verify_down(
     assert again["data"]["changes"] == []
     assert "FC-026" not in [finding["id"] for finding in again["findings"]]
 
+    # A second project with the same name in another directory would share the Compose
+    # project: `up` and `down` there are refused and this project's Node is untouched.
+    twin = project.parent / "twin" / name
+    twin.mkdir(parents=True)
+    (twin / "fabric.yaml").write_text((project / "fabric.yaml").read_text("utf-8"))
+    before = _containers(name)
+    for command in (("up", "--wait", "5"), ("down", "--purge")):
+        refused = _fabric(twin, env, *command, expect=1)
+        (finding,) = [f for f in refused["findings"] if f["id"] == "FC-030"]
+        assert str(project.resolve()) in finding["detail"], finding
+    assert _containers(name) == before
+    assert _fabric(project, env, "up", "--wait", "240")["data"]["changes"] == []
+
     _fabric(project, env, "down")
     assert not [
         c for c in _containers(name) if "fabric-node" in c or "fabric-sink" in c

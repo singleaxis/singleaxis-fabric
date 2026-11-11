@@ -39,6 +39,8 @@ class FakeDocker:
     fail: dict[str, Result] = field(default_factory=dict)
     running: set[str] = field(default_factory=lambda: {"fabric-sensor"})
     calls: list[list[str]] = field(default_factory=list)
+    #: `docker ps` rows of the Compose project: (container name, project-dir label).
+    containers: list[tuple[str, str]] = field(default_factory=list)
 
     def __call__(  # noqa: PLR0911 - one return per docker subcommand
         self, argv: Sequence[str], environ: Mapping[str, str] | None, echo: IO[str] | None
@@ -49,6 +51,9 @@ class FakeDocker:
             return self.fail.get("version", Result(0, "Docker Compose version v2.29.0\n", ""))
         if args[0] == "info":
             return self.fail.get("info", Result(0, json.dumps(self.info), ""))
+        if args[0] == "ps":
+            rows = "".join(f"{name}\t{directory}\n" for name, directory in self.containers)
+            return self.fail.get("docker-ps", Result(0, rows, ""))
         if args[0] == "run":
             return self.fail.get("run", Result(0, "", ""))
         assert args[0] == "compose", args
