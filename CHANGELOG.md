@@ -17,9 +17,8 @@ it never makes, applies, waits for or returns one.
 
 - **The `fabric` command (spec 058, first part).** `pip install
   "singleaxis-fabric[cli]"` installs `fabric` and its alias `singleaxis-fabric`
-  (also `python -m fabric.cli`). This release ships `fabric version` and
-  `fabric help`; `plan`, `init`, `up`, `down`, `run`, `verify`, `doctor` and
-  `show` say they are not built yet and point at the quickstart. Underneath:
+  (also `python -m fabric.cli`). `plan`, `run`, `verify`, `doctor` and `show` say they are not built yet and
+  point at the quickstart. Underneath:
   `fabric.yaml` (`contracts/cli-config/v1`) with strict validation that names
   the nearest valid key, discovery (`--config`, `FABRIC_CONFIG`, the current
   directory, then parents up to the git root or home), and one precedence rule
@@ -28,7 +27,51 @@ it never makes, applies, waits for or returns one.
   `fabric.cli-report/v1` report; exit codes are 0 ok, 1 a check failed, 2 usage
   or configuration error, 3 a missing prerequisite. The CLI runs outside the
   agent: autoload never imports it or the `[cli]` extra's dependencies, and no
-  command opens a network connection.
+  command contacts anything but the local Docker daemon and the project's own
+  Node on loopback (a test runs `init`, `up` and `down` in a network namespace
+  with only loopback).
+- **`fabric init`, `fabric up` and `fabric down` for the local profile (spec
+  058).** `fabric up` in an empty directory is the whole local setup: it writes
+  `fabric.yaml`, generates the secrets, and starts a Fabric Node and a local
+  destination with Docker. No file, key, certificate or environment variable is
+  made by hand.
+  - `fabric init` writes `fabric.yaml` with the defaults, generates the
+    pseudonym id key, a local CA and the Node's certificate into a private
+    directory outside the project (`~/.local/state/fabric/<project>/secrets`,
+    directory `0700`, files `0600`, never overwritten, symlinks refused), and
+    compiles `.fabric/compiled.env`: the `FABRIC_*` environment for the agent,
+    with a file path for every secret and no `OTEL_*` variable. Secret values
+    are never printed; `--json` lists names, fingerprints and expiry. Run it
+    again to apply a change: flags such as `--provider URL`, `--exec` and
+    `--http-host` update the file and print the diff; `--force` rewrites it
+    with a backup; `--rotate node-cert|ca|id-key|all` rotates a secret and says
+    what must restart; `--from-env` imports an existing manual setup from the
+    shell's `FABRIC_*` and `OTEL_*` variables, referencing its key and CA by
+    path (`--import-secrets` copies them instead).
+  - `fabric up` renders a Compose project packaged with the CLI (no repository
+    clone, no image build), with every image pinned by digest to release
+    0.12.1, starts the Node with a TLS listener on loopback using the generated
+    certificate, and waits until it answers. The `local-dir` destination writes
+    each delivery straight into `./fabric-data/spans`, where
+    `python -m fabric.reconstruct --spans` reads it; there is no export step.
+    The host sensor starts where eBPF can load, scoped to a cgroup with no
+    limits; where it cannot (rootless Docker, an old kernel, no permission
+    to create the cgroup, inside a container) the reason and the fix are
+    printed and `up` continues. On Docker Desktop it runs inside the Docker VM
+    and says that a process started directly on the Mac is invisible to it. A second `fabric up`
+    applies what changed and says what.
+  - `fabric down` stops the project; `--purge` also deletes its volumes and
+    `.fabric/state`. Neither touches the secrets directory, recorded data, or
+    any container that is not this project's.
+  - `fabric.yaml` refuses a value that looks like a secret (`FC-017`), and
+    gains `secrets.id_key_file` and `secrets.ca_file` for a setup that keeps
+    its own files.
+  - The `[cli]` extra now also installs the OTLP/HTTP exporter, so one
+    `pip install "singleaxis-fabric[cli]"` in the agent's environment is
+    everything capture needs to deliver to the Node `fabric up` starts.
+  - Not in this release: `--profile production`, `--kubernetes`, `--render`,
+    `--from-env-file`, `--from-values`, the other destination presets and
+    `up --verify-images`. Each says so (`FC-011`) and names the manual route.
 - **A diagnostics catalogue** (`contracts/diagnostics/v1`,
   [docs/diagnostics.md](docs/diagnostics.md)): every message the CLI and the
   Python SDK print now ends with a stable id such as `[FW-012]`, each with a
