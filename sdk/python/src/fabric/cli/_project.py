@@ -173,6 +173,12 @@ def _check_compilable(project: Project) -> None:
         raise CliError([Finding("FC-011", "profile: production")])
     if not resolved["providers.builtin"]:
         raise CliError([Finding("FC-011", "providers.builtin: false")])
+    # Accepted by fabric.config/v1 and compiled by later work packages (E4; 057 WP7-9):
+    # a value that would be ignored is refused, never dropped without a word.
+    if resolved["node.queue_size"] != "auto":
+        raise CliError([Finding("FC-011", "node.queue_size (leave it at auto)")])
+    if resolved["capture.security_context"] is not None:
+        raise CliError([Finding("FC-011", "capture.security_context (remove the line)")])
     if project.generates_tls and resolved["secrets.ca_file"]:
         # Agents given another CA would refuse the local Node's certificate and record
         # nothing; refuse the combination instead of compiling it.

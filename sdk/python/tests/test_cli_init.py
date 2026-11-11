@@ -655,3 +655,22 @@ def test_a_data_directory_that_is_the_project_directory_is_not_ignored(
     report = _json(["init"], capsys)
     assert report["data"]["gitignore_added"] == ["/.fabric/"]
     assert "/./" not in (project / ".gitignore").read_text("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("line", "named"),
+    [
+        ("node:\n  queue_size: 1073741824\n", "node.queue_size"),
+        ("capture:\n  security_context: ./security-context.yaml\n", "capture.security_context"),
+    ],
+)
+def test_a_setting_this_release_would_ignore_is_refused_not_dropped(
+    line: str, named: str, project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Valid fabric.config/v1, but nothing compiles it yet: say so before writing anything."""
+    (project / "fabric.yaml").write_text("schema: fabric.config/v1\n" + line)
+    report = _json(["init"], capsys)
+    assert report["exit_code"] == 2
+    (finding,) = report["findings"]
+    assert finding["id"] == "FC-011" and finding["detail"].startswith(named)
+    assert not (project / ".fabric").exists()
