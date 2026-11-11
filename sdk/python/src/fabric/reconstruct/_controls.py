@@ -35,6 +35,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 AUTHENTICATION = "unverified_caller_report"
+ENFORCED_BY_FABRIC = False
 LAYER = "decisions_effects"
 PHASE_DECISIONS: Mapping[str, frozenset[str]] = {
     "request": frozenset({"pending", "escalate", "unknown"}),

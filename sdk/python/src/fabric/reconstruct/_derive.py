@@ -37,7 +37,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
-from fabric.reconstruct._controls import AUTHENTICATION
+from fabric.reconstruct._controls import AUTHENTICATION, ENFORCED_BY_FABRIC
 from fabric.reconstruct.dialects import (
     OFFERED_GRANT,
     RULES,
@@ -54,7 +54,7 @@ __all__ = ["DERIVE_CHOICES", "Derivation", "add_rows", "exchange_facts"]
 #: ``--derive`` values: one rule, or ``wire`` for the three rules that need no list.
 DERIVE_CHOICES: Final = ("wire", OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG)
 _WIRE_RULES: Final = frozenset({OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG})
-_INVARIANTS: Final = {"fabric.control.enforced_by_fabric": False,
+_INVARIANTS: Final = {"fabric.control.enforced_by_fabric": ENFORCED_BY_FABRIC,
                       "fabric.control.authentication": AUTHENTICATION}  # fmt: skip
 
 
