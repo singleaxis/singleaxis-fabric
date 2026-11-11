@@ -97,6 +97,21 @@ def node_config() -> dict[str, Any]:
     }  # fmt: skip
 
 
+def _bind(source: Path, target: str, *, read_only: bool = False) -> str | dict[str, Any]:
+    """A bind mount of a host path. Compose's short form splits on ``:``, so a host path
+    that contains one (a project in ``/work/a:b``) is written in the long form."""
+    if ":" not in str(source):
+        return f"{source}:{target}" + (":ro" if read_only else "")
+    # create_host_path false: Compose then passes a structured mount to the daemon, not the
+    # colon-separated bind string (which the daemon would split the same wrong way). Every
+    # source exists by the time the project is applied.
+    mount: dict[str, Any] = {"type": "bind", "source": str(source), "target": target,
+                             "bind": {"create_host_path": False}}  # fmt: skip
+    if read_only:
+        mount["read_only"] = True
+    return mount
+
+
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
@@ -112,9 +127,9 @@ def compose(project: str, compose_project: str, images: Images, layout: Layout,
         "image": images.sink, "command": ["python", f"/app/{SINK_FILE}"], **user,
         "environment": {"SINK_DATA_DIR": "/data", "SINK_PORT": "8080",
                         "PYTHONDONTWRITEBYTECODE": "1"},
-        "volumes": [f"{layout.compose_dir / SINK_FILE}:/app/{SINK_FILE}:ro",
-                    f"{layout.data_dir / 'spans'}:/data/spans",
-                    f"{layout.data_dir / 'host-logs'}:/data/host-logs"],
+        "volumes": [_bind(layout.compose_dir / SINK_FILE, f"/app/{SINK_FILE}", read_only=True),
+                    _bind(layout.data_dir / "spans", "/data/spans"),
+                    _bind(layout.data_dir / "host-logs", "/data/host-logs")],
         "healthcheck": {
             "test": ["CMD", "python", "-c", _SINK_HEALTH],
             "interval": "2s", "timeout": "3s", "retries": 30},
@@ -124,10 +139,11 @@ def compose(project: str, compose_project: str, images: Images, layout: Layout,
         "image": images.node, "command": [f"--config=/etc/fabric-node/{NODE_CONFIG_FILE}"],
         **user,
         "volumes": [
-            f"{layout.compose_dir / NODE_CONFIG_FILE}:/etc/fabric-node/{NODE_CONFIG_FILE}:ro",
-            f"{layout.node_cert}:{_TLS_DIR}/node.crt:ro",
-            f"{layout.node_key}:{_TLS_DIR}/node.key:ro",
-            f"{layout.queue_dir}:/var/lib/fabric-node/queue"],
+            _bind(layout.compose_dir / NODE_CONFIG_FILE,
+                  f"/etc/fabric-node/{NODE_CONFIG_FILE}", read_only=True),
+            _bind(layout.node_cert, f"{_TLS_DIR}/node.crt", read_only=True),
+            _bind(layout.node_key, f"{_TLS_DIR}/node.key", read_only=True),
+            _bind(layout.queue_dir, "/var/lib/fabric-node/queue")],
         # Loopback only: other machines never reach the local profile's Node.
         "ports": [f"127.0.0.1:{layout.port}:4318"],
         "depends_on": {SINK_SERVICE: {"condition": "service_healthy"}},
@@ -167,7 +183,7 @@ def compose(project: str, compose_project: str, images: Images, layout: Layout,
             "volumes": [
                 "/sys/kernel/btf:/sys/kernel/btf:ro", "/sys/kernel/tracing:/sys/kernel/tracing:ro",
                 "/sys/kernel/debug:/sys/kernel/debug:ro", "/sys/fs/cgroup:/sys/fs/cgroup:ro",
-                f"{layout.ca_cert}:/etc/fabric-host-emitter/ca.crt:ro",
+                _bind(layout.ca_cert, "/etc/fabric-host-emitter/ca.crt", read_only=True),
                 "sensor-spool:/var/lib/fabric-host-emitter"],
             "depends_on": {NODE_SERVICE: {"condition": "service_started"},
                            SPOOL_INIT_SERVICE: {"condition": "service_completed_successfully"}},

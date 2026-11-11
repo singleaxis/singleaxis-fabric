@@ -71,6 +71,8 @@ it never makes, applies, waits for or returns one.
     `fabric down` now refuse to act on a Compose project that holds another
     directory's containers (`FC-030`), name that directory, and say how to
     give this project its own name; nothing is started, stopped or removed.
+  - `fabric up` works in a project directory whose path contains a colon
+    (Docker used to answer "invalid volume specification").
   - `fabric.yaml` refuses a value that looks like a secret (`FC-017`), and
     gains `secrets.id_key_file` and `secrets.ca_file` for a setup that keeps
     its own files.

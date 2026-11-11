@@ -781,3 +781,36 @@ def test_a_compose_project_holding_another_projects_containers_is_refused(
     # Every container `up` starts carries the label the check reads.
     for service in _compose(project)["services"].values():
         assert service["labels"]["ai.singleaxis.fabric.project-dir"] == str(project.resolve())
+
+
+def test_a_project_path_with_a_colon_is_mounted_in_the_long_form(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Compose's short volume form splits on ``:``, so `up` in ``/work/a:b`` failed with
+    Docker's "invalid volume specification". Such a path is rendered as a long-form bind
+    mount with the same target and read-only flag; any other path keeps the short form."""
+    directory = tmp_path / "team:blue" / "support-agent"
+    directory.mkdir(parents=True)
+    monkeypatch.chdir(directory)
+    for name in [n for n in os.environ if n.startswith(("FABRIC_", "OTEL_"))]:
+        monkeypatch.delenv(name)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    _up_once(FakeDocker())
+    services = _compose(directory)["services"]
+    project_mounts = [m for service in services.values() for m in service["volumes"]
+                      if isinstance(m, dict)]  # fmt: skip
+    assert {m["target"] for m in project_mounts} >= {
+        "/data/spans", "/data/host-logs", "/var/lib/fabric-node/queue",
+        "/etc/fabric-node/node.yaml", "/app/otlp_sink.py"}  # fmt: skip
+    for mount in project_mounts:
+        assert mount["type"] == "bind" and str(directory.resolve()) in mount["source"]
+        # Without this Compose hands the daemon the same colon-separated string.
+        assert mount["bind"] == {"create_host_path": False}
+        writable = mount["target"] in ("/data/spans", "/data/host-logs",
+                                       "/var/lib/fabric-node/queue")  # fmt: skip
+        assert mount.get("read_only", False) is not writable
+    # No short-form entry is left that Compose would split in the wrong place.
+    for service in services.values():
+        for mount in service["volumes"]:
+            assert isinstance(mount, dict) or "team:blue" not in mount
