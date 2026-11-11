@@ -183,6 +183,7 @@ MANIFEST_SPAN_KEYS: tuple[tuple[str, str], ...] = (
     ("capture_policy/policy_id", "fabric.manifest.capture_policy.policy_id"),
     ("capture_policy/policy_version", "fabric.manifest.capture_policy.policy_version"),
     ("chunk_boundaries_retained", "fabric.manifest.chunk_boundaries_retained"),
+    ("classifications", "fabric.manifest.classifications"),
     ("clock/domain", "fabric.manifest.clock.domain"),
     ("clock/uncertainty_ns", "fabric.manifest.clock.uncertainty_ns"),
     ("content_capture", "fabric.manifest.content_capture"),
@@ -226,6 +227,7 @@ MANIFEST_SPAN_KEYS: tuple[tuple[str, str], ...] = (
 _MANIFEST_POINTS = "capture_points"
 _MANIFEST_FIELDS = "capture_points/fields"
 _MANIFEST_UNSEALED = "unsealed_prior_epochs"
+_MANIFEST_CLASSIFICATIONS = "classifications"
 
 
 class ReconstructInputError(ValueError):
@@ -1108,6 +1110,25 @@ def _manifest(
                        digest, document)  # fmt: skip
 
 
+def _classification_rows(value: Any) -> list[dict[str, Any]]:
+    """Spec 057 WP7-9: ``<id>:<state>:<count>:<reason or ->:<sha256 or ->`` strings as the
+    manifest's ``classifications`` rows (the digest is last: it holds a colon)."""
+    if not isinstance(value, list):
+        raise TypeError("classifications are a list")
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        list_id, state, count, reason, digest = str(item).split(":", 4)
+        if not _DECIMAL_RE.fullmatch(count):
+            raise ValueError("a classification count is decimal")
+        row: dict[str, Any] = {"id": list_id, "state": state, "count": int(count)}
+        if digest != "-":
+            row["sha256"] = digest
+        if reason != "-":
+            row["reason"] = reason
+        rows.append(row)
+    return rows
+
+
 def manifest_document(attrs: Mapping[str, Any]) -> dict[str, Any]:
     """The ``capture-manifest-v1`` document a manifest span's attributes rebuild (spec 049
     §2.8). Raises ``ValueError``/``TypeError``/``KeyError`` on a malformed span."""
@@ -1125,6 +1146,8 @@ def manifest_document(attrs: Mapping[str, Any]) -> dict[str, Any]:
             value = [int(item) for item in value]
             if any(item > _INT64_MAX for item in value):
                 raise ValueError("an epoch is an int64")
+        elif prop == _MANIFEST_CLASSIFICATIONS:
+            value = _classification_rows(value)
         node = document
         parts = prop.split("/")
         for part in parts[:-1]:
