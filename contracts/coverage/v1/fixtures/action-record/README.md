@@ -148,6 +148,7 @@ recomputable.
 | `pid`, `parent_pid`, `process_start_ns`, `host_id` | `fabric.process.pid`, `.parent_pid`, `.start_ns`, `fabric.execution.host_id` (first record carrying each) |
 | `exit_observed_ns` | the span end time of the first record carrying `fabric.process.exit_code` or `fabric.process.signal`: the hook saw the child reaped, so its pid was free, by then (absent when no record carries either, e.g. a timeout or a lost `end` record) |
 | `stdout` | the `end` record's `terminal.stdout` body, decoded as UTF-8 (absent when not captured) |
+| `hook_program`, `hook_outcome` | spec 057 WP7-10: `fabric.hook.program_label` (the customer's `hook_programs` label, set by the capture worker) and `fabric.hook.outcome` (the listed `exit_map`'s outcome, else `unknown`). An effect with `hook_program` is a hook around a tool call, never an effect of one: no A rule or S0 applies, it is not counted under `links` or as unattributed, and its trace rule is `hook_program`. Unless `hook_outcome` is `blocked`, every tool call whose window (§4.2 conditions 1-3) holds it was dispatched: if such a call is `none_in_window`, the `effects` chain is `partial(none_in_window)`. Absent when the customer lists no such program: Fabric never classifies a process by its name |
 
 ## 2. Local-profile host records (`interface/host-local-log-records.json`)
 

@@ -127,6 +127,11 @@
       "description": "LABEL: the raised exception class's __qualname__, never its message.",
       "type": "string",
       "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"
+    },
+    "errno": {
+      "description": "META (spec 057 WP7-10): the symbolic errno name (for example EACCES, EPERM, ENOENT, ENOEXEC) of an OSError the spawn raised, beside error_class; only on a spawn failure (pid_known false) whose exception carries an errno the runtime names. Never the number alone, never the message.",
+      "type": "string",
+      "pattern": "^E[A-Z0-9]{1,31}$"
     }
   }
 }

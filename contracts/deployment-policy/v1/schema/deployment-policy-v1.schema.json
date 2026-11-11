@@ -122,14 +122,13 @@
       ]
     },
     "security_context": {
-      "description": "Spec 057 §4, §8 (optional, off by default): the customer's classification lists for security-context capture. Classification is customer configuration, never a built-in list of products (B9). Exact match only: no suffix match, no wildcard. Lists are applied offline by the reader or in emitter user space, never in the request path; the capture manifest carries only their digest and counts, never their contents.",
+      "description": "Spec 057 §4, §8 (optional, off by default): the customer's classification lists for security-context capture. Classification is customer configuration, never a built-in list of products (B9). Exact match only: no suffix match, no wildcard. Lists are loaded at install into frozen exact-match tables (spec 057 WP7-9) and applied offline by the reader, on the capture worker or in emitter user space, never as a scan in the request path. A list of more than 256 entries is well-formed here but is refused at install with the status refused(over_limit) and never applied (a status, never an install error); the capture manifest carries each list's state, digest and entry count (classifications), never its contents.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "control_hosts": {
           "description": "Control endpoints the agent calls itself (policy services, guardrail APIs, approval systems), as canonical lower-case host[:port], the FABRIC_WIRE_HTTP_HOSTS syntax. A response body is read offline only when a decision_pointer and decision_map are given (OD-7, derivation configured_extract).",
           "type": "array",
-          "maxItems": 256,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -213,7 +212,6 @@
         "control_addresses": {
           "description": "The same endpoints as the host sensor sees them: IPv4/IPv6 addresses or CIDRs.",
           "type": "array",
-          "maxItems": 256,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -247,7 +245,6 @@
         "hook_programs": {
           "description": "Processes classified as hook programs: an exact absolute executable path or an argv[0] basename. exit_map maps an exit code to a hook outcome (derivation configured_exit_map); without it the outcome is unknown.",
           "type": "array",
-          "maxItems": 256,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -311,7 +308,6 @@
         "watched_paths": {
           "description": "Files and folders whose opens are labelled (fabric.sensor.watch_label, watch_class, a keyed pth- id); the path never reaches telemetry and Fabric never opens, reads or hashes it.",
           "type": "array",
-          "maxItems": 256,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -351,7 +347,6 @@
         "tool_result_markers": {
           "description": "Exact text the customer's own tool layer writes into a tool result when it refuses a call (OD-6). Byte-exact and case-sensitive: equals the whole text, a literal prefix, or a JSON Pointer and literal values. A marker states deny or escalate, never allow. No regular expression, no search inside the text, no built-in list.",
           "type": "array",
-          "maxItems": 256,
           "items": {
             "type": "object",
             "additionalProperties": false,
