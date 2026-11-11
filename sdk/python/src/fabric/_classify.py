@@ -178,9 +178,9 @@ _EMPTY: Final[Mapping[Any, Any]] = MappingProxyType({})
 class Classification:
     """The frozen tables of one capture policy's ``security_context`` section."""
 
-    hook_paths: Mapping[str, HookProgram] = _EMPTY
-    hook_basenames: Mapping[str, HookProgram] = _EMPTY
-    control_hosts: Mapping[tuple[str, int], ControlHost] = _EMPTY
+    hook_paths: Mapping[str, HookProgram] = field(default_factory=lambda: _EMPTY)
+    hook_basenames: Mapping[str, HookProgram] = field(default_factory=lambda: _EMPTY)
+    control_hosts: Mapping[tuple[str, int], ControlHost] = field(default_factory=lambda: _EMPTY)
     control_addresses: tuple[ControlAddress, ...] = ()
     watched_paths: tuple[Mapping[str, Any], ...] = ()
     tool_result_markers: tuple[Mapping[str, Any], ...] = ()
