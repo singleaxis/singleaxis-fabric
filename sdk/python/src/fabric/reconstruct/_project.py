@@ -316,6 +316,9 @@ _ROWS += (
     ("D11", ("control.authentication", "control.enforced_by_fabric"), True, "always",
      ("fabric.self",)),
     ("D36", ("control.resolution_state",), True, "unknown", ("reconstruct.parse",)),
+    # Spec 057 WP7-4: the offered grant of a model call, only when the reader derived it.
+    ("G16", ("model_call.offered_grant_id",), True, "not_captured(not_instrumented)",
+     ("reconstruct.parse",)),
 )  # fmt: skip
 FIELD_ROWS: Mapping[str, FieldRow] = {row[0]: FieldRow(*row) for row in _ROWS}
 #: Projection key -> its row (keys are unique across the registry, 049 §3).
@@ -2107,7 +2110,19 @@ class _WireStep:
             flags.append("split")
         self._model_fields(step, ctx, sides)
         self._inferred_fields(step)
+        self._offered_grant(provenance)
         return flags
+
+    def _offered_grant(self, provenance: str) -> None:
+        """G16 (spec 057 WP7-4): the offered grant the call carried, when the reader
+        derived it (``--derive wire.offered_grant`` with an id key); else no field."""
+        actions = getattr(self.steps.verifier, "actions", None)
+        grants = getattr(actions, "offered_grants", None) or {}
+        grant = grants.get(self.obs.exchange_id)
+        if isinstance(grant, str):
+            self.fields.put("model_call.offered_grant_id",
+                            wrapper("captured", provenance=provenance, point=_PARSE,
+                                    value=grant))  # fmt: skip
 
     def _span_fields(self, point: str, provenance: str) -> None:
         attrs, put = self.attrs, self.fields.put

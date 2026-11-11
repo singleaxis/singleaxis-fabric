@@ -102,6 +102,37 @@ it never makes, applies, waits for or returns one.
   New rows will be on by default from the release that adds them, listed here;
   `FABRIC_WIRE_BUILTIN_ENDPOINTS=legacy` pins today's three. `status()` reports
   `endpoint_set` and `endpoint_table_version`.
+- **The reader derives security context from the model wire, with no
+  change to the agent** (spec 057 P1). `python -m fabric.reconstruct`
+  takes `--derive wire` (or one rule at a time) and reads the request and
+  response bytes wire capture already stored:
+  - `wire.offered_grant`: the tools each model request offered, as an
+    `offered` grant row for the first call and for every change, with the
+    tool choice, the parallel-tool setting and the instructions digest
+    (never the text). Every model call names its grant, and fact F12 states
+    a tool call whose name was not offered in that request.
+  - `wire.safety_map`: one `provider_safety` control row per literal safety
+    field in a response (content filter, refusal field, refusal stop reason)
+    for OpenAI Chat Completions, Azure OpenAI filter results, OpenAI
+    Responses, OpenAI Completions and Anthropic Messages. A missing field
+    gives no row and no text is interpreted.
+  - `wire.tool_result_flag`: fact F14 counts tool results fed back with the
+    dialect's structured error flag.
+  Nothing runs in the agent's request path, and without the option every
+  report is unchanged.
+- **Denial markers** (`--tool-result-markers FILE`). List the exact text
+  your own tool layer writes when it refuses a call; the reader projects one
+  `configured_marker` control row per matching tool result, linked to its
+  tool call. Matching is `equals`, `prefix` or a `json` pointer with literal
+  values, byte-exact and case-sensitive. An entry that declares `allow`, or
+  is malformed, is refused when the list loads and named by index and reason
+  in the report; the marker strings never appear in any output.
+- **`grant_in_force` on every control row and tool call.** In a run that
+  holds a grant snapshot, each row names the latest snapshot recorded before
+  it, with `grant_basis` (`reported`, `observed` or `none`) and `certainty`
+  (`certain`, or `ambiguous` with the candidates when the snapshots come from
+  processes whose order only wall clocks give). Runs with no grant snapshot
+  are unchanged.
 - **`fabric.records.record_control`** records one decision an external
   control made (a guardrail, a policy service, a permission request and its
   answer, an approval, a rate limit, a budget): kind, phase, decision, the

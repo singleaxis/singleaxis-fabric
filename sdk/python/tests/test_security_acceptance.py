@@ -1,6 +1,6 @@
 # Copyright 2026 AI5Labs Research OPC Private Limited
 # SPDX-License-Identifier: Apache-2.0
-"""Spec 057 P0 acceptance (§10.1): SC-0, and SC-CP runs A and B with the third run.
+"""Spec 057 acceptance (§10.1): SC-0, and SC-CP runs A, B, the third run and run C (P1).
 
 Both use the plain tool loop of ``tests/_sc_agent.py`` on a fixture model, under real
 capture (``tests/_sc_capture.py``): the httpx patch tees the agent's model calls, the
@@ -27,6 +27,10 @@ parallel tool calls. The harness, not Fabric, wraps ``can_use`` with its ledger.
   reaches the dispatcher as the same object; denied calls carry F5.
 - The third run passes ``gated_tool_call_id`` and links every check, the pair included,
   ``provider_id`` · certain.
+- Run C (P1, WP7-6): run A, read with a denial marker equal to the agent's refusal text.
+  Every denial in the ledger has exactly one ``configured_marker`` row linked by
+  ``provider_id``; allows produce no row; a marker one byte off the refusal text produces
+  no row. The marker is applied offline by the reader: the agent runs exactly as in run A.
 - Tool results, process output and exit codes are identical with capture off, run A and
   run B; recorder faults in run B change none of them. The B4 budget of the wrapper is
   gated on this agent's own ``can_use`` in ``test_records_passivity.py``.
@@ -207,6 +211,77 @@ def test_sc_cp_run_a_records_calls_results_and_effects_and_no_decision(
 
 def _control_rows(view_run: dict[str, Any]) -> list[dict[str, Any]]:
     return [row for row in view_run["rows"] if row["kind"] == "control"]
+
+
+def _markers(tmp: Path, name: str, text: str) -> list[str]:
+    """Reader options applying one ``equals`` denial marker (a capture policy's
+    ``security_context.tool_result_markers``)."""
+    path = tmp / name
+    path.write_text(json.dumps({"security_context": {"tool_result_markers": [
+        {"label": "tool-acl", "equals": text, "reason_code": "acl.refused"}]}}))  # fmt: skip
+    return ["--tool-result-markers", str(path)]
+
+
+def test_sc_cp_run_c_a_denial_marker_gives_one_row_per_denial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Run C (spec 057 §10.1, WP7-6): run A, no code change, read with a denial marker
+    equal to the refusal text the agent's own dispatcher writes."""
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    ledger = Ledger(tmp_path / "ledger.jsonl", SC_CP)
+    with FixtureModel(SC_CP) as model:
+        agent = ToolLoop(model.url, check=ledger.wrap(can_use))
+
+        def body(_provider: Any) -> None:
+            agent.run(TASK)
+
+        export = capture_run(tmp_path / "capture", RUN_ID, model.port, body,
+                             monkeypatch=monkeypatch)  # fmt: skip
+    entries = ledger.entries()
+    assert entries == _expected_ledger()
+    read = read_export(export, tmp_path, *_markers(tmp_path, "markers.json", REFUSAL))
+    report_run, view_run = _only_run(read)
+    labels = _labels(view_run, SC_CP)
+    rows = _control_rows(view_run)
+    denied = [e["tool_call_id"] for e in entries if e["decision"] == "deny"]
+    # exactly one configured_marker row per ledger denial, linked by the provider id
+    assert sorted(row["link"]["target"] for row in rows) == sorted(labels[c] for c in denied)
+    for row in rows:
+        assert (row["control_kind"], row["phase"], row["decision"], row["derivation"]) == (
+            "permission_check", "observation", "deny", "configured_marker")  # fmt: skip
+        assert (row["engine"], row["reason_code"]) == ("tool-acl", "acl.refused")
+        assert (row["link"]["method"], row["link"]["confidence"], row["link"]["state"]) == (
+            "provider_id", "certain", "resolved")  # fmt: skip
+        assert len(row["evidence"]) == 1  # D47: the request that carried the result
+    # allows produce no row, and never an allow
+    allowed = {labels[e["tool_call_id"]] for e in entries if e["decision"] == "allow"}
+    assert allowed.isdisjoint(row["link"]["target"] for row in rows)
+    assert report_run["security_context"]["controls"] == [
+        {"kind": "permission_check", "decision": "deny", "derivation": "configured_marker",
+         "count": len(denied)}]  # fmt: skip
+    assert report_run["security_context"]["control_links"] == {"provider_id": len(denied)}
+    assert report_run["chains"]["controls"] == {"verdict": "complete"}
+    # each denied call now shows why no effect followed (F5), as the marker declares
+    without = {row["call"]: row["reason"] for row in view_run["tool_calls_without_effect"]}
+    assert {without[labels[c]] for c in denied} == {"control_denied"}
+    # the marker string is in neither output: the report has its digest and count only
+    markers = read.report["inputs"]["derivation"]["tool_result_markers"]
+    assert (markers["status"], markers["count"], markers["loaded"]) == ("active", 1, 1)
+    assert REFUSAL not in json.dumps(read.report) and REFUSAL not in read.view
+    assert REFUSAL not in json.dumps(read.actions)
+    _assert_no_evaluation_words(read)
+
+    # a refusal text changed by one byte produces no row: the same export as run A reads
+    for near in (REFUSAL[:-1] + "x", REFUSAL.capitalize(), " " + REFUSAL, REFUSAL + "."):
+        miss = read_export(export, tmp_path, *_markers(tmp_path, "near.json", near))
+        miss_run, miss_view = _only_run(miss)
+        assert _control_rows(miss_view) == [], near
+        assert miss_run["security_context"]["controls"] == []
+        # the rule ran and found nothing: an observed chain with no control, never a row
+        assert miss_run["chains"]["controls"] == {"verdict": "complete"}
+    # the marker is applied by the reader only: the agent's outputs are run A's
+    plain, _, _ = _sc_cp(tmp_path / "off", "A", monkeypatch, captured=False)
+    assert agent.observable() == plain.observable()
 
 
 def test_sc_cp_run_b_one_line_per_check(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

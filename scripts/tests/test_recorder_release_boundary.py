@@ -296,7 +296,9 @@ SPEC_057_MODULES = (
     "_rec_check.py", "_rec_controls.py", "_rec_extension.py", "_rec_grant.py", "_rec_run.py",
     "_records_api.py", "_security_policy.py", "records/__init__.py", "records/_handles.py",
     "records/_vocab.py", "records/_walker.py", "reconstruct/_controls.py",
-    "reconstruct/_security.py",
+    "reconstruct/_security.py", "reconstruct/_derive.py", "reconstruct/dialects/__init__.py",
+    "reconstruct/dialects/offered_grant.py", "reconstruct/dialects/safety_map.py",
+    "reconstruct/dialects/tool_result.py",
 )  # fmt: skip
 # Where the mapping-profile schema and its example, the capture policy's security_context
 # section and the classification vocabularies live: never a published contract family.
