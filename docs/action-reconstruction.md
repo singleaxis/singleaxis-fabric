@@ -317,14 +317,73 @@ run r-3f2a…  decisions: complete  actions: complete  effects: complete  corrob
   for one whose channel was disabled.
   F6 (`deny_with_effect`) is co-occurrence: the row lists the deny's mode
   and derivation, the effect's attribution and any later allow.
-- **Not yet.** F12 and F14 read the offered tools and the tool-result error
-  flag that the wire derivations of spec 057 P1 add; until then no export
-  states them. Side effects that required approval (F7) are read from
+- **Grant in force.** In a run that holds a grant snapshot, every control
+  row and every tool call carries `grant_in_force`: the `id` of the latest
+  snapshot recorded in the run before it, `grant_basis` (`reported` for a
+  snapshot from the records API or telemetry, `observed` for one derived
+  from model-wire bytes, `none` when no snapshot precedes the row) and
+  `certainty`. `certain` means the earlier snapshots come from one process,
+  so their order is a sequence order. `ambiguous` means they come from more
+  than one process and only wall clocks order them; the row then lists the
+  `candidates`. The view prints `in force grt-… (observed)`, `in force none`
+  or `in force ambiguous: …`; the report's `security_context.grant_in_force`
+  counts the rows by basis. A run with no grant snapshot carries no such
+  field and reads exactly as before.
+- **Not yet.** Side effects that required approval (F7) are read from
   records-input `side_effect` records, which the records API does not emit
-  yet.
-  The `path_ref` join (a watched rule file to its operator snapshot) and the
-  `grant_in_force` join of spec 057 §6.1 are not built: their inputs and
-  output shape arrive with later work packages.
+  yet. The `path_ref` join (a watched rule file to its operator snapshot)
+  arrives with the work packages that record those opens and snapshots.
+
+### What the reader derives from the model wire (`--derive`)
+
+With wire capture on, the stored request and response bytes already hold
+security context the agent never reported. The reader derives it offline,
+on request, with no change to the agent and nothing added to its request
+path:
+
+```console
+python -m fabric.reconstruct actions <export> --derive wire \
+    --tool-result-markers markers.json
+```
+
+| Option | Rule | What you get |
+|---|---|---|
+| `--derive wire.offered_grant` | offered grants | One `offered` grant row for the first model call and one for each change of the offered tool set, with the tool count, the tool choice (`auto`, `none`, `required`, `specific`, `allowed_subset`), the parallel-tool setting and the instructions digest (never the text). Every model call names its grant (`offered_grant_id`). F12 states a tool call whose name was not offered in that request; provider-hosted tool types are excluded. |
+| `--derive wire.safety_map` | provider safety signals | One `provider_safety` control row per literal safety field in a response: a content filter, a refusal field or a refusal stop reason. Only the published map applies (`contracts/coverage/v1/registry/provider-safety-map-v1.json`). A missing field gives no row, and no text is ever interpreted: a response that merely reads like a refusal gives nothing. |
+| `--derive wire.tool_result_flag` | tool-result error flags | F14 counts tool results fed back to the model with the dialect's structured error flag (Anthropic `is_error`), once per tool call. It is a flag, not a denial claim. |
+| `--derive wire` | all three | |
+| `--tool-result-markers FILE` | denial markers | One `configured_marker` control row for each tool result whose text matches a marker you listed, linked to its tool call by the provider id. |
+
+Supported dialects are the ones wire capture parses: OpenAI Chat
+Completions (including Azure OpenAI's filter fields), OpenAI Responses,
+OpenAI Completions and Anthropic Messages. Other dialects give no rows.
+
+**Denial markers** are the exact text your own tool layer writes when it
+refuses a call. `FILE` is a deployment policy with
+`security_context.tool_result_markers`, an object with
+`tool_result_markers`, or the list itself:
+
+```json
+[
+  {"label": "fs-acl", "prefix": "permission denied", "reason_code": "path.outside_root"},
+  {"label": "shell-gate", "equals": "needs approval", "kind": "policy", "decision": "escalate"},
+  {"label": "api-acl", "json": {"pointer": "/error/code", "values": ["forbidden"]}}
+]
+```
+
+Matching is byte-exact and case-sensitive: `equals` (the whole text),
+`prefix` (the text begins with it) or `json` (an RFC 6901 pointer into a
+JSON tool result, and the literal values that mean a refusal). There is no
+regular expression, no search inside the text and no built-in marker, so a
+near miss (one byte, a different case, a leading space) gives nothing. A
+marker states `deny` (the default) or `escalate`, never `allow`: an entry
+that declares `allow`, or is malformed, is refused when the list loads and
+the others still apply. The report's `inputs.derivation` lists the rules
+applied and, for the marker list, its size, digest and each refused entry's
+index and reason (`decision_allow`, `invalid`, `over_limit`). The marker
+strings never appear in the report or the view.
+
+Without these options the reader reports every run exactly as before.
 
 ### Hook programs and control endpoints you declare (spec 057 P2)
 

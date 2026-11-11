@@ -235,7 +235,7 @@
     {"path": "fixtures/vectors/schema-cases-control-observation-v2.json", "sha256": "f417dc90a1d76fc0dee98629533fa8854b033954ad685c0b41bc474b25b08755", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/vectors/schema-cases-deployment-policy-security-context.json", "sha256": "819289dc277cfcac71b3d26f5d7c165985057459659577ea88540713f5034b80", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/vectors/schema-cases-grant-snapshot-v1.json", "sha256": "068b13c04a1aa916f3139bdb87bec33e73440c70c48df4c48a63bc42503d6493", "expectation": "vectors", "expected_error": null},
-    {"path": "registry/provider-safety-map-v1.json", "sha256": "93821f905fa1c2206929ed605fcf8fdaca51c285f8458d9331ccdc8853706782", "expectation": "registry", "expected_error": null},
+    {"path": "registry/provider-safety-map-v1.json", "sha256": "e0642e8dcb9a858e9699c7cf274c863e99863c756b0985d134f0bcd2a4f97b1b", "expectation": "registry", "expected_error": null},
     {"path": "schema/control-observation-v2.schema.json", "sha256": "d1c0c1fb5c87fe02e48e7fc986b2af0524100e342bb9f3851857a0bdfcbc0a22", "expectation": "schema", "expected_error": null},
     {"path": "schema/grant-snapshot-v1.schema.json", "sha256": "60fe3b5830cc43bb2f08636872c85a0d3286caa0c934ca56c9784a7e32c8755f", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/action-record/invalid/s0-startup-effect-also-unattributed.json", "sha256": "662a3fc91ac51d5da5f369c63d49962dc12177c1747f4bfbccab0beecdbcace4", "expectation": "invalid", "expected_error": "coverage.action.startup"},
@@ -243,6 +243,14 @@
     {"path": "fixtures/action-record/rules/edge-startup-effect.json", "sha256": "17a25e9bd36494888b81c1c39a60e7ef9f183f3c228441a515610f5aab497b31", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-hook-program-blocked.json", "sha256": "3c3325d2e618f2f5e4acf7fca88e0c5fa9aa3bdfb291eeaa9e326254ed9b1d6a", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/action-record/rules/edge-hook-program-only-window.json", "sha256": "ed0dbd3d8029b3a64b29f033b36d0eadf27e2fc3eb84097a121f7d27e1ae274b", "expectation": "valid", "expected_error": null},
-    {"path": "fixtures/action-record/rules/edge-hook-program-undeclared.json", "sha256": "136a6b740e52078af71b2eae47d30199985fd27f3428a90a943cd0ad2aa1282f", "expectation": "valid", "expected_error": null}
+    {"path": "fixtures/action-record/rules/edge-hook-program-undeclared.json", "sha256": "136a6b740e52078af71b2eae47d30199985fd27f3428a90a943cd0ad2aa1282f", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/provider-safety/anthropic.stop_reason.refusal.json", "sha256": "29fa90c731b525d3fcb802ae2faa8bead934154fc3dbbd6b4f29a2e21d45c9f4", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/azure.choice_filter_results.filtered.json", "sha256": "81667d5b3b79d0a3cb6e8a35110d722b75a38d712c715f38940be5688538aa45", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/azure.prompt_filter_results.filtered.json", "sha256": "d38f0ef5f9b033340b48e8b125a8ac82472095b785199cdbd46b6ae3f348e176", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/openai.completions.finish_reason.content_filter.json", "sha256": "912d6ac36856710f252aadeaa68b5c9ddecb228cbecd477446517f137f7532fb", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/openai.finish_reason.content_filter.json", "sha256": "88a2e393031c56efa7d3e740bfec74d25709af08895b7adc0c5cbf8e309f0e49", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/openai.message.refusal.json", "sha256": "f41241e7acf209b5af6365c1b334498142ee349cb925855d7fff632142ae62d1", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/openai.responses.incomplete.content_filter.json", "sha256": "730ca2ea7c3e8bb36073efe12339998bf73d8da1c7a16f5f988c9487dba8e91c", "expectation": "vectors", "expected_error": null},
+    {"path": "fixtures/provider-safety/openai.responses.refusal_part.json", "sha256": "1ef31f82397ab747577bfcc3517a218f980db350b47ba1e5dc86d4ece4317dbb", "expectation": "vectors", "expected_error": null}
   ]
 }

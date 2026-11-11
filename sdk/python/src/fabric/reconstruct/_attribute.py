@@ -74,8 +74,9 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from fabric import _classify
-from fabric.reconstruct import _security
+from fabric.reconstruct import _derive, _security
 from fabric.reconstruct._evidence import EVIDENCE_TYPES, decode_evidence
+from fabric.reconstruct._fields_model import _response_body
 from fabric.reconstruct._inputs import pseudonym
 from fabric.reconstruct._report import (
     LIST_MAX,
@@ -94,6 +95,8 @@ from fabric.reconstruct._stitch import (
     _UnparsedError,
     extract_stitch_keys,
 )
+from fabric.reconstruct.dialects import TOOL_RESULT_FLAG
+from fabric.reconstruct.dialects.tool_result import tool_results
 
 __all__ = [
     "EFFECT_POINTS",
@@ -904,6 +907,7 @@ class ActionReader:
         classification: _classify.Classification | None = None,
         policy_digest: str | None = None,
         id_key: bytes | None = None,
+        derivation: _derive.Derivation | None = None,
     ) -> None:
         # Spec 057 WP7-10/WP7-13: the capture policy's classification lists
         # (``--capture-policy``) and that policy's digest; they apply only to a run one of
@@ -912,6 +916,10 @@ class ActionReader:
         self.policy_digest = policy_digest
         self.id_key = id_key  # keys the ``hst-`` ids of the listed control addresses
         self.in_process_tools = tuple(sorted(set(in_process_tools)))
+        # Spec 057 P1: the opt-in wire derivation rules; none by default (§9.1).
+        self.derivation = derivation if derivation is not None else _derive.Derivation()
+        #: G16: each model call's offered grant id, by exchange id (the step projection).
+        self.offered_grants: dict[str, str] = {}
         self.host_joiner = host_joiner
         self.clock_uncertainty_ns = max(int(clock_uncertainty_ns), 0)
         self.every_run = every_run
@@ -973,6 +981,10 @@ class ActionReader:
         if host is not None:
             self._note_host_events(host.trace_host_events)
         result = attribute(inp, host=host)
+        _derive.add_rows(sec, inp, result.calls, self.derivation)
+        for exchange in inp["exchanges"]:
+            if isinstance(exchange.get("offered_grant_id"), str):
+                self.offered_grants[exchange["exchange_id"]] = exchange["offered_grant_id"]
         if host is not None:
             self._sensor_rows(inp, result, host, reader._classification())
         security = _security.analyse(inp, result, sec, self._control_index(run.verifier))
@@ -1262,6 +1274,8 @@ class _RunReader:
                 if (isinstance(row, Mapping) and row.get("state") == "loaded"
                         and row.get("id") in _security.CLASSIFY_POINTS):  # fmt: skip
                     active.add(str(row["id"]))
+        if self.run.members:  # spec 057 §6.4: a derivation rule applied to this run's calls
+            active.update(self.owner.derivation.active)
         sec["active_points"] = sorted(active)
         keys = {(item["source_id"], item["source_epoch"])
                 for name in ("controls", "hooks", "grants", "extensions")
@@ -1514,8 +1528,37 @@ class _RunReader:
                 item["model"] = entry["model"]
             calls, results = self._tool_io(exchange, entry)
             item["tool_calls"], item["tool_results"] = calls, results
+            if self.owner.derivation.active:
+                item.update(self._derived(exchange))
             out.append(item)
         return out
+
+    def _derived(self, exchange: Any) -> dict[str, Any]:
+        """Spec 057 P1: what the derivation rules read from the exchange's verified request
+        and response documents (``_derive.exchange_facts``)."""
+        bodies = self.bodies.get(exchange.exchange_id)
+        request: Any = getattr(bodies, "request", None)
+        response: Any = getattr(bodies, "response", None)
+        document: Any = None
+        if _verified(request):
+            try:
+                document = _load_json(_decode(request.data, request.content_encoding), strict=True)
+            except _UnparsedError:
+                document = None
+        parsed: Any = None
+        stream = False
+        if _verified(response):
+            try:
+                raw = _decode(response.data, response.content_encoding)
+                parsed, stream = _response_body(exchange.api, raw, response.media_type)
+            except Exception:  # an unparsed or cut response yields no row
+                parsed = None
+        endpoint = exchange.endpoint_id if isinstance(exchange.endpoint_id, str) else None
+        return _derive.exchange_facts(
+            self.owner.derivation, api=str(exchange.api), exchange_id=exchange.exchange_id,
+            endpoint_id=endpoint, request=document, response=parsed, stream=stream,
+            key=self.verifier.key,
+        )  # fmt: skip
 
     def _tool_io(
         self, exchange: Any, entry: Mapping[str, Any]
@@ -1544,6 +1587,7 @@ class _RunReader:
             )  # fmt: skip
             names = dict(keys.tool_calls)
         texts: dict[str, str] = {}
+        flags: dict[str, bool] = {}
         if consumed and request is not None and request.data is not None and not request.truncated:
             try:
                 document = _load_json(_decode(request.data, request.content_encoding))
@@ -1552,8 +1596,15 @@ class _RunReader:
             for raw, text in tool_result_texts(str(exchange.api), document):
                 if text is not None:
                     texts.setdefault(pseudonym(raw, self.verifier.key), text)
+            if self.owner.derivation.wants(TOOL_RESULT_FLAG):  # spec 057 WP7-6, F14
+                for found in tool_results(str(exchange.api), document):
+                    if found.is_error is not None:
+                        call = pseudonym(found.call_id, self.verifier.key)
+                        flags.setdefault(call, found.is_error)
         calls = [{"id": i, "name": names.get(i)} for i in emitted]
-        results = [{"id": i, **({"text": texts[i]} if i in texts else {})} for i in consumed]
+        results = [{"id": i, **({"text": texts[i]} if i in texts else {}),
+                    **({"is_error": flags[i]} if i in flags else {})}
+                   for i in consumed]  # fmt: skip
         return calls, results
 
     # -- effects ---------------------------------------------------------------------
@@ -1771,6 +1822,16 @@ def _extract(data: bytes, entry: _classify.ControlHost) -> str | None:
     return entry.decision_of(value)
 
 
+def _verified(side: Any) -> bool:
+    """An exchange side whose verified, untruncated bytes are in memory."""
+    return (
+        side is not None
+        and side.data is not None
+        and not side.truncated
+        and getattr(side, "verification", "verified") == "verified"
+    )
+
+
 def _object_ids(attrs: Mapping[str, Any]) -> list[str]:
     value = attrs.get("fabric.content.object_ids")
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
@@ -1812,20 +1873,40 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
     by_raw = {call.raw_id: labels[call.id] for call in result.calls}
     names = {call.id: call.name for call in result.calls}
     fed_here: dict[str, list[str]] = defaultdict(list)  # results first fed by an exchange
+    flagged: dict[str, list[str]] = defaultdict(list)  # of those, the ones with is_error
     for call in result.calls:
         if call.fed is not None:
             fed_here[call.fed["exchange_id"]].append(labels[call.id])
+            if call.result is not None and call.result.get("is_error") is True:
+                flagged[call.fed["exchange_id"]].append(labels[call.id])
+    security = run.security
+    in_force = security.call_grants if security is not None else {}
+    by_raw_id = {call.raw_id: call.id for call in result.calls}
     events: list[tuple[int, int, int, dict[str, Any]]] = []
     for exchange in inp["exchanges"]:
         row: dict[str, Any] = {"kind": "model_call", "exchange_id": exchange["exchange_id"],
                                "sequence": exchange["sequence"]}  # fmt: skip
         if "model" in exchange:
             row["model"] = exchange["model"]
+        if "offered_grant_id" in exchange:  # G16
+            row["offered_grant_id"] = exchange["offered_grant_id"]
         fed = fed_here.get(exchange["exchange_id"], [])
-        calls = [{"call": by_raw.get(c["id"], c["id"]), "name": c.get("name")}
-                 for c in exchange.get("tool_calls", ())]  # fmt: skip
+        calls = []
+        for c in exchange.get("tool_calls", ()):
+            entry: dict[str, Any] = {"call": by_raw.get(c["id"], c["id"]), "name": c.get("name")}
+            grant = in_force.get(by_raw_id.get(c["id"], c["id"]))
+            if grant is not None:
+                entry["grant_in_force"] = dict(grant)
+            offered = exchange.get("offered_tools")
+            hosted = exchange.get("hosted_tool_calls", ())
+            if (isinstance(offered, list) and c["id"] not in hosted
+                    and c.get("name") not in offered):  # fmt: skip
+                entry["not_offered"] = True  # F12: set membership on the literal names
+            calls.append(entry)
         if fed:
             row["results"] = fed
+        if flagged.get(exchange["exchange_id"]):
+            row["result_errors"] = flagged[exchange["exchange_id"]]
         if calls:
             row["tool_calls"] = calls
         events.append((exchange["start_ns"], 0, exchange["sequence"], row))
@@ -1914,9 +1995,9 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
             if key in request:
                 row[key] = request[key]
         events.append((request["start_ns"], 1, request["sequence"], row))
-    security = run.security
     if security is not None:
-        events += _security.view_events(security, labels)
+        positions = {x["exchange_id"]: (x["start_ns"], x["sequence"]) for x in inp["exchanges"]}
+        events += _security.view_events(security, labels, positions)
     events.sort(key=lambda item: item[:3])
     ordered = [row for *_, row in events]
     if security is not None:

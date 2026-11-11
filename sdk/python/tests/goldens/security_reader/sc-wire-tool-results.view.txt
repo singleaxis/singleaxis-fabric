@@ -1,0 +1,21 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  grant   grt-a93c…  offered  llm_wire  derived  tools 1  tool_choice auto  (observed)
+  1  model_call   m-55566f4e0c7dd95f  → tool_call T1 shell, T2 shell   in force grt-a93c… (observed)
+  2  model_call   m-55566f4e0c7dd95f  ← result T1, T2 (is_error: T2)  → tool_call T3 shell   in force grt-a93c… (observed)
+  3  model_call   m-55566f4e0c7dd95f  ← result T3
+  4  grant   grt-f59b…  offered  llm_wire  derived  tools 4  tool_choice auto  instr sha256:b9f72b3b…  previous grt-a93c…  (changed)  (observed)
+  5  model_call   gpt-4o-2024-08-06  → tool_call T4 write_file, T5 shell, T6 fetch   in force grt-f59b… (observed)
+  6    control    permission_check · observation · deny  fs-acl  path.outside_root  (configured_marker)  in force grt-f59b… (observed)   ← T4  provider_id · certain
+  7      no effect observed for T4 (control_denied: #6)
+  8    control    policy · observation · escalate  shell-gate  (configured_marker)  in force grt-f59b… (observed)   ← T5  provider_id · certain
+  9    control    permission_check · observation · deny  api-acl  (configured_marker)  in force grt-f59b… (observed)   ← T6  provider_id · certain
+ 10      no effect observed for T6 (control_denied: #9)
+ 11  model_call   gpt-4o-2024-08-06  ← result T4, T5, T6  → tool_call T7 write_file, T8 shell   in force grt-f59b… (observed)
+ 12  model_call   gpt-4o-2024-08-06  ← result T7, T8
+  tool calls without an effect: 8   (T1 none_in_window, T2 none_in_window, T3 none_in_window, T4 control_denied, T5 none_in_window, T6 control_denied, T7 none_in_window, T8 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F2  grant changed within the run: 1 (#4)
+    F5  deny gates a tool call and no effect is attributed to it: 2 (#6, #9)
+    F14 tool results fed back with an error flag: 1 (#2)

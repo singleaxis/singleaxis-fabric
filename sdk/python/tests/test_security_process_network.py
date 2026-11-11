@@ -216,7 +216,7 @@ def _run(
             policy_file.write_text(json.dumps(document), encoding="utf-8")
             extra = ("--capture-policy", str(policy_file))
         (root / "read").mkdir()
-        read = read_export(export, root / "read", extra)
+        read = read_export(export, root / "read", *extra)
     return agent, read, policy_service, export.spans.parent
 
 

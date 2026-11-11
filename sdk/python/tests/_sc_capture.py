@@ -116,11 +116,11 @@ def _stdout(argv: list[str]) -> tuple[int, str]:
     return code, out.getvalue()
 
 
-def read_export(export: Export, out: Path, extra: tuple[str, ...] = ()) -> Read:
+def read_export(export: Export, out: Path, *options: str) -> Read:
     """The report (``--projection`` too), the ``actions --json`` rows and the text view;
-    ``extra`` are further reader options (``--capture-policy PATH``)."""
+    ``options`` are further reader options (the spec 057 derivation rules)."""
     common = ["--store-root", str(export.store), "--tenant", TENANT,
-              "--evaluated-at", EVALUATED_AT, *extra]  # fmt: skip
+              "--evaluated-at", EVALUATED_AT, *options]  # fmt: skip
     report, projection = out / "report.json", out / "projection.json"
     code = main(["--spans", str(export.spans), *common, "--out", str(report),
                  "--projection", str(projection)])  # fmt: skip

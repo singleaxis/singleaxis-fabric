@@ -35,6 +35,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
 AUTHENTICATION = "unverified_caller_report"
+ENFORCED_BY_FABRIC = False
 LAYER = "decisions_effects"
 PHASE_DECISIONS: Mapping[str, frozenset[str]] = {
     "request": frozenset({"pending", "escalate", "unknown"}),
@@ -111,14 +112,14 @@ def control_fields(
         )  # fmt: skip
     authentication = attrs.get("fabric.control.authentication")
     enforced = attrs.get("fabric.control.enforced_by_fabric")
-    if authentication == AUTHENTICATION and enforced is False:
+    if authentication == AUTHENTICATION and enforced is ENFORCED_BY_FABRIC:
         for field_key, value in (("control.authentication", AUTHENTICATION),
-                                 ("control.enforced_by_fabric", False)):  # fmt: skip
+                                 ("control.enforced_by_fabric", ENFORCED_BY_FABRIC)):  # fmt: skip
             out[field_key] = wrap("captured", provenance="observed", point=point, value=value)
     else:
         for field_key, got, want in (
             ("control.authentication", authentication, AUTHENTICATION),
-            ("control.enforced_by_fabric", enforced, False),
+            ("control.enforced_by_fabric", enforced, ENFORCED_BY_FABRIC),
         ):  # fmt: skip
             out[field_key] = wrap(
                 "conflict", provenance="observed", point=point,
@@ -135,8 +136,9 @@ def control_fields(
 
 def invariant_conflict(attrs: Mapping[str, Any]) -> bool:
     """F10 / D11: a control record without both constants, or with a forged value."""
+    enforced = attrs.get("fabric.control.enforced_by_fabric")
     return not (attrs.get("fabric.control.authentication") == AUTHENTICATION
-                and attrs.get("fabric.control.enforced_by_fabric") is False)  # fmt: skip
+                and enforced is ENFORCED_BY_FABRIC)  # fmt: skip
 
 
 def run_annotation_fields(
@@ -276,7 +278,7 @@ def gates_links(attrs: Mapping[str, Any], step_ids: Mapping[str, str]) -> list[d
 
 
 __all__ = [
-    "CONTENT_KEYS", "CONTROL_KEYS", "PHASE_DECISIONS", "RUN_KEYS", "control_fields",
-    "gates_links", "invariant_conflict", "pair_controls", "resolution_state",
-    "run_annotation_fields",
+    "AUTHENTICATION", "CONTENT_KEYS", "CONTROL_KEYS", "ENFORCED_BY_FABRIC", "PHASE_DECISIONS",
+    "RUN_KEYS", "control_fields", "gates_links", "invariant_conflict", "pair_controls",
+    "resolution_state", "run_annotation_fields",
 ]  # fmt: skip

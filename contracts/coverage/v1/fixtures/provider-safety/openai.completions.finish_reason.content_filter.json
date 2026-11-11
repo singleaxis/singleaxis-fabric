@@ -1,0 +1,68 @@
+{
+  "schema_version": "fabric.provider-safety-fixture/v1",
+  "row_id": "openai.completions.finish_reason.content_filter",
+  "api": "openai.completions",
+  "dialect": "openai_completions",
+  "provenance": "documented_shape",
+  "source": "OpenAI Completions API reference: choices[].finish_reason",
+  "note": "Spec 057 WP7-5: the response shapes of this map row, built from the provider's published response reference (no live provider returns a filtered or refused response on demand); each case lists the rows the reader projects. A live recording replaces a case when one is captured.",
+  "request": {
+    "model": "gpt-3.5-turbo-instruct",
+    "prompt": "Tell me about it."
+  },
+  "cases": [
+    {
+      "name": "finish_reason content_filter",
+      "response": {
+        "id": "cmpl-safety",
+        "object": "text_completion",
+        "created": 1791331200,
+        "model": "gpt-3.5-turbo-instruct",
+        "choices": [
+          {
+            "text": "",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "content_filter"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 0,
+          "total_tokens": 12
+        }
+      },
+      "rows": [
+        {
+          "row": "openai.completions.finish_reason.content_filter",
+          "signal": "content_filter",
+          "stage": "output",
+          "decision": "deny"
+        }
+      ]
+    },
+    {
+      "name": "finish_reason stop",
+      "response": {
+        "id": "cmpl-safety",
+        "object": "text_completion",
+        "created": 1791331200,
+        "model": "gpt-3.5-turbo-instruct",
+        "choices": [
+          {
+            "text": " It is a city.",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 12,
+          "completion_tokens": 0,
+          "total_tokens": 12
+        }
+      },
+      "rows": []
+    }
+  ]
+}

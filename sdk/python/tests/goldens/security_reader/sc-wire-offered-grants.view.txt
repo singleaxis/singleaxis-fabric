@@ -1,0 +1,14 @@
+run trace:4bf92f3577b34da6a3ce929d0e0e4736  decisions: complete  actions: complete  effects: complete  corroboration: not_observed(not_configured)  controls: complete  verdict: complete_for_observed_scopes
+  grant   grt-66fd…  offered  llm_wire  derived  tools 3  tool_choice auto  instr sha256:b9f72b3b…  (observed)
+  1  model_call   gpt-4o-2024-08-06  → tool_call T1 read_file   in force grt-66fd… (observed)
+  2  model_call   gpt-4o-2024-08-06  ← result T1  → tool_call T2 shell   in force grt-66fd… (observed)
+  3  grant   grt-380e…  offered  llm_wire  derived  tools 2  tool_choice required  parallel no  instr sha256:b9f72b3b…  previous grt-66fd…  (changed)  (observed)
+  4  model_call   gpt-4o-2024-08-06  ← result T2  → tool_call T3 fetch_url   (F12: T3 not in offered grt-380e…)   in force grt-380e… (observed)
+  5  grant   grt-52aa…  offered  llm_wire  derived  tools 2  tool_choice none  instr sha256:b9f72b3b…  previous grt-380e…  (changed)  (observed)
+  6  model_call   gpt-4o-2024-08-06  ← result T3
+  tool calls without an effect: 3   (T1 none_in_window, T2 none_in_window, T3 none_in_window)
+  output match: not_applicable (not_exposed)
+  facts:
+    F1  no declared grant recorded
+    F2  grant changed within the run: 2 (#3, #5)
+    F12 tool called that was not offered in that request: 1 (#4)
