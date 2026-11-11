@@ -72,6 +72,187 @@ Fix: unset the variable if fabric.yaml should decide.
 
 Fix: upgrade the CLI; until then follow docs/quickstart.md.
 
+### FC-011
+
+`option_not_built`, error: this option is not part of this release yet.
+
+Fix: use the local profile's defaults; production, Kubernetes and the other destinations follow
+docs/production-setup.md and docs/deployment.md until the CLI builds them.
+
+### FC-012
+
+`secrets_dir_unsafe`, error: the secrets directory is not a private directory of this user.
+
+Fix: make it a real directory you own with mode 0700 (chmod 700 DIR), or set secrets.dir in
+fabric.yaml to another path.
+
+### FC-013
+
+`secret_file_unsafe`, error: a secret file is a symlink, is not a regular file, or is open to other
+users.
+
+Fix: restore it as your own regular file with mode 0600 (chmod 600 FILE), or replace it with `fabric
+init --rotate NAME`.
+
+### FC-014
+
+`secret_set_incomplete`, error: a generated certificate is missing its key or its CA.
+
+Fix: run `fabric init --rotate ca` to issue a new CA and Node certificate, then `fabric up` and
+restart agents.
+
+### FC-016
+
+`rotation_needs_restart`, warning: a rotated secret is still in use by running processes.
+
+Fix: run `fabric up` so the Node restarts with it; restart agents when the CA or the id key changed.
+
+### FC-017
+
+`config_secret_shaped`, error: fabric.yaml must not hold a secret value.
+
+Fix: put the value in a file and name the file's path (start a relative path with ./); `fabric init`
+generates and stores secrets itself.
+
+### FC-018
+
+`env_not_imported`, warning: an environment setting could not be written into fabric.yaml.
+
+Fix: keep exporting the variable (a variable already set wins over fabric.yaml), or pass
+--import-secrets to store a key given by value as a file.
+
+### FC-019
+
+`docker_missing`, error: Docker with Compose v2 is not installed or not on PATH.
+
+Fix: install Docker Engine or Docker Desktop (the `docker compose` plugin included), then run the
+command again.
+
+### FC-020
+
+`docker_not_running`, error: the Docker daemon did not answer.
+
+Fix: start Docker Desktop or the docker service and check `docker info`; on Linux add your user to
+the docker group or use sudo.
+
+### FC-021
+
+`compose_failed`, error: Docker Compose could not apply the Fabric project.
+
+Fix: read the detail (Docker's own last lines); `docker compose -p fabric-PROJECT logs` shows the
+services' output.
+
+### FC-022
+
+`port_in_use`, error: the Node's port is already in use on this machine.
+
+Fix: stop the other listener (an earlier local stack: `fabric down` in that project, or `make down`
+in deploy/compose), or set node.endpoint: https://localhost:PORT in fabric.yaml and run `fabric up`
+again.
+
+### FC-023
+
+`node_not_healthy`, error: the Fabric Node did not answer over TLS in time.
+
+Fix: run `fabric up --wait 180` to allow a slow first image pull; the detail holds the Node's last
+log line.
+
+### FC-024
+
+`node_external`, info: node.mode is external: there is nothing for this command to start or stop.
+
+Fix: nothing to do; set node.mode: docker in fabric.yaml to have `fabric up` run a local Node.
+
+### FC-025
+
+`certificate_renewed`, info: the Node certificate was close to expiry and was reissued from the
+local CA.
+
+Fix: nothing to do: agents trust the CA, which did not change.
+
+### FC-026
+
+`project_changed`, info: the running project differed from fabric.yaml or this CLI's pinned images
+and was updated.
+
+Fix: nothing to do; the detail names what changed.
+
+### FC-027
+
+`ca_expired`, error: the local CA has expired.
+
+Fix: run `fabric init --rotate ca`, then `fabric up`, then restart agents so they load the new CA.
+
+### FC-028
+
+`image_override`, warning: an environment variable replaces an image pinned by this CLI release.
+
+Fix: unset the variable to run the pinned, signed release image; keep it only to test a locally
+built image.
+
+### FC-029
+
+`state_not_removed`, warning: part of the project's local state could not be removed.
+
+Fix: remove the directory named in the detail by hand (files written by a container running as root
+need sudo).
+
+### FC-040
+
+`sensor_started`, info: the host sensor is running and scoped to this project's agent cgroup.
+
+Fix: start the agent with `fabric run` so it joins the sensor's scope.
+
+### FC-041
+
+`sensor_off`, info: the host sensor is off by configuration.
+
+Fix: set sensor.kind: auto in fabric.yaml and drop --no-sensor to start it where it can load.
+
+### FC-042
+
+`sensor_desktop_vm`, info: the host sensor runs inside the Docker VM: it cannot see a process
+started directly on this machine.
+
+Fix: nothing to do for capture from the SDK, which is unaffected; for independent host evidence run
+the agent on a Linux host.
+
+### FC-043
+
+`sensor_kernel_unsupported`, warning: this kernel cannot load the eBPF sensor (it needs Linux 5.8 or
+later with BTF and cgroup v2).
+
+Fix: use a host with a newer kernel; capture from the SDK is unaffected, only independent host
+evidence is missing.
+
+### FC-044
+
+`sensor_cgroup_not_permitted`, warning: the agent cgroup for the host sensor could not be created.
+
+Fix: run `fabric up` once with sudo, or from a systemd user session (a delegated cgroup); capture
+from the SDK is unaffected.
+
+### FC-045
+
+`sensor_start_failed`, warning: the host sensor container did not stay running.
+
+Fix: read the detail (the sensor's last log line); `fabric up --no-sensor` continues without host
+evidence.
+
+### FC-046
+
+`sensor_auditd_available`, info: eBPF cannot load here but auditd is present on this host.
+
+Fix: follow docs/host-sensors.md to run the auditd sensor collector; the CLI does not start it in
+this release.
+
+### FC-047
+
+`sensor_sandboxed_runtime`, warning: this machine runs inside a sandbox or container that hides the
+host kernel from the sensor.
+
+Fix: run `fabric up` on the host itself for host evidence; capture from the SDK is unaffected.
+
 ## The SDKs (wire capture, status, autoload)
 
 ### FW-001
