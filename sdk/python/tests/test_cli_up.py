@@ -1,0 +1,653 @@
+# Copyright 2026 AI5Labs Research OPC Private Limited
+# SPDX-License-Identifier: Apache-2.0
+"""Spec 058 WP8-3: ``fabric up`` and ``fabric down`` for the local profile (§5.4): the
+rendered Compose project (images pinned by digest, a TLS listener with the generated
+certificate, the local-dir destination), idempotent reconciliation, the host sensor's
+decision and its reported reasons, and the boundary rules I5 (one project, nothing else
+touched) and I7 (no secret value in a rendered file or on a command line)."""
+
+from __future__ import annotations
+
+import gzip
+import json
+import os
+import platform
+import shutil
+import threading
+import urllib.error
+import urllib.request
+from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
+
+import jsonschema
+import pytest
+import yaml
+
+from fabric.cli import _docker, _images, _localsink, _sensor, _templates, _up
+from fabric.cli._docker import Result
+from fabric.cli._report import CliError, Report
+
+from ._cli_support import DOCKER_DESKTOP, LINUX_ENGINE, FakeDocker, parse, secret_values
+
+REPO = Path(__file__).resolve().parents[3]
+REPORT_SCHEMA = json.loads(
+    (REPO / "contracts/cli-config/v1/schema/cli-report-v1.schema.json").read_text("utf-8")
+)
+
+
+@pytest.fixture()
+def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    directory = tmp_path / "support-agent"
+    directory.mkdir()
+    monkeypatch.chdir(directory)
+    for name in [n for n in os.environ if n.startswith(("FABRIC_", "OTEL_"))]:
+        monkeypatch.delenv(name)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    return directory
+
+
+def _up_once(docker: FakeDocker, *args: str, probe: bool = True) -> tuple[Report, list[str]]:
+    report, lines = _up.run_up(parse(["up", *args]), docker=docker.client(os.environ),
+                               probe=lambda _port, _ca: probe, sleep=lambda _s: None)  # fmt: skip
+    jsonschema.Draft202012Validator(REPORT_SCHEMA).validate(report.to_json())
+    return report, lines
+
+
+def _down(docker: FakeDocker, *args: str) -> tuple[Report, list[str]]:
+    return _up.run_down(parse(["down", *args]), docker=docker.client(os.environ))
+
+
+def _compose(project: Path) -> dict[str, Any]:
+    document: dict[str, Any] = yaml.safe_load(
+        (project / ".fabric" / "compose" / "docker-compose.yml").read_text("utf-8")
+    )
+    return document
+
+
+def _ids(report: Report) -> list[str]:
+    return [finding.id for finding in report.findings]
+
+
+def _secrets_dir(tmp_path: Path) -> Path:
+    (directory,) = (tmp_path / "xdg" / "fabric").iterdir()
+    return directory / "secrets"
+
+
+# ---------------------------------------------------------------- the rendered project
+
+
+def test_up_without_a_fabric_yaml_runs_init_with_defaults(project: Path, tmp_path: Path) -> None:
+    """§5.4 step 1: `fabric up` is the first Fabric command of the local path (G1)."""
+    docker = FakeDocker()
+    report, lines = _up_once(docker)
+    assert report.exit_code == 0
+    assert (project / "fabric.yaml").is_file() and (project / ".fabric" / "compiled.env").is_file()
+    assert sorted(p.name for p in _secrets_dir(tmp_path).iterdir()) == [
+        "ca.crt", "ca.key", "id.key", "node.crt", "node.key",
+    ]  # fmt: skip
+    assert report.data["node"]["endpoint"] == "https://localhost:4318"
+    assert report.data["destination"]["spans"] == str(project / "fabric-data" / "spans")
+    assert any(line.startswith("Fabric Node: https://localhost:4318") for line in lines)
+    assert lines[-1].startswith("next: fabric run")
+    for name in ("spans", "store", "host-logs"):
+        assert (project / "fabric-data" / name).is_dir()
+
+
+def test_every_image_is_pinned_by_digest(project: Path) -> None:
+    """§5.4 step 2, §11.2: `up` never pulls a floating tag."""
+    for name, reference in _images.PINNED.items():
+        assert _images.DIGEST_REF.fullmatch(reference), f"{name} is not a digest reference"
+        assert ":latest" not in reference
+    assert _images.NODE.startswith("ghcr.io/singleaxis/fabric-otelcol@sha256:")
+    assert _images.SENSOR.startswith("ghcr.io/singleaxis/fabric-host-emitter@sha256:")
+    _up_once(FakeDocker())
+    services = _compose(project)["services"]
+    assert len(services) == 4
+    for service in services.values():
+        assert _images.DIGEST_REF.fullmatch(service["image"]), service["image"]
+    # The same python:3.12-alpine digest the repository's Compose quickstart pins.
+    assert _images.SINK.split("@")[1] in (REPO / "deploy/compose/docker-compose.yml").read_text()
+
+
+def test_node_listens_with_tls_on_loopback_only_with_the_generated_certificate(
+    project: Path, tmp_path: Path
+) -> None:
+    _up_once(FakeDocker())
+    secrets = _secrets_dir(tmp_path)
+    node = _compose(project)["services"]["fabric-node"]
+    assert node["ports"] == ["127.0.0.1:4318:4318"]
+    mounts = {m.split(":")[0]: m for m in node["volumes"]}
+    assert str(secrets / "node.crt") in mounts and str(secrets / "node.key") in mounts
+    # Only the Node's own pair is mounted: never the CA key, the id key or the directory.
+    for forbidden in ("ca.key", "id.key"):
+        assert str(secrets / forbidden) not in mounts
+    assert str(secrets) not in mounts
+    assert all(m.endswith(":ro") for m in node["volumes"] if "/secrets/" in m)
+    config = yaml.safe_load((project / ".fabric/compose/node.yaml").read_text("utf-8"))
+    for protocol in ("grpc", "http"):
+        tls = config["receivers"]["otlp"]["protocols"][protocol]["tls"]
+        assert tls["cert_file"].endswith("node.crt") and tls["key_file"].endswith("node.key")
+    assert set(config["service"]["pipelines"]) == {"traces", "logs"}
+    for pipeline in config["service"]["pipelines"].values():
+        assert pipeline["processors"] == ["memory_limiter", "fabricguard"]
+    assert node["read_only"] is True and node["cap_drop"] == ["ALL"]
+
+
+def test_local_dir_destination_writes_spans_directly_into_the_project(project: Path) -> None:
+    """§9.1, F16: the sink writes into ./fabric-data, so there is no export step."""
+    _up_once(FakeDocker())
+    sink = _compose(project)["services"]["fabric-sink"]
+    assert f"{project / 'fabric-data' / 'spans'}:/data/spans" in sink["volumes"]
+    assert "ports" not in sink, "the sink is reachable only on the project's Compose network"
+    # The sink never sees the content store (the SDK writes it) or any secret.
+    assert not any("store" in m or "secrets" in m for m in sink["volumes"])
+    copied = (project / ".fabric/compose/otlp_sink.py").read_text("utf-8")
+    assert copied == Path(_localsink.__file__).read_text("utf-8")
+    if os.name == "posix":  # captured content: the data directory is the operator's alone
+        assert (project / "fabric-data").stat().st_mode & 0o777 == 0o700
+
+
+def test_rendered_files_and_command_lines_hold_no_secret_value(
+    project: Path, tmp_path: Path
+) -> None:
+    """I7: never in a rendered file, never on a command line."""
+    docker = FakeDocker()
+    _up_once(docker)
+    _down(docker, "--purge")
+    values = secret_values(_secrets_dir(tmp_path))
+    rendered = b"".join(p.read_bytes() for p in (project / ".fabric").rglob("*") if p.is_file())
+    argv = "\n".join(" ".join(call) for call in docker.calls)
+    for value in values:
+        assert value not in rendered
+        assert value.decode() not in argv
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a non-root user")
+def test_containers_run_as_the_operator_so_private_files_stay_private(project: Path) -> None:
+    _up_once(FakeDocker())
+    services = _compose(project)["services"]
+    expected = f"{os.geteuid()}:{os.getegid()}"
+    assert services["fabric-node"]["user"] == services["fabric-sink"]["user"] == expected
+    queue = project / ".fabric" / "state" / "node-queue"
+    assert f"{queue}:/var/lib/fabric-node/queue" in services["fabric-node"]["volumes"]
+
+
+def test_container_user_by_docker_setup() -> None:
+    facts = _sensor.probe(LINUX_ENGINE, system="Linux")
+    as_user = _sensor.HostFacts(**{**facts.__dict__, "euid": 1000})
+    assert _up._container_user(as_user)[0].startswith("1000:")  # type: ignore[union-attr]
+    as_root = _sensor.HostFacts(**{**facts.__dict__, "euid": 0})
+    assert _up._container_user(as_root) == (None, True)  # image user; key shared with its group
+    rootless = _sensor.HostFacts(**{**facts.__dict__, "euid": 1000, "rootless": True})
+    assert _up._container_user(rootless) == ("0:0", False)
+    windows = _sensor.HostFacts(**{**facts.__dict__, "euid": None})
+    assert _up._container_user(windows) == (None, False)
+
+
+# ---------------------------------------------------------------- I5: one project only
+
+
+def test_every_docker_command_targets_this_project_and_nothing_else(project: Path) -> None:
+    """I5: `up` and `down` act once, on the Compose project fabric-<project>; no command
+    stops, removes, restarts or scales anything else."""
+    docker = FakeDocker()
+    _up_once(docker)
+    _up_once(docker)
+    _down(docker)
+    _down(docker, "--purge")
+    compose_file = str(project / ".fabric" / "compose" / "docker-compose.yml")
+    for call in docker.calls:
+        if call[0] == "compose" and call[1] != "version":
+            assert call[1:5] == ["-p", "fabric-support-agent", "-f", compose_file], call
+            assert call[5] in _docker.COMPOSE_COMMANDS
+        else:
+            assert call[0] in ("compose", "info", "run"), call
+    forbidden = {"rm", "stop", "kill", "restart", "scale", "exec", "system", "prune", "push",
+                 "login", "rollout", "update", "service", "stack", "swarm"}  # fmt: skip
+    for call in docker.calls:
+        assert not forbidden & {call[0], *(call[5:6] if call[0] == "compose" else [])}, call
+    # The one `docker run` creates the sensor's cgroup in the Docker VM, with no network.
+    runs = [call for call in docker.calls if call[0] == "run"]
+    assert all("--network=none" in call and "--rm" in call for call in runs)
+    assert all(call[-3:-1] in (["mkdir", "-p"],) or call[-3] == "rmdir" for call in runs)
+
+
+def test_compose_project_name_can_never_be_the_customers_own(project: Path) -> None:
+    """Compose names a project after its directory by default; Fabric's is always
+    prefixed, so `down` can never remove the customer's own services."""
+    docker = FakeDocker()
+    report, _ = _up_once(docker)
+    assert report.data["compose_project"] == "fabric-support-agent" != project.name
+    assert _compose(project)["name"] == "fabric-support-agent"
+    with pytest.raises(ValueError, match="not a command fabric runs"):
+        docker.client().compose("fabric-x", None, "exec", "sh")
+
+
+# ---------------------------------------------------------------- idempotent (§5.4)
+
+
+def test_second_up_applies_nothing_new_and_reports_no_change(project: Path) -> None:
+    docker = FakeDocker()
+    _up_once(docker)
+    before = {p: p.read_bytes() for p in (project / ".fabric").rglob("*") if p.is_file()}
+    report, _ = _up_once(docker)
+    assert report.data["changes"] == [] and "FC-026" not in _ids(report)
+    assert {p: p.read_bytes() for p in before} == before
+    assert len(docker.compose_calls("up")) == 2  # Compose itself decides nothing changed
+
+
+def test_up_reconciles_a_changed_fabric_yaml_and_prints_the_changes(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker = FakeDocker()
+    _up_once(docker)
+    path = project / "fabric.yaml"
+    path.write_text(path.read_text().replace("endpoint: auto", "endpoint: https://localhost:5318")
+                    .replace("kind: auto", "kind: 'off'"))  # fmt: skip
+    report, _ = _up_once(docker)
+    assert report.data["changes"] == [
+        f"sensor image: {_images.SENSOR} -> None",
+        "Node port: 4318 -> 5318",
+        "host sensor: running -> off",
+    ]
+    assert _ids(report).count("FC-026") == 3
+    assert _compose(project)["services"]["fabric-node"]["ports"] == ["127.0.0.1:5318:4318"]
+    assert "fabric-sensor" not in _compose(project)["services"]
+    # The CLI's pinned images are part of what `up` reconciles (upgrade, §11.2).
+    monkeypatch.setenv("FABRIC_NODE_IMAGE", "fabric/node:local")
+    report, _ = _up_once(docker)
+    assert report.data["changes"] == [f"Node image: {_images.NODE} -> fabric/node:local"]
+    assert [f.detail for f in report.findings if f.id == "FC-028"] == ["FABRIC_NODE_IMAGE"]
+
+
+def test_a_rotated_node_certificate_recreates_the_node(project: Path, tmp_path: Path) -> None:
+    from fabric.cli import _secrets  # noqa: PLC0415
+
+    docker = FakeDocker()
+    _up_once(docker)
+    label = "ai.singleaxis.fabric.node-cert"
+    before = _compose(project)["services"]["fabric-node"]["labels"][label]
+    _secrets.rotate(_secrets_dir(tmp_path), "support-agent", ["node-cert"])
+    report, _ = _up_once(docker)
+    assert _compose(project)["services"]["fabric-node"]["labels"][label] != before
+    assert any(change.startswith("Node certificate:") for change in report.data["changes"])
+
+
+def test_up_renews_a_certificate_close_to_expiry(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import datetime as dt  # noqa: PLC0415
+
+    from fabric.cli import _secrets  # noqa: PLC0415
+
+    docker = FakeDocker()
+    _up_once(docker)
+    later = dt.datetime.now(dt.UTC) + dt.timedelta(days=85)
+    monkeypatch.setattr(_secrets, "_now", lambda: later)
+    report, _ = _up_once(docker)
+    assert "FC-025" in _ids(report) and report.exit_code == 0
+
+
+# ---------------------------------------------------------------- failures name the fix
+
+
+def test_docker_missing_is_exit_3_with_the_install_fix(project: Path) -> None:
+    client = _docker.Docker({}, runner=FakeDocker(), which=lambda _name: None)
+    with pytest.raises(CliError) as caught:
+        _up.run_up(parse(["up"]), docker=client)
+    assert (caught.value.exit_code, caught.value.findings[0].id) == (3, "FC-019")
+    assert "install Docker" in caught.value.findings[0].entry["fix"]
+
+
+def test_missing_compose_plugin_and_stopped_daemon_are_exit_3(project: Path) -> None:
+    with pytest.raises(CliError) as caught:
+        _up_once(FakeDocker(fail={"version": Result(1, "", "docker: 'compose' is not a command")}))
+    assert (caught.value.exit_code, caught.value.findings[0].id) == (3, "FC-019")
+    with pytest.raises(CliError) as caught:
+        _up_once(FakeDocker(fail={"info": Result(1, "", "Cannot connect to the Docker daemon")}))
+    assert (caught.value.exit_code, caught.value.findings[0].id) == (3, "FC-020")
+    assert "Cannot connect" in (caught.value.findings[0].detail or "")
+
+
+def test_a_busy_port_names_the_port_and_the_setting_that_moves_it(project: Path) -> None:
+    error = "Error response from daemon: Bind for 127.0.0.1:4318 failed: port is already allocated"
+    with pytest.raises(CliError) as caught:
+        _up_once(FakeDocker(fail={"up": Result(1, "", error)}))
+    finding = caught.value.findings[-1]
+    assert (caught.value.exit_code, finding.id, finding.detail) == (1, "FC-022", "port 4318")
+    assert "node.endpoint: https://localhost:PORT" in finding.entry["fix"]
+
+
+def test_compose_failure_and_an_unhealthy_node_carry_dockers_own_last_lines(project: Path) -> None:
+    with pytest.raises(CliError) as caught:
+        _up_once(FakeDocker(fail={"up": Result(1, "", "pull access denied\nfor image x\n")}))
+    assert caught.value.findings[-1].id == "FC-021"
+    assert "pull access denied" in (caught.value.findings[-1].detail or "")
+    with pytest.raises(CliError) as caught:
+        _up_once(FakeDocker(), "--wait", "0", probe=False)
+    finding = caught.value.findings[-1]
+    assert (caught.value.exit_code, finding.id) == (1, "FC-023")
+    assert "last log line of the service" in (finding.detail or "")
+    assert "--wait" in finding.entry["fix"]
+
+
+@pytest.mark.parametrize("flag", ["--kubernetes", "--verify-images"])
+def test_up_options_not_built_yet_say_so(flag: str, project: Path) -> None:
+    with pytest.raises(CliError) as caught:
+        _up_once(FakeDocker(), flag)
+    assert [(f.id, f.detail) for f in caught.value.findings] == [("FC-011", flag)]
+    assert list(project.iterdir()) == []
+
+
+def test_up_with_an_external_node_starts_nothing(project: Path) -> None:
+    (project / "fabric.yaml").write_text(
+        "schema: fabric.config/v1\nnode:\n  mode: external\n  endpoint: https://node.internal:4318\n"
+    )
+    docker = FakeDocker()
+    report, _ = _up_once(docker)
+    assert _ids(report) == ["FC-024"] and docker.calls == []
+    assert report.data["node"] == {"endpoint": "https://node.internal:4318", "managed": False}
+    report, _ = _down(docker)
+    assert _ids(report) == ["FC-024"] and docker.calls == []
+
+
+def test_wait_for_node_polls_until_it_answers() -> None:
+    answers = iter([False, False, True])
+    slept: list[float] = []
+    assert _up._wait_for_node(1, Path("ca"), 30, lambda _p, _c: next(answers), slept.append)
+    assert slept == [0.5, 0.5]
+
+
+# ---------------------------------------------------------------- the host sensor
+
+
+def _facts(info: dict[str, Any], system: str, **changes: Any) -> _sensor.HostFacts:
+    base = _sensor.probe(info, system=system)
+    return _sensor.HostFacts(**{**base.__dict__, "btf": True, "cgroup_v2": True,
+                                "in_container": False, "sandboxed": None, "auditd": False,
+                                "euid": 1000, **changes})  # fmt: skip
+
+
+@pytest.mark.parametrize(("kind", "no_sensor", "facts", "start", "ids"), [
+    ("auto", False, _facts(DOCKER_DESKTOP, "Darwin"), True, ["FC-042"]),
+    ("auto", False, _facts(DOCKER_DESKTOP, "Linux"), True, ["FC-042"]),  # Docker Desktop on Linux
+    ("ebpf", False, _facts(DOCKER_DESKTOP, "Windows"), True, ["FC-042"]),
+    ("auto", False, _facts({**DOCKER_DESKTOP, "KernelVersion": "5.4.0"}, "Darwin"), False,
+     ["FC-043"]),
+    ("auto", False, _facts({**DOCKER_DESKTOP, "CgroupVersion": "1"}, "Darwin"), False,
+     ["FC-043"]),
+    ("auto", False, _facts(LINUX_ENGINE, "Linux"), True, []),
+    ("auto", False, _facts(LINUX_ENGINE, "Linux", btf=False), False, ["FC-043"]),
+    ("auto", False, _facts(LINUX_ENGINE, "Linux", cgroup_v2=False, auditd=True), False,
+     ["FC-043", "FC-046"]),
+    ("auto", False, _facts(LINUX_ENGINE, "Linux", in_container=True), False, ["FC-047"]),
+    ("auto", False, _facts(LINUX_ENGINE, "Linux", sandboxed="gVisor"), False, ["FC-047"]),
+    ("auto", False, _facts(LINUX_ENGINE, "Linux", rootless=True), False, ["FC-047"]),
+    ("off", False, _facts(LINUX_ENGINE, "Linux"), False, ["FC-041"]),
+    ("auto", True, _facts(LINUX_ENGINE, "Linux"), False, ["FC-041"]),
+    ("auditd", False, _facts(LINUX_ENGINE, "Linux"), False, ["FC-046"]),
+])  # fmt: skip
+def test_sensor_starts_where_ebpf_loads_and_says_why_where_it_cannot(
+    kind: str, no_sensor: bool, facts: _sensor.HostFacts, start: bool, ids: list[str]
+) -> None:
+    """§5.4 step 4: every outcome is a catalogue finding with a fix; none stops `up`."""
+    plan = _sensor.plan(kind, no_sensor, facts, "demo", release="6.8.0-45-generic")
+    assert plan.start is start
+    assert [finding.id for finding in plan.findings] == ids
+    for finding in plan.findings:
+        assert finding.entry["fix"] and finding.severity != "error"
+
+
+def test_an_old_linux_kernel_is_a_named_reason() -> None:
+    plan = _sensor.plan("auto", False, _facts(LINUX_ENGINE, "Linux"), "demo", release="5.4.0-1")
+    assert not plan.start and plan.findings[0].detail == "missing: kernel 5.4.0-1"
+    assert _sensor.kernel_ok("5.8.0") and _sensor.kernel_ok("6.12.76-linuxkit")
+    assert not _sensor.kernel_ok("5.7.19") and not _sensor.kernel_ok("unknown")
+
+
+def test_probe_reads_only_docker_info_and_local_files(tmp_path: Path) -> None:
+    (tmp_path / "proc").mkdir()
+    (tmp_path / "proc/version").write_text("Linux version 4.4.0 #1 SMP gVisor\n")
+    (tmp_path / "sys/kernel/btf").mkdir(parents=True)
+    (tmp_path / "sys/kernel/btf/vmlinux").touch()
+    (tmp_path / ".dockerenv").touch()
+    info = {**LINUX_ENGINE, "SecurityOptions": ["name=seccomp", "name=rootless"]}
+    facts = _sensor.probe(info, system="Linux", root=tmp_path)
+    assert (facts.sandboxed, facts.btf, facts.cgroup_v2) == ("gVisor", True, False)
+    assert facts.in_container and facts.rootless and not facts.vm
+    assert _sensor.probe(DOCKER_DESKTOP, system="Linux", root=tmp_path).vm
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a non-root user")
+def test_agent_cgroup_is_created_in_a_delegated_subtree_without_root(tmp_path: Path) -> None:
+    """OQ-14: a delegated cgroup (a systemd user session) needs no root."""
+    root = tmp_path / "cgroup"
+    session = root / "user.slice/user-1000.slice/user@1000.service/app.slice/run-1.scope"
+    session.mkdir(parents=True)
+    self_cgroup = tmp_path / "self"
+    self_cgroup.write_text("0::/user.slice/user-1000.slice/user@1000.service/app.slice/"
+                           "run-1.scope\n")  # fmt: skip
+    created = _sensor.create_agent_cgroup("demo", os.geteuid(), cgroup_root=root,
+                                          self_cgroup=self_cgroup)  # fmt: skip
+    # The topmost directory this user owns, here the fake hierarchy's first level.
+    assert created == root / "user.slice" / "fabric.slice" / "agent-demo"
+    assert created.is_dir()
+    # No cgroup interface file is ever written: the cgroup has no limits.
+    assert list(created.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name != "posix" or os.geteuid() == 0, reason="needs a non-root user")
+def test_agent_cgroup_without_root_or_delegation_is_not_created(tmp_path: Path) -> None:
+    root = tmp_path / "cgroup"
+    (root / "system.slice/docker.service").mkdir(parents=True)
+    self_cgroup = tmp_path / "self"
+    self_cgroup.write_text("0::/system.slice/docker.service\n")
+    assert _sensor.create_agent_cgroup("demo", os.geteuid() + 1, cgroup_root=root,
+                                       self_cgroup=self_cgroup) is None  # fmt: skip
+    assert _sensor.create_agent_cgroup("demo", 12345, cgroup_root=root,
+                                       self_cgroup=tmp_path / "missing") is None  # fmt: skip
+    self_cgroup.write_text("1:name=systemd:/\n")  # cgroup v1 only
+    assert _sensor.create_agent_cgroup("demo", 12345, cgroup_root=root,
+                                       self_cgroup=self_cgroup) is None  # fmt: skip
+
+
+def test_sensor_service_is_read_only_scoped_and_minimally_privileged(
+    project: Path, tmp_path: Path
+) -> None:
+    report, lines = _up_once(FakeDocker())
+    sensor = _compose(project)["services"]["fabric-sensor"]
+    assert sensor["cap_drop"] == ["ALL"]
+    assert sensor["cap_add"] == ["BPF", "PERFMON", "SYS_RESOURCE", "DAC_READ_SEARCH"]
+    assert "privileged" not in sensor and sensor["read_only"] is True
+    scope = "/sys/fs/cgroup/fabric.slice/agent-support-agent"
+    assert sensor["environment"]["EMIT_CGROUP_PATH"] == scope
+    assert "EMIT_ALL_HOST" not in sensor["environment"], "the sensor must never be host-wide"
+    assert "EMIT_INSECURE" not in sensor["environment"]
+    assert sensor["environment"]["EMIT_ENDPOINT"] == "fabric-node:4317"
+    ca = str(_secrets_dir(tmp_path) / "ca.crt")
+    assert f"{ca}:/etc/fabric-host-emitter/ca.crt:ro" in sensor["volumes"]
+    assert all(m.endswith(":ro") for m in sensor["volumes"] if m.startswith("/sys/"))
+    assert report.data["sensor"] == {"state": "running", "cgroup": scope,
+                                     "reasons": ["FC-042", "FC-040"]}  # fmt: skip
+    assert f"host sensor: running (scope {scope})" in lines
+
+
+def test_no_sensor_flag_and_reasons_leave_the_sensor_out(project: Path) -> None:
+    report, lines = _up_once(FakeDocker(), "--no-sensor")
+    assert "fabric-sensor" not in _compose(project)["services"]
+    assert "volumes" not in _compose(project)
+    assert report.data["sensor"] == {"state": "off", "cgroup": None, "reasons": ["FC-041"]}
+    assert "host sensor: off" in lines and report.exit_code == 0
+
+
+def test_a_sensor_that_exits_is_reported_with_its_last_log_line(project: Path) -> None:
+    docker = FakeDocker(running=set())
+    report, _ = _up_once(docker)
+    assert report.exit_code == 0, "a sensor failure never fails `up`"
+    assert report.data["sensor"]["state"] == "off"
+    (finding,) = [f for f in report.findings if f.id == "FC-045"]
+    assert finding.detail == "last log line of the service"
+    assert "FC-040" not in _ids(report) and "FC-042" not in _ids(report)
+
+
+def test_a_cgroup_that_cannot_be_created_is_a_named_reason(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker = FakeDocker(fail={"run": Result(1, "", "permission denied")})
+    report, _ = _up_once(docker)
+    assert report.data["sensor"]["reasons"] == ["FC-044"]
+    assert "fabric-sensor" not in _compose(project)["services"]
+    # Native Linux: the cgroup is created by this process, or the reason is reported.
+    docker = FakeDocker(info=dict(LINUX_ENGINE))
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform, "release", lambda: "6.8.0-45-generic")
+    linux = _facts(dict(LINUX_ENGINE), "Linux")
+    monkeypatch.setattr(_sensor, "probe", lambda _info, **_: linux)
+    monkeypatch.setattr(_sensor, "create_agent_cgroup", lambda *_a, **_k: None)
+    report, _ = _up_once(docker)
+    assert report.data["sensor"]["reasons"] == ["FC-044"]
+    assert "sudo" in next(f for f in report.findings if f.id == "FC-044").entry["fix"]
+    created = Path("/sys/fs/cgroup/user.slice/fabric.slice/agent-support-agent")
+    monkeypatch.setattr(_sensor, "create_agent_cgroup", lambda *_a, **_k: created)
+    report, _ = _up_once(docker)
+    assert report.data["sensor"] == {"state": "running", "cgroup": str(created),
+                                     "reasons": ["FC-040"]}  # fmt: skip
+    assert not [call for call in docker.calls if call[0] == "run"], "no helper on native Linux"
+
+
+# ---------------------------------------------------------------- down (§5.4)
+
+
+def test_down_stops_the_project_and_keeps_everything(project: Path, tmp_path: Path) -> None:
+    docker = FakeDocker()
+    _up_once(docker)
+    (project / "fabric-data/spans/traces-1.otlp").write_bytes(b"record")
+    report, lines = _down(docker)
+    (call,) = docker.compose_calls("down")
+    assert "--volumes" not in call and "-v" not in call
+    assert report.data["purged"] is False and "kept" in lines[0]
+    assert (project / ".fabric/state/node-queue").is_dir()
+    assert len(list(_secrets_dir(tmp_path).iterdir())) == 5
+
+
+def test_purge_deletes_volumes_and_state_never_secrets_or_recorded_data(
+    project: Path, tmp_path: Path
+) -> None:
+    docker = FakeDocker()
+    _up_once(docker)
+    (project / "fabric-data/spans/traces-1.otlp").write_bytes(b"record")
+    (project / ".fabric/state/node-queue/segment").write_bytes(b"queued")
+    secrets_before = {p.name: p.read_bytes() for p in _secrets_dir(tmp_path).iterdir()}
+    report, _ = _down(docker, "--purge")
+    assert "--volumes" in docker.compose_calls("down")[-1]
+    assert report.data["purged"] is True and report.findings == []
+    assert not (project / ".fabric/state").exists()
+    assert {p.name: p.read_bytes() for p in _secrets_dir(tmp_path).iterdir()} == secrets_before
+    assert (project / "fabric-data/spans/traces-1.otlp").read_bytes() == b"record"
+    assert (project / "fabric.yaml").is_file() and (project / ".fabric/compiled.env").is_file()
+    # The empty agent cgroup `up` created in the Docker VM is removed the same way.
+    # The agent cgroup, then its slice (rmdir leaves a slice other projects still use).
+    assert docker.calls[-1][-3:] == [
+        "rmdir",
+        "/sys/fs/cgroup/fabric.slice/agent-support-agent",
+        "/sys/fs/cgroup/fabric.slice",
+    ]
+
+
+def test_down_without_a_project_or_with_a_failing_compose_says_why(project: Path) -> None:
+    with pytest.raises(CliError) as caught:
+        _down(FakeDocker())
+    assert caught.value.findings[0].id == "FC-001"
+    docker = FakeDocker()
+    _up_once(docker, "--no-sensor")
+    docker.fail["down"] = Result(1, "", "network has active endpoints")
+    with pytest.raises(CliError) as caught:
+        _down(docker)
+    assert (caught.value.exit_code, caught.value.findings[0].id) == (1, "FC-021")
+    with pytest.raises(CliError) as caught:
+        _down(FakeDocker(), "--kubernetes")
+    assert caught.value.findings[0].id == "FC-011"
+
+
+def test_purge_of_a_native_linux_cgroup_and_state_that_cannot_be_removed(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker = FakeDocker()
+    _up_once(docker, "--no-sensor")
+    state = project / ".fabric/state/up.json"
+    removed: list[str] = []
+    monkeypatch.setattr(os, "rmdir", lambda path: removed.append(str(path)))
+    cgroup = "/sys/fs/cgroup/fabric.slice/agent-support-agent"
+    state.write_text(json.dumps({"sensor_cgroup": cgroup, "sensor_cgroup_created": "direct"}))
+    monkeypatch.setattr(shutil, "rmtree", lambda *_a, **_k: None)
+    report, _ = _down(docker, "--purge")
+    assert removed == [cgroup, "/sys/fs/cgroup/fabric.slice"]
+    assert [(f.id, f.detail) for f in report.findings] == [("FC-029", str(state.parent))]
+    # A cgroup path outside /sys/fs/cgroup in a tampered state file is never touched.
+    state.write_text(json.dumps({"sensor_cgroup": "/etc", "sensor_cgroup_created": "direct"}))
+    _down(docker, "--purge")
+    assert removed == [cgroup, "/sys/fs/cgroup/fabric.slice"]
+
+
+# ---------------------------------------------------------------- the bundled sink (§9.1)
+
+
+@pytest.fixture()
+def sink(tmp_path: Path) -> Iterator[tuple[str, Path]]:
+    server = _localsink.serve(tmp_path / "data", "127.0.0.1", 0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", tmp_path / "data"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _post(url: str, body: bytes, headers: dict[str, str] | None = None) -> int:
+    request = urllib.request.Request(url, data=body, headers=headers or {}, method="POST")  # noqa: S310
+    try:
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+            return int(response.status)
+    except urllib.error.HTTPError as error:
+        return int(error.code)
+
+
+def test_sink_writes_span_requests_where_the_reader_looks(sink: tuple[str, Path]) -> None:
+    url, data = sink
+    assert _post(f"{url}/v1/traces", b"span-request") == 200
+    assert _post(f"{url}/v1/traces", gzip.compress(b"zipped"), {"Content-Encoding": "gzip"}) == 200
+    assert _post(f"{url}/v1/logs", b"host-record") == 200
+    spans = sorted(p.read_bytes() for p in (data / "spans").glob("traces-*.otlp"))
+    assert spans == [b"span-request", b"zipped"]
+    assert [p.read_bytes() for p in (data / "host-logs").glob("logs-*.otlp")] == [b"host-record"]
+    assert not list(data.rglob("*.tmp")), "a partial file was left where the reader looks"
+    with urllib.request.urlopen(f"{url}/health", timeout=5) as response:  # noqa: S310
+        assert json.load(response) == {"status": "ready"}
+
+
+def test_sink_refuses_what_it_cannot_store_so_the_node_retries(
+    sink: tuple[str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    url, data = sink
+    assert _post(f"{url}/v1/metrics", b"x") == 404
+    assert _post(f"{url}/v1/traces", b"not gzip", {"Content-Encoding": "gzip"}) == 400
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        urllib.request.urlopen(f"{url}/other", timeout=5)  # noqa: S310
+    assert caught.value.code == 404
+
+    def refuse(*_args: object) -> str:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(_localsink, "store", refuse)
+    assert _post(f"{url}/v1/traces", b"span-request") == 503  # retried from the durable queue
+    assert not data.exists() or not list(data.rglob("*.otlp"))
+
+
+def test_packaged_templates_are_code_not_data_files() -> None:
+    """§5.4 step 2, F12: nothing is cloned or downloaded; the wheel ships code only."""
+    assert _templates.sink_source().startswith("# Copyright")
+    package = Path(_templates.__file__).parent
+    assert {p.suffix for p in package.iterdir() if p.is_file()} == {".py"}
