@@ -173,6 +173,7 @@ L_PPID = "process.parent_pid"
 L_PEER_ADDRESS = "network.peer.address"
 L_CGROUP_ID = "audit.cgroup_id"
 L_RECORD_UID = "log.record.uid"
+L_EXE_SHA256 = "process.executable.path_sha256"
 L_RECORD_ID = "fabric.record_id"
 
 # Spec 053 §6.2.3 keys (registered by 053 WP4-01; checked here as the table states them).
@@ -198,6 +199,7 @@ S_SCOPE = "fabric.sensor.scope"
 S_POD_ID = "fabric.sensor.pod_id"
 S_SANDBOX_ID = "fabric.execution.sandbox_id"
 S_PEER_PORT = "fabric.sensor.peer_port"
+S_EXE_SHA256 = "fabric.sensor.exe_sha256"  # spec 057 WP7-10: matched to hook_programs paths
 # Host-source manifest keys (manifest-span-v1): the capture-point rows and the clock.
 M_CAPTURE_POINTS = "fabric.manifest.capture_points"
 M_CLOCK_UNCERTAINTY = "fabric.manifest.clock.uncertainty_ns"
@@ -343,6 +345,9 @@ class HostEvent:
     peer_port: int | None = None
     epoch: int | None = None
     sequence: int | None = None
+    # Spec 057 WP7-10: the bare SHA-256 of the executable path, when the sensor's digest
+    # permission allows it (053 §6.2.5); the reader matches it to a listed hook program.
+    exe_sha256: str | None = None
 
     def report_entry(self) -> dict[str, Any]:
         """The run report's ``sensor_events[]`` entry, without links: ids, pids and times
@@ -735,6 +740,15 @@ def _optional(attrs: Mapping[str, Any], key: str, check: Any) -> Any:
     return _ABSENT if value is None else value
 
 
+_BARE_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _bare_digest(value: Any) -> str | None:
+    """A bare 64-hex digest, else ``None`` (a malformed digest is ignored, never an error:
+    it only classifies)."""
+    return value if isinstance(value, str) and _BARE_SHA256_RE.fullmatch(value) else None
+
+
 # ------------------------------------------------------------------ local-profile records
 def normalize_local_record(
     time_ns: int, attrs: Mapping[str, Any], *, id_key: bytes | None
@@ -773,6 +787,7 @@ def normalize_local_record(
         peer_id=peer_id(address, id_key) if isinstance(address, str) and address else None,
         cgroup_id=cgroup,
         syscall=syscall,
+        exe_sha256=_bare_digest(attrs.get(L_EXE_SHA256)),
     )
 
 
@@ -915,6 +930,7 @@ def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
         source_id=position.source_id,
         epoch=position.epoch,
         sequence=position.sequence,
+        exe_sha256=_bare_digest(attrs.get(S_EXE_SHA256)),
         **optional,
     )
 

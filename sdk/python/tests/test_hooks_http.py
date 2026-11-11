@@ -930,3 +930,122 @@ def test_httpx2_requests_are_recorded_the_same_way(rig: Rig) -> None:
     (end,) = rig.only()
     assert end.request_json()["target"] == "/two"
     assert [b for _, b in end.bodies("network.response")] == [b'{"v":2}']
+
+
+# --- spec 057 WP7-13: control endpoints (control_hosts) ------------------------------------
+
+CONTROL_ROLES = ("control.exchange.request", "control.exchange.response")
+CONTROL_KEYS = {"fabric.control.kind", "fabric.control.engine.name"}
+CONTROL_CANARY = "CONTROL-CANARY-91ae"
+
+
+def _control_rig(hosts: tuple[str, ...], *entries: dict[str, Any], **modes: str) -> Rig:
+    """A rig whose capture policy lists ``entries`` under ``security_context.control_hosts``."""
+    from dataclasses import replace  # noqa: PLC0415
+
+    from fabric import _classify  # noqa: PLC0415
+
+    table = _classify.load({"control_hosts": list(entries)})
+    assert table is not None and table.status("control_hosts").state == "loaded"  # type: ignore[union-attr]
+    return _rig(hosts, replace(_policy(**modes), classification=table))
+
+
+def _decision_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, json={"decision": "DENY", "why": CONTROL_CANARY})
+
+
+POLICY_ENTRY = {"host": "policy.example.com", "label": "policy-svc", "control_kind": "policy"}
+
+
+def test_a_listed_control_host_is_labelled_and_its_bodies_are_withheld_by_default() -> None:
+    """Default roles: ``control.exchange.*`` are off even when the general ``network.*``
+    roles are retained, so what a control inspected and answered is in no stored body; the
+    records carry the list's kind and the customer's label, never the host."""
+    rig = _control_rig(("policy.example.com",), POLICY_ENTRY)  # network.* retain_original
+    try:
+        with _client(_decision_handler) as client:
+            response = client.post("https://policy.example.com/v1/check",
+                                   json={"prompt": CONTROL_CANARY})  # fmt: skip
+        assert response.json()["decision"] == "DENY"  # the caller reads its own response
+        records = rig.only()
+        for record in records:
+            assert record.attrs["fabric.control.kind"] == "policy"
+            assert record.attrs["fabric.control.engine.name"] == "policy-svc"
+            assert not record.bodies("network.request") and not record.bodies("network.response")
+            assert not any(record.bodies(role) for role in CONTROL_ROLES)
+            assert "policy.example.com" not in json.dumps(record.span)
+            for descriptor, data in record.staged:
+                assert CONTROL_CANARY.encode() not in data
+                assert CONTROL_CANARY not in json.dumps(descriptor)
+        assert records[-1].attrs["http.response.status_code"] == 200
+        assert records[-1].attrs["fabric.network.host_id"].startswith("hst-")
+        assert rig.counters()["control_rules"] == 1
+    finally:
+        _close(rig)
+
+
+def test_named_control_roles_retain_the_exchange_under_those_roles_only() -> None:
+    rig = _control_rig(("policy.example.com",), POLICY_ENTRY,
+                       **dict.fromkeys(CONTROL_ROLES, "retain_original"),
+                       **dict.fromkeys(NETWORK_ROLES, "omit"))  # fmt: skip
+    try:
+        with _client(_decision_handler) as client:
+            client.post("https://policy.example.com/v1/check", json={"prompt": "p"})
+        records = rig.only()
+        request = [data for r in records for _, data in r.bodies("control.exchange.request")]
+        response = [data for r in records for _, data in r.bodies("control.exchange.response")]
+        assert any(b'"prompt"' in data for data in request)
+        assert json.loads(b"".join(response)) == {"decision": "DENY", "why": CONTROL_CANARY}
+        assert not any(r.bodies("network.request") or r.bodies("network.response")
+                       for r in records)  # fmt: skip
+    finally:
+        _close(rig)
+
+
+def test_an_unlisted_host_is_recorded_as_general_http_with_no_control_key() -> None:
+    """Exact host and port only: a sibling host, a subdomain and another port of a listed
+    control host are general HTTP (``network.*`` roles, no ``fabric.control.*`` key)."""
+    hosts = ("api.example.com", "sub.policy.example.com", "policy.example.com:8443")
+    rig = _control_rig(hosts, POLICY_ENTRY)
+    try:
+        with _client(_json_handler) as client:
+            for url in ("https://api.example.com/x", "https://sub.policy.example.com/x",
+                        "https://policy.example.com:8443/x"):  # fmt: skip
+                client.get(url)
+        attempts = rig.attempts()
+        assert len(attempts) == 3
+        for records in attempts.values():
+            assert all(not (CONTROL_KEYS & set(r.attrs)) for r in records)
+            assert any(r.bodies("network.response") for r in records)
+        assert rig.counters()["control_rules"] == 0
+    finally:
+        _close(rig)
+
+
+def test_a_control_host_outside_the_hook_allowlist_is_not_recorded() -> None:
+    rig = _control_rig(("api.example.com",), POLICY_ENTRY)
+    try:
+        with _client(_decision_handler) as client:
+            client.post("https://policy.example.com/v1/check", json={})
+        assert rig.records() == []
+    finally:
+        _close(rig)
+
+
+def test_a_control_exchange_is_passive_when_the_control_fails() -> None:
+    """The caller's exception from a control endpoint is the transport's own object."""
+    boom = httpx.ConnectError("refused")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise boom
+
+    rig = _control_rig(("policy.example.com",), POLICY_ENTRY)
+    try:
+        with _client(handler) as client, pytest.raises(httpx.ConnectError) as caught:
+            client.post("https://policy.example.com/v1/check", json={})
+        assert caught.value is boom
+        end = rig.only()[-1]
+        assert end.attrs["fabric.control.kind"] == "policy"
+        assert end.status == "error"
+    finally:
+        _close(rig)

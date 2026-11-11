@@ -89,6 +89,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.manifest.after_source_sequence":                   intAtLeast(-1),
 	"fabric.manifest.capture_point_fields":                    sliceOf(0, 64, false, matches(manifestPointFieldsPattern)),
 	"fabric.manifest.capture_points":                          sliceOf(0, 64, false, matches(manifestPointPattern)),
+	"fabric.manifest.classifications":                         sliceOf(0, 8, true, matches(manifestClassificationPattern)),
 	"fabric.manifest.capture_policy.encrypted_store_required": isBool,
 	"fabric.manifest.capture_policy.policy_digest":            matches(coverageDigestPattern),
 	"fabric.manifest.capture_policy.policy_id":                matches(coverageOpaqueIDPattern),
@@ -325,6 +326,7 @@ var manifestSpanKeys = toSet(
 	"fabric.manifest.capture_policy.policy_id",
 	"fabric.manifest.capture_policy.policy_version",
 	"fabric.manifest.chunk_boundaries_retained",
+	"fabric.manifest.classifications",
 	"fabric.manifest.clock.domain",
 	"fabric.manifest.clock.uncertainty_ns",
 	"fabric.manifest.content_capture",
@@ -759,34 +761,35 @@ var recordKeyConditions = map[string]map[string][]string{
 }
 
 var (
-	dbSystemPattern            = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
-	coverageDigestPattern      = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	capturePointPattern        = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$`)
-	gatedStepIDPattern         = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:lbl|g)-[0-9a-f]{32})$`)
-	controlIDPattern           = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$`)
-	operatorLabelPattern       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
-	errorCodePattern           = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
-	frameworkNamePattern       = regexp.MustCompile(`^@?[a-z0-9][a-z0-9._/-]{0,127}$`)
-	softwareVersionPattern     = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
-	manifestPointFieldsPattern = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}=([XCSNDGE][0-9]{2}(,[XCSNDGE][0-9]{2}){0,255})?$`)
-	manifestPointPattern       = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|unattributed_effect|ambiguous_attribution|tool_result_missing|exchange_gap|source_gap|anchor_missing|unexplained_host_event|channel_disabled|no_effect_channel|none_in_window|remote_sandbox|-)$`)
-	coverageOpaqueIDPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
-	coverageProfilePattern     = regexp.MustCompile(`^fabric\.profile\.[a-z0-9-]+/v[0-9]+$`)
-	keyIDPattern               = regexp.MustCompile(`^kid-[0-9a-f]{8}$`)
-	roleTableVersionPattern    = regexp.MustCompile(`^fabric\.content-role-table/v[0-9]+@[0-9]+$`)
-	runtimeVersionPattern      = regexp.MustCompile(`^[0-9A-Za-z.+-]{1,64}$`)
-	decimalEpochPattern        = regexp.MustCompile(`^(?P<epoch>0|[1-9][0-9]{0,18})$`)
-	mcpProtocolVersionPattern  = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
-	decimalU64Pattern          = regexp.MustCompile(`^[0-9]{1,20}$`)
-	predecessorPattern         = regexp.MustCompile(`^(none|seg-[0-9a-f]{32}/(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})/(?P<epoch>[1-9][0-9]{0,18})/(-1|0|[1-9][0-9]{0,18})/sha256:[0-9a-f]{64})$`)
-	sensorDigestPattern        = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	wireEndpointIDPattern      = regexp.MustCompile(`^(?:[a-z][a-z0-9_]{0,31}\.default|lbl-[0-9a-f]{32})$`)
-	stepLinkPattern            = regexp.MustCompile(`^(?:caused_by|depends_on|result_of|emits|consumes|continues|retries|fallback_of|hedges|delegates|resumes|gates|resolves|compensates|delivers|derived_from|part_of|corroborated_by|same_as)/(?:attempt|step|event|run|provider_item|external)/(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:r|p|seg|lbl|g|br|sess|usr|act|conv|turn|trg|dsp|agt|tgt|hst|sbx|mcps|rpc|dbn|txn|mst|mkey|p|ckp|eff|out|ctl|axn|prf|grt|crd|ext|src|pth|net)-[0-9a-f]{32})$`)
-	updateOfPattern            = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{32})$`)
-	reasonCodePattern          = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,63}$`)
-	permissionModePattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$`)
-	extensionNamePattern       = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$`)
-	recordRunIDPattern         = regexp.MustCompile(`^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40}|source:(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,100}):(?P<epoch>[0-9]{1,19}))$`)
+	dbSystemPattern               = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
+	coverageDigestPattern         = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+	capturePointPattern           = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$`)
+	gatedStepIDPattern            = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:lbl|g)-[0-9a-f]{32})$`)
+	controlIDPattern              = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$`)
+	operatorLabelPattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
+	errorCodePattern              = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+	frameworkNamePattern          = regexp.MustCompile(`^@?[a-z0-9][a-z0-9._/-]{0,127}$`)
+	softwareVersionPattern        = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$`)
+	manifestPointFieldsPattern    = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}=([XCSNDGE][0-9]{2}(,[XCSNDGE][0-9]{2}){0,255})?$`)
+	manifestPointPattern          = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|unattributed_effect|ambiguous_attribution|tool_result_missing|exchange_gap|source_gap|anchor_missing|unexplained_host_event|channel_disabled|no_effect_channel|none_in_window|remote_sandbox|-)$`)
+	manifestClassificationPattern = regexp.MustCompile(`^classify\.(control_hosts|control_addresses|hook_programs|watched_paths|tool_result_markers):(off|loaded|refused):(0|[1-9][0-9]{0,5}):(over_limit|duplicate_entry|invalid_entry|-):(sha256:[0-9a-f]{64}|-)$`)
+	coverageOpaqueIDPattern       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+	coverageProfilePattern        = regexp.MustCompile(`^fabric\.profile\.[a-z0-9-]+/v[0-9]+$`)
+	keyIDPattern                  = regexp.MustCompile(`^kid-[0-9a-f]{8}$`)
+	roleTableVersionPattern       = regexp.MustCompile(`^fabric\.content-role-table/v[0-9]+@[0-9]+$`)
+	runtimeVersionPattern         = regexp.MustCompile(`^[0-9A-Za-z.+-]{1,64}$`)
+	decimalEpochPattern           = regexp.MustCompile(`^(?P<epoch>0|[1-9][0-9]{0,18})$`)
+	mcpProtocolVersionPattern     = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+	decimalU64Pattern             = regexp.MustCompile(`^[0-9]{1,20}$`)
+	predecessorPattern            = regexp.MustCompile(`^(none|seg-[0-9a-f]{32}/(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})/(?P<epoch>[1-9][0-9]{0,18})/(-1|0|[1-9][0-9]{0,18})/sha256:[0-9a-f]{64})$`)
+	sensorDigestPattern           = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	wireEndpointIDPattern         = regexp.MustCompile(`^(?:[a-z][a-z0-9_]{0,31}\.default|lbl-[0-9a-f]{32})$`)
+	stepLinkPattern               = regexp.MustCompile(`^(?:caused_by|depends_on|result_of|emits|consumes|continues|retries|fallback_of|hedges|delegates|resumes|gates|resolves|compensates|delivers|derived_from|part_of|corroborated_by|same_as)/(?:attempt|step|event|run|provider_item|external)/(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:r|p|seg|lbl|g|br|sess|usr|act|conv|turn|trg|dsp|agt|tgt|hst|sbx|mcps|rpc|dbn|txn|mst|mkey|p|ckp|eff|out|ctl|axn|prf|grt|crd|ext|src|pth|net)-[0-9a-f]{32})$`)
+	updateOfPattern               = regexp.MustCompile(`^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{32})$`)
+	reasonCodePattern             = regexp.MustCompile(`^[a-z0-9][a-z0-9._:-]{0,63}$`)
+	permissionModePattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$`)
+	extensionNamePattern          = regexp.MustCompile(`^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$`)
+	recordRunIDPattern            = regexp.MustCompile(`^(?:r-[0-9a-f]{32}|trace:[0-9a-f]{32}|h-[0-9a-f]{40}|source:(?P<source>[A-Za-z0-9][A-Za-z0-9._:-]{0,100}):(?P<epoch>[0-9]{1,19}))$`)
 )
 
 // END GENERATED

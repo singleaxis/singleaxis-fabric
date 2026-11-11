@@ -467,6 +467,92 @@
         "bound",
         "unbound"
       ]
+    },
+    "classifications": {
+      "description": "Spec 057 §6.4, WP7-9: the capture policy's security_context classification lists, present only when the policy has that section (an install without one keeps its manifest unchanged, §9.1). One row per list in the order control_hosts, control_addresses, hook_programs, watched_paths, tool_result_markers: its state (off when absent or empty, loaded, or refused with a reason: over_limit for more than 256 entries, duplicate_entry when two entries match one value, invalid_entry when an entry cannot be held), its entry count and the sha256 of its spec-029 canonical JSON; never its contents. A refused list is never applied.",
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "state",
+          "count"
+        ],
+        "properties": {
+          "id": {
+            "enum": [
+              "classify.control_hosts",
+              "classify.control_addresses",
+              "classify.hook_programs",
+              "classify.watched_paths",
+              "classify.tool_result_markers"
+            ]
+          },
+          "state": {
+            "enum": [
+              "off",
+              "loaded",
+              "refused"
+            ]
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "reason": {
+            "enum": [
+              "over_limit",
+              "duplicate_entry",
+              "invalid_entry"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "refused"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "reason",
+                "sha256"
+              ]
+            },
+            "else": {
+              "not": {
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "state": {
+                  "const": "loaded"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "sha256"
+              ]
+            }
+          }
+        ]
+      }
     }
   },
   "allOf": [

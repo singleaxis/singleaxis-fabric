@@ -620,9 +620,12 @@ def policy_cases() -> list[dict[str, Any]]:
          "enum"),
         ("unknown section", {"guardrails": []}, "closed section"),
         ("control kind", {"control_hosts": [{"host": "x.example", "label": "x", "control_kind": "judge"}]}, "enum"),
-        ("over 256 entries", {"watched_paths": [{"path": f"/p{i}", "match": "exact", "label": "x", "class": "other"}
-                                                for i in range(257)]}, "at most 256 entries"),
     ]  # fmt: skip
+    # WP7-9: a list longer than 256 entries is well-formed; install refuses it with a status
+    # (refused(over_limit)), never a schema or policy error.
+    cases.append(_case("over 256 entries", _policy_doc({"watched_paths": [
+        {"path": f"/p{i}", "match": "exact", "label": "x", "class": "other"}
+        for i in range(257)]}), True))  # fmt: skip
     cases += [
         _case(name, _policy_doc(section), False, rule) for name, section, rule in bad
     ]

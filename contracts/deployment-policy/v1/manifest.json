@@ -4,6 +4,6 @@
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/deployment-policy-v1.schema.json",
-    "sha256": "46105fc4ed395d47cfc1630adc86c2332b24c2bfb1351550011c0a34667088de"
+    "sha256": "59b1259dea1fe6761c1779da85ba03546d9262d8382bf2004874955b17e361e4"
   }
 }

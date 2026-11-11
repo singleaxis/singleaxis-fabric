@@ -41,6 +41,18 @@ probes the platform at import does this in every run.
 
 No rule ever picks the most likely of several candidates (§4.1).
 
+**Hook programs** (spec 057 §4.3, WP7-10; field finding F2). An exec record the capture
+worker classified as a listed hook program (``fabric.hook.program_label``) is not an
+effect of any tool call: it is the customer's hook running around one. A0-A4 and S0 skip
+it (its decision is ``hook_program``, it is never counted under ``links``, never
+unattributed), so a hook can never satisfy "this tool call had an effect"; spec 057 shows
+it as a hook row (``_security.py``) gating the call its window names. A tool call whose
+window holds a hook program that did not block it, but no effect, stays
+``none_in_window``, and the ``effects`` chain is ``partial(none_in_window)``: the call was
+dispatched (its hook ran) and its effect was not where the enabled channels look (a remote
+sandbox, an unhooked client). An exec record that is not classified (no list, or a program
+the list does not name) is an effect exactly as before: Fabric never guesses by name.
+
 **Host events** (§4.3, rules H1-H4) are joined by ``_host.py`` (WP6-05) through the
 :class:`HostJoin` interface: this module composes its links and facts into the
 ``corroboration`` chain and the attribution summary, and never joins host events itself.
@@ -61,6 +73,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Final
 
+from fabric import _classify
 from fabric.reconstruct import _derive, _security
 from fabric.reconstruct._evidence import EVIDENCE_TYPES, decode_evidence
 from fabric.reconstruct._fields_model import _response_body
@@ -107,6 +120,11 @@ __all__ = [
 
 #: Spec 056 revision 11, rule S0: an effect the process ran before its first model call.
 STARTUP: Final = "S0"
+#: Spec 057 WP7-10: a listed hook program, never an effect (no A rule applies).
+HOOK_PROGRAM: Final = "hook_program"
+#: Spec 057 WP7-13: the widest listed control network the reader enumerates to match the
+#: sensor's keyed peer ids (a /16); a wider one is matched by the emitter (WP7-11), not here.
+MAX_ENUMERATED_ADDRESSES: Final = 1 << 16
 #: Spec 056 §4.2 A1: the shortest output that can match a result by substring.
 MIN_MATCH_BYTES: Final = 16
 #: The effect capture points whose records are effects (spec 056 §2 "Effect"; M2 adds the
@@ -350,7 +368,7 @@ def _caused_by(
 class Decision:
     """Which rule decided one effect, its links and whether A1 was evaluated for it."""
 
-    rule: str  # A0, A1, A1-ambiguous, A2, A3, A4, or S0 (startup, revision 11)
+    rule: str  # A0, A1, A1-ambiguous, A2, A3, A4, S0 (startup) or hook_program (057)
     links: list[dict[str, Any]]
     evaluated: bool
 
@@ -358,11 +376,15 @@ class Decision:
     def basis(self) -> str:
         if self.rule == "A0":
             return "reported"
-        return "none" if self.rule in ("A4", STARTUP) else str(self.links[0]["method"])
+        if self.rule in ("A4", STARTUP, HOOK_PROGRAM):
+            return "none"
+        return str(self.links[0]["method"])
 
     @property
     def state(self) -> str:
-        return "unresolved" if self.rule in ("A4", STARTUP) else str(self.links[0]["state"])
+        if self.rule in ("A4", STARTUP, HOOK_PROGRAM):
+            return "unresolved"
+        return str(self.links[0]["state"])
 
 
 def startup_effects(inp: Mapping[str, Any], effects: Iterable[Mapping[str, Any]]) -> set[str]:
@@ -379,7 +401,8 @@ def startup_effects(inp: Mapping[str, Any], effects: Iterable[Mapping[str, Any]]
     lowest_gap = min((int(gap[0]) for gap in inp.get("effect_sequence_gaps", ())), default=None)
     found: set[str] = set()
     for effect in effects:
-        if effect.get("reported_parent_attempt") or effect.get("reported_parent_call"):
+        if (effect.get("reported_parent_attempt") or effect.get("reported_parent_call")
+                or effect.get("hook_program")):  # fmt: skip
             continue
         sequence = int(effect["sequence"])
         bound = first.get(_epoch(inp, effect))
@@ -446,6 +469,9 @@ class Attribution:
     decisions: dict[str, Decision] = field(default_factory=dict)
     # Unexplained host events no ``sensor_events`` entry lists (actions view only).
     unexplained_events: list[dict[str, Any]] = field(default_factory=list)
+    # Spec 057: per hook-program effect or control contact attempt uid, the tool calls
+    # whose open window holds it (the §4.2 conditions; spec 057 joins them by window).
+    windows: dict[str, list[str]] = field(default_factory=dict)
 
     def expected(self) -> dict[str, Any]:
         """The rule fixture ``expected`` shape of this result."""
@@ -494,8 +520,19 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
     startup: list[Mapping[str, Any]] = []
     before_first_call = startup_effects(inp, effects)
     evaluated = ambiguous = False
+    windows: dict[str, list[str]] = {}
+    dispatched: set[str] = set()  # calls in whose window an unblocked hook program ran
     for effect in effects:
         uid = effect["attempt_uid"]
+        if effect.get("hook_program"):
+            # Spec 057 WP7-10 (F2): a listed hook program is never an effect.
+            decisions[uid] = Decision(HOOK_PROGRAM, [], evaluated=False)
+            trace["effects"][uid] = HOOK_PROGRAM
+            found = candidates(inp, effect, calls)
+            windows[uid] = [call.id for call in found]
+            if effect.get("hook_outcome") != "blocked":
+                dispatched.update(call.id for call in found)
+            continue
         if uid in before_first_call:
             # Revision 11: counted and listed, never attributed, never a chain reason.
             decisions[uid] = Decision(STARTUP, [], evaluated=False)
@@ -572,6 +609,11 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
             reason = "none_in_window"
         not_observed_counts[reason] += 1
         trace["tool_calls"][call.id] = reason
+    # Spec 057 WP7-10 (F2): a call its hook program shows was dispatched, with no effect.
+    hook_only = any(trace["tool_calls"].get(c.id) == "none_in_window" for c in calls
+                    if c.id in dispatched)  # fmt: skip
+    for contact in inp.get("control_contacts", ()):
+        windows[contact["attempt_uid"]] = [call.id for call in candidates(inp, contact, calls)]
 
     chains = {
         "decisions": _decisions(inp),
@@ -587,6 +629,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
                     # Only remote.sandbox is active: a call it did not explain had its
                     # effect on the disabled exec.subprocess channel.
                     *(["channel_disabled"] if exec_disabled_calls else []),
+                    *(["none_in_window"] if hook_only else []),
                 ]
             )
             if active
@@ -645,6 +688,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         calls=calls,
         decisions=decisions,
         unexplained_events=unexplained_events,
+        windows=windows,
     )
 
 
@@ -692,6 +736,12 @@ def _actions(inp: Mapping[str, Any], calls: Sequence[ToolCall]) -> dict[str, Any
 _A_POINT = "fabric.capture.point"
 _A_LIFECYCLE = "fabric.step.lifecycle_state"
 _A_PARENT = "fabric.step.parent_id"
+_A_HOOK_LABEL = "fabric.hook.program_label"
+_A_HOOK_OUTCOME = "fabric.hook.outcome"
+_A_CONTROL_KIND = "fabric.control.kind"
+_A_CONTROL_LABEL = "fabric.control.engine.name"
+_CONTROL_RESPONSE_ROLE = "control.exchange.response"
+_MAX_EXTRACT_BYTES = 1 << 20  # the control.exchange.* role cap
 _PROCESS_KEYS: Final = (
     ("pid", "fabric.process.pid"),
     ("parent_pid", "fabric.process.parent_pid"),
@@ -854,8 +904,17 @@ class ActionReader:
         clock_uncertainty_ns: int = 0,
         every_run: bool = False,
         keep_runs: bool = False,
+        classification: _classify.Classification | None = None,
+        policy_digest: str | None = None,
+        id_key: bytes | None = None,
         derivation: _derive.Derivation | None = None,
     ) -> None:
+        # Spec 057 WP7-10/WP7-13: the capture policy's classification lists
+        # (``--capture-policy``) and that policy's digest; they apply only to a run one of
+        # whose manifests names the digest. Offline only: the lists never leave the reader.
+        self.classification = classification
+        self.policy_digest = policy_digest
+        self.id_key = id_key  # keys the ``hst-`` ids of the listed control addresses
         self.in_process_tools = tuple(sorted(set(in_process_tools)))
         # Spec 057 P1: the opt-in wire derivation rules; none by default (§9.1).
         self.derivation = derivation if derivation is not None else _derive.Derivation()
@@ -877,6 +936,7 @@ class ActionReader:
         self._run_claims: dict[str, list[tuple[str, dict[str, Any], Attribution, dict[str, Any]]]]
         self._run_claims = defaultdict(list)
         self._index: tuple[Any, _security.ControlIndex] | None = None
+        self._sensor_cache: tuple[Any, dict[str, Any], dict[str, Any]] | None = None
 
     @property
     def declared_host_sources(self) -> tuple[str, ...]:
@@ -925,6 +985,8 @@ class ActionReader:
         for exchange in inp["exchanges"]:
             if isinstance(exchange.get("offered_grant_id"), str):
                 self.offered_grants[exchange["exchange_id"]] = exchange["offered_grant_id"]
+        if host is not None:
+            self._sensor_rows(inp, result, host, reader._classification())
         security = _security.analyse(inp, result, sec, self._control_index(run.verifier))
         _apply_security(result, security)
         self._claim_run_links(report, result)
@@ -943,6 +1005,96 @@ class ActionReader:
                 self.links[uid] = links
         for uid, links in security.projection_links.items():
             self.links[uid] = [*self.links.get(uid, ()), *links]
+
+    # -- spec 057 WP7-10/WP7-13: classification of host records (offline) -------------
+
+    def _sensor_tables(
+        self, table: _classify.Classification
+    ) -> tuple[dict[str, _classify.HookProgram], dict[str, _classify.ControlAddress]]:
+        """The lists as the host records can be matched to them, built once: per listed
+        hook ``path`` its bare SHA-256 (the sensor's ``exe_sha256``), and per listed
+        control address its keyed ``hst-`` id (the sensor's peer id). A sensor never
+        reports a basename or an address in clear, so ``basename`` entries match
+        in-process records only, a network wider than :data:`MAX_ENUMERATED_ADDRESSES`
+        is not matched here, and without the id key no address is."""
+        if self._sensor_cache is None or self._sensor_cache[0] is not table:
+            from fabric.reconstruct._host import peer_id  # noqa: PLC0415 - host join only
+
+            digests = {hashlib.sha256(path.encode("utf-8", "surrogateescape")).hexdigest(): hook
+                       for path, hook in table.hook_paths.items()}  # fmt: skip
+            peers: dict[str, _classify.ControlAddress] = {}
+            for entry in table.control_addresses if self.id_key is not None else ():
+                if entry.network.num_addresses > MAX_ENUMERATED_ADDRESSES:
+                    continue
+                for address in entry.network:
+                    found = peer_id(str(address), self.id_key)
+                    if found is not None:
+                        peers.setdefault(found, entry)
+            self._sensor_cache = (table, digests, peers)
+        return self._sensor_cache[1], self._sensor_cache[2]
+
+    def _sensor_rows(self, inp: dict[str, Any], result: Attribution, host: Any,
+                     table: _classify.Classification | None) -> None:  # fmt: skip
+        """Host events of this run the customer's lists classify, added to the input for
+        ``_security.analyse``: ``sensor_hooks`` (an ``exec`` whose executable digest is a
+        listed hook path's, unless it is the process of an in-process effect, which is
+        classified there) and ``sensor_contacts`` (a ``connect`` to a listed control
+        address). A connect in the time bracket of an HTTP contact with the same label and
+        kind is that contact seen twice: it is counted on the contact (``host_connects``),
+        never a second row. Each row's window is every tool call open at the event's time
+        (056 §4.2 by time: a host source has its own positions)."""
+        if table is None:
+            return
+        digests, peers = self._sensor_tables(table)
+        if not digests and not peers:
+            return
+        traced = host.trace_host_events
+        outside = ("outside_run", "H4-other-process", "H4-other-lineage", "H4-earlier-process")
+        anchored = {link["target"]["id"] for links in result.projection_links.values()
+                    for link in links if link.get("type") == "corroborated_by"}  # fmt: skip
+        margin = max(int(inp["agent"].get("clock_uncertainty_ns", 0) or 0), 0)
+        contacts = inp.get("control_contacts", [])
+        hooks: list[dict[str, Any]] = []
+        connects: list[dict[str, Any]] = []
+        for event in sorted(self._host_events(), key=lambda e: (e.time_ns, e.event_id)):
+            rule = traced.get(event.event_id)
+            if rule is None or rule in outside or event.result == "failed":
+                continue
+            row: dict[str, Any] = {
+                "attempt_uid": event.event_id, "event_id": event.event_id,
+                "source_id": event.source_id or event.source, "source_epoch": event.epoch or 0,
+                "sequence": event.sequence or 0, "start_ns": event.time_ns, "via": event.source,
+            }  # fmt: skip
+            if event.event_class == "exec" and event.exe_sha256 in digests:
+                if event.event_id in anchored:
+                    continue
+                row["hook_program"] = digests[event.exe_sha256].label
+                hooks.append(row)
+            elif event.event_class == "connect" and event.peer_id in peers:
+                entry = peers[event.peer_id]
+                same = [
+                    c
+                    for c in contacts
+                    if c.get("label") == entry.label
+                    and c["control_kind"] == entry.control_kind
+                    and c["start_ns"] - margin <= event.time_ns <= c["end_ns"] + margin
+                ]
+                if same:
+                    same[0]["host_connects"] = same[0].get("host_connects", 0) + 1
+                    continue
+                row.update(control_kind=entry.control_kind, label=entry.label)
+                connects.append(row)
+            else:
+                continue
+            result.windows[event.event_id] = [
+                call.id
+                for call in result.calls
+                if call.open_ns - margin <= event.time_ns < call.close_ns + margin
+            ]
+        if hooks:
+            inp["sensor_hooks"] = hooks
+        if connects:
+            inp["sensor_contacts"] = connects
 
     def _control_index(self, verifier: Any) -> _security.ControlIndex:
         """Every control record of the input, once per verifier (052 §4.9 rule 3)."""
@@ -1077,6 +1229,11 @@ class _RunReader:
             r for r in self.records if _point_id(r.span.attributes) in EFFECT_POINTS
         ]
         self.http_records = [r for r in self.records if _point_id(r.span.attributes) == HTTP_POINT]
+        # Spec 057 WP7-13: requests to a listed control endpoint (the hook labels them)
+        controlled = {r.attempt_uid for r in self.http_records
+                      if isinstance(r.span.attributes.get(_A_CONTROL_KIND), str)}  # fmt: skip
+        self.control_records = [r for r in self.http_records if r.attempt_uid in controlled]
+        self.http_records = [r for r in self.http_records if r.attempt_uid not in controlled]
         self.keys = sorted({x.source for x in run.members} | {r.source for r in self.records})
         self.channels = self._channels()
         self.withheld_privacy = False
@@ -1111,6 +1268,11 @@ class _RunReader:
             for row in manifest.document.get("capture_points", ()):
                 if (isinstance(row, Mapping) and row.get("id") in _security.SECURITY_POINTS
                         and row.get("state") == "active"):  # fmt: skip
+                    active.add(str(row["id"]))
+            # Spec 057 §6.4: a loaded classification list is an active derivation rule.
+            for row in manifest.document.get("classifications", ()):
+                if (isinstance(row, Mapping) and row.get("state") == "loaded"
+                        and row.get("id") in _security.CLASSIFY_POINTS):  # fmt: skip
                     active.add(str(row["id"]))
         if self.run.members:  # spec 057 §6.4: a derivation rule applied to this run's calls
             active.update(self.owner.derivation.active)
@@ -1204,7 +1366,89 @@ class _RunReader:
             inp["in_process_tools"] = list(self.owner.in_process_tools)
         if self.owner.keep_runs and self.http_records:
             inp["http_requests"] = self._http_requests()  # the view only; no rule reads it
+        if self.control_records:
+            inp["control_contacts"] = self._control_contacts()
         return inp
+
+    def _classification(self) -> _classify.Classification | None:
+        """The reader's ``--capture-policy`` lists, when one of the run's manifests names
+        that policy's digest (a list applies only to runs captured under it)."""
+        table, digest = self.owner.classification, self.owner.policy_digest
+        if table is None or digest is None:
+            return None
+        named = {(m.document.get("capture_policy") or {}).get("policy_digest")
+                 for m in self._manifests()}  # fmt: skip
+        return table if digest in named else None
+
+    def _control_contacts(self) -> list[dict[str, Any]]:
+        """Spec 057 §4.4 (WP7-13): one contact per request to a listed control endpoint:
+        its position and time, the list's kind and label, the HTTP status and, offline
+        only, the decision a configured ``decision_pointer`` and ``decision_map`` extract
+        from its retained ``control.exchange.response`` body (``configured_extract``).
+        Without a pointer, or when nothing maps, the decision is ``unknown``; a listed
+        pointer whose body was not retained is ``body_not_retained``."""
+        by_attempt: dict[str, list[Any]] = defaultdict(list)
+        for record in self.control_records:
+            by_attempt[record.attempt_uid].append(record)
+        table = self._classification()
+        out: list[dict[str, Any]] = []
+        for uid, records in by_attempt.items():
+            first = records[0]
+            attrs = {k: v for r in records for k, v in r.span.attributes.items()}
+            item: dict[str, Any] = {
+                "attempt_uid": uid, "event_id": first.event_id,
+                "source_id": first.source_id, "source_epoch": first.source_epoch,
+                "sequence": first.source_sequence, "start_ns": first.span.start_ns,
+                "end_ns": max(r.span.end_ns for r in records),
+                "control_kind": str(attrs[_A_CONTROL_KIND]),
+                "evidence_event_ids": [r.event_id for r in records][:8],
+            }  # fmt: skip
+            if first.segment_id is not None:
+                item["segment_id"] = first.segment_id
+            if isinstance(label := attrs.get(_A_CONTROL_LABEL), str):
+                item["label"] = label
+            status = next((v for r in reversed(records)
+                           if (v := _int(r.span.attributes.get("http.response.status_code")))
+                           is not None), None)  # fmt: skip
+            if status is not None:
+                item["status"] = status
+            entry = self._control_entry(table, item)
+            if entry is not None and entry.decision_pointer is not None:
+                data = self._joined_body(records, _CONTROL_RESPONSE_ROLE)
+                if data is None:
+                    item["body_not_retained"] = True
+                elif (decision := _extract(data, entry)) is not None:
+                    item["decision"] = decision
+            out.append(item)
+        return out
+
+    @staticmethod
+    def _control_entry(
+        table: _classify.Classification | None, item: Mapping[str, Any]
+    ) -> _classify.ControlHost | None:
+        """The ``control_hosts`` entry a contact names: the one entry with its label and
+        kind (two entries sharing both name no single entry: nothing is extracted)."""
+        if table is None:
+            return None
+        found = [
+            e
+            for e in table.control_hosts.values()
+            if e.label == item.get("label") and e.control_kind == item["control_kind"]
+        ]
+        return found[0] if len(found) == 1 else None
+
+    def _joined_body(self, records: Sequence[Any], role: str) -> bytes | None:
+        """Every verified body of ``role`` the attempt's records carry, in record order
+        (a streamed response's pieces); ``None`` when none is retained or one is not."""
+        parts: list[bytes] = []
+        for record in records:
+            if not self._names(record, role):
+                continue
+            data = self._body(record, role)
+            if data is None:
+                return None
+            parts.append(data)
+        return b"".join(parts) if parts else None
 
     def _http_requests(self) -> list[dict[str, Any]]:
         """One row per recorded non-model HTTP request (attempt): its first record's
@@ -1371,7 +1615,9 @@ class _RunReader:
             by_attempt[record.attempt_uid].append(record)
         return [self._effect(uid, records) for uid, records in by_attempt.items()]
 
-    def _effect(self, uid: str, records: Sequence[Any]) -> dict[str, Any]:
+    def _effect(  # noqa: PLR0912 - one branch per optional effect field
+        self, uid: str, records: Sequence[Any]
+    ) -> dict[str, Any]:
         """One attempt's normalized effect (README §1 ``normalized_effect``): its start
         record's identity and time, the first value of each process key, the last verified
         ``terminal.stdout`` body, and a reported parent (A0) when a record names one."""
@@ -1416,6 +1662,18 @@ class _RunReader:
             value = _int(last.get(key))
             if value is not None:
                 effect[name] = value
+        # Spec 057 WP7-10: a listed hook program (the capture worker's label, never a path)
+        label = next((v for r in records
+                      if isinstance(v := r.span.attributes.get(_A_HOOK_LABEL), str) and v),
+                     None)  # fmt: skip
+        if label is not None:
+            effect["hook_program"] = label
+            outcome = next((v for r in reversed(records)
+                            if isinstance(v := r.span.attributes.get(_A_HOOK_OUTCOME), str)),
+                           None)  # fmt: skip
+            if outcome is not None:
+                effect["hook_outcome"] = outcome
+            effect["end_ns"] = max(r.span.end_ns for r in records)
         # Spec 056 §4.3 exec chains: the hook saw the child reaped, so its pid was free, by
         # the end of the first record carrying its exit code or signal.
         exited = next((r.span.end_ns for r in records
@@ -1521,6 +1779,49 @@ class _RunReader:
         return None
 
 
+def _pointer(document: Any, pointer: str) -> tuple[bool, Any]:  # noqa: PLR0911 - one per RFC 6901 miss
+    """RFC 6901: ``(True, value)`` at ``pointer`` in ``document``, else ``(False, None)``.
+    An array index is decimal without a leading zero; ``-`` names nothing."""
+    if pointer == "":
+        return True, document
+    if not pointer.startswith("/"):
+        return False, None
+    node = document
+    for raw in pointer[1:].split("/"):
+        token = raw.replace("~1", "/").replace("~0", "~")
+        if isinstance(node, dict):
+            if token not in node:
+                return False, None
+            node = node[token]
+        elif isinstance(node, list):
+            if not token.isdigit() or (len(token) > 1 and token.startswith("0")):
+                return False, None
+            index = int(token)
+            if index >= len(node):
+                return False, None
+            node = node[index]
+        else:
+            return False, None
+    return True, node
+
+
+def _extract(data: bytes, entry: _classify.ControlHost) -> str | None:
+    """Spec 057 §4.4 (OD-7) offline decision extraction: the literal at the entry's JSON
+    Pointer in a retained JSON response, mapped through its ``decision_map`` by exact
+    type and value; ``None`` when the body is not JSON (or over 1 MiB), the pointer names
+    nothing, or the literal is not mapped. No vendor parser, no text search."""
+    if entry.decision_pointer is None or len(data) > _MAX_EXTRACT_BYTES:
+        return None
+    try:
+        document = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, RecursionError):
+        return None
+    found, value = _pointer(document, entry.decision_pointer)
+    if not found or isinstance(value, (dict, list, float)) or value is None:
+        return None
+    return entry.decision_of(value)
+
+
 def _verified(side: Any) -> bool:
     """An exchange side whose verified, untruncated bytes are in memory."""
     return (
@@ -1611,6 +1912,8 @@ def action_rows(run: ActionRun) -> dict[str, Any]:  # noqa: PLR0912, PLR0915 - o
         events.append((exchange["start_ns"], 0, exchange["sequence"], row))
     for effect in inp["effects"]:
         uid = effect["attempt_uid"]
+        if effect.get("hook_program"):
+            continue  # spec 057 §4.3: shown as its hook row, never as an effect
         row = {"kind": "effect", "attempt_uid": uid, "event_id": effect["event_id"],
                "sequence": effect["sequence"]}  # fmt: skip
         for key in ("label", "pid", "exit_code", "signal", "capture_point", "sandbox_id",

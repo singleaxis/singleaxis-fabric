@@ -112,6 +112,7 @@ _EXEC_OBSERVATION_SCHEMA: Mapping[str, Any] = {
         "pid_known": {"type": "boolean"},
         "duplicate_suppressed": {"type": "boolean"},
         "error_class": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.]{0,127}$"},
+        "errno": {"type": "string", "pattern": "^E[A-Z0-9]{1,31}$"},  # spec 057 WP7-10
     },
 }  # fmt: skip
 _BODY_STATE = {"enum": ["complete", "partial", "early_close", "unconsumed", "not_retained",

@@ -1128,6 +1128,34 @@
       }
     },
     {
+      "key": "fabric.manifest.classifications",
+      "change": "new",
+      "field": "X34",
+      "validator": "META: array (max 8, unique) of `<id>:<state>:<count>:<reason or ->:<sha256 or ->` for the security_context classification lists (spec 057 §6.4, WP7-9): id `classify.<list>`, state `off`/`loaded`/`refused`, the entry count, the refusal reason `over_limit`/`duplicate_entry`/`invalid_entry`, the `sha256:` digest of the list's canonical JSON; never a list's contents",
+      "phase": "P2 (spec 057)",
+      "note": "Attribute of the `fabric.capture_manifest` span; present only when the capture policy has a security_context section (spec 057 §9.1).",
+      "manifest_property": "classifications",
+      "check": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^classify\\.(control_hosts|control_addresses|hook_programs|watched_paths|tool_result_markers):(off|loaded|refused):(0|[1-9][0-9]{0,5}):(over_limit|duplicate_entry|invalid_entry|-):(sha256:[0-9a-f]{64}|-)$",
+          "examples": [
+            "classify.hook_programs:loaded:2:-:sha256:abababababababababababababababababababababababababababababababab",
+            "classify.watched_paths:refused:257:over_limit:sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          ]
+        },
+        "max_items": 8,
+        "examples": [
+          [
+            "classify.control_hosts:off:0:-:-",
+            "classify.hook_programs:loaded:2:-:sha256:abababababababababababababababababababababababababababababababab"
+          ]
+        ],
+        "unique": true
+      }
+    },
+    {
       "key": "fabric.manifest.capture_policy.encrypted_store_required",
       "change": "new",
       "field": "X31",

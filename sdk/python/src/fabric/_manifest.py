@@ -45,7 +45,10 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
-from . import _loss  # noqa: F401 - its after-fork hook must run before this module's
+from . import (
+    _classify,
+    _loss,  # noqa: F401 - its after-fork hook must run before this module's
+)
 from ._capture_types import (
     COUNTERS,
     Marker,
@@ -246,6 +249,8 @@ SPAN_KEYS: Mapping[str, str] = MappingProxyType({
     "unsealed_prior_epochs": "fabric.manifest.unsealed_prior_epochs",
     "unsealed_prior_epoch_count": "fabric.manifest.unsealed_prior_epoch_count",
     "source_auth": "fabric.manifest.source_auth",
+    # spec 057 WP7-9: only with a security_context section in the capture policy
+    "classifications": "fabric.manifest.classifications",
 })  # fmt: skip
 
 # Document key order: the fixed head, then the optional keys a document may add.
@@ -257,7 +262,7 @@ _ORDER: tuple[str, ...] = (
     "uncaptured_classes", "inputs", "manifest_seq", "after_source_sequence",
     "chunk_boundaries_retained", "spool_encrypted", "unsealed_prior_epochs",
     "unsealed_prior_epoch_count", "source_auth", "previous_manifest_sha256",
-    "content_capture_reason", "spool_key_id",
+    "content_capture_reason", "spool_key_id", "classifications",
 )  # fmt: skip
 _VERSION_RE = re.compile(r"[^0-9A-Za-z.+-]")
 
@@ -399,6 +404,10 @@ def manifest_attributes(document: Mapping[str, Any]) -> dict[str, Any]:
             attributes[key] = [f"{p['id']}={','.join(p['fields'])}" for p in points]
         elif prop == "unsealed_prior_epochs":
             attributes[key] = [str(epoch) for epoch in document["unsealed_prior_epochs"]]
+        elif prop == "classifications":
+            if "classifications" in document:
+                attributes[key] = [_classify.status_text(row)
+                                   for row in document["classifications"]]  # fmt: skip
         elif (value := _get(document, prop)) is not None:
             attributes[key] = list(value) if isinstance(value, (list, tuple)) else value
     return attributes
@@ -414,6 +423,8 @@ def manifest_from_attributes(attributes: Mapping[str, Any]) -> dict[str, Any]:
         value = attributes[key]
         if prop == "unsealed_prior_epochs":
             value = [int(epoch) for epoch in value]
+        elif prop == "classifications":
+            value = _classify.statuses_from_text(value)
         elif isinstance(value, (list, tuple)):
             value = list(value)
         node = document
@@ -555,6 +566,11 @@ def _build_template(handle: WireHandle, facts: BuildFacts) -> _Template:
         fixed["content_capture_reason"] = status["content_capture_reason"]
     if fixed["spool_encrypted"] and isinstance(spool_key_id, str):
         fixed["spool_key_id"] = spool_key_id
+    # spec 057 WP7-9: each classification list's state, count and digest, never its
+    # contents; absent without a security_context section (§9.1: byte-identical output)
+    classification = getattr(gate.policy, "classification", None)
+    if classification is not None:
+        fixed["classifications"] = classification.manifest_rows()
     points = tuple(
         (point, facts.point_version(point), POINTS[point], tuple(facts.fields.get(point, ())))
         for point in facts.points

@@ -53,6 +53,19 @@ and the response. Otherwise:
   telemetry keys and the evidence object are recorded, and the response stream is not
   wrapped at all.
 
+**Control endpoints** (spec 057 §4.4, WP7-13). A rule whose canonical host and port is in
+the capture policy's ``security_context.control_hosts`` (an exact match in the frozen
+table loaded at install, ``fabric._classify``; no suffix, no wildcard) is a control
+endpoint the agent calls itself. Its hops are recorded as any other, with three
+differences: the bodies use the roles ``control.exchange.request`` and
+``control.exchange.response`` instead of ``network.*`` (both ``off`` by default, so
+retaining general HTTP bodies never retains what a control inspected); the records carry
+``fabric.control.kind`` and ``fabric.control.engine.name`` (the list's control kind and
+the customer's label, never the host); and nothing is parsed here. The reader projects one
+control row per request (``decision=unknown``) and, offline only, applies a configured
+``decision_pointer`` to a retained response. A control host must also be in the hook's
+host allowlist to be recorded at all.
+
 Passive (AGENTS.md; 053 §4.1): the request and response objects the caller sees are the
 ones the transport handled; the response stream yields the same chunks in the same order;
 Fabric never reads a body the caller does not read, follows no redirect, retries nothing,
@@ -76,6 +89,7 @@ from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final, Literal
 from urllib.parse import urlsplit
 
+from .. import _classify
 from .._capture_scope import explicit_tool_attempt
 from .._capture_types import (
     EVIDENCE_ROLE,
@@ -108,6 +122,10 @@ JSON: Final = "application/json"
 OCTETS: Final = "application/octet-stream"
 REQUEST_ROLE: Final = "network.request"
 RESPONSE_ROLE: Final = "network.response"
+# spec 057 §4.4, §7.1: a listed control endpoint's bodies (both ``off`` by default)
+CONTROL_REQUEST_ROLE: Final = "control.exchange.request"
+CONTROL_RESPONSE_ROLE: Final = "control.exchange.response"
+CONTROL_BODY_CAP: Final = 1024 * 1024  # the control.exchange.* roles' cap (role table)
 PIECE_BYTES: Final = 256 * 1024  # 053 §3.1: a streamed body is emitted in pieces
 METHODS: Final = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 REDIRECT_STATUSES: Final = frozenset({301, 302, 303, 307, 308})
@@ -233,10 +251,11 @@ class _Hop:
     """One recorded request hop, from the request to its outcome (one attempt)."""
 
     __slots__ = (
-        "__weakref__", "attempt", "base", "channel", "content", "done", "exact_method",
-        "finalizer", "kept", "media", "method", "observed", "pieces", "request_body",
-        "request_media", "response_body", "retain", "rule_index", "start_ns", "started",
-        "status", "stopped", "target", "window", "window_bytes",
+        "__weakref__", "attempt", "base", "cap", "channel", "content", "control", "done",
+        "exact_method", "finalizer", "kept", "media", "method", "observed", "pieces",
+        "request_body", "request_media", "request_role", "response_body", "response_role",
+        "retain", "rule_index", "start_ns", "started", "status", "stopped", "target", "window",
+        "window_bytes",
     )  # fmt: skip
 
     def __init__(self, channel: HttpChannel, attempt: Attempt, start_ns: int, method: str,
@@ -244,6 +263,14 @@ class _Hop:
         self.channel, self.attempt, self.start_ns = channel, attempt, start_ns
         self.exact_method, self.base, self.rule_index = method, base, rule_index
         self.method = method if method in METHODS else "other"  # http.request.method
+        # spec 057 WP7-13: a listed control endpoint's entry, and the roles its bodies use
+        self.control: _classify.ControlHost | None = channel.controls.get(rule_index)
+        self.request_role, self.response_role = (
+            (REQUEST_ROLE, RESPONSE_ROLE) if self.control is None
+            else (CONTROL_REQUEST_ROLE, CONTROL_RESPONSE_ROLE)
+        )  # fmt: skip
+        self.cap = (channel.max_body_bytes if self.control is None
+                    else min(channel.max_body_bytes, CONTROL_BODY_CAP))  # fmt: skip
         # The request as handed to the transport (read before the call): its in-memory
         # body (``None``: a stream), target and media type.
         self.content: bytes | None = None
@@ -273,7 +300,7 @@ class _Hop:
             self.observed += size
             if not self.retain or self.stopped or not size:
                 return
-            if self.kept + size > self.channel.max_body_bytes:
+            if self.kept + size > self.cap:
                 self.stopped = True
                 self.channel._count("body_cap")
                 return
@@ -428,11 +455,19 @@ class HttpChannel:
         self.rule = _routes.RouteRule(
             POINT, {(r.scheme, r.host, r.port): i for i, r in enumerate(rules)}, self, internal
         )
+        # spec 057 WP7-13: the rules that are listed control endpoints (exact host and port)
+        policy = getattr(getattr(producer.wire, "gate", None), "policy", None)
+        table = getattr(policy, "classification", None)
+        self.controls: dict[int, _classify.ControlHost] = {}
+        if isinstance(table, _classify.Classification):
+            for index, rule in enumerate(rules):
+                if (entry := table.control_host(rule.host, rule.port)) is not None:
+                    self.controls[index] = entry
 
     # -- HookChannel ------------------------------------------------------------------
 
     def status(self) -> Mapping[str, int]:
-        return {**self.counters, "rules": len(self.rules)}
+        return {**self.counters, "rules": len(self.rules), "control_rules": len(self.controls)}
 
     def close(self) -> None:
         with contextlib.suppress(Exception):
@@ -486,6 +521,9 @@ class HttpChannel:
             attributes["http.response.status_code"] = hop.status
         if (host_id := self.host_id(hop.rule_index)) is not None:
             attributes["fabric.network.host_id"] = host_id
+        if (control := hop.control) is not None:  # the list's kind and label, never the host
+            attributes["fabric.control.kind"] = control.control_kind
+            attributes["fabric.control.engine.name"] = control.label
         return attributes
 
     # -- the request (caller's thread, before the transport; fail-open) ----------------
@@ -517,9 +555,9 @@ class HttpChannel:
                 base["redirect_of"] = str(pending.uid)
                 self._count("redirect_hops")
         hop = _Hop(self, attempt, start_ns, method, base, rule_index)
-        if self.producer.mode(RESPONSE_ROLE) != "omit":
+        if self.producer.mode(hop.response_role) != "omit":
             hop.response_body = "unconsumed"
-        if self.producer.mode(REQUEST_ROLE) != "omit":
+        if self.producer.mode(hop.request_role) != "omit":
             content = _own(request).get("_content")
             hop.content = content if type(content) is bytes else None
             if hop.content is not None and content_encoding_of(
@@ -541,7 +579,7 @@ class HttpChannel:
         content = hop.content
         if content is None:
             return "not_exposed"  # a streamed body: Fabric does not tee it
-        if len(content) > self.max_body_bytes:
+        if len(content) > hop.cap:
             self._count("body_cap")
             return "not_retained"
         return "complete"
@@ -557,7 +595,7 @@ class HttpChannel:
     def _request_bodies(self, hop: _Hop, pieces: list[bytes], bodies: list[AnyBody]) -> None:
         """The ``network.request`` JSON and the body's first piece (appended to
         ``bodies``), when the role is retained."""
-        if self.producer.mode(REQUEST_ROLE) == "omit":
+        if self.producer.mode(hop.request_role) == "omit":
             return
         content = hop.content
         locator: dict[str, Any]
@@ -570,10 +608,11 @@ class HttpChannel:
         else:
             locator = {"form": "pieces", "length": len(content)}
         document = {"method": hop.exact_method, "target": hop.target, "body": locator}
-        bodies.append(RecordBody(REQUEST_ROLE, canonical_json(document), JSON, BOUNDARY,
+        bodies.append(RecordBody(hop.request_role, canonical_json(document), JSON, BOUNDARY,
                                  "protocol"))  # fmt: skip
         if pieces:
-            bodies.append(self._piece_body(REQUEST_ROLE, hop, pieces[0], 0, hop.request_media))
+            bodies.append(self._piece_body(hop.request_role, hop, pieces[0], 0,
+                                           hop.request_media))  # fmt: skip
 
     def _start(self, hop: _Hop) -> None:
         """The ``start`` record (the request as handed to the transport) and any further
@@ -602,7 +641,7 @@ class HttpChannel:
 
     def _request_piece(self, hop: _Hop, data: bytes, index: int, final: bool) -> None:
         bodies: list[AnyBody] = [
-            self._piece_body(REQUEST_ROLE, hop, data, index, hop.request_media)
+            self._piece_body(hop.request_role, hop, data, index, hop.request_media)
         ]
         evidence = self._evidence(self._item(hop), bodies, (index, final))
         self._count("pieces")
@@ -685,7 +724,8 @@ class HttpChannel:
         self._start(hop)
         index = hop.pieces
         hop.pieces += 1
-        bodies: list[AnyBody] = [self._piece_body(RESPONSE_ROLE, hop, data, index, hop.media)]
+        bodies: list[AnyBody] = [self._piece_body(hop.response_role, hop, data, index,
+                                                  hop.media)]  # fmt: skip
         item = self._item(hop)
         item["response_body"] = "partial"
         evidence = self._evidence(item, bodies, (index, False))
@@ -723,9 +763,11 @@ class HttpChannel:
             hop.window, hop.window_bytes = [], 0
             if hop.pieces:
                 continuation = (hop.pieces, True)
-                bodies.append(self._piece_body(RESPONSE_ROLE, hop, data, hop.pieces, hop.media))
+                bodies.append(self._piece_body(hop.response_role, hop, data, hop.pieces,
+                                               hop.media))  # fmt: skip
             else:
-                bodies.append(RecordBody(RESPONSE_ROLE, data, hop.media, BOUNDARY, "protocol"))
+                bodies.append(RecordBody(hop.response_role, data, hop.media, BOUNDARY,
+                                         "protocol"))  # fmt: skip
         evidence = self._evidence(self._item(hop, exc), bodies, continuation)
         self._count("outcomes")
         hop.attempt.emit(
