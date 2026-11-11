@@ -2,25 +2,48 @@
 title: Execution channels — P4 opt-in observed hooks and production host sources
 status: draft
 qualification: NO_COVERAGE_CLAIM
-revision: 4
-last_updated: 2026-11-04
+revision: 5
+last_updated: 2026-11-11
 owner: recorder-engineering
 depends_on: ["049", "050", "051", "052"]
-related: ["030", "031", "041", "043", "047", "048", "054", "055"]
+related: ["030", "031", "041", "043", "047", "048", "054", "055", "056", "057", "058"]
 ---
 
 # 053 — Execution channels (P4)
 
-**Status: draft; built only in part, for spec 056.** Spec 056 (its owner
-decision OD-1) moves the hooks foundation, the `exec.subprocess` channel and
-the host-sensor production ingress of this spec ahead of P2 and P3. The
-first two are built for 056 milestone M1 and released in v0.10.0; the
-host ingress, the production host sensors and the non-model HTTP hook
-(§5.4 without dialects) are built for 056 milestone M2 and released in
-v0.11.0. The rest of this spec is not built. Codes
-in parentheses such as (R8) or (R11) name the cross-spec revision decisions
-that a rule applies, and "decision n" means row n of 049 §9; the
-[glossary](../docs/glossary.md) lists both.
+**Status: draft; built in part.** Spec 056 (its owner decision OD-1) moved
+the hooks foundation, the `exec.subprocess` channel and the host-sensor
+production ingress of this spec ahead of P2 and P3. They are built and
+released (v0.10.0 and v0.11.0), with the non-model HTTP hook (§5.4 without
+dialects). §2 lists exactly what is built, with code anchors. The next
+build is the lane of §8.1: the shared audit callback, `exec.audit` and
+`file.audit`. Codes in parentheses such as (R8) or (R11) name the
+cross-spec revision decisions that a rule applies, and "decision n" means
+row n of 049 §9; the [glossary](../docs/glossary.md) lists both.
+
+**Revision 5** (2026-11-11) prepares the in-process audit channels for
+building. The field harness found that a file the agent writes inside its
+own process is recorded only when the eBPF sensor can load: 0 of 7 writes
+were captured across its deployment shapes, and eBPF cannot load on macOS,
+in gVisor sandboxes or without root. Python audit hooks (PEP 578) see those
+operations in every one of those places. The changes:
+- §2 is rewritten against main: what is built, what is not, with anchors.
+- The shared audit callback was specified as part of WP4-00 but never
+  built (056 built a subset of WP4-00). §4.5 now specifies it in full.
+- §5.1 "Exec audit" and §5.2 are amended so the channels are useful and
+  quiet in a real process: file audit records write-intent opens by
+  default, skips the interpreter's own bytecode cache and descriptor
+  wraps, converts the exact standard-library `pathlib` types, and adds
+  three directory and truncate events (§5.2, questions OQ5-1 to OQ5-4).
+- §8.1 splits WP4-02 (exec audit part) and WP4-03 into four build units
+  with exact acceptance tests. WP4-04 (database), WP4-05 (HTTP dialects)
+  and WP4-06b (SSH) stay unbuilt and are not in this lane. WP4-06a (MCP
+  transport) is being built by spec 057 P1b (WP7-8); this lane does not
+  touch it (§8.1 "Dependencies").
+- Linking a recorded file or exec effect to the tool call that caused it
+  is spec 056 revision 12, built after this lane's four units.
+- §11 lists the open questions for the owner, each with a recommendation.
+  Nothing in revisions 1 to 4 is reopened.
 
 **Revision 4** (2026-11-04) corrects revision 3 after review of the 056 M2
 plan (056 revision 5): `ns_ppid` is the parent's thread-group id in the
@@ -134,26 +157,52 @@ Tightening:
 
 ## 2. Current state and missing work
 
-| Evidence in current code | Consequence |
+Checked against main at `de693caa` (2026-11-11). Paths under `sdk/python/`
+are written from `sdk/python/src/fabric/`. Two pull requests in review
+change files this spec names; they are listed after the tables.
+
+### 2.1 Work packages: built or not
+
+| WP | State on main | Evidence |
+|---|---|---|
+| WP4-01 Contracts | **Built in part** (by 056 WP6-01 and WP6-11). Registered: `fabric.exec.observation/v1` for `exec.subprocess` only, `fabric.http.observation/v1`, the sensor keys, the host fixtures. **Not registered:** `fabric.file.audit/v1`, the database, MCP and remote evidence types, `fabric.file.operation`, `exec.audit` as a point of the exec type | `contracts/coverage/v1/registry/field-registry-v1.json:4700-4705` (exec type, one capture point); `contracts/coverage/v1/evidence/` holds four schemas, none for files; `contracts/coverage/v1/evidence/fabric.exec.observation-v1.schema.json:26,29` already has `api: audit` and `audit_event`; `capture-points-v1.json:544` (`exec.audit`) and `:599` (`file.audit`) still say state `P4` |
+| WP4-00 Hooks foundation | **Built in part** (056 WP6-02, WP6-09a): install, configuration, status, disable, close, patch ownership, the records producer, the internal-I/O guard, the route table. **Not built:** `hooks/_audit.py` (the shared audit callback, its sentinel and suppression token), the `exec_audit`, `file_audit`, `db` and `mcp` options | `hooks/__init__.py:154-158` (three channels: `exec.subprocess`, `http.nonmodel`, `remote.sandbox`); `hooks/__init__.py:404-407` (`install` takes no audit option); `hooks/_config.py:54-57` (`FABRIC_WIRE_EXEC_AUDIT`, `FABRIC_WIRE_FILE_AUDIT`, `FABRIC_WIRE_DB_DRIVERS`, `FABRIC_WIRE_MCP` are "not in this build"); `hooks/_producer.py:52` (`HookPoint` has three values); `hooks/_guard.py:42-46` (the guard already has the thread-local fallback an audit callback needs); `sys.addaudithook` is called nowhere under `sdk/python/src` |
+| WP4-02 Exec | **`exec.subprocess` built** (056 WP6-03, WP6-08). **`exec.audit` not built.** `os.system`, `os.exec*` and `os.posix_spawn` called directly are not recorded | `hooks/_exec.py:1258-1280` patches `subprocess.Popen` (`__init__`, `communicate`, `wait`, `poll`), `subprocess.run`, `check_output` and the asyncio equivalents, nothing in `os`; no `hooks/_exec_audit.py` |
+| WP4-03 File | **Not built** | no `hooks/_file.py`; `decision.py:2438` (`record_file_access`) is the explicit reporting API, not a hook |
+| WP4-04a, WP4-04b Database | **Not built; not in this lane** | no `hooks/db/` |
+| WP4-05 HTTP and dialects | **Hook built** (056 WP6-09a), emitting `dialect: none`. **Dialects not built; not in this lane** | `hooks/_http.py`, `wire/_routes.py`; no `reconstruct/dialects/` on main (spec 057 P1a adds that package for its own parsers) |
+| WP4-06a MCP | **Not built here; being built by spec 057 P1b (WP7-8)** | `hooks/_config.py:56`; no `hooks/_mcp.py` |
+| WP4-06b SSH | **Not built; not in this lane** | no `hooks/ssh.py` |
+| WP4-07a, 07b, 07c Host records and sensors | **Built** (v0.11.0) | `components/otel-collector-fabric/hostrecords/`, `receiver/auditreceiver/`, `components/host-emitter/` |
+| WP4-08a, 08b Gate and fabricguard | **Built** (v0.11.0) | `components/otel-collector-fabric/gate/`, `processor/fabricguardprocessor/` |
+| WP4-09 Deployment | **Built** (v0.11.0) | `charts/`, `deploy/` |
+| WP4-10a Channel projection | **Not built; not in this lane** | no `reconstruct/_channels.py`, `_diff.py` |
+| WP4-10b Host corroboration | **Built**, as 056 §4.3 amended it (rules H1 to H5) | `reconstruct/_host.py` |
+| WP4-11a, 11b, WP4-12 Qualification and exit | **Not built** as written; spec 056's AR-1 covers the built channels | `qualification/action-record/`, `.github/workflows/action-record.yml` |
+
+### 2.2 The code this lane starts from
+
+| Evidence in current code | Consequence for the lane |
 |---|---|
-| `sdk/python/src/fabric/wire/_match.py:11–60`: five API names; POST-only matcher; host/scheme/port/prefix checks | No non-model dispatch table. Keep model matching and add an independent allowlisted route |
-| `wire/_model.py:15–21,78–99`: model API union, model roles, `CaptureJob`, nonblocking submit | Hooks use P1's records input (050 §3.4), not fabricated model exchanges |
-| `wire/_pipeline.py:249–264,377–449`: queue admission and worker-side protection and spooling | 050 extends the same worker path to `RecordJob`; hooks add no serialisation, redaction RPC or fsync |
-| `wire/_config.py:43–45,91–100`: 32 MiB object cap, 64 MiB retention, 16384-entry ceiling with byte budgeting | Hooks share the byte and entry budgets through 050's `max_inflight_bytes` charge |
-| `wire/_protect.py:3–14,61–65`: extraction before protection, customer-run redaction service, role validation | All hook content passes the same stage before disk or export; no customer code runs in Fabric |
-| `wire/_aiohttp.py:69–84,86–115`: bytes-only request observation, response feed observation | No MCP byte interception or WebSocket capture; no P4 aiohttp network claim |
-| `wire/_detect.py:54–65,69–101`: requests/urllib3 model-call loss detector, recursion guard | Keep loss accounting for uninstrumented model clients; do not extend it to all traffic |
-| `decision.py:2141–2210`: `record_file_access` file span event with a SHA-256 path hash; no byte-range argument | Not a PEP 578 hook; hooks never call this legacy method on the action path. No API supplies N45's byte range |
-| `reconstruct/_inputs.py:518–550`: exchange/loss/heartbeat classification | 050 WP-30 adds records; P4 adds channel projection and host readers through registration hooks |
-| `components/otel-collector-fabric/receiver/auditreceiver/translate.go:27–114`: audit-class log records, SHA-256 executable/argv/path, raw peer address, `process.owner`, executable name | Production needs keyed ids, dropped owner/name/address and opt-in digests (§6.2.5) |
-| `auditreceiver/durable_state.go:21–22,94–125,169–215`: durable staged logfile batch and cursor with fsync | Keep accepted-cursor semantics; add encryption, source/epoch/position and persisted event ids |
-| `auditreceiver/receiver.go:180–188,276–348`; `netlink_linux.go:317–347` | Source-health uncertainty and counted delivery losses exist and become heartbeat evidence |
-| `components/host-emitter/emitter.go:130–176`; `spool.go:159–208`; `otlp.go:44–107` | eBPF emits the same audit-class logs, a plaintext durable OTLP spool, TLS/token export and partial-success quarantine; no source/epoch/manifest |
-| `fabricguardprocessor/config.go:16–26,70–83`; `processor.go:1013–1065` (`validHostAuditValue`) | One `evidence_source_binding` per instance; host audit-class values are validated, never bound or stamped in production |
-| `gate/gate.go:72–100,285–310` | The gate requires exactly one processor named `fabricguard` and one binding; a source list alone is unsafe |
-| `charts/fabric/charts/otel-collector/templates/configmap.yaml:21–100`; `deploy/compose/README.md:193–208` | Production deployment is one agent source per Node; host-monitor compose is local only |
-| `contracts/coverage/v1/registry/capture-points-v1.json` `http.nonmodel.input = "wire"` | Must become `records` (R7; §7) |
-| `telemetry-keys-v1.json` has no rows for `fabric.file.operation`, `fabric.file.path_hash`, `http.request.method`, `http.response.status_code` | They exist only in the legacy allowlist (`P/allowlist.go:111,120`); WP4-01 adds rows with `record` placement |
+| `hooks/__init__.py:141-158`: a channel is a `ChannelSlot` (capture point, environment switch, module, loader) whose module exposes `install_channel(producer, patches)` | `exec.audit` and `file.audit` are two more slots. Their modules register a handler with the shared callback instead of patching |
+| `hooks/__init__.py:209-252`: `_start` publishes `active` as soon as the entry point returns | An audit channel is `active` only after the sentinel event is seen (§4.5); its entry point raises `UnsupportedChannel` otherwise |
+| `hooks/__init__.py:264-278`, `:367-391`: `close()` restores patches | An audit hook cannot be removed. `close()` switches the handler off; the callback stays and costs one dictionary miss per event (§4.5) |
+| `hooks/_producer.py:128-153`: `begin` checks the switch, the guard and same-kind explicit ownership, in that order | The audit handlers call it unchanged. `HookPoint` gains two values |
+| `hooks/_guard.py:58-98`: `active()` and `internal()` with a context variable and a thread-local depth | Fabric's own spool, status-file and key-file opens run inside it and are never recorded; a test proves it (§8.1, 053-a3) |
+| `hooks/_exec.py:1040` (`_popen_init`) and the asyncio wrappers | They enter the suppression token of §4.5 around the original call, so one operation is never recorded by both exec channels |
+| `_capture_scope.py:48-58,91`: an `ExplicitScope` names the step kinds it owns; `adapters/synthetic_evidence.py:869` opens one with `kinds=("terminal",)` | D2 for files: an explicit producer that records file bytes opens its scope with kind `file`; the file handler then records nothing inside it (§5.2) |
+| `contracts/coverage/v1/registry/telemetry-keys-v1.json:23-33`: `fabric.file.path` is never admitted; the path travels in the `artifact.locator` role | No path on telemetry. `fabric.file.operation` gets a row in 053-a1 |
+| `contracts/coverage/v1/registry/content-roles-v1.json`: `artifact.locator` (64 KiB, default policy `content`), `terminal.argv` (256 KiB), `terminal.context` (64 KiB) exist | No new content role |
+| `cli/_config.py:361-363`: `fabric.yaml` maps `capture.exec`, `capture.http_hosts` and `capture.mcp` to their environment switches | 053-a2 and 053-a3 add `capture.exec_audit` and `capture.file_audit` the same way (spec 058 §6) |
+| `contracts/diagnostics/v1/messages-v1.json`: 34 catalogued messages, each with a `fix` (spec 058 §13.1) | Every new message of this lane is catalogued with its cause and fix (053-a1) |
+| `reconstruct/_attribute.py:113`: the effect capture points are `exec.subprocess` and `remote.sandbox` | Audit records project as steps but are not attributed until spec 056 revision 12 (units 056-c4, 056-c5) |
+| `.github/workflows/recorder-ci.yml:104`: the SDK runs on Python 3.11, 3.12 and 3.13 | Every audit event signature is pinned by a test on each of them |
+
+**Pull requests in review that touch these files.** #295 (spec 057 P2a)
+edits `hooks/_exec.py` (hook-program classification, the errno name of a
+failed spawn) and `hooks/_http.py`; the 057 P1b unit will add
+`hooks/_mcp.py` and its option in `hooks/__init__.py` and `_config.py`.
+The lane's units rebase on them; §8.1 says which lines each unit owns.
 
 ## 3. Binding to the P1 contract (050 rev 2)
 
@@ -314,12 +363,14 @@ fabric.exec.observation/v1
    duplicate_suppressed?: bool,
    error_class?: LABEL ^[A-Za-z_][A-Za-z0-9_.]{0,127}$}
 
-fabric.file.audit/v1
-  {audit_event: enum[open, os.rename, os.remove],
-   operation: enum[open, rename, delete],
+fabric.file.audit/v1                                  # revision 5 (§5.2)
+  {audit_event: enum[open, os.rename, os.remove,
+                     os.truncate, os.mkdir, os.rmdir],     # last three: OQ5-3
+   operation: enum[open, rename, delete, truncate, create],
    mode?: LABEL ^[rwxabt+U]{1,5}$, flags?: int 0..2147483647,
+   write_intent?: bool,                                    # audit_event=open only
    path_kind: P, target_path_kind?: P,
-           # P = enum[str, bytes, fd, path_like_not_converted, not_exposed]
+           # P = enum[str, bytes, pathlib, fd, path_like_not_converted, not_exposed]
    dir_fd_present: bool,
    existence_before: enum[unknown], existence_after: enum[unknown]}
 
@@ -407,8 +458,13 @@ hooks.status()                      # capability, budget and loss counters only
 hooks.close(timeout_s=2.0)          # bounded explicit lifecycle call
 ```
 
+Revision 5: `file_audit` takes `False`, `True` or one of the modes
+`"writes"` and `"all"` (§5.2); `True` means `"writes"`. The built
+`install` also takes `host_label`, `remote_sandbox` and `sandbox_hosts`
+(056), and has no `db` or `mcp` option yet.
+
 Equivalent environment switches: `FABRIC_WIRE_EXEC=1`,
-`FABRIC_WIRE_EXEC_AUDIT=1`, `FABRIC_WIRE_FILE_AUDIT=1`,
+`FABRIC_WIRE_EXEC_AUDIT=1`, `FABRIC_WIRE_FILE_AUDIT=1` (or `writes`, `all`),
 `FABRIC_WIRE_DB_DRIVERS=sqlite3,psycopg`, `FABRIC_WIRE_HTTP_HOSTS` (a JSON
 array) and `FABRIC_WIRE_MCP=1`. Absent means disabled. The SSH wrapper has
 no switch: the application calls it.
@@ -447,7 +503,9 @@ and passivity gates pass. No Python gate depends on a TypeScript WP.
    `format`, `__fspath__`, `__index__`, `__len__` of a non-builtin,
    iterators, getters, serialisers, row factories, adapters or user
    converters. Unsupported values become `not_exposed` or `{"u": null}`. No
-   secret-bearing object is retained for later inspection.
+   secret-bearing object is retained for later inspection. Revision 5 has
+   one exception, for the four exact standard-library `pathlib` types
+   (§5.2, OQ5-2).
 3. **Bound work before serialising.** Check element counts, lengths and
    depth on the exact types **before** building any JSON or bytes. Over a
    bound, pass `DescriptorOnlyBody(reason="payload_too_large")`; never
@@ -541,6 +599,87 @@ include a host hook that refuses `sys.addaudithook`, and verify the Fabric
 hook never raises. A host may refuse installation silently, so the
 capability is `enabled` only after a private sentinel audit event is seen.
 
+### 4.5 The shared audit callback (revision 5)
+
+`hooks/_audit.py` owns the one PEP 578 callback of the process. Everything
+here is new code: WP4-00 specified it and no build has written it (§2.1).
+
+**Why it needs care.** `sys.addaudithook` cannot be undone, the callback
+runs inside the audited operation on the application's thread, and an
+exception that leaves it aborts that operation. A mistake here changes the
+agent, which the product boundary forbids. So the callback does almost
+nothing unless a handler is on, and can never raise.
+
+**Interface** (the only way a channel reaches the callback):
+
+```python
+def register_audit_handler(event_names: tuple[str, ...], handler: AuditHandler,
+                           switch: Switch) -> AuditRegistration: ...
+    # AuditHandler = Callable[[str, tuple[object, ...]], None]
+    # raises UnsupportedChannel("unsupported_runtime") when the callback is not live
+class AuditRegistration:
+    def remove(self) -> None: ...        # the events leave the table; the callback stays
+def exec_owned() -> ContextManager[None]: ...   # the suppression token (§5.1)
+def exec_is_owned() -> bool: ...
+def status() -> dict[str, int]: ...     # counters only
+```
+
+**Rules.**
+1. **Installed once, on first use.** The first `register_audit_handler`
+   call adds the callback with `sys.addaudithook`. Importing `fabric`,
+   `fabric.hooks` or `fabric.hooks._audit`, and installing hooks with no
+   audit channel, add nothing. A second hooks install reuses the callback.
+2. **Sentinel before `active`.** Another audit hook may refuse the
+   addition, and CPython hides that refusal. After adding, `_audit.py`
+   raises one private event, `sys.audit("fabric.hooks.sentinel", token)`,
+   with a random token. The callback is live only if it saw that token.
+   If not, the channel is `unsupported(unsupported_runtime)`, the counter
+   `audit_refused` is 1, and the catalogued message `audit_refused`
+   names the cause (another audit hook in this process refused Fabric's)
+   and the fix (register Fabric before that hook, or use the host sensor
+   for file and process evidence).
+3. **The callback body.** `_TABLE` maps an event name to its handler and
+   switch. It is an ordinary `dict` that is replaced, never mutated, when a
+   handler is added or removed, so a reader needs no lock.
+
+   ```python
+   def _callback(event, args):                 # never raises
+       entry = _TABLE.get(event)               # the only work for an unrelated event
+       if entry is None:
+           return
+       try:
+           if not entry.switch.on or _guard.active() or _LOCAL.depth:
+               return
+           _LOCAL.depth = 1                    # an event raised by the handler is skipped
+           try:
+               entry.handler(event, args)
+           finally:
+               _LOCAL.depth = 0
+       except BaseException:                   # §4.1 item 6; counted, never re-raised
+           _count_internal_error()
+   ```
+
+   The exits run in the order of §4.1 item 1. `_count_internal_error`
+   cannot raise (a bare integer add inside its own `try`).
+4. **Disabled means near-free.** With every audit channel off, disabled or
+   closed, `_TABLE` is empty and the callback is one dictionary miss.
+   Budget: 2 µs median per unrelated event (P4-AUDIT, P4-FILE, §4.4); the
+   test measures a tight loop of an event Fabric does not admit, with the
+   callback added and without it, in fresh interpreters.
+5. **Handlers follow §4.1.** Exact primitive types only, bounds before any
+   serialising, no application code, no I/O, no waiting. A handler emits
+   through `HookProducer.begin` and `Attempt.emit`, which only enqueue.
+6. **Fork and shutdown.** After a fork the child resets the thread-local
+   depth and the suppression token; the callback is inherited with the
+   interpreter. During interpreter shutdown module globals may already be
+   cleared: rule 3's `except` covers it, and nothing is logged.
+7. **One interpreter.** `sys.addaudithook` covers the interpreter it is
+   called in. Subinterpreters are `not_captured(not_instrumented)`; the
+   capture-point rows say so.
+8. **`status()`** reports `installed` (0 or 1), `sentinel_seen`,
+   `audit_refused`, `events_admitted`, `events_skipped_internal`,
+   `duplicate_suppressed` and `internal_errors`. Counts only.
+
 ## 5. Channel designs and PROTECT mapping
 
 ### 5.1 Subprocess and exec audit
@@ -603,6 +742,41 @@ never matched speculatively.
   (`duplicate_suppressed` is counted in `status()`). Unmatched exec-family
   events still record attempts.
 
+**Revision 5: what the exec audit record is.**
+- **Pinned signatures** (CPython 3.11 to 3.13): `subprocess.Popen`
+  `(executable, args, cwd, env)`; `os.system` `(command,)`; `os.exec`
+  `(path, args, env)`; `os.posix_spawn` `(path, argv, env)`. A tuple of
+  another length or with another shape is counted
+  (`signature_unknown`) and recorded with `argv_form: not_exposed`; it is
+  never guessed at.
+- **Record.** One `start` record of step kind `terminal` at `exec.audit`:
+  `terminal.argv` in the cells of this section (`os.system` gives the
+  `shell` form), `terminal.context` with `executable` and `cwd` when the
+  event carries them as exact `str` or `bytes`, and `env_names` only from
+  an exact `dict` (`os.environ` is an `os._Environ` and is never
+  enumerated). Evidence `fabric.exec.observation/v1` with `api: audit`,
+  `audit_event`, `argv_form` and `pid_known: false`. Keys:
+  `fabric.process.parent_pid` (this process's pid, read with `os.getpid()`)
+  and `fabric.execution.host_id`. No pid, exit code, signal or output: the
+  event comes before the operation, so N33 to N35 are
+  `not_captured(not_exposed)`.
+- **Suppression token.** `_exec.py`'s wrappers enter `_audit.exec_owned()`
+  around the original call only. The token is execution-local (a context
+  variable, so an asyncio task that awaits inside
+  `create_subprocess_exec` keeps it and another task does not see it).
+- **What it adds over `exec.subprocess`.** `os.system`, a direct
+  `os.posix_spawn`, a direct `os.exec*`, and any `subprocess.Popen` when
+  the subprocess hook is off. With both on, each operation is recorded
+  once, by the subprocess hook.
+- **Declared limits.** An `os.exec*` that succeeds replaces the process
+  image: the record is enqueued, Fabric never delays the exec to flush it,
+  and if the worker has not drained it the epoch simply ends without a
+  final heartbeat (the reader reports `tail_unverified`). An `os.exec*` in
+  a forked child is counted in the child and lost with it. Children
+  started by `_posixsubprocess.fork_exec` directly (as `multiprocessing`
+  does) raise no audit event. `os.spawn*`, `pty.spawn` and `os.startfile`
+  are not admitted (OQ5-5).
+
 ### 5.2 File audit and explicit artifacts
 
 WP4-03's `hooks/_file.py` handles `open`, `os.rename` and `os.remove` from
@@ -629,6 +803,67 @@ the shared callback.
   version and `derived_from` links. Files are never reread. The diff's
   protection is never weaker than either input. A truncated or partial
   input cannot establish a full diff.
+
+**Revision 5 amendments.** They exist because an unfiltered `open` event
+fires for every module import, every pipe a subprocess wraps and every
+bytecode cache write, which would bury the agent's own file operations.
+
+- **Events and pinned signatures** (CPython 3.11 to 3.13): `open`
+  `(path, mode, flags)`, raised by `open`, `io.open`, `os.open` (mode
+  `None`) and `io.open_code`; `os.rename` `(src, dst, src_dir_fd,
+  dst_dir_fd)`, raised by `os.rename`, `os.renames` and `os.replace`;
+  `os.remove` `(path, dir_fd)`, raised by `os.remove` and `os.unlink`;
+  and, when OQ5-3 is accepted, `os.truncate` `(path, length)`
+  (operation `truncate`), `os.mkdir` `(path, mode, dir_fd)` (operation
+  `create`) and `os.rmdir` `(path, dir_fd)` (operation `delete`). A tuple
+  of another shape is counted (`signature_unknown`) and recorded with
+  `path_kind: not_exposed`.
+- **Modes.** `file_audit="writes"` (the default when the channel is on)
+  records an `open` only when it shows write intent, and every rename,
+  delete, truncate, mkdir and rmdir. `file_audit="all"` also records read
+  opens. The manifest row carries the mode.
+- **Write intent** is read from the event, never from the file: `mode` is
+  an exact `str` containing `w`, `a`, `x` or `+`; or `mode` is not a `str`
+  and `flags` is an exact `int` with any of `O_WRONLY`, `O_RDWR`,
+  `O_APPEND`, `O_CREAT`, `O_TRUNC` set. The evidence field `write_intent`
+  records the result. `fabric.file.operation` stays `open`: the event does
+  not prove a write.
+- **Skipped, counted, never recorded:**
+  1. Fabric's own I/O (the guard; `events_skipped_internal`);
+  2. in `writes` mode, an `open` whose path is an `int`: it wraps a
+     descriptor that already exists (a subprocess pipe, a socket file) and
+     opens nothing (`fd_wraps_skipped`). In `all` mode it is recorded with
+     `path_kind: fd`;
+  3. in both modes, a `str` or `bytes` path that has a path component
+     equal to `__pycache__`: the interpreter's bytecode cache, written by
+     the import system, not by the agent (`bytecode_cache_skipped`);
+  4. in `writes` mode, read opens (`reads_skipped`);
+  5. an operation inside an explicit scope that owns step kind `file`
+     (D2, §4.3; `deferred_to_explicit`).
+  The capture-point row's `cannot_observe` lists 2 to 4.
+- **Paths.** An exact `str` is a `str` cell; exact `bytes` is a `b64`
+  cell. An exact `pathlib.PosixPath`, `PurePosixPath`, `WindowsPath` or
+  `PureWindowsPath` is converted with `os.fspath` and recorded with
+  `path_kind: pathlib` (OQ5-2; this is the one exception to §4.1 item 2,
+  and it applies only to those four exact types, checked with `type(x) is`
+  and only when `pathlib` is already imported). Any other path-like object
+  stays `path_like_not_converted`. A path longer than 4096 characters makes
+  the locator `DescriptorOnlyBody(payload_too_large)`. No `os.getcwd()`,
+  no normalisation: a relative path is recorded as given.
+- **`fabric.file.path_hash` is not emitted in this lane** (OQ5-4). N45's
+  digest part is `not_captured(not_configured)`.
+- **Step and record.** One `start` record per event and no `end`, as for
+  exec audit (the event comes before the operation, so the attempt
+  projects with result `unknown`): step kind `file`, lifecycle `running`,
+  capture point `file.audit`, with `artifact.locator`, evidence
+  `fabric.file.audit/v1` and `fabric.file.operation`.
+- **Explicit artifacts (D2).** An explicit producer that records a file's
+  before and after bytes (N47) opens its `ExplicitScope` with kind `file`
+  for the duration of its own file operations; the handler records nothing
+  inside it and the projection reports the hook's fields
+  `not_captured(deferred_to_explicit)`. `adapters/synthetic_evidence.py`
+  today owns kind `terminal` only; 053-a3 adds `file` to the scope it opens
+  around its artifact reads and writes, and nothing else in the adapter.
 
 ### 5.3 Database
 
@@ -1201,6 +1436,12 @@ seal or verdict.
 
 ## 7. Contract deltas (applied by WP4-01 only)
 
+Revision 5: 056 WP6-01 and WP6-11 already applied the rows their channels
+needed (§2.1). Unit 053-a1 (§8.1) applies the `exec.audit` and
+`file.audit` rows of this table, as §5.1 and §5.2 amend them, and nothing
+else. The database, HTTP-dialect, MCP, SSH, diff and
+`capture_point_kinds` rows stay for their own work packages.
+
 Registry operations are keyed by id, key or role and preserve every column
 not named here. Bump registry revisions, family manifest minor versions and
 pins atomically. 049's generated blocks are regenerated by 049's owner. No
@@ -1258,6 +1499,10 @@ Rules for every WP:
   Sonnet.
 - No TypeScript WP is in this spec; no P4 exit gate depends on one.
 - This authoring task changes only this spec and spawns no agents.
+
+Revision 5: §2.1 says which of these work packages are built. The lane
+being built now is §8.1; it replaces the wave plan below for WP4-02 and
+WP4-03 only.
 
 **Tracks.** The Python track and the Go track run in parallel after WP4-01.
 Host and Node work never blocks the Python hooks, and the reverse.
@@ -1320,6 +1565,194 @@ after WP4-07a; WP4-09 after WP4-08a and WP4-08b; WP4-11b after WP4-11a for
 the shared harness files. Every other WP in a wave is independent of the
 others in that wave.
 
+### 8.1 Lane 053: the in-process audit units (revision 5)
+
+Four units, one pull request each, each stacked on the one before. A unit
+is at most about 2,000 changed lines, tests included. Spec 056 revision 12
+(§7.4 there) continues the same lane with the linking units.
+
+| Order | Unit | Work package | Delivers |
+|---|---|---|---|
+| 1 | `053-a1` | WP4-01, audit rows only | Contracts for `exec.audit` and `file.audit`; no runtime code |
+| 2 | `053-a2` | WP4-00 audit part, WP4-02 exec audit part | `hooks/_audit.py` (§4.5) and the `exec.audit` channel (§5.1) |
+| 3 | `053-a3` | WP4-03 | The `file.audit` channel and the explicit-artifact rule (§5.2) |
+| 4 | `053-a4` | WP4-11a and WP4-12, for these two channels only | Acceptance scenario AH-1, documentation, release-boundary checks, the registry `state` of both rows |
+
+**Dependencies.**
+- **Spec 057 P1b (WP7-8)** builds WP4-06a (MCP transport, stdio
+  included). This lane does not build, move or test it. Both add a channel
+  slot to `hooks/__init__.py` and an option to `hooks/_config.py`; the
+  later one to merge rebases, and each touches only its own slot, option
+  and environment name.
+- **Spec 057 P2a (#295)** edits `hooks/_exec.py`. Unit 053-a2 adds only the
+  `exec_owned()` token around the original call in the `Popen` and asyncio
+  wrappers; it changes no other line of that file.
+- **Spec 058** owns the `fabric` command. This lane adds two
+  `fabric.yaml` settings (`capture.exec_audit`, `capture.file_audit`) in
+  the existing table (`cli/_config.py`) and its schema, nothing else; the
+  `plan` and `init` rows that print them are spec 058's
+  (`integration-rows-v1.json` already names both capture points).
+- **Contracts are a serial chain** (§8, "Shared files"). 053-a1 takes the
+  next free registry revisions, manifest minors and `FW-` ids at the time
+  it builds, after whatever 055 and 057 units have merged.
+
+**Files each unit owns.** A unit edits only these.
+
+| Unit | Owns |
+|---|---|
+| `053-a1` | `contracts/coverage/v1/**` (the audit rows, `evidence/fabric.file.audit-v1.schema.json`, fixtures, vectors), `contracts/diagnostics/v1/messages-v1.json`, `contracts/cli-config/v1/**` (two settings and their fixtures), the generated tables and documents the existing generators write (`_records_keys_generated.py`, `_manifest_fields_generated.py`, `_catalogue_data.py`, the fabricguard and evidence-type Go tables, `docs/diagnostics.md`, 049's generated blocks), the three hand deltas D4-3, D4-4 and D4-12 of §10 in spec 049, contract tests under `scripts/tests/` |
+| `053-a2` | `hooks/_audit.py`, `hooks/_exec_audit.py` (new); the `exec.audit` slot, option and environment name in `hooks/__init__.py`, `hooks/_config.py`, `hooks/_producer.py`; the token lines in `hooks/_exec.py`; one `Setting` in `cli/_config.py`; `tests/test_hooks_audit.py`, `tests/test_hooks_exec_audit.py`, `tests/test_hooks_exec_audit_passivity.py` |
+| `053-a3` | `hooks/_file.py` (new); the `file.audit` slot, option and environment name in the same three hooks files; one `Setting` in `cli/_config.py`; the scope-kind line in `adapters/synthetic_evidence.py`; `tests/test_hooks_file.py`, `tests/test_hooks_file_passivity.py` |
+| `053-a4` | `qualification/in-process-audit/**` (new), one job in `.github/workflows/action-record.yml`, `docs/action-reconstruction.md`, `docs/limitations-and-roadmap.md`, `docs/wire-capture-deployment.md`, `scripts/tests/test_recorder_release_boundary.py` (additions), the `state` column of the two capture-point rows and the blocks generated from it, `specs/README.md`, `CHANGELOG.md` |
+
+**Unit 053-a1: contracts.**
+- Evidence type `fabric.file.audit/v1` (§3.2 as revised), registered for
+  `file.audit`, step kind `file`, with its pointer map.
+  `fabric.exec.observation/v1` gains capture point `exec.audit`.
+- `telemetry-keys-v1.json`: `fabric.file.operation` (N45, the enum of §7,
+  placement `record`, capture points `file.audit` and `sdk.records`);
+  `fabric.process.parent_pid` and `fabric.execution.host_id` admit
+  `exec.audit`. No `fabric.file.path_hash` row (OQ5-4).
+- `capture-points-v1.json`: the `exec.audit` and `file.audit` rows of §7,
+  with `cannot_observe` extended by §5.1's limits and §5.2's skips, and
+  activation text naming the option and environment switch. `state` stays
+  `P4` until 053-a4.
+- `field-registry-v1.json`: the N45 note of §7.
+- Diagnostics catalogue, each with cause and fix: `audit_refused`
+  (§4.5 rule 2), `file_audit_mode_invalid` ("`FABRIC_WIRE_FILE_AUDIT`
+  must be `1`, `writes` or `all`"; fix: the three values and what each
+  records), `audit_hook_stays_installed` (info: Python cannot remove an
+  audit hook; a closed channel is inert until the process exits),
+  `audit_content_withheld` (info: the channel is on and the capture policy
+  withholds `artifact.locator` or `terminal.argv`, so operations are
+  recorded without paths or commands; fix: retain that role).
+- `fabric.yaml` schema: `capture.exec_audit` (boolean) and
+  `capture.file_audit` (`false`, `true`, `writes`, `all`), with valid and
+  invalid fixtures.
+- Acceptance tests (all must exist and pass):
+  1. `validate_coverage_contracts.py` and `validate_capture_contracts.py`
+     pass; every generator's `--check` passes.
+  2. Fixtures for `fabric.file.audit/v1`: one valid document per
+     `audit_event`; invalid documents for an extra key, an unknown enum
+     value, a path in `mode` (CONTENT in a LABEL), `write_intent` on a
+     rename, and the type on capture point `exec.subprocess`.
+  3. Fixtures for `fabric.exec.observation/v1` at `exec.audit`: one valid
+     document per `audit_event`; invalid: `audit_event` with `api: popen`.
+  4. `seal-digest-v1.json` gains one `exec.audit` and one `file.audit`
+     record with their expected digests; `records-span-v1.json` gains
+     cases for `fabric.file.operation` admitted on `file.audit`, refused
+     on `exec.subprocess`, and `fabric.file.path` still never admitted.
+  5. `sdk/python/tests/test_diagnostics_catalogue.py` passes with the four
+     new entries; every entry has a non-empty `fix`.
+  6. `pytest scripts/tests` passes, including the release-boundary and
+     documentation-scope tests.
+
+**Unit 053-a2: the audit callback and `exec.audit`.** Builds §4.5 and
+§5.1 "Revision 5". `fabric.hooks.install(exec_audit=True)`,
+`FABRIC_WIRE_EXEC_AUDIT=1`, `capture.exec_audit`. Acceptance tests, by
+name:
+- `tests/test_hooks_audit.py` (each in a fresh interpreter, because an
+  audit hook outlives the test that added it):
+  `test_import_and_non_audit_install_add_no_hook`,
+  `test_callback_added_once_across_installs`,
+  `test_sentinel_seen_before_active`,
+  `test_refusing_host_hook_gives_unsupported_runtime_and_message`,
+  `test_handler_exception_never_reaches_operation` (an `Exception`, a
+  `BaseException` subclass, `KeyboardInterrupt` and `MemoryError` raised
+  inside a handler: the audited call returns the same value),
+  `test_closed_or_disabled_table_is_empty`,
+  `test_event_raised_by_handler_is_skipped`,
+  `test_internal_guard_skips_event`, `test_fork_child_resets_state`,
+  `test_interpreter_shutdown_is_silent`, `test_status_counts_only`.
+- `tests/test_hooks_exec_audit.py`:
+  `test_signature_pins` (the four event tuples on the running
+  interpreter), `test_os_system_recorded_shell_form`,
+  `test_posix_spawn_direct_recorded`,
+  `test_popen_recorded_when_exec_hook_off`,
+  `test_recorded_once_when_exec_hook_on` (sync, and two concurrent asyncio
+  tasks: the task inside `create_subprocess_exec` is suppressed, the other
+  task's `os.system` is not), `test_os_exec_is_not_delayed`,
+  `test_unknown_signature_is_not_exposed`,
+  `test_argv_bounds_checked_before_encoding`,
+  `test_env_names_only_from_exact_dict` (with an environment-value
+  canary), `test_path_like_executable_not_converted`,
+  `test_no_outcome_fields`, `test_omit_mode_builds_no_body`,
+  `test_return_value_and_exception_identity`,
+  `test_option_environment_and_yaml_setting`,
+  `test_config_error_matrix` (explicit `install` raises `ValueError`; the
+  environment never raises), `test_record_matches_contract_fixture`,
+  `test_canaries_never_on_telemetry_or_logs`.
+- `tests/test_hooks_exec_audit_passivity.py`:
+  `test_admitted_exec_event_budget` (20 µs),
+  `test_unrelated_audit_event_budget` (2 µs),
+  `test_blocking_injection_fails_the_budget` (the negative control).
+- Existing suites stay green: `tests/test_hooks_foundation.py`,
+  `tests/test_hooks_exec.py`, `tests/test_hooks_exec_passivity.py`.
+
+**Unit 053-a3: `file.audit`.** Builds §5.2 as revised.
+`fabric.hooks.install(file_audit=True | "writes" | "all")`,
+`FABRIC_WIRE_FILE_AUDIT`, `capture.file_audit`. Acceptance tests, by name:
+- `tests/test_hooks_file.py`: `test_signature_pins`,
+  `test_write_opens_recorded` (modes `w`, `a`, `x`, `r+`, `wb`;
+  `os.open` with `O_WRONLY|O_CREAT`; `pathlib.Path.write_text`;
+  `tempfile.NamedTemporaryFile`), `test_read_open_skipped_in_writes_recorded_in_all`,
+  `test_rename_replace_remove_unlink_recorded`,
+  `test_truncate_mkdir_rmdir_recorded` (per OQ5-3),
+  `test_exact_pathlib_types_converted_subclass_not` (per OQ5-2),
+  `test_bytes_path_is_b64_cell`,
+  `test_descriptor_wrap_skipped` (`subprocess.run(capture_output=True)`
+  yields no file record), `test_bytecode_cache_skipped`,
+  `test_import_storm_records_nothing_in_writes_mode`,
+  `test_fabric_own_io_never_recorded` (a real file spool, the status file
+  and a key file), `test_pre_operation_semantics` (an `open` that raises
+  `FileNotFoundError` is still recorded, existence `unknown`, the same
+  exception object reaches the caller), `test_huge_path_is_descriptor_only`,
+  `test_malformed_event_tuple_is_not_exposed`,
+  `test_no_stat_resolve_or_getcwd`,
+  `test_explicit_scope_of_kind_file_defers`,
+  `test_omit_mode_builds_no_locator`, `test_content_withheld_message`,
+  `test_handler_base_exception_does_not_reach_open`,
+  `test_fork_inside_handler_is_safe`,
+  `test_full_queue_is_a_counted_loss_without_waiting`,
+  `test_modes_option_environment_and_yaml_setting`,
+  `test_invalid_mode_message_names_the_fix`,
+  `test_record_matches_contract_fixture`,
+  `test_path_canary_never_on_telemetry_or_logs`.
+- `tests/test_hooks_file_passivity.py`: `test_admitted_file_event_budget`
+  (20 µs), `test_skipped_read_open_budget` (2 µs),
+  `test_unrelated_audit_event_budget` (2 µs),
+  `test_blocking_injection_fails_the_budget`.
+
+**Unit 053-a4: acceptance scenario AH-1.** A framework-free script,
+`qualification/in-process-audit/agent.py`, runs an OpenAI-style tool loop
+against the hermetic model fixture AR-1 already uses. Its tools work
+inside the process: write a file, patch a file, append to a log, write
+through `pathlib`, replace a file atomically (`os.replace`), delete a file,
+create a directory; and it runs one `os.system` command and one direct
+`os.posix_spawn`. It writes its own ground-truth log, independent of
+Fabric. `run.py` compares the two. The job runs on an unprivileged Linux
+runner with no sensor and on macOS, the two places the eBPF sensor cannot
+help. AH-1 passes when:
+
+| Check | Passes when |
+|---|---|
+| AH-1.1 | 7 of 7 in-process file writes of the ground truth are recorded, each with the path the agent used, on both runners |
+| AH-1.2 | The `os.system` and `os.posix_spawn` commands are each recorded once; with `FABRIC_WIRE_EXEC=1` as well, every subprocess is still recorded once |
+| AH-1.3 | The agent's output, exit code and the SHA-256 of every file it wrote are identical with capture off, with capture on, and with capture on while the queue is full and the Node is down |
+| AH-1.4 | `python -m fabric.reconstruct` verifies every audit record (positions, seals, evidence schemas); no field is `parse_failed` |
+| AH-1.5 | Path and environment canaries appear only in `artifact.locator` and `terminal.argv` objects; under a metadata-only policy they appear nowhere |
+| AH-1.6 | The number of file records equals the ground-truth count exactly while the script imports 200 standard-library modules (no bytecode-cache, descriptor-wrap or Fabric-internal record) |
+| AH-1.7 | With a host audit hook that refuses Fabric's, the agent's output is unchanged and the manifest says `unsupported(unsupported_runtime)` for both points |
+| AH-1.8 | Both passivity modules pass on both runners |
+
+Also in 053-a4: the two capture-point rows become `built`; the
+documentation pages explain the switches, the modes, what is skipped and
+why, and the limits; `test_recorder_release_boundary.py` checks that the
+wheel adds no evaluator, policy engine or enforcement path and that the
+audit modules contain no call that can raise into or delay the audited
+operation (a source check for `raise` outside `UnsupportedChannel`, for
+`time.sleep`, and for blocking queue calls).
+
 ## 9. Qualification, risks and open owner decisions
 
 **Qualification.** `qualification/execution-channels/` holds `matrix.json`,
@@ -1377,6 +1810,8 @@ draft manifests, changes claims.
 | K3 | Large fetches are only partially captured | Declared `rows_partial`; configurable bound with a measured budget (O4-10) |
 | K4 | Sensors are privileged | Customer-deployed only; never installed or privileged by default; production mode drops owner, name and address |
 | K5 | A host may silently refuse audit hooks | Capability `enabled` only after the sentinel event |
+| K6 | An audit hook cannot be removed and runs inside the agent's operations (revision 5) | Added only on explicit opt-in; one dictionary miss when off; the callback catches everything; fresh-interpreter tests and a 2 µs budget (§4.5) |
+| K7 | `open` events flood the record (imports, pipes, bytecode cache) (revision 5) | Write-intent default, three counted skips, the `all` mode as an explicit choice (§5.2); AH-1.6 |
 
 **Open owner decisions.** Each default is **Recommended — pending owner
 confirmation** (RPOC). Build agents follow it unless the owner changes it.
@@ -1424,3 +1859,20 @@ when applying, in case concurrent revisions move lines.
 
 Revision 1's delta on the 16384-entry ceiling is dropped: 049 rev 6.4
 already states it correctly (049:245, 049:2320).
+
+## 11. Open questions for the owner (revision 5)
+
+Each row has a recommendation. Build agents follow the recommendation
+unless the owner records a different answer in this table. O4-1 to O4-12
+(§9) are unchanged.
+
+| # | Question | Recommendation | If the owner says no |
+|---|---|---|---|
+| OQ5-1 | **Default file-audit mode.** Record every `open`, or only opens that show write intent? | **Write intent** (`writes`), with `all` as an explicit mode. A Python process opens thousands of files to import modules; recording them hides the agent's writes and costs records for nothing. Reads of sensitive paths are spec 057's watched-path labels, which can build on `all` later | `all` becomes the default; AH-1.6 changes to "no bytecode-cache, descriptor-wrap or Fabric-internal record" and the budget test covers the import storm |
+| OQ5-2 | **`pathlib` paths.** `Path.unlink()`, `Path.rename()` and `os.open(Path)` hand the audit event a `Path` object, not a string. §4.1 item 2 forbids converting path-like objects because conversion can run application code | **Convert the four exact standard-library types** (`PosixPath`, `PurePosixPath`, `WindowsPath`, `PureWindowsPath`) with `os.fspath`; their conversion is standard-library code with no I/O. Subclasses and other path-like objects stay unconverted. Without this, deletes and renames made through `pathlib` have no path | Those events are recorded with `path_like_not_converted` and no path; 056's path match cannot link them |
+| OQ5-3 | **Three more events:** `os.truncate`, `os.mkdir`, `os.rmdir` | **Yes.** Same handler, three pinned signatures, about 60 lines with tests. Without them an agent that empties a file or removes a directory leaves no record | 053-a1 registers and 053-a3 handles only `open`, `os.rename`, `os.remove` |
+| OQ5-4 | **`fabric.file.path_hash`** (the SHA-256 path digest on telemetry, under a digest permission) | **Not in this lane.** The path is already recorded as protected content; a digest on telemetry needs a permission mechanism the SDK's capture policy does not have yet, and nothing in this lane or in 056 revision 12 reads it | 053-a1 adds the key row and 053-a3 emits it only when the capture policy has an explicit `file_path_digest: true`, which 053-a3 then also adds to the policy parser |
+| OQ5-5 | **More exec events:** `os.spawn*`, `pty.spawn`, `os.startfile` | **Later**, when a field finding needs one. The four events of §5.1 cover what the harness agents do | 053-a1 extends the `audit_event` enum and 053-a2 pins and handles the extra signatures |
+| OQ5-6 | **`KeyboardInterrupt` inside the callback.** §4.1 item 6 says Fabric-only code catches `BaseException`. A Ctrl-C delivered while the callback runs is then swallowed (once; the next one is delivered normally) | **Keep the rule.** An exception leaving an audit hook aborts the agent's `open` or `exec` call, which is a larger change to the agent than one absorbed signal in a window of a few microseconds. The limit is documented | The callback re-raises `KeyboardInterrupt` only; the audited operation then fails with it, as it would have a few microseconds later |
+| OQ5-7 | **Watched-path labels in process** (057 §4.3 "In process") | **Not in this lane.** 057 owns the labels; it can add them to `file.audit` records once 057 P2a's classification tables and this lane have both merged | 053-a3 reads 057's frozen path table and admits a read open of a watched path in `writes` mode |
+
