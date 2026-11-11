@@ -83,10 +83,12 @@ class Project:
 
     @property
     def ca_file(self) -> Path | None:
+        """The CA agents verify the Node with: the generated one for a local Node (its
+        certificate is issued from it), a referenced one for an external Node."""
+        if self.generates_tls:
+            return self.secrets_dir / _secrets.CA_CERT
         referenced = self.resolved["secrets.ca_file"]
-        if referenced:
-            return _absolute(self.directory, str(referenced))
-        return self.secrets_dir / _secrets.CA_CERT if self.generates_tls else None
+        return _absolute(self.directory, str(referenced)) if referenced else None
 
 
 def _absolute(directory: Path, value: str) -> Path:
@@ -164,14 +166,33 @@ def node_endpoint(resolved: _config.Resolved) -> str:
     return endpoint.rstrip("/")
 
 
-def compile_environment(project: Project) -> dict[str, str]:
-    """§6.5: the ``FABRIC_*`` environment of spec 058 §5.5 step 3 that does not depend on
-    one run. File paths for every secret; no ``OTEL_*`` name (I2)."""
+def _check_compilable(project: Project) -> None:
+    """Refuse what this release cannot compile, before anything is written."""
     resolved = project.resolved
     if resolved["profile"] != "local":
         raise CliError([Finding("FC-011", "profile: production")])
     if not resolved["providers.builtin"]:
         raise CliError([Finding("FC-011", "providers.builtin: false")])
+    if project.generates_tls and resolved["secrets.ca_file"]:
+        # Agents given another CA would refuse the local Node's certificate and record
+        # nothing; refuse the combination instead of compiling it.
+        raise CliError(
+            [
+                Finding(
+                    "FC-004",
+                    "secrets.ca_file: is the CA of an existing Node, but node.mode: docker "
+                    "starts a local Node with its own generated CA; remove secrets.ca_file, "
+                    "or set node.mode: external and node.endpoint to that Node",
+                )
+            ]
+        )
+
+
+def compile_environment(project: Project) -> dict[str, str]:
+    """§6.5: the ``FABRIC_*`` environment of spec 058 §5.5 step 3 that does not depend on
+    one run. File paths for every secret; no ``OTEL_*`` name (I2)."""
+    resolved = project.resolved
+    _check_compilable(project)
     env: dict[str, str] = {
         "FABRIC_TENANT_ID": str(resolved["tenant"]),
         "FABRIC_AGENT_ID": str(resolved["agent"]),
@@ -257,7 +278,8 @@ def gitignore_entries(project: Project) -> list[str]:
     wanted = [f"/{STATE_DIR}/"]
     with contextlib.suppress(ValueError):  # a data directory outside the project: not ours to list
         relative = project.data_dir.resolve().relative_to(project.directory.resolve())
-        wanted.append(f"/{relative.as_posix()}/")
+        if relative.parts:  # the project directory itself is never ignored
+            wanted.append(f"/{relative.as_posix()}/")
     path = project.directory / ".gitignore"
     try:
         existing = path.read_text(encoding="utf-8")

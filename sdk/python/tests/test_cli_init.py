@@ -540,3 +540,118 @@ def test_detect_shape() -> None:
     assert _init.detect_shape("Windows", False) == "laptop"
     assert _init.detect_shape("Linux", False) == "linux-host"
     assert _init.detect_shape("Linux", True) == "container"
+
+
+# ---------------------------------------------------------------- review fixes (058-e1b)
+
+
+def test_a_ca_without_a_node_endpoint_is_never_given_to_agents_of_the_local_node(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """The local Node's certificate is signed by the generated CA. A CA the shell names for
+    some other collector must not replace it in the compiled environment: agents would
+    refuse the Node and record nothing."""
+    ca = tmp_path / "other-collector-ca.crt"
+    ca.write_text("some other collector's CA")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", str(ca))
+    report = _json(["init", "--from-env"], capsys)
+    document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
+    assert document["node"]["mode"] == "docker" and "ca_file" not in document["secrets"]
+    assert _compiled(project)["FABRIC_OTLP_CERTIFICATE"] == str(_secrets_dir(tmp_path) / "ca.crt")
+    (finding,) = [f for f in report["findings"] if f["id"] == "FC-018"]
+    assert finding["detail"].startswith("OTEL_EXPORTER_OTLP_CERTIFICATE: ")
+    assert "generated CA" in finding["detail"]
+    # --import-secrets does not copy it either.
+    _json(["init", "--from-env", "--import-secrets"], capsys)
+    assert not (_secrets_dir(tmp_path) / "imported-ca.crt").exists()
+    # Written by hand, the combination is refused before anything is compiled.
+    text = (project / "fabric.yaml").read_text("utf-8")
+    (project / "fabric.yaml").write_text(
+        text.replace("  dir: auto\n", f"  dir: auto\n  ca_file: {ca}\n")
+    )
+    compiled_before = (project / ".fabric/compiled.env").read_bytes()
+    refused = _json(["init"], capsys)
+    assert refused["exit_code"] == 2 and refused["findings"][0]["id"] == "FC-004"
+    assert "secrets.ca_file" in refused["findings"][0]["detail"]
+    assert "node.mode: external" in refused["findings"][0]["detail"]
+    assert (project / ".fabric/compiled.env").read_bytes() == compiled_before
+
+
+def test_import_secrets_says_when_another_id_key_is_already_stored(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """An existing secret is never overwritten, and never silently kept either: the
+    operator asked for today's pseudonyms and is not getting them."""
+    assert _run(["init", "--quiet"], capsys)[0] == 0
+    generated = (_secrets_dir(tmp_path) / "id.key").read_bytes()
+    value = "by-value-id-key-0123456789abcdef"
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY", value)
+    code, out, err = _run(["init", "--from-env", "--import-secrets", "--json"], capsys)
+    assert code == 0 and value not in out + err and generated.decode() not in out + err
+    (finding,) = [f for f in json.loads(out)["findings"] if f["id"] == "FC-018"]
+    assert finding["detail"].startswith("FABRIC_WIRE_ID_KEY: ")
+    assert "already holds another id.key" in finding["detail"]
+    assert (_secrets_dir(tmp_path) / "id.key").read_bytes() == generated
+    # The same key again is not a difference.
+    (_secrets_dir(tmp_path) / "id.key").unlink()
+    _run(["init", "--from-env", "--import-secrets", "--quiet"], capsys)
+    code, out, _ = _run(["init", "--from-env", "--import-secrets", "--json"], capsys)
+    assert code == 0 and json.loads(out)["findings"] == []
+
+
+def test_an_imported_id_key_file_is_the_key_the_sdk_read_from_it(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """The SDK ignores exactly one trailing newline of an id key file; the copy must give
+    the same key (by file or by value) or every pseudonym changes on import."""
+    from fabric._sequence import id_key_from_env  # noqa: PLC0415
+
+    key = tmp_path / "manual-id.key"
+    key.write_bytes(b"manual-id-key-of-32-bytes-or-more\n\n")
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY_FILE", str(key))
+    assert _run(["init", "--from-env", "--import-secrets", "--quiet"], capsys)[0] == 0
+    stored = _secrets_dir(tmp_path) / "id.key"
+    before = id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(key)})
+    after = id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(stored)})
+    assert before == after == b"manual-id-key-of-32-bytes-or-more\n"
+    stored.unlink()
+    monkeypatch.delenv("FABRIC_WIRE_ID_KEY_FILE")
+    for value in ("by-value-id-key-0123456789abcdef", "by-value-id-key-0123456789abcdef\n"):
+        monkeypatch.setenv("FABRIC_WIRE_ID_KEY", value)
+        assert _run(["init", "--from-env", "--import-secrets", "--quiet"], capsys)[0] == 0
+        assert id_key_from_env({"FABRIC_WIRE_ID_KEY_FILE": str(stored)}) == value.encode()
+        stored.unlink()
+
+
+def test_from_env_names_every_otlp_exporter_variable_it_drops(tmp_path: Path) -> None:
+    document = _init.fresh_document("p", "laptop")
+    findings, _ = _init.import_environment({
+        "OTEL_EXPORTER_OTLP_ENDPOINT": "https://node.internal:4318",
+        "OTEL_EXPORTER_OTLP_CERTIFICATE": "/etc/fabric/ca.crt",
+        "OTEL_EXPORTER_OTLP_CLIENT_KEY": "/etc/fabric/client.key",
+        "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE": "/etc/fabric/client.crt",
+        "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+        "OTEL_SERVICE_NAME": "not an exporter setting",
+    }, document, tmp_path, import_secrets=False)  # fmt: skip
+    assert sorted(f.detail or "" for f in findings) == [
+        "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE: has no fabric.yaml setting",
+        "OTEL_EXPORTER_OTLP_CLIENT_KEY: has no fabric.yaml setting",
+        "OTEL_EXPORTER_OTLP_PROTOCOL: has no fabric.yaml setting",
+    ]
+    assert document["node"] == {"mode": "external", "endpoint": "https://node.internal:4318"}
+    assert document["secrets"]["ca_file"] == "/etc/fabric/ca.crt"
+
+
+def test_a_data_directory_that_is_the_project_directory_is_not_ignored(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=project, check=True)  # noqa: S607
+    (project / "fabric.yaml").write_text(
+        "schema: fabric.config/v1\ndestination:\n  preset: local-dir\n  path: .\n"
+    )
+    report = _json(["init"], capsys)
+    assert report["data"]["gitignore_added"] == ["/.fabric/"]
+    assert "/./" not in (project / ".gitignore").read_text("utf-8")

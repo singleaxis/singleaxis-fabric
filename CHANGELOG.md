@@ -47,7 +47,10 @@ it never makes, applies, waits for or returns one.
     with a backup; `--rotate node-cert|ca|id-key|all` rotates a secret and says
     what must restart; `--from-env` imports an existing manual setup from the
     shell's `FABRIC_*` and `OTEL_*` variables, referencing its key and CA by
-    path (`--import-secrets` copies them instead).
+    path (`--import-secrets` copies them instead). A CA is taken over only
+    together with the Node endpoint it belongs to: the local Node always uses
+    the generated CA. Whatever the import leaves out is named, variable by
+    variable, including a stored key it did not replace.
   - `fabric up` renders a Compose project packaged with the CLI (no repository
     clone, no image build), with every image pinned by digest to release
     0.12.1, starts the Node with a TLS listener on loopback using the generated

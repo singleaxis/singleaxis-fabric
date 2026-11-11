@@ -48,6 +48,15 @@ _IMPORTED = frozenset({
     "FABRIC_WIRE_ID_KEY_FILE",
 })  # fmt: skip
 IMPORTED_CA = "imported-ca.crt"
+_CA_VARIABLES = ("FABRIC_OTLP_CERTIFICATE", "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+                 "OTEL_EXPORTER_OTLP_CERTIFICATE")  # fmt: skip
+#: What `--import-secrets` stores, by the variable a person knows it by (for messages).
+_IMPORT_SOURCE = {_secrets.ID_KEY: "FABRIC_WIRE_ID_KEY", IMPORTED_CA: "FABRIC_OTLP_CERTIFICATE"}
+#: OTLP variables `--from-env` reads (the SDK reads them when no FABRIC_OTLP_* is set).
+_OTEL_UNDERSTOOD = frozenset({
+    "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_CERTIFICATE", "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+})  # fmt: skip
 _TRUE = ("1", "true", "yes", "on")
 
 
@@ -344,11 +353,22 @@ def _import_secret_references(environ: Mapping[str, str], document: dict[str, An
     """The CA and the id key: referenced by their existing paths, or (``import_secrets``)
     returned for storing as files in the secrets directory."""
     to_store: dict[str, bytes] = {}
-    ca = (environ.get("FABRIC_OTLP_CERTIFICATE")
-          or environ.get("OTEL_EXPORTER_OTLP_CERTIFICATE") or "").strip()  # fmt: skip
-    if ca and not import_secrets:
+    ca_name = next((name for name in _CA_VARIABLES if (environ.get(name) or "").strip()), "")
+    ca = (environ.get(ca_name) or "").strip() if ca_name else ""
+    _, node_mode = _config._lookup(document, "node.mode")
+    if ca and node_mode != "external":
+        # No Node endpoint came with it: `fabric up` starts a local Node whose certificate
+        # the generated CA signs, so this CA would make agents refuse that Node.
+        findings.append(
+            _not_imported(
+                ca_name,
+                "is the CA of a Node this shell does not name (no OTLP endpoint is set); "
+                "the local Node gets its own generated CA",
+            )
+        )
+    elif ca and not import_secrets:
         _set(document, "secrets.ca_file", ca)
-    elif ca and (data := _read_for_import("FABRIC_OTLP_CERTIFICATE", ca, findings)) is not None:
+    elif ca and (data := _read_for_import(ca_name, ca, findings)) is not None:
         to_store[IMPORTED_CA] = data
     key_file = (environ.get("FABRIC_WIRE_ID_KEY_FILE") or "").strip()
     key_value = environ.get("FABRIC_WIRE_ID_KEY") or ""
@@ -357,9 +377,13 @@ def _import_secret_references(environ: Mapping[str, str], document: dict[str, An
     elif key_file:
         data = _read_for_import("FABRIC_WIRE_ID_KEY_FILE", key_file, findings)
         if data is not None:
-            to_store[_secrets.ID_KEY] = data.rstrip(b"\r\n")
+            # Byte for byte: the SDK ignores exactly one trailing newline of a key file,
+            # so only an identical copy is certain to give the same key.
+            to_store[_secrets.ID_KEY] = data
     elif key_value and import_secrets:
-        to_store[_secrets.ID_KEY] = key_value.encode("utf-8", "surrogatepass")
+        # The SDK drops one trailing newline of a key file: keep one that is part of the key.
+        to_store[_secrets.ID_KEY] = (key_value + ("\n" if key_value.endswith("\n") else "")
+                                     ).encode("utf-8", "surrogatepass")  # fmt: skip
     elif key_value:
         findings.append(
             _not_imported(
@@ -386,8 +410,8 @@ def import_environment(
     for name in sorted(environ):
         if name in _IMPORTED or name in _NOT_IMPORTED_SILENTLY or not environ[name].strip():
             continue
-        if name.startswith("FABRIC_") or name in ("OTEL_EXPORTER_OTLP_HEADERS",
-                                                  "OTEL_EXPORTER_OTLP_TRACES_HEADERS"):  # fmt: skip
+        if name.startswith("FABRIC_") or (name.startswith("OTEL_EXPORTER_OTLP_")
+                                          and name not in _OTEL_UNDERSTOOD):  # fmt: skip
             findings.append(_not_imported(name, "has no fabric.yaml setting"))
     return findings, to_store
 
@@ -500,7 +524,18 @@ def prepare(project: _project.Project, *, rotate: str | None = None,
     _project.ensure_state_dir(project)
     findings: list[Finding] = []
     for name, data in (to_store or {}).items():
-        _secrets.import_file(project.secrets_dir, name, data, public=name.endswith(".crt"))
+        stored = _secrets.import_file(project.secrets_dir, name, data,
+                                      public=name.endswith(".crt"))  # fmt: skip
+        if _secrets._read(stored) != data:
+            # Never overwritten (§5.3), and never silently: the shell's secret is not the
+            # one this project uses.
+            findings.append(
+                _not_imported(
+                    _IMPORT_SOURCE.get(name, name),
+                    f"the secrets directory already holds another {name}, which is kept; "
+                    f"move {stored} away and run the import again to use the shell's",
+                )
+            )
     generate_id_key = project.resolved["secrets.id_key_file"] is None
     secrets_now = _secrets.ensure_local(project.secrets_dir, project.name, id_key=generate_id_key,
                                         tls=project.generates_tls)  # fmt: skip
