@@ -326,6 +326,83 @@ run r-3f2a…  decisions: complete  actions: complete  effects: complete  corrob
   `grant_in_force` join of spec 057 §6.1 are not built: their inputs and
   output shape arrive with later work packages.
 
+### Hook programs and control endpoints you declare (spec 057 P2)
+
+Fabric never guesses that a process is a hook or that a host is a policy
+service. You declare both in the capture policy (the
+`FABRIC_CAPTURE_POLICY` file), under `security_context`:
+
+```json
+"security_context": {
+  "hook_programs": [
+    {"path": "/opt/hooks/pre-shell.sh", "label": "pre-shell-check",
+     "exit_map": {"0": "passed", "2": "blocked"}},
+    {"basename": "lint-hook", "label": "linter"}
+  ],
+  "control_hosts": [
+    {"host": "policy.internal.example", "label": "policy-svc",
+     "control_kind": "policy", "decision_pointer": "/decision",
+     "decision_map": [{"value": "ALLOW", "decision": "allow"},
+                      {"value": "DENY", "decision": "deny"}]}
+  ],
+  "control_addresses": [
+    {"address": "10.0.3.0/24", "label": "policy-svc", "control_kind": "policy"}
+  ]
+}
+```
+
+- **Matching is exact.** A hook program is an exact executable path or an
+  exact `argv[0]` basename; a control host is `host[:port]` exactly (no
+  suffix, no wildcard; no port means 443); an address is one IP or a CIDR.
+- **Lists are loaded once, at install.** A list with more than 256 entries,
+  with two entries that match the same value, or with an entry that cannot
+  be held is *refused*: it is not applied, capture carries on, and the
+  capture manifest says `refused` with the reason (`over_limit`,
+  `duplicate_entry`, `invalid_entry`). Fix the list and restart the agent.
+  The manifest publishes each list's state, entry count and digest
+  (`fabric.manifest.classifications`), never its contents.
+- **Hook programs.** A subprocess the hook sees whose path or basename is
+  listed is recorded with your label (`fabric.hook.program_label`, never the
+  path) and shown as a `hook` row with `basis=process`. With an `exit_map`
+  the outcome is the mapped one (`configured_exit_map`); without a map, or
+  for a code the map does not name, it is `unknown` and the exit code is
+  still shown. A signal is the negative code, as Python reports it
+  (`"-9"`).
+- **A hook program is never a tool call's effect.** A tool call whose
+  window holds only hook programs stays under `tool_calls_without_effect`,
+  and the `effects` chain is `partial(none_in_window)`: the hook shows the
+  call was dispatched, and its effect was somewhere the enabled channels do
+  not look (a remote sandbox, an unhooked client). The one exception is a
+  hook whose `exit_map` outcome is `blocked`: that call was not dispatched,
+  so its missing effect is expected. A process you did not list is linked
+  as before (`sequence_bracket`, tentative).
+- **Control endpoints.** List the host in `control_hosts` and in the HTTP
+  hook's allowlist (`FABRIC_WIRE_HTTP_HOSTS` / `http_hosts=`). Each request
+  to it is one `control` row: kind and label from the list,
+  `phase=observation`, `decision=unknown`, the HTTP status and measured
+  latency. Its bodies are stored only under the roles
+  `control.exchange.request` and `control.exchange.response`, both off
+  unless your policy names them, so retaining general HTTP bodies
+  (`network.*`) never retains what a control inspected.
+- **Reading the decision (offline, opt-in).** Give the entry a
+  `decision_pointer` (RFC 6901) and a `decision_map`, retain
+  `control.exchange.response`, and pass the same policy file to the reader:
+  `python -m fabric.reconstruct actions ... --capture-policy policy.json`.
+  The reader then fills the decision (`configured_extract`). Nothing is
+  parsed in the agent. If the pointer is listed but the body was not
+  retained, the row says so and the `controls` chain is
+  `partial(body_not_retained)`. The policy applies only to runs whose
+  capture manifest names its digest.
+- **Host sensors.** With `--capture-policy`, a sensor `exec` whose
+  executable-path digest is a listed `path` is a hook row, and a sensor
+  `connect` to a listed `control_addresses` entry is a contact row
+  (`decision=unknown`). The sensor must be allowed to emit path digests for
+  the first, and the reader needs the id key for the second
+  (`FABRIC_WIRE_ID_KEY`). A `basename` entry matches in-process records
+  only; a network wider than a /16 is not matched by the reader.
+- **Spawn errors.** A spawn that raises an `OSError` now records the errno
+  name (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.
+
 ## Production profile (M2)
 
 Released in v0.11.0. Against a production-profile Node, a host sensor is a
