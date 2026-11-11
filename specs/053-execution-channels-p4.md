@@ -157,9 +157,9 @@ Tightening:
 
 ## 2. Current state and missing work
 
-Checked against main at `de693caa` (2026-11-11). Paths under `sdk/python/`
-are written from `sdk/python/src/fabric/`. Two pull requests in review
-change files this spec names; they are listed after the tables.
+Checked against main at `50e56d83` (2026-11-11). Paths under `sdk/python/`
+are written from `sdk/python/src/fabric/`. Pull requests in review
+that change files this spec names are listed after the tables.
 
 ### 2.1 Work packages: built or not
 
@@ -170,7 +170,7 @@ change files this spec names; they are listed after the tables.
 | WP4-02 Exec | **`exec.subprocess` built** (056 WP6-03, WP6-08). **`exec.audit` not built.** `os.system`, `os.exec*` and `os.posix_spawn` called directly are not recorded | `hooks/_exec.py:1258-1280` patches `subprocess.Popen` (`__init__`, `communicate`, `wait`, `poll`), `subprocess.run`, `check_output` and the asyncio equivalents, nothing in `os`; no `hooks/_exec_audit.py` |
 | WP4-03 File | **Not built** | no `hooks/_file.py`; `decision.py:2438` (`record_file_access`) is the explicit reporting API, not a hook |
 | WP4-04a, WP4-04b Database | **Not built; not in this lane** | no `hooks/db/` |
-| WP4-05 HTTP and dialects | **Hook built** (056 WP6-09a), emitting `dialect: none`. **Dialects not built; not in this lane** | `hooks/_http.py`, `wire/_routes.py`; no `reconstruct/dialects/` on main (spec 057 P1a adds that package for its own parsers) |
+| WP4-05 HTTP and dialects | **Hook built** (056 WP6-09a), emitting `dialect: none`. **Dialects not built; not in this lane** | `hooks/_http.py`, `wire/_routes.py`; `reconstruct/dialects/` holds only spec 057 P1a's parsers (`offered_grant.py`, `safety_map.py`, `tool_result.py`), no `jsonrpc2` or `qdrant_rest_v1` |
 | WP4-06a MCP | **Not built here; being built by spec 057 P1b (WP7-8)** | `hooks/_config.py:56`; no `hooks/_mcp.py` |
 | WP4-06b SSH | **Not built; not in this lane** | no `hooks/ssh.py` |
 | WP4-07a, 07b, 07c Host records and sensors | **Built** (v0.11.0) | `components/otel-collector-fabric/hostrecords/`, `receiver/auditreceiver/`, `components/host-emitter/` |
@@ -195,7 +195,7 @@ change files this spec names; they are listed after the tables.
 | `contracts/coverage/v1/registry/content-roles-v1.json`: `artifact.locator` (64 KiB, default policy `content`), `terminal.argv` (256 KiB), `terminal.context` (64 KiB) exist | No new content role |
 | `cli/_config.py:361-363`: `fabric.yaml` maps `capture.exec`, `capture.http_hosts` and `capture.mcp` to their environment switches | 053-a2 and 053-a3 add `capture.exec_audit` and `capture.file_audit` the same way (spec 058 §6) |
 | `contracts/diagnostics/v1/messages-v1.json`: 34 catalogued messages, each with a `fix` (spec 058 §13.1) | Every new message of this lane is catalogued with its cause and fix (053-a1) |
-| `reconstruct/_attribute.py:113`: the effect capture points are `exec.subprocess` and `remote.sandbox` | Audit records project as steps but are not attributed until spec 056 revision 12 (units 056-c4, 056-c5) |
+| `reconstruct/_attribute.py:116`: the effect capture points are `exec.subprocess` and `remote.sandbox` | Audit records project as steps but are not attributed until spec 056 revision 12 (units 056-c4, 056-c5) |
 | `.github/workflows/recorder-ci.yml:104`: the SDK runs on Python 3.11, 3.12 and 3.13 | Every audit event signature is pinned by a test on each of them |
 
 **Pull requests in review that touch these files.** #295 (spec 057 P2a)
