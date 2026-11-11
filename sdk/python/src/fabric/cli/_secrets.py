@@ -152,10 +152,10 @@ def write_new(path: Path, data: bytes, mode: int = 0o600) -> None:
     """Create ``path`` exclusively (``FileExistsError`` when it exists, a symlink
     included), write, fsync the file and its directory."""
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-    fd = os.open(path, flags, mode)
+    fd = os.open(path, flags, 0o600)  # always created private
     try:
         if _POSIX:
-            os.fchmod(fd, mode)  # the mode of open() is subject to the umask
+            os.fchmod(fd, mode)  # exact, whatever the umask; a certificate is opened up here
         view = memoryview(data)
         while view:
             view = view[os.write(fd, view) :]

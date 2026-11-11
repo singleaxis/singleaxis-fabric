@@ -10,6 +10,7 @@ from, and is rewritten whenever that file changes."""
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import ipaddress
 import os
@@ -215,11 +216,9 @@ def write_compiled_env(project: Project) -> tuple[Path, bool]:
     content changed."""
     text = render_compiled_env(compile_environment(project), config_digest(project.config_path))
     path = ensure_state_dir(project) / COMPILED_ENV
-    try:
+    with contextlib.suppress(OSError, UnicodeDecodeError):  # missing or unreadable: write it
         if path.read_text(encoding="utf-8") == text and not path.is_symlink():
             return path, False
-    except (OSError, UnicodeDecodeError):
-        pass
     temporary = path.with_name(f".{COMPILED_ENV}.{_random.token_hex(6)}.tmp")
     _secrets.write_new(temporary, text.encode("utf-8"), 0o600)
     os.replace(temporary, path)
@@ -256,11 +255,9 @@ def gitignore_entries(project: Project) -> list[str]:
     if _config._git_root(project.directory) is None:
         return []
     wanted = [f"/{STATE_DIR}/"]
-    try:
+    with contextlib.suppress(ValueError):  # a data directory outside the project: not ours to list
         relative = project.data_dir.resolve().relative_to(project.directory.resolve())
         wanted.append(f"/{relative.as_posix()}/")
-    except ValueError:
-        pass
     path = project.directory / ".gitignore"
     try:
         existing = path.read_text(encoding="utf-8")

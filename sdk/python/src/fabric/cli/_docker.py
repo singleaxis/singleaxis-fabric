@@ -44,14 +44,14 @@ def _run(argv: Sequence[str], environ: Mapping[str, str] | None, echo: IO[str] |
     """Run ``argv``; ``echo``: also copy its stderr there as it arrives (pull progress)."""
     process = subprocess.Popen(  # noqa: S603 - argv is built here, never from a shell string
         list(argv), env=dict(environ) if environ is not None else None,
-        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        errors="replace",
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )  # fmt: skip
     collected: list[str] = []
 
     def pump() -> None:
         assert process.stderr is not None  # noqa: S101
-        for line in process.stderr:
+        for raw in process.stderr:
+            line = raw.decode("utf-8", "replace")
             collected.append(line)
             if echo is not None:
                 echo.write(line)
@@ -60,7 +60,7 @@ def _run(argv: Sequence[str], environ: Mapping[str, str] | None, echo: IO[str] |
     reader = threading.Thread(target=pump, daemon=True)
     reader.start()
     assert process.stdout is not None  # noqa: S101
-    stdout = process.stdout.read()
+    stdout = process.stdout.read().decode("utf-8", "replace")
     code = process.wait()
     reader.join(timeout=5)
     return Result(code, stdout, "".join(collected))

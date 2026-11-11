@@ -123,6 +123,7 @@ def main(argv: list[str]) -> int:
     codes = {"init": fabric(["init", "--quiet"])}
     (secrets,) = (work / "xdg" / "fabric").iterdir()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(secrets / "secrets" / "node.crt", secrets / "secrets" / "node.key")
     server = _FakeNode(("127.0.0.1", port), http.server.BaseHTTPRequestHandler)
     server.socket = context.wrap_socket(server.socket, server_side=True)

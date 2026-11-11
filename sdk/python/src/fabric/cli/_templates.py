@@ -11,11 +11,10 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from importlib import resources
 from pathlib import Path
 from typing import Any
 
-from . import _config, _secrets
+from . import _config, _localsink, _secrets
 from ._images import Images
 
 NODE_SERVICE = _secrets.NODE_SERVICE
@@ -28,6 +27,9 @@ SINK_FILE = "otlp_sink.py"
 PROJECT_LABEL = "ai.singleaxis.fabric.project"
 NODE_IMAGE_GID = 65532  # the Node image's nonroot user and group
 _TLS_DIR = "/run/fabric-node/tls"
+_SINK_HEALTH = (
+    "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"
+)
 _HARDENING: dict[str, Any] = {
     "read_only": True, "cap_drop": ["ALL"], "security_opt": ["no-new-privileges:true"],
     "restart": "unless-stopped",
@@ -110,8 +112,7 @@ def compose(project: str, compose_project: str, images: Images, layout: Layout,
                     f"{layout.data_dir / 'spans'}:/data/spans",
                     f"{layout.data_dir / 'host-logs'}:/data/host-logs"],
         "healthcheck": {
-            "test": ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen("
-                     "'http://127.0.0.1:8080/health', timeout=2)"],
+            "test": ["CMD", "python", "-c", _SINK_HEALTH],
             "interval": "2s", "timeout": "3s", "retries": 30},
         "networks": ["fabric"], "labels": dict(labels), **_HARDENING,
     }  # fmt: skip
@@ -179,7 +180,7 @@ def dump(document: dict[str, Any], header: str) -> str:
 
 def sink_source() -> str:
     """The bundled sink's source, copied into the project and mounted into its container."""
-    return resources.files(__package__).joinpath("_localsink.py").read_text(encoding="utf-8")
+    return Path(_localsink.__file__).read_text(encoding="utf-8")
 
 
 RENDER_HEADER = (

@@ -118,11 +118,9 @@ def _container_user(facts: _sensor.HostFacts) -> tuple[str | None, bool]:
 
 
 def _write_if_changed(path: Path, text: str) -> bool:
-    try:
+    with contextlib.suppress(OSError, UnicodeDecodeError):  # missing or unreadable: write it
         if path.read_text(encoding="utf-8") == text:
             return False
-    except (OSError, UnicodeDecodeError):
-        pass
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}")
     temporary.write_text(text, encoding="utf-8")
     os.replace(temporary, path)
@@ -161,6 +159,7 @@ def node_answers(port: int, ca_file: Path, timeout: float = 2.0) -> bool:
     """Whether the Node's OTLP/HTTP listener on loopback completes a TLS handshake with a
     certificate the generated CA signed, and answers HTTP. Loopback only; no DNS."""
     context = ssl.create_default_context(cafile=str(ca_file))
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     try:
         # A plain AF_INET socket to the literal address: no resolver call of any kind (I4).
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as raw:
@@ -364,7 +363,9 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     _start(docker, project, compose_file, layout, options.wait, probe, sleep, findings)
     _confirm_sensor(sensor, docker, project, compose_file, sleep)
     findings.extend(sensor.findings)
-    applied.update(sensor=sensor.state() if sensor.start or not sensor.create else "failed",
+    # The same words `applied` was compared with above, so a sensor that could not start
+    # is not reported as a change by the next `up`.
+    applied.update(sensor=sensor.state(),
                    sensor_cgroup=sensor.cgroup if sensor.start else None,
                    sensor_cgroup_created=sensor.create if sensor.start else None)  # fmt: skip
     _write_if_changed(state_path, json.dumps(applied, indent=2, sort_keys=True) + "\n")

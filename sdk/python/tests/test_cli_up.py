@@ -509,6 +509,10 @@ def test_a_cgroup_that_cannot_be_created_is_a_named_reason(
     report, _ = _up_once(docker)
     assert report.data["sensor"]["reasons"] == ["FC-044"]
     assert "sudo" in next(f for f in report.findings if f.id == "FC-044").entry["fix"]
+    # A sensor that could not start is not a "change" the next `up` reports.
+    report, _ = _up_once(docker)
+    assert report.data["changes"] == [] and "FC-026" not in _ids(report)
+    assert report.data["sensor"]["reasons"] == ["FC-044"]
     created = Path("/sys/fs/cgroup/user.slice/fabric.slice/agent-support-agent")
     monkeypatch.setattr(_sensor, "create_agent_cgroup", lambda *_a, **_k: created)
     report, _ = _up_once(docker)

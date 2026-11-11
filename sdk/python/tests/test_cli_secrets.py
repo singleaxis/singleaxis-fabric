@@ -191,6 +191,7 @@ def tls_server(tmp_path: Path) -> Iterator[tuple[int, Path]]:
     """A loopback HTTPS server with the generated Node certificate."""
     directory = _generate(tmp_path)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(directory / "node.crt", directory / "node.key")
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.BaseHTTPRequestHandler)
     server.socket = context.wrap_socket(server.socket, server_side=True)
