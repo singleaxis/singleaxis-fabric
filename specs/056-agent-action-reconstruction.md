@@ -1420,16 +1420,16 @@ M2 privacy canaries:
 ### 6.3 Measuring the ambiguous share again (revision 12)
 
 **The figure.** The build plan states that 41% of effect-to-tool-call
-links are ambiguous. The field harness
-(`fabric-field-harness`, a separate repository owned by the owner; build
-agents may read it and never write it) classes every ground-truth process
-as `linked:certain`, `linked:tentative`, `linked:ambiguous`,
-`captured:unlinked`, `wrong` or `missing` (`harness/compare.py`,
-`_link_class`). Recomputing from its stored `results/smoke-2/report.json`
-over every `proc:*` class gives 26 ambiguous of 58 linked (45%), and 17 of
-those 26 are hook-program processes. The plan's 41% is close to this but
-the stored reports do not reproduce it exactly, so the first step below
-is a fresh baseline, not a reuse of the old number.
+links are ambiguous. The number comes from the field harness, a test
+harness kept outside this repository that runs real agent shapes with an
+independent ground-truth log; build agents may read it and never write
+it. Its comparator classes every ground-truth process as
+`linked:certain`, `linked:tentative`, `linked:ambiguous`,
+`captured:unlinked`, `wrong` or `missing`. Recomputing from its stored
+second smoke run over every process class gives 26 ambiguous of 58 linked
+(45%), and 17 of those 26 are hook-program processes. The plan's 41% is
+close to this but the stored reports do not reproduce it exactly, so the
+first step below is a fresh baseline, not a reuse of the old number.
 
 **Definition.**
 
@@ -1474,8 +1474,8 @@ file-write capture count.
 this lane): the comparator joins `file_write` ground truth to `file.audit`
 effects by path (today it marks every one `missing` without looking); it
 adds an `os.system` process class; its agent images set the two new
-switches; `_link_class` keeps working unchanged, because the action view's
-link fields keep their names.
+switches; its link classifier keeps working unchanged, because the action
+view's link fields keep their names.
 
 **In-repository stand-in (unit 056-c6).** The harness needs real model
 calls and cloud resources, so CI cannot run it.
