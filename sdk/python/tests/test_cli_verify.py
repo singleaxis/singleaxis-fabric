@@ -12,6 +12,7 @@ autoload)."""
 
 from __future__ import annotations
 
+import contextlib
 import json
 import subprocess
 import sys
@@ -41,6 +42,12 @@ from .test_security_boundary import FORBIDDEN_WORDS, _printable_literals, _tree
 def lab(tmp_path: Path) -> Iterator[dict[str, Any]]:
     """A project, the sink in its data directory, a fake model, and the environment of a
     shell whose FABRIC_OTLP_ENDPOINT (a variable already set wins, §6.2) is the sink."""
+    with _lab(tmp_path) as made:
+        yield made
+
+
+@contextlib.contextmanager
+def _lab(tmp_path: Path) -> Iterator[dict[str, Any]]:
     env = base_env(tmp_path)
     project = make_project(tmp_path, env)
     sink = Sink(project / "fabric-data")
@@ -170,6 +177,21 @@ def test_verify_show_and_doctor_on_a_working_project(lab: dict[str, Any]) -> Non
     everything = json.dumps(report) + text + "\n".join(lines)
     for value in secrets:
         assert value.decode(errors="replace") not in everything
+
+
+def test_a_project_path_with_a_space_reads_its_content_store(tmp_path: Path) -> None:
+    """The compiled FABRIC_WIRE_STORE is a file URI (a space is %20); verify and show must
+    read the store the SDK wrote, or every exchange reads back unverified."""
+    root = tmp_path / "my projects"
+    root.mkdir()
+    with _lab(root) as lab:
+        _start_agent(lab)
+        code, lines, report = _verify_now(lab)
+        assert code == 0 and {"FC-065", "FC-069"} <= set(_ids(report)), report["findings"]
+        _, lines = _show.run(
+            parse(["show", "--content"]), lab["shell"], lab["project"], is_tty=lambda: False
+        )
+        assert 'answer: "It is noon in UTC."' in "\n".join(lines)
 
 
 def test_s1_a_model_host_no_endpoint_matches_is_named_with_the_fix(lab: dict[str, Any]) -> None:

@@ -753,8 +753,8 @@ def _docker(env: Mapping[str, str], project: _project.Project, notes: list[str])
         elif name in _IN_CONTAINER:
             flags.append(f"-v {_shell(value + ':' + _IN_CONTAINER[name] + ':ro')}")
             inside = _IN_CONTAINER[name]
-        elif name == "FABRIC_WIRE_STORE" and value.startswith("file://"):
-            flags.append(f"-v {_shell(value[len('file://') :] + ':/var/lib/fabric/store')}")
+        elif name == "FABRIC_WIRE_STORE" and (store := _project.store_directory(value)):
+            flags.append(f"-v {_shell(str(store) + ':/var/lib/fabric/store')}")
             inside = "file:///var/lib/fabric/store"
         flags.append(f"-e {_shell(name + '=' + inside)}")
     if "FABRIC_WIRE_AUTOLOAD" in env:

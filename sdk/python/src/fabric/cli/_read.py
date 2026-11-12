@@ -61,8 +61,7 @@ def destination(
     except ValueError:
         key = None
     tenant = env.get("FABRIC_TENANT_ID") or str(project.resolved["tenant"])
-    store_uri = env.get("FABRIC_WIRE_STORE") or ""
-    store = Path(store_uri[len("file://") :]) if store_uri.startswith("file://") else None
+    store = _project.store_directory(env.get("FABRIC_WIRE_STORE") or "")
     if spans is not None:
         return Destination(Path(spans), store, tenant, key)
     preset = (project.resolved["destination"] or {}).get("preset")

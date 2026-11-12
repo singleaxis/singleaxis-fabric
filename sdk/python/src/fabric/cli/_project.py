@@ -19,7 +19,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from . import _config, _providers, _secrets
 from ._report import CliError, Finding
@@ -231,6 +231,15 @@ def compile_environment(project: Project) -> dict[str, str]:
         if "\n" in value or "\r" in value:
             raise CliError([Finding("FC-004", f"{name}: the value has a line break")])
     return env
+
+
+def store_directory(uri: str) -> Path | None:
+    """The directory a ``file://`` ``FABRIC_WIRE_STORE`` names, decoded as the SDK decodes
+    it (``as_uri`` writes a space as ``%20``); ``None`` for any other store."""
+    parts = urlsplit(uri)
+    if parts.scheme != "file" or parts.netloc not in ("", "localhost"):
+        return None
+    return Path(unquote(parts.path))
 
 
 def config_digest(config_path: Path) -> str:

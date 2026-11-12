@@ -433,6 +433,20 @@ def test_print_env_sh_round_trips_through_a_shell(tmp_path: Path, env: dict[str,
     assert matcher["hosts"] == ["my-llm.example.com"]
 
 
+def test_the_store_uri_is_decoded_as_the_sdk_decodes_it(tmp_path: Path) -> None:
+    """``as_uri`` writes a space as %20: the docker mount names the real directory."""
+    root = tmp_path / "my projects"
+    root.mkdir()
+    env = base_env(root)
+    project = make_project(root, env)
+    store = (project / "fabric-data" / "store").resolve()
+    assert _project.store_directory(store.as_uri()) == store
+    assert _project.store_directory("node") is None
+    assert _project.store_directory("s3://bucket/prefix") is None
+    text, _ = _print_env(project, env, "--format", "docker", "--", str(PY), "a.py")
+    assert f"-v '{store}:/var/lib/fabric/store'" in text and "%20" not in text
+
+
 def test_systemd_values_are_escaped() -> None:
     assert _run._quote_systemd('a"b%c\\d') == 'a\\"b%%c\\\\d'
 
