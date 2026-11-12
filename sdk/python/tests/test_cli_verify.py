@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from fabric.cli import _doctor, _read, _runstate, _show, _verify
-from fabric.cli._report import Finding
+from fabric.cli._report import Finding, Report, emit
 
 from ._cli_run_support import (
     AGENT,
@@ -138,7 +138,7 @@ def test_verify_show_and_doctor_on_a_working_project(lab: dict[str, Any]) -> Non
     assert report_.exit_code == 0 and "run agent-1" in text and "verdict: complete" in text
     assert 'user: "What time is it in UTC?"' in text
     assert 'tool_call T1 get_time  {"zone": "UTC"}' in text
-    assert '↳ result T1  "{\\"time\\": \\"12:00\\"}"' in text or "result T1" in text
+    assert '↳ result T1  "{"time": "12:00"}"' in text
     assert 'answer: "It is noon in UTC."' in text
     # Not a terminal and no --content: no content, and a finding says how to get it.
     report_, lines = _show.run(parse(["show"]), lab["shell"], lab["project"], is_tty=lambda: False)
@@ -317,3 +317,20 @@ def test_reader_outputs_name_no_evaluation_word() -> None:
     ):
         for literal in _printable_literals(_tree(module)):
             assert not FORBIDDEN_WORDS.search(literal), (module, literal)
+
+
+def test_human_output_never_drives_the_terminal(capsys: pytest.CaptureFixture[str]) -> None:
+    """``show`` prints model answers and tool results, ``verify`` and ``doctor`` hosts and
+    labels from status files: none of them may reach the terminal as an escape sequence."""
+    hostile = "It is noon\x1b]0;owned\x07\x1b[2J \u202etxt.exe\x9b"
+    report = Report("show", findings=[Finding("FW-006", f"{hostile}: 3 request(s)")])
+    report.findings.append(Finding("FC-068", hostile))  # an error goes to stderr
+    emit(report, [f'  1  model  fake  answer: "{hostile}"', "tab\tand\nnewline"],
+         as_json=False, quiet=False)  # fmt: skip
+    out, err = capsys.readouterr()
+    for stream in (out, err):
+        assert not any(ch in stream for ch in "\x1b\x07\u202e\x9b"), stream
+    assert "\\x1b]0;owned\\x07" in out and "\\u202etxt.exe" in out and "\\x1b[2J" in err
+    assert "tab\tand\nnewline" in out
+    emit(report, [], as_json=True, quiet=False)
+    assert "\x1b" not in capsys.readouterr().out

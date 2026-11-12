@@ -38,7 +38,7 @@ from typing import IO, Any
 
 from .._version import __version__
 from . import _config, _project, _providers, _runstate, _sensor, _templates
-from ._report import EXIT_OK, EXIT_USAGE, CliError, Finding, Report
+from ._report import EXIT_OK, EXIT_USAGE, CliError, Finding, Report, printable
 
 FORMATS = ("sh", "dotenv", "docker", "systemd", "k8s")
 PROBE_TIMEOUT_S = 15.0
@@ -468,7 +468,7 @@ def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
         for finding in findings:
             if quiet and finding.severity != "error":
                 continue
-            stream.write(f"fabric run: {finding.line()}\n")
+            stream.write(f"fabric run: {printable(finding.line())}\n")
         stream.flush()
     except (OSError, ValueError):
         return
