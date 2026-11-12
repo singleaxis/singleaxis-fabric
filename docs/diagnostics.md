@@ -380,7 +380,7 @@ is not affected, launchers that read the file are.
 
 `node_unreachable`, error: the Fabric Node did not answer over TLS with the project's CA.
 
-Fix: run `fabric up`; if it is running, the detail holds its last log line (docker compose -p
+Fix: run `fabric up`; if it is running, `fabric doctor` prints its last log line (docker compose -p
 fabric-PROJECT logs fabric-node shows more).
 
 ### FC-062

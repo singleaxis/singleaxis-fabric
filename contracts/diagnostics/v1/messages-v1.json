@@ -233,7 +233,7 @@
      "fix": "run `fabric init` (or `fabric up`) to rewrite it; `fabric run` compiles fabric.yaml itself and is not affected, launchers that read the file are"},
     {"id": "FC-061", "name": "node_unreachable", "severity": "error",
      "text": "the Fabric Node did not answer over TLS with the project's CA",
-     "fix": "run `fabric up`; if it is running, the detail holds its last log line (docker compose -p fabric-PROJECT logs fabric-node shows more)"},
+     "fix": "run `fabric up`; if it is running, `fabric doctor` prints its last log line (docker compose -p fabric-PROJECT logs fabric-node shows more)"},
     {"id": "FC-062", "name": "canary_not_captured", "severity": "error",
      "text": "the canary could not record a model exchange with this project's configuration",
      "fix": "the detail holds the SDK's reason and fix; `fabric doctor` checks the same configuration"},

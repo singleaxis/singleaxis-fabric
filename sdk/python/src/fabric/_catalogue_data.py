@@ -657,8 +657,8 @@ CATALOGUE: dict[str, Any] = {
             "name": "node_unreachable",
             "severity": "error",
             "text": "the Fabric Node did not answer over TLS with the project's CA",
-            "fix": "run `fabric up`; if it is running, the detail holds its last log line "
-            "(docker compose -p fabric-PROJECT logs fabric-node shows more)",
+            "fix": "run `fabric up`; if it is running, `fabric doctor` prints its last log "
+            "line (docker compose -p fabric-PROJECT logs fabric-node shows more)",
         },
         {
             "id": "FC-062",
