@@ -41,6 +41,11 @@ singleaxis-fabric = "fabric.cli:main"
 cli = [
   "PyYAML>=6.0.2,<7.0",
   "cryptography>=49",
+  # Spec 058 G1: one install. `fabric init` compiles an https Node endpoint, so the agent's
+  # environment needs the OTLP/HTTP exporter that sends records there (the [otlp] extra's
+  # packages); without it the first `fabric run` would stop at FW-011.
+  "opentelemetry-exporter-otlp-proto-http>=1.41",
+  "urllib3>=2.8.0",
 ]
 # Wire-capture node mode (spec 048) needs no extra entry: this exporter
 # already depends on `requests` and `opentelemetry-proto`, which the content

@@ -32,6 +32,20 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$")  # FABRIC_TENANT_ID /
 _ENDPOINT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?$")
 DESTINATION_PRESETS = ("local-dir", "trial", "s3", "s3-compatible", "otlp")
+# §7.2: fabric.yaml holds no secret. A path-valued setting whose value has the shape of a
+# credential (the fabricctl reference rules: a PEM block, a bearer or API token, a cloud or
+# source-host key, a JWT, a long opaque or hex string) is refused. A value with a / or a
+# file extension is a path, so ./token-files/policy.json passes. The JSON schema carries
+# the same pattern.
+CREDENTIAL_SHAPE = (
+    r"^(-----BEGIN |[Bb][Ee][Aa][Rr][Ee][Rr][ :]"
+    r"|([Ss][Kk]|[Pp][Kk]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]"
+    r"|[Ss][Ee][Cc][Rr][Ee][Tt])[_-][A-Za-z0-9_~+-]{8,}$"
+    r"|(AKIA|ASIA)[A-Z0-9]{16}$|gh[pousr]_[A-Za-z0-9]{20,}$"
+    r"|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$"
+    r"|[A-Za-z0-9_-]{48,}$|[A-Fa-f0-9]{40,}$)"
+)
+_CREDENTIAL_SHAPE_RE = re.compile(CREDENTIAL_SHAPE)
 
 
 # ---------------------------------------------------------------- validation rules
@@ -76,6 +90,8 @@ def _path_or(*keywords: str) -> Rule:
         if not isinstance(value, str) or not value.strip() or "\0" in value:
             listed = " or ".join(keywords)
             raise _bad(path, f"must be {listed + ' or ' if listed else ''}a file path")
+        if _CREDENTIAL_SHAPE_RE.match(value):
+            raise _InvalidError(Finding("FC-017", f"{path}: looks like a secret value, not a path"))
 
     return check
 
@@ -174,7 +190,10 @@ SCHEMA = _Object({
         "otlp_headers_file": _path_or(),
     }, required=("preset",)),
     "sensor": _Object({"kind": _enum("auto", "ebpf", "auditd", "off")}),
-    "secrets": _Object({"dir": _path_or("auto")}),
+    # id_key_file / ca_file: an existing setup's own files, referenced by path and never
+    # copied (§11.3); unset, `fabric init` generates them in secrets.dir.
+    "secrets": _Object({"dir": _path_or("auto"), "id_key_file": _path_or(),
+                        "ca_file": _path_or()}),
 }, required=("schema",))  # fmt: skip
 
 # The destination keys each preset accepts (spec 058 §9.1), beyond preset itself.
@@ -364,7 +383,7 @@ SETTINGS: tuple[Setting, ...] = (
     Setting("capture.security_context"),
     Setting("node.mode"), Setting("node.endpoint", "FABRIC_OTLP_ENDPOINT"),
     Setting("node.queue_size"), Setting("destination"), Setting("sensor.kind"),
-    Setting("secrets.dir"),
+    Setting("secrets.dir"), Setting("secrets.id_key_file"), Setting("secrets.ca_file"),
 )  # fmt: skip
 
 
@@ -377,6 +396,7 @@ def defaults(profile: str, project: str) -> dict[str, Any]:
         "capture.exec": False, "capture.http_hosts": [], "capture.mcp": False,
         "capture.security_context": None, "node.mode": "docker", "node.endpoint": "auto",
         "node.queue_size": "auto", "sensor.kind": "auto", "secrets.dir": "auto",
+        "secrets.id_key_file": None, "secrets.ca_file": None,
         "destination": ({"preset": "local-dir", "path": "./fabric-data"}
                         if profile == "local" else None),
     }  # fmt: skip
