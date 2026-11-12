@@ -170,6 +170,33 @@ staged batch.
   searched hierarchies when a matching pod has no cgroup. cgroup v1-only
   nodes are not supported (a hybrid node's v2 hierarchy is used).
 
+**Syscall results, exits and watched files (spec 057 P2).** Off by
+default; each is a separate switch:
+
+- `EMIT_SYSCALL_RESULTS=true` (emitter) pairs `connect`, `openat` and
+  `execve` with their return, so a record says `success` or `failed` with
+  the errno, and a failed `execve` (for example `EACCES` on a file without
+  the execute bit) is recorded. The auditd receiver always reads the result
+  from the audit record. The syscall is never delayed: the event waits in a
+  kernel map and is sent when the call returns.
+- `EMIT_EXIT=true` (emitter) records each process exit in scope as event
+  class `exit`, with `fabric.sensor.exit_code` or, for a process a signal
+  ended, `fabric.sensor.signal` (31 is `SIGSYS`, the seccomp kill action).
+- `EMIT_WATCHED_PATHS_FILE` (emitter) and `production.watched_paths_file`
+  (auditd receiver) name your `watched_paths` list: a JSON list, or a
+  deployment policy in JSON whose `security_context` holds it. Both need
+  file access on. An open of a listed file, or of anything under a listed
+  `prefix` folder, carries your label, class and the entry's keyed `pth-`
+  id; the path never leaves the sensor, and the sensor never opens, stats or
+  reads the file. A path is matched exactly as the process passed it, so a
+  relative open is not labelled.
+
+The reader shows an `execve`, `openat` or `connect` refused with `EACCES`
+or `EPERM`, and a `SIGSYS` kill, as a control row
+`os_access · effect · deny  kernel` under the tool call its process belongs
+to ([action reconstruction](action-reconstruction.md)). Other failures
+(`ENOENT`, `ECONNREFUSED`, a nonzero exit, `SIGKILL`) stay record fields.
+
 [AR-1 production](../qualification/action-record/README.md#ar-1-production-m2)
 exercises this path in CI.
 

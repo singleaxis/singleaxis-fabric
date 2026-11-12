@@ -34,6 +34,35 @@ it never makes, applies, waits for or returns one.
   does not fail. The manifest carries each list's state, count and digest
   (`fabric.manifest.classifications`), never its contents. See
   [docs/action-reconstruction.md](docs/action-reconstruction.md).
+- **Host sensors see syscall results, process exits and watched files
+  (spec 057 P2, WP7-11).** The eBPF emitter can now pair `connect`, `openat`
+  and `execve` with their return (`EMIT_SYSCALL_RESULTS=true`): records
+  carry `fabric.sensor.result` (`success` or `failed`) and the errno, and a
+  failed `execve` is recorded for the first time. The syscall is never
+  delayed; an event whose return was not seen (a non-blocking connect, a
+  call still running at shutdown) keeps result `unknown`. `EMIT_EXIT=true`
+  (production) records every process exit in scope as event class `exit`
+  with its exit code or the signal that ended it; the manifest gains the
+  `host.ebpf.exit` and `host.ebpf.syscall_result` rows. Both are off by
+  default. Your `watched_paths` list (`EMIT_WATCHED_PATHS_FILE` for the
+  emitter, `production.watched_paths_file` for the auditd receiver, both
+  needing file access) labels an open of a listed file or folder with your
+  label, class and a keyed `pth-` id; the path itself never leaves the
+  sensor, and the sensor never opens or reads the file. A hook program seen
+  only by the eBPF sensor now gets its exit code, and its `exit_map`
+  outcome, from the exit record.
+- **Kernel refusals in the action view (spec 057 P2, WP7-12).** An
+  `execve`, `openat` or `connect` that failed with `EACCES` or `EPERM`, and
+  a process killed by `SIGSYS` (the seccomp kill action), are shown as
+  control rows `os_access · effect · deny  kernel  errno.eacces` (or
+  `errno.eperm`, `signal.sigsys`), linked to the tool call their process
+  belongs to with the grade spec 056 gives that evidence, and counted in
+  fact F13 by syscall, reason and link. They come from host-sensor records
+  or from the in-process exec hook (a refused spawn, a child killed by
+  `SIGSYS`); one refusal seen by both is one row. Every other failure
+  (`ENOENT`, `ECONNREFUSED`, a nonzero exit, `SIGKILL`) stays a field and is
+  never a row. A row says the kernel refused, not which mechanism did, and
+  is not a policy statement.
 - **Spawn errors carry the errno name.** When `subprocess` raises an
   `OSError` (for example on a non-executable file), the exec record now has
   `errno` (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.

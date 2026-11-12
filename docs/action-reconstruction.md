@@ -471,7 +471,9 @@ service. You declare both in the capture policy (the
   the reader prints a warning when it applied to none.
 - **Host sensors.** With `--capture-policy`, a sensor `exec` whose
   executable-path digest is a listed `path` is a hook row (outcome
-  `unknown`; like an in-process hook it is never an effect, and a call
+  `unknown` unless the sensor also records exits, `EMIT_EXIT=true`: then
+  the exit record of that process gives its exit code or signal and the
+  `exit_map` applies; like an in-process hook it is never an effect, and a call
   whose window holds it and no effect makes the `effects` chain
   `partial(none_in_window)`), and a sensor
   `connect` to a listed `control_addresses` entry is a contact row
@@ -481,6 +483,38 @@ service. You declare both in the capture policy (the
   only; a network wider than a /16 is not matched by the reader.
 - **Spawn errors.** A spawn that raises an `OSError` now records the errno
   name (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.
+
+### Kernel refusals (spec 057 P2)
+
+The view shows what the kernel refused as a control row, with no
+configuration:
+
+```text
+  4  model_call   → tool_call T2 write_file
+  5    control    os_access · effect · deny  kernel  errno.eacces  openat  (literal)  seen by host.ebpf   ← T2  process_anchor · tentative
+```
+
+- **The closed set.** An `execve`, `openat` or `connect` that failed with
+  `EACCES` (`errno.eacces`) or `EPERM` (`errno.eperm`), and a process killed
+  by `SIGSYS` (`signal.sigsys`, the seccomp kill action). Nothing else is a
+  row: `ENOENT`, `ECONNREFUSED`, `ETIMEDOUT`, a nonzero exit and `SIGKILL`
+  stay fields of their records.
+- **Where they come from.** A host sensor's records (the eBPF emitter with
+  `EMIT_SYSCALL_RESULTS=true` and `EMIT_EXIT=true`, or the auditd receiver;
+  see [host sensors](host-sensors.md)), or the subprocess hook: a spawn that
+  raised `PermissionError` (`errno.eacces_or_eperm` when only the class is
+  known), or a child killed by `SIGSYS`. One refusal seen by both is one row
+  (`host events 1`), and the sensor's exact errno replaces the class.
+- **Linking.** The row is linked to the tool call its process belongs to,
+  by `process_anchor`, with the confidence spec 056 gives that evidence:
+  the subprocess record's own link, the effect the sensor event was joined
+  to, or otherwise the calls open at that time (`tentative`; several give an
+  ambiguous row that gates none). A refused call with no effect is counted
+  as `control_denied` (F5); fact F13 counts the rows by syscall, reason and
+  link.
+- **What it does not say.** Which mechanism refused (file permissions, an
+  LSM or a seccomp `ERRNO` action look the same), or that a policy was
+  enforced. Fabric only reads the errno or signal the kernel reported.
 
 ## Production profile (M2)
 
