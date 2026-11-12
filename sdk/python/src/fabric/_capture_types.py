@@ -237,6 +237,12 @@ class StatusInputs:
     dropped: tuple[str, ...] = ()
 
 
+#: Resolved status inputs of plain ``str``/``None`` arguments that dropped nothing: the
+#: table is fixed, so each combination is resolved once (bounded: only table values).
+_STATUS_MEMO: dict[tuple[str | None, ...], StatusInputs] = {}
+_PLAIN = (str, type(None))
+
+
 def resolve_status_inputs(
     phase: Phase, lifecycle: Lifecycle | None = None, result_status: ResultStatus | None = None,
     otlp_status: OtlpStatus = "unset",
@@ -246,6 +252,22 @@ def resolve_status_inputs(
     stays ``unset`` even with ``result_status=error``). An unknown ``phase`` raises
     :class:`RecordsMisuseError` (nothing can be emitted); any other value outside the
     table is dropped and named in ``dropped``."""
+    plain = (type(phase) is str and type(lifecycle) in _PLAIN
+             and type(result_status) in _PLAIN and type(otlp_status) is str)  # fmt: skip
+    if plain:
+        found = _STATUS_MEMO.get((phase, lifecycle, result_status, otlp_status))
+        if found is not None:
+            return found
+    resolved = _resolve_status_inputs(phase, lifecycle, result_status, otlp_status)
+    if plain and not resolved.dropped:  # only table values: a finite set of keys
+        _STATUS_MEMO[(phase, lifecycle, result_status, otlp_status)] = resolved
+    return resolved
+
+
+def _resolve_status_inputs(
+    phase: Phase, lifecycle: Lifecycle | None, result_status: ResultStatus | None,
+    otlp_status: OtlpStatus,
+) -> StatusInputs:  # fmt: skip
     rule = PHASE_TABLE.get(phase) if isinstance(phase, str) else None
     if rule is None:
         raise RecordsMisuseError("records API misuse: unknown phase")
