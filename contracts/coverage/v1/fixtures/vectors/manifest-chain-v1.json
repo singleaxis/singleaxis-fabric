@@ -29,7 +29,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@5",
+      "role_table_version": "fabric.content-role-table/v1@6",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -494,7 +494,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@5",
+      "role_table_version": "fabric.content-role-table/v1@6",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -930,7 +930,7 @@
       "unsealed_prior_epochs": [],
       "unsealed_prior_epoch_count": 0,
       "source_auth": "unbound",
-      "previous_manifest_sha256": "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221"
+      "previous_manifest_sha256": "sha256:fa362712a778b72ae7b3230219c1b6d9c9f8b91a078918734ae1c3d01f87024e"
     },
     {
       "schema_version": "fabric.capture-manifest/v1",
@@ -959,7 +959,7 @@
         "encrypted_store_required": false
       },
       "content_capture": "enabled",
-      "role_table_version": "fabric.content-role-table/v1@5",
+      "role_table_version": "fabric.content-role-table/v1@6",
       "limits": {
         "max_body_bytes": 33554432,
         "max_retain_bytes": 67108864,
@@ -1396,12 +1396,12 @@
       "unsealed_prior_epochs": [],
       "unsealed_prior_epoch_count": 0,
       "source_auth": "unbound",
-      "previous_manifest_sha256": "sha256:33f6951e42e6e6047764cf0f33f49bdb94b927dccbce3d36ed8f090c0fa66e10"
+      "previous_manifest_sha256": "sha256:d6d506cc26b24ea09970571c2448fdf95a5193b5e96b8ec70e20b7eb163812a2"
     }
   ],
   "digests": [
-    "sha256:c0abea7ae9a64edef2b09f4e10e6cb4aa6af0528d478378026d1a626822f5221",
-    "sha256:33f6951e42e6e6047764cf0f33f49bdb94b927dccbce3d36ed8f090c0fa66e10",
-    "sha256:b24070f71e405f88aec9d17b74e2bd5903e283ab9867768b4566acb9a00be492"
+    "sha256:fa362712a778b72ae7b3230219c1b6d9c9f8b91a078918734ae1c3d01f87024e",
+    "sha256:d6d506cc26b24ea09970571c2448fdf95a5193b5e96b8ec70e20b7eb163812a2",
+    "sha256:b6a755de4fad21784053dc2834c2413aff86d61a9136cea9ad3d6a7bec5aae18"
   ]
 }

@@ -65,7 +65,7 @@
       "fabric.manifest.max_clock_uncertainty_ns": 300000000000,
       "fabric.manifest.profile": "local",
       "fabric.manifest.pseudonym_mode": "keyed",
-      "fabric.manifest.role_table_version": "fabric.content-role-table/v1@5",
+      "fabric.manifest.role_table_version": "fabric.content-role-table/v1@6",
       "fabric.manifest.runtime.name": "cpython",
       "fabric.manifest.runtime.version": "3.12.13",
       "fabric.manifest.sdk.language": "python",
