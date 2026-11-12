@@ -20,6 +20,7 @@ import yaml
 
 from fabric import cli
 from fabric.cli import _config, _init, _project
+from fabric.hooks import _config as hooks_config
 
 from ._cli_support import mode, secret_values
 
@@ -238,7 +239,10 @@ def test_flags_update_an_existing_file_and_print_the_diff(
     assert document["capture"]["mcp"] is True and document["sensor"]["kind"] == "off"
     env = _compiled(project)
     assert env["FABRIC_TENANT_ID"] == "acme" and env["FABRIC_WIRE_EXEC"] == "1"
-    assert env["FABRIC_WIRE_HTTP_HOSTS"] == "api.github.com" and env["FABRIC_WIRE_MCP"] == "1"
+    assert env["FABRIC_WIRE_HTTP_HOSTS"] == '["api.github.com"]' and env["FABRIC_WIRE_MCP"] == "1"
+    # The compiled value is the SDK's own form: the hooks it names stay on.
+    hooks, _ = hooks_config.config_from_env(env)
+    assert hooks is not None and hooks.exec and hooks.http_hosts[0].host == "api.github.com"
     assert {p.name: p.read_bytes() for p in _secrets_dir(tmp_path).iterdir()} == secrets_before
     # The same flag again changes nothing.
     assert _json(["init", "--http-host", "api.github.com"], capsys)["data"]["config"][
@@ -789,3 +793,20 @@ def test_a_refused_init_leaves_fabric_yaml_as_it_was(
     assert (report["exit_code"], report["findings"][0]["id"]) == (2, finding_id)
     assert (project / "fabric.yaml").read_text() == before
     assert not list(project.glob("fabric.yaml.bak-*"))
+
+
+def test_http_hosts_from_the_environment_take_the_sdks_json_form() -> None:
+    """--from-env imports FABRIC_WIRE_HTTP_HOSTS as the SDK reads it (a JSON array), and a
+    comma list as before; a JSON value of another shape is kept whole so the host check
+    names it."""
+    assert _config._env_list('["api.github.com", "tools.internal:8443"]') == [
+        "api.github.com",
+        "tools.internal:8443",
+    ]
+    assert _config._env_list("api.github.com, tools.internal:8443") == [
+        "api.github.com",
+        "tools.internal:8443",
+    ]
+    assert _config._env_list('[1, 2]') == ["[1, 2]"]
+    assert _config._env_list("[not json") == ["[not json"]
+    assert _config._env_list("") == []

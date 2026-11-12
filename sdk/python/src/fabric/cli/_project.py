@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import ipaddress
+import json
 import os
 import secrets as _random
 from collections.abc import Mapping
@@ -221,7 +222,10 @@ def compile_environment(project: Project) -> dict[str, str]:
     if resolved["capture.exec"]:
         env["FABRIC_WIRE_EXEC"] = "1"
     if resolved["capture.http_hosts"]:
-        env["FABRIC_WIRE_HTTP_HOSTS"] = ",".join(resolved["capture.http_hosts"])
+        # The SDK reads a JSON array (hooks/_config.py); any other form disables every hook.
+        env["FABRIC_WIRE_HTTP_HOSTS"] = json.dumps(
+            list(resolved["capture.http_hosts"]), separators=(",", ":")
+        )
     if resolved["capture.mcp"]:
         env["FABRIC_WIRE_MCP"] = "1"
     if resolved["capture.privacy"] != "profile-default":
