@@ -8,7 +8,7 @@
 package fabriccontentexporter
 
 // roleTableVersion is the role table this exporter enforces.
-const roleTableVersion = "fabric.content-role-table/v1@5"
+const roleTableVersion = "fabric.content-role-table/v1@6"
 
 // roleTable is every content role with its permitted boundaries, provenance,
 // media types and cap (capBytes 0: the configured max_body_bytes).

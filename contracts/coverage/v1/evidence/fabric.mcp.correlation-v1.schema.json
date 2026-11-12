@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.mcp.correlation-v1.schema.json",
+  "title": "Evidence type fabric.mcp.correlation/v1 (spec 053 §3.2, §5.5; spec 057 WP7-8)",
+  "description": "The one item of an mcp.client record: one JSON-RPC message the MCP protocol library's transport sent or received, with its transport, direction and kind, the session and request it belongs to, and how it was correlated with its request. Metadata only: the method, direction and error kind travel as telemetry keys (N22, N25); the message itself travels as an mcp.* content body, never here. Closed: no other property, no free text. session_ref is a hook-minted mcps- id of one transport connection (stdio has no session id); rpc_ref and related_rpc_ref are rpc- v2 pseudonyms of the literal JSON-RPC id, omitted without an id key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "transport",
+    "direction",
+    "message_kind",
+    "connection_index",
+    "representation",
+    "correlation"
+  ],
+  "properties": {
+    "transport": {
+      "description": "META (C28): the MCP transport the message travelled on.",
+      "enum": [
+        "stdio",
+        "streamable_http"
+      ]
+    },
+    "direction": {
+      "description": "META (N22): who sent the message, kept independently of request and response (a server may send requests).",
+      "enum": [
+        "client_to_server",
+        "server_to_client"
+      ]
+    },
+    "message_kind": {
+      "description": "META: the JSON-RPC 2.0 kind of the message.",
+      "enum": [
+        "request",
+        "response",
+        "error",
+        "notification"
+      ]
+    },
+    "session_ref": {
+      "description": "ID (N23): the transport connection the message belongs to: mcps- + 32 hex, or the clear-mode form under identity_mode clear.",
+      "type": "string",
+      "pattern": "^mcps-[0-9a-f]{32}$",
+      "x-fabric-clear": {
+        "type": "string",
+        "pattern": "^(?:h-[0-9a-f]{40}|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"
+      }
+    },
+    "rpc_ref": {
+      "description": "ID (N23): the message's own JSON-RPC id (a request, or the request a response answers): rpc- + 32 hex, or the clear-mode form under identity_mode clear. Absent for a notification and without an id key.",
+      "type": "string",
+      "pattern": "^rpc-[0-9a-f]{32}$",
+      "x-fabric-clear": {
+        "type": "string",
+        "pattern": "^(?:h-[0-9a-f]{40}|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"
+      }
+    },
+    "related_rpc_ref": {
+      "description": "ID: the request a progress or cancel notification names: rpc- + 32 hex, or the clear-mode form under identity_mode clear.",
+      "type": "string",
+      "pattern": "^rpc-[0-9a-f]{32}$",
+      "x-fabric-clear": {
+        "type": "string",
+        "pattern": "^(?:h-[0-9a-f]{40}|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"
+      }
+    },
+    "id_type": {
+      "description": "META: the JSON type of the literal id (\"1\" and 1 are different ids).",
+      "enum": [
+        "string",
+        "number"
+      ]
+    },
+    "connection_index": {
+      "description": "META: the reconnect index within one session (0 for the first connection).",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "representation": {
+      "description": "META: exact_bytes when the body holds the bytes the transport wrote or read; library_serialised when it holds a string the library itself serialised.",
+      "enum": [
+        "exact_bytes",
+        "library_serialised"
+      ]
+    },
+    "correlation": {
+      "description": "META: matched (a response or error paired with its request in this session), unmatched (no request was seen), evicted (the request left the bounded correlation map before its answer), not_applicable (a request or notification).",
+      "enum": [
+        "matched",
+        "unmatched",
+        "evicted",
+        "not_applicable"
+      ]
+    }
+  }
+}

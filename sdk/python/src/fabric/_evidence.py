@@ -59,7 +59,7 @@ EVIDENCE_ENVELOPE_KEYS: Mapping[str, bool] = {
 # the http and sandbox types).
 REGISTERED_EVIDENCE_TYPES: frozenset[str] = frozenset(
     {"fabric.test.items/v1", "fabric.exec.observation/v1", "fabric.http.observation/v1",
-     "fabric.sandbox.observation/v1"}
+     "fabric.sandbox.observation/v1", "fabric.mcp.correlation/v1"}
 )  # fmt: skip
 # An ID property's clear-mode alternative (R8), admitted only under identity_mode clear.
 CLEAR_KEYWORD = "x-fabric-clear"
@@ -161,6 +161,31 @@ _SANDBOX_OBSERVATION_SCHEMA: Mapping[str, Any] = {
         "error_class": _LABEL,
     },
 }  # fmt: skip
+_CLEAR_ID = {"type": "string",
+             "pattern": "^(?:h-[0-9a-f]{40}|[A-Za-z0-9][A-Za-z0-9._:-]{0,127})$"}  # fmt: skip
+# Spec 053 §3.2, §5.5 (registered by spec 057 WP7-8 for mcp.client).
+_MCP_CORRELATION_SCHEMA: Mapping[str, Any] = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://singleaxis.ai/contracts/coverage/v1/evidence/fabric.mcp.correlation-v1.schema.json",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["transport", "direction", "message_kind", "connection_index",
+                 "representation", "correlation"],
+    "properties": {
+        "transport": {"enum": ["stdio", "streamable_http"]},
+        "direction": {"enum": ["client_to_server", "server_to_client"]},
+        "message_kind": {"enum": ["request", "response", "error", "notification"]},
+        "session_ref": {"type": "string", "pattern": "^mcps-[0-9a-f]{32}$",
+                        CLEAR_KEYWORD: _CLEAR_ID},
+        "rpc_ref": {"type": "string", "pattern": "^rpc-[0-9a-f]{32}$", CLEAR_KEYWORD: _CLEAR_ID},
+        "related_rpc_ref": {"type": "string", "pattern": "^rpc-[0-9a-f]{32}$",
+                            CLEAR_KEYWORD: _CLEAR_ID},
+        "id_type": {"enum": ["string", "number"]},
+        "connection_index": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "representation": {"enum": ["exact_bytes", "library_serialised"]},
+        "correlation": {"enum": ["matched", "unmatched", "evicted", "not_applicable"]},
+    },
+}  # fmt: skip
 #: The closed item schema of each registered type (its file under
 #: ``contracts/coverage/v1/evidence/``, annotations dropped). ``fabric.reconstruct``
 #: validates stored objects against the same dictionaries.
@@ -169,6 +194,7 @@ EVIDENCE_ITEM_SCHEMAS: Mapping[str, Mapping[str, Any]] = MappingProxyType({
     "fabric.exec.observation/v1": _EXEC_OBSERVATION_SCHEMA,
     "fabric.http.observation/v1": _HTTP_OBSERVATION_SCHEMA,
     "fabric.sandbox.observation/v1": _SANDBOX_OBSERVATION_SCHEMA,
+    "fabric.mcp.correlation/v1": _MCP_CORRELATION_SCHEMA,
 })  # fmt: skip
 # ---------------------------------------------------------------------------------------------
 
