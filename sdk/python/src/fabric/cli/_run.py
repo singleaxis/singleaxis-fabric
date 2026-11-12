@@ -481,9 +481,7 @@ def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
 _PYTHON_IGNORED = ("SIGPIPE", "SIGXFZ", "SIGXFSZ")
 
 
-def _exec(
-    execvpe: Callable[..., Any], command: Sequence[str], env: Mapping[str, str]
-) -> None:
+def _exec(execvpe: Callable[..., Any], command: Sequence[str], env: Mapping[str, str]) -> None:
     """``execvpe`` with the default disposition of the signals Python ignores, as a shell
     gives them (best effort, I3). They are put back when ``exec`` does not happen (it
     failed, or a test's ``execvpe`` returned)."""

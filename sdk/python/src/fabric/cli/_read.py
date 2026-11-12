@@ -254,7 +254,6 @@ def provider_url(entry: Mapping[str, Any]) -> str:
     return f"{scheme}://{where}/v1"
 
 
-
 @dataclass(frozen=True)
 class Row:
     """One coverage row: the question, its state, and the evidence or the fix."""
