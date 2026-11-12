@@ -18,7 +18,6 @@ prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
 from __future__ import annotations
 
 import argparse
-import importlib
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -208,8 +207,16 @@ def _reader_command(name: str) -> Callable[[argparse.Namespace], tuple[Report, l
     so ``fabric run`` stays inside its start-up budget (§5.5)."""
 
     def handler(options: argparse.Namespace) -> tuple[Report, list[str]]:
-        module = importlib.import_module(f"{__name__}._{name}")
-        result: tuple[Report, list[str]] = module.run(options)
-        return result
+        if name == "verify":
+            from . import _verify  # noqa: PLC0415 - loaded only for this command
+
+            return _verify.run(options)
+        if name == "show":
+            from . import _show  # noqa: PLC0415 - loaded only for this command
+
+            return _show.run(options)
+        from . import _doctor  # noqa: PLC0415 - loaded only for this command
+
+        return _doctor.run(options)
 
     return handler

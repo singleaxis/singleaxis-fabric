@@ -286,16 +286,57 @@ def _imports(tree: ast.Module, relative: str) -> set[str]:
     return out
 
 
+#: The operator CLI's read commands (spec 058 5.6 to 5.8: ``fabric verify``, ``show`` and
+#: ``doctor``) run the reader in the operator's own process, after the agent has ended.
+#: They are the only modules outside ``fabric/reconstruct`` that may import it. Nothing the
+#: agent's process loads imports them (the tests below pin that).
+READER_COMMAND_MODULES = frozenset(
+    {"cli/_read.py", "cli/_show.py", "cli/_transcript.py", "cli/_verify.py"}
+)
+
+
+def _imports_reader(imported: set[str]) -> bool:
+    return any(m == "fabric.reconstruct" or m.startswith("fabric.reconstruct.") for m in imported)
+
+
 def test_b2_no_request_path_module_imports_the_reader() -> None:
     """No derivation rule (``reconstruct.parse``) is importable from a module the agent's
-    process runs: no SDK module outside ``fabric/reconstruct`` imports it."""
+    process runs: no SDK module outside ``fabric/reconstruct`` imports it, except the
+    operator CLI's read commands, which never run in the agent's process."""
     for path in SRC.rglob("*.py"):
         relative = path.relative_to(SRC).as_posix()
-        if relative.startswith("reconstruct/"):
+        if relative.startswith("reconstruct/") or relative in READER_COMMAND_MODULES:
             continue
         imported = _imports(ast.parse(path.read_text(encoding="utf-8")), relative)
-        assert not any(m == "fabric.reconstruct" or m.startswith("fabric.reconstruct.")
-                       for m in imported), relative  # fmt: skip
+        assert not _imports_reader(imported), relative
+
+
+def test_b2_the_reader_commands_are_reachable_only_from_the_operator_cli() -> None:
+    """The exemption above stays narrow: each exempt module does import the reader (a stale
+    entry fails), no module outside ``fabric/cli`` imports one of them, and inside the CLI
+    they are loaded only when ``verify``, ``show`` or ``doctor`` runs."""
+    exempt = {"fabric." + name[:-3].replace("/", ".") for name in READER_COMMAND_MODULES}
+    for name in READER_COMMAND_MODULES:
+        tree = ast.parse((SRC / name).read_text(encoding="utf-8"))
+        assert _imports_reader(_imports(tree, name)), name
+    for path in SRC.rglob("*.py"):
+        relative = path.relative_to(SRC).as_posix()
+        if relative.startswith("cli/"):
+            continue
+        imported = _imports(ast.parse(path.read_text(encoding="utf-8")), relative)
+        assert not imported & exempt, relative
+    # `fabric run` (the launcher the agent is started through) and every other command's
+    # import path load neither the reader nor a read command.
+    code = (
+        "import json, sys\n"
+        "import fabric.cli, fabric.cli._run, fabric.cli._runstate\n"
+        "print(json.dumps(sorted(m for m in sys.modules if m.startswith('fabric.reconstruct')"
+        f" or m in {sorted(exempt)!r})))"
+    )
+    out = subprocess.run(  # noqa: S603
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True, timeout=60
+    )
+    assert json.loads(out.stdout) == []
 
 
 def test_b2_recording_never_loads_the_reader(tmp_path: Path) -> None:
