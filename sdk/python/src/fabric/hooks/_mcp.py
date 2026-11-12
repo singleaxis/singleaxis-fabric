@@ -55,7 +55,6 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import importlib
 import importlib.metadata
 import json
 import os
@@ -531,17 +530,26 @@ def _resolve() -> list[tuple[Any, str]]:
         raise UnsupportedChannel("unsupported_runtime")
     if not all(pinned(name, _version(name)) for name in PINS):
         raise UnsupportedChannel("unsupported_version")
-    out: list[tuple[Any, str]] = []
-    try:
-        for module_name, owner_name, attribute in SYMBOLS:
-            owner: Any = importlib.import_module(module_name)
-            if owner_name:
-                owner = getattr(owner, owner_name)
-            if not callable(getattr(owner, attribute, None)):
-                raise UnsupportedChannel("unsupported_version")
-            out.append((owner, attribute))
-    except (ImportError, AttributeError) as exc:
+    try:  # literal imports, only once the pins match (never a computed module name)
+        from anyio._backends import _asyncio as backend  # noqa: PLC0415
+        from mcp.client import stdio  # noqa: PLC0415
+    except ImportError as exc:
         raise UnsupportedChannel("unsupported_version") from exc
+    owners: dict[str, Any] = {
+        "mcp.client.stdio": stdio,
+        "anyio._backends._asyncio.StreamWriterWrapper": getattr(
+            backend, "StreamWriterWrapper", None
+        ),
+        "anyio._backends._asyncio.StreamReaderWrapper": getattr(
+            backend, "StreamReaderWrapper", None
+        ),
+    }
+    out: list[tuple[Any, str]] = []
+    for module_name, owner_name, attribute in SYMBOLS:
+        owner = owners[f"{module_name}.{owner_name}" if owner_name else module_name]
+        if owner is None or not callable(getattr(owner, attribute, None)):
+            raise UnsupportedChannel("unsupported_version")
+        out.append((owner, attribute))
     return out
 
 
