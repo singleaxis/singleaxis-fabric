@@ -68,14 +68,15 @@ SRC = SDK / "src" / "fabric"
 TESTS = SDK / "tests"
 ROOT = SDK.parents[1]
 
-#: Every module spec 057 (P0a-P0c, P1a) added to the SDK.
+#: Every module spec 057 (P0a-P0c, P1a, P1b) added to the SDK.
 NEW_MODULES = (
     "_rec_check.py", "_rec_controls.py", "_rec_extension.py", "_rec_grant.py", "_rec_run.py",
     "_records_api.py", "_security_policy.py", "records/__init__.py", "records/_handles.py",
     "records/_vocab.py", "records/_walker.py", "reconstruct/_controls.py",
     "reconstruct/_security.py", "reconstruct/_derive.py", "reconstruct/dialects/__init__.py",
     "reconstruct/dialects/offered_grant.py", "reconstruct/dialects/safety_map.py",
-    "reconstruct/dialects/tool_result.py",
+    "reconstruct/dialects/tool_result.py", "reconstruct/dialects/jsonrpc2.py",
+    "reconstruct/dialects/mcp.py", "reconstruct/_mcp_read.py", "hooks/_mcp.py",
 )  # fmt: skip
 #: The ones on the agent's request path (everything but the offline reader).
 REQUEST_PATH = tuple(m for m in NEW_MODULES if not m.startswith("reconstruct/"))
