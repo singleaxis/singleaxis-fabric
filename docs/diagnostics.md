@@ -500,7 +500,8 @@ Fix: load Fabric with NODE_OPTIONS=--import=@singleaxis/fabric/register so every
 `node_autoload_off`, info: @singleaxis/fabric/register was loaded but did nothing:
 FABRIC_WIRE_AUTOLOAD is not 1.
 
-Fix: set FABRIC_WIRE_AUTOLOAD=1, or start the agent with `fabric run`.
+Fix: set FABRIC_WIRE_AUTOLOAD=1 in the agent's environment (`fabric run` sets it for you once it
+ships).
 
 ### FW-032
 

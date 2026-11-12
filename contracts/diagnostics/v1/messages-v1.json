@@ -95,7 +95,7 @@
      "fix": "load Fabric with NODE_OPTIONS=--import=@singleaxis/fabric/register so every thread inherits it"},
     {"id": "FW-031", "name": "node_autoload_off", "severity": "info", "sdk": ["typescript"],
      "text": "@singleaxis/fabric/register was loaded but did nothing: FABRIC_WIRE_AUTOLOAD is not 1",
-     "fix": "set FABRIC_WIRE_AUTOLOAD=1, or start the agent with `fabric run`"},
+     "fix": "set FABRIC_WIRE_AUTOLOAD=1 in the agent's environment (`fabric run` sets it for you once it ships)"},
     {"id": "FW-032", "name": "node_redacted_roles", "severity": "warning", "sdk": ["typescript"],
      "text": "the capture policy masks some content roles and no redaction service is configured: their content is withheld",
      "fix": "set FABRIC_REDACTION_ENDPOINT, or give those roles retain_original or metadata_only in the capture policy"},

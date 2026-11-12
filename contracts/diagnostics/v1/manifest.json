@@ -9,7 +9,7 @@
   "files": [
     {
       "path": "messages-v1.json",
-      "sha256": "f3ea4c11e9f266556dd765d67e3dfe31ee84559a476545ca4e898c2cc728044a"
+      "sha256": "6e503f94ea466e75ce22f22ffac1b5dfb1b275ae6021bb1d26162209d6c660fa"
     },
     {
       "path": "schema/wire-status-v1.schema.json",

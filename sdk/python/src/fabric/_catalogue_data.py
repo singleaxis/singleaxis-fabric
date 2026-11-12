@@ -303,7 +303,8 @@ CATALOGUE: dict[str, Any] = {
             "sdk": ["typescript"],
             "text": "@singleaxis/fabric/register was loaded but did nothing: "
             "FABRIC_WIRE_AUTOLOAD is not 1",
-            "fix": "set FABRIC_WIRE_AUTOLOAD=1, or start the agent with `fabric run`",
+            "fix": "set FABRIC_WIRE_AUTOLOAD=1 in the agent's environment (`fabric run` "
+            "sets it for you once it ships)",
         },
         {
             "id": "FW-032",
