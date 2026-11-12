@@ -23,6 +23,7 @@ import dataclasses
 import json
 import math
 import os
+import shlex
 import shutil
 import socket
 import ssl
@@ -432,8 +433,24 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     lines.append(f"records: {project.data_dir / 'spans'}   content: {project.data_dir / 'store'}")
     scope = f" (scope {sensor.cgroup})" if sensor.start else ""
     lines.append(f"host sensor: {sensor.state()}{scope}")
-    lines.append("next: fabric run -- <your agent command>")
+    lines.append(next_command(project))
     return report, lines
+
+
+def next_command(project: _project.Project) -> str:
+    """§5.4 step 5: the next command. ``fabric run`` once this CLI builds it (WP8-4); until
+    then the route that works today, so `up` never points at a command that answers
+    ``FC-010``: the compiled environment and Python's zero-code autoload."""
+    from . import BUILT  # noqa: PLC0415 - the package imports this module
+
+    if "run" in BUILT:
+        return "next: fabric run -- <your agent command>"
+    return (
+        f"next: set -a; . {shlex.quote(str(project.compiled_env_path))}; set +a; "
+        'export FABRIC_WIRE_AUTOLOAD=1 PYTHONPATH="$(python -m fabric.wire '
+        '--print-autoload-path)"; then run your agent with that python (it needs '
+        '"singleaxis-fabric[otlp]")'
+    )
 
 
 def _remove_tree(path: Path, findings: list[Finding]) -> None:

@@ -90,9 +90,33 @@ def test_up_without_a_fabric_yaml_runs_init_with_defaults(project: Path, tmp_pat
     assert report.data["node"]["endpoint"] == "https://localhost:4318"
     assert report.data["destination"]["spans"] == str(project / "fabric-data" / "spans")
     assert any(line.startswith("Fabric Node: https://localhost:4318") for line in lines)
-    assert lines[-1].startswith("next: fabric run")
+    assert lines[-1] == _up.next_command(_project_of(project))
     for name in ("spans", "store", "host-logs"):
         assert (project / "fabric-data" / name).is_dir()
+
+
+def _project_of(directory: Path) -> Any:
+    from fabric.cli import _config, _project  # noqa: PLC0415
+
+    return _project.load(_config.Located(directory / "fabric.yaml", "cwd"), {}, os.environ)
+
+
+def test_the_next_command_up_prints_is_one_this_release_builds(
+    project: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§5.4 step 5, ease of integration: `up` never points at a command that answers
+    FC-010. Until `fabric run` (WP8-4) ships it names the compiled environment route."""
+    from fabric import cli  # noqa: PLC0415
+
+    _up_once(FakeDocker())
+    loaded = _project_of(project)
+    if "run" not in cli.BUILT:
+        line = _up.next_command(loaded)
+        assert "fabric run" not in line
+        assert str(loaded.compiled_env_path) in line and "FABRIC_WIRE_AUTOLOAD=1" in line
+        assert "--print-autoload-path" in line
+    monkeypatch.setattr(cli, "BUILT", cli.BUILT | {"run"})
+    assert _up.next_command(loaded) == "next: fabric run -- <your agent command>"
 
 
 def test_every_image_is_pinned_by_digest(project: Path) -> None:
