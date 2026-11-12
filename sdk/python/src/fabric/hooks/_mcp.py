@@ -64,7 +64,7 @@ import sys
 import time
 import uuid
 import weakref
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any, Final, Literal
 
@@ -109,6 +109,9 @@ METHODS: Final = frozenset({
 MAX_PENDING: Final = 4096  # outstanding requests per session (053 §5.5)
 PARSE_LIMIT: Final = 1024 * 1024  # a longer line is counted, never parsed on the loop
 MAX_COMMAND: Final = 64 * 1024  # characters of a launch command that are pseudonymised
+#: MCP stdio lines are UTF-8 (the library decodes them strictly): decoding them directly
+#: skips ``json.loads``'s encoding detection; invalid UTF-8 is a ``ValueError`` (unparsed).
+_DECODE: Final = json.JSONDecoder().decode
 _RELEASE_RE: Final = re.compile(r"^([0-9]{1,4})\.([0-9]{1,4})(?:\.[0-9]{1,6})?")
 _COUNTER_NAMES: Final = (
     "sessions", "backend_not_exposed", "messages", "requests", "answers", "notifications",
@@ -140,7 +143,9 @@ class _Session:
         self.pending: OrderedDict[tuple[str, str, str | int], tuple[Attempt, int, str]] = (
             OrderedDict()
         )
-        self.evicted: deque[tuple[str, str, str | int]] = deque(maxlen=MAX_PENDING)
+        # The keys that left the map, oldest first and as bounded as the map: a dict, so a
+        # late answer's lookup is one hash probe, never a scan of 4096 keys on the loop.
+        self.evicted: OrderedDict[tuple[str, str, str | int], None] = OrderedDict()
         self.parts: dict[str, tuple[list[bytes], int, bool]] = {
             CLIENT: ([], 0, False), SERVER: ([], 0, False),
         }  # fmt: skip
@@ -199,6 +204,9 @@ class McpChannel:
         config = getattr(producer.wire, "config", None)
         cap = getattr(config, "max_body_bytes", None)
         self.max_line: int = cap if type(cap) is int and cap > 0 else 32 * 1024 * 1024
+        # B5: the role's privacy mode before any body is built (the records input caches
+        # it per epoch); called inside ``feed``'s guard, so a failure loses one message.
+        self.mode_of: Callable[[str], str] = producer.records.mode_of
 
     # -- HookChannel ------------------------------------------------------------------
 
@@ -252,7 +260,16 @@ class McpChannel:
         if type(data) is not bytes or not data:
             return
         parts, size, overflow = session.parts[direction]
-        if b"\n" not in data:
+        end = data.find(b"\n")
+        if end == len(data) - 1 and not parts and not overflow:
+            # The common case: exactly one whole line in one chunk (no split, no copy of
+            # the pieces); this guard already confines a failure to this one message.
+            if end > self.max_line:
+                self._count("line_cap")
+            else:
+                self._parse(session, direction, data[:end])
+            return
+        if end < 0:
             if overflow or size + len(data) > self.max_line:
                 session.parts[direction] = ([], 0, True)
                 return
@@ -275,14 +292,18 @@ class McpChannel:
 
     @fail_open(None)
     def _line(self, session: _Session, direction: str, line: bytes) -> None:
-        """One complete line (fail-open on its own: a failure loses this message only)."""
-        if not line.strip():
+        """One complete line of a chunk that held several (fail-open on its own: a failure
+        loses this message only)."""
+        self._parse(session, direction, line)
+
+    def _parse(self, session: _Session, direction: str, line: bytes) -> None:
+        if line[:1] != b"{" and not line.strip():
             return
         if len(line) > PARSE_LIMIT:
             self._count("parse_limit")
             return
         try:
-            value = json.loads(line)
+            value = _DECODE(line.decode())
         except (ValueError, RecursionError):
             self._count("unparsed")
             return
@@ -305,7 +326,7 @@ class McpChannel:
                   correlation: str, bodies: list[AnyBody]) -> EvidenceDoc | None:  # fmt: skip
         """The record's evidence object, built once per distinct item of a session (the
         item holds no per-message value, so the hot path validates nothing twice)."""
-        if self.producer.mode(EVIDENCE_ROLE) == "omit":
+        if self.mode_of(EVIDENCE_ROLE) == "omit":
             return None
         key = (direction, kind, id_type, correlation)
         doc = session.docs.get(key)
@@ -329,7 +350,7 @@ class McpChannel:
 
     def _bodies(self, direction: str, kind: Kind, line: bytes) -> list[AnyBody]:
         role = _ROLES[(direction, kind)]
-        if self.producer.mode(role) == "omit":
+        if self.mode_of(role) == "omit":
             return []
         return [RecordBody(role, line, JSON_MEDIA, BOUNDARY, "protocol")]
 
@@ -356,7 +377,11 @@ class McpChannel:
         session.pending[key] = (attempt, now, method)
         while len(session.pending) > MAX_PENDING:
             old, _ = session.pending.popitem(last=False)
-            session.evicted.append(old)
+            evicted = session.evicted
+            evicted.pop(old, None)
+            evicted[old] = None
+            while len(evicted) > MAX_PENDING:
+                evicted.popitem(last=False)
 
     def _notification(self, session: _Session, direction: str, line: bytes,
                       method: str) -> None:  # fmt: skip

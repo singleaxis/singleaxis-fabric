@@ -38,9 +38,8 @@ import httpx
 import jsonschema
 import pytest
 
-import fabric._sequence
 from fabric import _capture_types as ct
-from fabric import _manifest, hooks
+from fabric import _manifest, _sequence, hooks
 from fabric._capture_types import COUNTERS
 from fabric._evidence import EVIDENCE_ITEM_SCHEMAS
 from fabric._sequence import pseudonym_v2
@@ -144,7 +143,7 @@ def _isolated(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     for name in (*_config.HOOK_ENV_NAMES, _config.HOST_LABEL_ENV, ct.STRICT_ENV):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("FABRIC_IDENTITY_MODE", "pseudonymous")
-    monkeypatch.setattr(fabric._sequence, "_REGISTRY", {})
+    monkeypatch.setattr(_sequence, "_REGISTRY", {})
     monkeypatch.setattr(hooks, "_HANDLE", None)
     COUNTERS.reset()
     yield
@@ -451,6 +450,16 @@ def test_split_and_joined_lines_are_framed_as_the_reader_frames_them(rig: Rig) -
     assert rig.channel.status()["unparsed"] == 1
 
 
+def test_a_line_that_is_not_utf8_is_counted_unparsed_and_never_raises(rig: Rig) -> None:
+    session = _mcp._Session({}, object())
+    good = b'{"jsonrpc":"2.0","method":"notifications/initialized"}'
+    rig.channel.feed(session, "client_to_server", b'{"jsonrpc":"2.0","id":1,"method":"\xff"}\n')
+    rig.channel.feed(session, "client_to_server", b"\xef\xbb\xbf" + good + b"\n")
+    rig.channel.feed(session, "client_to_server", good + b"\n")
+    assert [r.body()[1] for r in rig.records()] == [good]  # type: ignore[index]
+    assert rig.channel.status()["unparsed"] == 2
+
+
 def test_the_correlation_map_is_bounded(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_mcp, "MAX_PENDING", 2)
     session = _mcp._Session({}, object())
@@ -464,6 +473,28 @@ def test_the_correlation_map_is_bounded(rig: Rig, monkeypatch: pytest.MonkeyPatc
     answers = [r.item["correlation"] for r in rig.records()
                if r.item["message_kind"] == "response"]  # fmt: skip
     assert answers == ["evicted", "matched", "unmatched"]
+
+
+def test_the_eviction_memory_is_bounded_and_looked_up_by_key(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The evicted keys are as bounded as the map (oldest forgotten first) and a late
+    answer finds its key by hash: a full memory of 4096 keys is never scanned per message."""
+    monkeypatch.setattr(_mcp, "MAX_PENDING", 2)
+    session = _mcp._Session({}, object())
+    for n in range(5):
+        rig.channel.feed(session, "client_to_server",
+                         b'{"jsonrpc":"2.0","id":%d,"method":"ping"}\n' % n)  # fmt: skip
+    assert isinstance(session.evicted, dict)
+    assert list(session.evicted) == [("client_to_server", "number", 1),
+                                     ("client_to_server", "number", 2)]  # fmt: skip
+    for n in (0, 1, 4):
+        rig.channel.feed(
+            session, "server_to_client", b'{"jsonrpc":"2.0","id":%d,"result":{}}\n' % n
+        )
+    answers = [r.item["correlation"] for r in rig.records()
+               if r.item["message_kind"] == "response"]  # fmt: skip
+    assert answers == ["unmatched", "evicted", "matched"]
 
 
 # --- pins and runtimes ----------------------------------------------------------------------
@@ -525,7 +556,8 @@ def test_installed_through_fabric_hooks_and_published(tmp_path: Path) -> None:
         assert rows[POINT]["state"] == "active"
         run_stdio()
         assert handle.status()["counters"][POINT]["messages"] == 32
-        assert handle.close() is True
+        closed = handle.close()
+        assert closed is True
         assert handle.status()["capabilities"][POINT] == {"state": "disabled",
                                                           "reason": "shutdown"}  # fmt: skip
     finally:
