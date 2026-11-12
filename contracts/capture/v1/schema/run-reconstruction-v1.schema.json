@@ -59,7 +59,7 @@
           "enum": ["local", "production"]
         },
         "derivation": {
-          "description": "Spec 057 P1 (WP7-4 to WP7-6): the opt-in wire derivation rules the reader applied to the stored model-call bytes (--derive, --tool-result-markers). Absent when none was asked; every run is then reported as without them (spec 057 §9.1). The denial-marker list is described by its size, digest and refusals only, never by its strings (§7.1, §7.3).",
+          "description": "Spec 057 P1 (WP7-4 to WP7-8): the opt-in derivation rules the reader applied to stored bytes (--derive, --tool-result-markers, --mcp-host): the model-wire rules and mcp.jsonrpc (MCP messages). Absent when none was asked; every run is then reported as without them (spec 057 §9.1). The denial-marker list is described by its size, digest and refusals only, never by its strings (§7.1, §7.3).",
           "type": "object",
           "additionalProperties": false,
           "required": ["rules"],
@@ -67,8 +67,15 @@
             "rules": {
               "type": "array",
               "uniqueItems": true,
-              "maxItems": 4,
-              "items": {"enum": ["wire.offered_grant", "wire.safety_map", "wire.tool_result_flag", "wire.tool_result_marker"]}
+              "maxItems": 5,
+              "items": {"enum": ["wire.offered_grant", "wire.safety_map", "wire.tool_result_flag", "wire.tool_result_marker", "mcp.jsonrpc"]}
+            },
+            "mcp_hosts": {
+              "description": "Spec 057 WP7-7: how many MCP hosts --mcp-host listed (never the hosts).",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["count"],
+              "properties": {"count": {"type": "integer", "minimum": 1}}
             },
             "tool_result_markers": {
               "type": "object",

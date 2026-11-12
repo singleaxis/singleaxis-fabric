@@ -55,13 +55,14 @@ def capture_run(
     root: Path, run_id: str, port: int, body: Callable[[TracerProvider], None], *,
     exec_hook: bool = True, monkeypatch: pytest.MonkeyPatch,
     before: Callable[[Any], None] | None = None, after: Callable[[], None] | None = None,
-    capture_policy: Any = None, http_hosts: tuple[str, ...] = (),
+    capture_policy: Any = None, http_hosts: tuple[str, ...] = (), mcp: bool = False,
 ) -> Export:  # fmt: skip
     """``body(provider)`` under real capture (``provider`` is the destination's tracer
     provider, for the application's own Fabric client); ``before(handle)`` runs after
     install and ``after()`` after the body, before the drain (fault injection).
     ``capture_policy`` is the deployment policy the install runs with and ``http_hosts``
-    the non-model HTTP hook's host allowlist (spec 057 P2). Returns the export."""
+    the non-model HTTP hook's host allowlist (spec 057 P2); ``mcp`` turns on the MCP
+    transport hook (spec 057 WP7-8). Returns the export."""
     root.mkdir(parents=True)
     emitter = fabric._loss.LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
@@ -79,8 +80,8 @@ def capture_run(
         ),),
     )  # fmt: skip
     channels = (hooks.install(exec=exec_hook, host_label=HOST_LABEL if exec_hook else None,
-                              http_hosts=http_hosts)
-                if exec_hook or http_hosts else None)  # fmt: skip
+                              http_hosts=http_hosts, mcp=mcp)
+                if exec_hook or http_hosts or mcp else None)  # fmt: skip
     try:
         if before is not None:
             before(handle)

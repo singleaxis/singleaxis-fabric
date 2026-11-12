@@ -13,6 +13,9 @@ already holds it, and returns plain values; nothing here runs in the agent's req
 - :mod:`.tool_result` (``wire.tool_result_flag`` and ``wire.tool_result_marker``, WP7-6):
   the tool results a request fed back, their structured error flag, and the customer's
   exact denial markers.
+- :mod:`.jsonrpc2` (053 §5.4, frozen) and :mod:`.mcp` (``mcp.jsonrpc``, WP7-7, WP7-8):
+  JSON-RPC 2.0 structure, and the MCP method layer over it, for the MCP messages of
+  ``http.nonmodel`` and ``mcp.client`` records.
 
 Supported dialects are the ones the wire parser already reads (``openai.chat_completions``,
 ``openai.responses``, ``anthropic.messages``; ``openai.completions`` and
@@ -26,6 +29,10 @@ OFFERED_GRANT = "wire.offered_grant"
 SAFETY_MAP = "wire.safety_map"
 TOOL_RESULT_FLAG = "wire.tool_result_flag"
 TOOL_RESULT_MARKER = "wire.tool_result_marker"
-RULES = (OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG, TOOL_RESULT_MARKER)
+MCP_JSONRPC = "mcp.jsonrpc"
+RULES = (OFFERED_GRANT, SAFETY_MAP, TOOL_RESULT_FLAG, TOOL_RESULT_MARKER, MCP_JSONRPC)
 
-__all__ = ["OFFERED_GRANT", "RULES", "SAFETY_MAP", "TOOL_RESULT_FLAG", "TOOL_RESULT_MARKER"]
+__all__ = [
+    "MCP_JSONRPC", "OFFERED_GRANT", "RULES", "SAFETY_MAP", "TOOL_RESULT_FLAG",
+    "TOOL_RESULT_MARKER",
+]  # fmt: skip

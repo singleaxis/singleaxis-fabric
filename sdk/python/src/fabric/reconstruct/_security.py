@@ -397,6 +397,8 @@ class SecurityResult:
     #: The grant in force at each tool call (call id -> ``grant_in_force``), when the run
     #: holds a grant snapshot.
     call_grants: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: MCP ``tools/call`` and inventory-change rows derived from MCP messages (WP7-7/8).
+    mcp_calls: list[dict[str, Any]] = field(default_factory=list)
 
 
 def zero_context() -> dict[str, Any]:
@@ -634,6 +636,32 @@ def _effects_by_call(attribution: Any, inp: Mapping[str, Any]) -> dict[str, list
     return out
 
 
+def _pending(item: Mapping[str, Any], index: ControlIndex) -> bool:
+    """F4 / D36. A request derived from MCP messages (an ``elicitation/create`` the server
+    sent) is pending when no answer with its JSON-RPC id was read in its session."""
+    if item.get("derived") and item.get("kind") == "elicitation":
+        return item.get("phase") == "request" and not item.get("answered")
+    return index.pending(item)
+
+
+def _link_mcp_call(item: dict[str, Any], calls: Sequence[Any]) -> None:
+    """§6.1: an MCP ``tools/call`` joins the model's tool call with the same tool name that
+    is pending at its position (``sequence_bracket`` and name; inferred, tentative: the
+    MCP request id is not the provider tool-call id). Several such calls: ambiguous; none:
+    no link (agent code may call a tool the model never asked for)."""
+    tool = item.get("tool")
+    if not isinstance(tool, str) or item.get("method") != "tools/call":
+        return
+    found = [c.id for c in _pending_calls(item, calls) if c.name == tool]
+    if len(found) == 1:
+        item["link"] = _gates(found[0], "sequence_bracket", "inferred", "tentative", "resolved")
+        item["link"]["type"] = "caused_by"
+    elif found:
+        item["link"] = _gates(found[0], "sequence_bracket", "inferred", "tentative", "ambiguous",
+                              pool=found)  # fmt: skip
+        item["link"]["type"] = "caused_by"
+
+
 def _fact(facts: dict[str, list[str]], code: str, event_id: str) -> None:
     facts[code].append(event_id)
 
@@ -674,14 +702,16 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
 
     facts: dict[str, list[str]] = defaultdict(list)
     observed = (present(sec) or bool(sec.get("active_points")) or bool(derived_hooks)
-                or bool(contacts))  # fmt: skip
+                or bool(contacts) or bool(sec.get("mcp_calls")))  # fmt: skip
     declared = [g for g in grants if g["basis"] == "declared"]
     if observed and not declared:
         facts["no_declared_grant"] = []
-    last_id: dict[str, str | None] = {}
-    seen_basis: set[str] = set()
+    # A listed grant changes per MCP session (``scope``): two servers' listings are two
+    # grants, not a change of one.
+    last_id: dict[tuple[str, Any], str | None] = {}
+    seen_basis: set[tuple[str, Any]] = set()
     for grant in sorted(grants, key=lambda g: (g["start_ns"], g["sequence"])):
-        basis = grant["basis"]
+        basis = (grant["basis"], grant.get("scope"))
         if basis in seen_basis and (grant.get("id") is None or grant.get("id") != last_id[basis]):
             grant["changed"] = True
             _fact(facts, "grant_changed", grant["event_id"])
@@ -691,7 +721,7 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         if item["unmatched"]:
             _fact(facts, "control_unmatched", item["event_id"])
     for item in controls:
-        if index.pending(item):
+        if _pending(item, index):
             item["pending_at_end"] = True
             _fact(facts, "control_pending_at_end", item["event_id"])
     effects = _effects_by_call(attribution, inp)
@@ -776,6 +806,11 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     for call in calls:  # wire.tool_result_flag (WP7-6): once per call, where first fed back
         if call.fed is not None and call.result is not None and call.result.get("is_error") is True:
             _fact(facts, "tool_result_error", str(call.fed["exchange_id"]))
+    mcp_calls = [dict(c) for c in sec.get("mcp_calls", ())]
+    for item in mcp_calls:  # mcp.jsonrpc (WP7-7, WP7-8): an MCP isError result is F14 too
+        if item.get("outcome") == "tool_error":
+            _fact(facts, "tool_result_error", item["event_id"])
+        _link_mcp_call(item, calls)
 
     fact_list = []
     for _, code in FACT_CODES:
@@ -796,8 +831,9 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         reasons.append("ambiguous_attribution")
     if GRANT_POINT in set(sec.get("active_points", ())) and not declared:
         reasons.append("grant_not_recorded")
-    if any(c.get("body_not_retained") for c in contacts):
-        reasons.append("body_not_retained")  # a decision_pointer is listed; nothing to read
+    if any(c.get("body_not_retained") for c in contacts) or sec.get("mcp_body_not_retained"):
+        # a decision_pointer or an MCP host is listed, or the MCP hook is on: nothing to read
+        reasons.append("body_not_retained")
     if sec.get("sequence_gaps"):
         reasons.append("sequence_gap")
     if facts.get("control_invariant_conflict"):
@@ -859,6 +895,7 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         controls=controls, hooks=hooks, grants=grants, extensions=extensions,
         facts=fact_list if observed else [], denied_calls=dict(denied_calls),
         deny_with_effect=deny_with_effect, observed=observed, call_grants=call_grants,
+        mcp_calls=mcp_calls,
     )  # fmt: skip
 
 
@@ -980,7 +1017,7 @@ def _in_force_view(in_force: Mapping[str, Any]) -> dict[str, Any]:
             for key, value in in_force.items()}  # fmt: skip
 
 
-def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
+def view_events(  # noqa: PLR0912, PLR0915 - one branch per row kind and optional field
     security: SecurityResult,
     labels: Mapping[str, str],
     exchanges: Mapping[str, tuple[int, int]] | None = None,
@@ -1004,8 +1041,9 @@ def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
     for ext in security.extensions:
         row = {"kind": "extension", "event_id": ext["event_id"], "extension_kind": ext["kind"],
                "observed_via": ext["observed_via"], "signature_status": ext["signature_status"],
-               "provenance": "reported"}  # fmt: skip
-        for key in ("id", "name", "version", "scope", "tools", "changed"):
+               "provenance": ext.get("provenance", "reported")}  # fmt: skip
+        for key in ("id", "name", "version", "scope", "tools", "changed", "annotations",
+                    "source_kind", "source_ref", "protocol_version"):  # fmt: skip
             if key in ext:
                 row[key] = ext[key]
         out.append((ext["start_ns"], 1, ext["sequence"], row))
@@ -1047,6 +1085,15 @@ def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
             out.append((under[0], 0, under[1], row))
         else:
             out.append((item["start_ns"], 1, item["sequence"], row))
+    for item in security.mcp_calls:
+        row = {"kind": "mcp_call", "event_id": item["event_id"], "method": item["method"],
+               "outcome": item["outcome"], "session": item["session"]}  # fmt: skip
+        if "tool" in item:
+            row["tool"] = item["tool"]
+        link = _link_view(item, labels)
+        if link is not None:
+            row["link"] = link
+        out.append((item["start_ns"], 1, item["sequence"], row))
     for item in security.hooks:
         row = {"kind": "hook", "attempt_uid": item["attempt_uid"], "event_id": item["event_id"],
                "sequence": item["sequence"], "basis": item["basis"],
