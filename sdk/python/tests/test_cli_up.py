@@ -577,6 +577,27 @@ def test_down_without_a_project_or_with_a_failing_compose_says_why(project: Path
     assert caught.value.findings[0].id == "FC-011"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="symlinks")
+def test_a_symlinked_state_directory_is_never_written_or_purged_through(
+    project: Path, tmp_path: Path
+) -> None:
+    """A checkout may carry `.fabric` as a link to somewhere else: `up` refuses to write
+    through it and `down --purge` deletes nothing under it."""
+    elsewhere = tmp_path / "elsewhere"
+    (elsewhere / "state").mkdir(parents=True)
+    (elsewhere / "state" / "keep").write_bytes(b"not fabric's")
+    (project / "fabric.yaml").write_text("schema: fabric.config/v1\n")
+    (project / ".fabric").symlink_to(elsewhere)
+    docker = FakeDocker()
+    with pytest.raises(CliError) as caught:
+        _up_once(docker)
+    assert [f.id for f in caught.value.findings] == ["FC-012"]
+    report, lines = _down(docker, "--purge")
+    assert [f.id for f in report.findings] == ["FC-012"] and report.data["purged"] is False
+    assert (elsewhere / "state" / "keep").read_bytes() == b"not fabric's"
+    assert "nothing under it was deleted" in lines[-1]
+
+
 def test_purge_of_a_native_linux_cgroup_and_state_that_cannot_be_removed(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

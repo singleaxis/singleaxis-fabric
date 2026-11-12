@@ -110,8 +110,12 @@ def load(located: _config.Located, flags: Mapping[str, Any], environ: Mapping[st
 
 
 def ensure_state_dir(project: Project) -> Path:
-    """``.fabric/`` beside ``fabric.yaml``, mode 0700 (§5.1)."""
+    """``.fabric/`` beside ``fabric.yaml``, mode 0700 (§5.1). A symlink is refused: the
+    project directory may be a checkout of somebody else's repository, and `down --purge`
+    deletes ``.fabric/state``."""
     path = project.state_dir
+    if path.is_symlink():
+        raise CliError([Finding("FC-012", f"{path}: is a symlink")])
     path.mkdir(mode=0o700, exist_ok=True)
     if os.name == "posix":
         path.chmod(0o700)

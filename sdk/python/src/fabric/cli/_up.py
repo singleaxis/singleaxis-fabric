@@ -502,7 +502,11 @@ def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = No
     if result.code != 0:
         raise CliError([Finding("FC-021", result.tail())], EXIT_FINDINGS)
     lines = [f"stopped {project.compose_project}; state, secrets and recorded data are kept"]
-    if options.purge:
+    if options.purge and project.state_dir.is_symlink():
+        # Never delete through a link a checkout may carry (`.fabric` -> somewhere else).
+        report.findings.append(Finding("FC-012", f"{project.state_dir}: is a symlink"))
+        lines.append(f"{project.state_dir} is a symlink: nothing under it was deleted")
+    elif options.purge:
         state = _read_state(project.state_dir / "state" / STATE_FILE)
         _remove_agent_cgroup(state, docker, project.name, _images.resolve(environ))
         _remove_tree(project.state_dir / "state", report.findings)
