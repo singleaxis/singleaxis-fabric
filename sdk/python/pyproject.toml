@@ -116,6 +116,10 @@ dev = [
   # application already uses it.
   "e2b==2.62.*",
   "e2b-code-interpreter==2.11.*",
+  # Drives the mcp.client hook tests (spec 057 WP7-8) with the MCP library's own client
+  # against the fixture MCP server; the hook's pinned versions (fabric.hooks._mcp.PINS).
+  # Dev-only: the hook patches the library only when FABRIC_WIRE_MCP=1 asks for it.
+  "mcp==2.3.*",
 ]
 # CI and release builds: `python -m build --no-isolation` against this locked backend,
 # installed with pip --require-hashes (scripts/ci/install-python-locked.sh), so no
