@@ -60,9 +60,16 @@ def test_invalid_status_fixtures_are_refused(path: Path) -> None:
 
 def test_fixtures_cover_both_sdks_and_every_capture_state() -> None:
     documents = [_json(p) for p in _fixtures("valid")]
-    assert {d.get("sdk_language", "python") for d in documents} == {"python", "typescript"}
+    assert {d.get("sdk_language", "python") for d in documents} == {
+        "python",
+        "typescript",
+    }
     for language in ("python", "typescript"):
-        states = {d["capture"] for d in documents if d.get("sdk_language", "python") == language}
+        states = {
+            d["capture"]
+            for d in documents
+            if d.get("sdk_language", "python") == language
+        }
         assert states == {"installed", "disabled", "not_installed", "closed"}, language
 
 
@@ -94,7 +101,9 @@ _WRITER = textwrap.dedent(
 def _python_documents(tmp_path: Path, env: dict[str, str]) -> list[dict[str, Any]]:
     """Run the Python SDK in a clean process with ``env`` and return what it wrote."""
     path = tmp_path / "status.json"
-    environ = {k: os.environ[k] for k in ("PATH", "HOME", "SYSTEMROOT") if k in os.environ}
+    environ = {
+        k: os.environ[k] for k in ("PATH", "HOME", "SYSTEMROOT") if k in os.environ
+    }
     environ.update(env, FABRIC_WIRE_STATUS_FILE=str(path))
     script = tmp_path / "writer.py"
     script.write_text(_WRITER, encoding="utf-8")
@@ -132,7 +141,9 @@ def test_python_status_documents_validate(
     for document in documents:
         errors = [e.message for e in validator.iter_errors(document)]
         assert errors == [], (case, errors)
-        assert set(document["warning_ids"]) | set(document["notice_ids"]) <= _catalogued()
+        assert (
+            set(document["warning_ids"]) | set(document["notice_ids"]) <= _catalogued()
+        )
         if document["capture"] == "not_installed":
             assert document["reason_id"] in _catalogued()
 

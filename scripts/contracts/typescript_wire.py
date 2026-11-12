@@ -41,7 +41,11 @@ QUALIFICATION_SCHEMA = "schema/wire-qualification-v1.schema.json"
 QUALIFICATION = "fabric.wire-qualification/v1"
 TS_POINTS = ("wire.ts.undici", "wire.ts.node_http")
 TS_VERSION = "1.0.0"
-GATE_POINTS = {"TS-1U": ("wire.ts.undici",), "TS-1H": ("wire.ts.node_http",), "TS-1D": TS_POINTS}
+GATE_POINTS = {
+    "TS-1U": ("wire.ts.undici",),
+    "TS-1H": ("wire.ts.node_http",),
+    "TS-1D": TS_POINTS,
+}
 NODE_FLOOR = 24  # spec 055 §3.1: the owner-approved major-version floor
 POINT_VALUE = re.compile(
     r"^(?P<id>[a-z][a-z0-9_.]{0,63})@(?P<version>[0-9A-Za-z.+-]{1,32})$"
@@ -135,7 +139,9 @@ def check_manifest_points(
     for index, point in enumerate(document["capture_points"]):
         where, pid = f"$.capture_points[{index}]", point["id"]
         family = {"wire.ts.": "typescript", "wire.py.": "python"}
-        owner = next((lang for pre, lang in family.items() if pid.startswith(pre)), None)
+        owner = next(
+            (lang for pre, lang in family.items() if pid.startswith(pre)), None
+        )
         if owner is not None and owner != language:
             fail(
                 "coverage.manifest.capture_point",
@@ -379,10 +385,17 @@ def _qualification_fixtures() -> dict[str, dict[str, Any]]:
             audited, lambda d: d["gates"].update({"TS-1U": "passed"})
         ),
         "invalid/wire-qualification-node-22-tuple.json": _mutate(
-            audited, lambda d: d["tuples"].append({
-                "point": "wire.ts.node_http", "node": BUILD_22, "platform": "linux-x64-glibc",
-                "boundary": "pre_decompression", "claim": "audited"})
-        ),  # fmt: skip
+            audited,
+            lambda d: d["tuples"].append(
+                {
+                    "point": "wire.ts.node_http",
+                    "node": BUILD_22,
+                    "platform": "linux-x64-glibc",
+                    "boundary": "pre_decompression",
+                    "claim": "audited",
+                }
+            ),
+        ),
         "invalid/wire-qualification-tuple-without-publication.json": _mutate(
             audited, lambda d: d["tuples"].append(tuple_(BUILD_OLD, "7.8.0"))
         ),
@@ -399,7 +412,9 @@ def _coverage_fixtures(
 ) -> dict[str, Any]:  # fmt: skip
     cov = Path("contracts/coverage/v1")
     ts = typescript_manifests(reg, manifests["m0"], manifests["prod"], key_id)
-    out: dict[str, Any] = {f"valid/manifest-typescript-{n}.json": d for n, d in ts.items()}
+    out: dict[str, Any] = {
+        f"valid/manifest-typescript-{n}.json": d for n, d in ts.items()
+    }
     base = ts["active-undici"]
     out["invalid/manifest-typescript-unqualified-active.json"] = _mutate(
         base, lambda d: d["runtime"].update(version=BUILD_OLD)
@@ -413,17 +428,21 @@ def _coverage_fixtures(
     )
     out["invalid/manifest-typescript-epoch-rounded.json"] = _mutate(
         # What JSON.stringify of a Number holding 2^62 + 1 rounds to, as a float literal.
-        base, lambda d: d.update(source_epoch=float(base["source_epoch"]))
+        base,
+        lambda d: d.update(source_epoch=float(base["source_epoch"])),
     )
     model = read_json(cov / "valid/projection-model-call-field-statuses.json")
-    projection = _replace_point(model, "wire.py.httpx@1.2.0", f"wire.ts.undici@{TS_VERSION}")
+    projection = _replace_point(
+        model, "wire.py.httpx@1.2.0", f"wire.ts.undici@{TS_VERSION}"
+    )
     out["valid/projection-typescript-model-call.json"] = projection
     out["invalid/projection-typescript-unregistered-point.json"] = _replace_point(
         model, "wire.py.httpx@1.2.0", f"wire.ts.fetch@{TS_VERSION}"
     )
     out["invalid/projection-typescript-false-complete.json"] = _mutate(
         # An open run (deadline set) whose layers claim everything was captured.
-        projection, lambda d: d["runs"][0].update(run_state="open")
+        projection,
+        lambda d: d["runs"][0].update(run_state="open"),
     )
     out.update(_qualification_fixtures())
     return out

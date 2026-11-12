@@ -59,8 +59,12 @@ def _section() -> str:
 
 def spec_functions() -> list[tuple[str, int]]:
     """``(name, argument count)`` of every row of §4.4's function table, in order."""
-    rows = re.findall(r"^\| `([A-Za-z0-9]+)\(([^)]*)\)[^`]*` \|", _section(), re.M)
-    return [(name, len([a for a in args.split(",") if a.strip()])) for name, args in rows]
+    rows = re.findall(
+        r"^\| `([A-Za-z0-9]+)\(([^)]*)\)[^`]*` \|", _section(), re.MULTILINE
+    )
+    return [
+        (name, len([a for a in args.split(",") if a.strip()])) for name, args in rows
+    ]
 
 
 def spec_codes() -> list[str]:

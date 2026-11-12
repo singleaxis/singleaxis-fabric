@@ -39,8 +39,10 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contracts import p1_reference as ref  # noqa: E402
-from contracts import typescript_wire as tsw  # noqa: E402
+from contracts import (
+    p1_reference as ref,  # noqa: E402
+    typescript_wire as tsw,  # noqa: E402
+)
 
 ROOT = Path("contracts/capture/v1")
 IDENTITY = ("singleaxis.fabric.capture", "1.10.0")

@@ -46,8 +46,10 @@ from jsonschema import Draft202012Validator, FormatChecker
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from contracts import p1_reference as ref  # noqa: E402
-from contracts import typescript_wire as tsw  # noqa: E402
+from contracts import (
+    p1_reference as ref,  # noqa: E402
+    typescript_wire as tsw,  # noqa: E402
+)
 
 FAMILY = Path("contracts/coverage/v1")
 SPEC = Path("specs/049-four-layer-capture-coverage.md")
