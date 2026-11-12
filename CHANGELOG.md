@@ -39,7 +39,8 @@ it never makes, applies, waits for or returns one.
   tracing context once instead of twice, and skips two small rebuilds it did
   not need. The MCP transport hook parses a pipe chunk that holds one whole
   message without splitting it, and finds a late answer to an evicted request
-  by key instead of scanning the last 4096 requests. What is recorded is
+  by key instead of scanning the last 4096 requests, and submits its records
+  without re-checking arguments it built itself. What is recorded is
   unchanged.
 
 - **Hook programs and control endpoints you declare (spec 057 P2, first
