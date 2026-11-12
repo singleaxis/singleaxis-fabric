@@ -159,6 +159,7 @@ class FakeNode:
                 return
 
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
         context.load_cert_chain(secrets_dir / "node.crt", secrets_dir / "node.key")
         self.server = _Server(("127.0.0.1", port), Handler)
         self.server.socket = context.wrap_socket(self.server.socket, server_side=True)

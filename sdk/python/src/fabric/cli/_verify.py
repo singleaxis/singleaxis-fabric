@@ -54,6 +54,7 @@ def node_reachable(endpoint: str, ca_file: Path | None, timeout: float = 3.0) ->
             if parts.scheme != "https":
                 return True
             context = ssl.create_default_context(cafile=str(ca_file) if ca_file else None)
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             with context.wrap_socket(raw, server_hostname=host) as tls:
                 tls.settimeout(timeout)
                 tls.sendall(f"GET / HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n".encode())

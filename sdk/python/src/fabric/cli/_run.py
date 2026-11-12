@@ -514,8 +514,8 @@ def launch(
         with contextlib.suppress(OSError, ValueError):
             stderr.write(f"fabric run: {Finding('FC-056').line()}\n")
         return EXIT_USAGE
-    env = environ  # unchanged unless everything below succeeds (I3)
-    findings: list[Finding] = []
+    env: dict[str, str]
+    findings: list[Finding]
     try:
         env, findings = _prepare(options, command, environ, cwd, runner, now_ns)
     except Exception as exc:  # fail-open, whatever went wrong (I3)
