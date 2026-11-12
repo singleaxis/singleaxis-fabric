@@ -200,6 +200,21 @@ S_POD_ID = "fabric.sensor.pod_id"
 S_SANDBOX_ID = "fabric.execution.sandbox_id"
 S_PEER_PORT = "fabric.sensor.peer_port"
 S_EXE_SHA256 = "fabric.sensor.exe_sha256"  # spec 057 WP7-10: matched to hook_programs paths
+# Spec 057 OD-13 (WP7-11): a paired syscall's errno, a process exit's status, and the
+# customer's label for a watched open (never the path).
+S_ERRNO = "fabric.sensor.errno"
+S_EXIT_CODE = "fabric.sensor.exit_code"
+S_SIGNAL = "fabric.sensor.signal"
+S_WATCH_LABEL = "fabric.sensor.watch_label"
+S_WATCH_CLASS = "fabric.sensor.watch_class"
+S_WATCH_ID = "fabric.sensor.watch_id"
+#: The event class of a process exit: no syscall, result ``unknown``, an exit code or a signal.
+EXIT_CLASS = "exit"
+WATCH_CLASSES = frozenset({"permission_config", "hook_config", "extension_dir",
+                           "credential_file", "other"})  # fmt: skip
+_ERRNO_RE = re.compile(r"^(?:E[A-Z0-9]{1,31}|other)$")
+_WATCH_LABEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
+_PTH_RE = re.compile(r"^pth-[0-9a-f]{32}$")
 # Host-source manifest keys (manifest-span-v1): the capture-point rows and the clock.
 M_CAPTURE_POINTS = "fabric.manifest.capture_points"
 M_CLOCK_UNCERTAINTY = "fabric.manifest.clock.uncertainty_ns"
@@ -348,6 +363,16 @@ class HostEvent:
     # Spec 057 WP7-10: the bare SHA-256 of the executable path, when the sensor's digest
     # permission allows it (053 §6.2.5); the reader matches it to a listed hook program.
     exe_sha256: str | None = None
+    # Spec 057 OD-13 (WP7-11): ``errno`` is the sensor's errno name of a ``failed`` syscall
+    # (``other`` outside its closed set); ``exit_code`` or ``signal`` the status of an
+    # ``exit`` event (exactly one); ``watch_*`` the customer's label, class and keyed
+    # ``pth-`` id of a watched open, never its path.
+    errno: str | None = None
+    exit_code: int | None = None
+    signal: int | None = None
+    watch_label: str | None = None
+    watch_class: str | None = None
+    watch_id: str | None = None
 
     def report_entry(self) -> dict[str, Any]:
         """The run report's ``sensor_events[]`` entry, without links: ids, pids and times
@@ -717,6 +742,11 @@ def _sbx(value: Any) -> str | None:
     return value if isinstance(value, str) and _SBX_RE.fullmatch(value) else None
 
 
+def _pattern(regex: re.Pattern[str]) -> Any:
+    """A check for :func:`_optional`: the string when it matches ``regex``, else ``None``."""
+    return lambda value: value if isinstance(value, str) and regex.fullmatch(value) else None
+
+
 def _scope(value: Any) -> str | None:
     return value if isinstance(value, str) and value in SENSOR_SCOPES else None
 
@@ -879,7 +909,7 @@ def _position(span: SpanRecord) -> SensorPosition | None:
     return SensorPosition(match.group(1), source_id, epoch, sequence, span.start_ns)
 
 
-def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
+def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:  # noqa: PLR0911 - one per check
     """A spec 053 §6.2.3 host record as a :class:`HostEvent`, or ``None`` when any key
     the join reads is missing or fails its 053 check (a malformed record is never used,
     and its position then reads as a gap of its source)."""
@@ -897,10 +927,24 @@ def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
         or uuid4_value(attrs.get(A_ATTEMPT_UID)) is None
         or attrs.get(A_CAPTURE_INPUT) != "records"
         or attrs.get(S_SOURCE) != "observed"
-        or not isinstance(syscall, str)
-        or SYSCALL_CLASS.get(syscall) != event_class
         or result not in ("success", "failed", "unknown")
         or pid is None
+    ):
+        return None
+    exit_code = _optional(attrs, S_EXIT_CODE, lambda v: _int(v, -(2**31), 2**31 - 1))
+    signal = _optional(attrs, S_SIGNAL, lambda v: _int(v, 1, 2**31 - 1))
+    if exit_code is _ABSENT or signal is _ABSENT:
+        return None
+    if event_class == EXIT_CLASS:
+        # Spec 057 OD-13: a process exit names no syscall, its result is unknown and it
+        # carries exactly one of an exit code and a signal.
+        if syscall is not None or result != "unknown" or (exit_code is None) == (signal is None):
+            return None
+    elif (
+        not isinstance(syscall, str)
+        or SYSCALL_CLASS.get(syscall) != event_class
+        or exit_code is not None
+        or signal is not None
     ):
         return None
     optional = {
@@ -916,9 +960,16 @@ def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
         "sandbox_id": _optional(attrs, S_SANDBOX_ID, _sbx),
         "pod_id": _optional(attrs, S_POD_ID, _sbx),
         "peer_port": _optional(attrs, S_PEER_PORT, lambda v: _int(v, 0, 65_535)),
-    }
+        "errno": _optional(attrs, S_ERRNO, _pattern(_ERRNO_RE)),
+        "watch_label": _optional(attrs, S_WATCH_LABEL, _pattern(_WATCH_LABEL_RE)),
+        "watch_class": _optional(attrs, S_WATCH_CLASS,
+                                 lambda v: v if v in WATCH_CLASSES else None),
+        "watch_id": _optional(attrs, S_WATCH_ID, _pattern(_PTH_RE)),
+    }  # fmt: skip
     if any(value is _ABSENT for value in optional.values()):
         return None
+    if optional["errno"] is not None and result != "failed":
+        return None  # 053 §6.2.3: an errno only when the syscall failed
     return HostEvent(
         event_id=event_id,
         source=position.source,
@@ -931,6 +982,8 @@ def normalize_sensor_span(span: SpanRecord) -> HostEvent | None:
         epoch=position.epoch,
         sequence=position.sequence,
         exe_sha256=_bare_digest(attrs.get(S_EXE_SHA256)),
+        exit_code=exit_code,
+        signal=signal,
         **optional,
     )
 
@@ -2488,6 +2541,9 @@ def join_normalized(inp: Mapping[str, Any]) -> HostJoin:
             peer_port=e.get("peer_port"),
             epoch=e.get("source_epoch"),
             sequence=e.get("sequence"),
+            errno=e.get("errno"),
+            exit_code=e.get("exit_code"),
+            signal=e.get("signal"),
         )
         for e in inp.get("host_events", [])
     ]

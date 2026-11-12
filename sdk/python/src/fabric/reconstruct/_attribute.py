@@ -76,7 +76,7 @@ from dataclasses import dataclass, field
 from typing import Any, Final
 
 from fabric import _classify
-from fabric.reconstruct import _derive, _security
+from fabric.reconstruct import _derive, _os_access, _security
 from fabric.reconstruct._evidence import EVIDENCE_TYPES, decode_evidence
 from fabric.reconstruct._fields_model import _response_body
 from fabric.reconstruct._inputs import pseudonym
@@ -144,6 +144,8 @@ OUTPUT_ROLES: Final = {EXEC_POINT: "terminal.stdout", REMOTE_SANDBOX_POINT: "rem
 _SANDBOX_EVIDENCE: Final = {
     name: EVIDENCE_TYPES[name] for name in ("fabric.sandbox.observation/v1",)
 }
+# Spec 057 WP7-12: the exec hook's evidence, read for a spawn failure's error class and errno.
+_EXEC_EVIDENCE: Final = {name: EVIDENCE_TYPES[name] for name in ("fabric.exec.observation/v1",)}
 # Trailing whitespace A1 removes: ASCII only, so the rule is the same in every language.
 _TRAILING_WHITESPACE: Final = " \t\n\r\x0b\x0c"
 _NOT_OBSERVED_REASONS: Final = ("channel_disabled", "no_effect_channel", "none_in_window")
@@ -905,6 +907,46 @@ def _apply_security(result: Attribution, security: _security.SecurityResult) -> 
         result.chains["effects"] = chain(r for r in reasons if r != "none_in_window")
 
 
+def _linked_attempts(result: Attribution) -> dict[str, tuple[str, str]]:
+    """Host event id -> the effect attempt the 056 join linked it to (a resolved
+    ``corroborated_by`` link or a sensor event's attempt link), with that link's grade."""
+    attempt_of: dict[str, tuple[str, str]] = {}
+    for uid, links in result.projection_links.items():
+        for link in links:
+            if link.get("type") == "corroborated_by" and link.get("state") == "resolved":
+                attempt_of.setdefault(link["target"]["id"], (uid, str(link["confidence"])))
+    for entry in result.sensor_events:
+        for link in entry.get("links", ()):
+            if link["target"]["namespace"] == "attempt" and link.get("state") == "resolved":
+                graded = (link["target"]["id"], str(link["confidence"]))
+                attempt_of.setdefault(entry["event_id"], graded)
+    return attempt_of
+
+
+def _same_refusal(
+    event: Any, reason: str,
+    in_process: Sequence[tuple[dict[str, Any], Mapping[str, Any]]], margin: int,
+) -> dict[str, Any] | None:  # fmt: skip
+    """Spec 057 WP7-12: the in-process refusal row a refused host event is the same fact
+    as, else ``None``: the exit of the killed child's pid with the same signal, or a failed
+    ``execve`` inside the refused spawn's bracket (the hook may name only the class)."""
+    for row, effect in in_process:
+        start = int(effect["start_ns"]) - margin
+        last = effect.get("end_ns", effect.get("exit_observed_ns", effect["start_ns"]))
+        if not start <= event.time_ns <= int(last) + margin:
+            continue
+        if event.event_class == "exit":
+            if row["reason_code"] == reason and effect.get("pid") == event.pid:
+                return row
+        elif (
+            event.event_class == "exec"
+            and row.get("syscall") == "execve"
+            and row["reason_code"] in (reason, "errno.eacces_or_eperm")
+        ):
+            return row
+    return None
+
+
 class ActionReader:
     """The verifier's spec 056 hook: per reported run, while its bodies are in memory,
     builds the normalized input from verified records and bytes, attributes its effects,
@@ -1018,6 +1060,7 @@ class ActionReader:
                 self.offered_grants[exchange["exchange_id"]] = exchange["offered_grant_id"]
         if host is not None:
             self._sensor_rows(inp, result, host, reader._classification())
+        self._os_refusals(inp, result, host)
         security = _security.analyse(inp, result, sec, self._control_index(run.verifier))
         _apply_security(result, security)
         self._claim_run_links(report, result)
@@ -1100,6 +1143,7 @@ class ActionReader:
                 if event.event_id in anchored:
                     continue
                 row["hook_program"] = digests[event.exe_sha256].label
+                self._sensor_exit(row, event, digests[event.exe_sha256])
                 hooks.append(row)
             elif event.event_class == "connect" and event.peer_id in peers:
                 entry = peers[event.peer_id]
@@ -1122,12 +1166,142 @@ class ActionReader:
                 for call in result.calls
                 if call.open_ns - margin <= event.time_ns < call.close_ns + margin
             ]
-            if "hook_program" in row:  # outcome unknown (no exit code): never ``blocked``
+            # A hook the customer's exit map reads as ``blocked`` did not dispatch the call
+            # (3.7 note 4); with no exit record its outcome is unknown, never ``blocked``.
+            if "hook_program" in row and row.get("hook_outcome") != "blocked":
                 result.hook_dispatched |= frozenset(result.windows[event.event_id])
         if hooks:
             inp["sensor_hooks"] = hooks
         if connects:
             inp["sensor_contacts"] = connects
+
+    def _sensor_exit(self, row: dict[str, Any], event: Any, hook: _classify.HookProgram) -> None:
+        """Spec 057 WP7-11: the exit of a hook program a host sensor saw start, from the
+        sensor's ``exit`` record of the same process (the same source and pid, the same
+        start tick when both carry one, the first at or after the exec). Its exit code or
+        signal goes on the row and through the customer's ``exit_map`` (a signal as the
+        negative code, as in process). Without an exit record the outcome stays unknown."""
+        from fabric.reconstruct._host import same_tick  # noqa: PLC0415 - host join only
+
+        source = event.source_id or event.source
+        for other in sorted(self._host_events(), key=lambda e: (e.time_ns, e.event_id)):
+            if (other.event_class != "exit" or other.pid != event.pid
+                    or other.time_ns < event.time_ns
+                    or (other.source_id or other.source) != source):  # fmt: skip
+                continue
+            if (event.process_start_ns is not None and other.process_start_ns is not None
+                    and not same_tick(event.process_start_ns, other.process_start_ns)):  # fmt: skip
+                continue
+            if other.signal is not None:
+                row["signal"], code = other.signal, -other.signal
+            else:
+                row["exit_code"] = code = int(other.exit_code)
+            row["end_ns"] = other.time_ns
+            outcome = hook.outcome(code)
+            if outcome != "unknown":
+                row["hook_outcome"] = outcome
+            return
+
+    # -- spec 057 WP7-12: kernel refusals as os_access rows -------------------------
+
+    def _os_refusals(self, inp: dict[str, Any], result: Attribution, host: Any) -> None:
+        """The run's kernel refusals of the closed set (``_os_access``), added to the input
+        as ``os_refusals`` for ``_security.analyse``: one per refused in-process spawn or
+        ``SIGSYS``-killed child, and one per refused host event of the run (a failed
+        ``execve``, ``openat`` or ``connect`` with ``EACCES`` or ``EPERM``; an ``exit`` by
+        ``SIGSYS``).
+
+        Each names the tool calls its evidence is attributed to (§6.1: the exec record it
+        came from, then 056's grade): an in-process effect's own 056 link; a host event
+        the join linked to an effect (its anchor or lineage), that effect's link; any
+        other event of the run, the tool calls open at its time (tentative, as 056 §4.2
+        by time). A host event that is the same refusal as an in-process one (a failed
+        exec inside the spawn's bracket, the exit of the killed child's pid) is counted on
+        that row (``host_events``), never a second row; it gives the exact errno when the
+        hook recorded only ``PermissionError``."""
+        margin = max(int(inp["agent"].get("clock_uncertainty_ns", 0) or 0), 0)
+        raw_ids = {call.raw_id: call.id for call in result.calls}
+
+        def effect_calls(uid: str, effect: Mapping[str, Any] | None) -> tuple[list[str], str]:
+            decision = result.decisions.get(uid)
+            links = [link for link in (decision.links if decision is not None else ())
+                     if link["target"]["namespace"] == "call"]  # fmt: skip
+            if links:
+                first = links[0]
+                pool = [first["target"]["id"], *first.get("candidates", ())]
+                if first.get("state") == "ambiguous":
+                    return list(dict.fromkeys(pool)), "tentative"
+                return [first["target"]["id"]], str(first.get("confidence", "tentative"))
+            parent = effect.get("reported_parent_call") if effect is not None else None
+            if isinstance(parent, str) and parent:
+                return [raw_ids.get(parent, parent)], "certain"
+            return [], "tentative"
+
+        rows: list[dict[str, Any]] = []
+        in_process: list[tuple[dict[str, Any], Mapping[str, Any]]] = []
+        effects = {e["attempt_uid"]: e for e in inp.get("effects", ())}
+        for uid, effect in effects.items():
+            found = _os_access.effect_refusal(effect)
+            if found is None:
+                continue
+            calls, confidence = effect_calls(uid, effect)
+            row = {key: effect[key] for key in ("attempt_uid", "event_id", "source_id",
+                                                "source_epoch", "sequence", "start_ns",
+                                                "segment_id") if key in effect}  # fmt: skip
+            row.update(reason_code=found[0], calls=calls, confidence=confidence, own_attempt=uid)
+            if found[1]:
+                row["syscall"] = found[1]
+            rows.append(row)
+            in_process.append((row, effect))
+        if host is not None:
+            rows += self._host_refusals(inp, result, host, in_process, effect_calls, margin)
+        if rows:
+            inp["os_refusals"] = rows
+
+    def _host_refusals(
+        self, inp: Mapping[str, Any], result: Attribution, host: Any,
+        in_process: Sequence[tuple[dict[str, Any], Mapping[str, Any]]],
+        effect_calls: Callable[[str, Mapping[str, Any] | None], tuple[list[str], str]],
+        margin: int,
+    ) -> list[dict[str, Any]]:  # fmt: skip
+        """The refused host events of the run, as :meth:`_os_refusals` describes."""
+        traced = host.trace_host_events
+        outside = ("outside_run", "H4-other-process", "H4-other-lineage", "H4-earlier-process",
+                   "sandbox-unlinked")  # fmt: skip
+        effects = {e["attempt_uid"]: e for e in inp.get("effects", ())}
+        attempt_of = _linked_attempts(result)
+        rows: list[dict[str, Any]] = []
+        for event in sorted(self._host_events(), key=lambda e: (e.time_ns, e.event_id)):
+            rule = traced.get(event.event_id)
+            found = _os_access.event_refusal(event)
+            if found is None or rule is None or rule in outside:
+                continue
+            reason, syscall = found
+            same = _same_refusal(event, reason, in_process, margin)
+            if same is not None:
+                same["host_events"] = same.get("host_events", 0) + 1
+                same["reason_code"] = reason  # the exact errno, when the hook had only the class
+                continue
+            linked = attempt_of.get(event.event_id)
+            if linked is not None:
+                calls, confidence = effect_calls(linked[0], effects.get(linked[0]))
+                if linked[1] != "certain":
+                    confidence = "tentative"
+            else:
+                at = event.time_ns
+                calls = [call.id for call in result.calls
+                         if call.open_ns - margin <= at < call.close_ns + margin]  # fmt: skip
+                confidence = "tentative"
+            row = {
+                "attempt_uid": event.event_id, "event_id": event.event_id,
+                "source_id": event.source_id or event.source, "source_epoch": event.epoch or 0,
+                "sequence": event.sequence or 0, "start_ns": event.time_ns, "via": event.source,
+                "reason_code": reason, "calls": calls, "confidence": confidence,
+            }  # fmt: skip
+            if syscall:
+                row["syscall"] = syscall
+            rows.append(row)
+        return rows
 
     def _control_index(self, verifier: Any) -> _security.ControlIndex:
         """Every control record of the input, once per verifier (052 §4.9 rule 3)."""
@@ -1715,10 +1889,27 @@ class _RunReader:
                       None)  # fmt: skip
         if exited is not None:
             effect["exit_observed_ns"] = exited
+        if point == EXEC_POINT and "pid" not in effect:
+            self._spawn_error(effect, records)
         self._stdout(effect, records, OUTPUT_ROLES.get(str(point), "terminal.stdout"))
         if self.owner.keep_runs:
             self._label(effect, start, records, point)
         return effect
+
+    def _spawn_error(self, effect: dict[str, Any], records: Sequence[Any]) -> None:
+        """Spec 057 WP7-12: a spawn that raised has no pid; its verified exec evidence
+        names the exception class and, for a builtin ``OSError``, the errno name (WP7-10).
+        Both are labels, never a message; the reader projects ``EACCES`` and ``EPERM`` as
+        an OS refusal and leaves every other errno a field."""
+        for record in reversed(records):
+            for item in self._evidence_items(record, _EXEC_EVIDENCE, EXEC_POINT):
+                if item.get("pid_known") is not False or "error_class" not in item:
+                    continue
+                effect["error_class"] = item["error_class"]
+                if "errno" in item:
+                    effect["errno"] = item["errno"]
+                effect["end_ns"] = max(r.span.end_ns for r in records)
+                return
 
     def _label(
         self, effect: dict[str, Any], start: Any, records: Sequence[Any], point: str | None
@@ -1748,6 +1939,13 @@ class _RunReader:
     def _sandbox_items(self, record: Any) -> list[dict[str, Any]]:
         """The items of ``record``'s verified sandbox observation, when its type schema
         accepts every item; else none."""
+        return self._evidence_items(record, _SANDBOX_EVIDENCE, REMOTE_SANDBOX_POINT)
+
+    def _evidence_items(
+        self, record: Any, evidence_types: Mapping[str, Any], point: str
+    ) -> list[dict[str, Any]]:
+        """The items of ``record``'s verified ``record.evidence`` object of one of
+        ``evidence_types``, when the type schema accepts every item; else none."""
         if self.verifier.reader is None:
             return []
         for object_id in _object_ids(record.span.attributes):
@@ -1761,8 +1959,8 @@ class _RunReader:
             if data is None:
                 continue
             decoded = decode_evidence(
-                bytes(data), evidence_types=_SANDBOX_EVIDENCE, provenance="observed",
-                capture_point=REMOTE_SANDBOX_POINT,
+                bytes(data), evidence_types=evidence_types, provenance="observed",
+                capture_point=point,
             )  # fmt: skip
             if decoded.status == "ok" and not decoded.item_errors:
                 return list(json.loads(bytes(data))["items"])
