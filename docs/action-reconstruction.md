@@ -426,15 +426,22 @@ service. You declare both in the capture policy (the
   the outcome is the mapped one (`configured_exit_map`); without a map, or
   for a code the map does not name, it is `unknown` and the exit code is
   still shown. A signal is the negative code, as Python reports it
-  (`"-9"`).
+  (`"-9"`). `argv[0]` and `executable=` are matched when they are a string
+  or a `pathlib` path. A hook started through an interpreter
+  (`["sh", "hook.sh"]`, `["python", "hook.py"]`) has the interpreter as its
+  `argv[0]`, so it cannot be listed without listing every use of that
+  interpreter: give the script a shebang and an execute bit and run it
+  directly, or it is linked as an unlisted process.
 - **A hook program is never a tool call's effect.** A tool call whose
   window holds only hook programs stays under `tool_calls_without_effect`,
   and the `effects` chain is `partial(none_in_window)`: the hook shows the
   call was dispatched, and its effect was somewhere the enabled channels do
-  not look (a remote sandbox, an unhooked client). The one exception is a
-  hook whose `exit_map` outcome is `blocked`: that call was not dispatched,
-  so its missing effect is expected. A process you did not list is linked
-  as before (`sequence_bracket`, tentative).
+  not look (a remote sandbox, an unhooked client). There are two
+  exceptions, where the missing effect is expected and the chain is not
+  lowered: a hook whose `exit_map` outcome is `blocked` (the call was not
+  dispatched), and a call a recorded deny gates (it is counted as
+  `control_denied`, fact F5). A process you did not list is linked as before
+  (`sequence_bracket`, tentative).
 - **Control endpoints.** List the host in `control_hosts` and in the HTTP
   hook's allowlist (`FABRIC_WIRE_HTTP_HOSTS` / `http_hosts=`). Each request
   to it is one `control` row: kind and label from the list,

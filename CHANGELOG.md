@@ -333,6 +333,18 @@ it never makes, applies, waits for or returns one.
   the call stays under `tool_calls_without_effect` and the chain is
   `partial(none_in_window)`. A process you have not listed is linked as
   before, tentatively.
+- **A hook started with a `pathlib` path is now recognised.** A listed hook
+  program run as `subprocess.run([Path("/opt/hooks/pre.sh"), ...])`,
+  `subprocess.run(Path(...))` or with `executable=Path(...)` was never
+  matched, because only plain strings were compared. It was then counted as
+  the tool call's effect again. Exact `pathlib` paths are now matched too.
+  The recorded argv still shows a path object as `not_exposed`.
+- **A denied call no longer leaves a stray `none_in_window` reason.** When a
+  hook program passed a tool call and a recorded deny then gated the same
+  call, the call was correctly counted as `control_denied`, but the
+  `effects` chain still said `partial(none_in_window)` with no call left in
+  `none_in_window`. The chain now drops that reason when every call the
+  hook let through is explained by a deny.
 - **Spooled delivery to a remote Node is much faster.** Each process sent its
   stored request and response bodies to the Node one per request, one at a
   time, so it delivered at one round trip per body: about 3 to 14 model
