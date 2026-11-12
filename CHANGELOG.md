@@ -154,7 +154,10 @@ it never makes, applies, waits for or returns one.
     content store (on a terminal, or with `--content`), the effects and host
     evidence, with repeated host lines collapsed. `--list` lists recent runs
     with their verdicts; `--actions` is the reader's action view;
-    `--transcript` is the conversation only.
+    `--transcript` is the conversation only. Text Fabric did not write (model
+    answers, tool arguments and results, hosts and labels) is printed with
+    terminal control characters escaped, so a tool result cannot retitle or
+    clear your terminal.
   - `fabric doctor` checks which `fabric` is first on `PATH`, `fabric.yaml`,
     the compiled environment, shell variables that override the file (by
     name), the secrets, the SDK in the agent's interpreter
