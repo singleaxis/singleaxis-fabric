@@ -251,11 +251,32 @@ def add_canary(state_dir: Path, label: str) -> None:
 
 
 def _interpreter_key(interpreter: Path) -> tuple[str, int] | None:
+    """The interpreter's own path, symlinks not followed: a virtual environment's
+    ``bin/python`` is a link to its base interpreter, and two environments of one base have
+    different packages, so the base must never stand for both. The modification time is
+    the base binary's (an upgrade of Python changes the answer)."""
     try:
-        real = interpreter.resolve()
-        return str(real), real.stat().st_mtime_ns
+        return os.path.abspath(interpreter), interpreter.stat().st_mtime_ns
     except OSError:
         return None
+
+
+def _still_valid(answer: dict[str, Any]) -> bool:
+    """A cached "has the SDK" answer holds while its autoload directory is a Fabric one and
+    still exists (an uninstall leaves the interpreter's modification time unchanged). The
+    cache sits in a project directory that may be somebody else's checkout, so a cached
+    path that is not ``.../fabric/_autoload`` is never put on ``PYTHONPATH``."""
+    if not answer.get("sdk"):
+        return True
+    autoload = answer.get("autoload")
+    if not isinstance(autoload, str):
+        return False
+    path = Path(autoload)
+    return (
+        path.is_absolute()
+        and path.parts[-2:] == ("fabric", "_autoload")
+        and (path / "sitecustomize.py").is_file()
+    )
 
 
 def cached_probe(state_dir: Path | None, interpreter: Path) -> dict[str, Any] | None:
@@ -272,7 +293,7 @@ def cached_probe(state_dir: Path | None, interpreter: Path) -> dict[str, Any] | 
     if not isinstance(entry, dict) or entry.get("mtime_ns") != key[1]:
         return None
     answer = entry.get("answer")
-    return answer if isinstance(answer, dict) else None
+    return answer if isinstance(answer, dict) and _still_valid(answer) else None
 
 
 def store_probe(state_dir: Path | None, interpreter: Path, answer: dict[str, Any]) -> None:

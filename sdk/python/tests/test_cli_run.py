@@ -283,6 +283,50 @@ def test_the_interpreter_answer_is_cached(tmp_path: Path) -> None:
     assert _run.probe_interpreter(PY, state, runner) == first and len(calls) == 1
 
 
+@pytest.mark.skipif(os.name != "posix", reason="venv symlinks are POSIX")
+def test_the_cache_never_lends_one_environments_sdk_to_another(tmp_path: Path) -> None:
+    """Two virtual environments of one base interpreter link to the same binary: the
+    answer of the one with the SDK must not be taken for the one without it (that would
+    report capture on, put the other environment's autoload on PYTHONPATH and hide the
+    FC-050 install line)."""
+    for name in ("with-sdk", "bare"):
+        subprocess.run(  # noqa: S603
+            [sys.executable, "-m", "venv", "--without-pip", str(tmp_path / name)],
+            check=True,
+            capture_output=True,
+        )
+    with_sdk, bare = tmp_path / "with-sdk" / "bin" / "python", tmp_path / "bare" / "bin" / "python"
+    assert with_sdk.resolve() == bare.resolve()  # one base binary
+    (site,) = (tmp_path / "with-sdk" / "lib").glob("python*/site-packages")
+    (site / "this-sdk.pth").write_text(
+        "\n".join(p for p in sys.path if p and Path(p).is_dir()) + "\n"
+    )
+    state = tmp_path / ".fabric"
+    assert _run.probe_interpreter(with_sdk, state)["sdk"]  # cached
+    assert not _run.probe_interpreter(bare, state)["sdk"]
+
+
+def test_a_cached_autoload_that_is_gone_or_foreign_is_asked_again(tmp_path: Path) -> None:
+    state = tmp_path / ".fabric"
+    first = _run.probe_interpreter(PY, state)
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], **kwargs: Any) -> Any:
+        calls.append(argv)
+        return subprocess.run(argv, **kwargs)  # noqa: S603, PLW1510
+
+    cache = state / "state" / _runstate.INTERPRETERS_FILE
+    data = json.loads(cache.read_text())
+    for planted in (str(tmp_path / "gone" / "fabric" / "_autoload"), str(tmp_path / "evil")):
+        (tmp_path / "evil").mkdir(exist_ok=True)
+        (tmp_path / "evil" / "sitecustomize.py").write_text("")
+        for entry in data.values():
+            entry["answer"]["autoload"] = planted
+        cache.write_text(json.dumps(data))
+        assert _run.probe_interpreter(PY, state, runner) == first
+    assert len(calls) == 2
+
+
 def test_pre_exec_work_fits_the_budget(tmp_path: Path, env: dict[str, str]) -> None:
     """§5.5: at most 150 ms before exec with a warm interpreter cache. Measured here for
     the work after start-up; the whole process (Python start and imports included) is
