@@ -39,8 +39,8 @@ it never makes, applies, waits for or returns one.
   `errno` (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.
 - **The `fabric` command (spec 058, first part).** `pip install
   "singleaxis-fabric[cli]"` installs `fabric` and its alias `singleaxis-fabric`
-  (also `python -m fabric.cli`). `plan`, `run`, `verify`, `doctor` and `show` say they are not built yet and
-  point at the quickstart. Underneath:
+  (also `python -m fabric.cli`). `plan` says it is not built yet and points at
+  the quickstart. Underneath:
   `fabric.yaml` (`contracts/cli-config/v1`) with strict validation that names
   the nearest valid key, discovery (`--config`, `FABRIC_CONFIG`, the current
   directory, then parents up to the git root or home), and one precedence rule
@@ -100,12 +100,9 @@ it never makes, applies, waits for or returns one.
     pseudonym key. A referenced key or CA file that is missing or unreadable
     is named (`FC-031`). A secrets directory inside the project is added to
     `.gitignore`, and a symlinked `.fabric` is refused (`down --purge` deletes
-    nothing through it). Until `fabric run` ships, `fabric up` ends with the
-    command that works today (the compiled environment plus autoload); it
-    exports every value exactly, including the JSON of a `--provider`
-    endpoint, and keeps an existing `PYTHONPATH`. The sensor-running
-    finding (`FC-040`) says how to start an agent in the sensor's scope by
-    hand. `fabric up` and `fabric down` refuse a `--project` that is not the
+    nothing through it). `fabric up` ends with the next command,
+    `fabric run -- <your agent command>`. The sensor-running finding
+    (`FC-040`) says that `fabric run` puts the agent in the sensor's scope. `fabric up` and `fabric down` refuse a `--project` that is not the
     one `fabric.yaml` names (`FC-032`); a refused `fabric init` leaves
     `fabric.yaml` unchanged; `down --purge` also removes an agent cgroup
     made by an `up` that failed or by one before a later `up --no-sensor`.
@@ -118,6 +115,56 @@ it never makes, applies, waits for or returns one.
   - Not in this release: `--profile production`, `--kubernetes`, `--render`,
     `--from-env-file`, `--from-values`, the other destination presets and
     `up --verify-images`. Each says so (`FC-011`) and names the manual route.
+- **`fabric run`, `fabric verify`, `fabric show` and `fabric doctor` (spec
+  058).** With `fabric up` running, the local path is three commands and no
+  hand-made file, secret or variable: `fabric up`, `fabric run -- python
+  agent.py`, `fabric verify`.
+  - `fabric run -- CMD` turns on zero-code capture for one agent command and
+    replaces itself with it, so the agent keeps its PID, signals, terminal,
+    arguments, input and exit code. It adds only `FABRIC_*` variables and
+    the autoload directory first on `PYTHONPATH`; it never sets or changes an
+    `OTEL_*` variable, never overrides a variable you already set, and opens
+    no network connection. If anything is wrong before the agent starts (no
+    or a broken `fabric.yaml`, missing secrets, an interpreter without the
+    SDK, even a mistyped `fabric run` flag) the agent runs exactly as
+    without Fabric and the reason is recorded; messages appear on stderr
+    only when it is a terminal. When the agent's interpreter lacks the SDK
+    you get the exact install line for that interpreter (`FC-050`). A model
+    host in your `OPENAI_BASE_URL`, `OPENAI_API_BASE`, `ANTHROPIC_BASE_URL`
+    or `AZURE_OPENAI_ENDPOINT` that the built-in table does not cover is
+    recorded with no `--provider` flag. Node.js agents get the variables the
+    explicit API reads and other programs the run label; zero-code capture
+    is Python-only in this release. On Linux the agent joins the host
+    sensor's cgroup when `fabric up` started one (fail-open). `--run NAME`
+    labels the run, `--no-exec` waits for the agent as a child,
+    `--no-capture` runs it unchanged, and `--print-env --format
+    sh|dotenv|docker|systemd|k8s` prints the environment for a launcher
+    `fabric run` cannot wrap (file paths, never secret values).
+  - `fabric verify` checks the configuration and the Node, sends a canary
+    model exchange through capture, the Node and the destination and reads
+    it back, then reads your last `fabric run` (or `fabric verify LABEL`)
+    and prints the coverage report: what was recorded, what is off and the
+    one command that turns it on, and every reader gap in words with its
+    fix. It exits 0 only when the reader's own verdict is complete and the
+    model decisions were recorded; a model host no endpoint matched is
+    named with the `fabric init --provider` line that fixes it.
+  - `fabric show` prints a run as a timeline: the user's message, each tool
+    call with its arguments, the results fed back and the answer, from the
+    content store (on a terminal, or with `--content`), the effects and host
+    evidence, with repeated host lines collapsed. `--list` lists recent runs
+    with their verdicts; `--actions` is the reader's action view;
+    `--transcript` is the conversation only.
+  - `fabric doctor` checks which `fabric` is first on `PATH`, `fabric.yaml`,
+    the compiled environment, shell variables that override the file (by
+    name), the secrets, the SDK in the agent's interpreter
+    (`python -m fabric.wire status` with the project's settings), the last
+    run's record and status file, the Node and the host sensor. It works on a
+    manual setup with no `fabric.yaml` too, and changes nothing.
+  - The `[cli]` extra also installs `httpx`, which the canary sends through.
+- **The reader takes `--latest`** (`python -m fabric.reconstruct --latest`,
+  also for `actions`): only the run that started last is reported. `--spans
+  ./fabric-data` (the directory `fabric up` prints) reads its `spans/`
+  directory.
 - **A diagnostics catalogue** (`contracts/diagnostics/v1`,
   [docs/diagnostics.md](docs/diagnostics.md)): every message the CLI and the
   Python SDK print now ends with a stable id such as `[FW-012]`, each with a
