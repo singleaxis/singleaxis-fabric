@@ -112,7 +112,8 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="rewrite fabric.yaml from the defaults and flags (keeps a backup)",
+        help="rewrite fabric.yaml from the defaults and flags (keeps a backup, the project "
+        "name and where its secrets are)",
     )
     # Accepted so the answer is FC-011 with the manual route, not an argparse error.
     parser.add_argument("--kubernetes", action="store_true", help=argparse.SUPPRESS)
@@ -419,6 +420,40 @@ def import_environment(
 # ---------------------------------------------------------------- the command
 
 
+#: What `--force` keeps from the file it rewrites: the settings that locate the project's
+#: secrets and name its Compose project. Without them the rewrite would move the secrets
+#: directory (a new id key, so new pseudonyms; a new CA) and leave the running Node behind
+#: under the old Compose project, although --force never regenerates a secret (§5.3).
+#: (secrets.ca_file is not kept: it is an external Node's CA, and --force resets the Node
+#: to the local one, whose CA is generated.)
+_KEPT_ON_FORCE = ("project", "secrets.dir", "secrets.id_key_file")
+
+
+def _kept_on_force(path: Path, fresh: Mapping[str, Any]) -> dict[str, Any]:
+    """The :data:`_KEPT_ON_FORCE` settings of the file ``--force`` rewrites, each kept only
+    when it is valid on its own (a file broken elsewhere can still be reset)."""
+    yaml = _config._yaml()
+    try:
+        old = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        return {}
+    if not isinstance(old, Mapping):
+        return {}
+    kept: dict[str, Any] = {}
+    for key in _KEPT_ON_FORCE:
+        present, value = _config._lookup(old, key)
+        if not present:
+            continue
+        candidate = copy.deepcopy(dict(fresh))
+        _set(candidate, key, value)
+        try:
+            _config.validate(candidate)
+        except CliError:
+            continue
+        kept[key] = value
+    return kept
+
+
 def _backup(path: Path, now: dt.datetime | None = None) -> Path:
     stamp = (now or dt.datetime.now(dt.UTC)).strftime("%Y%m%dT%H%M%SZ")
     target = path.with_name(f"{path.name}.bak-{stamp}")
@@ -478,6 +513,13 @@ def write_config(options: argparse.Namespace, environ: Mapping[str, str], cwd: P
     else:
         name = options.project or _config._project_name(directory)
         document = fresh_document(name, options.shape or detect_shape())
+        if exists:  # --force
+            kept = _kept_on_force(path, document)
+            if "project" in kept and not options.project:  # the agent id defaults to it
+                document = fresh_document(kept["project"], document["shape"])
+            for key, value in kept.items():
+                if key != "project" or not options.project:
+                    _set(document, key, value)
     to_store: dict[str, bytes] = {}
     if options.from_env:
         imported, to_store = import_environment(environ, document, directory,

@@ -252,6 +252,51 @@ def test_force_rewrites_with_a_backup_and_never_regenerates_secrets(
     assert {s["action"] for s in report["data"]["secrets"]} == {"kept"}
 
 
+def test_force_keeps_the_project_name_and_where_its_secrets_are(
+    project: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The project name locates the secrets directory and names the Compose project, and
+    an id key file is the pseudonym key: a rewrite that dropped them would generate new
+    secrets (new pseudonyms) and leave the running Node behind (§5.3)."""
+    key = tmp_path / "manual-id.key"
+    key.write_bytes(b"manual-id-key-of-32-bytes-or-more")
+    (project / "fabric.yaml").write_text(
+        "schema: fabric.config/v1\nproject: billing\ntenant: acme\n"
+        f"secrets:\n  dir: ./.secrets\n  id_key_file: {key}\n"
+    )
+    _run(["init", "--quiet"], capsys)
+    secrets = project / ".secrets"
+    before = {p.name: p.read_bytes() for p in secrets.iterdir()}
+    report = _json(["init", "--force"], capsys)
+    document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
+    assert (document["project"], document["agent"], document["tenant"]) == (
+        "billing",
+        "billing",
+        "default",
+    )
+    assert document["secrets"] == {"dir": "./.secrets", "id_key_file": str(key)}
+    assert {p.name: p.read_bytes() for p in secrets.iterdir()} == before
+    assert {s["name"]: s["action"] for s in report["data"]["secrets"]} == {
+        "ca": "kept", "node-cert": "kept", "id-key": "referenced",
+    }  # fmt: skip
+    assert not (tmp_path / "xdg").exists(), "secrets were generated somewhere new"
+    # A kept value that is invalid on its own is dropped (the file can still be reset).
+    (project / "fabric.yaml").write_text("schema: fabric.config/v1\nproject: 'Not Valid!'\n")
+    assert _json(["init", "--force", "--quiet"], capsys)["exit_code"] == 0
+    assert yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))["project"] == (
+        "support-agent"
+    )
+
+
+def test_force_with_a_project_flag_uses_the_flag(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _run(["init", "--project", "billing", "--quiet"], capsys)
+    _json(["init", "--force", "--project", "payments"], capsys)
+    document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
+    assert (document["project"], document["agent"]) == ("payments", "payments")
+
+
 @pytest.mark.parametrize(("args", "detail"), [
     (["--profile", "production"], "--profile production"),
     (["--kubernetes"], "--kubernetes"),
