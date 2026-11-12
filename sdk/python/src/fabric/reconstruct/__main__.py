@@ -837,7 +837,9 @@ def _action_reader(
         policy_digest=digest,
         id_key=key,
         derivation=Derivation.build(
-            args.derive, _markers_file(args.tool_result_markers), _mcp_hosts(args.mcp_hosts)
+            args.derive,
+            _markers_file(args.tool_result_markers),
+            _mcp_hosts(args.mcp_hosts, key),
         ),
     )
 
@@ -879,10 +881,18 @@ def _capture_policy(path: str | None) -> tuple[_classify.Classification | None, 
     return classification, policy.digest
 
 
-def _mcp_hosts(values: Sequence[str]) -> tuple[str, ...]:
-    """``--mcp-host`` values, each checked as a FABRIC_WIRE_HTTP_HOSTS entry."""
+def _mcp_hosts(values: Sequence[str], key: bytes | None) -> tuple[str, ...]:
+    """``--mcp-host`` values, each checked as a FABRIC_WIRE_HTTP_HOSTS entry. The hook
+    records a host only as its keyed ``hst-`` id, so without the id key no listed host
+    could be matched and a missing body would go unreported: refused, as the host options
+    are."""
     from fabric.hooks._config import parse_host  # noqa: PLC0415 - pure parsing
 
+    if values and key is None:
+        raise ReconstructInputError(
+            "--mcp-host needs the id key (the --id-key-env variable): the HTTP hook records "
+            "a host only as its keyed hst- id, so an MCP host cannot be matched without it"
+        )
     out = []
     for value in values:
         try:

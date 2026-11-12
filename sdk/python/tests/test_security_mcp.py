@@ -336,3 +336,23 @@ def test_a_non_python_client_gives_launch_evidence_only(
     assert seen["client"] == (0, True)
     assert _rows(read, "mcp_call") == [] and _rows(read, "extension") == []
     assert len(_rows(read, "effect")) == 1  # the client's launch, nothing of its messages
+
+
+def test_mcp_host_without_the_id_key_is_refused_with_the_fix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--mcp-host`` matches the hook's keyed ``hst-`` id: without the id key nothing could
+    match, and a missing body would go unreported. Refused, naming the cause and the fix,
+    never echoing the host."""
+    from fabric.reconstruct.__main__ import main  # noqa: PLC0415
+
+    monkeypatch.delenv("FABRIC_WIRE_ID_KEY", raising=False)
+    spans = tmp_path / "spans.jsonl"
+    spans.write_text("", encoding="utf-8")
+    common = ["--spans", str(spans), "--store-root", str(tmp_path / "store"),
+              "--tenant", "tenant-sc", "--out", str(tmp_path / "report.json")]  # fmt: skip
+    capsys.readouterr()
+    assert main([*common, "--mcp-host", "mcp-canary.internal:8443"]) != 0
+    err = capsys.readouterr().err
+    assert "--mcp-host needs the id key" in err and "--id-key-env" in err
+    assert "mcp-canary" not in err
