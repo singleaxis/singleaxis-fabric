@@ -9,7 +9,8 @@ and no phone-home: no command opens a network connection the operator did not as
 
 Commands (the I1 allowlist; additions need a spec change): ``plan``, ``init``, ``up``,
 ``down``, ``run``, ``verify``, ``doctor``, ``show``, ``version``, ``help``. This release
-builds ``version`` and ``help``; the others say so and point at the manual route.
+builds ``init``, ``up`` and ``down`` for the local profile, ``version`` and ``help``; the
+others say so and point at the manual route.
 
 Exit codes: 0 success; 1 a check did not pass; 2 usage or configuration error; 3 a
 prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
@@ -23,7 +24,7 @@ from collections.abc import Callable, Sequence
 from typing import NoReturn
 
 from .._version import __version__
-from . import _config, _providers
+from . import _config, _images, _init, _providers, _up
 from ._report import (
     EXIT_OK,
     EXIT_USAGE,
@@ -38,7 +39,7 @@ COMMANDS: tuple[str, ...] = (
     "plan", "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
 )  # fmt: skip
 #: The commands this release builds; the rest of COMMANDS report FC-010.
-BUILT: frozenset[str] = frozenset({"version", "help"})
+BUILT: frozenset[str] = frozenset({"init", "up", "down", "version", "help"})
 _SUMMARIES = {
     "plan": "predict what Fabric would record for this project",
     "init": "write fabric.yaml, generated secrets and the compiled environment",
@@ -83,6 +84,12 @@ def build_parser() -> _Parser:
         _common(sub)
         if name == "help":
             sub.add_argument("topic", nargs="?", choices=COMMANDS, help="a command")
+        elif name == "init":
+            _init.add_arguments(sub)
+        elif name == "up":
+            _up.add_up_arguments(sub)
+        elif name == "down":
+            _up.add_down_arguments(sub)
         parser.commands[name] = sub
     return parser
 
@@ -95,6 +102,8 @@ def _version(options: argparse.Namespace) -> tuple[Report, list[str]]:
         "cli_version": __version__, "sdk_version": __version__,
         "endpoint_table_version": _providers.table_version(),
         "builtin_endpoints": [m.endpoint_id for m in _providers.builtin()],
+        # §11.2: the images `fabric up` runs, pinned by digest as packaged data.
+        "images": _images.resolve({}).to_json(),
     }  # fmt: skip
     lines = [f"fabric {__version__} (singleaxis-fabric {__version__})",
              f"endpoint table version {_providers.table_version()}: "
@@ -151,8 +160,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stdout.write(_help(parser, getattr(options, "topic", None)) + "\n")
         return EXIT_OK
     handlers: dict[str, Callable[[argparse.Namespace], tuple[Report, list[str]]]] = {
-        "version": _version,
-    }
+        "version": _version, "init": _init.run, "up": _up.run_up, "down": _up.run_down,
+    }  # fmt: skip
     try:
         if command not in BUILT:
             raise CliError([Finding("FC-010", f"fabric {command}")])

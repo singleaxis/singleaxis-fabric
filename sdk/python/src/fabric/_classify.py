@@ -190,12 +190,16 @@ class Classification:
     def has_hook_programs(self) -> bool:
         return bool(self.hook_paths or self.hook_basenames)
 
-    def hook_program(self, argv0: str | None, executable: str | None = None) -> HookProgram | None:
+    def hook_program(self, argv0: str | None, executable: str | None = None, *,
+                     path_known: bool = True) -> HookProgram | None:  # fmt: skip
         """The hook program a child is, by exact match: the executable path (``executable``
         when the caller passed one, else ``argv[0]``) against the ``path`` entries, then
-        the basename of ``argv[0]`` against the ``basename`` entries; else ``None``."""
+        the basename of ``argv[0]`` against the ``basename`` entries; else ``None``.
+        ``path_known=False``: the caller passed an executable Fabric does not read, so the
+        path that runs is unknown and no ``path`` entry is matched (never ``argv[0]``)."""
         path = executable if type(executable) is str and executable else argv0
-        if type(path) is str and (found := self.hook_paths.get(path)) is not None:
+        if (path_known and type(path) is str
+                and (found := self.hook_paths.get(path)) is not None):  # fmt: skip
             return found
         if type(argv0) is str and argv0:
             return self.hook_basenames.get(argv0.rsplit("/", 1)[-1])

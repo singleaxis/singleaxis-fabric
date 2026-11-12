@@ -121,6 +121,10 @@ jobs:
           python -m pip install --no-deps --no-build-isolation -e .
       - name: Test with recorder coverage floor
         working-directory: sdk/python
+        env:
+          # Spec 058 I4: the CLI's no-phone-home test must run in a network namespace
+          # with only loopback here; a skip would hide a regression.
+          FABRIC_REQUIRE_NETNS: "1"
         run: python -m pytest --cov --cov-report=term-missing --cov-fail-under=85
       - name: Fixture E2B service ledger (spec 056 WP6-09b)
         run: python -m pytest qualification/remote-sandbox -q -p no:cacheprovider

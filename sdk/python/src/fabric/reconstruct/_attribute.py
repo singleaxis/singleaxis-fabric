@@ -50,7 +50,9 @@ it as a hook row (``_security.py``) gating the call its window names. A tool cal
 window holds a hook program that did not block it, but no effect, stays
 ``none_in_window``, and the ``effects`` chain is ``partial(none_in_window)``: the call was
 dispatched (its hook ran) and its effect was not where the enabled channels look (a remote
-sandbox, an unhooked client). An exec record that is not classified (no list, or a program
+sandbox, an unhooked client). A deny that gates such a call moves it to ``control_denied``
+(F5), and when no such call is left ``none_in_window`` the reason goes with it
+(``_apply_security``). An exec record that is not classified (no list, or a program
 the list does not name) is an effect exactly as before: Fabric never guesses by name.
 
 **Host events** (§4.3, rules H1-H4) are joined by ``_host.py`` (WP6-05) through the
@@ -472,6 +474,11 @@ class Attribution:
     # Spec 057: per hook-program effect or control contact attempt uid, the tool calls
     # whose open window holds it (the §4.2 conditions; spec 057 joins them by window).
     windows: dict[str, list[str]] = field(default_factory=dict)
+    # Spec 057 WP7-10 (F2): the calls in whose window an unblocked hook program ran (in
+    # process here; seen only by a host sensor, added by ``_sensor_rows``); one of them
+    # left ``none_in_window`` is what lowers the effects chain (``_apply_security`` sets
+    # the reason after F5 has moved denied calls to ``control_denied``).
+    hook_dispatched: frozenset[str] = frozenset()
 
     def expected(self) -> dict[str, Any]:
         """The rule fixture ``expected`` shape of this result."""
@@ -689,6 +696,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         decisions=decisions,
         unexplained_events=unexplained_events,
         windows=windows,
+        hook_dispatched=frozenset(dispatched),
     )
 
 
@@ -879,6 +887,22 @@ def _apply_security(result: Attribution, security: _security.SecurityResult) -> 
             counts[reason] -= 1
             counts["control_denied"] += 1
             result.trace["tool_calls"][call_id] = "control_denied"
+    # Spec 057 WP7-10 (F2): the effects chain's ``none_in_window`` reason names a call a
+    # hook program shows was dispatched and that still has no effect. A deny that gates
+    # every such call (F5 above) leaves none: the reason goes with it, so the chain never
+    # states a reason ``effects_not_observed`` does not count. A hook seen only by a host
+    # sensor (``_sensor_rows``, after ``attribute``) adds its window here, like one seen
+    # in process (3.7 note 4: any listed hook program that did not map to ``blocked``).
+    effects = result.chains.get("effects", {})
+    if effects.get("verdict") not in ("complete", "partial"):
+        return  # not_observed: no enabled effect channel to judge
+    reasons = list(effects.get("reasons", ()))
+    pending = any(result.trace["tool_calls"].get(call_id) == "none_in_window"
+                  for call_id in result.hook_dispatched)  # fmt: skip
+    if pending and "none_in_window" not in reasons:
+        result.chains["effects"] = chain([*reasons, "none_in_window"])
+    elif not pending and "none_in_window" in reasons:
+        result.chains["effects"] = chain(r for r in reasons if r != "none_in_window")
 
 
 class ActionReader:
@@ -915,6 +939,10 @@ class ActionReader:
         self.classification = classification
         self.policy_digest = policy_digest
         self.id_key = id_key  # keys the ``hst-`` ids of the listed control addresses
+        # Runs read with the lists, and those whose manifest names the policy's digest: the
+        # CLI says so when the lists applied to no run (a silent no-op otherwise).
+        self.policy_runs = 0
+        self.policy_matched = 0
         self.in_process_tools = tuple(sorted(set(in_process_tools)))
         # Spec 057 P1: the opt-in wire derivation rules; none by default (§9.1).
         self.derivation = derivation if derivation is not None else _derive.Derivation()
@@ -976,6 +1004,9 @@ class ActionReader:
     ) -> None:
         """Annotate one run's report entry (``run`` is the verifier's ``_Run``)."""
         reader = _RunReader(self, report, run, bodies)
+        if self.classification is not None:
+            self.policy_runs += 1
+            self.policy_matched += reader._classification() is not None
         sec = reader.security(gaps)
         # Spec 057 §6.4: a run with a security record or an active security capture point
         # is annotated too; any other run keeps the report it had (§9.1).
@@ -990,12 +1021,7 @@ class ActionReader:
             self._note_host_events(host.trace_host_events)
         result = attribute(inp, host=host)
         _derive.add_rows(sec, inp, result.calls, self.derivation)
-        if self.derivation.wants(MCP_JSONRPC):  # spec 057 WP7-7, WP7-8
-            found = _mcp_read.read(
-                reader, http_records=reader.http_records, mcp_records=reader.mcp_records,
-                effects=inp["effects"], listed=self._mcp_hosts(), key=self.id_key,
-            )  # fmt: skip
-            _derive.add_mcp_rows(sec, found, self.id_key)
+        self._add_mcp_rows(reader, sec, inp)
         for exchange in inp["exchanges"]:
             if isinstance(exchange.get("offered_grant_id"), str):
                 self.offered_grants[exchange["exchange_id"]] = exchange["offered_grant_id"]
@@ -1019,6 +1045,17 @@ class ActionReader:
                 self.links[uid] = links
         for uid, links in security.projection_links.items():
             self.links[uid] = [*self.links.get(uid, ()), *links]
+
+    def _add_mcp_rows(self, reader: _RunReader, sec: dict[str, Any], inp: dict[str, Any]) -> None:
+        """Spec 057 WP7-7, WP7-8: the rows ``--derive mcp.jsonrpc`` reads from one run's
+        recorded MCP messages (nothing without the option)."""
+        if not self.derivation.wants(MCP_JSONRPC):
+            return
+        found = _mcp_read.read(
+            reader, http_records=reader.http_records, mcp_records=reader.mcp_records,
+            effects=inp["effects"], listed=self._mcp_hosts(), key=self.id_key,
+        )  # fmt: skip
+        _derive.add_mcp_rows(sec, found, self.id_key)
 
     # -- spec 057 WP7-10/WP7-13: classification of host records (offline) -------------
 
@@ -1105,6 +1142,8 @@ class ActionReader:
                 for call in result.calls
                 if call.open_ns - margin <= event.time_ns < call.close_ns + margin
             ]
+            if "hook_program" in row:  # outcome unknown (no exit code): never ``blocked``
+                result.hook_dispatched |= frozenset(result.windows[event.event_id])
         if hooks:
             inp["sensor_hooks"] = hooks
         if connects:

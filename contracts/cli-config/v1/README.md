@@ -10,3 +10,7 @@ Contracts of the `fabric` operator CLI (spec 058).
 - `fixtures/valid/*.yaml`, `fixtures/invalid/*.yaml`: each invalid fixture's first line names the finding id and
   the setting the CLI reports (`# expect: FC-003 capture.exek`). `sdk/python/tests/test_cli_config.py` runs the
   CLI's validator and the JSON schema over every fixture and requires them to agree.
+- `secrets.id_key_file` and `secrets.ca_file` name an existing setup's own files by path (`fabric init --from-env`,
+  spec 058 §11.3). `fabric.yaml` never holds a secret: a path-valued setting whose value has the shape of a
+  credential (a PEM block, a bearer or API token, a cloud key, a JWT, a long opaque or hex string) is refused
+  with `FC-017` (§7.2).

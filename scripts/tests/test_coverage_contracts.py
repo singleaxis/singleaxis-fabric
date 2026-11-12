@@ -720,7 +720,7 @@ def test_p1_registry_rows() -> None:
     assert evidence["allowed_modes"] == ["retain_original", "metadata_only", "omit"]
     assert (
         reg["roles"]["registry_revision"] == 6
-    )  # spec 057 roles and control.checked off; mcp.* off (057 rev 3.8)
+    )  # spec 057 roles and control.checked off; mcp.* off (057 rev 3.9)
     assert [t["type"] for t in reg["fields"]["evidence_types"]] == [
         "fabric.test.items/v1",
         "fabric.exec.observation/v1",  # spec 053 §3.2, registered by spec 056 WP6-01

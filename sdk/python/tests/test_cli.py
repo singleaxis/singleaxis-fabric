@@ -137,7 +137,12 @@ def test_console_scripts_and_cli_extra() -> None:
     assert project["scripts"] == {"fabric": "fabric.cli:main",
                                   "singleaxis-fabric": "fabric.cli:main"}  # fmt: skip
     cli_extra = {req.split(">")[0].split("=")[0] for req in project["optional-dependencies"]["cli"]}
-    assert cli_extra == {"PyYAML", "cryptography"}
+    # PyYAML and cryptography for the CLI itself; the OTLP/HTTP exporter so that the one
+    # install line of G1 is also everything `fabric run` needs to deliver records.
+    assert cli_extra == {"PyYAML", "cryptography", "opentelemetry-exporter-otlp-proto-http",
+                         "urllib3"}  # fmt: skip
+    otlp = set(project["optional-dependencies"]["otlp"])
+    assert otlp <= set(project["optional-dependencies"]["cli"]), "[cli] must cover [otlp]"
     base = {req.split(">")[0].split("=")[0].split("<")[0] for req in project["dependencies"]}
     assert not base & cli_extra, "a [cli] dependency leaked into every agent install"
 

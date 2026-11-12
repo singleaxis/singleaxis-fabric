@@ -4,7 +4,7 @@
   "digest_scope": "exact_file_bytes",
   "schema": {
     "path": "schema/fabric-config-v1.schema.json",
-    "sha256": "93ed75a77d35335bdae8699ab7e787f5633688369a29a2c5d7639ff386bce03a"
+    "sha256": "1facf4c38805826744dbf375e367576ba6f19c963b6caf25d696e32e26a1e5b9"
   },
   "files": [
     {
@@ -32,6 +32,10 @@
       "sha256": "71326dc6b7558dbc544847920a728265c08c6ed4f2f1de27a606e8211fde2c31"
     },
     {
+      "path": "fixtures/invalid/pem-in-secrets.yaml",
+      "sha256": "6673a39e14520b23b6ec98a02541cb34120d10e90fcdda11592e9324fdbb4c16"
+    },
+    {
       "path": "fixtures/invalid/provider-url-with-credentials.yaml",
       "sha256": "86910bda9a410d89af59efd635cb5c23eef8bd54bcd3a1108a955a98a0ce204a"
     },
@@ -44,6 +48,10 @@
       "sha256": "1866a1d4af413653594826644160ff6216ce635ffc9fcdab8e83144798401d8f"
     },
     {
+      "path": "fixtures/invalid/secret-shaped-path.yaml",
+      "sha256": "fdf67c4ea7056856590cd1bb7a35f80b592e2f8de8cb6481c581769a4c83ee46"
+    },
+    {
       "path": "fixtures/invalid/unknown-key.yaml",
       "sha256": "59458cf72aac63078282ba5d29a85c480548d41d9dde2a3042844e51d7e8d70e"
     },
@@ -54,6 +62,10 @@
     {
       "path": "fixtures/valid/full-local.yaml",
       "sha256": "2a450516372c55fd035af07615d08ff2f5759e4fbf8c3a1922b9426f97799b47"
+    },
+    {
+      "path": "fixtures/valid/imported-secrets.yaml",
+      "sha256": "ff213fad919a83a96a0002fb5b927301aba372dfd2f98b51ff14d990e4f434b1"
     },
     {
       "path": "fixtures/valid/minimal.yaml",

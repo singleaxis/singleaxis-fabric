@@ -210,7 +210,7 @@ def test_attempts_pair_requests_with_their_answers(rig: Rig) -> None:
             assert items[0]["correlation"] == "not_applicable"
             assert items[1]["correlation"] == "matched"
             assert items[0]["id_type"] == items[1]["id_type"]
-            assert "rpc_ref" not in items[0]  # the id is in the protected body (rev 3.8)
+            assert "rpc_ref" not in items[0]  # the id is in the protected body (rev 3.9)
             assert items[0]["direction"] != items[1]["direction"]
             assert records[0].attrs["fabric.step.lifecycle_state"] == "running"
             assert records[1].attrs["fabric.step.lifecycle_state"] == "completed"
