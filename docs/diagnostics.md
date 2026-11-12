@@ -214,6 +214,14 @@ readable regular file, so agents given the compiled environment would capture no
 Fix: correct the path in fabric.yaml (secrets.id_key_file or secrets.ca_file) and run `fabric init`
 again, or remove the setting so `fabric init` generates the secret.
 
+### FC-032
+
+`project_flag_not_the_files`, error: --project names another project than the fabric.yaml this
+command found, so nothing was done.
+
+Fix: drop --project (fabric.yaml names the project), pass --config with that project's fabric.yaml,
+or rename this project with `fabric down` and then `fabric init --project NAME`.
+
 ### FC-040
 
 `sensor_started`, info: the host sensor is running and scoped to this project's agent cgroup.

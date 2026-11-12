@@ -108,6 +108,7 @@ def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: 
         project = _project.load(located, {}, environ, document)
     else:
         project = _project.load(located, {}, environ)
+        _refuse_other_project(options, project)
     _refuse_unbuilt(options, project)
     secrets_now, more, _ = _init.prepare(project)
     findings.extend(more)
@@ -115,6 +116,15 @@ def _load_or_init(options: argparse.Namespace, environ: Mapping[str, str], cwd: 
     if ignored:
         lines.append("added to .gitignore: " + ", ".join(ignored))
     return project, located, findings, lines, secrets_now
+
+
+def _refuse_other_project(options: argparse.Namespace, project: _project.Project) -> None:
+    """``--project`` (on every command, §5.1) names the project ``fabric.yaml`` holds, or
+    is refused: `up` and `down` act on the file's project, and compiling another name
+    would move its secrets directory and Compose project for one invocation only."""
+    if options.project and options.project != project.name:
+        raise CliError([Finding("FC-032", f"--project {options.project}, but "
+                                f"{project.config_path} names {project.name}")])  # fmt: skip
 
 
 def _refuse_another_projects_containers(docker: Docker, project: _project.Project) -> None:
@@ -531,6 +541,7 @@ def run_down(options: argparse.Namespace, environ: Mapping[str, str] | None = No
         raise CliError([Finding("FC-011", "--kubernetes")])
     located = _config.discover(options.config, environ, cwd)
     project = _project.load(located, {}, environ)
+    _refuse_other_project(options, project)
     report = Report("down", config=located.to_json())
     report.data = {"project": project.name, "compose_project": project.compose_project,
                    "purged": False}  # fmt: skip

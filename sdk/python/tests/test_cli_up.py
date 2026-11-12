@@ -644,6 +644,28 @@ def test_purge_deletes_volumes_and_state_never_secrets_or_recorded_data(
     ]
 
 
+def test_a_project_flag_that_is_not_the_files_project_is_refused(project: Path) -> None:
+    """§5.1 lists --project on every command. `up` and `down` ignored it once fabric.yaml
+    existed, so `fabric down --project billing` stopped this directory's project instead,
+    without a word. A name that is not fabric.yaml's is refused before Docker is touched;
+    the file's own name is accepted."""
+    docker = FakeDocker()
+    _up_once(docker, "--no-sensor")
+    calls = len(docker.calls)
+    for command in ("up", "down"):
+        with pytest.raises(CliError) as caught:
+            if command == "up":
+                _up_once(docker, "--project", "billing")
+            else:
+                _down(docker, "--project", "billing")
+        (finding,) = caught.value.findings
+        detail = finding.detail or ""
+        assert finding.id == "FC-032" and "billing" in detail and "support-agent" in detail
+        assert caught.value.exit_code == 2
+    assert len(docker.calls) == calls, "Docker was touched"
+    assert _down(docker, "--project", "support-agent")[0].exit_code == 0
+
+
 _VM_CGROUP_RMDIR = ["rmdir", "/sys/fs/cgroup/fabric.slice/agent-support-agent",
                     "/sys/fs/cgroup/fabric.slice"]  # fmt: skip
 

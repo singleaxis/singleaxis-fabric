@@ -459,6 +459,16 @@ CATALOGUE: dict[str, Any] = {
             "`fabric init` generates the secret",
         },
         {
+            "id": "FC-032",
+            "name": "project_flag_not_the_files",
+            "severity": "error",
+            "text": "--project names another project than the fabric.yaml this command "
+            "found, so nothing was done",
+            "fix": "drop --project (fabric.yaml names the project), pass --config with that "
+            "project's fabric.yaml, or rename this project with `fabric down` and "
+            "then `fabric init --project NAME`",
+        },
+        {
             "id": "FC-040",
             "name": "sensor_started",
             "severity": "info",
