@@ -677,7 +677,10 @@ def admit(
             raise HostRefusal("binding", where)
         if cls == "manifest":
             # the source's own row, plus its spec 057 §6.4 sensor-class rows
-            ids = [str(r).split("@", 1)[0] for r in attrs.get("fabric.manifest.capture_points", [])]
+            ids = [
+                str(r).split("@", 1)[0]
+                for r in attrs.get("fabric.manifest.capture_points", [])
+            ]
             allowed_ids = {kind, f"{kind}.exit", f"{kind}.syscall_result"}
             if kind not in ids or any(i not in allowed_ids for i in ids):
                 raise HostRefusal("binding", where)
@@ -689,12 +692,15 @@ def admit(
     for (name, attrs), cls in zip(decoded, classes, strict=True):
         attrs = dict(attrs)
         attrs.pop("fabric.source.authenticated", None)  # step 2: never the sender's
-        exit_record = cls == "record" and attrs.get("fabric.sensor.event_class") == "exit"
+        exit_record = (
+            cls == "record" and attrs.get("fabric.sensor.event_class") == "exit"
+        )
         if cls == "record":
             allowed = record_keys
             # spec 057 OD-13: a process exit names no syscall
             required: Iterable[str] = tuple(
-                k for k in HOST_RECORD_REQUIRED
+                k
+                for k in HOST_RECORD_REQUIRED
                 if not (exit_record and k == "fabric.sensor.syscall")
             )
         elif cls == "manifest":
@@ -918,10 +924,18 @@ def host_manifest(
                 "fields": ["C41"],
             },
             *(
-                {"id": f"{kind}.{c}", "version": VERSION, "kind": "S", "state": "active",
-                 "process_global": False, "opt_in": True, "fields": []}
-                for c in ("exit", "syscall_result") if c in sensor_classes
-            ),  # fmt: skip
+                {
+                    "id": f"{kind}.{c}",
+                    "version": VERSION,
+                    "kind": "S",
+                    "state": "active",
+                    "process_global": False,
+                    "opt_in": True,
+                    "fields": [],
+                }
+                for c in ("exit", "syscall_result")
+                if c in sensor_classes
+            ),
         ],
         "uncaptured_classes": [
             f"sensor_{c}" for c in ("exec", "connect", "file") if c not in classes
@@ -1123,7 +1137,13 @@ def host_fixtures(
         "host.ebpf.syscall_result. fabricguard binds rows of the source's own kind and its "
         "sensor classes only.",
         _guard("host.ebpf"),
-        [[classes_src.manifest(1000.0, reg, sensor_classes=("exit", "syscall_result"))]],
+        [
+            [
+                classes_src.manifest(
+                    1000.0, reg, sensor_classes=("exit", "syscall_result")
+                )
+            ]
+        ],
     )
     manifest_src = HostSource("host.ebpf", "markers")
     manifest = manifest_src.manifest(1000.0, reg, unsealed=[6917529027641081601])

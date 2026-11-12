@@ -59,7 +59,9 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     #   fixtures (mapping profiles, the controls chain and security_context counts)
     # + spec 057 WP7-2 (1.9.0, unreleased): two refusals (a run verdict a partial controls
     #   chain does not bound; a fact-backed controls reason without its fact)
-    assert len(validated) == 167
+    # + spec 057 WP7-11: three host fixtures (an exit record, a watched open, a manifest
+    #   with the sensor-class rows)
+    assert len(validated) == 170
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
