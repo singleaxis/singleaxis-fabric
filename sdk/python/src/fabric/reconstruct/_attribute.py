@@ -50,7 +50,9 @@ it as a hook row (``_security.py``) gating the call its window names. A tool cal
 window holds a hook program that did not block it, but no effect, stays
 ``none_in_window``, and the ``effects`` chain is ``partial(none_in_window)``: the call was
 dispatched (its hook ran) and its effect was not where the enabled channels look (a remote
-sandbox, an unhooked client). An exec record that is not classified (no list, or a program
+sandbox, an unhooked client). A deny that gates such a call moves it to ``control_denied``
+(F5), and when no such call is left ``none_in_window`` the reason goes with it
+(``_apply_security``). An exec record that is not classified (no list, or a program
 the list does not name) is an effect exactly as before: Fabric never guesses by name.
 
 **Host events** (§4.3, rules H1-H4) are joined by ``_host.py`` (WP6-05) through the
@@ -472,6 +474,10 @@ class Attribution:
     # Spec 057: per hook-program effect or control contact attempt uid, the tool calls
     # whose open window holds it (the §4.2 conditions; spec 057 joins them by window).
     windows: dict[str, list[str]] = field(default_factory=dict)
+    # Spec 057 WP7-10 (F2): the calls in whose window an unblocked hook program ran; one of
+    # them left ``none_in_window`` is what lowers the effects chain (``_apply_security``
+    # re-reads it after F5 has moved denied calls to ``control_denied``).
+    hook_dispatched: frozenset[str] = frozenset()
 
     def expected(self) -> dict[str, Any]:
         """The rule fixture ``expected`` shape of this result."""
@@ -689,6 +695,7 @@ def attribute(  # noqa: PLR0912, PLR0915 - one branch per rule outcome and chain
         decisions=decisions,
         unexplained_events=unexplained_events,
         windows=windows,
+        hook_dispatched=frozenset(dispatched),
     )
 
 
@@ -879,6 +886,16 @@ def _apply_security(result: Attribution, security: _security.SecurityResult) -> 
             counts[reason] -= 1
             counts["control_denied"] += 1
             result.trace["tool_calls"][call_id] = "control_denied"
+    # Spec 057 WP7-10 (F2): the effects chain's ``none_in_window`` reason names a call a
+    # hook program shows was dispatched and that still has no effect. A deny that gates
+    # every such call (F5 above) leaves none: the reason goes with it, so the chain never
+    # states a reason ``effects_not_observed`` does not count.
+    effects = result.chains.get("effects", {})
+    if "none_in_window" in effects.get("reasons", ()) and not any(
+        result.trace["tool_calls"].get(call_id) == "none_in_window"
+        for call_id in result.hook_dispatched
+    ):
+        result.chains["effects"] = chain(r for r in effects["reasons"] if r != "none_in_window")
 
 
 class ActionReader:
