@@ -2604,6 +2604,7 @@ dependencies = [
 [package.optional-dependencies]
 cli = [
     { name = "cryptography" },
+    { name = "httpx" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "pyyaml" },
     { name = "urllib3" },
@@ -2666,6 +2667,7 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'signing'", specifier = ">=49" },
     { name = "e2b", marker = "extra == 'hooks-sandbox-e2b'", specifier = "==2.62.*" },
     { name = "e2b-code-interpreter", marker = "extra == 'hooks-sandbox-e2b'", specifier = "==2.11.*" },
+    { name = "httpx", marker = "extra == 'cli'", specifier = ">=0.27" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.30,!=2.0.*,!=2.1.*" },
     { name = "opentelemetry-api", specifier = ">=1.41" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'cli'", specifier = ">=1.41" },

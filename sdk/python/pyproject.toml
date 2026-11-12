@@ -46,6 +46,9 @@ cli = [
   # packages); without it the first `fabric run` would stop at FW-011.
   "opentelemetry-exporter-otlp-proto-http>=1.41",
   "urllib3>=2.8.0",
+  # Spec 058 §5.6: `fabric verify` sends its canary model exchange through httpx, a client
+  # wire capture hooks, so the canary exercises the same tee as the agent.
+  "httpx>=0.27",
 ]
 # Wire-capture node mode (spec 048) needs no extra entry: this exporter
 # already depends on `requests` and `opentelemetry-proto`, which the content

@@ -226,9 +226,9 @@ or rename this project with `fabric down` and then `fabric init --project NAME`.
 
 `sensor_started`, info: the host sensor is running and scoped to this project's agent cgroup.
 
-Fix: on Linux, start the agent from a shell in the sensor's scope: write that shell's PID to the
-cgroup.procs file of the cgroup named in the detail (`echo $$ | sudo tee DETAIL/cgroup.procs`), then
-start the agent from it; `fabric run` will do this for you once it ships.
+Fix: start the agent with `fabric run -- CMD`, which joins this cgroup on Linux; a process started
+another way is outside the sensor's scope unless its shell joins first (`echo $$ | sudo tee
+DETAIL/cgroup.procs`).
 
 ### FC-041
 
@@ -279,6 +279,243 @@ this release.
 host kernel from the sensor.
 
 Fix: run `fabric up` on the host itself for host evidence; capture from the SDK is unaffected.
+
+### FC-048
+
+`node_not_started`, info: `fabric up` has not started this project's local Node, so the agent's
+records wait in its spool.
+
+Fix: run `fabric up`; the spool delivers the records once the Node answers.
+
+### FC-049
+
+`sdk_version_skew`, warning: the agent's SDK and this CLI are more than one minor version apart.
+
+Fix: upgrade the older one so both come from the same release (pip install -U
+"singleaxis-fabric[otlp]" in the agent's environment, or upgrade the CLI).
+
+### FC-050
+
+`run_sdk_missing`, warning: the agent's Python interpreter cannot load the Fabric SDK, so this run
+is not captured; the agent ran unchanged.
+
+Fix: install the SDK in the agent's own environment with the command in the detail (python -m pip
+install "singleaxis-fabric[otlp]" with that interpreter), then start the agent again.
+
+### FC-051
+
+`run_otlp_exporter_missing`, warning: the agent's environment has the Fabric SDK but not the OTLP
+exporter that sends records to the Node, so this run is not captured; the agent ran unchanged.
+
+Fix: install the [otlp] extra in the agent's environment with the command in the detail, then start
+the agent again.
+
+### FC-052
+
+`run_config_unusable`, warning: the project's configuration could not be used, so the agent ran
+without capture.
+
+Fix: run `fabric doctor` in the project directory: it names the problem and its fix (the detail
+names the first one).
+
+### FC-053
+
+`run_env_only`, info: this command is not a Python program `fabric run` can turn capture on for; it
+was given the run's Fabric settings only.
+
+Fix: start a Python agent through its interpreter (fabric run -- python app.py) or the project's
+.venv; a launcher script can export `fabric run --print-env` itself; Node.js and compiled agents
+record through the explicit API and the host sensor.
+
+### FC-054
+
+`run_cgroup_join_failed`, warning: the agent could not join the host sensor's cgroup, so the sensor
+does not observe this run.
+
+Fix: start the agent as the user that ran `fabric up`, or run `fabric up` from a systemd user
+session (a delegated cgroup); capture by the SDK is unaffected.
+
+### FC-055
+
+`run_command_not_found`, error: the agent command could not be started.
+
+Fix: check the command name, that it is on PATH and that it is executable; the detail names it.
+
+### FC-056
+
+`run_no_command`, error: `fabric run` needs the agent command after --.
+
+Fix: fabric run -- python agent.py.
+
+### FC-057
+
+`run_state_unwritable`, warning: the run could not be recorded under .fabric/state, so it ran
+without capture and `fabric verify` and `fabric show` do not see it.
+
+Fix: make the project's .fabric directory a real directory writable by this user (not a symlink),
+then start the agent again.
+
+### FC-058
+
+`run_capture_off_by_flag`, info: capture is off for this run (--no-capture): the agent ran with its
+environment unchanged.
+
+Fix: drop --no-capture to record the run.
+
+### FC-059
+
+`run_label_invalid`, warning: the --run label is not usable, so a generated label was used.
+
+Fix: use 1-64 letters, digits and ._- for --run.
+
+### FC-060
+
+`compiled_env_stale`, warning: .fabric/compiled.env is missing or was made from an older
+fabric.yaml.
+
+Fix: run `fabric init` (or `fabric up`) to rewrite it; `fabric run` compiles fabric.yaml itself and
+is not affected, launchers that read the file are.
+
+### FC-061
+
+`node_unreachable`, error: the Fabric Node did not answer over TLS with the project's CA.
+
+Fix: run `fabric up`; if it is running, the detail holds its last log line (docker compose -p
+fabric-PROJECT logs fabric-node shows more).
+
+### FC-062
+
+`canary_not_captured`, error: the canary could not record a model exchange with this project's
+configuration.
+
+Fix: the detail holds the SDK's reason and fix; `fabric doctor` checks the same configuration.
+
+### FC-063
+
+`canary_not_delivered`, error: the canary's records did not reach the destination in time.
+
+Fix: check that the Node runs (`fabric up`) and answers (`fabric doctor`); on a slow machine allow
+more time with fabric verify --wait 120.
+
+### FC-064
+
+`canary_incomplete`, error: the canary run was read back but is not complete.
+
+Fix: each reason in the detail names its fix; python -m fabric.reconstruct --spans DATA/spans --run
+LABEL prints the full report.
+
+### FC-065
+
+`canary_complete`, info: the canary went through capture, the Node and the destination and was read
+back complete.
+
+Fix: nothing to do.
+
+### FC-066
+
+`no_run_recorded`, info: no `fabric run` is recorded in this project yet, so only the path was
+checked.
+
+Fix: start the agent with `fabric run -- CMD`, then run `fabric verify` again.
+
+### FC-067
+
+`run_not_found`, error: the run's records were not found in the destination.
+
+Fix: check the label (`fabric show --list`); a run still in progress or just ended may not be
+delivered yet: run the command again after the agent exits.
+
+### FC-068
+
+`run_incomplete`, error: the run's records are not complete in the reader's verdict.
+
+Fix: each reason in the detail names its fix; `fabric show` displays what was recorded.
+
+### FC-069
+
+`run_complete`, info: the run's records were read back complete and its model decisions were
+recorded.
+
+Fix: nothing to do.
+
+### FC-070
+
+`run_not_captured`, error: the run was started without capture.
+
+Fix: the detail lists the reasons recorded when it started; `fabric doctor` shows each with its fix.
+
+### FC-073
+
+`records_unreadable`, error: the destination's span files could not be read.
+
+Fix: the detail names the input and the accepted forms; check the destination directory.
+
+### FC-074
+
+`destination_not_readable`, info: this destination is not one Fabric can read back, so records were
+checked only up to the Node.
+
+Fix: pass --spans PATH with an export of the destination's spans, or use the local-dir destination.
+
+### FC-080
+
+`no_runs`, info: no `fabric run` is recorded in this project.
+
+Fix: start the agent with `fabric run -- CMD`.
+
+### FC-082
+
+`content_hidden`, info: content is not printed because stdout is not a terminal.
+
+Fix: pass --content to print it.
+
+### FC-090
+
+`manual_setup`, info: no fabric.yaml was found: checking this shell's FABRIC_* environment as a
+manual setup.
+
+Fix: nothing to do for a manual setup; `fabric init --from-env` writes fabric.yaml from it.
+
+### FC-091
+
+`sdk_ready`, info: the agent's Python environment loads the Fabric SDK with this project's settings
+and reports no problem.
+
+Fix: nothing to do.
+
+### FC-092
+
+`other_fabric_on_path`, warning: another program named fabric comes first on PATH.
+
+Fix: use the singleaxis-fabric command, which is always this CLI, or put this CLI's directory first
+on PATH.
+
+### FC-094
+
+`sensor_stopped`, warning: `fabric up` started the host sensor, but its container is not running
+now.
+
+Fix: run `fabric up` again; the detail holds the sensor's last log line.
+
+### FC-095
+
+`node_ok`, info: the Fabric Node answers over TLS with the project's CA.
+
+Fix: nothing to do.
+
+### FC-096
+
+`no_status_file`, info: the last run left no status file: its agent never loaded the SDK, or was
+stopped before it started.
+
+Fix: start the agent with `fabric run` again; if this repeats, the agent's interpreter is not the
+one with the SDK (`fabric doctor` names the one it checked).
+
+### FC-097
+
+`no_problem_found`, info: no problem found.
+
+Fix: nothing to do.
 
 ## The SDKs (wire capture, status, autoload)
 

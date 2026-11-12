@@ -9,8 +9,8 @@ and no phone-home: no command opens a network connection the operator did not as
 
 Commands (the I1 allowlist; additions need a spec change): ``plan``, ``init``, ``up``,
 ``down``, ``run``, ``verify``, ``doctor``, ``show``, ``version``, ``help``. This release
-builds ``init``, ``up`` and ``down`` for the local profile, ``version`` and ``help``; the
-others say so and point at the manual route.
+builds ``init``, ``up``, ``down``, ``run``, ``verify``, ``doctor`` and ``show`` for the local
+profile, ``version`` and ``help``; ``plan`` says so and points at the manual route.
 
 Exit codes: 0 success; 1 a check did not pass; 2 usage or configuration error; 3 a
 prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
@@ -18,13 +18,14 @@ prerequisite is missing. ``fabric run`` exits with the agent's exit code."""
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import sys
 from collections.abc import Callable, Sequence
 from typing import NoReturn
 
 from .._version import __version__
-from . import _config, _images, _init, _providers, _up
+from . import _args, _config, _images, _init, _providers, _run, _up
 from ._report import (
     EXIT_OK,
     EXIT_USAGE,
@@ -39,7 +40,9 @@ COMMANDS: tuple[str, ...] = (
     "plan", "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
 )  # fmt: skip
 #: The commands this release builds; the rest of COMMANDS report FC-010.
-BUILT: frozenset[str] = frozenset({"init", "up", "down", "version", "help"})
+BUILT: frozenset[str] = frozenset({
+    "init", "up", "down", "run", "verify", "doctor", "show", "version", "help",
+})  # fmt: skip
 _SUMMARIES = {
     "plan": "predict what Fabric would record for this project",
     "init": "write fabric.yaml, generated secrets and the compiled environment",
@@ -90,6 +93,14 @@ def build_parser() -> _Parser:
             _up.add_up_arguments(sub)
         elif name == "down":
             _up.add_down_arguments(sub)
+        elif name == "run":
+            _run.add_arguments(sub)
+        elif name == "verify":
+            _args.add_verify_arguments(sub)
+        elif name == "doctor":
+            _args.add_doctor_arguments(sub)
+        elif name == "show":
+            _args.add_show_arguments(sub)
         parser.commands[name] = sub
     return parser
 
@@ -140,14 +151,20 @@ def _help(parser: _Parser, topic: str | None) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one return per outcome
     """Entry point of the ``fabric`` and ``singleaxis-fabric`` console scripts."""
     args = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
+    command_argv: list[str] | None = None
+    if args[:1] == ["run"] and "--" in args:  # everything after the first -- is the agent's
+        split = args.index("--")
+        args, command_argv = args[:split], args[split + 1 :]
     as_json = "--json" in args
     try:
         options = parser.parse_args(args)
     except CliError as exc:
+        if command_argv:  # I3: a mistyped fabric run flag never stops the agent
+            return _run.launch_unchanged(command_argv, exc.findings)
         return emit(Report("fabric", findings=exc.findings, exit_code=exc.exit_code), [],
                     as_json=as_json, quiet=False)  # fmt: skip
     except SystemExit as exc:  # --help on a command
@@ -159,8 +176,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if command is None or options.help or command == "help":
         sys.stdout.write(_help(parser, getattr(options, "topic", None)) + "\n")
         return EXIT_OK
+    if command == "run":
+        agent = command_argv if command_argv is not None else _strip_dashes(options.agent_command)
+        if not options.print_env:
+            # Never through emit: the agent's stdout is its own (I2).
+            return _run.launch(options, agent)
+        options.agent_command = agent
     handlers: dict[str, Callable[[argparse.Namespace], tuple[Report, list[str]]]] = {
         "version": _version, "init": _init.run, "up": _up.run_up, "down": _up.run_down,
+        "run": lambda o: _run.print_env(o, o.agent_command), "verify": _reader_command("verify"),
+        "doctor": _reader_command("doctor"), "show": _reader_command("show"),
     }  # fmt: skip
     try:
         if command not in BUILT:
@@ -170,3 +195,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         report = Report(command, findings=exc.findings, exit_code=exc.exit_code)
         lines = []
     return emit(report, lines, as_json=options.json, quiet=options.quiet)
+
+
+def _strip_dashes(command: Sequence[str]) -> list[str]:
+    """``fabric run python app.py`` without ``--``: argparse leaves the words as given."""
+    words = list(command)
+    return words[1:] if words[:1] == ["--"] else words
+
+
+def _reader_command(name: str) -> Callable[[argparse.Namespace], tuple[Report, list[str]]]:
+    """``verify``, ``show`` and ``doctor`` import the reader: only when one of them runs,
+    so ``fabric run`` stays inside its start-up budget (§5.5)."""
+
+    def handler(options: argparse.Namespace) -> tuple[Report, list[str]]:
+        module = importlib.import_module(f"{__name__}._{name}")
+        result: tuple[Report, list[str]] = module.run(options)
+        return result
+
+    return handler
