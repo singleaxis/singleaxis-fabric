@@ -325,6 +325,22 @@ it never makes, applies, waits for or returns one.
   markers). A repository test checks the same for charts, Node build files,
   images and the published contract families.
 
+- **Specs prepared for the next build: files and commands inside the agent
+  process, and better links from effects to tool calls.** Documentation
+  only; nothing in this entry changes behaviour yet. Spec 053 revision 5
+  says exactly which execution channels are built and readies two opt-in
+  channels on Python audit hooks: `exec.audit` (commands started through
+  `os.system`, `os.posix_spawn` and `os.exec*`) and `file.audit` (files the
+  agent process opens for writing, renames, deletes, truncates, and
+  directories it creates or removes). They work where the eBPF sensor
+  cannot load: macOS, gVisor sandboxes, containers without root. Spec 056
+  revision 12 specifies how a recorded effect is linked to the tool call
+  that caused it by exact match (the command or path the model wrote in
+  the call's arguments, or the thread or asyncio task that made the model
+  call) instead of timing alone. Every such link names what matched and is
+  marked tentative; nothing is scored or ranked. Both specs end with open
+  questions for the owner, each with a recommendation.
+
 ### Changed
 
 - **`ControlObservation.to_dict()` emits v2**
