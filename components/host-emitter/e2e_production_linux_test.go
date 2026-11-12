@@ -654,6 +654,7 @@ func TestSyscallResultsAndExits(t *testing.T) {
 	var execs []seen
 	var exit *event
 	var watchedLabel string
+	var trace []string // every event of the helper, logged when an assertion fails
 	deadline := time.After(15 * time.Second)
 	quiet := time.NewTimer(time.Hour)
 	for exit == nil || quiet != nil {
@@ -666,6 +667,8 @@ func TestSyscallResultsAndExits(t *testing.T) {
 			if e.Pid != pid {
 				continue
 			}
+			trace = append(trace, fmt.Sprintf("type=%d result=%d errno=%d incomplete=%v name=%q",
+				e.Type, e.Result, e.Errno, e.FilenameIncomplete, e.Filename))
 			ev, ok := hostEvent(e, watch)
 			if !ok {
 				t.Fatalf("untranslatable event %+v", e)
@@ -699,6 +702,11 @@ func TestSyscallResultsAndExits(t *testing.T) {
 		}
 	}
 	want := map[string][]seen{denied: {{"failed", "EACCES"}}, missing: {{"failed", "ENOENT"}}, watched: {{"success", ""}}}
+	defer func() {
+		if t.Failed() {
+			t.Logf("kernel %s; the helper's events:\n%s", kernelRelease(), strings.Join(trace, "\n"))
+		}
+	}()
 	if !reflect.DeepEqual(opens, want) {
 		t.Errorf("opens %v, want %v", opens, want)
 	}
@@ -902,4 +910,13 @@ func TestKernelRefusals(t *testing.T) {
 	if lost, err := rt.lossCount(); err != nil || lost != 0 {
 		t.Errorf("ring loss %d (%v): loss accounting must stay zero for this load", lost, err)
 	}
+}
+
+// kernelRelease is uname -r, for failure messages of the kernel matrix.
+func kernelRelease() string {
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
+		return "unknown"
+	}
+	return unix.ByteSliceToString(u.Release[:])
 }
