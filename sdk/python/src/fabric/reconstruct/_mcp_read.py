@@ -198,7 +198,9 @@ def _evidence_item(reader: Any, record: Any) -> dict[str, Any]:
 
 def _stdio(reader: Any, records: Sequence[Any], effects: Sequence[Mapping[str, Any]],
            key: bytes | None, out: McpInput) -> None:  # fmt: skip
-    exec_by_pid = {e["pid"]: e["event_id"] for e in effects
+    # The exec record of the server: same source (the one process both hooks run in) and
+    # pid. A pid alone could name another host's or another epoch's process.
+    exec_by_pid = {(e.get("source_id"), e["pid"]): e["event_id"] for e in effects
                    if isinstance(e.get("pid"), int) and "capture_point" not in e}  # fmt: skip
     seen_sessions: set[str] = set()
     for record in records:
@@ -222,8 +224,8 @@ def _stdio(reader: Any, records: Sequence[Any], effects: Sequence[Mapping[str, A
             pid = attrs.get("fabric.process.pid")
             pid = pid if isinstance(pid, int) and not isinstance(pid, bool) else None
             evidence = [record.event_id]
-            if pid is not None and pid in exec_by_pid:
-                evidence.append(exec_by_pid[pid])
+            if pid is not None and (record.source_id, pid) in exec_by_pid:
+                evidence.append(exec_by_pid[(record.source_id, pid)])
             out.launches.append((info, _at(record), evidence, pid))
         direction = attrs.get("fabric.mcp.direction")
         if direction not in (_CLIENT, _SERVER):

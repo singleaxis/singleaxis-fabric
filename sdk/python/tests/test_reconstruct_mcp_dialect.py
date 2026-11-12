@@ -286,3 +286,27 @@ def test_two_servers_with_one_name_are_two_extensions_not_an_inventory_change() 
     assert _two_servers(KEY, hosts) == []
     assert _two_servers(None, (None, None)) == []
     assert _two_servers(KEY, (hosts[0], hosts[0])) == ["a3.1#mcp.1"]
+
+
+def test_the_launch_row_joins_the_exec_record_of_its_own_source_only(
+    monkeypatch: Any,
+) -> None:
+    """WP7-8: a stdio session's launch row names the exec record of the same process: the
+    same pid in the same source. Another source's process with that pid is not it."""
+    from fabric.reconstruct import _mcp_read  # noqa: PLC0415
+
+    monkeypatch.setattr(_mcp_read, "_evidence_item", lambda reader, record: {})
+    monkeypatch.setattr(_mcp_read, "_objects", lambda reader, record, role: [])
+    span = SimpleNamespace(start_ns=5, attributes={"fabric.process.pid": 77,
+                                                   "fabric.mcp.direction": C})  # fmt: skip
+    record = SimpleNamespace(source_id="agent", source_epoch=1, source_sequence=3, span=span,
+                             attempt_uid="u1", segment_id=None, event_id="mcp-1")  # fmt: skip
+    effects = [{"source_id": "other-host", "pid": 77, "event_id": "exec-elsewhere"},
+               {"source_id": "agent", "pid": 77, "event_id": "exec-here"}]  # fmt: skip
+    out = _mcp_read.McpInput()
+    _mcp_read._stdio(None, [record], effects, KEY, out)
+    ((_, _, evidence, pid),) = out.launches
+    assert pid == 77 and evidence == ["mcp-1", "exec-here"]
+    out = _mcp_read.McpInput()
+    _mcp_read._stdio(None, [record], effects[:1], KEY, out)
+    assert out.launches[0][2] == ["mcp-1"]
