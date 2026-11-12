@@ -17,6 +17,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import secrets as _random
 import socket
 import ssl
@@ -204,19 +205,20 @@ def _canary(
 # ---------------------------------------------------------------- the user's run
 
 
+_SCHEME = re.compile(r'"schemes":\s*\["(https?)"')
+
+
 def provider_hint(entry: Mapping[str, Any]) -> str:
-    """``fabric init --provider URL`` for a model-looking host no endpoint matched."""
+    """``fabric init --provider URL`` for a model-looking host no endpoint matched. The
+    scheme comes from the matcher the SDK suggested for it (its ``fix``)."""
     host, port = str(entry.get("host") or ""), entry.get("port")
-    url = (
-        f"https://{host}"
-        if port in (443, None)
-        else f"http://{host}"
-        if port == 80  # noqa: PLR2004 - plain HTTP's port
-        else f"https://{host}:{port}"
-    )
+    found = _SCHEME.search(str(entry.get("fix") or ""))
+    scheme = found[1] if found else ("http" if port == 80 else "https")  # noqa: PLR2004
+    default = {"https": 443, "http": 80}[scheme]
+    where = f"{host}:{port}" if port not in (None, default) else host
     return (
-        f"{host}: {entry.get('count', '?')} request(s); fix: fabric init --provider {url}/v1 "
-        "(use http:// if the server is plain HTTP)"
+        f"{host}: {entry.get('count', '?')} request(s); fix: fabric init --provider "
+        f"{scheme}://{where}/v1 (the base URL the client uses)"
     )
 
 
@@ -286,6 +288,21 @@ def _judge(runs: Sequence[Mapping[str, Any]], record: _runstate.RunRecord) -> li
     return [
         Finding("FC-069", f"{len(runs)} process(es), {exchanges} exchange(s), decisions: complete")
     ]
+
+
+def _nothing_found(record: _runstate.RunRecord, status: Mapping[str, Any] | None) -> Finding:
+    """No reported run is this one's. A process that exited having matched no model call
+    left nothing to date its run by: say that (the status file's counters), not "not
+    found"."""
+    stats = (status or {}).get("stats") if (status or {}).get("phase") == "exit" else None
+    if isinstance(stats, Mapping) and stats.get("matched") == 0:
+        return Finding("FC-068", f"{record.label}: no model call was recorded in this run "
+                       "(decisions not observed)")  # fmt: skip
+    return Finding(
+        "FC-067",
+        f"{record.label}: no records of it in the destination yet; if the agent is still "
+        "running or just exited, run fabric verify again in a few seconds",
+    )
 
 
 def _user_run(
@@ -374,14 +391,7 @@ def _user_run(
             f"exchange(s)  decisions: {chains.get('decisions', {}).get('verdict', '-')}"
         )
     if not runs and record.runtime == "python":
-        findings.append(
-            Finding(
-                "FC-067",
-                f"{record.label}: no records of it in the destination "
-                "yet; if the agent is still running or just exited, run "
-                "fabric verify again in a few seconds",
-            )
-        )
+        findings.append(_nothing_found(record, status))
     elif record.runtime == "python":
         findings.extend(_judge(runs, record))
     rows = _read.coverage(project, record, runs, status)

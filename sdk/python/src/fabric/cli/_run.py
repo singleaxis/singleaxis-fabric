@@ -497,7 +497,7 @@ def launch(
     environ: Mapping[str, str] | None = None,
     cwd: Path | None = None,
     *,
-    execvpe: Callable[..., Any] = os.execvpe,
+    execvpe: Callable[..., Any] | None = None,
     spawn: Callable[[Sequence[str], Mapping[str, str]], int] = _spawn,
     runner: Callable[..., Any] = subprocess.run,
     stderr: IO[str] | None = None,
@@ -509,6 +509,7 @@ def launch(
     environ = dict(os.environ if environ is None else environ)
     cwd = cwd or Path.cwd()
     stderr = stderr or sys.stderr
+    execvpe = execvpe or os.execvpe
     if not command:  # nothing to launch, so nothing whose output this could disturb
         with contextlib.suppress(OSError, ValueError):
             stderr.write(f"fabric run: {Finding('FC-056').line()}\n")
@@ -537,12 +538,13 @@ def launch_unchanged(
     command: Sequence[str],
     findings: Sequence[Finding],
     *,
-    execvpe: Callable[..., Any] = os.execvpe,
+    execvpe: Callable[..., Any] | None = None,
     stderr: IO[str] | None = None,
 ) -> int:
     """``fabric run``'s own arguments could not be parsed: the agent still runs, with its
     environment unchanged (I3), and the problem is said on a terminal only (I2)."""
     stderr = stderr or sys.stderr
+    execvpe = execvpe or os.execvpe
     _say(findings, stderr, False)
     env = dict(os.environ)
     if os.name == "posix":
@@ -613,7 +615,7 @@ def _prepare(
     except OSError as exc:
         findings.append(Finding("FC-057", type(exc).__name__))
         return environ, findings
-    if capture or plan.runtime.kind in ("node", "other"):
+    if capture or (not options.no_capture and plan.runtime.kind in ("node", "other")):
         plan.added["FABRIC_RUN_ID"] = label  # other runtimes: the label (and the cgroup) only
     if capture:
         plan.added["FABRIC_WIRE_STATUS_FILE"] = str(record.status_file(runs))
@@ -786,6 +788,7 @@ def print_env(
     names one (a launcher is reused for many runs)."""
     environ = os.environ if environ is None else environ
     cwd = cwd or Path.cwd()
+    command = list(command)[1:] if list(command)[:1] == ["--"] else list(command)
     located = _config.discover(options.config, environ, cwd)
     project, compiled = _load_project(options, environ, cwd)
     _endpoints(project, compiled, environ)
