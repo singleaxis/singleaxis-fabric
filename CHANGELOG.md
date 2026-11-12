@@ -31,8 +31,10 @@ it never makes, applies, waits for or returns one.
   `cancel`). A stdio server is also shown as a launched process, joined to
   the exec hook's record of it from launch to exit. Only `mcp` 2.3.x on
   `anyio` 4.x is hooked; another version is reported as
-  `unsupported(unsupported_version)` and nothing is patched.
-  `--mcp-host HOST` lists an MCP host so that missing bodies are reported
+  `unsupported(unsupported_version)` and nothing is patched. The patched
+  stream methods run for every subprocess the event loop manages, so a stream
+  the hook does not track always passes through untouched, and a lookup
+  failure is never raised into the application. `--mcp-host HOST` lists an MCP host so that missing bodies are reported
   as `body_not_retained` instead of silently giving nothing.
 
 - **Less work per recorded event.** Every hook record now reads the caller's
