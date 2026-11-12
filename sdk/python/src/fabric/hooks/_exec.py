@@ -78,7 +78,14 @@ carry ``fabric.hook.program_label`` (the customer's label, never the path) and
 ``fabric.hook.basis=process``; the record that carries the exit status also carries
 ``fabric.hook.outcome``, the listed ``exit_map``'s outcome for that code, else
 ``unknown`` (the exit code itself is recorded either way). A shell string names its first
-word when it is one simple command. An unlisted child is unchanged.
+word when it is one simple command (under ``shell=True`` a sequence's first item is that
+string). For an argv-form call, ``argv[0]`` and ``executable=``
+are matched when each is an exact ``str``, ``bytes`` or ``pathlib`` path, whether or not
+the ``terminal.argv`` body fits its bound: the caller only keeps references, the worker
+reads the text (``os.fsdecode`` of ``bytes``), and the argv body still records a path
+object as ``not_exposed``. An ``executable=`` of any other type is not read, so the path
+that runs is unknown and no ``path`` entry is matched (``argv[0]`` never stands in for it).
+An unlisted child is unchanged.
 
 **Spawn errors.** A spawn that raises an ``OSError`` records, beside ``error_class``, the
 symbolic ``errno`` name (``EACCES``, ``EPERM``, ``ENOENT``, ``ENOEXEC``, ...) of a builtin
@@ -98,6 +105,7 @@ import inspect
 import io
 import json
 import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -340,23 +348,59 @@ def _errno_name(exc: BaseException) -> str | None:
 # --- hook programs (spec 057 §4.3, WP7-10; capture worker only) ---------------------------
 
 
-class _HookProbe:
-    """What the capture worker classifies a child by: the install's classification, the
-    argv document the caller already built (by reference) and the ``executable`` argument
-    when it is an exact ``str`` of an argv-form call."""
+# Exact ``pathlib`` types: immutable, and their text is pathlib's own computation (no
+# customer code runs for an exact type), so the capture worker reads it to classify a hook
+# program. The ``terminal.argv`` body still records a path object as ``not_exposed``.
+_PATH_TYPES: Final = frozenset({pathlib.PurePosixPath, pathlib.PosixPath,
+                                pathlib.PureWindowsPath, pathlib.WindowsPath})  # fmt: skip
 
-    __slots__ = ("document", "executable", "table")
+
+def _program_ref(value: object) -> bool:
+    """An exact ``str``, ``bytes`` or ``pathlib`` path: what names a program to classify."""
+    kind = type(value)
+    return kind is str or kind is bytes or kind in _PATH_TYPES
+
+
+def _path_text(value: object) -> str | None:
+    """The text of an exact ``str``, ``bytes`` (``os.fsdecode``) or ``pathlib`` path; else
+    ``None``. Capture worker only."""
+    if type(value) is str:
+        return value
+    if type(value) is bytes or type(value) in _PATH_TYPES:
+        with contextlib.suppress(Exception):
+            return os.fsdecode(value) if type(value) is bytes else str(value)
+    return None
+
+
+class _HookProbe:
+    """What the capture worker classifies a child by (references only, read on the worker):
+    for a shell string, the argv document the caller already built (its first word); for
+    an argv-form call, ``argv[0]`` and the ``executable`` argument as the caller passed
+    them, so a classification never depends on the ``terminal.argv`` body's bound."""
+
+    __slots__ = ("argv0", "document", "executable", "path_known", "table")
 
     def __init__(self, table: _classify.Classification, document: object,
-                 executable: object) -> None:  # fmt: skip
+                 executable: object, argv0: object) -> None:  # fmt: skip
         self.table, self.document = table, document
-        self.executable = executable if type(executable) is str else None
+        self.executable = executable if _program_ref(executable) else None
+        # an ``executable=`` Fabric does not read (not an exact str, bytes or path): the
+        # program that runs is unknown, so argv[0] never stands in for it (path entries)
+        self.path_known = executable is None or self.executable is not None
+        self.argv0 = argv0 if _program_ref(argv0) else None
 
     def program(self) -> _classify.HookProgram | None:
         document = self.document
-        executable = (self.executable if isinstance(document, dict)
-                      and document.get("form") == "argv" else None)  # fmt: skip
-        return self.table.hook_program(_classify.argv0_of(document), executable)
+        if document is not None:  # shell=True: what the shell runs
+            if isinstance(document, dict) and document.get("form") == "argv":
+                # a sequence under shell=True: its first item is the command the shell
+                # runs (the rest are the shell's positional parameters)
+                cells = document.get("args")
+                document = ({"form": "shell", "command": cells[0]}
+                            if isinstance(cells, list) and cells else None)  # fmt: skip
+            return self.table.hook_program(_classify.argv0_of(document))
+        return self.table.hook_program(_path_text(self.argv0), _path_text(self.executable),
+                                       path_known=self.path_known)  # fmt: skip
 
 
 def _hook_late(probe: _HookProbe | None, returncode: int | None = None, *,
@@ -905,8 +949,17 @@ class ExecChannel:
         stdio = {name: _disposition(self._param(args, kwargs, name))
                  for name in ("stdin", "stdout", "stderr")}  # fmt: skip
         table = self.hook_table
-        probe = None if table is None or not isinstance(document, dict) else _HookProbe(
-            table, document, self._param(args, kwargs, "executable"))  # fmt: skip
+        probe = None
+        if table is not None and shell is False:
+            # argv[0] and executable= by reference (a str, bytes or path object, whether or
+            # not the argv body fits its bound); the worker reads them (WP7-10, F2)
+            raw = self._param(args, kwargs, "args")
+            first = raw[0] if (type(raw) is list or type(raw) is tuple) and raw else raw
+            executable = self._param(args, kwargs, "executable")
+            if _program_ref(first) or _program_ref(executable):
+                probe = _HookProbe(table, None, executable, first)
+        elif table is not None and shell and isinstance(document, dict):
+            probe = _HookProbe(table, document, None, None)  # the shell runs the command
         return ({"argv_form": argv_form, "stdio": stdio}, _create_candidate(document, shell),
                 probe)  # fmt: skip
 

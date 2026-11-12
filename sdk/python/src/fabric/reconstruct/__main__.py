@@ -788,6 +788,7 @@ def report_main(argv: Sequence[str]) -> int:
         stream = sys.stderr if args.out else sys.stdout
         for line in summary_lines(document):
             print(line, file=stream)
+    _note_capture_policy(args, reader)
     if args.projection and not _write_projection(args.projection, projection):
         return EXIT_USAGE
     if not document["runs"]:
@@ -868,6 +869,18 @@ def _capture_policy(path: str | None) -> tuple[_classify.Classification | None, 
             "hook_programs) to the policy, or drop the option"
         )
     return classification, policy.digest
+
+
+def _note_capture_policy(args: argparse.Namespace, reader: ActionReader) -> None:
+    """``--capture-policy`` that no run was captured under applies nothing: say so, with
+    the cause and the fix (never the path or a list value)."""
+    if getattr(args, "capture_policy", None) and reader.policy_runs and not reader.policy_matched:
+        _fail(
+            "warning: --capture-policy applied to no run: no run's capture manifest names "
+            "this policy's digest. Pass the exact file the agent ran with (its "
+            "FABRIC_CAPTURE_POLICY); a policy changed after the run, even only to add a "
+            "decision_pointer, has another digest and applies only to runs captured under it"
+        )
 
 
 def _markers_file(path: str | None) -> object:
@@ -1072,6 +1085,7 @@ def actions_main(argv: Sequence[str]) -> int:
         sys.stdout.write("\n".join(format_actions(view) for view in views))
         if outside:
             sys.stdout.write(("\n" if views else "") + format_unattributed_host(outside))
+    _note_capture_policy(args, reader)
     if not document["runs"]:
         _explain_no_runs(args.spans, args.runs)
     return _exit_code(document)

@@ -426,15 +426,26 @@ service. You declare both in the capture policy (the
   the outcome is the mapped one (`configured_exit_map`); without a map, or
   for a code the map does not name, it is `unknown` and the exit code is
   still shown. A signal is the negative code, as Python reports it
-  (`"-9"`).
+  (`"-9"`). `argv[0]` and `executable=` are matched when they are a string,
+  `bytes` or a `pathlib` path, also when the argv is too long for the
+  recorded argv body. Under `shell=True` the command string, or a list's
+  first item, is matched by its first word when it is one simple command.
+  An `executable=` of any other type is not read, so only `basename`
+  entries can match that child. A hook started through an interpreter
+  (`["sh", "hook.sh"]`, `["python", "hook.py"]`) has the interpreter as its
+  `argv[0]`, so it cannot be listed without listing every use of that
+  interpreter: give the script a shebang and an execute bit and run it
+  directly, or it is linked as an unlisted process.
 - **A hook program is never a tool call's effect.** A tool call whose
   window holds only hook programs stays under `tool_calls_without_effect`,
   and the `effects` chain is `partial(none_in_window)`: the hook shows the
   call was dispatched, and its effect was somewhere the enabled channels do
-  not look (a remote sandbox, an unhooked client). The one exception is a
-  hook whose `exit_map` outcome is `blocked`: that call was not dispatched,
-  so its missing effect is expected. A process you did not list is linked
-  as before (`sequence_bracket`, tentative).
+  not look (a remote sandbox, an unhooked client). There are two
+  exceptions, where the missing effect is expected and the chain is not
+  lowered: a hook whose `exit_map` outcome is `blocked` (the call was not
+  dispatched), and a call a recorded deny gates (it is counted as
+  `control_denied`, fact F5). A process you did not list is linked as before
+  (`sequence_bracket`, tentative).
 - **Control endpoints.** List the host in `control_hosts` and in the HTTP
   hook's allowlist (`FABRIC_WIRE_HTTP_HOSTS` / `http_hosts=`). Each request
   to it is one `control` row: kind and label from the list,
@@ -450,10 +461,19 @@ service. You declare both in the capture policy (the
   The reader then fills the decision (`configured_extract`). Nothing is
   parsed in the agent. If the pointer is listed but the body was not
   retained, the row says so and the `controls` chain is
-  `partial(body_not_retained)`. The policy applies only to runs whose
-  capture manifest names its digest.
+  `partial(body_not_retained)`. A response the service sends compressed
+  (`Content-Encoding: gzip`, which httpx asks for by default) is never
+  stored, so it reads as not retained too: send `Accept-Encoding: identity`
+  on requests to that host, or turn compression off for that endpoint. The
+  policy applies only to runs whose capture manifest names its digest, so
+  pass the exact file the agent ran with; a policy changed after the run
+  (even only to add a `decision_pointer`) applies to no earlier run, and
+  the reader prints a warning when it applied to none.
 - **Host sensors.** With `--capture-policy`, a sensor `exec` whose
-  executable-path digest is a listed `path` is a hook row, and a sensor
+  executable-path digest is a listed `path` is a hook row (outcome
+  `unknown`; like an in-process hook it is never an effect, and a call
+  whose window holds it and no effect makes the `effects` chain
+  `partial(none_in_window)`), and a sensor
   `connect` to a listed `control_addresses` entry is a contact row
   (`decision=unknown`). The sensor must be allowed to emit path digests for
   the first, and the reader needs the id key for the second

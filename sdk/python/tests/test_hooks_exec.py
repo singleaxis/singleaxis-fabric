@@ -37,7 +37,7 @@ import warnings
 import weakref
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 
 import jsonschema
@@ -1418,6 +1418,106 @@ def test_a_shell_string_and_an_executable_argument_are_classified(tmp_path: Path
         labels = [r.attrs.get("fabric.hook.program_label") for r in rig.records()
                   if r.lifecycle == "completed"]  # fmt: skip
         assert labels == ["pre-tool-check", "pre-tool-check", None]
+    finally:
+        _close(rig)
+
+
+def test_a_path_object_argv0_or_executable_is_classified(tmp_path: Path) -> None:
+    """P2a review: ``subprocess.run([Path(...), ...])`` is a common way to run a hook. The
+    argv body still records a path object as ``not_exposed`` (never converted on the
+    caller's path), but the worker classifies an exact ``pathlib`` path by its text, so a
+    declared hook started this way is a hook row and never a tool call's effect (F2)."""
+    script = _script(tmp_path, "pre-tool.sh", "exit 2")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"2": "blocked"}},
+                    {"basename": "lint-hook", "label": "linter"})  # fmt: skip
+    lint = _script(tmp_path, "lint-hook", "exit 0")
+    try:
+        subprocess.run([script, "--tool", "shell"])
+        subprocess.run(["renamed"], executable=script)
+        subprocess.run([lint])  # a basename entry, by the path's last part
+        subprocess.run(script)  # a bare path object is the whole argv
+        # an unlisted path object: executable= is checked against the path entries only
+        subprocess.run([PurePosixPath(str(tmp_path / "other.sh"))], check=False,
+                       executable=str(lint))  # fmt: skip
+        ends = [r for r in rig.records() if r.lifecycle == "completed"]
+        assert [r.attrs.get("fabric.hook.program_label") for r in ends] == [
+            "pre-tool-check", "pre-tool-check", "linter", "pre-tool-check", None]  # fmt: skip
+        assert [r.attrs.get("fabric.hook.outcome") for r in ends] == [
+            "blocked", "blocked", "unknown", "blocked", None]  # fmt: skip
+        # the argv body still never converts a path object (053 §4.1)
+        starts = [r for r in rig.records() if r.lifecycle == "running"]
+        assert starts[0].json("terminal.argv")["args"][0] == {"t": "not_exposed"}
+        assert "terminal.argv" not in starts[3].bodies
+    finally:
+        _close(rig)
+
+
+def test_a_hook_whose_argv_is_over_the_body_bound_or_bytes_is_still_classified(
+    tmp_path: Path,
+) -> None:
+    """P2a review: the ``terminal.argv`` document is dropped over its bound (64K chars or
+    1024 items), e.g. a hook given a large tool input as an argument. Classification must
+    not depend on that body: the worker reads ``argv[0]`` and ``executable=`` by reference,
+    so the declared hook stays a hook row, never the tool call's effect (F2). A ``bytes``
+    ``argv[0]`` or ``executable=`` is decoded on the worker as ``os.fsdecode`` would."""
+    script = _script(tmp_path, "pre-tool.sh", "exit 2")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"2": "blocked"}})  # fmt: skip
+    try:
+        subprocess.run([str(script), "x" * (_exec.MAX_ARGV_CHARS + 1)])
+        subprocess.run([str(script), *(["a"] * _exec.MAX_ARGV_ITEMS)])
+        subprocess.run(["renamed", "x" * (_exec.MAX_ARGV_CHARS + 1)], executable=str(script))
+        subprocess.run([os.fsencode(script), "--tool"])
+        subprocess.run([b"renamed"], executable=os.fsencode(script))
+        # unchanged: an over-bound argv of an unlisted program is not classified
+        subprocess.run([SH, "-c", "exit 0", "x" * (_exec.MAX_ARGV_CHARS + 1)])
+        ends = [r for r in rig.records() if r.lifecycle == "completed"]
+        assert [r.attrs.get("fabric.hook.program_label") for r in ends] == [
+            *(["pre-tool-check"] * 5), None]  # fmt: skip
+        assert [r.attrs.get("fabric.hook.outcome") for r in ends] == [*(["blocked"] * 5), None]
+        # the over-bound argv bodies stay dropped (descriptor only): nothing is copied
+        starts = [r for r in rig.records() if r.lifecycle == "running"]
+        assert [s.body("terminal.argv") for s in starts[:3]] == [b"", b"", b""]
+    finally:
+        _close(rig)
+
+
+class _OpaquePath(os.PathLike[str]):
+    """A customer path type Fabric never reads (its ``__fspath__`` is customer code)."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def __fspath__(self) -> str:
+        return self.path
+
+
+def test_a_shell_sequence_and_an_unread_executable_are_classified_by_what_runs(
+    tmp_path: Path,
+) -> None:
+    """P2a review: under ``shell=True`` a sequence's first item is the command the shell
+    runs, so a declared hook started as ``run(["/hooks/pre.sh --tool x"], shell=True)`` is
+    a hook row, never the tool call's effect (F2). An ``executable=`` Fabric does not read
+    hides which program runs: ``argv[0]`` never stands in for it, so a program that is not
+    the hook is never labelled as one (which would hide a real effect)."""
+    script = _script(tmp_path, "pre-tool.sh", "exit 2")
+    other = _script(tmp_path, "real-effect", "exit 0")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"2": "blocked"}},
+                    {"basename": "lint-hook", "label": "linter"})  # fmt: skip
+    try:
+        subprocess.run([f"{script} --tool x"], shell=True)  # noqa: S602 - one simple command
+        subprocess.run([f"{script} --tool x", "positional"], shell=True)  # noqa: S602
+        subprocess.run([f"{script}; true"], shell=True)  # noqa: S602 - compound: no program
+        subprocess.run([str(script)], executable=_OpaquePath(str(other)))
+        # a basename entry still matches argv[0]'s basename, as with any executable=
+        subprocess.run(["lint-hook"], executable=_OpaquePath(str(other)))
+        ends = [r for r in rig.records() if r.lifecycle == "completed"]
+        assert [r.attrs.get("fabric.hook.program_label") for r in ends] == [
+            "pre-tool-check", "pre-tool-check", None, None, "linter"]  # fmt: skip
+        assert [r.attrs.get("fabric.hook.outcome") for r in ends] == [
+            "blocked", "blocked", None, None, "unknown"]  # fmt: skip
     finally:
         _close(rig)
 
