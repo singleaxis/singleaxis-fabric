@@ -6,7 +6,8 @@
     fabric init --provider <fake model>      (fabric.yaml, generated secrets, compiled env)
     fabric up                                (the pinned release Node with a TLS listener,
                                               the local-dir sink, the host sensor or a reason)
-    an unchanged agent, zero-code autoload, with the compiled environment and nothing else
+    an unchanged agent, started through the route `fabric up` prints (compiled
+    environment and zero-code autoload, exported by a real shell), nothing else
         -> wire tee -> the Node over TLS (generated CA) -> the sink -> ./fabric-data/spans
     python -m fabric.reconstruct             (complete_for_declared_scope)
     fabric up (again), fabric down, fabric down --purge
@@ -32,11 +33,11 @@ import pytest
 from _wire_capture_common import (
     AGENT,
     FakeModel,
-    autoload_path,
     compose_available,
     free_port,
     wait_until,
 )
+from fabric.cli._up import compiled_env_route
 
 pytestmark = pytest.mark.skipif(
     not compose_available(), reason="docker compose unavailable — env-dependent gate"
@@ -127,17 +128,23 @@ def test_init_up_capture_verify_down(
     for image in up["data"]["images"].values():
         assert "@sha256:" in image or image == up["data"]["images"]["release"]
 
-    # The agent: unchanged code, zero-code autoload, and only what `fabric init` compiled.
+    # The agent: unchanged code, started the way `fabric up` says (a real shell exports
+    # the compiled environment and turns on autoload), with nothing else of Fabric's.
     compiled = _compiled(project)
     assert not [key for key in compiled if key.startswith("OTEL_")]
+    shim = project.parent / "bin"
+    shim.mkdir()
+    (shim / "python").write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    (shim / "python").chmod(0o755)
     agent_env = {
-        "PATH": env["PATH"], "HOME": env["HOME"], **compiled,
-        "FABRIC_WIRE_AUTOLOAD": "1", "PYTHONPATH": autoload_path(),
+        "PATH": f"{shim}{os.pathsep}{env['PATH']}", "HOME": env["HOME"],
         "E2E_MODEL_API_KEY": API_KEY, "E2E_TOOL_RESULT_MARK": "tool-result-mark",
         "E2E_TRACE_STATE": "trace-state-mark",
     }  # fmt: skip
+    route = compiled_env_route(project / ".fabric" / "compiled.env")
     agent = subprocess.run(  # noqa: S603
-        [sys.executable, str(AGENT), "--model-url", model.url, "--question", "Weather in Lisbon?"],
+        ["sh", "-c", route + ' exec python "$@"', "sh", str(AGENT),  # noqa: S607
+         "--model-url", model.url, "--question", "Weather in Lisbon?"],
         env=agent_env, cwd=project, capture_output=True, text=True, timeout=180, check=False,
     )  # fmt: skip
     assert agent.returncode == 0, agent.stdout + agent.stderr
