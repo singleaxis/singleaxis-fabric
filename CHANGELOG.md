@@ -95,6 +95,13 @@ it never makes, applies, waits for or returns one.
     give this project its own name; nothing is started, stopped or removed.
   - `fabric up` works in a project directory whose path contains a colon
     (Docker used to answer "invalid volume specification").
+  - `fabric init --force` keeps the project name, `secrets.dir` and
+    `secrets.id_key_file`, so it never moves the secrets or changes the
+    pseudonym key. A referenced key or CA file that is missing or unreadable
+    is named (`FC-031`). A secrets directory inside the project is added to
+    `.gitignore`, and a symlinked `.fabric` is refused (`down --purge` deletes
+    nothing through it). Until `fabric run` ships, `fabric up` ends with the
+    command that works today (the compiled environment plus autoload).
   - `fabric.yaml` refuses a value that looks like a secret (`FC-017`), and
     gains `secrets.id_key_file` and `secrets.ca_file` for a setup that keeps
     its own files.
