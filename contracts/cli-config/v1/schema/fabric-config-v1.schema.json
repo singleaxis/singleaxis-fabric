@@ -91,12 +91,16 @@
     "secrets": {
       "type": "object",
       "additionalProperties": false,
-      "properties": {"dir": {"$ref": "#/$defs/path"}}
+      "properties": {
+        "dir": {"$ref": "#/$defs/path"},
+        "id_key_file": {"$ref": "#/$defs/path"},
+        "ca_file": {"$ref": "#/$defs/path"}
+      }
     }
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$"},
-    "path": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]*\\S[^\\u0000]*$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^[^\\u0000]*\\S[^\\u0000]*$", "not": {"pattern": "^(-----BEGIN |[Bb][Ee][Aa][Rr][Ee][Rr][ :]|([Ss][Kk]|[Pp][Kk]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt])[_-][A-Za-z0-9_~+-]{8,}$|(AKIA|ASIA)[A-Z0-9]{16}$|gh[pousr]_[A-Za-z0-9]{20,}$|eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$|[A-Za-z0-9_-]{48,}$|[A-Fa-f0-9]{40,}$)"}},
     "http_url": {"type": "string", "pattern": "^https?://[^@?#/\\s]+(/[^?#\\s]*)?$"}
   }
 }
