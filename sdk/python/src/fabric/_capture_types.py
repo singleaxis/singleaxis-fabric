@@ -826,13 +826,16 @@ def _check_held(bodies: tuple[AnyBody, ...], evidence: EvidenceDoc | None,
     """The bodies and evidence object a record job may hold (§3.4 step 3)."""
     if len(bodies) + (evidence is not None) > MAX_RECORD_BODIES:
         raise RecordsMisuseError("records API misuse: more than 8 bodies on one record")
-    evidence_bodies = sum(body.role == EVIDENCE_ROLE for body in bodies)
-    if evidence_bodies + (evidence is not None) > 1:
+    evidence_objects = int(evidence is not None)
+    protocol = False
+    for body in bodies:  # one pass (the calling thread's hot path)
+        if body.role == EVIDENCE_ROLE:
+            evidence_objects += 1
+        if isinstance(body, RecordBody) and body.content_provenance == "protocol":
+            protocol = True
+    if evidence_objects > 1:
         raise RecordsMisuseError("records API misuse: more than one evidence object")
-    if provenance == "reported" and any(
-        isinstance(body, RecordBody) and body.content_provenance == "protocol"
-        for body in bodies
-    ):  # fmt: skip
+    if protocol and provenance == "reported":
         raise RecordsMisuseError("records API misuse: protocol content on a reported record")
 
 

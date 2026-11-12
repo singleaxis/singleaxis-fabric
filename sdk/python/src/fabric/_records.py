@@ -64,6 +64,7 @@ from ._capture_types import (
     RecordsMisuseError,
     ResultStatus,
     SpanIds,
+    StatusInputs,
     StepKind,
     fail_open,
     mint_uuid4,
@@ -537,6 +538,26 @@ class Attempt:
         return records.submit(
             self, minted, status.lifecycle, status.result_status, status.otlp_status,
             name_hint, attributes, start, end, kept_bodies, evidence, span_ids, late,
+        )  # fmt: skip
+
+    def emit_resolved(
+        self, status: StatusInputs, name_hint: str, attributes: Mapping[str, AttributeValue],
+        start_ns: int, end_ns: int, bodies: tuple[AnyBody, ...], evidence: EvidenceDoc | None,
+    ) -> bool:  # fmt: skip
+        """:meth:`emit` for a Fabric hook on a hot path whose inputs already have the
+        checked shapes: ``status`` resolved by
+        :func:`~fabric._capture_types.resolve_status_inputs` (nothing dropped), plain
+        ``int`` times with ``end_ns >= start_ns``, a tuple of bodies the hook built (one
+        evidence object at most). The record is the one :meth:`emit` submits; the job
+        still checks the bodies it holds (count, evidence, provenance). Not fail-open:
+        the hook calls it inside its own guard, which counts a failure as :meth:`emit`
+        would."""
+        records = self.records
+        if not records.active:
+            return False
+        return records.submit(
+            self, mint_uuid4(), status.lifecycle, status.result_status, status.otlp_status,
+            name_hint, attributes, start_ns, end_ns, bodies, evidence, None, None,
         )  # fmt: skip
 
 
