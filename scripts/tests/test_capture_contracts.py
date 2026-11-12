@@ -1007,7 +1007,7 @@ def test_053_host_record_fixtures() -> None:
                 classes.add(attrs["fabric.sensor.event_class"])
             else:
                 markers.add(attrs.get("fabric.heartbeat.kind") or span["name"])
-    assert classes == {"exec", "connect", "file"}
+    assert classes == {"exec", "connect", "file", "exit"}  # exit: spec 057 OD-13 (WP7-11)
     assert {
         "fabric.capture_manifest",
         "periodic",
