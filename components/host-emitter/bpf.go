@@ -44,6 +44,7 @@ type rawEvent struct {
 	ExitCode           int32
 	ExitSignal         uint32
 	Reserved           uint32
+	Uptr               uint64 // cleared before emission (bpf/emit.bpf.c)
 	Comm               [16]byte
 	Filename           [240]byte
 	Argv               [384]byte

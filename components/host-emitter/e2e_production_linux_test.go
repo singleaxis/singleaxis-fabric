@@ -62,6 +62,8 @@ func TestMain(m *testing.M) {
 		os.Exit(refusedConnectHelper())
 	case "seccomp-kill":
 		os.Exit(seccompKillHelper())
+	case "unmapped-path":
+		os.Exit(unmappedPathHelper())
 	}
 	os.Exit(m.Run())
 }
@@ -207,6 +209,42 @@ func seccompKillHelper() int {
 	}
 	_, _, _ = unix.RawSyscall(unix.SYS_GETPPID, 0, 0, 0)
 	return 43 // not reached: the kernel killed the process
+}
+
+// unmappedPathHelper opens and execs FABRIC_E2E_DENIED through a path that
+// sits in an untouched file-backed mapping (FABRIC_E2E_PATH_FILE holds the
+// path and its NUL): the page has no page-table entry, so the sensor's read
+// at sys_enter fails and only the kernel's own copy faults it in. Both calls
+// fail with EACCES (the file is root-only and not executable).
+func unmappedPathHelper() int {
+	if err := syscall.Setgid(65534); err != nil {
+		return 50
+	}
+	if err := syscall.Setuid(65534); err != nil {
+		return 51
+	}
+	f, err := os.Open(os.Getenv("FABRIC_E2E_PATH_FILE"))
+	if err != nil {
+		return 52
+	}
+	defer f.Close()
+	page, err := unix.Mmap(int(f.Fd()), 0, 4096, unix.PROT_READ, unix.MAP_PRIVATE)
+	if err != nil {
+		return 53
+	}
+	path := uintptr(unsafe.Pointer(&page[0])) // the address only: the page is never touched here
+	cwd := int64(unix.AT_FDCWD)
+	atFDCWD := uintptr(cwd)
+	_, _, e := unix.Syscall6(unix.SYS_OPENAT, atFDCWD, path, unix.O_RDONLY, 0, 0, 0)
+	if e != unix.EACCES {
+		return 54
+	}
+	argv := []*byte{nil}
+	_, _, e = unix.Syscall(unix.SYS_EXECVE, path, uintptr(unsafe.Pointer(&argv[0])), uintptr(unsafe.Pointer(&argv[0])))
+	if e != unix.EACCES {
+		return 55
+	}
+	return 5
 }
 
 // heldConnectHelper connects twice to a listener that accepts nothing and
@@ -919,4 +957,51 @@ func kernelRelease() string {
 		return "unknown"
 	}
 	return unix.ByteSliceToString(u.Release[:])
+}
+
+// TestPathReadRetriedAtExit (spec 057 WP7-11): a held openat or execve whose
+// path the sensor could not read at sys_enter (the page was not resident)
+// is read again at sys_exit, after the kernel copied it, so the record still
+// names the path (its digest and watched label) with the result and errno.
+func TestPathReadRetriedAtExit(t *testing.T) {
+	base := testBase(t)
+	agent := mkCgroup(t, filepath.Join(base, "agent"))
+	rt := loadSensorClasses(t, agent)
+	events := collect(t, rt)
+
+	dir := filepath.Join("/tmp", "fabric-e2e-"+randomHex(t, 4))
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	denied := filepath.Join(dir, "denied")
+	if err := os.WriteFile(denied, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pathFile := filepath.Join(dir, "path")
+	if err := os.WriteFile(pathFile, append([]byte(denied), 0), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^$")
+	cmd.Env = append(os.Environ(), helperEnv+"=unmapped-path", "FABRIC_E2E_PATH_FILE="+pathFile)
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, agent)}
+	err = cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 5 {
+		t.Fatalf("the unmapped-path helper did not make both calls as expected: %v", err)
+	}
+	pid := uint32(cmd.Process.Pid)
+	for _, typ := range []uint32{evOpenat, evExec} {
+		e := waitFor(t, events, fmt.Sprintf("the refused call of type %d", typ), func(e *event) bool {
+			return e.Pid == pid && e.Type == typ && e.Result == resultFailed && e.Errno == 13 // not the Go runtime's own opens
+		})
+		if e.Filename != denied || e.FilenameIncomplete {
+			t.Errorf("type %d: name %q incomplete %v, want %q and complete",
+				typ, e.Filename, e.FilenameIncomplete, denied)
+		}
+	}
 }

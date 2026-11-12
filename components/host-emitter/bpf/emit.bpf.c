@@ -93,6 +93,11 @@ struct event {
     __s32 exit_code;
     __u32 exit_signal;
     __u32 reserved;
+    // The user address of a held openat or execve path (never sent: cleared
+    // before emission). When the read at sys_enter failed (the page was not
+    // resident, and a BPF read cannot fault it in), sys_exit reads it again
+    // after the kernel itself has copied the path.
+    __u64 uptr;
     char  comm[16];
     char  filename[240];
     __u8  argv[384];
@@ -175,6 +180,7 @@ struct {
 // emit_copy sends a held event to the ring buffer (a reservation failure is
 // the same counted loss as for an event emitted at once).
 static __always_inline void emit_copy(struct event *e) {
+    e->uptr = 0;
     if (bpf_ringbuf_output(&events, e, sizeof(*e), 0) != 0)
         note_ring_loss();
 }
@@ -372,6 +378,12 @@ static __always_inline void complete(__u32 type, long ret) {
     struct event *e = bpf_map_lookup_elem(&pending, &key);
     if (!e || e->type != type)
         return;
+    if (e->filename_incomplete && e->uptr) {
+        // The sys_enter read failed; the kernel has read the path by now.
+        long n = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), (const void *)e->uptr);
+        if (n > 0 && n < sizeof(e->filename))
+            e->filename_incomplete = 0;
+    }
     if (ret >= 0) {
         e->result = RES_SUCCESS;
     } else if (type == EV_CONNECT && (ret == -EINPROGRESS || ret == -EINTR || ret == -EALREADY)) {
@@ -480,6 +492,8 @@ int tp_openat(struct trace_event_raw_sys_enter *ctx) {
     long path_read = bpf_probe_read_str(&e->filename, sizeof(e->filename), fname);
     if (path_read <= 0 || path_read >= sizeof(e->filename))
         e->filename_incomplete = 1;
+    if (h.held && path_read <= 0)
+        e->uptr = (__u64)fname;
     finish(h);
     return 0;
 }
@@ -511,6 +525,8 @@ int tp_execve_enter(struct trace_event_raw_sys_enter *ctx) {
     long path_read = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), fname);
     if (path_read <= 0 || path_read >= sizeof(e->filename))
         e->filename_incomplete = 1;
+    if (path_read <= 0)
+        e->uptr = (__u64)fname;
     e->argv_incomplete = 1;
     return 0;
 }
