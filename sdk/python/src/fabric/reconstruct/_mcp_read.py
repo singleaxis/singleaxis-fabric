@@ -39,7 +39,6 @@ from fabric.reconstruct.dialects.mcp import Seen, SessionInfo
 __all__ = ["MCP_POINT", "McpInput", "listed_host_ids", "read"]
 
 MCP_POINT: Final = "mcp.client"
-HTTP_POINT: Final = "http.nonmodel"
 _REQUEST, _RESPONSE = "network.request", "network.response"
 _MCP_ROLES: Final = ("mcp.request", "mcp.response", "mcp.notification")
 _EVIDENCE_ROLE: Final = "record.evidence"
@@ -85,11 +84,14 @@ def _at(record: Any) -> dict[str, Any]:
     return out
 
 
+def _object_ids(attrs: Mapping[str, Any]) -> list[str]:
+    value = attrs.get("fabric.content.object_ids")
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
 def _objects(reader: Any, record: Any, role: str) -> list[tuple[dict[str, Any], bytes | None]]:
     """Every object of ``role`` the record names: its descriptor and verified bytes
     (``None`` when not retained, missing or unverified)."""
-    from fabric.reconstruct._attribute import _object_ids  # noqa: PLC0415
-
     out: list[tuple[dict[str, Any], bytes | None]] = []
     verifier = reader.verifier
     for object_id in _object_ids(record.span.attributes):
