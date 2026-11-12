@@ -661,6 +661,11 @@ def test_sink_refuses_what_it_cannot_store_so_the_node_retries(
     url, data = sink
     assert _post(f"{url}/v1/metrics", b"x") == 404
     assert _post(f"{url}/v1/traces", b"not gzip", {"Content-Encoding": "gzip"}) == 400
+    # A gzip header over a corrupt deflate stream raises zlib.error, not OSError: still a
+    # 400, never a dropped connection the Node would retry without end.
+    zipped = gzip.compress(b"span-request" * 20)
+    corrupt = zipped[:10] + b"\xff" * 20 + zipped[-8:]
+    assert _post(f"{url}/v1/traces", corrupt, {"Content-Encoding": "gzip"}) == 400
     with pytest.raises(urllib.error.HTTPError) as caught:
         urllib.request.urlopen(f"{url}/other", timeout=5)  # noqa: S310
     assert caught.value.code == 404

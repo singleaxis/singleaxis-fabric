@@ -17,6 +17,7 @@ import gzip
 import json
 import os
 import uuid
+import zlib
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -84,7 +85,9 @@ def make_handler(data_dir: Path) -> type[BaseHTTPRequestHandler]:
             if self.headers.get("Content-Encoding", "").lower() == "gzip":
                 try:
                     body = gzip.decompress(body)
-                except (OSError, EOFError):
+                except (OSError, EOFError, zlib.error):
+                    # A corrupt deflate stream raises zlib.error: answered, never a dropped
+                    # connection the Node would retry without end.
                     self._json(HTTPStatus.BAD_REQUEST, {"error": "body is not gzip"})
                     return
             try:
