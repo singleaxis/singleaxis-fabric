@@ -78,7 +78,10 @@ carry ``fabric.hook.program_label`` (the customer's label, never the path) and
 ``fabric.hook.basis=process``; the record that carries the exit status also carries
 ``fabric.hook.outcome``, the listed ``exit_map``'s outcome for that code, else
 ``unknown`` (the exit code itself is recorded either way). A shell string names its first
-word when it is one simple command. An unlisted child is unchanged.
+word when it is one simple command. ``argv[0]`` and ``executable=`` are matched when each
+is an exact ``str`` or an exact ``pathlib`` path; the worker reads a path's text, the
+caller only keeps the reference, and the argv body still records it as ``not_exposed``.
+An unlisted child is unchanged.
 
 **Spawn errors.** A spawn that raises an ``OSError`` records, beside ``error_class``, the
 symbolic ``errno`` name (``EACCES``, ``EPERM``, ``ENOENT``, ``ENOEXEC``, ...) of a builtin
@@ -98,6 +101,7 @@ import inspect
 import io
 import json
 import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -340,23 +344,48 @@ def _errno_name(exc: BaseException) -> str | None:
 # --- hook programs (spec 057 §4.3, WP7-10; capture worker only) ---------------------------
 
 
+# Exact ``pathlib`` types: immutable, and their text is pathlib's own computation (no
+# customer code runs for an exact type), so the capture worker reads it to classify a hook
+# program. The ``terminal.argv`` body still records a path object as ``not_exposed``.
+_PATH_TYPES: Final = frozenset({pathlib.PurePosixPath, pathlib.PosixPath,
+                                pathlib.PureWindowsPath, pathlib.WindowsPath})  # fmt: skip
+
+
+def _path_text(value: object) -> str | None:
+    """An exact ``str``, or the text of an exact ``pathlib`` path; else ``None``. Capture
+    worker only."""
+    if type(value) is str:
+        return value
+    if type(value) in _PATH_TYPES:
+        with contextlib.suppress(Exception):
+            return str(value)
+    return None
+
+
 class _HookProbe:
     """What the capture worker classifies a child by: the install's classification, the
-    argv document the caller already built (by reference) and the ``executable`` argument
-    when it is an exact ``str`` of an argv-form call."""
+    argv document the caller already built (by reference), and, for an argv-form call,
+    the ``executable`` argument and ``argv[0]`` when each is an exact ``str`` or an exact
+    ``pathlib`` path (by reference; read on the worker only)."""
 
-    __slots__ = ("document", "executable", "table")
+    __slots__ = ("argv0", "document", "executable", "table")
 
     def __init__(self, table: _classify.Classification, document: object,
-                 executable: object) -> None:  # fmt: skip
+                 executable: object, argv0: object = None) -> None:  # fmt: skip
         self.table, self.document = table, document
-        self.executable = executable if type(executable) is str else None
+        self.executable = executable if type(executable) is str or (
+            type(executable) in _PATH_TYPES) else None  # fmt: skip
+        self.argv0 = argv0 if type(argv0) in _PATH_TYPES else None
 
     def program(self) -> _classify.HookProgram | None:
         document = self.document
-        executable = (self.executable if isinstance(document, dict)
-                      and document.get("form") == "argv" else None)  # fmt: skip
-        return self.table.hook_program(_classify.argv0_of(document), executable)
+        argv_form = self.argv0 is not None or (
+            isinstance(document, dict) and document.get("form") == "argv")  # fmt: skip
+        argv0 = _classify.argv0_of(document)
+        if argv0 is None and self.argv0 is not None:
+            argv0 = _path_text(self.argv0)
+        executable = _path_text(self.executable) if argv_form else None
+        return self.table.hook_program(argv0, executable)
 
 
 def _hook_late(probe: _HookProbe | None, returncode: int | None = None, *,
@@ -905,8 +934,16 @@ class ExecChannel:
         stdio = {name: _disposition(self._param(args, kwargs, name))
                  for name in ("stdin", "stdout", "stderr")}  # fmt: skip
         table = self.hook_table
-        probe = None if table is None or not isinstance(document, dict) else _HookProbe(
-            table, document, self._param(args, kwargs, "executable"))  # fmt: skip
+        probe = None
+        if table is not None:
+            # argv[0] as a path object (``run([Path(...), ...])`` or ``run(Path(...))``):
+            # kept by reference for the worker; never converted here (WP7-10)
+            raw = self._param(args, kwargs, "args") if shell is False else None
+            first = raw[0] if (type(raw) is list or type(raw) is tuple) and raw else raw
+            first = first if type(first) in _PATH_TYPES else None
+            if isinstance(document, dict) or first is not None:
+                probe = _HookProbe(table, document, self._param(args, kwargs, "executable"),
+                                   first)  # fmt: skip
         return ({"argv_form": argv_form, "stdio": stdio}, _create_candidate(document, shell),
                 probe)  # fmt: skip
 
