@@ -339,6 +339,17 @@ it never makes, applies, waits for or returns one.
   matched, because only plain strings were compared. It was then counted as
   the tool call's effect again. Exact `pathlib` paths are now matched too.
   The recorded argv still shows a path object as `not_exposed`.
+- **A hook with a long argv is now recognised.** A listed hook program was
+  matched from the recorded argv body, which is dropped when the argv is
+  over 64K characters or 1,024 items (for example a hook given a large tool
+  input as an argument). Such a hook counted as the tool call's effect
+  again. `argv[0]` and `executable=` are now matched directly, also when
+  they are `bytes`; the recorded argv is unchanged.
+- **`--capture-policy` that matches no run now says so.** The reader applies
+  a capture policy's lists only to runs whose manifest names that policy's
+  digest, so a policy changed after the run (for example to add a
+  `decision_pointer`) applied to nothing, silently. The reader now prints a
+  warning naming the cause and the fix.
 - **A denied call no longer leaves a stray `none_in_window` reason.** When a
   hook program passed a tool call and a recorded deny then gated the same
   call, the call was correctly counted as `control_denied`, but the

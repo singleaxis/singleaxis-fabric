@@ -426,8 +426,9 @@ service. You declare both in the capture policy (the
   the outcome is the mapped one (`configured_exit_map`); without a map, or
   for a code the map does not name, it is `unknown` and the exit code is
   still shown. A signal is the negative code, as Python reports it
-  (`"-9"`). `argv[0]` and `executable=` are matched when they are a string
-  or a `pathlib` path. A hook started through an interpreter
+  (`"-9"`). `argv[0]` and `executable=` are matched when they are a string,
+  `bytes` or a `pathlib` path, also when the argv is too long for the
+  recorded argv body. A hook started through an interpreter
   (`["sh", "hook.sh"]`, `["python", "hook.py"]`) has the interpreter as its
   `argv[0]`, so it cannot be listed without listing every use of that
   interpreter: give the script a shebang and an execute bit and run it
@@ -457,8 +458,14 @@ service. You declare both in the capture policy (the
   The reader then fills the decision (`configured_extract`). Nothing is
   parsed in the agent. If the pointer is listed but the body was not
   retained, the row says so and the `controls` chain is
-  `partial(body_not_retained)`. The policy applies only to runs whose
-  capture manifest names its digest.
+  `partial(body_not_retained)`. A response the service sends compressed
+  (`Content-Encoding: gzip`, which httpx asks for by default) is never
+  stored, so it reads as not retained too: send `Accept-Encoding: identity`
+  on requests to that host, or turn compression off for that endpoint. The
+  policy applies only to runs whose capture manifest names its digest, so
+  pass the exact file the agent ran with; a policy changed after the run
+  (even only to add a `decision_pointer`) applies to no earlier run, and
+  the reader prints a warning when it applied to none.
 - **Host sensors.** With `--capture-policy`, a sensor `exec` whose
   executable-path digest is a listed `path` is a hook row, and a sensor
   `connect` to a listed `control_addresses` entry is a contact row
