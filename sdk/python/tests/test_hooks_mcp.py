@@ -31,6 +31,7 @@ import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Final
 
 import anyio
@@ -448,6 +449,66 @@ def test_split_and_joined_lines_are_framed_as_the_reader_frames_them(rig: Rig) -
     bodies = [r.body()[1] for r in rig.records()]  # type: ignore[index]
     assert bodies == [one, two]
     assert rig.channel.status()["unparsed"] == 1
+
+
+_VARYING = ("fabric.source.sequence", "fabric.event_id", "fabric.attempt.uid",
+            "fabric.content.object_ids")  # fmt: skip
+
+
+def test_emit_resolved_submits_the_record_emit_submits(rig: Rig) -> None:
+    """The hook's hot path (:meth:`Attempt.emit_resolved`) gives the same record as the
+    public ``emit`` with the same inputs: attributes, name, status, times and objects."""
+    session = _mcp._Session({"fabric.process.pid": 4242}, object())
+    attrs = rig.channel._attrs(session, "server_to_client", "tools/call")
+    line = b'{"jsonrpc":"2.0","id":1,"error":{"code":-1,"message":"m"}}'
+    for resolved in (False, True):
+        bodies = rig.channel._bodies("server_to_client", "error", line)
+        evidence = rig.channel._evidence(session, "server_to_client", "error", "number",
+                                         "matched", bodies)  # fmt: skip
+        attempt = rig.producer.begin(POINT, "mcp_call")
+        assert attempt is not None
+        if resolved:
+            assert attempt.emit_resolved(_mcp._STATUS_ERROR, _mcp.NAME_HINT, attrs, 10, 20,
+                                         tuple(bodies), evidence)  # fmt: skip
+        else:
+            assert attempt.emit("end", name_hint=_mcp.NAME_HINT, attributes=attrs,
+                                start_ns=10, end_ns=20, lifecycle="completed",
+                                result_status="error", otlp_status="error", bodies=bodies,
+                                evidence=evidence)  # fmt: skip
+    public, hot = rig.records()
+
+    def same(record: Record) -> tuple[Any, ...]:
+        kept = {k: v for k, v in record.attrs.items() if k not in _VARYING}
+        span = {k: v for k, v in record.span.items() if k in (
+            "name", "status", "start_time_unix_nano", "end_time_unix_nano")}  # fmt: skip
+        return kept, span, record.body(), record.item
+
+    assert same(public) == same(hot)
+    assert hot.span["status"] == "error" and hot.attrs["fabric.step.status"] == "error"
+
+
+def test_emit_resolved_submits_nothing_once_capture_stopped(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempt = rig.producer.begin(POINT, "mcp_call")
+    assert attempt is not None
+    monkeypatch.setattr(type(attempt.records), "active", property(lambda self: False))
+    assert attempt.emit_resolved(_mcp._STATUS_OK, _mcp.NAME_HINT, {}, 1, 1, (), None) is False
+
+
+def test_an_answer_read_on_a_clock_stepped_back_ends_at_its_start(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session = _mcp._Session({}, object())
+    clock = iter((5_000, 1_000))
+    monkeypatch.setattr("fabric.hooks._mcp.time", SimpleNamespace(time_ns=lambda: next(clock)))
+    rig.channel.feed(session, "client_to_server", b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
+    rig.channel.feed(session, "server_to_client", b'{"jsonrpc":"2.0","id":1,"result":{}}\n')
+    monkeypatch.undo()
+    start, end = rig.records()
+    assert end.item["correlation"] == "matched"
+    assert end.span["start_time_unix_nano"] == end.span["end_time_unix_nano"] == 5_000
+    assert start.span["start_time_unix_nano"] == 5_000
 
 
 def test_a_line_that_is_not_utf8_is_counted_unparsed_and_never_raises(rig: Rig) -> None:

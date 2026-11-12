@@ -68,7 +68,15 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from typing import TYPE_CHECKING, Any, Final, Literal
 
-from .._capture_types import EVIDENCE_ROLE, AnyBody, EvidenceDoc, RecordBody, fail_open
+from .._capture_types import (
+    EVIDENCE_ROLE,
+    AnyBody,
+    EvidenceDoc,
+    RecordBody,
+    StatusInputs,
+    fail_open,
+    resolve_status_inputs,
+)
 from ._producer import UnsupportedChannel
 
 if TYPE_CHECKING:
@@ -124,14 +132,21 @@ _ROLES: Final = {
     (SERVER, "error"): "mcp.response", (SERVER, "notification"): "mcp.notification",
 }  # fmt: skip
 Kind = Literal["request", "response", "error", "notification"]
+#: The three status inputs of each record the hook emits, resolved once by the phase
+#: table (none drops anything: an import-time check).
+_STATUS_START: Final = resolve_status_inputs("start", "running")
+_STATUS_OK: Final = resolve_status_inputs("end", "completed", "ok")
+_STATUS_ERROR: Final = resolve_status_inputs("end", "completed", "error", "error")
+if _STATUS_START.dropped or _STATUS_OK.dropped or _STATUS_ERROR.dropped:  # pragma: no cover
+    raise RuntimeError("fabric.hooks._mcp: a status input left the phase table")
 
 
 class _Session:
     """One stdio transport connection: its hook-minted ``mcps-`` reference, the attributes
     every record carries, the outstanding requests and the partial line of each pipe."""
 
-    __slots__ = ("__weakref__", "attrs", "docs", "evicted", "key", "parts", "pending", "process",
-                 "ref", "started_ns")  # fmt: skip
+    __slots__ = ("__weakref__", "attr_sets", "attrs", "docs", "evicted", "key", "parts",
+                 "pending", "process", "ref", "started_ns")  # fmt: skip
 
     def __init__(self, attrs: dict[str, Any], process: object, ref: str | None = None) -> None:
         # The connection's own id is a random uuid (stdio has no session id); its keyed
@@ -140,6 +155,7 @@ class _Session:
         self.ref = ref
         self.docs: dict[tuple[Any, ...], EvidenceDoc] = {}
         self.attrs = attrs
+        self.attr_sets: dict[tuple[str, str], dict[str, Any]] = {}
         self.pending: OrderedDict[tuple[str, str, str | int], tuple[Attempt, int, str]] = (
             OrderedDict()
         )
@@ -312,7 +328,7 @@ class McpChannel:
             self._count("unparsed")
             return
         kind, ident, method = found
-        self._count("messages")
+        self.counters["messages"] += 1
         if kind == "request":
             self._request(session, direction, line, ident, method or "")
         elif kind == "notification":
@@ -355,12 +371,19 @@ class McpChannel:
         return [RecordBody(role, line, JSON_MEDIA, BOUNDARY, "protocol")]
 
     def _attrs(self, session: _Session, direction: str, method: str) -> dict[str, Any]:
-        return {**session.attrs, "fabric.mcp.method": method if method in METHODS else "other",
-                "fabric.mcp.direction": direction}  # fmt: skip
+        """The record's attributes, built once per direction and method value of a session
+        (a finite set: an unknown method is ``other``); ``emit`` copies, never keeps them."""
+        name = method if method in METHODS else "other"
+        found = session.attr_sets.get((direction, name))
+        if found is None:
+            found = session.attr_sets[(direction, name)] = {
+                **session.attrs, "fabric.mcp.method": name, "fabric.mcp.direction": direction,
+            }  # fmt: skip
+        return found
 
     def _request(self, session: _Session, direction: str, line: bytes,
                  ident: tuple[str, str | int] | None, method: str) -> None:  # fmt: skip
-        self._count("requests")
+        self.counters["requests"] += 1
         attempt = self.producer.begin(POINT, "mcp_call")
         if attempt is None or ident is None:
             return
@@ -368,10 +391,8 @@ class McpChannel:
         bodies = self._bodies(direction, "request", line)
         evidence = self._evidence(session, direction, "request", ident[0], "not_applicable",
                                   bodies)  # fmt: skip
-        attempt.emit(
-            "start", name_hint=NAME_HINT, attributes=self._attrs(session, direction, method),
-            start_ns=now, end_ns=now, lifecycle="running", bodies=bodies, evidence=evidence,
-        )  # fmt: skip
+        _submit(attempt, _STATUS_START, self._attrs(session, direction, method), now, now,
+                bodies, evidence)  # fmt: skip
         key = (direction, *ident)
         session.pending.pop(key, None)
         session.pending[key] = (attempt, now, method)
@@ -385,7 +406,7 @@ class McpChannel:
 
     def _notification(self, session: _Session, direction: str, line: bytes,
                       method: str) -> None:  # fmt: skip
-        self._count("notifications")
+        self.counters["notifications"] += 1
         attempt = self.producer.begin(POINT, "mcp_call")
         if attempt is None:
             return
@@ -393,15 +414,12 @@ class McpChannel:
         bodies = self._bodies(direction, "notification", line)
         evidence = self._evidence(session, direction, "notification", None, "not_applicable",
                                   bodies)  # fmt: skip
-        attempt.emit(
-            "end", name_hint=NAME_HINT, attributes=self._attrs(session, direction, method),
-            start_ns=now, end_ns=now, lifecycle="completed", result_status="ok",
-            bodies=bodies, evidence=evidence,
-        )  # fmt: skip
+        _submit(attempt, _STATUS_OK, self._attrs(session, direction, method), now, now,
+                bodies, evidence)  # fmt: skip
 
     def _answer(self, session: _Session, direction: str, line: bytes, kind: Kind,
                 ident: tuple[str, str | int] | None, value: dict[str, Any]) -> None:  # fmt: skip
-        self._count("answers")
+        self.counters["answers"] += 1
         asked = CLIENT if direction == SERVER else SERVER
         key = (asked, *ident) if ident is not None else None
         found = session.pending.pop(key, None) if key is not None else None
@@ -419,20 +437,18 @@ class McpChannel:
         attrs = self._attrs(session, direction, method)
         error = kind == "error"
         if error:
-            attrs["fabric.mcp.error_kind"] = "protocol"
+            attrs = {**attrs, "fabric.mcp.error_kind": "protocol"}
         elif method == "tools/call":
             result = value.get("result")
             if type(result) is dict and result.get("isError") is True:
-                attrs["fabric.mcp.error_kind"] = "tool"
+                attrs = {**attrs, "fabric.mcp.error_kind": "tool"}
         bodies = self._bodies(direction, kind, line)
         evidence = self._evidence(session, direction, kind,
                                   ident[0] if ident is not None else None, correlation,
                                   bodies)  # fmt: skip
-        attempt.emit(
-            "end", name_hint=NAME_HINT, attributes=attrs, start_ns=start_ns, end_ns=now,
-            lifecycle="completed", result_status="error" if error else "ok",
-            otlp_status="error" if error else "unset", bodies=bodies, evidence=evidence,
-        )  # fmt: skip
+        # A wall clock stepped back between the request and its answer ends at the start.
+        _submit(attempt, _STATUS_ERROR if error else _STATUS_OK, attrs, start_ns,
+                now if now >= start_ns else start_ns, bodies, evidence)  # fmt: skip
 
     # -- the stop (after the library stopped its server; fail-open) ----------------------
 
@@ -454,6 +470,16 @@ class McpChannel:
             return
         if exec_module.exit_observed(get_info("subprocess"), get_code(), start_ns):
             self._count("exits")
+
+
+@fail_open(False)
+def _submit(attempt: Attempt, status: StatusInputs, attrs: Mapping[str, Any], start_ns: int,
+            end_ns: int, bodies: list[AnyBody], evidence: EvidenceDoc | None) -> bool:  # fmt: skip
+    """One record of ``attempt`` (fail-open as ``emit``: a failure loses this record, and
+    the request is still remembered for its answer). The hook's inputs already have the
+    records API's checked shapes, so it submits through :meth:`Attempt.emit_resolved`."""
+    return attempt.emit_resolved(status, NAME_HINT, attrs, start_ns, end_ns, tuple(bodies),
+                                 evidence)  # fmt: skip
 
 
 # --- the wrappers -----------------------------------------------------------------------------
