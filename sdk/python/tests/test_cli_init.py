@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -185,6 +186,31 @@ def test_gitignore_gets_the_state_and_data_directories_in_a_git_work_tree(
     assert text.startswith("node_modules/\n") and "/.fabric/\n" in text
     assert _json(["init"], capsys)["data"]["gitignore_added"] == []
     assert (project / ".gitignore").read_text() == text
+
+
+def test_gitignore_gets_a_secrets_directory_inside_the_project(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`secrets.dir: ./...` puts the CA key and the id key in the work tree: they are
+    ignored, never one `git add -A` away from a commit."""
+    git = shutil.which("git")
+    if git:
+        subprocess.run([git, "init", "-q"], cwd=project, check=True)  # noqa: S603
+    else:
+        (project / ".git").mkdir()  # enough for init to see a work tree
+    (project / "fabric.yaml").write_text(
+        "schema: fabric.config/v1\nsecrets:\n  dir: ./.fabric-secrets\n"
+    )
+    report = _json(["init"], capsys)
+    assert report["data"]["gitignore_added"] == ["/.fabric/", "/.fabric-secrets/",
+                                                 "/fabric-data/"]  # fmt: skip
+    assert (project / ".fabric-secrets" / "ca.key").is_file()
+    if git:
+        status = subprocess.run(  # noqa: S603
+            [git, "status", "--porcelain", "--untracked-files=all"],
+            cwd=project, capture_output=True, text=True, check=True,
+        )  # fmt: skip
+        assert ".fabric-secrets" not in status.stdout
 
 
 def test_no_gitignore_is_written_outside_a_git_work_tree(

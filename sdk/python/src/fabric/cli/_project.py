@@ -282,10 +282,14 @@ def gitignore_entries(project: Project) -> list[str]:
     if _config._git_root(project.directory) is None:
         return []
     wanted = [f"/{STATE_DIR}/"]
-    with contextlib.suppress(ValueError):  # a data directory outside the project: not ours to list
-        relative = project.data_dir.resolve().relative_to(project.directory.resolve())
-        if relative.parts:  # the project directory itself is never ignored
-            wanted.append(f"/{relative.as_posix()}/")
+    # A secrets directory (`secrets.dir: ./...`) or data directory inside the project: the
+    # keys and the captured content must never be one `git add -A` away from a commit.
+    for inside in (project.secrets_dir, project.data_dir):
+        with contextlib.suppress(ValueError):  # outside the project: not ours to list
+            relative = inside.resolve().relative_to(project.directory.resolve())
+            entry = f"/{relative.as_posix()}/"
+            if relative.parts and entry not in wanted:  # never the project directory itself
+                wanted.append(entry)
     path = project.directory / ".gitignore"
     try:
         existing = path.read_text(encoding="utf-8")
