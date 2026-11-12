@@ -22,7 +22,7 @@ from typing import Any
 
 import pytest
 
-from fabric.cli import _doctor, _read, _runstate, _show, _verify
+from fabric.cli import _doctor, _read, _runstate, _show, _transcript, _verify
 from fabric.cli._report import Finding, Report, emit
 
 from ._cli_run_support import (
@@ -356,3 +356,44 @@ def test_human_output_never_drives_the_terminal(capsys: pytest.CaptureFixture[st
     assert "tab\tand\nnewline" in out
     emit(report, [], as_json=True, quiet=False)
     assert "\x1b" not in capsys.readouterr().out
+
+
+class _Store:
+    """A content store holding one request and one response body, as given."""
+
+    def __init__(self, bodies: dict[str, bytes]) -> None:
+        self.bodies = bodies
+
+    def evidence_ref_for(self, object_id: str) -> str:
+        return object_id
+
+    def read(self, uri: str) -> bytes:
+        return self.bodies[uri]
+
+    def read_descriptor(self, uri: str) -> dict[str, Any]:
+        return {}
+
+
+@pytest.mark.parametrize(
+    ("api", "response"),
+    [
+        ("anthropic.messages", b'data: {"type":"content_block_start","index":0,"content_block":"x"}\n\n'),
+        ("anthropic.messages", b'data: {"type":"content_block_delta","index":0,"delta":"x"}\n\n'),
+        ("openai.chat_completions", b'data: {"choices":[{"delta":{"tool_calls":[{"function":"x"}]}}]}\n\n'),
+        ("openai.chat_completions", b'data: {"choices":[{"delta":{"tool_calls":[{"index":[1]}]}}]}\n\n'),
+        ("openai.chat_completions", b'{"choices":[{"message":{"content":"hi","tool_calls":"x"}}]}'),
+        ("anthropic.messages", b'{"content":{"type":"text"}}'),
+        ("openai.responses", b'{"output":{"type":"message"}}'),
+    ],
+)  # fmt: skip
+def test_show_never_raises_on_a_body_of_an_odd_shape(api: str, response: bytes) -> None:
+    """``show`` prints what a model server sent: a body of a shape the provider's API does
+    not have is shown as far as it parses, or said, never a traceback."""
+    store = _Store({"q": b'{"messages":"not a list","input":5}', "a": response})
+    objects = {
+        "request": {"verification": "verified", "object_id": "q"},
+        "response": {"verification": "verified", "object_id": "a"},
+    }
+    turn = _transcript.turn(api, store, objects)
+    assert turn.unavailable in (None, "unparsed")
+    assert all(isinstance(part, str) for call in turn.calls for part in call)

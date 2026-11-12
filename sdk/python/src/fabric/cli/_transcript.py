@@ -119,7 +119,7 @@ def _request(api: str, document: Any, turn: Turn) -> None:
             if isinstance(item, Mapping) and item.get("role") == "user":
                 turn.user = _text(item.get("content")) or turn.user
         return
-    for message in document.get("messages") or ():
+    for message in _list(document.get("messages")):
         if isinstance(message, Mapping) and message.get("role") == "user":
             text = _text(message.get("content"))
             if text:  # an Anthropic tool_result turn carries no text block
@@ -133,7 +133,7 @@ def _chat(document: Mapping[str, Any], turn: Turn) -> None:
         if not isinstance(message, Mapping):
             continue
         turn.answer = _text(message.get("content"))
-        for call in message.get("tool_calls") or ():
+        for call in _list(message.get("tool_calls")):
             function = call.get("function") if isinstance(call, Mapping) else None
             if isinstance(function, Mapping):
                 turn.calls.append(
@@ -147,7 +147,7 @@ def _chat(document: Mapping[str, Any], turn: Turn) -> None:
 
 def _messages(document: Mapping[str, Any], turn: Turn) -> None:
     texts = []
-    for block in document.get("content") or ():
+    for block in _list(document.get("content")):
         if not isinstance(block, Mapping):
             continue
         if block.get("type") == "text" and isinstance(block.get("text"), str):
@@ -165,7 +165,7 @@ def _messages(document: Mapping[str, Any], turn: Turn) -> None:
 
 def _responses(document: Mapping[str, Any], turn: Turn) -> None:
     texts = []
-    for item in document.get("output") or ():
+    for item in _list(document.get("output")):
         if not isinstance(item, Mapping):
             continue
         if item.get("type") == "message":
@@ -181,6 +181,19 @@ def _responses(document: Mapping[str, Any], turn: Turn) -> None:
     turn.answer = "\n".join(t for t in texts if t) or None
 
 
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _key(value: Any) -> Any:
+    """A stream's call index as a dict key (a body may hold any JSON there)."""
+    return value if isinstance(value, (int, str)) else repr(value)
+
+
 def _stream(api: str, data: bytes, turn: Turn) -> None:  # noqa: PLR0912 - per dialect and event
     """A streamed response, folded: text deltas and tool-call pieces in order."""
     try:
@@ -193,28 +206,28 @@ def _stream(api: str, data: bytes, turn: Turn) -> None:  # noqa: PLR0912 - per d
         if not isinstance(event, Mapping):
             continue
         if api == "openai.chat_completions":
-            for choice in event.get("choices") or ():
+            for choice in _list(event.get("choices")):
                 delta = choice.get("delta") if isinstance(choice, Mapping) else None
                 if not isinstance(delta, Mapping):
                     continue
                 if isinstance(delta.get("content"), str):
                     text.append(delta["content"])
-                for call in delta.get("tool_calls") or ():
+                for call in _list(delta.get("tool_calls")):
                     if not isinstance(call, Mapping):
                         continue
-                    entry = calls.setdefault(call.get("index"), ["", "", ""])
-                    function = call.get("function") or {}
+                    entry = calls.setdefault(_key(call.get("index")), ["", "", ""])
+                    function = _mapping(call.get("function"))
                     entry[0] = str(call.get("id") or entry[0])
                     entry[1] += str(function.get("name") or "")
                     entry[2] += str(function.get("arguments") or "")
         elif api == "anthropic.messages":
-            index = event.get("index")
+            index = _key(event.get("index"))
             if event.get("type") == "content_block_start":
-                block = event.get("content_block") or {}
+                block = _mapping(event.get("content_block"))
                 if block.get("type") == "tool_use":
                     calls[index] = [str(block.get("id") or ""), str(block.get("name") or ""), ""]
             elif event.get("type") == "content_block_delta":
-                delta = event.get("delta") or {}
+                delta = _mapping(event.get("delta"))
                 if delta.get("type") == "text_delta":
                     text.append(str(delta.get("text") or ""))
                 elif delta.get("type") == "input_json_delta" and index in calls:
@@ -229,7 +242,16 @@ def _stream(api: str, data: bytes, turn: Turn) -> None:  # noqa: PLR0912 - per d
 
 
 def turn(api: str, store: Any, objects: Mapping[str, Any]) -> Turn:
-    """The conversation of one exchange, from its verified objects."""
+    """The conversation of one exchange, from its verified objects. A body of a shape the
+    provider's API does not have is said (``unparsed``), never raised: ``show`` reads
+    what a model server sent, and one odd body must not stop the timeline."""
+    try:
+        return _turn(api, store, objects)
+    except Exception:
+        return Turn(unavailable="unparsed")
+
+
+def _turn(api: str, store: Any, objects: Mapping[str, Any]) -> Turn:
     out = Turn()
     request, why = read_object(store, objects.get("request"))
     if request is None:
