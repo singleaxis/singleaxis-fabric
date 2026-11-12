@@ -345,6 +345,22 @@ it never makes, applies, waits for or returns one.
   input as an argument). Such a hook counted as the tool call's effect
   again. `argv[0]` and `executable=` are now matched directly, also when
   they are `bytes`; the recorded argv is unchanged.
+- **A hook run as a one-item shell command list is now recognised.** Under
+  `shell=True`, `subprocess.run(["/opt/hooks/pre.sh --tool x"], shell=True)`
+  runs the first item as a shell command, but only a plain string command
+  was read, so the hook counted as the tool call's effect again. The first
+  item is now read like a shell string (one simple command only).
+- **A hook seen only by a host sensor now lowers the `effects` chain too.**
+  A listed hook program matched from a sensor `exec` (by its path digest)
+  was shown as a hook row, but a tool call whose window held it and no
+  effect left the `effects` chain `complete`. It is now
+  `partial(none_in_window)`, as for the same hook seen in process.
+- **A program behind an unreadable `executable=` is no longer taken for a
+  listed hook.** When `executable=` is a custom path type Fabric does not
+  read, the program that runs is unknown; `argv[0]` was still matched
+  against the `path` entries, so another program (a real effect) could be
+  labelled as the hook. Such a child is now matched by `basename` entries
+  only.
 - **`--capture-policy` that matches no run now says so.** The reader applies
   a capture policy's lists only to runs whose manifest names that policy's
   digest, so a policy changed after the run (for example to add a

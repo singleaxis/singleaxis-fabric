@@ -428,7 +428,10 @@ service. You declare both in the capture policy (the
   still shown. A signal is the negative code, as Python reports it
   (`"-9"`). `argv[0]` and `executable=` are matched when they are a string,
   `bytes` or a `pathlib` path, also when the argv is too long for the
-  recorded argv body. A hook started through an interpreter
+  recorded argv body. Under `shell=True` the command string, or a list's
+  first item, is matched by its first word when it is one simple command.
+  An `executable=` of any other type is not read, so only `basename`
+  entries can match that child. A hook started through an interpreter
   (`["sh", "hook.sh"]`, `["python", "hook.py"]`) has the interpreter as its
   `argv[0]`, so it cannot be listed without listing every use of that
   interpreter: give the script a shebang and an execute bit and run it
@@ -467,7 +470,10 @@ service. You declare both in the capture policy (the
   (even only to add a `decision_pointer`) applies to no earlier run, and
   the reader prints a warning when it applied to none.
 - **Host sensors.** With `--capture-policy`, a sensor `exec` whose
-  executable-path digest is a listed `path` is a hook row, and a sensor
+  executable-path digest is a listed `path` is a hook row (outcome
+  `unknown`; like an in-process hook it is never an effect, and a call
+  whose window holds it and no effect makes the `effects` chain
+  `partial(none_in_window)`), and a sensor
   `connect` to a listed `control_addresses` entry is a contact row
   (`decision=unknown`). The sensor must be allowed to emit path digests for
   the first, and the reader needs the id key for the second
