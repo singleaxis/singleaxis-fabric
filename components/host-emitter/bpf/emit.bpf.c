@@ -7,6 +7,14 @@
 // which translates them to the shared event_class=audit schema (local mode)
 // or to host records (production mode, spec 053 §6.2.9, spec 056 §7.3.3 (c))
 // and OTLP-exports them to the Fabric Node.
+//
+// Syscall results (spec 057 OD-13, WP7-11; cfg[CFG_RESULTS]): a connect,
+// openat or execve is held in a per-thread pending map at sys_enter and
+// emitted once, at its sys_exit, with the return value. Nothing waits: the
+// syscall runs exactly as without the sensor. Every held event is emitted
+// exactly once; when the map is full, a stale entry is found or the thread
+// exits mid-call, the event goes out with result unknown, as without
+// results. The only loss stays the ring-buffer reservation counter.
 
 //go:build ignore
 
@@ -20,6 +28,20 @@ char LICENSE[] SEC("license") = "GPL";
 #define EV_EXEC 1
 #define EV_CONNECT 2
 #define EV_OPENAT 3
+#define EV_EXIT 4
+
+// Result of the paired syscall (spec 057 OD-13).
+#define RES_UNKNOWN 0
+#define RES_SUCCESS 1
+#define RES_FAILED 2
+
+// errno values (asm-generic, the same on x86 and arm64).
+#define EINTR 4
+#define EALREADY 114
+#define EINPROGRESS 115
+
+// include/linux/sched/signal.h
+#define SIGNAL_GROUP_EXIT 0x00000004
 
 #define AF_INET 2
 #define AF_INET6 10
@@ -63,6 +85,13 @@ struct event {
     // Set when cg_name and cg_parent hold the kernfs names of the event's
     // cgroup and its parent (sandbox-scope events only).
     __u32 cg_names;
+    // Spec 057 OD-13: the paired syscall's result (RES_*) and, when failed,
+    // its positive errno; a process exit's wait status split into exit code
+    // and terminating signal (exit_signal 0: a normal exit).
+    __u32 result;
+    __s32 err;
+    __s32 exit_code;
+    __u32 exit_signal;
     __u32 reserved;
     char  comm[16];
     char  filename[240];
@@ -95,13 +124,17 @@ static __always_inline void note_ring_loss(void) {
 // cfg[0] = target cgroup id in local mode; 0 means unfiltered (all_host
 // opt-in). cfg[1] = 1 selects production mode (root-based scope). cfg[2] is
 // the production scope of an event under no root: SCOPE_AGENT with
-// EMIT_ALL_HOST, else SCOPE_NONE (not emitted).
+// EMIT_ALL_HOST, else SCOPE_NONE (not emitted). cfg[3] = 1 holds connect,
+// openat and execve for their sys_exit (EMIT_SYSCALL_RESULTS); cfg[4] = 1
+// emits process exits (EMIT_EXIT).
 #define CFG_LOCAL_CGROUP 0
 #define CFG_MODE 1
 #define CFG_DEFAULT_SCOPE 2
+#define CFG_RESULTS 3
+#define CFG_EXIT 4
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
-    __uint(max_entries, 3);
+    __uint(max_entries, 5);
     __type(key, __u32);
     __type(value, __u64);
 } cfg SEC(".maps");
@@ -118,6 +151,43 @@ struct {
 static __always_inline __u64 cfg_get(__u32 k) {
     __u64 *v = bpf_map_lookup_elem(&cfg, &k);
     return v ? *v : 0;
+}
+
+// Events held between sys_enter and sys_exit, by pid_tgid (one syscall per
+// thread at a time). Preallocated: an insert never allocates.
+#define PENDING_MAX 4096
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, PENDING_MAX);
+    __type(key, __u64);
+    __type(value, struct event);
+} pending SEC(".maps");
+
+// A zeroed event, the source of a pending insert. Never written, so programs
+// that share a CPU cannot disturb each other through it.
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, struct event);
+} zero_event SEC(".maps");
+
+// emit_copy sends a held event to the ring buffer (a reservation failure is
+// the same counted loss as for an event emitted at once).
+static __always_inline void emit_copy(struct event *e) {
+    if (bpf_ringbuf_output(&events, e, sizeof(*e), 0) != 0)
+        note_ring_loss();
+}
+
+// flush_pending emits the event a thread still holds, result unknown, and
+// forgets it: its sys_exit was never seen (a stale entry, a thread exit).
+static __always_inline void flush_pending(__u64 key) {
+    struct event *old = bpf_map_lookup_elem(&pending, &key);
+    if (!old)
+        return;
+    old->result = RES_UNKNOWN;
+    emit_copy(old);
+    bpf_map_delete_elem(&pending, &key);
 }
 
 // scope_of walks the current task's cgroup ancestors from level 1 down to
@@ -213,19 +283,8 @@ static __always_inline void fill_task(struct event *e, struct task_struct *task)
         e->ns_ppid = BPF_CORE_READ(pp, numbers[level].nr);
 }
 
-// begin reserves and fills the common part of an event, or returns NULL when
-// the event is out of scope or the ring buffer is full.
-static __always_inline struct event *begin(__u32 type) {
-    __u64 cg = bpf_get_current_cgroup_id();
-    __u32 scope;
-    if (!admit(cg, &scope))
-        return 0;
-    struct event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
-    if (!e) {
-        note_ring_loss();
-        return 0;
-    }
-    __builtin_memset(e, 0, sizeof(*e));
+// fill writes the common part of a zeroed event.
+static __always_inline void fill(struct event *e, __u32 type, __u64 cg, __u32 scope) {
     struct task_struct *task = (void *)bpf_get_current_task();
     e->type = type;
     e->cgroup_id = cg;
@@ -235,14 +294,119 @@ static __always_inline struct event *begin(__u32 type) {
     if (scope == SCOPE_SANDBOX)
         fill_names(e, task);
     bpf_get_current_comm(&e->comm, sizeof(e->comm));
+}
+
+// reserve reserves a zeroed ring-buffer event, counting a failure as loss.
+static __always_inline struct event *reserve(void) {
+    struct event *e = bpf_ringbuf_reserve(&events, sizeof(*e), 0);
+    if (!e) {
+        note_ring_loss();
+        return 0;
+    }
+    __builtin_memset(e, 0, sizeof(*e));
     return e;
+}
+
+// begin reserves and fills the common part of an event, or returns NULL when
+// the event is out of scope or the ring buffer is full.
+static __always_inline struct event *begin(__u32 type) {
+    __u64 cg = bpf_get_current_cgroup_id();
+    __u32 scope;
+    if (!admit(cg, &scope))
+        return 0;
+    struct event *e = reserve();
+    if (e)
+        fill(e, type, cg, scope);
+    return e;
+}
+
+// struct held is where an enter program writes its event: the pending map
+// entry of this thread (held = 1; sent at sys_exit) or, with results off or
+// the map full, a ring-buffer reservation (held = 0; sent by finish).
+struct held {
+    struct event *e;
+    int held;
+};
+
+// hold returns the thread's new pending entry when results are on, else a
+// ring-buffer event as begin does. A stale entry of the thread (its sys_exit
+// was never seen) is emitted first, result unknown.
+static __always_inline struct held hold(__u32 type) {
+    struct held h = {0, 0};
+    __u64 cg = bpf_get_current_cgroup_id();
+    __u32 scope;
+    if (!admit(cg, &scope))
+        return h;
+    if (cfg_get(CFG_RESULTS)) {
+        __u64 key = bpf_get_current_pid_tgid();
+        __u32 zk = 0;
+        struct event *zero = bpf_map_lookup_elem(&zero_event, &zk);
+        flush_pending(key);
+        if (zero && bpf_map_update_elem(&pending, &key, zero, BPF_NOEXIST) == 0) {
+            struct event *e = bpf_map_lookup_elem(&pending, &key);
+            if (e) {
+                fill(e, type, cg, scope);
+                h.e = e;
+                h.held = 1;
+                return h;
+            }
+        }
+        // The map is full: emit at once, result unknown (no event is lost).
+    }
+    h.e = reserve();
+    if (h.e)
+        fill(h.e, type, cg, scope);
+    return h;
+}
+
+// finish submits a ring-buffer event; a held one waits for its sys_exit.
+static __always_inline void finish(struct held h) {
+    if (!h.held)
+        bpf_ringbuf_submit(h.e, 0);
+}
+
+// complete emits the thread's pending event of the given type with the
+// syscall's return value and forgets it. Another type's entry is left alone.
+static __always_inline void complete(__u32 type, long ret) {
+    __u64 key = bpf_get_current_pid_tgid();
+    struct event *e = bpf_map_lookup_elem(&pending, &key);
+    if (!e || e->type != type)
+        return;
+    if (ret >= 0) {
+        e->result = RES_SUCCESS;
+    } else if (type == EV_CONNECT && (ret == -EINPROGRESS || ret == -EINTR || ret == -EALREADY)) {
+        // A non-blocking or interrupted connect goes on after the call returns:
+        // its outcome is not this return value.
+        e->result = RES_UNKNOWN;
+    } else {
+        e->result = RES_FAILED;
+        e->err = (__s32)-ret;
+    }
+    emit_copy(e);
+    bpf_map_delete_elem(&pending, &key);
+}
+
+// forget_exec drops a held execve of key: this exec succeeded, and
+// sched_process_exec records it (with argv and the image actually run).
+static __always_inline void forget_exec(__u64 key) {
+    struct event *e = bpf_map_lookup_elem(&pending, &key);
+    if (e && e->type == EV_EXEC)
+        bpf_map_delete_elem(&pending, &key);
 }
 
 SEC("tracepoint/sched/sched_process_exec")
 int tp_exec(struct trace_event_raw_sched_process_exec *ctx) {
+    if (cfg_get(CFG_RESULTS)) {
+        // A non-leader thread that exec'd took the leader's id: its held
+        // execve is under the id it had (old_pid).
+        __u64 tgid = bpf_get_current_pid_tgid() >> 32;
+        forget_exec((tgid << 32) | (__u32)ctx->old_pid);
+        forget_exec(bpf_get_current_pid_tgid());
+    }
     struct event *e = begin(EV_EXEC);
     if (!e)
         return 0;
+    e->result = RES_SUCCESS;
     // filename sits behind the tracepoint's __data_loc (low 16 bits = offset)
     __u32 off = ctx->__data_loc_filename & 0xFFFF;
     __u32 source_len = ctx->__data_loc_filename >> 16;
@@ -280,7 +444,8 @@ int tp_connect(struct trace_event_raw_sys_enter *ctx) {
     bpf_probe_read(&fam, sizeof(fam), uservaddr);
     if (fam != AF_INET && fam != AF_INET6)
         return 0;
-    struct event *e = begin(EV_CONNECT);
+    struct held h = hold(EV_CONNECT);
+    struct event *e = h.e;
     if (!e)
         return 0;
     e->family = fam;
@@ -295,19 +460,96 @@ int tp_connect(struct trace_event_raw_sys_enter *ctx) {
         e->port = __builtin_bswap16(sa6.sin6_port);
         __builtin_memcpy(&e->addr, &sa6.sin6_addr, 16);
     }
-    bpf_ringbuf_submit(e, 0);
+    finish(h);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_connect")
+int tp_connect_exit(struct trace_event_raw_sys_exit *ctx) {
+    complete(EV_CONNECT, ctx->ret);
     return 0;
 }
 
 SEC("tracepoint/syscalls/sys_enter_openat")
 int tp_openat(struct trace_event_raw_sys_enter *ctx) {
-    struct event *e = begin(EV_OPENAT);
+    struct held h = hold(EV_OPENAT);
+    struct event *e = h.e;
     if (!e)
         return 0;
     const char *fname = (const char *)ctx->args[1];
     long path_read = bpf_probe_read_str(&e->filename, sizeof(e->filename), fname);
     if (path_read <= 0 || path_read >= sizeof(e->filename))
         e->filename_incomplete = 1;
+    finish(h);
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_openat")
+int tp_openat_exit(struct trace_event_raw_sys_exit *ctx) {
+    complete(EV_OPENAT, ctx->ret);
+    return 0;
+}
+
+// execve is held at sys_enter only to see a failed exec (spec 057 OD-13):
+// a successful one is recorded by sched_process_exec, which forgets this.
+// argv is not read here, so a failed exec carries no argv digest.
+SEC("tracepoint/syscalls/sys_enter_execve")
+int tp_execve_enter(struct trace_event_raw_sys_enter *ctx) {
+    if (!cfg_get(CFG_RESULTS))
+        return 0;
+    struct held h = hold(EV_EXEC);
+    struct event *e = h.e;
+    if (!e)
+        return 0;
+    if (!h.held) {
+        // The map is full: a failed exec cannot be paired, and a successful
+        // one is recorded by sched_process_exec anyway.
+        bpf_ringbuf_discard(e, 0);
+        return 0;
+    }
+    const char *fname = (const char *)ctx->args[0];
+    long path_read = bpf_probe_read_user_str(&e->filename, sizeof(e->filename), fname);
+    if (path_read <= 0 || path_read >= sizeof(e->filename))
+        e->filename_incomplete = 1;
+    e->argv_incomplete = 1;
+    return 0;
+}
+
+SEC("tracepoint/syscalls/sys_exit_execve")
+int tp_execve_exit(struct trace_event_raw_sys_exit *ctx) {
+    if (ctx->ret == 0) {
+        forget_exec(bpf_get_current_pid_tgid());
+        return 0;
+    }
+    complete(EV_EXEC, ctx->ret);
+    return 0;
+}
+
+// sched_process_exit fires for every exiting thread. It emits what the
+// thread still holds (result unknown) and, with process exits on, one exit
+// event when the thread group's last thread exits: the status wait() reports
+// (the group exit code after exit_group or a fatal signal, else the leader's).
+SEC("tracepoint/sched/sched_process_exit")
+int tp_proc_exit(struct trace_event_raw_sched_process_template *ctx) {
+    flush_pending(bpf_get_current_pid_tgid());
+    if (!cfg_get(CFG_EXIT))
+        return 0;
+    struct task_struct *task = (void *)bpf_get_current_task();
+    if (BPF_CORE_READ(task, signal, live.counter) != 0)
+        return 0; // another thread of the group still runs
+    int status;
+    if (BPF_CORE_READ(task, signal, flags) & SIGNAL_GROUP_EXIT)
+        status = BPF_CORE_READ(task, signal, group_exit_code);
+    else
+        status = BPF_CORE_READ(task, group_leader, exit_code);
+    struct event *e = begin(EV_EXIT);
+    if (!e)
+        return 0;
+    if (status & 0x7f) {
+        e->exit_signal = status & 0x7f;
+    } else {
+        e->exit_code = (status >> 8) & 0xff;
+    }
     bpf_ringbuf_submit(e, 0);
     return 0;
 }

@@ -412,7 +412,7 @@ func TestProductionTranslateGolden(t *testing.T) {
 			cfg.Digests = "omitted"
 			src := openTestSource(t, cfg)
 			defer src.Close(false)
-			hev, ok := hostEvent(&ev)
+			hev, ok := hostEvent(&ev, nil)
 			if !ok {
 				t.Fatal("event not translated")
 			}
@@ -477,7 +477,7 @@ func TestKernfsNamesToSandboxIDs(t *testing.T) {
 			parent, leaf = "", v.LastTwo
 		}
 		e := &event{Type: evExec, Pid: 10, Scope: scopeSandbox, CgroupNamesRead: true, CgroupParentName: parent, CgroupName: leaf}
-		ev, translated := hostEvent(e)
+		ev, translated := hostEvent(e, nil)
 		if !translated {
 			t.Fatalf("%s: not translated", v.Name)
 		}
@@ -516,7 +516,7 @@ func TestUnresolvableCgroupHasNoIDs(t *testing.T) {
 		"three levels away": {Scope: scopeSandbox, CgroupNamesRead: true, CgroupParentName: "init.scope", CgroupName: "leaf"},
 	} {
 		e.Type, e.Pid = evExec, 10
-		ev, ok := hostEvent(e)
+		ev, ok := hostEvent(e, nil)
 		if !ok {
 			t.Fatalf("%s: not translated", name)
 		}
@@ -529,7 +529,7 @@ func TestUnresolvableCgroupHasNoIDs(t *testing.T) {
 func TestHostEventNeverCarriesClearValues(t *testing.T) {
 	e := &event{Type: evExec, Pid: 7, Ppid: 1, Comm: "agent-tool", Filename: "/tmp/agent-tool",
 		Argv: []byte("/tmp/agent-tool\x00--token\x00supersecret"), Scope: scopeAgent}
-	ev, ok := hostEvent(e)
+	ev, ok := hostEvent(e, nil)
 	if !ok || ev.ExeSHA256 != sha256String("/tmp/agent-tool") || ev.ArgvSHA256 == "" || ev.Incomplete != "" {
 		t.Fatalf("exec translation: %+v", ev)
 	}
@@ -539,15 +539,15 @@ func TestHostEventNeverCarriesClearValues(t *testing.T) {
 			t.Fatalf("clear %q in the host event", clear)
 		}
 	}
-	c, _ := hostEvent(&event{Type: evConnect, Pid: 7, Family: 10, Port: 8443, Addr: [16]byte{0x20, 0x01, 0x0d, 0xb8, 15: 1}})
+	c, _ := hostEvent(&event{Type: evConnect, Pid: 7, Family: 10, Port: 8443, Addr: [16]byte{0x20, 0x01, 0x0d, 0xb8, 15: 1}}, nil)
 	if c.PeerFamily != "ipv6" || c.Peer.String() != "2001:db8::1" || c.PeerPort == nil || *c.PeerPort != 8443 || c.Result != "unknown" {
 		t.Fatalf("connect translation: %+v", c)
 	}
-	f, _ := hostEvent(&event{Type: evOpenat, Pid: 7, Filename: "/etc/secret", FilenameIncomplete: true})
+	f, _ := hostEvent(&event{Type: evOpenat, Pid: 7, Filename: "/etc/secret", FilenameIncomplete: true}, nil)
 	if f.Class != "file" || f.Incomplete != "path" || f.PathSHA256 != "" {
 		t.Fatalf("incomplete openat translation: %+v", f)
 	}
-	if _, ok := hostEvent(&event{Type: evExec}); ok {
+	if _, ok := hostEvent(&event{Type: evExec}, nil); ok {
 		t.Fatal("an event without a pid was translated")
 	}
 }
@@ -569,7 +569,7 @@ func TestEncryptedSpoolHasNoClearBytes(t *testing.T) {
 		{Type: evExec, Pid: 4180, Ppid: 4170, Scope: scopeSandbox, CgroupNamesRead: true, CgroupParentName: "sandboxes",
 			CgroupName: "docker-" + container + ".scope", Filename: "/usr/bin/secret-tool", Argv: []byte("secret-tool\x00--password\x00hunter2")},
 	} {
-		ev, _ := hostEvent(e)
+		ev, _ := hostEvent(e, nil)
 		events = append(events, ev)
 	}
 	if err := prod.stage(events); err != nil {
@@ -633,7 +633,7 @@ func TestPartialSuccessQuarantineIsSpanDropped(t *testing.T) {
 	}
 	var events []hostrecords.Event
 	for pid := uint32(100); pid < 103; pid++ {
-		ev, _ := hostEvent(&event{Type: evExec, Pid: pid, Scope: scopeAgent})
+		ev, _ := hostEvent(&event{Type: evExec, Pid: pid, Scope: scopeAgent}, nil)
 		events = append(events, ev)
 	}
 	if err := prod.stage(events); err != nil {
@@ -677,7 +677,7 @@ func TestRestartReplayNoIDChurn(t *testing.T) {
 	src := openTestSource(t, cfg)
 	down := &fakeSender{results: []error{errors.New("node down")}}
 	prod := newProduction(src, down)
-	ev, _ := hostEvent(&event{Type: evExec, Pid: 4121, Ppid: 4100, Scope: scopeAgent})
+	ev, _ := hostEvent(&event{Type: evExec, Pid: 4121, Ppid: 4100, Scope: scopeAgent}, nil)
 	if err := prod.stage([]hostrecords.Event{ev, ev}); err != nil {
 		t.Fatal(err)
 	}

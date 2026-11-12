@@ -26,6 +26,14 @@
 #                               emitted
 #   TestSandboxRootScope        a short-lived container cgroup removed before
 #                               user space reads the event keeps its id
+#   TestSyscallResultsAndExits  spec 057 WP7-11: connect, openat and execve
+#                               paired with their result and errno, a
+#                               process exit's code and signal, a watched
+#                               open labelled, no ring loss
+#   TestHeldSyscallEmittedAtStop  a connect blocked at shutdown is emitted
+#                               by the stop drain, result unknown
+#   TestKernelRefusals          a connect a cgroup connect4 program refuses
+#                               (EPERM) and a seccomp kill (signal 31)
 set -euo pipefail
 
 if [ "${1:-}" = "--production" ]; then
@@ -42,7 +50,7 @@ if [ "${1:-}" = "--production" ]; then
     -v /sys/kernel/debug:/sys/kernel/debug \
     -w /src/host-emitter "$BUILD_IMG" \
     go test -tags e2e -count=1 -v \
-      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope)$' .
+      -run '^(TestNamespacePidsMatchProc|TestAgentRootPodShape|TestSandboxRootScope|TestSyscallResultsAndExits|TestHeldSyscallEmittedAtStop|TestKernelRefusals)$' .
 fi
 
 EMIT_IMG="${EMIT_IMG:-fabric-host-emitter:local}"

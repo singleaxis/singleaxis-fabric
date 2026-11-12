@@ -15,18 +15,27 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/asm"
+	"github.com/cilium/ebpf/link"
 	"golang.org/x/sys/unix"
+
+	"github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords"
 )
 
 const helperEnv = "FABRIC_E2E_HELPER"
@@ -45,6 +54,14 @@ func TestMain(m *testing.M) {
 		os.Exit(nsInit())
 	case "report":
 		os.Exit(report())
+	case "sensor-classes":
+		os.Exit(sensorClassesHelper())
+	case "held-connect":
+		os.Exit(heldConnectHelper())
+	case "refused-connect":
+		os.Exit(refusedConnectHelper())
+	case "seccomp-kill":
+		os.Exit(seccompKillHelper())
 	}
 	os.Exit(m.Run())
 }
@@ -109,6 +126,104 @@ func report() int {
 	return 0
 }
 
+// sensorClassesHelper (spec 057 OD-13, WP7-11) drops to nobody and makes
+// one call of each kind the sensor pairs with its result, then exits 3. The
+// paths and ports come from the environment.
+func sensorClassesHelper() int {
+	if err := syscall.Setgid(65534); err != nil {
+		return 10
+	}
+	if err := syscall.Setuid(65534); err != nil {
+		return 11
+	}
+	env := func(k string) string { return os.Getenv("FABRIC_E2E_" + k) }
+	// openat: EACCES (root-only file), ENOENT, success (a watched file)
+	if _, err := unix.Open(env("DENIED"), unix.O_RDONLY, 0); err != unix.EACCES {
+		return 12
+	}
+	if _, err := unix.Open(env("MISSING"), unix.O_RDONLY, 0); err != unix.ENOENT {
+		return 13
+	}
+	fd, err := unix.Open(env("WATCHED"), unix.O_RDONLY, 0)
+	if err != nil {
+		return 14
+	}
+	unix.Close(fd)
+	// connect (blocking): ECONNREFUSED, then success
+	for i, port := range []string{env("CLOSED_PORT"), env("OPEN_PORT")} {
+		p, _ := strconv.Atoi(port)
+		s, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+		if err != nil {
+			return 15
+		}
+		err = unix.Connect(s, &unix.SockaddrInet4{Port: p, Addr: [4]byte{127, 0, 0, 1}})
+		unix.Close(s)
+		if (i == 0) != (err == unix.ECONNREFUSED) {
+			return 16 + i
+		}
+	}
+	// execve of a file without the execute bit: EACCES
+	if err := unix.Exec(env("NOEXEC"), []string{"noexec"}, nil); err != unix.EACCES {
+		return 18
+	}
+	return 3
+}
+
+// refusedConnectHelper connects once to 127.0.0.1:FABRIC_E2E_OPEN_PORT; the
+// test's cgroup connect4 program refuses it, so connect fails with EPERM.
+func refusedConnectHelper() int {
+	p, _ := strconv.Atoi(os.Getenv("FABRIC_E2E_OPEN_PORT"))
+	s, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return 30
+	}
+	defer unix.Close(s)
+	if err := unix.Connect(s, &unix.SockaddrInet4{Port: p, Addr: [4]byte{127, 0, 0, 1}}); err != unix.EPERM {
+		return 31
+	}
+	return 4
+}
+
+// seccompKillHelper installs a seccomp filter that kills the process on
+// getppid (SECCOMP_RET_KILL_PROCESS, the seccomp kill action) and calls it:
+// the kernel ends the process with SIGSYS. It never dumps core.
+func seccompKillHelper() int {
+	runtime.LockOSThread()
+	if err := unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0); err != nil {
+		return 40
+	}
+	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
+		return 41
+	}
+	filter := []unix.SockFilter{
+		{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: 0}, // seccomp_data.nr
+		{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, Jt: 0, Jf: 1, K: uint32(unix.SYS_GETPPID)},
+		{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_KILL_PROCESS},
+		{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW},
+	}
+	prog := unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}
+	if err := unix.Prctl(unix.PR_SET_SECCOMP, unix.SECCOMP_MODE_FILTER, uintptr(unsafe.Pointer(&prog)), 0, 0); err != nil {
+		return 42
+	}
+	_, _, _ = unix.RawSyscall(unix.SYS_GETPPID, 0, 0, 0)
+	return 43 // not reached: the kernel killed the process
+}
+
+// heldConnectHelper connects twice to a listener that accepts nothing and
+// has a backlog of 0: the second connect blocks in the kernel until killed,
+// so the sensor still holds it for its sys_exit when the test stops.
+func heldConnectHelper() int {
+	p, _ := strconv.Atoi(os.Getenv("FABRIC_E2E_OPEN_PORT"))
+	for i := 0; i < 8; i++ {
+		s, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+		if err != nil {
+			return 20
+		}
+		_ = unix.Connect(s, &unix.SockaddrInet4{Port: p, Addr: [4]byte{127, 0, 0, 1}})
+	}
+	return 21
+}
+
 // --- harness ----------------------------------------------------------------
 
 func randomHex(t *testing.T, n int) string {
@@ -156,6 +271,20 @@ func cgroupID(t *testing.T, path string) uint64 {
 func loadProduction(t *testing.T, agent, sandbox []string) *bpfRuntime {
 	t.Helper()
 	cfg := &Config{Production: true, Exec: true, AgentCgroupRoots: agent, SandboxCgroupRoots: sandbox}
+	rt, err := loadBPF(cfg)
+	if err != nil {
+		t.Fatalf("load BPF: %v", err)
+	}
+	t.Cleanup(rt.close)
+	return rt
+}
+
+// loadSensorClasses loads the BPF programs with spec 057 OD-13's syscall
+// results and process exits on, file access on, under one agent root.
+func loadSensorClasses(t *testing.T, agent string) *bpfRuntime {
+	t.Helper()
+	cfg := &Config{Production: true, Exec: true, Connect: true, FileAccess: true,
+		SyscallResults: true, ProcessExit: true, AgentCgroupRoots: []string{agent}}
 	rt, err := loadBPF(cfg)
 	if err != nil {
 		t.Fatalf("load BPF: %v", err)
@@ -453,8 +582,324 @@ func TestSandboxRootScope(t *testing.T) {
 	if !e.CgroupNamesRead || e.CgroupName != "docker-"+id+".scope" || e.CgroupParentName != "sandboxes" {
 		t.Fatalf("kernfs names = %v %q %q", e.CgroupNamesRead, e.CgroupParentName, e.CgroupName)
 	}
-	ev, ok := hostEvent(e)
+	ev, ok := hostEvent(e, nil)
 	if !ok || ev.ContainerID != id || ev.PodUID != "" || ev.Scope != "sandbox" {
 		t.Fatalf("host event container %q pod %q scope %q", ev.ContainerID, ev.PodUID, ev.Scope)
+	}
+}
+
+// TestSyscallResultsAndExits (spec 057 OD-13, WP7-11, kernel matrix): each
+// paired syscall is emitted once with its result and errno; a failed exec is
+// seen; a process exit carries its exit code or signal; a watched open is
+// labelled in user space and an unwatched one is not; nothing is lost.
+func TestSyscallResultsAndExits(t *testing.T) {
+	base := testBase(t)
+	agent := mkCgroup(t, filepath.Join(base, "agent"))
+	rt := loadSensorClasses(t, agent)
+	events := collect(t, rt)
+
+	dir := filepath.Join("/tmp", "fabric-e2e-"+randomHex(t, 4))
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	write := func(name string, mode os.FileMode) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("x"), mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	denied, watched, noexec := write("denied", 0o600), write("acl.json", 0o644), write("noexec", 0o644)
+	missing := filepath.Join(dir, "missing")
+	open, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer open.Close()
+	closed, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closedPort := closed.Addr().(*net.TCPAddr).Port
+	closed.Close()
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^$")
+	cmd.Env = append(os.Environ(), helperEnv+"=sensor-classes",
+		"FABRIC_E2E_DENIED="+denied, "FABRIC_E2E_MISSING="+missing, "FABRIC_E2E_WATCHED="+watched,
+		"FABRIC_E2E_NOEXEC="+noexec, "FABRIC_E2E_CLOSED_PORT="+strconv.Itoa(closedPort),
+		"FABRIC_E2E_OPEN_PORT="+strconv.Itoa(open.Addr().(*net.TCPAddr).Port))
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, agent)}
+	err = cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 3 {
+		t.Fatalf("the helper did not make every call as expected: %v", err)
+	}
+	pid := uint32(cmd.Process.Pid)
+
+	watch, err := hostrecords.NewWatchTable([]hostrecords.WatchedPath{{Path: watched, Match: "exact", Label: "agent-acl", Class: "permission_config"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	type seen struct{ result, errno string }
+	opens := map[string][]seen{}
+	var connects []seen
+	var execs []seen
+	var exit *event
+	var watchedLabel string
+	deadline := time.After(15 * time.Second)
+	quiet := time.NewTimer(time.Hour)
+	for exit == nil || quiet != nil {
+		var tick <-chan time.Time
+		if exit != nil {
+			tick = quiet.C
+		}
+		select {
+		case e := <-events:
+			if e.Pid != pid {
+				continue
+			}
+			ev, ok := hostEvent(e, watch)
+			if !ok {
+				t.Fatalf("untranslatable event %+v", e)
+			}
+			switch e.Type {
+			case evOpenat:
+				for _, p := range []string{denied, missing, watched} {
+					if e.Filename == p {
+						opens[p] = append(opens[p], seen{ev.Result, ev.Errno})
+						if ev.Watch != nil {
+							watchedLabel = p + "=" + ev.Watch.Label
+						}
+					}
+				}
+			case evConnect:
+				if e.Family == 2 && (e.Port == uint32(closedPort) || e.Port == uint32(open.Addr().(*net.TCPAddr).Port)) {
+					connects = append(connects, seen{ev.Result, ev.Errno})
+				}
+			case evExec:
+				if e.Filename == noexec || ev.Result == "success" {
+					execs = append(execs, seen{ev.Result, ev.Errno})
+				}
+			case evExit:
+				exit = e
+				quiet.Reset(500 * time.Millisecond)
+			}
+		case <-tick:
+			quiet = nil
+		case <-deadline:
+			t.Fatalf("no exit event for pid %d (opens %v connects %v execs %v)", pid, opens, connects, execs)
+		}
+	}
+	want := map[string][]seen{denied: {{"failed", "EACCES"}}, missing: {{"failed", "ENOENT"}}, watched: {{"success", ""}}}
+	if !reflect.DeepEqual(opens, want) {
+		t.Errorf("opens %v, want %v", opens, want)
+	}
+	if !reflect.DeepEqual(connects, []seen{{"failed", "ECONNREFUSED"}, {"success", ""}}) {
+		t.Errorf("connects %v", connects)
+	}
+	// The helper's own successful exec (sched_process_exec), then the refused one.
+	if !reflect.DeepEqual(execs, []seen{{"success", ""}, {"failed", "EACCES"}}) {
+		t.Errorf("execs %v", execs)
+	}
+	if exit.ExitCode != 3 || exit.ExitSignal != 0 {
+		t.Errorf("exit code %d signal %d, want 3 and 0", exit.ExitCode, exit.ExitSignal)
+	}
+	if watchedLabel != watched+"=agent-acl" {
+		t.Errorf("watched label %q", watchedLabel)
+	}
+	if lost, err := rt.lossCount(); err != nil || lost != 0 {
+		t.Errorf("ring loss %d (%v): loss accounting must stay zero for this load", lost, err)
+	}
+
+	// A process killed by a signal: the signal, no exit code.
+	sleeper := exec.Command("/bin/sleep", "30")
+	sleeper.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, agent)}
+	if err := sleeper.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = sleeper.Process.Kill()
+	_ = sleeper.Wait()
+	killed := waitFor(t, events, "the killed process's exit", func(e *event) bool {
+		return e.Type == evExit && e.Pid == uint32(sleeper.Process.Pid)
+	})
+	if killed.ExitSignal != 9 {
+		t.Errorf("killed: signal %d exit code %d, want signal 9", killed.ExitSignal, killed.ExitCode)
+	}
+}
+
+// TestHeldSyscallEmittedAtStop: a connect still blocked in the kernel when the
+// emitter stops is emitted by the drain, result unknown, so a held event is
+// never lost.
+func TestHeldSyscallEmittedAtStop(t *testing.T) {
+	base := testBase(t)
+	agent := mkCgroup(t, filepath.Join(base, "agent"))
+	rt := loadSensorClasses(t, agent)
+	// A listener with a backlog of 0 that never accepts: once its accept
+	// queue is full, the kernel drops the next SYN and that connect blocks.
+	ln, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(ln)
+	if err := unix.Bind(ln, &unix.SockaddrInet4{Addr: [4]byte{127, 0, 0, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := unix.Listen(ln, 0); err != nil {
+		t.Fatal(err)
+	}
+	sa, err := unix.Getsockname(ln)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := sa.(*unix.SockaddrInet4).Port
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(exe, "-test.run=^$")
+	cmd.Env = append(os.Environ(), helperEnv+"=held-connect",
+		"FABRIC_E2E_OPEN_PORT="+strconv.Itoa(port))
+	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, agent)}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	pid := uint32(cmd.Process.Pid)
+	// Read until the helper's connects stop completing: the next one is held.
+	completed := 0
+	idle := time.After(3 * time.Second)
+read:
+	for {
+		select {
+		case <-idle:
+			break read
+		default:
+		}
+		e, err := rt.nextWithin(200 * time.Millisecond)
+		if err != nil {
+			continue
+		}
+		if e.Pid == pid && e.Type == evConnect {
+			completed++
+		}
+	}
+	if err := rt.stop(); err != nil {
+		t.Fatal(err)
+	}
+	var held []*event
+	for {
+		// a deadline, so a drain that never ends fails instead of hanging
+		e, err := rt.nextWithin(5 * time.Second)
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			t.Fatal("the stop drain never returned ErrFlushed")
+		}
+		if err != nil {
+			break
+		}
+		if e.Pid == pid && e.Type == evConnect {
+			held = append(held, e)
+		}
+	}
+	if len(held) != 1 || held[0].Result != resultUnknown {
+		t.Fatalf("after %d completed connects, the stop drain gave %d held connects (want 1, result unknown)", completed, len(held))
+	}
+}
+
+// nextWithin is next with a read deadline (the held-event test reads until
+// the helper's connects stop completing).
+func (rt *bpfRuntime) nextWithin(d time.Duration) (*event, error) {
+	rt.reader.SetDeadline(time.Now().Add(d))
+	defer rt.reader.SetDeadline(time.Time{})
+	return rt.next()
+}
+
+// TestKernelRefusals (spec 057 WP7-11 and WP7-12, kernel matrix): the two
+// refusals of the closed set no file permission can produce. A connect that a
+// cgroup connect4 program refuses (as a network policy does) is emitted
+// failed with EPERM; a process the seccomp kill action ends is emitted as an
+// exit with signal 31 (SIGSYS) and no exit code. Both are what the kernel
+// reported; the emitter decides nothing.
+func TestKernelRefusals(t *testing.T) {
+	base := testBase(t)
+	agent := mkCgroup(t, filepath.Join(base, "agent"))
+	refusing := mkCgroup(t, filepath.Join(agent, "refusing"))
+	rt := loadSensorClasses(t, agent)
+	events := collect(t, rt)
+
+	// The refusing control, test-only: return 0 from a connect4 hook (EPERM).
+	deny, err := ebpf.NewProgram(&ebpf.ProgramSpec{
+		Type:       ebpf.CGroupSockAddr,
+		AttachType: ebpf.AttachCGroupInet4Connect,
+		License:    "Apache-2.0",
+		Instructions: asm.Instructions{
+			asm.Mov.Imm(asm.R0, 0),
+			asm.Return(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("load the test's connect4 program: %v", err)
+	}
+	t.Cleanup(func() { deny.Close() })
+	l, err := link.AttachCgroup(link.CgroupOptions{Path: refusing, Attach: ebpf.AttachCGroupInet4Connect, Program: deny})
+	if err != nil {
+		t.Fatalf("attach the test's connect4 program: %v", err)
+	}
+	t.Cleanup(func() { l.Close() })
+
+	open, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer open.Close()
+	port := open.Addr().(*net.TCPAddr).Port
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper := func(name, cgroup string) *exec.Cmd {
+		cmd := exec.Command(exe, "-test.run=^$")
+		cmd.Env = append(os.Environ(), helperEnv+"="+name, "FABRIC_E2E_OPEN_PORT="+strconv.Itoa(port))
+		cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: openCgroup(t, cgroup)}
+		return cmd
+	}
+
+	refused := helper("refused-connect", refusing)
+	err = refused.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 4 {
+		t.Fatalf("the refused-connect helper did not see EPERM: %v", err)
+	}
+	connect := waitFor(t, events, "the refused connect", func(e *event) bool {
+		return e.Type == evConnect && e.Pid == uint32(refused.Process.Pid) && e.Port == uint32(port)
+	})
+	if ev, ok := hostEvent(connect, nil); !ok || ev.Result != "failed" || ev.Errno != "EPERM" {
+		t.Errorf("refused connect: result %q errno %q, want failed EPERM", ev.Result, ev.Errno)
+	}
+
+	killed := helper("seccomp-kill", agent)
+	err = killed.Run()
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("the seccomp-kill helper was not killed: %v", err)
+	}
+	if ws, ok := exitErr.Sys().(syscall.WaitStatus); !ok || !ws.Signaled() || ws.Signal() != syscall.SIGSYS {
+		t.Fatalf("the seccomp-kill helper ended with %v, want SIGSYS", err)
+	}
+	exit := waitFor(t, events, "the seccomp-killed exit", func(e *event) bool {
+		return e.Type == evExit && e.Pid == uint32(killed.Process.Pid)
+	})
+	ev, ok := hostEvent(exit, nil)
+	if !ok || ev.Class != "exit" || ev.Signal == nil || *ev.Signal != 31 || ev.ExitCode != nil {
+		t.Errorf("seccomp kill: %+v, want class exit, signal 31, no exit code", ev)
+	}
+	if lost, err := rt.lossCount(); err != nil || lost != 0 {
+		t.Errorf("ring loss %d (%v): loss accounting must stay zero for this load", lost, err)
 	}
 }
