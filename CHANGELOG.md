@@ -400,6 +400,45 @@ it never makes, applies, waits for or returns one.
   the call stays under `tool_calls_without_effect` and the chain is
   `partial(none_in_window)`. A process you have not listed is linked as
   before, tentatively.
+- **A hook started with a `pathlib` path is now recognised.** A listed hook
+  program run as `subprocess.run([Path("/opt/hooks/pre.sh"), ...])`,
+  `subprocess.run(Path(...))` or with `executable=Path(...)` was never
+  matched, because only plain strings were compared. It was then counted as
+  the tool call's effect again. Exact `pathlib` paths are now matched too.
+  The recorded argv still shows a path object as `not_exposed`.
+- **A hook with a long argv is now recognised.** A listed hook program was
+  matched from the recorded argv body, which is dropped when the argv is
+  over 64K characters or 1,024 items (for example a hook given a large tool
+  input as an argument). Such a hook counted as the tool call's effect
+  again. `argv[0]` and `executable=` are now matched directly, also when
+  they are `bytes`; the recorded argv is unchanged.
+- **A hook run as a one-item shell command list is now recognised.** Under
+  `shell=True`, `subprocess.run(["/opt/hooks/pre.sh --tool x"], shell=True)`
+  runs the first item as a shell command, but only a plain string command
+  was read, so the hook counted as the tool call's effect again. The first
+  item is now read like a shell string (one simple command only).
+- **A hook seen only by a host sensor now lowers the `effects` chain too.**
+  A listed hook program matched from a sensor `exec` (by its path digest)
+  was shown as a hook row, but a tool call whose window held it and no
+  effect left the `effects` chain `complete`. It is now
+  `partial(none_in_window)`, as for the same hook seen in process.
+- **A program behind an unreadable `executable=` is no longer taken for a
+  listed hook.** When `executable=` is a custom path type Fabric does not
+  read, the program that runs is unknown; `argv[0]` was still matched
+  against the `path` entries, so another program (a real effect) could be
+  labelled as the hook. Such a child is now matched by `basename` entries
+  only.
+- **`--capture-policy` that matches no run now says so.** The reader applies
+  a capture policy's lists only to runs whose manifest names that policy's
+  digest, so a policy changed after the run (for example to add a
+  `decision_pointer`) applied to nothing, silently. The reader now prints a
+  warning naming the cause and the fix.
+- **A denied call no longer leaves a stray `none_in_window` reason.** When a
+  hook program passed a tool call and a recorded deny then gated the same
+  call, the call was correctly counted as `control_denied`, but the
+  `effects` chain still said `partial(none_in_window)` with no call left in
+  `none_in_window`. The chain now drops that reason when every call the
+  hook let through is explained by a deny.
 - **Spooled delivery to a remote Node is much faster.** Each process sent its
   stored request and response bodies to the Node one per request, one at a
   time, so it delivered at one round trip per body: about 3 to 14 model

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fabric import _classify
-from fabric.reconstruct._attribute import ActionReader, action_rows
+from fabric.reconstruct._attribute import ActionReader, action_rows, tool_calls
 from fabric.reconstruct._host import HostEvent, HostEvidence, HostSource, host_joiner, peer_id
 from tests.test_reconstruct_action_host import HOST, LS_START_NS
 from tests.test_reconstruct_attribute_export import AGENT_PID, ExecCapture, project, scenario
@@ -137,3 +137,44 @@ def test_the_lists_apply_only_to_a_run_captured_under_that_policy(tmp_path: Path
 def test_without_the_id_key_no_address_is_matched_and_hooks_still_are(tmp_path: Path) -> None:
     _, rows, _ = _read(tmp_path, id_key=None)
     assert [row["kind"] for row in _security_rows(rows)] == ["hook"]
+
+
+class HookOnlyJoiner:
+    """Harness shape B seen only by a host sensor: no in-process effect at all, and one
+    exec of the listed hook path (a non-Python runtime's pre-tool hook) inside the first
+    tool call's window."""
+
+    def __init__(self) -> None:
+        self.evidence = HostEvidence()
+
+    def __call__(self, inp: Mapping[str, Any]) -> Any:
+        first = min(tool_calls(inp), key=lambda call: call.open_ns)
+        self.evidence = HostEvidence.of([
+            HostEvent(HOOK_EVENT, "host.ebpf", "exec", first.open_ns + 1_000, pid=4122,
+                      ppid=AGENT_PID, result="success", exe_sha256=_sha(HOOK_PATH)),
+        ])  # fmt: skip
+        return host_joiner(self.evidence, [HostSource("host.ebpf", HOST, verified=True)])(inp)
+
+
+def test_f2_a_sensor_only_hook_lowers_the_effects_chain_like_an_in_process_one(
+    tmp_path: Path,
+) -> None:
+    """P2a review (3.7 note 4): a call whose window holds a listed hook program that did
+    not map to ``blocked``, and no effect, makes the effects chain
+    ``partial(none_in_window)``, whether the hook was seen in process or only by a host
+    sensor (outcome ``unknown``). Without the list the chain is unchanged."""
+    capture = ExecCapture(tmp_path)
+    scenario(capture, hook=False)  # exec.subprocess is active; no call has an effect
+    table = _classify.load(SECTION)
+    reader = ActionReader(host_joiner=HookOnlyJoiner(), keep_runs=True, classification=table,
+                          policy_digest=POLICY_DIGEST, id_key=ID_KEY)  # fmt: skip
+    report, _ = project(capture, actions=reader)
+    run = only_run(report)
+    (hook,) = [row for row in _security_rows(action_rows(reader.runs[0])) if row["kind"] == "hook"]
+    assert hook["link"]["method"] == "sequence_bracket"
+    assert run["attribution"]["effects_not_observed"]["none_in_window"] == 3
+    assert run["chains"]["effects"] == {"verdict": "partial", "reasons": ["none_in_window"]}
+    # the same run read without the lists: no hook row, the chain as 056 states it
+    unlisted = ActionReader(host_joiner=HookOnlyJoiner(), keep_runs=True)
+    report, _ = project(capture, actions=unlisted)
+    assert only_run(report)["chains"]["effects"] == {"verdict": "complete"}

@@ -146,8 +146,9 @@ class Agent:
     then run the hook; either can skip the tool. No Fabric import."""
 
     def __init__(self, model_url: str, hook: Path | None, service: str | None,
-                 remote: bool = False) -> None:  # fmt: skip
+                 remote: bool = False, hook_first: bool = False) -> None:  # fmt: skip
         self.hook, self.service, self.remote = hook, service, remote
+        self.hook_first = hook_first  # run the hook before asking the policy service
         self.hook_exits: list[int] = []
         self.loop = ToolLoop(model_url, check=lambda user, tool, args: True, around=self.around)
 
@@ -155,19 +156,29 @@ class Agent:
         if phase != "before":
             return None
         command = call.args["cmd"]
+        steps = (self._hook, self._ask) if self.hook_first else (self._ask, self._hook)
+        for step in steps:
+            if (refused := step(command)) is not None:
+                return refused
+        if self.remote:  # the tool's action happens where no enabled channel looks
+            return f"remote job finished: {command}"
+        return None
+
+    def _ask(self, command: str) -> str | None:
         if self.service is not None:
             answer = httpx.post(f"http://{self.service}/v1/check",
                                 json={"command": command, "note": CANARY},
                                 timeout=10.0)  # fmt: skip
             if answer.json()["result"]["decision"] == "DENY":
                 return REFUSED
+        return None
+
+    def _hook(self, command: str) -> str | None:
         if self.hook is not None:
             done = subprocess.run([str(self.hook), command], check=False)  # noqa: S603
             self.hook_exits.append(done.returncode)
             if done.returncode == 2:
                 return SKIPPED
-        if self.remote:  # the tool's action happens where no enabled channel looks
-            return f"remote job finished: {command}"
         return None
 
 
@@ -175,11 +186,13 @@ def _run(
     root: Path, monkeypatch: pytest.MonkeyPatch, *, section: Any = None, retained: Any = (),
     reader_policy: bool = False, hook: bool = True, service: bool = True,
     listed: bool = True, pointer: bool = True, exit_map: bool = True, remote: bool = False,
-    script: list[Turn] | None = None,
+    script: list[Turn] | None = None, hook_first: bool = False,
+    reader_document: dict[str, Any] | None = None,
 ) -> tuple[Agent, Read, PolicyService, Path]:  # fmt: skip
     """One captured run and its read. ``listed``: the policy service is in
     ``control_hosts``; ``pointer``: its entry gives the offline extraction;
-    ``reader_policy``: the reader is given ``--capture-policy``."""
+    ``reader_policy``: the reader is given ``--capture-policy`` (``reader_document``
+    instead of the capture policy when given)."""
     root.mkdir(parents=True, exist_ok=True)
     hook_path = _hook(root)
     with PolicyService() as policy_service, FixtureModel(script or SCRIPT) as model:
@@ -200,7 +213,7 @@ def _run(
                 section["control_hosts"] = [host]
         document = _policy(section, *retained)
         agent = Agent(model.url, hook_path if hook else None,
-                      policy_service.host if service else None, remote)  # fmt: skip
+                      policy_service.host if service else None, remote, hook_first)  # fmt: skip
 
         def body(provider: Any) -> None:
             agent.loop.run("Go.")
@@ -213,7 +226,7 @@ def _run(
         extra: tuple[str, ...] = ()
         if reader_policy:
             policy_file = root / "capture-policy.json"
-            policy_file.write_text(json.dumps(document), encoding="utf-8")
+            policy_file.write_text(json.dumps(reader_document or document), encoding="utf-8")
             extra = ("--capture-policy", str(policy_file))
         (root / "read").mkdir()
         read = read_export(export, root / "read", *extra)
@@ -445,7 +458,48 @@ def test_f2_an_undeclared_hook_program_is_linked_as_before_tentative(
     assert view_run["tool_calls_without_effect"] == []
 
 
+def test_f2_a_passed_hook_then_a_deny_leaves_no_stray_none_in_window_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2a review: the hook passes call_4, then the policy service denies it (extracted
+    offline). F5 moves call_4 to ``control_denied``; no call is left ``none_in_window``, so
+    the effects chain must not keep the ``none_in_window`` reason the hook run added."""
+    agent, read, service, _ = _run(tmp_path, monkeypatch, retained=CONTROL_ROLES,
+                                   reader_policy=True, hook_first=True)  # fmt: skip
+    assert agent.hook_exits == [0, 2, -15, 0]  # call_4's hook passed; the service denied it
+    assert [d for _, d in service.ledger] == ["ALLOW", "ALLOW", "DENY"]  # call_2: skipped
+    (report_run,) = read.report["runs"]
+    not_observed = report_run["attribution"]["effects_not_observed"]
+    assert not_observed["none_in_window"] == 0
+    assert not_observed["control_denied"] == 2  # call_2 (hook blocked), call_4 (deny)
+    assert _chain(read, "effects") == {"verdict": "complete"}
+    (view_run,) = read.actions["runs"]
+    assert {item["reason"] for item in view_run["tool_calls_without_effect"]} == {"control_denied"}
+
+
 # ---------------------------------------------------------------------- the reader option
+def test_a_capture_policy_no_run_was_captured_under_is_a_warning_naming_the_fix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """P2a review: the lists apply only to runs whose manifest names the policy's digest.
+    A policy changed after the run (here: the hook entry gains an ``exit_map``) used to
+    apply to nothing, silently; the reader now says so on stderr, with the fix, and the
+    output is as without the option."""
+    edited = _policy({"hook_programs": [{"basename": "pre-tool", "label": HOOK_LABEL,
+                                         "exit_map": EXIT_MAP}]})  # fmt: skip
+    _, read, _, _ = _run(tmp_path, monkeypatch, retained=CONTROL_ROLES, reader_policy=True,
+                         reader_document=edited)  # fmt: skip
+    err = capsys.readouterr().err
+    assert err.count("--capture-policy applied to no run") == 3  # report, --json, view
+    assert "FABRIC_CAPTURE_POLICY" in err and "decision_pointer" in err
+    assert str(tmp_path) not in err and CANARY not in err
+    contacts = _rows(read, "control")
+    assert contacts and {row["decision"] for row in contacts} == {"unknown"}  # nothing applied
+    # the matching policy: no warning
+    _run(tmp_path / "same", monkeypatch, retained=CONTROL_ROLES, reader_policy=True)
+    assert "--capture-policy" not in capsys.readouterr().err
+
+
 def test_capture_policy_option_errors_name_the_cause_and_the_fix(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
