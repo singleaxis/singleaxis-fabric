@@ -773,7 +773,9 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
     manifest_of: dict[Any, str] = {}
     loaded: set[tuple[Any, ...]] = set()
     for ext in sorted(sec.get("extensions", ()), key=lambda e: (e["start_ns"], e["sequence"])):
-        identity = ext.get("id") or (ext["kind"], ext.get("name"))
+        # A derived MCP row without an id key carries its session's ``identity``: two
+        # servers that report one name are never one extension (F11).
+        identity = ext.get("id") or ext.get("identity") or (ext["kind"], ext.get("name"))
         manifest = ext.get("manifest_hash")
         before = manifest_of.get(identity)
         changed = before is not None and manifest is not None and before != manifest
@@ -781,7 +783,7 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
             manifest_of[identity] = manifest
         if changed:
             _fact(facts, "inventory_changed", ext["event_id"])
-        key = (ext["kind"], ext.get("name"), ext.get("version"), manifest, ext.get("id"))
+        key = (ext["kind"], ext.get("name"), ext.get("version"), manifest, identity)
         if key in loaded:
             continue  # the same load recorded twice (extension.loaded beside fabric.skill)
         loaded.add(key)

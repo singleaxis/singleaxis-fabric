@@ -254,3 +254,35 @@ def test_listed_grants_change_per_session_only() -> None:
                                 "extensions": []}, _security.ControlIndex())  # fmt: skip
     changed = [g["event_id"] for g in result.grants if g.get("changed")]
     assert changed == ["g2"]
+
+
+def _two_servers(key: bytes | None, hosts: tuple[str | None, str | None]) -> list[str]:
+    """Two HTTP sessions whose servers both report the name ``srv`` and list different
+    tools; the F11 facts the reader states for them."""
+    messages: list[mcp.Seen] = []
+    sessions: dict[str, mcp.SessionInfo] = {}
+    for n, (name, host) in enumerate(zip(("one", "two"), hosts, strict=True)):
+        sessions[name] = mcp.SessionInfo("streamable_http", f"{name}#session.1", None, host)
+        for seen in _seen([
+            (C, _r(1, "initialize")), (S, _ok(1, {"serverInfo": {"name": "srv"}})),
+            (C, _r(2, "tools/list")), (S, _ok(2, {"tools": TOOLS[n:]})),
+        ], session=name):  # fmt: skip
+            at = dict(seen.at, sequence=seen.at["sequence"] + 10 * n,
+                      start_ns=seen.at["start_ns"] + 10 * n)  # fmt: skip
+            messages.append(mcp.Seen(seen.message, seen.direction, seen.session, at,
+                                     f"{seen.carrier}.{n}", f"{seen.evidence}.{n}"))  # fmt: skip
+    out = mcp.derive(messages, sessions, key=key)
+    attribution = SimpleNamespace(calls=[], decisions={}, trace={"tool_calls": {}})
+    sec = {"grants": [], "controls": [], "hooks": [], "extensions": out.extensions}
+    result = _security.analyse({"exchanges": []}, attribution, sec, _security.ControlIndex())
+    return [e["event_id"] for e in result.extensions if e.get("changed")]
+
+
+def test_two_servers_with_one_name_are_two_extensions_not_an_inventory_change() -> None:
+    """E10/F11: servers on two hosts that report the same name are two extensions; a
+    different listing on the second is not a change of the first, with or without a key.
+    The same host listing differently after a reconnect is a change (with the key)."""
+    hosts = ("hst-" + "a" * 32, "hst-" + "b" * 32)
+    assert _two_servers(KEY, hosts) == []
+    assert _two_servers(None, (None, None)) == []
+    assert _two_servers(KEY, (hosts[0], hosts[0])) == ["a3.1#mcp.1"]

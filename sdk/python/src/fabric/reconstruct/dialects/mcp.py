@@ -284,8 +284,11 @@ class _Deriver:
             row["source_ref"] = info.server_ref
         if info.host_id is not None:
             row["host_id"] = info.host_id
-        identity = f"mcp_server/{state.name or ''}/{info.server_ref or ''}"
-        ext_id = pseudonym_v2("ext", identity, self.key)
+        # E10: (kind, name, source ref). Over HTTP the server's URL is never recorded, so
+        # the keyed host id stands in for it: two servers that report one name on two
+        # hosts are two extensions, and a listing on one never "changes" the other (F11).
+        source = info.server_ref or info.host_id
+        ext_id = pseudonym_v2("ext", f"mcp_server/{state.name or ''}/{source or ''}", self.key)
         if ext_id is not None:
             row["id"] = ext_id
         else:  # no id key: the session still tells one server's rows from another's
