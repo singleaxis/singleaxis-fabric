@@ -1483,6 +1483,45 @@ def test_a_hook_whose_argv_is_over_the_body_bound_or_bytes_is_still_classified(
         _close(rig)
 
 
+class _OpaquePath(os.PathLike[str]):
+    """A customer path type Fabric never reads (its ``__fspath__`` is customer code)."""
+
+    def __init__(self, path: str) -> None:
+        self.path = path
+
+    def __fspath__(self) -> str:
+        return self.path
+
+
+def test_a_shell_sequence_and_an_unread_executable_are_classified_by_what_runs(
+    tmp_path: Path,
+) -> None:
+    """P2a review: under ``shell=True`` a sequence's first item is the command the shell
+    runs, so a declared hook started as ``run(["/hooks/pre.sh --tool x"], shell=True)`` is
+    a hook row, never the tool call's effect (F2). An ``executable=`` Fabric does not read
+    hides which program runs: ``argv[0]`` never stands in for it, so a program that is not
+    the hook is never labelled as one (which would hide a real effect)."""
+    script = _script(tmp_path, "pre-tool.sh", "exit 2")
+    other = _script(tmp_path, "real-effect", "exit 0")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"2": "blocked"}},
+                    {"basename": "lint-hook", "label": "linter"})  # fmt: skip
+    try:
+        subprocess.run([f"{script} --tool x"], shell=True)  # noqa: S602 - one simple command
+        subprocess.run([f"{script} --tool x", "positional"], shell=True)  # noqa: S602
+        subprocess.run([f"{script}; true"], shell=True)  # noqa: S602 - compound: no program
+        subprocess.run([str(script)], executable=_OpaquePath(str(other)))
+        # a basename entry still matches argv[0]'s basename, as with any executable=
+        subprocess.run(["lint-hook"], executable=_OpaquePath(str(other)))
+        ends = [r for r in rig.records() if r.lifecycle == "completed"]
+        assert [r.attrs.get("fabric.hook.program_label") for r in ends] == [
+            "pre-tool-check", "pre-tool-check", None, None, "linter"]  # fmt: skip
+        assert [r.attrs.get("fabric.hook.outcome") for r in ends] == [
+            "blocked", "blocked", None, None, "unknown"]  # fmt: skip
+    finally:
+        _close(rig)
+
+
 def test_the_hook_label_never_carries_the_path_and_argv_stays_protected(tmp_path: Path) -> None:
     """Argv protection canary: with ``terminal.argv`` omitted, a classified hook's argv
     (path and arguments) is in no span and no stored body; only the label is recorded."""
