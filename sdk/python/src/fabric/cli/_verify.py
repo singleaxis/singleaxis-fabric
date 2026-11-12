@@ -17,7 +17,6 @@ import argparse
 import contextlib
 import json
 import os
-import re
 import secrets as _random
 import socket
 import ssl
@@ -29,7 +28,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from ..reconstruct._inputs import ReconstructInputError
+from ..reconstruct._inputs import ACCEPTED_INPUTS, ReconstructInputError
 from ..reconstruct._report import COMPLETE_VERDICTS, EXIT_RUN_STATES
 from . import _config, _project, _read, _run, _runstate, _up
 from ._report import EXIT_FINDINGS, EXIT_OK, CliError, Finding, Report
@@ -104,6 +103,13 @@ def run_canary(
     return answer if isinstance(answer, dict) else {"installed": False, "error": "no answer"}
 
 
+def _input_error(exc: ReconstructInputError) -> str:
+    """The reader's input error, with the input forms it accepts (FC-073's fix promises
+    them; the reader names them only for some errors)."""
+    text = str(exc)
+    return text if ACCEPTED_INPUTS in text else f"{text}; accepted: {ACCEPTED_INPUTS}"
+
+
 def _canary_failure(answer: Mapping[str, Any]) -> Finding:
     if answer.get("error") == "httpx_missing":
         return Finding("FC-062", _HTTPX_MISSING)
@@ -142,7 +148,7 @@ def _poll_canary(
                 if last is not None and last["verdict"] in COMPLETE_VERDICTS:
                     return last, None
             except ReconstructInputError as exc:
-                error = str(exc)
+                error = _input_error(exc)
         if time.monotonic() >= deadline:
             return last, error
         sleep(1.0)
@@ -206,20 +212,12 @@ def _canary(
 # ---------------------------------------------------------------- the user's run
 
 
-_SCHEME = re.compile(r'"schemes":\s*\["(https?)"')
-
-
 def provider_hint(entry: Mapping[str, Any]) -> str:
     """``fabric init --provider URL`` for a model-looking host no endpoint matched. The
     scheme comes from the matcher the SDK suggested for it (its ``fix``)."""
-    host, port = str(entry.get("host") or ""), entry.get("port")
-    found = _SCHEME.search(str(entry.get("fix") or ""))
-    scheme = found[1] if found else ("http" if port == 80 else "https")  # noqa: PLR2004
-    default = {"https": 443, "http": 80}[scheme]
-    where = f"{host}:{port}" if port not in (None, default) else host
     return (
-        f"{host}: {entry.get('count', '?')} request(s); fix: fabric init --provider "
-        f"{scheme}://{where}/v1 (the base URL the client uses)"
+        f"{entry.get('host') or ''}: {entry.get('count', '?')} request(s); fix: fabric init "
+        f"--provider {_read.provider_url(entry)} (the base URL the client uses)"
     )
 
 
@@ -351,10 +349,12 @@ def _user_run(
     if dest.spans_dir is None:
         findings.append(Finding("FC-074", dest.reason))
         return data
+    # --spans: the reader takes the path as given (a file, a directory of span files, or
+    # a `fabric up` data directory, 13.4) and names the accepted forms when it is none.
     files = (
-        [str(dest.spans_dir)]
-        if dest.spans_dir.is_file()
-        else _read.span_files(dest.spans_dir, None if options.spans else record.started_ns)
+        [str(options.spans)]
+        if options.spans
+        else _read.span_files(dest.spans_dir, record.started_ns)
     )
     if not files:
         findings.append(
@@ -369,7 +369,7 @@ def _user_run(
     try:
         document = _read.read(dest, files)
     except ReconstructInputError as exc:
-        findings.append(Finding("FC-073", str(exc)))
+        findings.append(Finding("FC-073", _input_error(exc)))
         return data
     exclude = _read.canary_ids(
         [*_runstate.load_canaries(project.state_dir), *([canary_label] if canary_label else [])],

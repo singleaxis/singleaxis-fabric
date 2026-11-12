@@ -119,6 +119,16 @@ def test_verify_show_and_doctor_on_a_working_project(lab: dict[str, Any]) -> Non
     assert rows["commands the agent ran"] == ("fix", "fabric init --exec")
     assert rows["end user and session"][0] == "needs code"
     assert any(line.startswith("coverage (observed):") for line in lines)
+    # --spans in each of the reader's input forms (13.4): the data directory `fabric up`
+    # prints, its spans/ directory; a path that is none of them names the accepted forms.
+    data = lab["project"] / "fabric-data"
+    for spans in (data, data / "spans"):
+        code, lines, report = _verify_now(lab, "--canary-only", "--spans", str(spans))
+        code, lines, report = _verify_now(lab, "agent-1", "--spans", str(spans))
+        assert code == 0 and "FC-069" in _ids(report), (spans, report["findings"])
+    code, _, report = _verify_now(lab, "agent-1", "--spans", str(data / "nothing-here"))
+    (unreadable,) = [f for f in report["findings"] if f["id"] == "FC-073"]
+    assert code == 1 and "fabric up` data directory" in unreadable["detail"]
 
     # show: the conversation, the tool call with its arguments, the answer.
     report_, lines = _show.run(
@@ -173,6 +183,12 @@ def test_s1_a_model_host_no_endpoint_matches_is_named_with_the_fix(lab: dict[str
     findings = {f["id"]: f for f in report["findings"]}
     port = lab["model"].url.split(":")[2].split("/")[0]
     assert f"fabric init --provider http://127.0.0.1:{port}/v1" in findings["FW-006"]["detail"]
+    rows = {row["row"]: row for row in report["data"]["run"]["coverage"]}
+    assert rows["model calls (requests and responses)"] == {
+        "row": "model calls (requests and responses)",
+        "state": "fix",
+        "note": f"fix: fabric init --provider http://127.0.0.1:{port}/v1",
+    }
     assert findings["FW-006"]["fix"]
     assert "no model call was recorded" in findings["FC-068"]["detail"]
 

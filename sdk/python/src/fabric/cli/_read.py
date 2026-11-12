@@ -9,6 +9,7 @@ id key so labels map, and its content store so bodies are checked. Nothing is se
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -238,6 +239,21 @@ def run_reasons(run: Mapping[str, Any]) -> list[str]:
 
 # ---------------------------------------------------------------- coverage report (§12)
 
+_SCHEME = re.compile(r'"schemes":\s*\["(https?)"')
+
+
+def provider_url(entry: Mapping[str, Any]) -> str:
+    """The ``--provider`` base URL for a model-looking host no endpoint matched (an entry
+    of the status file's ``unmatched_model_hosts``): its scheme from the matcher the SDK
+    suggested (its ``fix``), its port unless it is the scheme's default."""
+    host, port = str(entry.get("host") or ""), entry.get("port")
+    found = _SCHEME.search(str(entry.get("fix") or ""))
+    scheme = found[1] if found else ("http" if port == 80 else "https")  # noqa: PLR2004
+    default = {"https": 443, "http": 80}[scheme]
+    where = f"{host}:{port}" if port not in (None, default) else host
+    return f"{scheme}://{where}/v1"
+
+
 
 @dataclass(frozen=True)
 class Row:
@@ -289,12 +305,12 @@ def coverage(
         )
     else:
         hosts = [
-            str(h.get("host"))
+            h
             for h in (status or {}).get("unmatched_model_hosts") or []
-            if isinstance(h, dict) and h.get("host")
+            if isinstance(h, Mapping) and h.get("host")
         ]
         fix = (
-            f"fix: fabric init --provider https://{hosts[0]}/v1"
+            f"fix: fabric init --provider {provider_url(hosts[0])}"
             if hosts
             else "no model call was recorded"
         )
