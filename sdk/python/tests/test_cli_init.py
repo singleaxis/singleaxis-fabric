@@ -297,6 +297,26 @@ def test_force_with_a_project_flag_uses_the_flag(
     assert (document["project"], document["agent"]) == ("payments", "payments")
 
 
+def test_a_referenced_secret_file_that_is_missing_is_named_not_compiled_silently(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """An agent given a key or CA path it cannot read captures nothing: `init` says so."""
+    monkeypatch.setenv("FABRIC_WIRE_ID_KEY_FILE", str(tmp_path / "gone" / "id.key"))
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "https://node.internal:4318")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", str(tmp_path / "gone" / "ca.crt"))
+    report = _json(["init", "--from-env"], capsys)
+    assert report["exit_code"] == 0
+    details = sorted(f["detail"] for f in report["findings"] if f["id"] == "FC-031")
+    assert details == [f"secrets.ca_file: {tmp_path / 'gone' / 'ca.crt'}",
+                       f"secrets.id_key_file: {tmp_path / 'gone' / 'id.key'}"]  # fmt: skip
+    # Once the files exist the warning goes away.
+    (tmp_path / "gone").mkdir()
+    (tmp_path / "gone" / "id.key").write_bytes(b"manual-id-key-of-32-bytes-or-more")
+    (tmp_path / "gone" / "ca.crt").write_text("a CA")
+    assert [f["id"] for f in _json(["init"], capsys)["findings"]] == []
+
+
 @pytest.mark.parametrize(("args", "detail"), [
     (["--profile", "production"], "--profile production"),
     (["--kubernetes"], "--kubernetes"),

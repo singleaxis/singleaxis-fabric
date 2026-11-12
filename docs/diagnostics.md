@@ -206,6 +206,14 @@ Fix: two projects with the same name share one Compose project: set a different 
 directory's fabric.yaml and run the command again, or run `fabric down` in the directory named in
 the detail first.
 
+### FC-031
+
+`referenced_secret_unreadable`, warning: a secret file fabric.yaml references is missing or not a
+readable regular file, so agents given the compiled environment would capture nothing with it.
+
+Fix: correct the path in fabric.yaml (secrets.id_key_file or secrets.ca_file) and run `fabric init`
+again, or remove the setting so `fabric init` generates the secret.
+
 ### FC-040
 
 `sensor_started`, info: the host sensor is running and scoped to this project's agent cgroup.

@@ -448,6 +448,17 @@ CATALOGUE: dict[str, Any] = {
             "detail first",
         },
         {
+            "id": "FC-031",
+            "name": "referenced_secret_unreadable",
+            "severity": "warning",
+            "text": "a secret file fabric.yaml references is missing or not a readable "
+            "regular file, so agents given the compiled environment would capture "
+            "nothing with it",
+            "fix": "correct the path in fabric.yaml (secrets.id_key_file or "
+            "secrets.ca_file) and run `fabric init` again, or remove the setting so "
+            "`fabric init` generates the secret",
+        },
+        {
             "id": "FC-040",
             "name": "sensor_started",
             "severity": "info",

@@ -556,6 +556,11 @@ def write_config(options: argparse.Namespace, environ: Mapping[str, str], cwd: P
         to_store, findings, lines  # fmt: skip
 
 
+def _readable_file(path: Path) -> bool:
+    """A regular file this user can open for reading (its content is never read)."""
+    return path.is_file() and os.access(path, os.R_OK)
+
+
 def prepare(project: _project.Project, *, rotate: str | None = None,
             to_store: Mapping[str, bytes] | None = None) -> tuple[list[_secrets.SecretInfo],
                                                                  list[Finding], bool]:  # fmt: skip
@@ -594,9 +599,14 @@ def prepare(project: _project.Project, *, rotate: str | None = None,
         secrets_now = [rotated.get(info.name, info) for info in secrets_now]
         findings.extend(Finding("FC-016", _ROTATION_NOTES[name]) for name in names)
     for key, name in (("secrets.id_key_file", "id-key"), ("secrets.ca_file", "ca")):
-        if project.resolved[key]:
-            secrets_now.append(_secrets.SecretInfo(name, (str(project.resolved[key]),),
-                                                   "referenced"))  # fmt: skip
+        if not project.resolved[key]:
+            continue
+        referenced = _project._absolute(project.directory, str(project.resolved[key]))
+        secrets_now.append(_secrets.SecretInfo(name, (str(referenced),), "referenced"))
+        if not _readable_file(referenced):
+            # The compiled environment would name a file the agent cannot read: say so now,
+            # not at the agent's first run.
+            findings.append(Finding("FC-031", f"{key}: {referenced}"))
     _, changed = _project.write_compiled_env(project)
     return secrets_now, findings, changed
 
