@@ -1065,6 +1065,65 @@ def rule_fixtures() -> dict[str, dict[str, Any]]:
         )
     )
 
+    # Spec 057 WP7-10 (field finding F2): a remote-sandbox tool with a local pre-tool hook
+    # and no remote effect recorded. The hook's process is in the customer's hook_programs
+    # list (the capture worker labelled it), so it is never the call's effect.
+    s = Scenario("edge-hook-program-only-window")
+    s.exchange(0, 900, calls=[("call_HP", "sandbox_run")])
+    s.effect(
+        "exec /opt/hooks/pre-tool.sh",
+        1000,
+        stdout="pre-tool check passed\n",
+        hook_program="pre-tool-check",
+        hook_outcome="passed",
+        exit_code=0,
+    )
+    s.exchange(1500, 2400, results=[("call_HP", "The sandbox ran the job.")])
+    put(
+        s.fixture(
+            [],
+            "A listed hook program is the only process in the tool call's window: it is no effect (trace hook_program, no link, not counted), the call stays none_in_window and the effects chain is partial(none_in_window), never complete (spec 057 WP7-10).",
+        )
+    )
+
+    # The same run when the customer has not listed the program: Fabric never guesses by
+    # name, so the process is an effect as before (A2, tentative).
+    s = Scenario("edge-hook-program-undeclared")
+    s.exchange(0, 900, calls=[("call_HU", "sandbox_run")])
+    s.effect(
+        "exec /opt/hooks/pre-tool.sh",
+        1000,
+        stdout="pre-tool check passed\n",
+        exit_code=0,
+    )
+    s.exchange(1500, 2400, results=[("call_HU", "The sandbox ran the job.")])
+    put(
+        s.fixture(
+            ["A2"],
+            "The hook program of edge-hook-program-only-window without a hook_programs entry: nothing classifies it, so it is linked as today (sequence_bracket, tentative); Fabric does not guess a hook by its name.",
+        )
+    )
+
+    # A hook program whose exit map says it blocked the call: the call has no effect and
+    # that is expected, so the effects chain stays complete (spec 057 F5 names the block).
+    s = Scenario("edge-hook-program-blocked")
+    s.exchange(0, 900, calls=[("call_HB", "sandbox_run")])
+    s.effect(
+        "exec /opt/hooks/pre-tool.sh",
+        1000,
+        stdout="blocked by pre-tool check\n",
+        hook_program="pre-tool-check",
+        hook_outcome="blocked",
+        exit_code=2,
+    )
+    s.exchange(1500, 2400, results=[("call_HB", "The call was skipped.")])
+    put(
+        s.fixture(
+            [],
+            "A listed hook program whose exit map gives blocked: no effect link, the call is none_in_window, and the effects chain is complete (the call was not dispatched; spec 057 reports the block as a hook row).",
+        )
+    )
+
     # A3: two candidates, neither singled out by output (outputs too short to match).
     s = Scenario("a3-several-windows")
     s.exchange(0, 900, calls=[("call_A3a", "run_shell"), ("call_A3b", "run_shell")])

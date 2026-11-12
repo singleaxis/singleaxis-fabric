@@ -36,7 +36,7 @@
     {"path": "fixtures/invalid/run-reconstruction-scope-without-verdict.json", "sha256": "6d9fb7c6b9463c1f8bd6fe803264496f31fdf0a9229fedfc515c776aa7d27d38", "expectation": "invalid", "expected_error": "capture.reconstruction.scope"},
     {"path": "fixtures/model-names/model-exposure-v1.json", "sha256": "1126576c0d7d814fc0018ed33454c583c9edc08863294152ee276484b37e75ca", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "5d606abfae8566c98bb0f858a2c05fafea6faf0126b4241164a7ae5a043528e5", "expectation": "vectors", "expected_error": null},
-    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "d5b0da85c6fe29f55f96a8fad1ec6104e1fb9be2dd71c78455265da1183b140f", "expectation": "schema", "expected_error": null},
+    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "613d132977a245f1065872a0457c481929240c69262c2965462e96a57b58ea91", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/capture-manifest-record-local.json", "sha256": "7dfe1c3efc12e7928d7bcfb16c5a300f3dc137f748aeae422b15b9abb845fe32", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/capture-manifest-record-production-disabled.json", "sha256": "1e04687b4bf1cb6d2b9143d83802e394f60c78c23836b138af505b1c6ea6f356", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/loss-record-run-start-continuation.json", "sha256": "ef6b655267fe853e146226b99cf82606b0e99eca6f02c7090e4f021f811c5169", "expectation": "valid", "expected_error": null},

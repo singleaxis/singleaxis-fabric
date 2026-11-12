@@ -569,519 +569,8 @@
       }
     },
     {
-      "name": "marker states allow",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "tool_result_markers": [
-            {
-              "label": "m",
-              "equals": "no",
-              "decision": "allow"
-            }
-          ]
-        }
-      },
-      "rule": "a marker never states allow"
-    },
-    {
-      "name": "marker with two rules",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "tool_result_markers": [
-            {
-              "label": "m",
-              "equals": "no",
-              "prefix": "n"
-            }
-          ]
-        }
-      },
-      "rule": "exactly one matching rule"
-    },
-    {
-      "name": "marker without a rule",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "tool_result_markers": [
-            {
-              "label": "m"
-            }
-          ]
-        }
-      },
-      "rule": "exactly one matching rule"
-    },
-    {
-      "name": "marker regex field",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "tool_result_markers": [
-            {
-              "label": "m",
-              "equals": "no",
-              "regex": "no.*"
-            }
-          ]
-        }
-      },
-      "rule": "no regular expressions"
-    },
-    {
-      "name": "wildcard host",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "control_hosts": [
-            {
-              "host": "*.example",
-              "label": "x",
-              "control_kind": "policy"
-            }
-          ]
-        }
-      },
-      "rule": "exact match only"
-    },
-    {
-      "name": "pointer without map",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "control_hosts": [
-            {
-              "host": "x.example",
-              "label": "x",
-              "control_kind": "policy",
-              "decision_pointer": "/d"
-            }
-          ]
-        }
-      },
-      "rule": "pointer and map together"
-    },
-    {
-      "name": "extract maps unknown",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "control_hosts": [
-            {
-              "host": "x.example",
-              "label": "x",
-              "control_kind": "policy",
-              "decision_pointer": "/d",
-              "decision_map": [
-                {
-                  "value": "x",
-                  "decision": "unknown"
-                }
-              ]
-            }
-          ]
-        }
-      },
-      "rule": "an extracted decision is allow, deny, modify or escalate"
-    },
-    {
-      "name": "hook path and basename",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "hook_programs": [
-            {
-              "path": "/a",
-              "basename": "a",
-              "label": "a"
-            }
-          ]
-        }
-      },
-      "rule": "path or basename"
-    },
-    {
-      "name": "hook exit map outcome",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "hook_programs": [
-            {
-              "basename": "a",
-              "label": "a",
-              "exit_map": {
-                "0": "ok"
-              }
-            }
-          ]
-        }
-      },
-      "rule": "hook outcome enum"
-    },
-    {
-      "name": "watched relative path",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "watched_paths": [
-            {
-              "path": "work/x",
-              "match": "exact",
-              "label": "x",
-              "class": "other"
-            }
-          ]
-        }
-      },
-      "rule": "absolute paths"
-    },
-    {
-      "name": "watch class",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "watched_paths": [
-            {
-              "path": "/x",
-              "match": "exact",
-              "label": "x",
-              "class": "secrets"
-            }
-          ]
-        }
-      },
-      "rule": "enum"
-    },
-    {
-      "name": "unknown section",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "guardrails": []
-        }
-      },
-      "rule": "closed section"
-    },
-    {
-      "name": "control kind",
-      "valid": false,
-      "document": {
-        "schema_version": "fabric.deployment-policy/v1",
-        "policy_id": "acme-capture",
-        "policy_version": 1,
-        "tenant_id": "tenant-a",
-        "workload_id": "agent-1",
-        "privacy": {
-          "model.exchange.request": "retain_original"
-        },
-        "storage": {
-          "backend": "local",
-          "region": "local",
-          "key_id": "kid-1"
-        },
-        "retention": {
-          "days": 30
-        },
-        "required_integrations": [],
-        "deployment": {
-          "profile": "local",
-          "image_digest": "local",
-          "tls_required": false,
-          "encrypted_store_required": false
-        },
-        "security_context": {
-          "control_hosts": [
-            {
-              "host": "x.example",
-              "label": "x",
-              "control_kind": "judge"
-            }
-          ]
-        }
-      },
-      "rule": "enum"
-    },
-    {
       "name": "over 256 entries",
-      "valid": false,
+      "valid": true,
       "document": {
         "schema_version": "fabric.deployment-policy/v1",
         "policy_id": "acme-capture",
@@ -2652,8 +2141,518 @@
             }
           ]
         }
+      }
+    },
+    {
+      "name": "marker states allow",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "decision": "allow"
+            }
+          ]
+        }
       },
-      "rule": "at most 256 entries"
+      "rule": "a marker never states allow"
+    },
+    {
+      "name": "marker with two rules",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "prefix": "n"
+            }
+          ]
+        }
+      },
+      "rule": "exactly one matching rule"
+    },
+    {
+      "name": "marker without a rule",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m"
+            }
+          ]
+        }
+      },
+      "rule": "exactly one matching rule"
+    },
+    {
+      "name": "marker regex field",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "tool_result_markers": [
+            {
+              "label": "m",
+              "equals": "no",
+              "regex": "no.*"
+            }
+          ]
+        }
+      },
+      "rule": "no regular expressions"
+    },
+    {
+      "name": "wildcard host",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "*.example",
+              "label": "x",
+              "control_kind": "policy"
+            }
+          ]
+        }
+      },
+      "rule": "exact match only"
+    },
+    {
+      "name": "pointer without map",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "policy",
+              "decision_pointer": "/d"
+            }
+          ]
+        }
+      },
+      "rule": "pointer and map together"
+    },
+    {
+      "name": "extract maps unknown",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "policy",
+              "decision_pointer": "/d",
+              "decision_map": [
+                {
+                  "value": "x",
+                  "decision": "unknown"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "rule": "an extracted decision is allow, deny, modify or escalate"
+    },
+    {
+      "name": "hook path and basename",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "hook_programs": [
+            {
+              "path": "/a",
+              "basename": "a",
+              "label": "a"
+            }
+          ]
+        }
+      },
+      "rule": "path or basename"
+    },
+    {
+      "name": "hook exit map outcome",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "hook_programs": [
+            {
+              "basename": "a",
+              "label": "a",
+              "exit_map": {
+                "0": "ok"
+              }
+            }
+          ]
+        }
+      },
+      "rule": "hook outcome enum"
+    },
+    {
+      "name": "watched relative path",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "watched_paths": [
+            {
+              "path": "work/x",
+              "match": "exact",
+              "label": "x",
+              "class": "other"
+            }
+          ]
+        }
+      },
+      "rule": "absolute paths"
+    },
+    {
+      "name": "watch class",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "watched_paths": [
+            {
+              "path": "/x",
+              "match": "exact",
+              "label": "x",
+              "class": "secrets"
+            }
+          ]
+        }
+      },
+      "rule": "enum"
+    },
+    {
+      "name": "unknown section",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "guardrails": []
+        }
+      },
+      "rule": "closed section"
+    },
+    {
+      "name": "control kind",
+      "valid": false,
+      "document": {
+        "schema_version": "fabric.deployment-policy/v1",
+        "policy_id": "acme-capture",
+        "policy_version": 1,
+        "tenant_id": "tenant-a",
+        "workload_id": "agent-1",
+        "privacy": {
+          "model.exchange.request": "retain_original"
+        },
+        "storage": {
+          "backend": "local",
+          "region": "local",
+          "key_id": "kid-1"
+        },
+        "retention": {
+          "days": 30
+        },
+        "required_integrations": [],
+        "deployment": {
+          "profile": "local",
+          "image_digest": "local",
+          "tls_required": false,
+          "encrypted_store_required": false
+        },
+        "security_context": {
+          "control_hosts": [
+            {
+              "host": "x.example",
+              "label": "x",
+              "control_kind": "judge"
+            }
+          ]
+        }
+      },
+      "rule": "enum"
     }
   ]
 }

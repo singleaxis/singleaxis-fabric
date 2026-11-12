@@ -55,11 +55,13 @@ def capture_run(
     root: Path, run_id: str, port: int, body: Callable[[TracerProvider], None], *,
     exec_hook: bool = True, monkeypatch: pytest.MonkeyPatch,
     before: Callable[[Any], None] | None = None, after: Callable[[], None] | None = None,
+    capture_policy: Any = None, http_hosts: tuple[str, ...] = (),
 ) -> Export:  # fmt: skip
     """``body(provider)`` under real capture (``provider`` is the destination's tracer
     provider, for the application's own Fabric client); ``before(handle)`` runs after
-    install and ``after()`` after the body, before the drain (fault injection). Returns
-    the export."""
+    install and ``after()`` after the body, before the drain (fault injection).
+    ``capture_policy`` is the deployment policy the install runs with and ``http_hosts``
+    the non-model HTTP hook's host allowlist (spec 057 P2). Returns the export."""
     root.mkdir(parents=True)
     emitter = fabric._loss.LossEmitter()
     monkeypatch.setattr(fabric._loss, "_EMITTER", emitter)
@@ -70,13 +72,15 @@ def capture_run(
     store = LocalFilesystemContentStore(root=str(root / "store"), tenant_id=TENANT)
     handle = wire.install(
         store=store, tracer_provider=provider, patch_httpx=True, patch_aiohttp=False,
-        id_key=ID_KEY, source_id=SOURCE,
+        id_key=ID_KEY, source_id=SOURCE, capture_policy=capture_policy,
         extra_endpoints=(wire.EndpointMatcher(
             endpoint_id="fixture-model", dialect="openai", hosts=frozenset({"127.0.0.1"}),
             ports=frozenset({port}), schemes=frozenset({"http"}),
         ),),
     )  # fmt: skip
-    channels = hooks.install(exec=True, host_label=HOST_LABEL) if exec_hook else None
+    channels = (hooks.install(exec=exec_hook, host_label=HOST_LABEL if exec_hook else None,
+                              http_hosts=http_hosts)
+                if exec_hook or http_hosts else None)  # fmt: skip
     try:
         if before is not None:
             before(handle)

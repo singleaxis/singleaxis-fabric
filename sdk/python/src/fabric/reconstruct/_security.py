@@ -37,6 +37,25 @@ holds a grant snapshot, every control row and every tool call names the latest s
 candidates when the snapshots before it come from more than one source epoch, whose
 order is only a wall-clock order). A run without a snapshot carries no such field.
 
+**Rows derived from process and network evidence** (§4.3, §4.4; WP7-10, WP7-13). Two kinds
+of row have no security record of their own:
+
+- a **hook program**: an ``exec.subprocess`` effect the capture worker classified by the
+  customer's ``hook_programs`` list (``fabric.hook.program_label``), or a host ``exec``
+  event whose executable digest is a listed path's. Basis ``process``; the outcome is the
+  listed ``exit_map``'s (``configured_exit_map``), else ``unknown``; the exit code is
+  shown either way;
+- a **control contact**: one ``http.nonmodel`` request to a listed ``control_hosts``
+  entry, or a host ``connect`` to a listed ``control_addresses`` entry. Kind from the
+  list, phase ``observation``, decision ``unknown`` (derivation ``literal``: nothing was
+  derived) unless the reader's capture policy gives a ``decision_pointer`` and the
+  retained response maps (``configured_extract``).
+
+Both link to a tool call by the 056 window rule (§4.2 conditions 1-3), never by name: one
+open window -> ``sequence_bracket``, inferred, tentative; several -> ``ambiguous`` with
+every candidate; none -> no link. A tentative link gates its call like any other resolved
+link (F5-F7).
+
 "Gates T" (F5-F7) means a link to T that is not ``ambiguous``: a ``pending_set`` row gates
 no call until the caller passes the id.
 """
@@ -52,6 +71,7 @@ from fabric.reconstruct._controls import AUTHENTICATION, invariant_conflict
 from fabric.reconstruct._report import LIST_MAX, chain, not_observed
 
 __all__ = [
+    "CLASSIFY_POINTS",
     "FACT_CODES",
     "FACT_TEXT",
     "SECURITY_POINTS",
@@ -84,6 +104,9 @@ _REASONS: Final = (
 #: Manifest capture-point rows that make the controls chain observed (§6.4 capture manifest).
 SECURITY_POINTS: Final = frozenset({"records.control", "records.grant", "records.extension"})
 GRANT_POINT: Final = "records.grant"
+#: Loaded classification lists that make the controls chain observed (§6.4).
+CLASSIFY_POINTS: Final = frozenset({"classify.control_hosts", "classify.control_addresses",
+                                    "classify.hook_programs"})  # fmt: skip
 _BASES: Final = ("offered", "listed", "declared")
 _KINDS: Final = frozenset({
     "guardrail", "policy", "permission_request", "approval", "rate_limit", "budget", "other",
@@ -520,6 +543,73 @@ def _link_hook(item: dict[str, Any], *, call_ids: set[str], wire: bool,
         item["unmatched"] = True
 
 
+_POSITION_KEYS: Final = ("attempt_uid", "event_id", "source_id", "source_epoch", "sequence",
+                         "start_ns", "segment_id")  # fmt: skip
+
+
+def _latency_ms(item: Mapping[str, Any]) -> float | None:
+    start, end = item.get("start_ns"), item.get("end_ns")
+    if isinstance(start, int) and isinstance(end, int) and end >= start:
+        return round((end - start) / 1e6, 3)
+    return None
+
+
+def _process_hook(source: Mapping[str, Any]) -> dict[str, Any]:
+    """A hook row for a classified hook program (§4.3, §5.4 E01, E03, E07-E09): an exec
+    effect or a host exec event carrying ``hook_program`` (the customer's label)."""
+    item = {key: source[key] for key in _POSITION_KEYS if key in source}
+    outcome = source.get("hook_outcome")
+    item.update(basis="process", program_label=str(source["hook_program"]),
+                name=str(source["hook_program"]),
+                outcome=outcome if outcome in _HOOK_OUTCOMES else "unknown")  # fmt: skip
+    if item["outcome"] != "unknown":
+        item["derivation"] = "configured_exit_map"
+    for key in ("exit_code", "signal"):
+        if isinstance(source.get(key), int):
+            item[key] = source[key]
+    if "via" in source:
+        item["via"] = source["via"]
+    latency = _latency_ms(source)
+    if latency is not None:
+        item["latency_ms"] = latency
+    return item
+
+
+def _contact(source: Mapping[str, Any]) -> dict[str, Any]:
+    """A control row for one contact with a listed control endpoint (§4.4)."""
+    item = {key: source[key] for key in _POSITION_KEYS if key in source}
+    kind = source.get("control_kind")
+    decision = source.get("decision")
+    extracted = decision in _DECISIONS and decision != "unknown"
+    item.update(attrs={}, invariant_conflict=False, phase="observation", contact=True,
+                decision=decision if extracted else "unknown",
+                derivation="configured_extract" if extracted else "literal")  # fmt: skip
+    if kind in _KINDS:
+        item["kind"] = kind
+    if isinstance(source.get("label"), str):
+        item["engine_name"] = source["label"]
+    latency = _latency_ms(source)
+    if latency is not None:
+        item["latency_ms"] = latency
+    for key in ("status", "body_not_retained", "via", "host_connects"):
+        if key in source:
+            item[key] = source[key]
+    return item
+
+
+def _link_window(item: dict[str, Any], window: Sequence[str]) -> None:
+    """The 056 window rule for a derived row, in place: one open tool call ->
+    ``sequence_bracket`` (inferred, tentative), which gates it; several -> ambiguous."""
+    item.update(method="none", unmatched=False)
+    if len(window) == 1:
+        item["link"] = _gates(window[0], "sequence_bracket", "inferred", "tentative", "resolved")
+        item.update(method="sequence_bracket", gated=window[0])
+    elif window:
+        item["link"] = _gates(window[0], "sequence_bracket", "inferred", "tentative",
+                              "ambiguous", pool=list(window))  # fmt: skip
+        item.update(method="sequence_bracket", candidates=list(window)[:LIST_MAX])
+
+
 def _effects_by_call(attribution: Any, inp: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Per tool call id, every effect the 056 result attributes to it: each effect link that
     names it (ambiguous candidates included, with their state), and each A0 effect whose
@@ -569,9 +659,22 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
                       index=index, by_uid=by_uid)  # fmt: skip
     for item in hooks:
         _link_hook(item, call_ids=call_ids, wire=wire, calls=calls)
+    # Rows derived from process and network evidence (WP7-10, WP7-13), linked by window.
+    windows: Mapping[str, Sequence[str]] = getattr(attribution, "windows", None) or {}
+    derived_hooks = [_process_hook(e) for e in (*inp.get("effects", ()),
+                                                *inp.get("sensor_hooks", ()))
+                     if e.get("hook_program")]  # fmt: skip
+    contacts = [_contact(c) for c in (*inp.get("control_contacts", ()),
+                                      *inp.get("sensor_contacts", ()))]  # fmt: skip
+    for item in (*derived_hooks, *contacts):
+        _link_window(item, windows.get(item["attempt_uid"], ()))
+    hooks += derived_hooks
+    controls += contacts
+    by_uid.update((c["attempt_uid"], c) for c in contacts)
 
     facts: dict[str, list[str]] = defaultdict(list)
-    observed = present(sec) or bool(sec.get("active_points"))
+    observed = (present(sec) or bool(sec.get("active_points")) or bool(derived_hooks)
+                or bool(contacts))  # fmt: skip
     declared = [g for g in grants if g["basis"] == "declared"]
     if observed and not declared:
         facts["no_declared_grant"] = []
@@ -687,10 +790,14 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         reasons.append("control_unmatched")
     if facts.get("control_pending_at_end"):
         reasons.append("control_pending_at_end")
-    if any(c["method"] == "pending_set" for c in controls):
+    if any(c["method"] == "pending_set" for c in controls) or any(
+        i.get("link", {}).get("state") == "ambiguous" for i in (*derived_hooks, *contacts)
+    ):
         reasons.append("ambiguous_attribution")
     if GRANT_POINT in set(sec.get("active_points", ())) and not declared:
         reasons.append("grant_not_recorded")
+    if any(c.get("body_not_retained") for c in contacts):
+        reasons.append("body_not_retained")  # a decision_pointer is listed; nothing to read
     if sec.get("sequence_gaps"):
         reasons.append("sequence_gap")
     if facts.get("control_invariant_conflict"):
@@ -736,7 +843,9 @@ def analyse(  # noqa: PLR0912, PLR0915 - one branch per fact and chain reason
         links: list[dict[str, Any]] = []
         link = item.get("link")
         # 052 already projects D06 ``gates`` and D05 ``resolves`` links on control steps.
-        if link is not None and item["method"] not in ("reported_ref", "ref_join"):
+        # A row derived from a host event has no step of its own to carry a link.
+        if (link is not None and item["method"] not in ("reported_ref", "ref_join")
+                and "via" not in item):  # fmt: skip
             links.append(dict(link))
         in_force = item.get("grant_in_force")
         # An ambiguous answer stays in the view and the report's counts: the projection's
@@ -908,7 +1017,10 @@ def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
                           ("decision", "decision"), ("engine_name", "engine"),
                           ("reason_code", "reason_code"), ("latency_ms", "latency_ms"),
                           ("mode", "mode"), ("decided_by", "decided_by"),
-                          ("gated_kind", "gated_kind"), ("error_class", "error_class"),
+                          ("gated_kind", "gated_kind"), ("status", "status"),
+                          ("via", "via"), ("body_not_retained", "body_not_retained"),
+                          ("host_connects", "host_connects"),
+                          ("error_class", "error_class"),
                           ("signal", "signal"), ("evidence_ref", "evidence"),
                           ("map_row", "map_row")):  # fmt: skip
             if key in item:
@@ -940,7 +1052,7 @@ def view_events(  # noqa: PLR0912 - one branch per row kind and optional field
                "sequence": item["sequence"], "basis": item["basis"],
                "outcome": item["outcome"], "method": item["method"]}  # fmt: skip
         for key in ("name", "phase", "event_name", "reason_code", "exit_code", "signal",
-                    "latency_ms", "program_label"):  # fmt: skip
+                    "latency_ms", "program_label", "derivation", "via"):  # fmt: skip
             if key in item:
                 row[key] = item[key]
         link = _link_view(item, labels)

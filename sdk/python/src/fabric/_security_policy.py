@@ -6,10 +6,12 @@ The customer's classification lists for security-context capture: control endpoi
 (``control_hosts``, ``control_addresses``), hook programs, watched paths, tool-result
 denial markers and the grant pseudonymisation switches. This module only checks the
 section's shape when the policy is parsed, so the policy digest binds a well-formed
-section; loading the lists into frozen tables and applying them is later work (spec 057
-WP7-9). Classification is customer configuration, never a built-in list of products
-(B9). A malformed section raises ``ValueError`` with fixed text (never a value), as every
-other policy section does.
+section; ``_classify.py`` loads the lists into frozen tables at install (spec 057 WP7-9).
+Classification is customer configuration, never a built-in list of products (B9). A
+malformed section raises ``ValueError`` with fixed text (never a value), as every other
+policy section does. A list longer than 256 entries is well-formed: it is refused at
+install with the status ``refused(over_limit)`` and never applied, never a raise (WP7-9);
+every entry is still checked here, so the digest binds well-formed entries only.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-MAX_ENTRIES = 256
+MAX_ENTRIES = 256  # applied at install (``_classify.py``): a longer list is refused there
 MAX_TEXT = 1024  # a literal value or JSON Pointer
 MAX_MAP = 64  # decision_map pairs, marker values, exit_map codes
 MAX_MARKER = 4096  # an equals/prefix marker
@@ -68,7 +70,7 @@ def _match(pattern: re.Pattern[str], value: object) -> str:
 
 
 def _entries(value: object) -> Sequence[object]:
-    if not isinstance(value, list) or len(value) > MAX_ENTRIES:
+    if not isinstance(value, list):
         raise _fail()
     return value
 

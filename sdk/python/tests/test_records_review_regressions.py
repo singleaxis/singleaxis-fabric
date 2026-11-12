@@ -292,7 +292,7 @@ def test_g_production_without_a_key_emits_no_clear_caller_id(
     gate = ContentGate("production", "enabled", None, policy)
     handle = Handle(gate=gate, protector=Protector(policy, max_body_bytes=1 << 20))
     try:
-        handle.gate = gate  # type: ignore[attr-defined]
+        handle.gate = gate
         handle.records = records = RecordsInput(handle)  # type: ignore[arg-type]
         assert records.identity_mode == "pseudonymous"
         attempt = records.begin("tool_call", "sdk.records", step_id="patient-123",

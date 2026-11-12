@@ -15,6 +15,28 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Hook programs and control endpoints you declare (spec 057 P2, first
+  part).** The capture policy's `security_context` lists are now loaded at
+  install and applied. `hook_programs`: a subprocess whose exact path or
+  `argv[0]` basename you list is recorded with your label and shown as a
+  hook row (`basis=process`); an `exit_map` turns its exit code into an
+  outcome (`passed`, `blocked`, ...), otherwise the outcome is `unknown` and
+  the code is still shown. `control_hosts`: each request the HTTP hook sees
+  to a listed host is a control row (`decision=unknown`, status, latency);
+  its bodies are stored only under the new roles `control.exchange.request`
+  and `control.exchange.response`, off unless the policy names them.
+  `python -m fabric.reconstruct ... --capture-policy FILE` applies, offline,
+  an entry's `decision_pointer` and `decision_map` to a retained response
+  (`configured_extract`), and matches host-sensor `exec` and `connect`
+  records to listed hook paths and `control_addresses`. Matching is exact
+  only. A list over 256 entries (or with duplicate or unusable entries) is
+  refused with a status in the capture manifest and never applied; install
+  does not fail. The manifest carries each list's state, count and digest
+  (`fabric.manifest.classifications`), never its contents. See
+  [docs/action-reconstruction.md](docs/action-reconstruction.md).
+- **Spawn errors carry the errno name.** When `subprocess` raises an
+  `OSError` (for example on a non-executable file), the exec record now has
+  `errno` (`EACCES`, `EPERM`, `ENOENT`, ...) beside `error_class`.
 - **The `fabric` command (spec 058, first part).** `pip install
   "singleaxis-fabric[cli]"` installs `fabric` and its alias `singleaxis-fabric`
   (also `python -m fabric.cli`). This release ships `fabric version` and
@@ -319,6 +341,14 @@ it never makes, applies, waits for or returns one.
 
 ### Fixed
 
+- **A declared hook program no longer counts as a tool call's effect.**
+  In an agent whose tools run remotely and whose pre-tool hook runs locally,
+  the hook process was linked to each tool call, so the report showed no
+  tool call without an effect and an `effects` chain of `complete`. A
+  process listed in `security_context.hook_programs` is now never an effect:
+  the call stays under `tool_calls_without_effect` and the chain is
+  `partial(none_in_window)`. A process you have not listed is linked as
+  before, tentatively.
 - **Spooled delivery to a remote Node is much faster.** Each process sent its
   stored request and response bodies to the Node one per request, one at a
   time, so it delivered at one round trip per body: about 3 to 14 model
