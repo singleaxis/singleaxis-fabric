@@ -1017,6 +1017,11 @@ RECORD_KEY_CHECKS: Mapping[str, Mapping[str, Any]] = {
         ),
         "source": "validator",
     },
+    "fabric.sensor.watch_id": {
+        "type": "string",
+        "pattern": "^pth-[0-9a-f]{32}$",
+        "examples": ("pth-9f86d081884c7d659a2feaa0c55ad015",),
+    },
     "fabric.sensor.watch_label": {
         "type": "string",
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
@@ -1277,6 +1282,9 @@ RECORD_KEY_CONDITIONS: Mapping[str, Mapping[str, tuple[str, ...]]] = {
         "capture_point_kinds": ("S",),
     },
     "fabric.sensor.watch_class": {
+        "capture_point_kinds": ("S",),
+    },
+    "fabric.sensor.watch_id": {
         "capture_point_kinds": ("S",),
     },
     "fabric.sensor.watch_label": {

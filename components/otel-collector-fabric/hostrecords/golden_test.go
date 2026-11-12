@@ -144,6 +144,7 @@ func TestSpanGoldens(t *testing.T) {
 	t.Run("records", func(t *testing.T) {
 		for _, src := range g.Sources {
 			cfg := goldenSourceConfig(t, g, src.Kind, src.Label)
+			cfg.Classes = append(cfg.Classes, "exit") // record-exit.json (spec 057 OD-13)
 			s := mustOpen(t, cfg)
 			for _, ge := range src.Events {
 				var e Event
@@ -211,6 +212,17 @@ func TestSpanGoldens(t *testing.T) {
 		pending, _ := s.Pending()
 		manifest := pending[len(pending)-1]
 		compareSpan(t, "manifest-zero", batchSpans(t, manifest)[0], want[0])
+	})
+	t.Run("manifest with sensor classes", func(t *testing.T) {
+		// spec 057 §6.4: the exit and syscall-result rows after the source's own
+		_, want := fixtureSpans(t, "valid/manifest-sensor-classes.json")
+		cfg := goldenSourceConfig(t, g, KindEBPF, "build-host-7/ebpf")
+		cfg.Classes = append(cfg.Classes, "exit")
+		cfg.SyscallResults = true
+		s := mustOpen(t, cfg)
+		defer crash(t, s)
+		pending, _ := s.Pending()
+		compareSpan(t, "manifest-sensor-classes", batchSpans(t, pending[len(pending)-1])[0], want[0])
 	})
 	markers := []struct {
 		fixture string

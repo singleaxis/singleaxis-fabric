@@ -101,6 +101,46 @@
             "ContainerID": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
             "PodUID": "6a1d9c2e-4b7f-4e10-9a3c-2f5d8e7b1c04"
           }
+        },
+        {
+          "fixture": "valid/record-exit.json",
+          "event": {
+            "TimeUnixNano": 1791331201217500000,
+            "Class": "exit",
+            "Result": "unknown",
+            "Pid": 4121,
+            "Ppid": 4100,
+            "NsPid": 41,
+            "NsPpid": 7,
+            "PidNS": 4026532481,
+            "ProcessStartNs": 60123217448,
+            "CgroupID": 9123,
+            "Scope": "agent",
+            "Signal": 31
+          }
+        },
+        {
+          "fixture": "valid/record-file-watched.json",
+          "event": {
+            "TimeUnixNano": 1791331201218000000,
+            "Class": "file",
+            "Syscall": "openat",
+            "Result": "failed",
+            "Errno": "EACCES",
+            "Pid": 4121,
+            "Ppid": 4100,
+            "NsPid": 41,
+            "NsPpid": 7,
+            "PidNS": 4026532481,
+            "CgroupID": 9123,
+            "Scope": "agent",
+            "Watch": {
+              "path": "/etc/agent/acl.json",
+              "match": "exact",
+              "label": "agent-acl",
+              "class": "permission_config"
+            }
+          }
         }
       ]
     },

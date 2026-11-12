@@ -293,6 +293,7 @@ var coverageKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.sensor.signal":                                    intAtLeast(1),
 	"fabric.sensor.watch_label":                               matches(operatorLabelPattern),
 	"fabric.sensor.watch_class":                               oneOf(toSet("permission_config", "hook_config", "extension_dir", "credential_file", "other")),
+	"fabric.sensor.watch_id":                                  matches(pseudonymPattern("pth")),
 }
 
 // operatorLabelKeys are operator labels (spec 049 §4.2 LABEL exposure): under
@@ -535,6 +536,7 @@ var coverageKeyPlacements = map[string][]string{
 	"fabric.sensor.upstream_loss_reason":       {"periodic"},
 	"fabric.sensor.upstream_lost":              {"periodic"},
 	"fabric.sensor.watch_class":                {"record"},
+	"fabric.sensor.watch_id":                   {"record"},
 	"fabric.sensor.watch_label":                {"record"},
 	"fabric.session_id":                        {"exchange", "run_start"},
 	"fabric.source.epoch":                      {"exchange", "record", "loss", "run_start", "run_end", "segment_seal", "periodic", "final"},
@@ -703,6 +705,7 @@ var recordKeyValidators = map[string]func(pcommon.Value) bool{
 	"fabric.sensor.signal":                     intAtLeast(1),
 	"fabric.sensor.syscall":                    oneOf(toSet("execve", "execveat", "connect", "accept", "bind", "socket", "openat", "open")),
 	"fabric.sensor.watch_class":                oneOf(toSet("permission_config", "hook_config", "extension_dir", "credential_file", "other")),
+	"fabric.sensor.watch_id":                   matches(pseudonymPattern("pth")),
 	"fabric.sensor.watch_label":                matches(operatorLabelPattern),
 	"fabric.source.epoch":                      intAtLeast(0),
 	"fabric.source.sequence":                   intAtLeast(0),
@@ -754,6 +757,7 @@ var recordKeyConditions = map[string]map[string][]string{
 	"fabric.sensor.signal":           {"capture_point_kinds": {"S"}},
 	"fabric.sensor.syscall":          {"capture_point_kinds": {"S"}},
 	"fabric.sensor.watch_class":      {"capture_point_kinds": {"S"}},
+	"fabric.sensor.watch_id":         {"capture_point_kinds": {"S"}},
 	"fabric.sensor.watch_label":      {"capture_point_kinds": {"S"}},
 	"fabric.tenant_id":               {"capture_point_kinds": {"S"}},
 	"http.request.method":            {"capture_points": {"http.nonmodel"}},

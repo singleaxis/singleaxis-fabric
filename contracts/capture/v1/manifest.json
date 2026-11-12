@@ -169,6 +169,9 @@
     {"path": "fixtures/valid/run-reconstruction-security-context.json", "sha256": "e3e68130c8a24181c6abf904c1393621a2001cf466bfba2f8ae0005611168897", "expectation": "valid", "expected_error": null},
     {"path": "schema/otlp-mapping-profile-v1.schema.json", "sha256": "681dd25e5192bb8d2a7a519615c83d3c44ca626dccee4b848c3cf5e5020e0deb", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json", "sha256": "6286c35fdc9487255815be99e4591bb4e51133e54d8376e82b812cafa2131490", "expectation": "invalid", "expected_error": "capture.reconstruction.chains"},
-    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "bf8542f4d2171c020145048012520c4b02f12c0c3d52bf9ab9de31c30d59e434", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"}
+    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "bf8542f4d2171c020145048012520c4b02f12c0c3d52bf9ab9de31c30d59e434", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
+    {"path": "fixtures/host/valid/manifest-sensor-classes.json", "sha256": "d453d714b25116a237d31ff3bd85c535604502531e4102a853452ce3e7fc5a35", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/host/valid/record-exit.json", "sha256": "6bfaa713b2eff7278f786076e3b13025b13870761c1a1f9741c24bd6111958d7", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/host/valid/record-file-watched.json", "sha256": "402751e5049d9dc626746fb8ca04f56c0d24ceb95e12828b36e8af4d26320bc0", "expectation": "valid", "expected_error": null}
   ]
 }
