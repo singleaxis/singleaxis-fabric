@@ -446,10 +446,22 @@ def next_command(project: _project.Project) -> str:
     if "run" in BUILT:
         return "next: fabric run -- <your agent command>"
     return (
-        f"next: set -a; . {shlex.quote(str(project.compiled_env_path))}; set +a; "
+        f"next: in the agent's shell run  {compiled_env_route(project.compiled_env_path)}  "
+        'then start your agent with that python (it needs "singleaxis-fabric[otlp]")'
+    )
+
+
+def compiled_env_route(path: Path) -> str:
+    """POSIX shell that exports the compiled environment and turns on Python's zero-code
+    autoload. The file is dotenv (the value is everything after the first ``=``), not
+    shell: sourcing it would strip the quotes of ``FABRIC_WIRE_ENDPOINTS``' JSON, and the
+    SDK would then install no capture at all. Each line is exported as one word instead.
+    ``PYTHONPATH`` keeps what it held, after the autoload directory."""
+    return (
+        'while IFS= read -r line; do case "$line" in [A-Z]*=*) export "$line";; esac; '
+        f"done < {shlex.quote(str(path))}; "
         'export FABRIC_WIRE_AUTOLOAD=1 PYTHONPATH="$(python -m fabric.wire '
-        '--print-autoload-path)"; then run your agent with that python (it needs '
-        '"singleaxis-fabric[otlp]")'
+        '--print-autoload-path)${PYTHONPATH:+:$PYTHONPATH}";'
     )
 
 

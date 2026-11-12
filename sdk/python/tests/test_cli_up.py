@@ -13,6 +13,8 @@ import json
 import os
 import platform
 import shutil
+import subprocess
+import sys
 import threading
 import urllib.error
 import urllib.request
@@ -117,6 +119,46 @@ def test_the_next_command_up_prints_is_one_this_release_builds(
         assert "--print-autoload-path" in line
     monkeypatch.setattr(cli, "BUILT", cli.BUILT | {"run"})
     assert _up.next_command(loaded) == "next: fabric run -- <your agent command>"
+
+
+@pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
+def test_the_compiled_environment_route_exports_every_value_exactly(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The route `up` prints until `fabric run` ships, executed by a real shell. Sourcing
+    the dotenv file (`set -a; . compiled.env`) stripped the quotes of the
+    FABRIC_WIRE_ENDPOINTS JSON that `init --provider` compiles, so the SDK installed no
+    capture at all (FW-014), and split a path with a space. Every value must arrive
+    byte for byte, and an existing PYTHONPATH must be kept after the autoload directory."""
+    from fabric import cli  # noqa: PLC0415
+    from fabric.cli import _init, _project  # noqa: PLC0415
+    from fabric.wire._config import parse_endpoints  # noqa: PLC0415
+
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state dir $HOME 'q' *"))
+    _init.run(parse(["init", "--provider", "https://models.example.com/v1"]))
+    loaded = _project_of(project)
+    _, compiled = _project.read_compiled_env(loaded.compiled_env_path)
+    assert '"' in compiled["FABRIC_WIRE_ENDPOINTS"] and " " in compiled["FABRIC_OTLP_CERTIFICATE"]
+    if "run" not in cli.BUILT:
+        assert _up.compiled_env_route(loaded.compiled_env_path) in _up.next_command(loaded)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "python").write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    (bin_dir / "python").chmod(0o755)
+    dump = 'exec python -c "import json, os; print(json.dumps(dict(os.environ)))"'
+    result = subprocess.run(  # noqa: S603
+        ["sh", "-c", _up.compiled_env_route(loaded.compiled_env_path) + " " + dump],  # noqa: S607
+        env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "PYTHONPATH": "/kept"},
+        capture_output=True, text=True, timeout=60, check=False,
+    )  # fmt: skip
+    assert result.returncode == 0, result.stderr
+    seen = json.loads(result.stdout)
+    for name, value in compiled.items():
+        assert seen.get(name) == value, name
+    assert parse_endpoints(seen["FABRIC_WIRE_ENDPOINTS"])
+    assert seen["FABRIC_WIRE_AUTOLOAD"] == "1"
+    autoload, _, kept = seen["PYTHONPATH"].partition(os.pathsep)
+    assert Path(autoload).is_dir() and kept == "/kept"
 
 
 def test_every_image_is_pinned_by_digest(project: Path) -> None:
