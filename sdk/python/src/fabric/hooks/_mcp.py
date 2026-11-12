@@ -519,13 +519,23 @@ def _stop(channel: McpChannel) -> Callable[[Any], Any]:
     return factory
 
 
+def _session_of(streams: weakref.WeakKeyDictionary[Any, _Session], stream: object) -> Any:
+    """The session noted for ``stream``, else ``None``. The patched methods run for every
+    subprocess stream of the backend, not only an MCP server's, so the lookup never
+    raises (a stream that cannot be weakly referenced or hashed is simply not noted)."""
+    try:
+        return streams.get(stream)
+    except Exception:
+        return None
+
+
 def _send(channel: McpChannel) -> Callable[[Any], Any]:
     switch, writers = channel.switch, channel.writers
 
     def factory(original: Callable[..., Awaitable[Any]]) -> Any:
         @functools.wraps(original)
         async def send(self: Any, item: Any, *args: Any, **kwargs: Any) -> Any:
-            session = writers.get(self) if switch.on else None
+            session = _session_of(writers, self) if switch.on else None
             result = await original(self, item, *args, **kwargs)
             if session is not None:
                 channel.feed(session, CLIENT, item)
@@ -542,7 +552,7 @@ def _receive(channel: McpChannel) -> Callable[[Any], Any]:
     def factory(original: Callable[..., Awaitable[Any]]) -> Any:
         @functools.wraps(original)
         async def receive(self: Any, *args: Any, **kwargs: Any) -> Any:
-            session = readers.get(self) if switch.on else None
+            session = _session_of(readers, self) if switch.on else None
             data = await original(self, *args, **kwargs)
             if session is not None:
                 channel.feed(session, SERVER, data)

@@ -412,16 +412,52 @@ def test_recorder_faults_never_reach_the_agent(fault: str, monkeypatch: pytest.M
     expected = run_stdio()
     rig = _rig()
     try:
-        if fault == "recorder_raises":
+        calls = []
 
-            def boom(*args: Any, **kwargs: Any) -> Any:
-                raise RuntimeError("recorder failed")
+        def boom(*args: Any, **kwargs: Any) -> Any:
+            calls.append(1)
+            raise RuntimeError("recorder failed")
 
-            monkeypatch.setattr(_records.Attempt, "emit", boom)
-        else:
-            monkeypatch.setattr(_records.Attempt, "emit", lambda *a, **k: False)
+        def full(*args: Any, **kwargs: Any) -> bool:
+            calls.append(1)
+            return False
+
+        # the hook submits through emit_resolved; emit is patched too for any other path
+        for name in ("emit", "emit_resolved"):
+            monkeypatch.setattr(_records.Attempt, name, boom if fault == "recorder_raises"
+                                else full)  # fmt: skip
         assert run_stdio() == expected
         assert rig.channel.status()["messages"] == 32
+        assert len(calls) >= 32  # the fault was reached for every record, not bypassed
+    finally:
+        rig.close()
+
+
+@pytest.mark.parametrize("wrap", ["send", "receive"])
+def test_a_stream_the_hook_cannot_note_never_raises_into_the_caller(wrap: str) -> None:
+    """The backend's stream methods are patched for every subprocess of the application,
+    not only an MCP server's: a stream object that cannot be weakly referenced passes
+    through with the original's result and nothing recorded."""
+
+    class Slotted:  # no __weakref__: a WeakKeyDictionary lookup of it raises TypeError
+        __slots__ = ()
+
+    sentinel = object()
+
+    async def original(self: Any, *args: Any) -> Any:
+        return sentinel
+
+    rig = _rig()
+    try:
+        factory = _mcp._send(rig.channel) if wrap == "send" else _mcp._receive(rig.channel)
+        wrapped = factory(original)
+        stream = Slotted()
+
+        async def call() -> Any:
+            return await (wrapped(stream, b"x\n") if wrap == "send" else wrapped(stream))
+
+        assert anyio.run(call) is sentinel
+        assert rig.records() == []
     finally:
         rig.close()
 
