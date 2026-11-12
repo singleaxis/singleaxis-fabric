@@ -15,6 +15,25 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Contracts for recording Node.js model calls (spec 055, unit 055-t1).**
+  No Node.js capture code ships yet; this sets down what it must do. The
+  coverage registry now describes the two TypeScript capture points: global
+  `fetch` and clients built on undici (`wire.ts.undici`), and Node's core
+  `http`/`https` as a separate opt-in (`wire.ts.node_http`), each with what
+  it can and cannot see. A new compatibility table,
+  `sdk/typescript/wire-qualification.json`, records which Node.js builds
+  actually publish request and response bytes: Node 22 and Node 24.0 to 24.3
+  do not, Node 24.4.0 (undici 7.11.0) and later do. CI re-checks four exact
+  builds with `scripts/typescript/audit-undici-channels.mjs`. Nothing is
+  claimed until the later gates pass. The diagnostics catalogue gains nine
+  Node.js messages (`FW-025` to `FW-033`), each with its fix, and an `sdk`
+  list saying which SDK emits each message. The status file
+  (`FABRIC_WIRE_STATUS_FILE`) now has a schema, and Python's documents
+  are tested against it. The native lock module's interface is fixed in
+  `sdk/typescript/native/fabric_wire_abi.h`. Contract validators now refuse
+  an unregistered capture point even when its name looks right, and refuse
+  a manifest whose 64-bit numbers went through a floating-point value.
+  Coverage contract 1.5.0, capture contract 1.10.0, diagnostics 1.1.0.
 - **Hook programs and control endpoints you declare (spec 057 P2, first
   part).** The capture policy's `security_context` lists are now loaded at
   install and applied. `hook_programs`: a subprocess whose exact path or
