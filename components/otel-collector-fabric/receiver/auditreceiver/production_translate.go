@@ -107,6 +107,10 @@ func (r *auditReceiver) hostEvent(ev *auditEvent) (hostrecords.Event, hostOutcom
 		if digests && fp != "" {
 			out.PathSHA256 = sha256Hex(fp)
 		}
+		// Spec 057 §4.3 (WP7-11, parity with the eBPF emitter): the label of
+		// a watched path, applied here; the record carries the label, the
+		// class and the entry's keyed id, never the path.
+		out.Watch = r.watch.Match(auditPathName(fp))
 	}
 	switch {
 	case pathMissing && argsMissing:
@@ -117,6 +121,22 @@ func (r *auditReceiver) hostEvent(ev *auditEvent) (hostrecords.Event, hostOutcom
 		out.Incomplete = "args"
 	}
 	return out, hostRecord
+}
+
+// auditPathName is a PATH record's name as the process passed it: auditd
+// writes a name with a space, quote or control byte as unquoted hex, and
+// any other as quoted text (which the parser unquotes). A clear name of an
+// absolute path starts with '/', which is not a hex digit; "(null)" and a
+// name that does not decode give "", which matches nothing.
+func auditPathName(raw string) string {
+	if raw == "" || raw[0] == '/' {
+		return raw
+	}
+	b, err := hex.DecodeString(raw)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func sha256Hex(s string) string {

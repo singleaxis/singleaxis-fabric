@@ -17,6 +17,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/receiver"
 	"go.uber.org/zap"
+
+	"github.com/singleaxis/singleaxis-fabric/components/otel-collector-fabric/hostrecords"
 )
 
 // logLike is the narrow logger surface used by the netlink helpers.
@@ -49,6 +51,9 @@ type auditReceiver struct {
 	bucket  *tokenBucket
 	conn    netlinkConn
 	stats   recvStats
+	// watch is the customer's watched_paths table (spec 057 §4.3), nil
+	// without production.watched_paths_file.
+	watch *hostrecords.WatchTable
 	// Production mode: the host source and the netlink loss counters the
 	// reader goroutine fills (production_netlink.go).
 	prod               *productionSink
