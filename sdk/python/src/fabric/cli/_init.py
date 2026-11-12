@@ -536,6 +536,11 @@ def write_config(options: argparse.Namespace, environ: Mapping[str, str], cwd: P
         )
         _set(document, "secrets.ca_file", str(target / IMPORTED_CA))
     _config.validate(document)
+    # Refuse what this release cannot compile (another profile, an ignored setting, an
+    # external CA beside a local Node) before the file changes: a refused `init` changes
+    # nothing, rather than writing the flags and then exiting 2 without the diff.
+    _project.compile_environment(_project.load(_config.Located(path, "cwd"), {}, environ,
+                                               document))  # fmt: skip
     happened: dict[str, Any] = {"path": str(path), "action": "kept"}
     if not exists:
         _write_text(path, render_document(document))

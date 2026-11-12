@@ -765,3 +765,27 @@ def test_a_setting_this_release_would_ignore_is_refused_not_dropped(
     (finding,) = report["findings"]
     assert finding["id"] == "FC-011" and finding["detail"].startswith(named)
     assert not (project / ".fabric").exists()
+
+
+@pytest.mark.parametrize(
+    ("line", "flags", "finding_id"),
+    [
+        ("node:\n  queue_size: 1073741824\n", ["--exec"], "FC-011"),
+        ("profile: production\ndestination:\n  preset: otlp\n"
+         "  otlp_endpoint: https://otel.example.com\n", ["--exec"], "FC-011"),
+        ("secrets:\n  ca_file: ./ca.pem\n", ["--http-host", "api.github.com"], "FC-004"),
+    ],
+)  # fmt: skip
+def test_a_refused_init_leaves_fabric_yaml_as_it_was(
+    line: str, flags: list[str], finding_id: str, project: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:  # fmt: skip
+    """`init` with flags wrote them into fabric.yaml and only then found that the file
+    cannot be compiled, so it exited 2 having changed the file without printing the diff.
+    A refused `init` changes nothing."""
+    before = "schema: fabric.config/v1\n" + line
+    (project / "fabric.yaml").write_text(before)
+    report = _json(["init", *flags], capsys)
+    assert (report["exit_code"], report["findings"][0]["id"]) == (2, finding_id)
+    assert (project / "fabric.yaml").read_text() == before
+    assert not list(project.glob("fabric.yaml.bak-*"))
