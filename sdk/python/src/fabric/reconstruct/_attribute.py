@@ -932,6 +932,10 @@ class ActionReader:
         self.classification = classification
         self.policy_digest = policy_digest
         self.id_key = id_key  # keys the ``hst-`` ids of the listed control addresses
+        # Runs read with the lists, and those whose manifest names the policy's digest: the
+        # CLI says so when the lists applied to no run (a silent no-op otherwise).
+        self.policy_runs = 0
+        self.policy_matched = 0
         self.in_process_tools = tuple(sorted(set(in_process_tools)))
         # Spec 057 P1: the opt-in wire derivation rules; none by default (§9.1).
         self.derivation = derivation if derivation is not None else _derive.Derivation()
@@ -985,6 +989,9 @@ class ActionReader:
     ) -> None:
         """Annotate one run's report entry (``run`` is the verifier's ``_Run``)."""
         reader = _RunReader(self, report, run, bodies)
+        if self.classification is not None:
+            self.policy_runs += 1
+            self.policy_matched += reader._classification() is not None
         sec = reader.security(gaps)
         # Spec 057 §6.4: a run with a security record or an active security capture point
         # is annotated too; any other run keeps the report it had (§9.1).
