@@ -101,7 +101,14 @@ it never makes, applies, waits for or returns one.
     is named (`FC-031`). A secrets directory inside the project is added to
     `.gitignore`, and a symlinked `.fabric` is refused (`down --purge` deletes
     nothing through it). Until `fabric run` ships, `fabric up` ends with the
-    command that works today (the compiled environment plus autoload).
+    command that works today (the compiled environment plus autoload); it
+    exports every value exactly, including the JSON of a `--provider`
+    endpoint, and keeps an existing `PYTHONPATH`. The sensor-running
+    finding (`FC-040`) says how to start an agent in the sensor's scope by
+    hand. `fabric up` and `fabric down` refuse a `--project` that is not the
+    one `fabric.yaml` names (`FC-032`); a refused `fabric init` leaves
+    `fabric.yaml` unchanged; `down --purge` also removes an agent cgroup
+    made by an `up` that failed or by one before a later `up --no-sensor`.
   - `fabric.yaml` refuses a value that looks like a secret (`FC-017`), and
     gains `secrets.id_key_file` and `secrets.ca_file` for a setup that keeps
     its own files.
