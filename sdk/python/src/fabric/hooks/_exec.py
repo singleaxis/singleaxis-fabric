@@ -112,6 +112,7 @@ from typing import TYPE_CHECKING, Any, Final, cast
 from .. import _classify
 from .._capture_scope import explicit_tool_attempt
 from .._capture_types import (
+    COUNTERS,
     EVIDENCE_ROLE,
     AnyBody,
     DescriptorOnlyBody,
@@ -128,7 +129,7 @@ if TYPE_CHECKING:
     from ._patches import PatchSet
     from ._producer import HookProducer
 
-__all__ = ["POINT", "ExecChannel", "install_channel"]
+__all__ = ["POINT", "ExecChannel", "exit_observed", "install_channel"]
 
 POINT: Final = "exec.subprocess"
 EVIDENCE_TYPE: Final = "fabric.exec.observation/v1"
@@ -1390,6 +1391,29 @@ def install_channel(producer: HookProducer, patches: PatchSet) -> ExecChannel:
             raise RuntimeError("exec.subprocess: a patch could not be applied")
     _CHANNELS.add(channel)
     return channel
+
+
+def exit_observed(popen: object, returncode: object, start_ns: int) -> bool:
+    """Spec 057 WP7-8: another hook channel saw the exit status of a child this channel
+    recorded the start of, where the application never waits for it itself (the MCP
+    library's stdio transport reads its server's return code from the event loop's
+    transport and never calls ``wait``). The status is recorded as this child's outcome
+    (``api: poll``), once; ``False`` when no channel tracks ``popen`` or the status is not
+    an ``int``. Never raises."""
+    if type(returncode) is not int:
+        return False
+    try:
+        for channel in list(_CHANNELS):
+            if not channel.switch.on:
+                continue
+            entry = channel._procs.get(id(popen))
+            if entry is None or entry[0]() is not popen:
+                continue
+            channel.returned(entry[1], returncode, "poll", start_ns)
+            return True
+    except Exception:
+        COUNTERS.internal_errors += 1
+    return False
 
 
 def _after_fork_in_child() -> None:

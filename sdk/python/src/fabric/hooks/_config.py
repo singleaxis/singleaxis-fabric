@@ -12,10 +12,11 @@ Two ways in, with different error rules:
   malformed: it disables only ``remote.sandbox``, which ``status()`` reports as
   ``disabled(unsupported_provider)`` (0.11.2); every other hook and capture run.
 
-Absent means disabled. This build registers three channels: ``exec.subprocess``
+Absent means disabled. This build registers four channels: ``exec.subprocess``
 (``FABRIC_WIRE_EXEC``), ``http.nonmodel`` (``FABRIC_WIRE_HTTP_HOSTS``, a JSON array of
-hosts) and ``remote.sandbox`` (``FABRIC_WIRE_REMOTE_SANDBOX``, comma-separated providers;
-only ``e2b``). ``FABRIC_WIRE_SANDBOX_HOSTS`` (a JSON array of hosts) declares the sandbox
+hosts), ``remote.sandbox`` (``FABRIC_WIRE_REMOTE_SANDBOX``, comma-separated providers;
+only ``e2b``) and ``mcp.client`` (``FABRIC_WIRE_MCP``, the MCP protocol library's stdio
+transport; spec 057 OD-4). ``FABRIC_WIRE_SANDBOX_HOSTS`` (a JSON array of hosts) declares the sandbox
 providers a deployment uses, for the manifest only (056 §4.4.1). The other spec 053
 switches name channels this build does not have; a set one is reported by ``status()``
 (``not_in_build``) and changes nothing.
@@ -39,7 +40,7 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 __all__ = [
-    "EXEC_ENV", "HOOK_ENV_NAMES", "HOST_LABEL_ENV", "HTTP_HOSTS_ENV", "MAX_HOSTS",
+    "EXEC_ENV", "HOOK_ENV_NAMES", "HOST_LABEL_ENV", "HTTP_HOSTS_ENV", "MAX_HOSTS", "MCP_ENV",
     "NOT_IN_BUILD_ENV", "REMOTE_SANDBOX_ENV", "SANDBOX_HOSTS_ENV", "SANDBOX_PROVIDERS",
     "HooksConfig", "HostRule", "canonical_host", "config_from_args", "config_from_env",
     "ipv6_text", "parse_host",
@@ -48,15 +49,15 @@ __all__ = [
 EXEC_ENV = "FABRIC_WIRE_EXEC"
 HOST_LABEL_ENV = "FABRIC_HOST_LABEL"
 HTTP_HOSTS_ENV = "FABRIC_WIRE_HTTP_HOSTS"
+MCP_ENV = "FABRIC_WIRE_MCP"
 REMOTE_SANDBOX_ENV = "FABRIC_WIRE_REMOTE_SANDBOX"
 SANDBOX_HOSTS_ENV = "FABRIC_WIRE_SANDBOX_HOSTS"
 # Spec 053 §4 switches of channels this build does not register.
 NOT_IN_BUILD_ENV: tuple[str, ...] = (
     "FABRIC_WIRE_EXEC_AUDIT", "FABRIC_WIRE_FILE_AUDIT", "FABRIC_WIRE_DB_DRIVERS",
-    "FABRIC_WIRE_MCP",
 )  # fmt: skip
 HOOK_ENV_NAMES: tuple[str, ...] = (
-    EXEC_ENV, HTTP_HOSTS_ENV, REMOTE_SANDBOX_ENV, SANDBOX_HOSTS_ENV, *NOT_IN_BUILD_ENV,
+    EXEC_ENV, HTTP_HOSTS_ENV, REMOTE_SANDBOX_ENV, SANDBOX_HOSTS_ENV, *NOT_IN_BUILD_ENV, MCP_ENV,
 )  # fmt: skip
 
 # Remote sandbox providers this build knows (056 §4.4.1, OD-3).
@@ -229,6 +230,7 @@ class HooksConfig:
     sandbox_hosts: tuple[HostRule, ...] = ()
     # FABRIC_WIRE_REMOTE_SANDBOX named a provider this build does not have (env only).
     remote_sandbox_unsupported: bool = False
+    mcp: bool = False
 
     def requested(self, point: str) -> bool:
         """Whether the channel at capture point ``point`` was asked for."""
@@ -238,11 +240,13 @@ class HooksConfig:
             return bool(self.http_hosts)
         if point == "remote.sandbox":
             return bool(self.remote_sandbox)
+        if point == "mcp.client":
+            return self.mcp
         return False
 
     @property
     def any_requested(self) -> bool:
-        return self.exec or bool(self.http_hosts) or bool(self.remote_sandbox)
+        return self.exec or bool(self.http_hosts) or bool(self.remote_sandbox) or self.mcp
 
     @property
     def sandbox_undeclared(self) -> bool:
@@ -264,20 +268,22 @@ def _label(value: object) -> str | None:
 
 def config_from_args(
     *, exec: object = False, host_label: object = None, http_hosts: object = (),
-    remote_sandbox: object = (), sandbox_hosts: object = (),
+    remote_sandbox: object = (), sandbox_hosts: object = (), mcp: object = False,
 ) -> HooksConfig:  # fmt: skip
     """The configuration of an explicit ``fabric.hooks.install(...)``: ``exec`` must be a
     ``bool`` (not a truthy string or int), ``host_label`` ``None`` or a bounded label,
     ``http_hosts`` and ``sandbox_hosts`` lists or tuples of host strings (a bare string is
     refused: it is not a list of hosts), ``remote_sandbox`` a list or tuple of provider
-    names (only ``"e2b"``). Malformed or contradictory arguments raise ``ValueError``
-    (fixed text, never the value)."""
+    names (only ``"e2b"``), ``mcp`` a ``bool``. Malformed or contradictory arguments raise
+    ``ValueError`` (fixed text, never the value)."""
     if type(exec) is not bool:
         raise ValueError("exec must be True or False")
+    if type(mcp) is not bool:
+        raise ValueError("mcp must be True or False")
     return HooksConfig(
         exec=exec, host_label=_label(host_label), http_hosts=_hosts(http_hosts, "http_hosts"),
         remote_sandbox=_providers(remote_sandbox),
-        sandbox_hosts=_hosts(sandbox_hosts, "sandbox_hosts"),
+        sandbox_hosts=_hosts(sandbox_hosts, "sandbox_hosts"), mcp=mcp,
     )  # fmt: skip
 
 
@@ -329,7 +335,7 @@ def config_from_env(
             http_hosts=_json_hosts(environ, HTTP_HOSTS_ENV),
             remote_sandbox=providers,
             sandbox_hosts=_json_hosts(environ, SANDBOX_HOSTS_ENV),
-            remote_sandbox_unsupported=unsupported,
+            remote_sandbox_unsupported=unsupported, mcp=_flag(environ, MCP_ENV),
         )  # fmt: skip
         return config, not_in_build
     except Exception:
