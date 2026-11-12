@@ -35,6 +35,13 @@ it never makes, applies, waits for or returns one.
   `--mcp-host HOST` lists an MCP host so that missing bodies are reported
   as `body_not_retained` instead of silently giving nothing.
 
+- **Less work per recorded event.** Every hook record now reads the caller's
+  tracing context once instead of twice, and skips two small rebuilds it did
+  not need. The MCP transport hook parses a pipe chunk that holds one whole
+  message without splitting it, and finds a late answer to an evicted request
+  by key instead of scanning the last 4096 requests. What is recorded is
+  unchanged.
+
 - **Hook programs and control endpoints you declare (spec 057 P2, first
   part).** The capture policy's `security_context` lists are now loaded at
   install and applied. `hook_programs`: a subprocess whose exact path or
