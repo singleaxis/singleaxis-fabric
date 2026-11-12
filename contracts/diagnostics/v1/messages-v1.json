@@ -167,7 +167,7 @@
      "fix": "correct the path in fabric.yaml (secrets.id_key_file or secrets.ca_file) and run `fabric init` again, or remove the setting so `fabric init` generates the secret"},
     {"id": "FC-040", "name": "sensor_started", "severity": "info",
      "text": "the host sensor is running and scoped to this project's agent cgroup",
-     "fix": "start the agent with `fabric run` so it joins the sensor's scope"},
+     "fix": "on Linux, start the agent from a shell in the sensor's scope: write that shell's PID to the cgroup.procs file of the cgroup named in the detail (`echo $$ | sudo tee DETAIL/cgroup.procs`), then start the agent from it; `fabric run` will do this for you once it ships"},
     {"id": "FC-041", "name": "sensor_off", "severity": "info",
      "text": "the host sensor is off by configuration",
      "fix": "set sensor.kind: auto in fabric.yaml and drop --no-sensor to start it where it can load"},

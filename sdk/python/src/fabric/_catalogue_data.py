@@ -463,7 +463,10 @@ CATALOGUE: dict[str, Any] = {
             "name": "sensor_started",
             "severity": "info",
             "text": "the host sensor is running and scoped to this project's agent cgroup",
-            "fix": "start the agent with `fabric run` so it joins the sensor's scope",
+            "fix": "on Linux, start the agent from a shell in the sensor's scope: write "
+            "that shell's PID to the cgroup.procs file of the cgroup named in the "
+            "detail (`echo $$ | sudo tee DETAIL/cgroup.procs`), then start the agent "
+            "from it; `fabric run` will do this for you once it ships",
         },
         {
             "id": "FC-041",

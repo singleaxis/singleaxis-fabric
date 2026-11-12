@@ -121,6 +121,22 @@ def test_the_next_command_up_prints_is_one_this_release_builds(
     assert _up.next_command(loaded) == "next: fabric run -- <your agent command>"
 
 
+def test_no_fix_sends_the_operator_to_a_command_this_release_does_not_build() -> None:
+    """Ease of integration: FC-040 (the sensor is running) told the operator to start the
+    agent with `fabric run`, which this release answers with FC-010, so nothing ever
+    joined the sensor's scope. A fix may name an unbuilt command only beside the route
+    that works today."""
+    import re  # noqa: PLC0415
+
+    from fabric import cli  # noqa: PLC0415
+    from fabric._catalogue_data import CATALOGUE  # noqa: PLC0415
+
+    for message in CATALOGUE["messages"]:
+        for command in re.findall(r"`fabric (\w+)", message["fix"]):
+            if command not in cli.BUILT:
+                assert "once it ships" in message["fix"], message["id"]
+
+
 @pytest.mark.skipif(shutil.which("sh") is None, reason="needs a POSIX shell")
 def test_the_compiled_environment_route_exports_every_value_exactly(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

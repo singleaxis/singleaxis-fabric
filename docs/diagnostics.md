@@ -218,7 +218,9 @@ again, or remove the setting so `fabric init` generates the secret.
 
 `sensor_started`, info: the host sensor is running and scoped to this project's agent cgroup.
 
-Fix: start the agent with `fabric run` so it joins the sensor's scope.
+Fix: on Linux, start the agent from a shell in the sensor's scope: write that shell's PID to the
+cgroup.procs file of the cgroup named in the detail (`echo $$ | sudo tee DETAIL/cgroup.procs`), then
+start the agent from it; `fabric run` will do this for you once it ships.
 
 ### FC-041
 
