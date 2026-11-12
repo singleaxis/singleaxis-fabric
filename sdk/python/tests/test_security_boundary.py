@@ -498,14 +498,28 @@ def test_b8_no_classification_list_or_profile_is_built_in() -> None:
 
 # ============================================================================ B9
 _THIRD_PARTY_ALLOWED = frozenset({"httpx", "aiohttp"})  # the qualified transport libraries
+# OD-4: the MCP protocol library (and the event-loop backend whose pipe streams it writes
+# and reads) joins the list for the pinned transport hook only, never for another module.
+_THIRD_PARTY_PER_MODULE: dict[str, frozenset[str]] = {
+    "hooks/_mcp.py": frozenset({"mcp", "anyio"}),
+}
 
 
 @pytest.mark.parametrize("relative", NEW_MODULES)
 def test_b9_new_modules_import_only_stdlib_and_fabric(relative: str) -> None:
+    extra = _THIRD_PARTY_PER_MODULE.get(relative, frozenset())
     for module in _imports(_tree(relative), relative):
         root = module.split(".")[0]
         allowed = root in ("fabric", "__future__") or root in sys.stdlib_module_names
-        assert allowed or root in _THIRD_PARTY_ALLOWED, (relative, module)
+        assert allowed or root in _THIRD_PARTY_ALLOWED | extra, (relative, module)
+
+
+def test_b9_the_mcp_library_is_allowed_only_in_the_transport_hook() -> None:
+    for relative in NEW_MODULES:
+        if relative in _THIRD_PARTY_PER_MODULE:
+            continue
+        roots = {module.split(".")[0] for module in _imports(_tree(relative), relative)}
+        assert not roots & {"mcp", "anyio"}, relative
 
 
 def _squash(text: str) -> str:
