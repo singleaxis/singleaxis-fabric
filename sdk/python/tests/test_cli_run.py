@@ -458,3 +458,20 @@ def test_version_skew() -> None:
     assert _run.version_skew(f"{major}.{minor + 2}.0")
     assert _run.version_skew(f"{major + 1}.{minor}.0")
     assert not _run.version_skew(None)
+
+
+def test_print_env_names_a_missing_exporter(tmp_path: Path, env: dict[str, str]) -> None:
+    """--print-env says what `run` says (FC-051) when the agent's interpreter has the SDK
+    but not the OTLP exporter: pasted into a launcher, its records would go nowhere."""
+    project = make_project(tmp_path, env)
+    answer = {"sdk": True, "autoload": str(tmp_path), "sdk_version": __version__, "otlp": False}
+
+    def runner(argv: list[str], **_: Any) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(argv, 0, json.dumps(answer) + "\n", "")
+
+    python = tmp_path / "python3"
+    python.write_text("")
+    options = parse(["run", "--print-env", "--", str(python), "a.py"])
+    report, _ = _run.print_env(options, options.agent_command, env, project, runner=runner)
+    (finding,) = [f for f in report.findings if f.id == "FC-051"]
+    assert f"{python} -m pip install" in (finding.detail or "")

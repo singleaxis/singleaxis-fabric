@@ -14,7 +14,11 @@ and ``show`` default to the last run (F16) and ``doctor`` reads its status file.
 
 Everything in ``.fabric/state`` sits in the project directory, which may be a checkout of
 somebody else's repository: every value read back is checked for type and shape, and
-nothing read from it is ever executed or used as a path outside ``.fabric/state``."""
+nothing read from it is used as a path outside ``.fabric/state``, with two exceptions
+that trust the project directory no more than its own ``.venv`` does: ``fabric doctor``
+asks the last run's interpreter for its SDK status, and ``fabric run`` puts a cached
+autoload directory on ``PYTHONPATH`` only while it is a ``fabric/_autoload`` directory
+holding ``sitecustomize.py``."""
 
 from __future__ import annotations
 

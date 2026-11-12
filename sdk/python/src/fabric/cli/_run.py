@@ -478,7 +478,7 @@ def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
 #: survives ``exec``, so without a reset the agent (and every program it starts) would
 #: ignore SIGPIPE: ``fabric run -- sh -c 'yes | head -1'`` would then differ from a bare
 #: run (I2). ``subprocess`` resets the same set for its children (``restore_signals``).
-_PYTHON_IGNORED = ("SIGPIPE", "SIGXFZ", "SIGXFSZ")
+_PYTHON_IGNORED = ("SIGPIPE", "SIGXFSZ")
 
 
 def _exec(execvpe: Callable[..., Any], command: Sequence[str], env: Mapping[str, str]) -> None:
@@ -824,6 +824,10 @@ def print_env(
         answer = probe_interpreter(runtime.interpreter, project.state_dir, runner)
         if answer.get("sdk"):
             autoload = answer.get("autoload")
+            if not answer.get("otlp"):  # as `run` says it (FC-051): records would go nowhere
+                findings.append(
+                    Finding("FC-051", f"install with: {install_line(runtime.interpreter)}")
+                )
         else:
             findings.append(
                 Finding(
