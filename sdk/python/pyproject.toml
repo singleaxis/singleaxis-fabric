@@ -87,7 +87,7 @@ signing = [
 # unsupported_version, so the pins are the qualified ones. Fabric never imports e2b on
 # the capture path otherwise.
 hooks-sandbox-e2b = [
-  "e2b==2.62.*",
+  "e2b>=2.62,<2.64",
   "e2b-code-interpreter==2.11.*",
 ]
 [dependency-groups]
@@ -119,7 +119,7 @@ dev = [
   # Drives the remote.sandbox hook tests against the fixture E2B server
   # (qualification/remote-sandbox). Dev-only: the hook observes the SDK only when the
   # application already uses it.
-  "e2b==2.62.*",
+  "e2b>=2.62,<2.64",
   "e2b-code-interpreter==2.11.*",
 ]
 # CI and release builds: `python -m build --no-isolation` against this locked backend,

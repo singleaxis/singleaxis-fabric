@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
@@ -212,7 +212,7 @@ wheels = [
 
 [[package]]
 name = "anthropic"
-version = "2.3.0"
+version = "2.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", version = "4.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
@@ -225,9 +225,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/3e/ba/4c91947e0d0062d66d371db371597287153f7685fbed512d3294d0cde3c7/anthropic-2.3.0.tar.gz", hash = "sha256:edfdea1e3fa7b3ce25df1511953408b2f03bfa61eb6f6268f766101a9e18ad53", size = 1869656, upload-time = "2026-10-23T23:18:47.649Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/25/b0/bb46b86bc12e0c176f22363f6fc1fa6484844ba624f868154c3894d1c294/anthropic-2.5.0.tar.gz", hash = "sha256:898848f23c473aca52b4d1b496c22e5f6125246c31e0b2161ef98cb0384131a0", size = 1962741, upload-time = "2026-11-04T20:27:46.038Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/29/eb3558ab6bf252a07ac41c76ac5b0ea24a0aa0c23f87a40aaf31a5f8dba4/anthropic-2.3.0-py3-none-any.whl", hash = "sha256:aa6a3984f9276f307933d42dc6f58b6efc821a5ecafbc8d1bb5993a066767622", size = 2216980, upload-time = "2026-10-23T23:18:45.779Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/10/c4e6f015111c702c2d5a386ad57745b83c79c08eae68e541dbb16b5e3965/anthropic-2.5.0-py3-none-any.whl", hash = "sha256:79756a8cafa23a8c0ab636700914d34ee968039eb6e466a8aa748210713f4c00", size = 2445606, upload-time = "2026-11-04T20:27:48.007Z" },
 ]
 
 [[package]]
@@ -249,8 +249,8 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "idna", marker = "python_full_version < '3.15'" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "idna" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13' or python_full_version >= '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/61/cc/a381afa6efea9f496eff839d4a6a1aed3bfafc7b3ab4b0d1b243a12573dd/anyio-4.14.2.tar.gz", hash = "sha256:cfa139f3ed1a23ee8f88a145ddb5ac7605b8bbfd8592baacd7ce3d8bb4313c7f", size = 260176, upload-time = "2026-07-12T20:29:07.082Z" }
 wheels = [
@@ -267,7 +267,7 @@ resolution-markers = [
     "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 dependencies = [
-    { name = "idna", marker = "python_full_version >= '3.15'" },
+    { name = "idna" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/d2/f4d173e22df740bc37b1db102b386ba719b66e95b0f0d751f556b387e6d2/anyio-4.15.1.tar.gz", hash = "sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94", size = 276966, upload-time = "2026-09-05T10:42:39.44Z" }
 wheels = [
@@ -784,7 +784,7 @@ wheels = [
 
 [[package]]
 name = "e2b"
-version = "2.62.1"
+version = "2.63.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
@@ -800,23 +800,23 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "wcmatch" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cb/60/985e4d6c213f9b5af974276b0bbb39b368c14d097666ca4b65290cfd2fae/e2b-2.62.1.tar.gz", hash = "sha256:dd471a6142690fc469620d69fd2176b3dbabfe055f97b3b81e45e74bb724e10f", size = 270860, upload-time = "2026-11-03T19:42:58.847Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9a/f7/4d317f3c22992152a934e1f47ec5c6eea61350635a1de628f2c8f4e34987/e2b-2.63.0.tar.gz", hash = "sha256:01c9aa7c8565e9730c6cfa075a10a67a7560db9e11f67458fb1bce21e0e2e0cc", size = 273466, upload-time = "2026-11-04T16:41:31.849Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/3a/a8c82052b69d46b798a7c742b5cdb7077a6920b9911d486976d87ea4a1e3/e2b-2.62.1-py3-none-any.whl", hash = "sha256:67f43430ae8ba323e3196a46a53a332dec08172ecd2c12d6dd4b64700dfc77df", size = 427206, upload-time = "2026-11-03T19:42:57.038Z" },
+    { url = "https://files.pythonhosted.org/packages/0a/24/4777775082b058be6c531bbeadf22d97897953320b24323b8dd45e902231/e2b-2.63.0-py3-none-any.whl", hash = "sha256:fae437d0de051c633e6854260d94c178d7155711387375b5a447b326efdda065", size = 430158, upload-time = "2026-11-04T16:41:30.173Z" },
 ]
 
 [[package]]
 name = "e2b-code-interpreter"
-version = "2.11.8"
+version = "2.11.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "attrs" },
     { name = "e2b" },
     { name = "httpx" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/a9/710ace4530c5d27e26a0335ca5db874402b96acb18a9ec2fd271cb967319/e2b_code_interpreter-2.11.8.tar.gz", hash = "sha256:ffb09541b3db2e4d678de986cd514fddfb8a9d779a22709e676f2998a3d916f7", size = 12547, upload-time = "2026-11-03T19:43:02.043Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f2/40/e5d1b3efb7b6f370e10c1f848dfcba05eecc87da2dfb621604dcd1c6c1fd/e2b_code_interpreter-2.11.9.tar.gz", hash = "sha256:c9507b5bc5f4eac5f848f666fedbd0feafa7f89e4fc0e6fde6618e3744dad996", size = 12550, upload-time = "2026-11-04T16:41:34.545Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/5f/60aaf8d85f4cf857e73f0ac18952f13548710d130f101faa0ad0181fc84b/e2b_code_interpreter-2.11.8-py3-none-any.whl", hash = "sha256:a6bf174809b5b3df5994b16ae70e5f8092fe59eb52b344a544c91c6f4d966d84", size = 17361, upload-time = "2026-11-03T19:43:00.931Z" },
+    { url = "https://files.pythonhosted.org/packages/07/ff/776c87730f0bd945a9aae61e11ecd3bc5b79116a1ae344163b566ad3e369/e2b_code_interpreter-2.11.9-py3-none-any.whl", hash = "sha256:cc1886209b1db5f23d8d4aaaec830da55959e309d3d5d720a62f2ff8ed798dd8", size = 17362, upload-time = "2026-11-04T16:41:33.352Z" },
 ]
 
 [[package]]
@@ -1019,8 +1019,8 @@ name = "httpcore2"
 version = "2.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h11", marker = "sys_platform != 'emscripten'" },
-    { name = "truststore", marker = "sys_platform != 'emscripten'" },
+    { name = "h11" },
+    { name = "truststore" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/cb/f3/1db7aa2bc2524062192bb0e0323969492d1883152a232fe36eea65f4e35c/httpcore2-2.13.1.tar.gz", hash = "sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103", size = 68071, upload-time = "2026-09-23T07:47:22.372Z" }
 wheels = [
@@ -1651,7 +1651,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.42.0"
+version = "3.46.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio", version = "4.14.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
@@ -1662,9 +1662,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/ef/c17c9ca921c1991b0a7185e8282da1996d09292b0caaf2e7cffd7e051eb6/openai-3.42.0.tar.gz", hash = "sha256:deffe27f9e20e4f1d9d471978d12f23aa119382494c0a9860795e66943d0fe42", size = 2353482, upload-time = "2026-10-31T00:27:26.502Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/b6/23cddcb571d6eafe7b4bb58c7e0a068076121b7b001b776179994cca6a03/openai-3.46.0.tar.gz", hash = "sha256:fb34cd8cab6809ad0aa8dc42493fa622aaa87c814fd8e67a6fb3fa1f1e5d952d", size = 2408622, upload-time = "2026-11-05T00:55:55.463Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c5/79/904afac12186d9ab9e3f731eb798e36dc0f5b991a557c4304b0a43e393c1/openai-3.42.0-py3-none-any.whl", hash = "sha256:efb9d089ecf66c668289f647717389df98b40b954cd86d4fe54eddce39aabb3f", size = 2397860, upload-time = "2026-10-31T00:27:24.493Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/63/454e6faad68ac903e7669932db8d0a91c95dfca829ec9476e52045b17684/openai-3.46.0-py3-none-any.whl", hash = "sha256:7b650117e9bf539029bf880c2eff94a26f281394f6572284efa5d068d4b1c98e", size = 2438918, upload-time = "2026-11-05T00:55:53.301Z" },
 ]
 
 [[package]]
@@ -2664,7 +2664,7 @@ requires-dist = [
     { name = "cryptography", marker = "extra == 'cli'", specifier = ">=49" },
     { name = "cryptography", marker = "extra == 'otlp'", specifier = ">=49" },
     { name = "cryptography", marker = "extra == 'signing'", specifier = ">=49" },
-    { name = "e2b", marker = "extra == 'hooks-sandbox-e2b'", specifier = "==2.62.*" },
+    { name = "e2b", marker = "extra == 'hooks-sandbox-e2b'", specifier = ">=2.62,<2.64" },
     { name = "e2b-code-interpreter", marker = "extra == 'hooks-sandbox-e2b'", specifier = "==2.11.*" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.30,!=2.0.*,!=2.1.*" },
     { name = "opentelemetry-api", specifier = ">=1.41" },
@@ -2690,7 +2690,7 @@ dev = [
     { name = "aiohttp", specifier = ">=3.9" },
     { name = "anthropic", specifier = ">=1.12.1" },
     { name = "cryptography", specifier = ">=49" },
-    { name = "e2b", specifier = "==2.62.*" },
+    { name = "e2b", specifier = ">=2.62,<2.64" },
     { name = "e2b-code-interpreter", specifier = "==2.11.*" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jsonschema", specifier = ">=4.23" },
@@ -2848,11 +2848,11 @@ wheels = [
 
 [[package]]
 name = "types-pyyaml"
-version = "6.0.12.20261030"
+version = "6.0.12.20261103"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c7/0c/72b85bc2e3a3cf23419a7f8861c1855893f02080e202b631e33cc0d1a94a/types_pyyaml-6.0.12.20261030.tar.gz", hash = "sha256:9123d707aa31a3883eeb2cb290537c75246dfcb1c00abed7a70f5419d3bd31ae", size = 18878, upload-time = "2026-10-30T07:50:19.43Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/82/2ed4d215a2840b467a9a864f03b0d21904250e28f5e1f006ad36fba0311a/types_pyyaml-6.0.12.20261103.tar.gz", hash = "sha256:7a1b5f837881dd35d5448b5f18275164f89f206185e31e8eae6e0b42607bc001", size = 18911, upload-time = "2026-11-03T08:45:23.714Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/34/99/7e2c7c7202108220fb664ce4c5ac313a564ab5babb153516a3ac0ad8a681/types_pyyaml-6.0.12.20261030-py3-none-any.whl", hash = "sha256:508cc80546918201026a955356222111224e1f4f7deab0b91f2a95933f764e67", size = 21283, upload-time = "2026-10-30T07:50:18.389Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/10/4353eb86278f6a59aeb9fe2be4d979c20b110b4009fa455a3ea6467cf5cb/types_pyyaml-6.0.12.20261103-py3-none-any.whl", hash = "sha256:444654c61f635dab82c092a511aa96a0ce31164810784b9a37314e3e56532ac8", size = 21299, upload-time = "2026-11-03T08:45:22.749Z" },
 ]
 
 [[package]]
@@ -2890,8 +2890,8 @@ name = "uvicorn"
 version = "0.46.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "click", marker = "sys_platform != 'emscripten'" },
-    { name = "h11", marker = "sys_platform != 'emscripten'" },
+    { name = "click" },
+    { name = "h11" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1f/93/041fca8274050e40e6791f267d82e0e2e27dd165627bd640d3e0e378d877/uvicorn-0.46.0.tar.gz", hash = "sha256:fb9da0926999cc6cb22dc7cd71a94a632f078e6ae47ff683c5c420750fb7413d", size = 88758, upload-time = "2026-04-23T07:16:00.151Z" }
 wheels = [
