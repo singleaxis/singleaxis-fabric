@@ -128,11 +128,15 @@ class _Session:
     """One stdio transport connection: its hook-minted ``mcps-`` reference, the attributes
     every record carries, the outstanding requests and the partial line of each pipe."""
 
-    __slots__ = ("__weakref__", "attrs", "evicted", "parts", "pending", "process", "ref",
-                 "started_ns")  # fmt: skip
+    __slots__ = ("__weakref__", "attrs", "docs", "evicted", "key", "parts", "pending", "process",
+                 "ref", "started_ns")  # fmt: skip
 
-    def __init__(self, attrs: dict[str, Any], process: object) -> None:
-        self.ref = "mcps-" + uuid.uuid4().hex
+    def __init__(self, attrs: dict[str, Any], process: object, ref: str | None = None) -> None:
+        # The connection's own id is a random uuid (stdio has no session id); its keyed
+        # ``mcps-`` form is what records carry (none without an id key).
+        self.key = uuid.uuid4().hex
+        self.ref = ref
+        self.docs: dict[tuple[Any, ...], EvidenceDoc] = {}
         self.attrs = attrs
         self.pending: OrderedDict[tuple[str, str, str | int], tuple[Attempt, int, str]] = (
             OrderedDict()
@@ -161,7 +165,9 @@ def _typed_id(value: object) -> tuple[str, str | int] | None:
     return None
 
 
-def _classify(value: object) -> tuple[Kind, tuple[str, str | int] | None, str | None] | None:
+def _classify(  # noqa: PLR0911 - one return per JSON-RPC kind and malformed shape
+    value: object,
+) -> tuple[Kind, tuple[str, str | int] | None, str | None] | None:
     """``(kind, typed id, method)`` of one parsed JSON-RPC 2.0 message, else ``None``."""
     if type(value) is not dict or value.get("jsonrpc") != "2.0":
         return None
@@ -233,6 +239,7 @@ class McpChannel:
             if ref is not None:
                 attrs["fabric.mcp.server_ref"] = ref
         session = _Session(attrs, process)
+        session.ref = self.producer.ident("mcps", session.key)
         self.writers[stdin] = session
         self.readers[stdout] = session
         self._count("sessions")
@@ -267,7 +274,9 @@ class McpChannel:
             else:
                 self._line(session, direction, line)
 
+    @fail_open(None)
     def _line(self, session: _Session, direction: str, line: bytes) -> None:
+        """One complete line (fail-open on its own: a failure loses this message only)."""
         if not line.strip():
             return
         if len(line) > PARSE_LIMIT:
@@ -287,38 +296,37 @@ class McpChannel:
         if kind == "request":
             self._request(session, direction, line, ident, method or "")
         elif kind == "notification":
-            self._notification(session, direction, line, value, method or "")
+            self._notification(session, direction, line, method or "")
         else:
             self._answer(session, direction, line, kind, ident, value)
 
     # -- records ------------------------------------------------------------------------
 
-    def _rpc_ref(self, session: _Session, ident: tuple[str, str | int] | None) -> str | None:
-        if ident is None:
-            return None
-        return self.producer.ident("rpc", f"{session.ref}:{ident[0]}:{ident[1]}")
-
-    def _evidence(self, item: dict[str, Any], bodies: list[AnyBody]) -> EvidenceDoc | None:
+    def _evidence(self, session: _Session, direction: str, kind: Kind, id_type: str | None,
+                  correlation: str, bodies: list[AnyBody]) -> EvidenceDoc | None:  # fmt: skip
+        """The record's evidence object, built once per distinct item of a session (the
+        item holds no per-message value, so the hot path validates nothing twice)."""
         if self.producer.mode(EVIDENCE_ROLE) == "omit":
             return None
+        key = (direction, kind, id_type, correlation)
+        doc = session.docs.get(key)
+        if doc is not None:
+            return doc
+        item: dict[str, Any] = {
+            "transport": TRANSPORT, "direction": direction, "message_kind": kind,
+            "connection_index": 0, "representation": "exact_bytes",
+            "correlation": correlation,
+        }  # fmt: skip
+        if session.ref is not None:
+            item["session_ref"] = session.ref
+        if id_type is not None:
+            item["id_type"] = id_type
         built = self.producer.evidence(EVIDENCE_TYPE, item, boundary=BOUNDARY)
         if not isinstance(built, EvidenceDoc):
             bodies.append(built)
             return None
+        session.docs[key] = built
         return built
-
-    def _item(self, session: _Session, direction: str, kind: Kind,
-              ident: tuple[str, str | int] | None, correlation: str) -> dict[str, Any]:  # fmt: skip
-        item: dict[str, Any] = {
-            "transport": TRANSPORT, "direction": direction, "message_kind": kind,
-            "session_ref": session.ref, "connection_index": 0,
-            "representation": "exact_bytes", "correlation": correlation,
-        }  # fmt: skip
-        if ident is not None:
-            item["id_type"] = ident[0]
-            if (ref := self._rpc_ref(session, ident)) is not None:
-                item["rpc_ref"] = ref
-        return item
 
     def _bodies(self, direction: str, kind: Kind, line: bytes) -> list[AnyBody]:
         role = _ROLES[(direction, kind)]
@@ -338,8 +346,8 @@ class McpChannel:
             return
         now = time.time_ns()
         bodies = self._bodies(direction, "request", line)
-        evidence = self._evidence(self._item(session, direction, "request", ident,
-                                             "not_applicable"), bodies)  # fmt: skip
+        evidence = self._evidence(session, direction, "request", ident[0], "not_applicable",
+                                  bodies)  # fmt: skip
         attempt.emit(
             "start", name_hint=NAME_HINT, attributes=self._attrs(session, direction, method),
             start_ns=now, end_ns=now, lifecycle="running", bodies=bodies, evidence=evidence,
@@ -351,7 +359,7 @@ class McpChannel:
             old, _ = session.pending.popitem(last=False)
             session.evicted.append(old)
 
-    def _notification(self, session: _Session, direction: str, line: bytes, value: dict[str, Any],
+    def _notification(self, session: _Session, direction: str, line: bytes,
                       method: str) -> None:  # fmt: skip
         self._count("notifications")
         attempt = self.producer.begin(POINT, "mcp_call")
@@ -359,13 +367,8 @@ class McpChannel:
             return
         now = time.time_ns()
         bodies = self._bodies(direction, "notification", line)
-        item = self._item(session, direction, "notification", None, "not_applicable")
-        params = value.get("params")
-        if method == "notifications/cancelled" and type(params) is dict:
-            related = _typed_id(params.get("requestId"))
-            if related is not None and (ref := self._rpc_ref(session, related)) is not None:
-                item["related_rpc_ref"] = ref
-        evidence = self._evidence(item, bodies)
+        evidence = self._evidence(session, direction, "notification", None, "not_applicable",
+                                  bodies)  # fmt: skip
         attempt.emit(
             "end", name_hint=NAME_HINT, attributes=self._attrs(session, direction, method),
             start_ns=now, end_ns=now, lifecycle="completed", result_status="ok",
@@ -398,7 +401,8 @@ class McpChannel:
             if type(result) is dict and result.get("isError") is True:
                 attrs["fabric.mcp.error_kind"] = "tool"
         bodies = self._bodies(direction, kind, line)
-        evidence = self._evidence(self._item(session, direction, kind, ident, correlation),
+        evidence = self._evidence(session, direction, kind,
+                                  ident[0] if ident is not None else None, correlation,
                                   bodies)  # fmt: skip
         attempt.emit(
             "end", name_hint=NAME_HINT, attributes=attrs, start_ns=start_ns, end_ns=now,

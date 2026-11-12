@@ -19,7 +19,7 @@ from typing import Any
 import anyio
 
 SERVER = Path(__file__).resolve().parent / "mcp_fixture_server.py"
-SECRET_ROOT = "file:///home/secret-root-canary/project"
+SECRET_ROOT = "file:///home/secret-root-canary/project"  # noqa: S105 - a privacy canary
 ELICITATION_MARKER = "Delete branch elicit-canary"
 #: The elicitation answers, in order (accept, decline, cancel).
 ACTIONS: Sequence[str] = ("accept", "decline", "cancel")
@@ -27,8 +27,8 @@ ACTIONS: Sequence[str] = ("accept", "decline", "cancel")
 
 async def _script(session: Any, actions: Sequence[str]) -> list[Any]:
     """initialize; tools/list; read_file (roots/list); fail (isError); one delete_branch per
-    elicitation answer; change_tools (list_changed); tools/list again; resources/read
-    (a protocol error)."""
+    elicitation answer; change_tools (list_changed); tools/list again; a tool the server
+    does not have and resources/read (protocol errors)."""
     seen: list[Any] = []
     init = await session.initialize()
     seen.append(("initialize", init.server_info.name if init.server_info else None))
@@ -45,6 +45,11 @@ async def _script(session: Any, actions: Sequence[str]) -> list[Any]:
     listed = await session.list_tools()
     seen.append(("tools", sorted(t.name for t in listed.tools)))
     try:
+        await session.call_tool("missing", {})
+        seen.append(("missing", "ok"))
+    except Exception as exc:  # the server answers -32602
+        seen.append(("missing", type(exc).__name__))
+    try:
         await session.read_resource("file:///nothing")
         seen.append(("resources/read", "ok"))
     except Exception as exc:  # the server answers -32601
@@ -53,7 +58,7 @@ async def _script(session: Any, actions: Sequence[str]) -> list[Any]:
 
 
 def _session(read: Any, write: Any, actions: Sequence[str]) -> Any:
-    import mcp.types as types  # noqa: PLC0415
+    from mcp import types  # noqa: PLC0415
     from mcp.client.session import ClientSession  # noqa: PLC0415
 
     answers = list(actions)

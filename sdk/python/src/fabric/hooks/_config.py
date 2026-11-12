@@ -16,8 +16,8 @@ Absent means disabled. This build registers four channels: ``exec.subprocess``
 (``FABRIC_WIRE_EXEC``), ``http.nonmodel`` (``FABRIC_WIRE_HTTP_HOSTS``, a JSON array of
 hosts), ``remote.sandbox`` (``FABRIC_WIRE_REMOTE_SANDBOX``, comma-separated providers;
 only ``e2b``) and ``mcp.client`` (``FABRIC_WIRE_MCP``, the MCP protocol library's stdio
-transport; spec 057 OD-4). ``FABRIC_WIRE_SANDBOX_HOSTS`` (a JSON array of hosts) declares the sandbox
-providers a deployment uses, for the manifest only (056 §4.4.1). The other spec 053
+transport; spec 057 OD-4). ``FABRIC_WIRE_SANDBOX_HOSTS`` (a JSON array of hosts) declares
+the sandbox providers a deployment uses, for the manifest only (056 §4.4.1). The other spec 053
 switches name channels this build does not have; a set one is reported by ``status()``
 (``not_in_build``) and changes nothing.
 

@@ -156,9 +156,9 @@ POINTS: Mapping[str, PointSpec] = MappingProxyType({
 # The registry points this Python runtime has, in manifest order: not the TypeScript tee,
 # the P4/P5 hooks this build does not register, out-of-process sensors or the
 # qualified-run-only sources. ``exec.subprocess``, ``http.nonmodel``, ``remote.sandbox`` and
-# ``mcp.client`` (spec 057 WP7-8) are the P4 hook channels this build registers (spec 056 §7.2, §7.3.3 (i),
-# ``fabric.hooks``); their state changes through capture_point_changed when hooks install,
-# disable or close them.
+# ``mcp.client`` (spec 057 WP7-8) are the P4 hook channels this build registers (spec 056
+# §7.2, §7.3.3 (i), ``fabric.hooks``); their state changes through capture_point_changed
+# when hooks install, disable or close them.
 RUNTIME_POINTS: tuple[str, ...] = (
     "fabric.self", "install.config", "wire.py.httpx", "wire.py.aiohttp",
     "explicit.call_recorder", "explicit.byte_boundary", "explicit.final_http",

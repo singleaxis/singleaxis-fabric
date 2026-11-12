@@ -13,6 +13,7 @@ file wrote. It lists three tools with annotations (one destructive), and on requ
   with what the client said;
 - ``read_file``: asks the client for its roots (``roots/list``);
 - ``fail``: a tool result with ``isError: true`` (F14);
+- a tool it does not have (``missing``): a JSON-RPC error (-32602, N25);
 - any method it does not know (``resources/read``): a JSON-RPC error (-32601, N25).
 
 Every message it receives and sends is appended to a ground-truth ledger
@@ -92,6 +93,9 @@ class Logic:
             result = {}
         elif method == "tools/list":
             result = {"tools": self.tools()}
+        elif method == "tools/call" and params.get("name") == "missing":
+            return {"jsonrpc": "2.0", "id": ident,
+                    "error": {"code": -32602, "message": "Unknown tool"}}  # fmt: skip
         elif method == "tools/call":
             result = self._call(params, ask, notify)
         else:
@@ -192,17 +196,17 @@ class HttpServer:
             def log_message(self, *args: Any) -> None:
                 pass
 
-            def do_GET(self) -> None:  # noqa: N802 - the standard library's name
+            def do_GET(self) -> None:
                 self.send_response(405)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
-            def do_DELETE(self) -> None:  # noqa: N802
+            def do_DELETE(self) -> None:
                 self.send_response(200)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length") or 0)
                 message = json.loads(self.rfile.read(length))
                 outer._record("client_to_server", message)
