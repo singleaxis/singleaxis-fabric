@@ -23,6 +23,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .. import _classify
 from .._roles import ROLE_TABLE_VERSION, ROLES
 from ..deployment_policy import DeploymentPolicy
 
@@ -54,6 +55,9 @@ class CapturePolicy:
     tenant_id: str | None = None
     # spec 057 §7.2: grant pseudonymisation groups the policy switches off (all on when absent)
     grant_pseudonymise: Mapping[str, bool] = field(default_factory=dict)
+    # spec 057 WP7-9: the security_context classification lists as frozen tables (None:
+    # the policy has no such section), loaded once here; loading never raises
+    classification: _classify.Classification | None = None
 
     def mode(self, role: str) -> str:
         """The role's privacy mode by the §2.7 precedence (rules 2-5): named → that mode;
@@ -82,6 +86,7 @@ class CapturePolicy:
             encrypted_store_required=bool(deployment["encrypted_store_required"]),
             workload_id=policy.workload_id, tenant_id=policy.tenant_id,
             grant_pseudonymise=dict(policy.grant_pseudonymise),
+            classification=_classify.from_policy(policy),
         )  # fmt: skip
 
 

@@ -1,0 +1,130 @@
+{
+  "schema_version": "fabric.action-rule-fixture/v1",
+  "name": "edge-hook-program-blocked",
+  "rules": [],
+  "description": "A listed hook program whose exit map gives blocked: no effect link, the call is none_in_window, and the effects chain is complete (the call was not dispatched; spec 057 reports the block as a hook row).",
+  "key": "fabric-test-id-key-not-a-secret",
+  "input": {
+    "run": {
+      "run_id": "r-93347307304ecb0a9bb1b51ae90ac326",
+      "segment_id": "seg-dc036958c70a72cf420903c9385c1051",
+      "window": [
+        1791331200000000000,
+        1791331260000000000
+      ]
+    },
+    "agent": {
+      "source_id": "s-b94f348e8d6890782b2af72c847dc77b",
+      "source_epoch": 4611686018427387905,
+      "pid": 4100,
+      "host_id": "hst-96164cc6e2bd169f1beee83173bb7293",
+      "clock_uncertainty_ns": 1000000
+    },
+    "content_mode": "retain_original",
+    "exchange_verdict": "complete",
+    "effect_channels": {
+      "exec.subprocess": "active"
+    },
+    "endpoint_peers": {
+      "openai.default": [
+        "hst-e9c49a15e91b136a7edde1b949c3e1ce"
+      ]
+    },
+    "host_sources": [],
+    "exchanges": [
+      {
+        "exchange_id": "6b8d14c5-d866-45be-a65b-af0c6cf6b093",
+        "sequence": 1,
+        "start_ns": 1791331200000000000,
+        "end_ns": 1791331200900000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [
+          {
+            "id": "call_HB",
+            "name": "sandbox_run"
+          }
+        ],
+        "tool_results": []
+      },
+      {
+        "exchange_id": "fd60c0f5-a12e-4fb9-ac9b-cb08b8b09d7f",
+        "sequence": 4,
+        "start_ns": 1791331201500000000,
+        "end_ns": 1791331202400000000,
+        "endpoint_id": "openai.default",
+        "tool_calls": [],
+        "tool_results": [
+          {
+            "id": "call_HB",
+            "text": "The call was skipped."
+          }
+        ]
+      }
+    ],
+    "effects": [
+      {
+        "attempt_uid": "c5f71ee7-c183-4ee7-a163-0f2c0fe32269",
+        "event_id": "2f67f5c3-3156-48d7-a63d-f778e819d420",
+        "label": "exec /opt/hooks/pre-tool.sh",
+        "sequence": 2,
+        "start_ns": 1791331201000000000,
+        "stdout": "blocked by pre-tool check\n",
+        "hook_program": "pre-tool-check",
+        "hook_outcome": "blocked",
+        "exit_code": 2
+      }
+    ],
+    "host_events": []
+  },
+  "expected": {
+    "projection_links": [],
+    "sensor_events": [],
+    "chains": {
+      "decisions": {
+        "verdict": "complete"
+      },
+      "actions": {
+        "verdict": "complete"
+      },
+      "effects": {
+        "verdict": "complete"
+      },
+      "corroboration": {
+        "verdict": "not_observed",
+        "reasons": [
+          "not_configured"
+        ]
+      }
+    },
+    "attribution": {
+      "links": {},
+      "unattributed_effects": {
+        "count": 0,
+        "effects": []
+      },
+      "effects_not_observed": {
+        "channel_disabled": 0,
+        "no_effect_channel": 0,
+        "none_in_window": 1
+      },
+      "output_match": {
+        "state": "not_applicable",
+        "reason": "not_exposed"
+      },
+      "unexplained_host_events": {
+        "count": 0,
+        "event_ids": []
+      }
+    },
+    "trace": {
+      "effects": {
+        "c5f71ee7-c183-4ee7-a163-0f2c0fe32269": "hook_program"
+      },
+      "anchors": {},
+      "host_events": {},
+      "tool_calls": {
+        "p-10e159c7726af6984aea50bf31a2f170": "none_in_window"
+      }
+    }
+  }
+}

@@ -368,6 +368,24 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
             64,
             [["wire.py.httpx@1.2.0:W:active:1:1:-"]],
         ),
+        # spec 057 WP7-9: the classification lists' state, count, reason and digest
+        "fabric.manifest.classifications": array(
+            string(
+                "^classify\\.(control_hosts|control_addresses|hook_programs|watched_paths"
+                "|tool_result_markers):(off|loaded|refused):(0|[1-9][0-9]{0,5})"
+                ":(over_limit|duplicate_entry|invalid_entry|-):(sha256:[0-9a-f]{64}|-)$",
+                "classify.hook_programs:loaded:2:-:sha256:" + "ab" * 32,
+                "classify.watched_paths:refused:257:over_limit:sha256:" + "cd" * 32,
+            ),
+            8,
+            [
+                [
+                    "classify.control_hosts:off:0:-:-",
+                    "classify.hook_programs:loaded:2:-:sha256:" + "ab" * 32,
+                ]
+            ],
+            unique=True,
+        ),
         "fabric.manifest.capture_policy.encrypted_store_required": boolean,
         "fabric.manifest.capture_policy.policy_digest": digest,
         "fabric.manifest.capture_policy.policy_id": string(
@@ -5762,6 +5780,7 @@ GO_BY_KEY = {
     "fabric.framework.name": "frameworkNamePattern",
     "fabric.manifest.capture_point_fields": "manifestPointFieldsPattern",
     "fabric.manifest.capture_points": "manifestPointPattern",
+    "fabric.manifest.classifications": "manifestClassificationPattern",
     "fabric.manifest.coverage_profile": "coverageProfilePattern",
     "fabric.manifest.key_id": "keyIDPattern",
     "fabric.manifest.spool_key_id": "keyIDPattern",

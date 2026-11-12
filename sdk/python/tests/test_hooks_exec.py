@@ -396,8 +396,10 @@ def test_spawn_failure_is_one_end_record_without_a_pid(rig: Rig) -> None:
     assert end.span["status"] == "error"
     assert not {"fabric.process.pid", "fabric.process.parent_pid"} & set(end.attrs)
     stdio = {"stdin": "inherit", "stdout": "pipe", "stderr": "pipe"}
+    # spec 057 WP7-10: the errno name rides beside error_class
     assert end.item == {"api": "run", "argv_form": "argv", "pid_known": False,
-                        "error_class": "FileNotFoundError", "stdio": stdio}  # fmt: skip
+                        "error_class": "FileNotFoundError", "errno": "ENOENT",
+                        "stdio": stdio}  # fmt: skip
     assert end.json("terminal.argv")["args"][1] == {"t": "str", "v": "--flag"}
     assert rig.counters()["spawn_failures"] == 1
 
@@ -1296,3 +1298,177 @@ def test_repeated_timeouts_keep_only_the_first_partial_output(rig: Rig) -> None:
     assert all("terminal.stdout" not in p.bodies for p in partials[1:])
     assert end.body("terminal.stdout") == b"abc"
     assert rig.counters()["timeout_output_omitted"] == timeouts - 1
+
+
+# --- spec 057 WP7-10: hook programs and spawn errors ---------------------------------------
+
+
+def _hook_rig(tmp_path: Path, *entries: dict[str, Any], **modes: str) -> Rig:
+    """A rig whose capture policy lists ``entries`` under ``security_context.hook_programs``."""
+    from dataclasses import replace  # noqa: PLC0415
+
+    from fabric import _classify  # noqa: PLC0415
+
+    table = _classify.load({"hook_programs": list(entries)})
+    assert table is not None and table.status("hook_programs").state == "loaded"  # type: ignore[union-attr]
+    return _rig(replace(_policy(**modes), classification=table))
+
+
+def _script(tmp_path: Path, name: str, body: str, mode: int = 0o755) -> Path:
+    path = tmp_path / name
+    path.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    path.chmod(mode)
+    return path
+
+
+HOOK_KEYS = {"fabric.hook.program_label", "fabric.hook.basis", "fabric.hook.outcome"}
+
+
+@pytest.mark.parametrize(
+    ("body", "code", "outcome"),
+    [("exit 0", 0, "passed"), ("exit 2", 2, "blocked"), ("kill -TERM $$", -15, "errored")],
+    ids=["exit-0", "exit-2", "signal"],
+)
+def test_a_listed_hook_program_carries_its_label_and_exit_map_outcome(
+    tmp_path: Path, body: str, code: int, outcome: str
+) -> None:
+    """Fixture hook scripts exiting 0, 2 and by signal: the records of a child whose path
+    is in ``hook_programs`` carry the customer's label and ``basis=process``; the record
+    with the exit status carries the exit map's outcome. The exit itself is recorded as
+    for any child."""
+    script = _script(tmp_path, "pre-tool.sh", body)
+    rig = _hook_rig(
+        tmp_path,
+        {
+            "path": str(script),
+            "label": "pre-tool-check",
+            "exit_map": {"0": "passed", "2": "blocked", "-15": "errored"},
+        },
+    )
+    try:
+        done = subprocess.run([str(script), "--tool", "shell"])
+        assert done.returncode == code  # the caller sees the child's own status
+        start, end = rig.records()
+        assert start.attrs["fabric.hook.program_label"] == "pre-tool-check"
+        assert start.attrs["fabric.hook.basis"] == "process"
+        assert "fabric.hook.outcome" not in start.attrs  # nothing is known at the start
+        assert end.attrs["fabric.hook.program_label"] == "pre-tool-check"
+        assert end.attrs["fabric.hook.basis"] == "process"
+        assert end.attrs["fabric.hook.outcome"] == outcome
+        if code >= 0:
+            assert end.attrs["fabric.process.exit_code"] == code
+        else:
+            assert end.attrs["fabric.process.signal"] == -code
+    finally:
+        _close(rig)
+
+
+def test_without_an_exit_map_the_outcome_is_unknown_and_the_exit_is_recorded(
+    tmp_path: Path,
+) -> None:
+    script = _script(tmp_path, "pre-tool.sh", "exit 2")
+    rig = _hook_rig(tmp_path, {"basename": "pre-tool.sh", "label": "pre-tool-check"})
+    try:
+        assert subprocess.run([str(script)]).returncode == 2
+        end = rig.records()[-1]
+        assert end.attrs["fabric.hook.program_label"] == "pre-tool-check"
+        assert end.attrs["fabric.hook.outcome"] == "unknown"
+        assert end.attrs["fabric.process.exit_code"] == 2
+    finally:
+        _close(rig)
+
+
+def test_an_exit_code_the_map_does_not_name_is_unknown(tmp_path: Path) -> None:
+    script = _script(tmp_path, "pre-tool.sh", "exit 7")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"0": "passed"}})  # fmt: skip
+    try:
+        subprocess.run([str(script)])
+        assert rig.records()[-1].attrs["fabric.hook.outcome"] == "unknown"
+    finally:
+        _close(rig)
+
+
+def test_hook_classification_is_exact_never_by_suffix_or_name_pattern(tmp_path: Path) -> None:
+    """A child that is not exactly a listed path or ``argv[0]`` basename is unchanged: no
+    ``fabric.hook.*`` key. No suffix, prefix or wildcard match (WP7-9)."""
+    listed = _script(tmp_path, "check.sh", "exit 0")
+    near = [_script(tmp_path, name, "exit 0") for name in ("pre-check.sh", "check.sh.bak")]
+    rig = _hook_rig(tmp_path, {"basename": "check.sh", "label": "check"},
+                    {"path": str(listed) + "-other", "label": "other"},
+                    {"basename": "c", "label": "c"})  # fmt: skip
+    try:
+        for script in near:
+            subprocess.run([str(script)])
+        subprocess.run(["/bin/sh", str(listed)])  # argv[0] is the shell, not the script
+        assert all(not (HOOK_KEYS & set(r.attrs)) for r in rig.records())
+        subprocess.run([str(listed)])
+        assert rig.records()[-1].attrs["fabric.hook.program_label"] == "check"
+    finally:
+        _close(rig)
+
+
+def test_a_shell_string_and_an_executable_argument_are_classified(tmp_path: Path) -> None:
+    script = _script(tmp_path, "pre-tool.sh", "exit 0")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check"})
+    try:
+        subprocess.run(f"{script} --tool shell", shell=True)  # noqa: S602 - one simple command
+        subprocess.run(["renamed"], executable=str(script))  # the path Popen executes
+        subprocess.run(f"{script}; true", shell=True)  # noqa: S602 - compound: no program
+        labels = [r.attrs.get("fabric.hook.program_label") for r in rig.records()
+                  if r.lifecycle == "completed"]  # fmt: skip
+        assert labels == ["pre-tool-check", "pre-tool-check", None]
+    finally:
+        _close(rig)
+
+
+def test_the_hook_label_never_carries_the_path_and_argv_stays_protected(tmp_path: Path) -> None:
+    """Argv protection canary: with ``terminal.argv`` omitted, a classified hook's argv
+    (path and arguments) is in no span and no stored body; only the label is recorded."""
+    script = _script(tmp_path, f"hook-{CANARY}.sh", "exit 0")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"0": "passed"}},
+                    **dict.fromkeys(CONTENT_ROLES, "omit"))  # fmt: skip
+    try:
+        subprocess.run([str(script), f"--secret={CANARY}"])
+        records = rig.records()
+        assert records[-1].attrs["fabric.hook.outcome"] == "passed"
+        rig.harness.flush()
+        assert rig.harness.sender is not None
+        for _, _, span, staged in rig.harness.sender.items:
+            assert CANARY not in json.dumps(span)
+            for descriptor, data in staged:
+                assert CANARY not in json.dumps(descriptor)
+                assert CANARY.encode() not in data
+    finally:
+        _close(rig)
+
+
+def test_a_spawn_of_a_non_executable_file_records_eacces(tmp_path: Path) -> None:
+    """The errno name of the ``OSError`` the spawn raised rides beside ``error_class``:
+    ``PermissionError`` alone covers ``EACCES`` and ``EPERM``."""
+    script = _script(tmp_path, "not-executable.sh", "exit 0", mode=0o644)
+    rig = _rig()
+    try:
+        with pytest.raises(PermissionError) as caught:
+            subprocess.run([str(script)])
+        (end,) = rig.records()
+        assert end.item["error_class"] == "PermissionError"
+        assert end.item["errno"] == "EACCES"
+        assert caught.value.errno is not None  # the caller's exception is untouched
+        assert str(script) not in json.dumps(end.item)
+    finally:
+        _close(rig)
+
+
+def test_a_spawn_error_without_an_errno_records_the_class_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Odd(OSError):  # noqa: N818 - not a builtin class: its errno is not trusted
+        pass
+
+    assert _exec._errno_name(Odd(13, "x")) is None
+    assert _exec._errno_name(OSError("no errno")) is None
+    assert _exec._errno_name(ValueError("x")) is None
+    assert _exec._errno_name(PermissionError(1, "x")) == "EPERM"
+    assert _exec._errno_name(OSError(8, "x")) == "ENOEXEC"

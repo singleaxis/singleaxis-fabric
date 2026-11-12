@@ -67,6 +67,22 @@ an explicitly passed ``env`` dict only, and ``os.environ`` is never enumerated.
 
 Per-process state is held in a bounded map keyed by object identity with weak references
 (never on the monitored object), cleared in a forked child.
+
+**Hook programs** (spec 057 §4.3, WP7-10). When the capture policy lists
+``security_context.hook_programs``, a child whose executable path (or ``argv[0]``) or
+``argv[0]`` basename is listed is a hook program. The lookup is an exact match in the
+frozen table loaded at install (``fabric._classify``), and it runs on the **capture
+worker** (the record's ``late`` attributes), never on the caller's path: the caller only
+keeps a reference to the argv document it already built. The records of a classified child
+carry ``fabric.hook.program_label`` (the customer's label, never the path) and
+``fabric.hook.basis=process``; the record that carries the exit status also carries
+``fabric.hook.outcome``, the listed ``exit_map``'s outcome for that code, else
+``unknown`` (the exit code itself is recorded either way). A shell string names its first
+word when it is one simple command. An unlisted child is unchanged.
+
+**Spawn errors.** A spawn that raises an ``OSError`` records, beside ``error_class``, the
+symbolic ``errno`` name (``EACCES``, ``EPERM``, ``ENOENT``, ``ENOEXEC``, ...) of a builtin
+exception class; never the message.
 """
 
 from __future__ import annotations
@@ -76,6 +92,7 @@ import asyncio.subprocess as asyncio_subprocess
 import base64
 import codecs
 import contextlib
+import errno as errno_names
 import functools
 import inspect
 import io
@@ -92,6 +109,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Final, cast
 
+from .. import _classify
 from .._capture_scope import explicit_tool_attempt
 from .._capture_types import (
     EVIDENCE_ROLE,
@@ -175,6 +193,7 @@ JSON_MAX_BYTES: Final = 1 << 20
 _HEX64_RE: Final = re.compile(r"[0-9a-f]{64}")
 _UUID_RE: Final = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _ERROR_CLASS_RE: Final = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,127}$")
+_ERRNO_RE: Final = re.compile(r"^E[A-Z0-9]{1,31}$")
 _ENCODING_RE: Final = re.compile(r"^[A-Za-z0-9_.-]{1,32}$")
 _MISSING: Any = object()
 
@@ -199,15 +218,18 @@ class _Via:
 class _Proc:
     """What Fabric remembers about one observed child until its object is collected."""
 
-    __slots__ = ("attempt", "command", "encoding", "ended", "index", "pid", "rc_done",
+    __slots__ = ("attempt", "command", "encoding", "ended", "hook", "index", "pid", "rc_done",
                  "timed_out", "via")  # fmt: skip
 
     def __init__(self, attempt: Attempt, pid: int, via: _Via | None, encoding: str | None,
-                 command: dict[str, Any] | None = None) -> None:  # fmt: skip
+                 command: dict[str, Any] | None = None,
+                 hook: _HookProbe | None = None) -> None:  # fmt: skip
         self.attempt, self.pid, self.via, self.encoding = attempt, pid, via, encoding
         # The argv document of a possible container create command until its first
         # standard output is observed (056 §7.3.3 (a)), else None.
         self.command = command
+        # What the capture worker classifies against hook_programs (spec 057 WP7-10).
+        self.hook = hook
         self.index = 0  # the next communicate observation_index
         self.timed_out = False  # an earlier communicate timed out: later output is cumulative
         self.ended = False  # an end record was emitted
@@ -303,6 +325,74 @@ def _status_keys(returncode: int) -> dict[str, int]:
     if returncode < 0:
         return {"fabric.process.signal": -returncode}
     return {"fabric.process.exit_code": returncode}
+
+
+def _errno_name(exc: BaseException) -> str | None:
+    """The symbolic errno name of a builtin ``OSError`` (spec 057 WP7-10), never its
+    message; ``None`` for any other exception or an errno the runtime does not name."""
+    if not isinstance(exc, OSError) or type(exc).__module__ != "builtins":
+        return None
+    code = exc.errno
+    name = errno_names.errorcode.get(code) if type(code) is int else None
+    return name if name is not None and _ERRNO_RE.fullmatch(name) else None
+
+
+# --- hook programs (spec 057 §4.3, WP7-10; capture worker only) ---------------------------
+
+
+class _HookProbe:
+    """What the capture worker classifies a child by: the install's classification, the
+    argv document the caller already built (by reference) and the ``executable`` argument
+    when it is an exact ``str`` of an argv-form call."""
+
+    __slots__ = ("document", "executable", "table")
+
+    def __init__(self, table: _classify.Classification, document: object,
+                 executable: object) -> None:  # fmt: skip
+        self.table, self.document = table, document
+        self.executable = executable if type(executable) is str else None
+
+    def program(self) -> _classify.HookProgram | None:
+        document = self.document
+        executable = (self.executable if isinstance(document, dict)
+                      and document.get("form") == "argv" else None)  # fmt: skip
+        return self.table.hook_program(_classify.argv0_of(document), executable)
+
+
+def _hook_late(probe: _HookProbe | None, returncode: int | None = None, *,
+               outcome: bool = False) -> Callable[[], Mapping[str, int | str]] | None:  # fmt: skip
+    """The worker-side ``fabric.hook.*`` keys of a classified child's record: label and
+    basis, and the exit map's outcome on the record that carries the exit status."""
+    if probe is None:
+        return None
+
+    def late() -> Mapping[str, int | str]:
+        program = probe.program()
+        if program is None:
+            return {}
+        values: dict[str, int | str] = {"fabric.hook.program_label": program.label,
+                                        "fabric.hook.basis": "process"}  # fmt: skip
+        if outcome:
+            values["fabric.hook.outcome"] = program.outcome(returncode)
+        return values
+
+    return late
+
+
+def _joined(*lates: Callable[[], Mapping[str, int | str]] | None,
+            ) -> Callable[[], Mapping[str, int | str]] | None:  # fmt: skip
+    """One ``late`` callable running each given one in order (``None`` when none is)."""
+    found = [late for late in lates if late is not None]
+    if len(found) <= 1:
+        return found[0] if found else None
+
+    def late() -> Mapping[str, int | str]:
+        values: dict[str, int | str] = {}
+        for each in found:
+            values.update(each())
+        return values
+
+    return late
 
 
 # --- the start-time read (OD-8 caller side, OD-2 worker fallback) and the pid namespace ---
@@ -659,6 +749,13 @@ class ExecChannel:
         if not _positions_match(subprocess.Popen.__init__):
             raise UnsupportedChannel("unsupported_version")
         self._positions = POPEN_POSITIONS
+        # spec 057 WP7-9/WP7-10: the install's hook_programs table (None: none listed)
+        policy = getattr(getattr(producer.wire, "gate", None), "policy", None)
+        table = getattr(policy, "classification", None)
+        self.hook_table: _classify.Classification | None = (
+            table if isinstance(table, _classify.Classification) and table.has_hook_programs
+            else None
+        )  # fmt: skip
 
     # -- HookChannel ------------------------------------------------------------------
 
@@ -781,10 +878,12 @@ class ExecChannel:
 
     def _spawn_bodies(self, args: tuple[Any, ...], kwargs: dict[str, Any],
                       bodies: list[AnyBody],
-                      ) -> tuple[dict[str, Any], dict[str, Any] | None]:  # fmt: skip
+                      ) -> tuple[dict[str, Any], dict[str, Any] | None,
+                                 _HookProbe | None]:  # fmt: skip
         """The start's argv and context bodies (each only when its role is not ``omit``),
-        the evidence fields they imply and, for a possible container create command, its
-        argv document (056 §7.3.3 (a))."""
+        the evidence fields they imply, for a possible container create command its argv
+        document (056 §7.3.3 (a)) and, with hook programs listed, what the worker
+        classifies the child by (spec 057 WP7-10; references only)."""
         flag = self._param(args, kwargs, "shell")
         # Popen tests the flag's truth; Fabric evaluates it only for exact builtins.
         shell = (flag if type(flag) is bool else flag != 0 if type(flag) is int
@@ -805,7 +904,11 @@ class ExecChannel:
             bodies.append(self._json_body("terminal.context", context))
         stdio = {name: _disposition(self._param(args, kwargs, name))
                  for name in ("stdin", "stdout", "stderr")}  # fmt: skip
-        return {"argv_form": argv_form, "stdio": stdio}, _create_candidate(document, shell)
+        table = self.hook_table
+        probe = None if table is None or not isinstance(document, dict) else _HookProbe(
+            table, document, self._param(args, kwargs, "executable"))  # fmt: skip
+        return ({"argv_form": argv_form, "stdio": stdio}, _create_candidate(document, shell),
+                probe)  # fmt: skip
 
     def _output_bodies(self, stdout: object, stderr: object, stdin: object,
                        bodies: list[AnyBody], *, keep: bool = True) -> str:  # fmt: skip
@@ -863,14 +966,14 @@ class ExecChannel:
         parent_pid = os.getpid()
         bodies: list[AnyBody] = []
         item: dict[str, Any] = {"api": _api(pending.via, "popen"), "pid_known": True}
-        fields, command = self._spawn_bodies(args, kwargs, bodies)
+        fields, command, probe = self._spawn_bodies(args, kwargs, bodies)
         item.update(fields)
         evidence = self._evidence(item, bodies)
         attributes: dict[str, Any] = {"fabric.process.pid": pid,
                                       "fabric.process.parent_pid": parent_pid}  # fmt: skip
         if (host_id := self.producer.host_id) is not None:
             attributes["fabric.execution.host_id"] = host_id
-        proc = _Proc(pending.attempt, pid, pending.via, _text_encoding(popen), command)
+        proc = _Proc(pending.attempt, pid, pending.via, _text_encoding(popen), command, probe)
         self._track(popen, proc)
         if pending.via is not None:
             pending.via.proc = proc
@@ -878,7 +981,8 @@ class ExecChannel:
         pending.attempt.emit(
             "start", name_hint=NAME_HINT, attributes=attributes, start_ns=pending.start_ns,
             end_ns=end_ns, lifecycle="running", bodies=bodies, evidence=evidence,
-            late=_start_late(pid, parent_pid, popen, stat) if _LINUX else None,
+            late=_joined(_start_late(pid, parent_pid, popen, stat) if _LINUX else None,
+                         _hook_late(probe)),
         )  # fmt: skip
 
     @fail_open(None)
@@ -888,15 +992,18 @@ class ExecChannel:
         ``pid_known: false``; it carries what was asked to run."""
         bodies: list[AnyBody] = []
         item: dict[str, Any] = {"api": _api(pending.via, "popen"), "pid_known": False}
-        item.update(self._spawn_bodies(args, kwargs, bodies)[0])
+        fields, _, probe = self._spawn_bodies(args, kwargs, bodies)
+        item.update(fields)
         if (name := _error_class(exc)) is not None:
             item["error_class"] = name
+            if (code := _errno_name(exc)) is not None:
+                item["errno"] = code  # spec 057 WP7-10: beside error_class
         evidence = self._evidence(item, bodies)
         self._count("spawn_failures")
         pending.attempt.emit(
             "end", name_hint=NAME_HINT, attributes={}, start_ns=pending.start_ns,
             end_ns=end_ns, lifecycle="completed", result_status="error",
-            otlp_status="error", bodies=bodies, evidence=evidence,
+            otlp_status="error", bodies=bodies, evidence=evidence, late=_hook_late(probe),
         )  # fmt: skip
 
     # -- outcomes (Fabric-only sections) -------------------------------------------------
@@ -998,6 +1105,7 @@ class ExecChannel:
             "end", name_hint=NAME_HINT, attributes={"fabric.process.pid": proc.pid},
             start_ns=start_ns, end_ns=time.time_ns(), lifecycle="completed",
             result_status="error", otlp_status="error", bodies=bodies, evidence=evidence,
+            late=_hook_late(proc.hook),
         )  # fmt: skip
 
     def _emit_outcome(self, proc: _Proc, returncode: int | None, bodies: list[AnyBody],
@@ -1006,9 +1114,13 @@ class ExecChannel:
                       ) -> None:  # fmt: skip
         end_ns = time.time_ns()
         attributes: dict[str, Any] = {"fabric.process.pid": proc.pid}
-        if returncode is not None and not proc.rc_done:
-            attributes.update(_status_keys(returncode))
+        status = returncode is not None and not proc.rc_done
+        if status:
+            attributes.update(_status_keys(cast("int", returncode)))
             proc.rc_done = True
+        if proc.hook is not None and (status or not proc.ended):
+            # the record with the exit status carries the exit map's outcome (WP7-10)
+            late = _joined(late, _hook_late(proc.hook, returncode, outcome=status))
         common: dict[str, Any] = {
             "name_hint": NAME_HINT, "attributes": attributes, "start_ns": start_ns,
             "end_ns": end_ns, "bodies": bodies, "evidence": evidence, "late": late,

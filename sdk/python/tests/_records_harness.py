@@ -162,6 +162,7 @@ class Handle:
         self.pipeline.set_settle(self.allocator.settle)
         self.loss.set_settle(self.allocator.settle)
         self.config = SimpleNamespace(labels=labels, id_key=id_key)
+        self.gate = gate  # as the installed handle: the content gate and its capture policy
         self._tee_or_none = SimpleNamespace(
             pipeline=self.pipeline, allocator=self.allocator, loss=self.loss, budget=self.budget
         )

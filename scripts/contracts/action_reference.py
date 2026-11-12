@@ -139,6 +139,8 @@ def startup_effects(
     for effect in effects:
         if effect.get("reported_parent_attempt") or effect.get("reported_parent_call"):
             continue
+        if effect.get("hook_program"):
+            continue  # spec 057 WP7-10: a listed hook program is never an effect
         bound = first.get(_epoch(inp, effect))
         if bound is None or effect["sequence"] >= bound:
             continue
@@ -831,7 +833,17 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
     startup: list[Mapping[str, Any]] = []
     before_first_call = startup_effects(inp, effects)
     evaluated = ambiguous = False
+    dispatched: set[str] = set()
     for effect in effects:
+        if effect.get("hook_program"):
+            # Spec 057 WP7-10 (field finding F2): a process the customer's hook_programs
+            # list names is a hook around a tool call, never an effect of one. No A rule
+            # applies and it is not counted; unless its exit map says it blocked the call,
+            # every call in whose window it ran was dispatched.
+            trace["effects"][effect["attempt_uid"]] = "hook_program"
+            if effect.get("hook_outcome") != "blocked":
+                dispatched.update(c["id"] for c in candidates(inp, effect, calls))
+            continue
         if effect["attempt_uid"] in before_first_call:
             # S0 (revision 11): listed and counted, never attributed, never a chain reason.
             trace["effects"][effect["attempt_uid"]] = "S0"
@@ -1100,6 +1112,13 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
         )
         not_observed[reason] += 1
         trace["tool_calls"][call["id"]] = reason
+    # A dispatched call with no effect in its window: the effect was not where the enabled
+    # channels look (a remote sandbox, an unhooked client), so the chain is not complete.
+    hook_only = any(
+        trace["tool_calls"][c["id"]] == "none_in_window"
+        for c in calls
+        if c["id"] in dispatched
+    )
 
     decisions: dict[str, Any] = {"verdict": inp["exchange_verdict"]}
     if inp.get("exchange_reasons"):
@@ -1129,6 +1148,7 @@ def reconstruct(inp: Mapping[str, Any], call_id: Any) -> dict[str, Any]:
                 *(["unattributed_effect"] if unattributed else []),
                 *(["ambiguous_attribution"] if ambiguous else []),
                 *(["remote_sandbox"] if remote_calls else []),
+                *(["none_in_window"] if hook_only else []),
             ]
         )
         if active

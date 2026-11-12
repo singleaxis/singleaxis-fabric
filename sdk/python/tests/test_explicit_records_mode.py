@@ -112,7 +112,7 @@ def _harness(monkeypatch: pytest.MonkeyPatch, **modes: str) -> Harness:
     modes = modes or dict.fromkeys(ROLES, "retain_original")
     gate, protector = _policy(**modes)
     handle = Harness(gate=gate, protector=protector, id_key=KEY)
-    handle.gate = gate  # type: ignore[attr-defined]  # the install's capture policy
+    handle.gate = gate  # the install's capture policy
     monkeypatch.setattr(call_recorder, "installed_records", lambda: handle.input)
     return handle
 
