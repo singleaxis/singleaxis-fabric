@@ -474,9 +474,10 @@ class Attribution:
     # Spec 057: per hook-program effect or control contact attempt uid, the tool calls
     # whose open window holds it (the §4.2 conditions; spec 057 joins them by window).
     windows: dict[str, list[str]] = field(default_factory=dict)
-    # Spec 057 WP7-10 (F2): the calls in whose window an unblocked hook program ran; one of
-    # them left ``none_in_window`` is what lowers the effects chain (``_apply_security``
-    # re-reads it after F5 has moved denied calls to ``control_denied``).
+    # Spec 057 WP7-10 (F2): the calls in whose window an unblocked hook program ran (in
+    # process here; seen only by a host sensor, added by ``_sensor_rows``); one of them
+    # left ``none_in_window`` is what lowers the effects chain (``_apply_security`` sets
+    # the reason after F5 has moved denied calls to ``control_denied``).
     hook_dispatched: frozenset[str] = frozenset()
 
     def expected(self) -> dict[str, Any]:
@@ -889,13 +890,19 @@ def _apply_security(result: Attribution, security: _security.SecurityResult) -> 
     # Spec 057 WP7-10 (F2): the effects chain's ``none_in_window`` reason names a call a
     # hook program shows was dispatched and that still has no effect. A deny that gates
     # every such call (F5 above) leaves none: the reason goes with it, so the chain never
-    # states a reason ``effects_not_observed`` does not count.
+    # states a reason ``effects_not_observed`` does not count. A hook seen only by a host
+    # sensor (``_sensor_rows``, after ``attribute``) adds its window here, like one seen
+    # in process (3.7 note 4: any listed hook program that did not map to ``blocked``).
     effects = result.chains.get("effects", {})
-    if "none_in_window" in effects.get("reasons", ()) and not any(
-        result.trace["tool_calls"].get(call_id) == "none_in_window"
-        for call_id in result.hook_dispatched
-    ):
-        result.chains["effects"] = chain(r for r in effects["reasons"] if r != "none_in_window")
+    if effects.get("verdict") not in ("complete", "partial"):
+        return  # not_observed: no enabled effect channel to judge
+    reasons = list(effects.get("reasons", ()))
+    pending = any(result.trace["tool_calls"].get(call_id) == "none_in_window"
+                  for call_id in result.hook_dispatched)  # fmt: skip
+    if pending and "none_in_window" not in reasons:
+        result.chains["effects"] = chain([*reasons, "none_in_window"])
+    elif not pending and "none_in_window" in reasons:
+        result.chains["effects"] = chain(r for r in reasons if r != "none_in_window")
 
 
 class ActionReader:
@@ -1115,6 +1122,8 @@ class ActionReader:
                 for call in result.calls
                 if call.open_ns - margin <= event.time_ns < call.close_ns + margin
             ]
+            if "hook_program" in row:  # outcome unknown (no exit code): never ``blocked``
+                result.hook_dispatched |= frozenset(result.windows[event.event_id])
         if hooks:
             inp["sensor_hooks"] = hooks
         if connects:
