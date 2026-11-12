@@ -442,7 +442,10 @@ def test_held_run_markers_survive_a_crash_through_the_ledger(tmp_path: Path) -> 
     assert wait_for(lambda: drainer.stats().ledger_recovered >= len(held), 30.0)
     drainer.close(30.0)
     markers = _markers(_spans(host))
-    assert held <= set(markers)
+    # A manifest larger than one ledger slot is not mirrored, by design (050 §3.5, counted
+    # as manifests_unledgered); every other held marker comes back from the ledger.
+    assert len(held - set(markers)) == state["manifests_unledgered"] <= 1
+    held &= set(markers)
     held_kinds = Counter(m["kind"] for e, m in markers.items() if e in held)
     assert {kind: held_kinds[kind] for kind in RUN_KINDS} == dict.fromkeys(RUN_KINDS, blocks)
     runs = {m["fabric.run.id"] for e, m in markers.items() if e in held and m["kind"] in RUN_KINDS}
