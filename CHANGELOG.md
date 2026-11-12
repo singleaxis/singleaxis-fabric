@@ -102,7 +102,8 @@ it never makes, applies, waits for or returns one.
     `.gitignore`, and a symlinked `.fabric` is refused (`down --purge` deletes
     nothing through it). `fabric up` ends with the next command,
     `fabric run -- <your agent command>`. The sensor-running finding
-    (`FC-040`) says that `fabric run` puts the agent in the sensor's scope. `fabric up` and `fabric down` refuse a `--project` that is not the
+    (`FC-040`) says that `fabric run` puts the agent in the sensor's scope.
+    `fabric up` and `fabric down` refuse a `--project` that is not the
     one `fabric.yaml` names (`FC-032`); a refused `fabric init` leaves
     `fabric.yaml` unchanged; `down --purge` also removes an agent cgroup
     made by an `up` that failed or by one before a later `up --no-sensor`.

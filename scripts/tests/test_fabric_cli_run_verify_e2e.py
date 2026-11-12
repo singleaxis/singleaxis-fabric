@@ -38,12 +38,16 @@ API_KEY = "sk-e2e-not-a-real-key"
 COMPLETION = "It is mild in Lisbon"
 
 
-def _fabric(project: Path, env: dict[str, str], *args: str, expect: int = 0) -> dict[str, Any]:
+def _fabric(
+    project: Path, env: dict[str, str], *args: str, expect: int = 0
+) -> dict[str, Any]:
     result = subprocess.run(  # noqa: S603
         [sys.executable, "-m", "fabric.cli", *args, "--json"],
         cwd=project, env=env, capture_output=True, text=True, timeout=600, check=False,
     )  # fmt: skip
-    assert result.returncode == expect, f"fabric {args}:\n{result.stdout}\n{result.stderr}"
+    assert result.returncode == expect, (
+        f"fabric {args}:\n{result.stdout}\n{result.stderr}"
+    )
     report: dict[str, Any] = json.loads(result.stdout)
     return report
 
@@ -71,7 +75,9 @@ def stack(tmp_path: Path) -> Iterator[tuple[Path, dict[str, str], FakeModel]]:
         )  # fmt: skip
 
 
-def test_up_run_verify_show_doctor(stack: tuple[Path, dict[str, str], FakeModel]) -> None:
+def test_up_run_verify_show_doctor(
+    stack: tuple[Path, dict[str, str], FakeModel],
+) -> None:
     project, env, model = stack
     _fabric(project, env, "up", "--wait", "240")
 
@@ -93,7 +99,9 @@ def test_up_run_verify_show_doctor(stack: tuple[Path, dict[str, str], FakeModel]
         env=agent_env, cwd=project, capture_output=True, text=True, timeout=180, check=False,
     )  # fmt: skip
     assert agent.returncode == 0, agent.stdout + agent.stderr
-    assert agent.stderr == ""  # not a terminal: run says nothing on the agent's stderr (I2)
+    assert (
+        agent.stderr == ""
+    )  # not a terminal: run says nothing on the agent's stderr (I2)
     info = json.loads(agent.stdout.strip().splitlines()[-1])
     assert info["capture_active"] and info["answer"].startswith(COMPLETION), info
 
@@ -106,7 +114,9 @@ def test_up_run_verify_show_doctor(stack: tuple[Path, dict[str, str], FakeModel]
     rows = {row["row"]: row for row in verify["data"]["run"]["coverage"]}
     assert rows["model calls (requests and responses)"]["state"] == "recorded"
     assert rows["commands the agent ran"] == {
-        "row": "commands the agent ran", "state": "fix", "note": "fabric init --exec"
+        "row": "commands the agent ran",
+        "state": "fix",
+        "note": "fabric init --exec",
     }
 
     # show: the conversation with the tool call's arguments, read from the store.
@@ -120,8 +130,12 @@ def test_up_run_verify_show_doctor(stack: tuple[Path, dict[str, str], FakeModel]
     assert 'get_weather  {"city": "Lisbon"}' in shown.stdout, shown.stdout
     assert COMPLETION in shown.stdout
     listed = _fabric(project, env, "show", "--list")
-    assert [(r["label"], r["verdict"]) for r in listed["data"]["runs"]] == [("e2e-1", "complete")]
+    assert [(r["label"], r["verdict"]) for r in listed["data"]["runs"]] == [
+        ("e2e-1", "complete")
+    ]
 
     doctor = _fabric(project, env, "doctor")
     ids = [f["id"] for f in doctor["findings"]]
-    assert "FC-095" in ids and not [f for f in doctor["findings"] if f["severity"] == "error"]
+    assert "FC-095" in ids and not [
+        f for f in doctor["findings"] if f["severity"] == "error"
+    ]
