@@ -1453,6 +1453,36 @@ def test_a_path_object_argv0_or_executable_is_classified(tmp_path: Path) -> None
         _close(rig)
 
 
+def test_a_hook_whose_argv_is_over_the_body_bound_or_bytes_is_still_classified(
+    tmp_path: Path,
+) -> None:
+    """P2a review: the ``terminal.argv`` document is dropped over its bound (64K chars or
+    1024 items), e.g. a hook given a large tool input as an argument. Classification must
+    not depend on that body: the worker reads ``argv[0]`` and ``executable=`` by reference,
+    so the declared hook stays a hook row, never the tool call's effect (F2). A ``bytes``
+    ``argv[0]`` or ``executable=`` is decoded on the worker as ``os.fsdecode`` would."""
+    script = _script(tmp_path, "pre-tool.sh", "exit 2")
+    rig = _hook_rig(tmp_path, {"path": str(script), "label": "pre-tool-check",
+                               "exit_map": {"2": "blocked"}})  # fmt: skip
+    try:
+        subprocess.run([str(script), "x" * (_exec.MAX_ARGV_CHARS + 1)])
+        subprocess.run([str(script), *(["a"] * _exec.MAX_ARGV_ITEMS)])
+        subprocess.run(["renamed", "x" * (_exec.MAX_ARGV_CHARS + 1)], executable=str(script))
+        subprocess.run([os.fsencode(script), "--tool"])
+        subprocess.run([b"renamed"], executable=os.fsencode(script))
+        # unchanged: an over-bound argv of an unlisted program is not classified
+        subprocess.run([SH, "-c", "exit 0", "x" * (_exec.MAX_ARGV_CHARS + 1)])
+        ends = [r for r in rig.records() if r.lifecycle == "completed"]
+        assert [r.attrs.get("fabric.hook.program_label") for r in ends] == [
+            *(["pre-tool-check"] * 5), None]  # fmt: skip
+        assert [r.attrs.get("fabric.hook.outcome") for r in ends] == [*(["blocked"] * 5), None]
+        # the over-bound argv bodies stay dropped (descriptor only): nothing is copied
+        starts = [r for r in rig.records() if r.lifecycle == "running"]
+        assert [s.body("terminal.argv") for s in starts[:3]] == [b"", b"", b""]
+    finally:
+        _close(rig)
+
+
 def test_the_hook_label_never_carries_the_path_and_argv_stays_protected(tmp_path: Path) -> None:
     """Argv protection canary: with ``terminal.argv`` omitted, a classified hook's argv
     (path and arguments) is in no span and no stored body; only the label is recorded."""
