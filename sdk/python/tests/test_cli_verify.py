@@ -194,6 +194,29 @@ def test_a_project_path_with_a_space_reads_its_content_store(tmp_path: Path) -> 
         assert 'answer: "It is noon in UTC."' in "\n".join(lines)
 
 
+def test_the_network_row_says_what_the_run_recorded(lab: dict[str, Any], tmp_path: Path) -> None:
+    """§12.4: the non-model HTTP row is observed, not assumed from the configuration: the
+    requests the reader found in the run, or "not observed" when it found none."""
+    port = lab["model"].url.split(":")[2].split("/")[0]
+    lab["shell"]["FABRIC_WIRE_HTTP_HOSTS"] = json.dumps([f"http://127.0.0.1:{port}"])
+    agent = AGENT.replace(
+        "print(json.dumps(",
+        'httpx.get(base.rsplit("/", 1)[0] + "/health", trust_env=False)\nprint(json.dumps(',
+    )
+    lab["agent"] = write(tmp_path / "agent-with-http.py", agent)
+    _start_agent(lab, label="with-http")
+    _, _, report = _verify_now(lab, "--canary-only")
+    _, _, report = _verify_now(lab)
+    rows = {row["row"]: (row["state"], row["note"]) for row in report["data"]["run"]["coverage"]}
+    state, note = rows["network contacts (non-model HTTP)"]
+    assert state == "recorded" and note.startswith("1 request(s); "), report["findings"]
+    lab["agent"] = write(tmp_path / "agent-without-http.py", AGENT)
+    _start_agent(lab, label="without-http")
+    _, _, report = _verify_now(lab)
+    rows = {row["row"]: (row["state"], row["note"]) for row in report["data"]["run"]["coverage"]}
+    assert rows["network contacts (non-model HTTP)"][0] == "not observed"
+
+
 def test_s1_a_model_host_no_endpoint_matches_is_named_with_the_fix(lab: dict[str, Any]) -> None:
     """F2/S1: the agent's model host matches nothing (base-URL derivation off): the run
     records no model call, and verify says which host and the one line that fixes it."""
@@ -374,22 +397,24 @@ class _Store:
         return {}
 
 
-@pytest.mark.parametrize(
-    ("api", "response"),
-    [
-        ("anthropic.messages", b'data: {"type":"content_block_start","index":0,"content_block":"x"}\n\n'),
-        ("anthropic.messages", b'data: {"type":"content_block_delta","index":0,"delta":"x"}\n\n'),
-        ("openai.chat_completions", b'data: {"choices":[{"delta":{"tool_calls":[{"function":"x"}]}}]}\n\n'),
-        ("openai.chat_completions", b'data: {"choices":[{"delta":{"tool_calls":[{"index":[1]}]}}]}\n\n'),
-        ("openai.chat_completions", b'{"choices":[{"message":{"content":"hi","tool_calls":"x"}}]}'),
-        ("anthropic.messages", b'{"content":{"type":"text"}}'),
-        ("openai.responses", b'{"output":{"type":"message"}}'),
-    ],
-)  # fmt: skip
-def test_show_never_raises_on_a_body_of_an_odd_shape(api: str, response: bytes) -> None:
+_SSE = "data: {}\n\n"
+_CALLS = '{{"choices":[{{"delta":{{"tool_calls":[{}]}}}}]}}'
+_ODD_BODIES = [
+    ("anthropic.messages", _SSE.format('{"type":"content_block_start","content_block":"x"}')),
+    ("anthropic.messages", _SSE.format('{"type":"content_block_delta","index":0,"delta":"x"}')),
+    ("openai.chat_completions", _SSE.format(_CALLS.format('{"function":"x"}'))),
+    ("openai.chat_completions", _SSE.format(_CALLS.format('{"index":[1]}'))),
+    ("openai.chat_completions", '{"choices":[{"message":{"content":"hi","tool_calls":"x"}}]}'),
+    ("anthropic.messages", '{"content":{"type":"text"}}'),
+    ("openai.responses", '{"output":{"type":"message"}}'),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("api", "response"), _ODD_BODIES)
+def test_show_never_raises_on_a_body_of_an_odd_shape(api: str, response: str) -> None:
     """``show`` prints what a model server sent: a body of a shape the provider's API does
     not have is shown as far as it parses, or said, never a traceback."""
-    store = _Store({"q": b'{"messages":"not a list","input":5}', "a": response})
+    store = _Store({"q": b'{"messages":"not a list","input":5}', "a": response.encode()})
     objects = {
         "request": {"verification": "verified", "object_id": "q"},
         "response": {"verification": "verified", "object_id": "a"},

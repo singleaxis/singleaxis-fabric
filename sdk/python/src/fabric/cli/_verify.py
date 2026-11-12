@@ -366,8 +366,13 @@ def _user_run(
             )
         )
         return data
+    from ..reconstruct._attribute import ActionReader  # noqa: PLC0415
+
+    # every_run: each run's view (its non-model HTTP requests for the coverage report);
+    # the report entries, and so the verdicts, stay as the reader's report has them.
+    reader = ActionReader(every_run=True, keep_runs=True, id_key=dest.id_key)
     try:
-        document = _read.read(dest, files)
+        document = _read.read(dest, files, actions=reader)
     except ReconstructInputError as exc:
         findings.append(Finding("FC-073", _input_error(exc)))
         return data
@@ -395,7 +400,8 @@ def _user_run(
         findings.append(_nothing_found(record, status))
     elif record.runtime == "python":
         findings.extend(_judge(runs, record))
-    rows = _read.coverage(project, record, runs, status)
+    effective = _config.resolve(project.document, {}, environ, project.directory)
+    rows = _read.coverage(effective, record, runs, status, _read.http_requests(reader, runs))
     data["coverage"] = [row.to_json() for row in rows]
     lines.append("coverage (observed):")
     lines.extend(row.line() for row in rows)

@@ -121,6 +121,18 @@ def read(
     )
 
 
+def http_requests(reader: Any, runs: Sequence[Mapping[str, Any]]) -> int:
+    """The non-model HTTP requests (``http.nonmodel``) the action reader found in ``runs``."""
+    from ..reconstruct._attribute import action_rows  # noqa: PLC0415
+
+    wanted = {run["run_id"] for run in runs}
+    return sum(
+        int(action_rows(view).get("http_requests_unattributed") or 0)
+        for view in reader.runs
+        if view.run_id in wanted
+    )
+
+
 def canary_ids(labels: Iterable[str], key: bytes | None) -> set[str]:
     return {report_run_id(label, key) for label in labels}
 
@@ -278,14 +290,16 @@ def _chain(runs: Sequence[Mapping[str, Any]], name: str) -> str | None:
 
 
 def coverage(
-    project: _project.Project,
+    resolved: Any,
     record: _runstate.RunRecord,
     runs: Sequence[Mapping[str, Any]],
     status: Mapping[str, Any] | None,
+    http: int | None = None,
 ) -> list[Row]:
     """§12.4, for the rows built so far: what this run recorded, from the reader's report
-    and the run's own record, with the line that turns on what is off."""
-    resolved = project.resolved
+    and the run's own record, with the line that turns on what is off. ``resolved``: the
+    settings as the agent got them (fabric.yaml, and this shell's variables over it,
+    §6.2). ``http``: the non-model HTTP requests the reader found in these runs."""
     exchanges = sum(int(run["counts"]["exchanges"]) for run in runs)
     rows: list[Row] = []
     if record.runtime != "python":
@@ -327,15 +341,16 @@ def coverage(
         rows.append(Row("commands the agent ran", "fix", "fabric init --exec"))
     else:
         rows.append(Row("commands the agent ran", _state(_chain(runs, "effects")), "exec hook"))
-    if not resolved["capture.http_hosts"]:
+    hosts = ", ".join(resolved["capture.http_hosts"] or [])
+    if not hosts:
         rows.append(Row("network contacts (non-model HTTP)", "fix", "fabric init --http-host HOST"))
-    else:
+    elif http:
         rows.append(
-            Row(
-                "network contacts (non-model HTTP)",
-                "recorded",
-                ", ".join(resolved["capture.http_hosts"]),
-            )
+            Row("network contacts (non-model HTTP)", "recorded", f"{http} request(s); {hosts}")
+        )
+    else:  # configured, but this run shows none: say so, never assume it was recorded
+        rows.append(
+            Row("network contacts (non-model HTTP)", "not observed", f"no request to {hosts}")
         )
     if record.sensor == "scoped":
         rows.append(

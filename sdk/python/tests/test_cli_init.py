@@ -807,6 +807,6 @@ def test_http_hosts_from_the_environment_take_the_sdks_json_form() -> None:
         "api.github.com",
         "tools.internal:8443",
     ]
-    assert _config._env_list('[1, 2]') == ["[1, 2]"]
+    assert _config._env_list("[1, 2]") == ["[1, 2]"]
     assert _config._env_list("[not json") == ["[not json"]
     assert _config._env_list("") == []
