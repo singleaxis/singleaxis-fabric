@@ -644,6 +644,42 @@ def test_purge_deletes_volumes_and_state_never_secrets_or_recorded_data(
     ]
 
 
+_VM_CGROUP_RMDIR = ["rmdir", "/sys/fs/cgroup/fabric.slice/agent-support-agent",
+                    "/sys/fs/cgroup/fabric.slice"]  # fmt: skip
+
+
+def test_purge_removes_the_agent_cgroup_after_a_later_up_without_the_sensor(
+    project: Path,
+) -> None:
+    """A later `up --no-sensor` overwrote the state file's record of the agent cgroup the
+    first `up` created, so `down --purge` left it behind."""
+    docker = FakeDocker()
+    _up_once(docker)
+    report, _ = _up_once(docker, "--no-sensor")
+    assert report.data["sensor"]["state"] == "off"
+    _down(docker, "--purge")
+    assert docker.calls[-1][-3:] == _VM_CGROUP_RMDIR
+
+
+def test_purge_removes_the_agent_cgroup_of_an_up_that_failed(project: Path) -> None:
+    """The cgroup is created before the project is applied; an `up` that then failed (a
+    busy port) wrote no state, so `down --purge` did not know to remove it. A later
+    successful `up` reports no change against that partial state."""
+    busy = Result(1, "", "Bind for 127.0.0.1:4318 failed: port is already allocated")
+    docker = FakeDocker(fail={"up": busy})
+    with pytest.raises(CliError) as caught:
+        _up_once(docker)
+    assert "FC-022" in [f.id for f in caught.value.findings]
+    _down(docker, "--purge")
+    assert docker.calls[-1][-3:] == _VM_CGROUP_RMDIR
+    # Failed, then started: the partial state is not a running project with changes.
+    with pytest.raises(CliError):
+        _up_once(docker)
+    docker.fail.clear()
+    report, _ = _up_once(docker)
+    assert report.data["changes"] == [] and "FC-026" not in _ids(report)
+
+
 def test_down_without_a_project_or_with_a_failing_compose_says_why(project: Path) -> None:
     with pytest.raises(CliError) as caught:
         _down(FakeDocker())

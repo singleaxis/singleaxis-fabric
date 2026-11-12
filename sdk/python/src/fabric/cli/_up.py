@@ -181,8 +181,9 @@ def _read_state(path: Path) -> dict[str, Any]:
 
 
 def _changes(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[str]:
-    """What the running project differs in, in words (only when there was one)."""
-    if not before:
+    """What the running project differs in, in words (only when there was one: a state
+    holding only the agent cgroup of an `up` that failed is not a running project)."""
+    if not before.get("node_image"):
         return []
     labels = {"node_image": "Node image", "sink_image": "sink image",
               "sensor_image": "sensor image", "node_port": "Node port",
@@ -359,6 +360,21 @@ def _confirm_sensor(sensor: _sensor.SensorPlan, docker: Docker, project: _projec
     )
 
 
+def _record_agent_cgroup(state_path: Path, previous: Mapping[str, Any],
+                         sensor: _sensor.SensorPlan) -> tuple[Any, Any]:  # fmt: skip
+    """The agent cgroup that now exists (removed by `down --purge`), whatever the sensor
+    does. Recorded before the project is applied, so a failed `up` (a busy port, a Node
+    that never answers) leaves it to `down --purge` too; one an earlier `up` made is
+    carried forward when this one makes none (`--no-sensor`, sensor.kind: off)."""
+    made: tuple[Any, Any] = (sensor.cgroup, sensor.create) if sensor.start else (None, None)
+    if made[0] is None and previous.get("sensor_cgroup"):
+        made = (previous["sensor_cgroup"], previous.get("sensor_cgroup_created"))
+    if made[0] is not None:
+        record = {**previous, "sensor_cgroup": made[0], "sensor_cgroup_created": made[1]}
+        _write_if_changed(state_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+    return made
+
+
 def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None,
            cwd: Path | None = None, *, docker: Docker | None = None,
            probe: Callable[[int, Path], bool] = node_answers,
@@ -393,8 +409,9 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
     layout = _layout(project, facts, port, sensor)
     compose_file, node_digest, fingerprint = _render(project, images, layout)
 
-    # The agent cgroup that now exists (removed by `down --purge`), whatever the sensor does.
-    cgroup_made = (sensor.cgroup, sensor.create) if sensor.start else (None, None)
+    state_path = project.state_dir / "state" / STATE_FILE
+    previous = _read_state(state_path)
+    cgroup_made = _record_agent_cgroup(state_path, previous, sensor)
     _start(docker, project, compose_file, layout, options.wait, probe, sleep, findings)
     if sensor.start:
         _confirm_sensor(sensor, docker, project, compose_file, sleep)
@@ -408,13 +425,12 @@ def run_up(options: argparse.Namespace, environ: Mapping[str, str] | None = None
 
     # Compared after the sensor is confirmed: one that could not start or stay up is
     # stored as "off" and is not a change the next `up` reports.
-    state_path = project.state_dir / "state" / STATE_FILE
     applied: dict[str, Any] = {
         "node_image": images.node, "sink_image": images.sink,
         "sensor_image": images.sensor if sensor.start else None, "node_port": port,
         "node_config": node_digest, "node_cert": fingerprint, "sensor": sensor.state(),
         "data_dir": str(project.data_dir)}  # fmt: skip
-    changes = _changes(_read_state(state_path), applied)
+    changes = _changes(previous, applied)
     findings.extend(Finding("FC-026", change) for change in changes)
     findings.extend(sensor.findings)
     applied.update(sensor_cgroup=cgroup_made[0], sensor_cgroup_created=cgroup_made[1])
