@@ -474,6 +474,33 @@ def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
         return
 
 
+#: Signals the Python interpreter sets to "ignore" at start-up. An ignored disposition
+#: survives ``exec``, so without a reset the agent (and every program it starts) would
+#: ignore SIGPIPE: ``fabric run -- sh -c 'yes | head -1'`` would then differ from a bare
+#: run (I2). ``subprocess`` resets the same set for its children (``restore_signals``).
+_PYTHON_IGNORED = ("SIGPIPE", "SIGXFZ", "SIGXFSZ")
+
+
+def _exec(
+    execvpe: Callable[..., Any], command: Sequence[str], env: Mapping[str, str]
+) -> None:
+    """``execvpe`` with the default disposition of the signals Python ignores, as a shell
+    gives them (best effort, I3). They are put back when ``exec`` does not happen (it
+    failed, or a test's ``execvpe`` returned)."""
+    previous: dict[int, Any] = {}
+    for name in _PYTHON_IGNORED:
+        number = getattr(signal, name, None)
+        if number is not None:
+            with contextlib.suppress(OSError, ValueError):
+                previous[number] = signal.signal(number, signal.SIG_DFL)
+    try:
+        execvpe(command[0], list(command), dict(env))
+    finally:
+        for number, handler in previous.items():
+            with contextlib.suppress(OSError, ValueError, TypeError):
+                signal.signal(number, handler)
+
+
 def _spawn(command: Sequence[str], env: Mapping[str, str]) -> int:
     """``--no-exec`` and Windows: start the agent, forward Ctrl-C and SIGTERM, wait."""
     child = subprocess.Popen(list(command), env=dict(env))  # noqa: S603 - the operator's command
@@ -524,7 +551,7 @@ def launch(
     _say(findings, stderr, options.quiet)
     if options.exec_mode and os.name == "posix":
         try:
-            execvpe(command[0], list(command), env)
+            _exec(execvpe, command, env)
         except OSError as exc:
             return _not_started(command, exc, stderr)
         return EXIT_OK  # only a test's execvpe returns
@@ -549,7 +576,7 @@ def launch_unchanged(
     env = dict(os.environ)
     if os.name == "posix":
         try:
-            execvpe(command[0], list(command), env)
+            _exec(execvpe, command, env)
         except OSError as exc:
             return _not_started(command, exc, stderr)
         return EXIT_OK  # only a test's execvpe returns

@@ -118,6 +118,32 @@ def test_the_agent_sees_a_bare_run_but_for_fabric_variables(world: dict[str, Any
         assert after == before
 
 
+@pytest.mark.parametrize("flags", [[], ["--no-such-flag"]], ids=["run", "mistyped-flag"])
+def test_the_agent_gets_the_signal_dispositions_of_a_bare_run(
+    tmp_path: Path, flags: list[str]
+) -> None:
+    """Python ignores SIGPIPE (and SIGXFSZ) at start-up and an ignored signal survives
+    exec: the agent must still get the default, or a pipeline in it no longer stops on a
+    closed pipe. A shell cannot reset a signal ignored on entry, so `kill -PIPE $$` shows
+    the disposition it was given."""
+    env = base_env(tmp_path)
+    project = make_project(tmp_path, env)
+    agent = ["sh", "-c", "kill -PIPE $$; kill -XFSZ $$; echo survived"]
+    bare = subprocess.run(  # noqa: S603 - Popen restores the default dispositions
+        agent, cwd=project, env=env, capture_output=True, timeout=60, check=False
+    )
+    run = subprocess.run(  # noqa: S603
+        [sys.executable, "-m", "fabric.cli", "run", *flags, "--", *agent],
+        cwd=project,
+        env=env,
+        capture_output=True,
+        timeout=120,
+        check=False,
+    )
+    assert bare.returncode != 0 and bare.stdout == b""
+    assert (run.returncode, run.stdout, run.stderr) == (bare.returncode, bare.stdout, bare.stderr)
+
+
 def test_fabric_run_opens_no_socket_and_resolves_no_name(tmp_path: Path) -> None:
     """I2: every socket event of the `fabric run` process before exec is recorded (the
     hook dies with the process image at exec)."""
