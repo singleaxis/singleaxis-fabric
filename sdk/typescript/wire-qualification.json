@@ -1,0 +1,466 @@
+{
+  "schema_version": "fabric.wire-qualification/v1",
+  "comment": "Spec 055 \u00a73.1 and \u00a79.4. Which Node.js builds may run a TypeScript wire capture point. `audits` is the output of scripts/typescript/audit-undici-channels.mjs for one local fetch POST on each exact build (CI re-runs it on Node 22.23.5, 24.0.0, 24.4.0 and 24.22.3 and fails when a row differs). A tuple with claim `audited` only says that build publishes both body-chunk channels: capture stays unsupported until its own passivity report makes it `active` (unit 055-t6) and the gates pass (055-t17, 055-t22). Node 22.x and Node 24.0.0 to 24.3.0 publish neither body channel; 24.4.0 (undici 7.11.0) is the lowest audited Node 24 build that publishes both.",
+  "gates": {
+    "TS-1U": "not_passed",
+    "TS-1D": "not_passed",
+    "TS-1H": "not_passed"
+  },
+  "audit_script": "scripts/typescript/audit-undici-channels.mjs",
+  "audits": [
+    {
+      "node": "22.23.5",
+      "undici": "6.29.1",
+      "undici_origin": "bundled",
+      "platform": "darwin-arm64",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "22.23.5",
+      "undici": "6.29.1",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "22.23.5",
+      "undici": "6.29.1",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "24.0.0",
+      "undici": "7.8.0",
+      "undici_origin": "bundled",
+      "platform": "darwin-arm64",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "24.0.0",
+      "undici": "7.8.0",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "24.0.0",
+      "undici": "7.8.0",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "24.3.0",
+      "undici": "7.10.0",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "24.3.0",
+      "undici": "7.10.0",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": false,
+      "response_body_published": false,
+      "boundary": null,
+      "result": "missing_body_channels"
+    },
+    {
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "darwin-arm64",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-musl",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-musl",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "darwin-arm64",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-musl",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    },
+    {
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-musl",
+      "published": [
+        "undici:request:create",
+        "undici:request:bodyChunkSent",
+        "undici:request:bodySent",
+        "undici:request:headers",
+        "undici:request:bodyChunkReceived",
+        "undici:request:trailers",
+        "undici:client:sendHeaders",
+        "undici:client:beforeConnect",
+        "undici:client:connected"
+      ],
+      "request_body_published": true,
+      "response_body_published": true,
+      "boundary": "pre_decompression",
+      "result": "both_body_channels"
+    }
+  ],
+  "tuples": [
+    {
+      "point": "wire.ts.undici",
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "darwin-arm64",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-musl",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.4.0",
+      "undici": "7.11.0",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-musl",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "darwin-arm64",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-glibc",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-arm64-musl",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-glibc",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    },
+    {
+      "point": "wire.ts.undici",
+      "node": "24.22.3",
+      "undici": "7.30.2",
+      "undici_origin": "bundled",
+      "platform": "linux-x64-musl",
+      "boundary": "pre_decompression",
+      "claim": "audited"
+    }
+  ]
+}

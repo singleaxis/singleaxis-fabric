@@ -15,7 +15,7 @@ import (
 // arbitrary point name. Unknown points cannot satisfy a kind restriction.
 var capturePointKinds = map[string]string{
 	"fabric.self": "F", "install.config": "R",
-	"wire.py.httpx": "W", "wire.py.aiohttp": "W", "wire.ts.undici": "W",
+	"wire.py.httpx": "W", "wire.py.aiohttp": "W", "wire.ts.undici": "W", "wire.ts.node_http": "W",
 	"explicit.call_recorder": "R", "explicit.byte_boundary": "R",
 	"explicit.final_http": "R", "explicit.subprocess_artifact": "R",
 	"sdk.records": "R", "run.scope": "R", "records.control": "R", "records.grant": "R",

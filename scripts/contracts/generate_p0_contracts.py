@@ -52,6 +52,7 @@ from contracts import (  # noqa: E402
     ingress_groups,
     p1_reference as ref,
     security_context,
+    typescript_wire,
     validate_coverage_contracts as coverage,
 )
 
@@ -299,7 +300,13 @@ def build_checks(reg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         "fabric.capture.manifest_id": uuid4,
         "fabric.capture.manifest_seq": integer(0),
         "fabric.capture.point": string(
-            f"^{cp_id}@{cp_version}$", "wire.py.httpx@1.2.0", "sdk.records@0.9.0+local"
+            f"^{cp_id}@{cp_version}$",
+            "wire.py.httpx@1.2.0",
+            "sdk.records@0.9.0+local",
+            # spec 055 §8: the TypeScript points; the pattern alone does not establish a
+            # registered or qualified point (the validators resolve the registry)
+            "wire.ts.undici@1.0.0",
+            "wire.ts.node_http@1.0.0",
         ),
         "fabric.checkpoint.action": field_enum("S27"),
         "fabric.config.digest": digest,
@@ -923,7 +930,7 @@ def generate_registry(w: Writer) -> None:
             raise SystemExit(f"no check for {key}")
         if key in capture_checks:
             row["capture_check"] = capture_checks[key]
-    keys["registry_revision"] = 13
+    keys["registry_revision"] = 14
     ordered: dict[str, Any] = {}
     for name, value in keys.items():
         if name in {"check_rule", "capture_check_rule"}:
@@ -943,7 +950,7 @@ def generate_registry(w: Writer) -> None:
             row["confidence"] = fixed.group(1)
         else:
             raise ValueError(f"inference method {row['value']!r} states no confidence")
-    vocab["registry_revision"] = 12
+    vocab["registry_revision"] = 13
     w.json(COVERAGE / coverage.REGISTRY["vocab"], vocab)
 
 
@@ -5690,6 +5697,9 @@ INVALID[CAPTURE].update(host_records.INVALID_CAPTURE)
 # Spec 057 WP7-0 (and spec 052 WP3-0): mapping profiles and the controls chain.
 INVALID[CAPTURE].update(security_context.INVALID_CAPTURE)
 INVALID[COVERAGE].update(security_context.INVALID_COVERAGE)
+# Spec 055 §8 (unit 055-t1): the TypeScript wire capture refusals.
+INVALID[COVERAGE].update(typescript_wire.INVALID_COVERAGE)
+INVALID[CAPTURE].update(typescript_wire.INVALID_CAPTURE)
 # Host vectors outside a vectors/ directory (contracts/capture/v1/fixtures/host/).
 HOST_VECTORS = {
     "fixtures/host/id-key-file-v1.json",
@@ -5697,7 +5707,8 @@ HOST_VECTORS = {
     "fixtures/ingress-groups/index.json",
 }
 # Spec 057 WP7-0: coverage 1.4.0, capture 1.9.0, content 2.4.0 (three roles).
-VERSIONS = {COVERAGE: "1.4.0", CAPTURE: "1.9.0", CONTENT: "2.4.0"}
+# Spec 055 §8 (unit 055-t1): coverage 1.5.0, capture 1.10.0 (the TypeScript wire points).
+VERSIONS = {COVERAGE: "1.5.0", CAPTURE: "1.10.0", CONTENT: "2.4.0"}
 
 
 def _expectation(family: Path, rel: str) -> tuple[str, str | None]:
@@ -6327,6 +6338,9 @@ def generate(root: Path, *, check: bool) -> list[str]:
     host_records.generate(w)
     ingress_groups.generate(w)
     security_context.generate(w.text, w.read_json, registries(w))
+    typescript_wire.generate(  # spec 055 §8 (unit 055-t1)
+        w.json, w.read_json, registries(w), coverage_manifests(registries(w)), kid
+    )
     generate_content(w)
     generate_pins(w)
     generate_go(w)

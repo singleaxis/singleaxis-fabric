@@ -57,6 +57,8 @@ def _copy_tree(tmp_path: Path) -> Path:
         action_record.REPORT_SCHEMA,
         action_record.ALLOWLIST_GO,
         action_record.PROCESSOR_GO,
+        # Spec 055 §9.4: the shipped qualification table is validated with the family.
+        Path("sdk/typescript/wire-qualification.json"),
         *(
             action_record.CAPTURE
             / f"fixtures/valid/spool-record-exec-subprocess-{phase}.json"
@@ -683,8 +685,9 @@ def _vector_code(document: Any) -> str:
 def test_p1_every_section_4_3_artifact_is_pinned() -> None:
     manifest = json.loads((REPO_ROOT / FAMILY / "manifest.json").read_text())
     pinned = {record["path"]: record for record in manifest["artifacts"]}
-    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0
-    assert manifest["version"] == "1.4.0"
+    # 1.2.0: spec 056 (WP6-01); 1.3.0: 056 M2 (WP6-11); 1.4.0: spec 057 WP7-0;
+    # 1.5.0: spec 055 §8 (the TypeScript wire points, unit 055-t1)
+    assert manifest["version"] == "1.5.0"
     for path in P1_ARTIFACTS:
         assert path in pinned, path
     assert (

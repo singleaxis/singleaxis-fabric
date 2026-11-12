@@ -1,6 +1,6 @@
 {
   "contract": "singleaxis.fabric.capture",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "digest_scope": "exact_file_bytes",
   "artifacts": [
     {"path": "schema/content-log-record-v1.schema.json", "sha256": "b8ce9af20eb9499b418698792e67fa9447b1f1d57369ff28af24e15aa3fb178b", "expectation": "schema", "expected_error": null},
@@ -36,7 +36,7 @@
     {"path": "fixtures/invalid/run-reconstruction-scope-without-verdict.json", "sha256": "6d9fb7c6b9463c1f8bd6fe803264496f31fdf0a9229fedfc515c776aa7d27d38", "expectation": "invalid", "expected_error": "capture.reconstruction.scope"},
     {"path": "fixtures/model-names/model-exposure-v1.json", "sha256": "1126576c0d7d814fc0018ed33454c583c9edc08863294152ee276484b37e75ca", "expectation": "vectors", "expected_error": null},
     {"path": "fixtures/run-ids/run-id-pseudonym-v1.json", "sha256": "5d606abfae8566c98bb0f858a2c05fafea6faf0126b4241164a7ae5a043528e5", "expectation": "vectors", "expected_error": null},
-    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "613d132977a245f1065872a0457c481929240c69262c2965462e96a57b58ea91", "expectation": "schema", "expected_error": null},
+    {"path": "schema/capture-manifest-record-v1.schema.json", "sha256": "69562efe2f4824f8de2b11a923a23da005cc2942b6fad1c9147837a84d33aa48", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/valid/capture-manifest-record-local.json", "sha256": "7dfe1c3efc12e7928d7bcfb16c5a300f3dc137f748aeae422b15b9abb845fe32", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/capture-manifest-record-production-disabled.json", "sha256": "1e04687b4bf1cb6d2b9143d83802e394f60c78c23836b138af505b1c6ea6f356", "expectation": "valid", "expected_error": null},
     {"path": "fixtures/valid/loss-record-run-start-continuation.json", "sha256": "ef6b655267fe853e146226b99cf82606b0e99eca6f02c7090e4f021f811c5169", "expectation": "valid", "expected_error": null},
@@ -169,6 +169,12 @@
     {"path": "fixtures/valid/run-reconstruction-security-context.json", "sha256": "e3e68130c8a24181c6abf904c1393621a2001cf466bfba2f8ae0005611168897", "expectation": "valid", "expected_error": null},
     {"path": "schema/otlp-mapping-profile-v1.schema.json", "sha256": "681dd25e5192bb8d2a7a519615c83d3c44ca626dccee4b848c3cf5e5020e0deb", "expectation": "schema", "expected_error": null},
     {"path": "fixtures/invalid/run-reconstruction-controls-reason-without-fact.json", "sha256": "6286c35fdc9487255815be99e4591bb4e51133e54d8376e82b812cafa2131490", "expectation": "invalid", "expected_error": "capture.reconstruction.chains"},
-    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "bf8542f4d2171c020145048012520c4b02f12c0c3d52bf9ab9de31c30d59e434", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"}
+    {"path": "fixtures/invalid/run-reconstruction-controls-unbounded-verdict.json", "sha256": "bf8542f4d2171c020145048012520c4b02f12c0c3d52bf9ab9de31c30d59e434", "expectation": "invalid", "expected_error": "capture.reconstruction.verdict"},
+    {"path": "fixtures/invalid/spool-record-exchange-typescript-agent-authenticated.json", "sha256": "27977a8f7d7d9835e90483408e2fa5c0624ef564e6bfe900a7cbbb1bb31a15c3", "expectation": "invalid", "expected_error": "capture.schema"},
+    {"path": "fixtures/invalid/spool-record-exchange-typescript-redacted-keeps-original-digest.json", "sha256": "efb8ea1c13a1f5fc51fca6aab0a5138626744d29e584eeee02d78f6ab1d518ec", "expectation": "invalid", "expected_error": "capture.schema"},
+    {"path": "fixtures/invalid/spool-record-exchange-typescript-unregistered-point.json", "sha256": "13a37fb0f93a495304f77eee62826a9ec0adcbc1ffc537e9bf2f9459edc51f4d", "expectation": "invalid", "expected_error": "capture.capture_point"},
+    {"path": "fixtures/valid/spool-record-exchange-typescript-split-redacted.json", "sha256": "b0c7325e9b37a85eeb48a6752a494d809040d43c231a9d54bcadb9cdacf581ae", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/spool-record-exchange-typescript.json", "sha256": "c78d96ce0d8b294f56dfc133cb972e3b418ab077f5e3a46aeb80c3df68a9684d", "expectation": "valid", "expected_error": null},
+    {"path": "fixtures/valid/spool-record-record-typescript.json", "sha256": "52ba2f42ff134f3f3d2641580b25e43934face4514510aef3a2e480e6e710b87", "expectation": "valid", "expected_error": null}
   ]
 }

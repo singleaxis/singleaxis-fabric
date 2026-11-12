@@ -88,7 +88,26 @@
       "process_global": true,
       "opt_in": true,
       "fields": [
-        "N01"
+        "X08",
+        "X22",
+        "X24",
+        "X40",
+        "C34",
+        "C35",
+        "C37",
+        "C40",
+        "S07",
+        "S08",
+        "S09",
+        "S10",
+        "S11",
+        "S29",
+        "S30",
+        "S32",
+        "N01",
+        "N02",
+        "N07",
+        "D31"
       ],
       "reason": "unsupported_runtime"
     },

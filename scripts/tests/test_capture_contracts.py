@@ -59,7 +59,11 @@ def test_all_pinned_capture_artifacts_validate() -> None:
     #   fixtures (mapping profiles, the controls chain and security_context counts)
     # + spec 057 WP7-2 (1.9.0, unreleased): two refusals (a run verdict a partial controls
     #   chain does not bound; a fact-backed controls reason without its fact)
-    assert len(validated) == 167
+    # + 1.10.0 (spec 055 §8, unit 055-t1): three TypeScript spool records (an exchange and
+    #   a records-input record of one source, a split exchange with a redacted review
+    #   copy) and three refusals (an unregistered point, an agent-stamped authentication
+    #   flag, a review copy that keeps the original's digest)
+    assert len(validated) == 173
     assert "capture/fixtures/digests/stitch-v1-messages.json" in validated
     assert "capture/fixtures/golden/content-descriptor-s3.json" in validated
 
@@ -644,10 +648,11 @@ def test_provider_pseudonyms_keyed_or_legacy(pseudonym: str, valid: bool) -> Non
 
 
 # ------------------------------------------------------------------ capture/v1 1.3.0 (spec 050 §4.2)
-def test_capture_family_is_version_1_9_0() -> None:
+def test_capture_family_is_version_1_10_0() -> None:
     # 1.5.0: spec 056 M1 (WP6-01); 1.6.0: spec 056 M2 (WP6-11); 1.7.0: spec 056 rev 7;
-    # 1.8.0: the Node's destination_rejected loss reason; 1.9.0: spec 057 WP7-0
-    assert _json("manifest.json")["version"] == "1.9.0"
+    # 1.8.0: the Node's destination_rejected loss reason; 1.9.0: spec 057 WP7-0;
+    # 1.10.0: spec 055 §8 (the TypeScript wire points, unit 055-t1)
+    assert _json("manifest.json")["version"] == "1.10.0"
 
 
 def test_destination_rejected_is_a_loss_reason_of_records_and_reports() -> None:
