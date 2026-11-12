@@ -1,0 +1,32 @@
+{
+  "capture": "disabled",
+  "notice_ids": [],
+  "phase": "install",
+  "pid": 5152,
+  "schema": "fabric.wire-status/v1",
+  "sdk_language": "typescript",
+  "sdk_version": "0.13.0",
+  "status": {
+    "capture": "disabled",
+    "capture_point_reasons": {
+      "wire.ts.node_http": "unsupported_version",
+      "wire.ts.undici": "unsupported_version"
+    },
+    "capture_points": {
+      "wire.ts.node_http": "unsupported",
+      "wire.ts.undici": "unsupported"
+    },
+    "capture_reason": "unsupported_version",
+    "runtime_qualification": {
+      "listed": false,
+      "node": "24.0.0",
+      "platform": "darwin-arm64",
+      "undici": "7.8.0",
+      "undici_origin": "bundled"
+    }
+  },
+  "warning_ids": [
+    "FW-026"
+  ],
+  "written_at": "2026-11-13T09:00:00.000Z"
+}
