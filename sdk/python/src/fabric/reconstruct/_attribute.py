@@ -965,6 +965,26 @@ def _same_refusal(
     return None
 
 
+def _killed_effect(
+    event: Any, effects: Mapping[str, Mapping[str, Any]], linked: str | None, margin: int
+) -> str | None:
+    """The in-process effect whose process a host ``exit`` event ends, else ``None``: the
+    effect the 056 join linked the exit to, when it names the same process; else an effect
+    of the same process (:func:`_same_process`) that started before the exit and whose
+    recorded end, if any, is not before it."""
+    if linked is not None and linked in effects and _same_process(effects[linked], event):
+        return linked
+    for uid, effect in effects.items():
+        end = effect.get("end_ns", effect.get("exit_observed_ns"))
+        if (
+            int(effect["start_ns"]) - margin <= event.time_ns
+            and (end is None or event.time_ns <= int(end) + margin)
+            and _same_process(effect, event)
+        ):
+            return str(uid)
+    return None
+
+
 class ActionReader:
     """The verifier's spec 056 hook: per reported run, while its bodies are in memory,
     builds the normalized input from verified records and bytes, attributes its effects,
@@ -1341,6 +1361,12 @@ class ActionReader:
             }  # fmt: skip
             if syscall:
                 row["syscall"] = syscall
+            if event.event_class == "exit":
+                # The killed process is an in-process effect itself (the hook saw it
+                # start, not end): it is the row's evidence, never an effect after the deny.
+                own = _killed_effect(event, effects, linked[0] if linked else None, margin)
+                if own is not None:
+                    row["own_attempt"] = own
             rows.append(row)
         return rows
 

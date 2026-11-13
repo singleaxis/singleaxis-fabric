@@ -199,11 +199,12 @@ class EventsJoiner:
         self.make = make
         self.options = options
         self.evidence = HostEvidence()
+        self.pid_namespace = "declared_same"
 
     def __call__(self, inp: Mapping[str, Any]) -> Any:
         self.evidence = HostEvidence.of(self.make(inp))
-        return host_joiner(self.evidence, [HostSource("host.ebpf", HOST, verified=True)],
-                           **self.options)(inp)  # fmt: skip
+        source = HostSource("host.ebpf", HOST, pid_namespace=self.pid_namespace, verified=True)
+        return host_joiner(self.evidence, [source], **self.options)(inp)
 
 
 def _read(tmp_path: Path, *, third: str = "sigsys", joiner: Any = None,
@@ -580,3 +581,64 @@ def test_a_hook_program_in_two_open_windows_keeps_the_report_valid(tmp_path: Pat
     (hook,) = [r for r in action_rows(reader.runs[0])["rows"] if r["kind"] == "hook"]
     assert hook["link"]["state"] == "ambiguous"
     assert "ambiguous_attribution" not in only_run(report)["chains"]["controls"].get("reasons", ())
+
+
+@pytest.mark.parametrize("anchored", [False, True])
+def test_a_sensor_sigsys_exit_of_the_effects_own_child_is_never_f6_against_itself(
+    tmp_path: Path, anchored: bool
+) -> None:
+    """The hook saw the child start but not end (the agent never waited), so only the
+    sensor saw the SIGSYS kill. The row gates the child's call (by time, or through the
+    056 anchor when the pid namespaces let the join anchor the child), and the killed
+    child is the row's evidence, not an effect after a deny (no F6 against itself)."""
+    ns = "4026532999"
+    capture = ExecCapture(tmp_path)
+    capture.manifest_with_exec()
+    segment = capture.new_segment()
+    capture.run_start(RUN, segment_id=segment)
+    capture.exchange(chat_request([SYSTEM, USER]),
+                     chat_response(calls(call("call_shell", "run_shell")), "chatcmpl-0",
+                                   "tool_calls"))  # fmt: skip
+    uid = capture.new_id()
+    argv = json.dumps({"form": "shell", "command": {"t": "str", "v": "./tool"}}).encode()
+    capture._exec_record(uid, {"fabric.step.lifecycle_state": "running",
+                               "fabric.process.pid": KILLED_PID,
+                               "fabric.process.parent_pid": AGENT_PID,
+                               "fabric.execution.host_id": HOST,
+                               **({"fabric.process.pid_ns": ns} if anchored else {})},
+                         [("terminal.argv", "application/json", argv)])  # fmt: skip
+    capture.rows[-1]["attributes"].pop("fabric.step.status", None)
+    history = [SYSTEM, USER, calls(call("call_shell", "run_shell")),
+               tool_result("call_shell", "started")]  # fmt: skip
+    capture.exchange(chat_request(history), chat_response(
+        {"role": "assistant", "content": "Done."}, "chatcmpl-1"))  # fmt: skip
+    capture.run_end(RUN)
+    capture.segment_seal(RUN, segment_id=segment)
+    capture.heartbeat()
+
+    def events(inp: Mapping[str, Any]) -> list[HostEvent]:
+        (effect,) = inp["effects"]
+        at = int(effect["start_ns"])
+        child: dict[str, Any] = {"pid": KILLED_PID, "ppid": AGENT_PID}
+        if anchored:  # the init-namespace pid differs; the ns pids are the hook's
+            child.update(pid=KILLED_PID + 70_000, ns_pid=KILLED_PID, ns_ppid=AGENT_PID,
+                         pid_ns=ns)  # fmt: skip
+        exited = HostEvent(EXIT_SIGSYS, "host.ebpf", "exit", at + 2_000, **child,
+                           signal=_os_access.SIGSYS)  # fmt: skip
+        if not anchored:  # no exec record: the exit is linked by time only
+            return [exited]
+        return [HostEvent("host-" + "1" * 32, "host.ebpf", "exec", at + 500, **child,
+                          result="success"), exited]  # fmt: skip
+
+    joiner = EventsJoiner(events, agent_pid=AGENT_PID, agent_host_id=HOST)
+    joiner.pid_namespace = "recorded" if anchored else "declared_same"
+    reader = ActionReader(host_joiner=joiner, keep_runs=True)
+    report, _ = project(capture, actions=reader)
+    run = only_run(report)
+    (row,) = _refusals(action_rows(reader.runs[0]))
+    assert row["reason_code"] == "signal.sigsys" and row["event_id"] == EXIT_SIGSYS
+    assert row["link"]["target"] == "T1" and row["link"]["method"] == "process_anchor"
+    anchors = run["attribution"]["links"]["process_anchor"]
+    assert anchors["resolved"] == (1 if anchored else 0)
+    codes = {f["code"] for f in run["security_context"]["facts"]}
+    assert "os_denied" in codes and "deny_with_effect" not in codes
