@@ -137,6 +137,23 @@ def test_a_variable_already_set_is_never_overridden(tmp_path: Path, env: dict[st
     assert "k" * 40 not in said
 
 
+def test_a_shell_that_turns_the_autoload_off_is_recorded_as_capture_off(
+    tmp_path: Path, env: dict[str, str]
+) -> None:
+    """FABRIC_WIRE_AUTOLOAD=0 in the shell wins (§6.2); the run record must then say capture
+    off with the reason, so verify names it instead of looking for records."""
+    project = make_project(tmp_path, env)
+    shell = {**env, "FABRIC_WIRE_AUTOLOAD": "0"}
+    _, execvpe, _ = _launch(project, shell, [str(PY), "a.py"])
+    child = execvpe.calls[0][2]
+    assert child["FABRIC_WIRE_AUTOLOAD"] == "0" and "PYTHONPATH" not in _added(shell, child)
+    (record,) = _runstate.load_runs(project / ".fabric")
+    assert record.capture == "off"
+    assert {"id": "FC-009", "detail": "FABRIC_WIRE_AUTOLOAD kept from this shell"} in (
+        record.findings
+    )
+
+
 def test_provider_base_url_adds_a_matcher_for_an_unknown_host(
     tmp_path: Path, env: dict[str, str]
 ) -> None:

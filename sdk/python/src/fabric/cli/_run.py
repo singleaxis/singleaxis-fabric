@@ -646,6 +646,8 @@ def _prepare(
         plan.added["FABRIC_WIRE_STATUS_FILE"] = str(record.status_file(runs))
     env, kept = child_environment(environ, plan) if plan.added else (environ, [])
     findings.extend(Finding("FC-009", f"{name} kept from this shell") for name in kept)
+    if capture and (env.get("FABRIC_WIRE_AUTOLOAD") or "").strip().lower() not in ("1", "true"):
+        capture = False  # this shell turned the autoload off (kept, §6.2): say so, not "on"
     if sys.platform.startswith("linux") or _up_state(project).get("sensor") == "running":
         record.sensor, joined = join_agent_cgroup(project)
         if joined is not None:
