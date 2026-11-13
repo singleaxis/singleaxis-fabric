@@ -90,7 +90,7 @@ signing = [
 # unsupported_version, so the pins are the qualified ones. Fabric never imports e2b on
 # the capture path otherwise.
 hooks-sandbox-e2b = [
-  "e2b==2.62.*",
+  "e2b>=2.62,<2.64",
   "e2b-code-interpreter==2.11.*",
 ]
 [dependency-groups]
@@ -98,7 +98,7 @@ dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
   # Lockstep with .pre-commit-config.yaml (ruff-pre-commit v0.17.3): CI installs this lock.
-  "ruff==0.17.3",
+  "ruff==0.17.4",
   "mypy>=1.11.2",
   "jsonschema>=4.23",
   "types-jsonschema>=4.23",
@@ -122,7 +122,7 @@ dev = [
   # Drives the remote.sandbox hook tests against the fixture E2B server
   # (qualification/remote-sandbox). Dev-only: the hook observes the SDK only when the
   # application already uses it.
-  "e2b==2.62.*",
+  "e2b>=2.62,<2.64",
   "e2b-code-interpreter==2.11.*",
   # Drives the mcp.client hook tests (spec 057 WP7-8) with the MCP library's own client
   # against the fixture MCP server; the hook's pinned versions (fabric.hooks._mcp.PINS).
