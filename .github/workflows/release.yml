@@ -155,6 +155,9 @@ jobs:
           python scripts/release/check_image_metadata.py \
             --policy scripts/release/release-policy.json --image fabric-host-emitter \
             --dockerfile components/host-emitter/Dockerfile
+          python scripts/release/check_image_metadata.py \
+            --policy scripts/release/release-policy.json --image fabric-cli \
+            --dockerfile components/fabric-cli/Dockerfile
       - name: Qualify exact publication artifacts
         run: |
           chart_package=$(find qualification/chart -maxdepth 1 -name 'fabric-*.tgz' -type f)
@@ -333,6 +336,12 @@ jobs:
           - component: host-emitter
             image: fabric-host-emitter
             context: components
+          # The operator CLI (spec 058 §11.1): the Python distribution with its [cli]
+          # extra, Docker with Compose, and Helm. Context: the repository root, limited
+          # by components/fabric-cli/Dockerfile.dockerignore to sdk/python.
+          - component: fabric-cli
+            image: fabric-cli
+            context: .
     env:
       REGISTRY: ghcr.io
       IMAGE_NAME: ${{ github.repository_owner }}/${{ matrix.image }}

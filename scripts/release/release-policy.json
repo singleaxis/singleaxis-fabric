@@ -238,11 +238,13 @@
   },
   "images": [
     "fabric-otelcol",
-    "fabric-host-emitter"
+    "fabric-host-emitter",
+    "fabric-cli"
   ],
   "ghcr_packages": [
     "fabric-otelcol",
     "fabric-host-emitter",
+    "fabric-cli",
     "charts/fabric"
   ],
   "image_metadata": {
@@ -253,7 +255,48 @@
     "fabric-host-emitter": {
       "title": "SingleAxis Fabric host emitter",
       "description": "SingleAxis Fabric eBPF host sensor: records process starts and connections for the recorder (capture, protect, deliver)"
+    },
+    "fabric-cli": {
+      "title": "SingleAxis Fabric CLI",
+      "description": "SingleAxis Fabric operator CLI: sets up, starts, launches capture for and checks the recorder on your own infrastructure (capture, protect, deliver)"
     }
+  },
+  "cli_image": {
+    "comment": "Spec 058 sections 4.1 (I1) and 11.1: what the fabric-cli image must hold (scripts/release/check_cli_image.py). Its CLI ships exactly the I1 commands; the installed singleaxis-fabric files obey python_distribution's forbidden paths; the clients it carries are Docker with the Compose plugin and Helm; it runs as a non-root user.",
+    "image": "fabric-cli",
+    "commands": [
+      "plan",
+      "init",
+      "up",
+      "down",
+      "run",
+      "verify",
+      "doctor",
+      "show",
+      "version",
+      "help"
+    ],
+    "clients": {
+      "docker": [
+        "docker",
+        "--version"
+      ],
+      "docker compose": [
+        "docker",
+        "compose",
+        "version"
+      ],
+      "helm": [
+        "helm",
+        "version",
+        "--short"
+      ]
+    },
+    "distribution": "singleaxis-fabric",
+    "extras": [
+      "cli",
+      "otlp"
+    ]
   },
   "forbidden_capability_terms": {
     "comment": "AGENTS.md: no release artifact advertises capabilities outside Capture -> Protect -> Deliver. Case-insensitive regular expressions matched against image labels and annotations and packaged metadata fields (descriptions, titles, keywords, summaries).",

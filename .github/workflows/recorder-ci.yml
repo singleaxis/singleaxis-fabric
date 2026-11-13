@@ -254,6 +254,46 @@ jobs:
         with:
           sarif_file: trivy-fabric-otelcol.sarif
 
+  fabric-cli-image:
+    name: fabric-cli image build, content check, and vulnerability scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the operator CLI image (spec 058 §11.1)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: components/fabric-cli/Dockerfile
+          push: false
+          load: true
+          tags: fabric-cli:pr
+          cache-from: type=gha,scope=fabric-cli-image
+          cache-to: type=gha,mode=max,scope=fabric-cli-image
+      - name: Check the image's commands, files, clients, user and labels
+        run: >-
+          python3 scripts/release/check_cli_image.py
+          --policy scripts/release/release-policy.json
+          --image fabric-cli:pr --version "$(tr -d '\n' < VERSION)"
+      - name: Scan released image surface
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: fabric-cli:pr
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          exit-code: "1"
+          format: sarif
+          output: trivy-fabric-cli.sarif
+          limit-severities-for-sarif: "true"
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        if: always()
+        with:
+          sarif_file: trivy-fabric-cli.sarif
+
   fabricctl:
     name: Recorder CLI
     runs-on: ubuntu-latest
