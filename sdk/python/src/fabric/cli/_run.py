@@ -241,7 +241,10 @@ def probe_interpreter(
         else None,
         "otlp": answer.get("otlp") is True,
     }
-    if answer["sdk"]:
+    # Only a complete answer is cached: installing the SDK or its exporter (the fix of
+    # FC-050 and FC-051) changes neither the interpreter's path nor its modification time,
+    # so a cached "missing" would outlive the fix.
+    if answer["sdk"] and answer["otlp"]:
         _runstate.store_probe(state_dir, interpreter, answer)
     return answer
 

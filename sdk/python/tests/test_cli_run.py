@@ -300,6 +300,25 @@ def test_the_interpreter_answer_is_cached(tmp_path: Path) -> None:
     assert _run.probe_interpreter(PY, state, runner) == first and len(calls) == 1
 
 
+def test_a_missing_exporter_is_asked_again_after_the_fix(tmp_path: Path) -> None:
+    """FC-051's fix installs the exporter into the same interpreter, which changes neither
+    its path nor its modification time: an answer without the exporter must not be cached,
+    or `fabric run` keeps capture off after the user followed the fix."""
+    answers = iter([False, True])
+    calls: list[list[str]] = []
+
+    def runner(argv: list[str], **kwargs: Any) -> Any:
+        calls.append(argv)
+        real = subprocess.run(argv, **kwargs)  # noqa: S603, PLW1510
+        answer = {**json.loads(real.stdout.strip().splitlines()[-1]), "otlp": next(answers)}
+        return subprocess.CompletedProcess(argv, 0, json.dumps(answer) + "\n", "")
+
+    state = tmp_path / ".fabric"
+    assert not _run.probe_interpreter(PY, state, runner)["otlp"]  # before the fix
+    assert _run.probe_interpreter(PY, state, runner)["otlp"]  # after it: asked again
+    assert _run.probe_interpreter(PY, state, runner)["otlp"] and len(calls) == 2  # now cached
+
+
 @pytest.mark.skipif(os.name != "posix", reason="venv symlinks are POSIX")
 def test_the_cache_never_lends_one_environments_sdk_to_another(tmp_path: Path) -> None:
     """Two virtual environments of one base interpreter link to the same binary: the
