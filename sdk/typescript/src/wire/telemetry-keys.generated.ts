@@ -15,10 +15,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.delegation.to_agent": {
     "check": {
       "type": "string",
-      "pattern": "^agt-[0-9a-f]{32}$",
-      "examples": [
-        "agt-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^agt-[0-9a-f]{32}$"
     }
   },
   "fabric.file.path": {
@@ -42,28 +39,19 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.interaction.target": {
     "check": {
       "type": "string",
-      "pattern": "^tgt-[0-9a-f]{32}$",
-      "examples": [
-        "tgt-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^tgt-[0-9a-f]{32}$"
     }
   },
   "fabric.memory.key": {
     "check": {
       "type": "string",
-      "pattern": "^mkey-[0-9a-f]{32}$",
-      "examples": [
-        "mkey-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^mkey-[0-9a-f]{32}$"
     }
   },
   "fabric.session_id": {
     "check": {
       "type": "string",
       "pattern": "^sess-[0-9a-f]{32}$",
-      "examples": [
-        "sess-9f86d081884c7d659a2feaa0c55ad015"
-      ],
       "identity_mode": {
         "clear": "existing"
       }
@@ -76,10 +64,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.user_id": {
     "check": {
       "type": "string",
-      "pattern": "^usr-[0-9a-f]{32}$",
-      "examples": [
-        "usr-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^usr-[0-9a-f]{32}$"
     },
     "placement": [
       "exchange",
@@ -89,38 +74,25 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.wire.request_sha256": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     }
   },
   "fabric.wire.response_sha256": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     }
   },
   "db.system.name": {
     "check": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_.]{0,63}$",
-      "examples": [
-        "postgresql",
-        "sqlite"
-      ]
+      "pattern": "^[a-z][a-z0-9_.]{0,63}$"
     }
   },
   "fabric.actor.id": {
     "check": {
       "type": "string",
-      "pattern": "^act-[0-9a-f]{32}$",
-      "examples": [
-        "act-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^act-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -151,10 +123,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.attempt.uid": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-      ]
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "placement": [
       "record"
@@ -169,10 +138,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.build.digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     }
   },
   "fabric.cancel.state": {
@@ -204,10 +170,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.capture.manifest_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "placement": [
       "run_start",
@@ -217,10 +180,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.capture.manifest_id": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-      ]
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "placement": [
       "run_start",
@@ -244,13 +204,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.capture.point": {
     "check": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$",
-      "examples": [
-        "wire.py.httpx@1.2.0",
-        "sdk.records@0.9.0+local",
-        "wire.ts.undici@1.0.0",
-        "wire.ts.node_http@1.0.0"
-      ]
+      "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}$"
     },
     "placement": [
       "exchange",
@@ -277,10 +231,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.config.digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     }
   },
   "fabric.context.change_kind": {
@@ -342,10 +293,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^axn-[0-9a-f]{32}$",
       "identity_mode": {
         "clear": "existing"
-      },
-      "examples": [
-        "axn-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -396,11 +344,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:lbl|g)-[0-9a-f]{32})$",
       "identity_mode": {
         "clear": "existing"
-      },
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
-        "lbl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -412,11 +356,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$",
       "identity_mode": {
         "clear": "existing"
-      },
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
-        "ctl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -462,10 +402,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.control.policy_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -477,12 +414,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "refund-approvals",
-        "acme/policies:v7",
-        "lbl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -503,10 +435,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^prf-[0-9a-f]{32}$",
       "identity_mode": {
         "clear": "existing"
-      },
-      "examples": [
-        "prf-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -518,11 +447,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|ctl-[0-9a-f]{32})$",
       "identity_mode": {
         "clear": "existing"
-      },
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
-        "ctl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -531,10 +456,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.conversation_id": {
     "check": {
       "type": "string",
-      "pattern": "^conv-[0-9a-f]{32}$",
-      "examples": [
-        "conv-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^conv-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -543,10 +465,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.db.namespace_id": {
     "check": {
       "type": "string",
-      "pattern": "^dbn-[0-9a-f]{32}$",
-      "examples": [
-        "dbn-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^dbn-[0-9a-f]{32}$"
     }
   },
   "fabric.db.rows_affected": {
@@ -564,10 +483,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.db.transaction_id": {
     "check": {
       "type": "string",
-      "pattern": "^txn-[0-9a-f]{32}$",
-      "examples": [
-        "txn-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^txn-[0-9a-f]{32}$"
     }
   },
   "fabric.delegation.state": {
@@ -587,19 +503,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.dispatch.branch_id": {
     "check": {
       "type": "string",
-      "pattern": "^br-[0-9a-f]{32}$",
-      "examples": [
-        "br-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^br-[0-9a-f]{32}$"
     }
   },
   "fabric.dispatch.id": {
     "check": {
       "type": "string",
-      "pattern": "^dsp-[0-9a-f]{32}$",
-      "examples": [
-        "dsp-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^dsp-[0-9a-f]{32}$"
     }
   },
   "fabric.dispatch.kind": {
@@ -633,11 +543,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.error.code": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9_.-]{1,64}$",
-      "examples": [
-        "429",
-        "rate_limit_exceeded"
-      ]
+      "pattern": "^[A-Za-z0-9_.-]{1,64}$"
     },
     "placement": [
       "exchange"
@@ -663,19 +569,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.event.supersedes": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-      ]
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     }
   },
   "fabric.execution.host_id": {
     "check": {
       "type": "string",
-      "pattern": "^hst-[0-9a-f]{32}$",
-      "examples": [
-        "hst-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^hst-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -684,10 +584,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.execution.image_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -696,10 +593,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.execution.sandbox_id": {
     "check": {
       "type": "string",
-      "pattern": "^sbx-[0-9a-f]{32}$",
-      "examples": [
-        "sbx-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^sbx-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -708,21 +602,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.framework.name": {
     "check": {
       "type": "string",
-      "pattern": "^@?[a-z0-9][a-z0-9._/-]{0,127}$",
-      "examples": [
-        "langgraph",
-        "@openai/agents"
-      ]
+      "pattern": "^@?[a-z0-9][a-z0-9._/-]{0,127}$"
     }
   },
   "fabric.framework.version": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
-      "examples": [
-        "0.2.14",
-        "1.0.0rc1"
-      ]
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
     }
   },
   "fabric.input.kind": {
@@ -765,18 +651,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[a-z][a-z0-9_.]{0,63}=([XCSNDGE][0-9]{2}(,[XCSNDGE][0-9]{2}){0,255})?$",
-        "examples": [
-          "wire.py.httpx=X08,N01,N02"
-        ]
+        "pattern": "^[a-z][a-z0-9_.]{0,63}=([XCSNDGE][0-9]{2}(,[XCSNDGE][0-9]{2}){0,255})?$"
       },
-      "max_items": 64,
-      "examples": [
-        [
-          "wire.py.httpx=X08,N01,N02",
-          "fabric.self="
-        ]
-      ]
+      "max_items": 64
     },
     "manifest_property": "capture_points/fields"
   },
@@ -785,18 +662,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|unattributed_effect|ambiguous_attribution|tool_result_missing|exchange_gap|source_gap|anchor_missing|unexplained_host_event|channel_disabled|no_effect_channel|none_in_window|remote_sandbox|-)$",
-        "examples": [
-          "wire.py.httpx@1.2.0:W:active:1:1:-",
-          "wire.ts.undici@0.0.0:W:unsupported:1:1:unsupported_runtime"
-        ]
+        "pattern": "^[a-z][a-z0-9_.]{0,63}@[0-9A-Za-z.+-]{1,32}:(F|W|H|R|P|I|S):(active|installed_inactive|disabled|unsupported|failed):[01]:[01]:(not_instrumented|hook_disabled|not_configured|unsupported_api|unsupported_runtime|unsupported_version|parse_failed|body_cap|part_cap|inflight_budget|queue_full|disk_full|shutdown|internal_error|span_dropped|store_failed|destination_rejected|transport_incomplete|stream_closed_early|privacy_policy|protection_failed|missing_capture_policy|missing_id_key|missing_spool_key|provider_redacted|provider_encrypted|provider_summarised|provider_not_returned|provider_held|caller_omitted|deferred_to_explicit|explicit_withheld|not_exposed|source_lost|segment_missing|segment_conflict|run_unterminated|post_terminal_activity|clock_uncertain|source_unauthenticated|unsealed_epoch|seal_mismatch|uninstrumented_client|sampling|retention_expired|deleted|unattributed_effect|ambiguous_attribution|tool_result_missing|exchange_gap|source_gap|anchor_missing|unexplained_host_event|channel_disabled|no_effect_channel|none_in_window|remote_sandbox|-)$"
       },
-      "max_items": 64,
-      "examples": [
-        [
-          "wire.py.httpx@1.2.0:W:active:1:1:-"
-        ]
-      ]
+      "max_items": 64
     },
     "manifest_property": "capture_points"
   },
@@ -805,19 +673,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^classify\\.(control_hosts|control_addresses|hook_programs|watched_paths|tool_result_markers):(off|loaded|refused):(0|[1-9][0-9]{0,5}):(over_limit|duplicate_entry|invalid_entry|-):(sha256:[0-9a-f]{64}|-)$",
-        "examples": [
-          "classify.hook_programs:loaded:2:-:sha256:abababababababababababababababababababababababababababababababab",
-          "classify.watched_paths:refused:257:over_limit:sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
-        ]
+        "pattern": "^classify\\.(control_hosts|control_addresses|hook_programs|watched_paths|tool_result_markers):(off|loaded|refused):(0|[1-9][0-9]{0,5}):(over_limit|duplicate_entry|invalid_entry|-):(sha256:[0-9a-f]{64}|-)$"
       },
       "max_items": 8,
-      "examples": [
-        [
-          "classify.control_hosts:off:0:-:-",
-          "classify.hook_programs:loaded:2:-:sha256:abababababababababababababababababababababababababababababababab"
-        ]
-      ],
       "unique": true
     },
     "manifest_property": "classifications"
@@ -831,21 +689,14 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.capture_policy.policy_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "manifest_property": "capture_policy/policy_digest"
   },
   "fabric.manifest.capture_policy.policy_id": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-      "examples": [
-        "fabric.local-default",
-        "acme-capture"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "manifest_property": "capture_policy/policy_id"
   },
@@ -905,30 +756,20 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.coverage_profile": {
     "check": {
       "type": "string",
-      "pattern": "^fabric\\.profile\\.[a-z0-9-]+/v[0-9]+$",
-      "examples": [
-        "fabric.profile.model-calls/v1"
-      ]
+      "pattern": "^fabric\\.profile\\.[a-z0-9-]+/v[0-9]+$"
     },
     "manifest_property": "coverage_profile"
   },
   "fabric.manifest.emitted_at": {
     "check": {
-      "type": "datetime",
-      "examples": [
-        "2026-10-19T09:00:00Z",
-        "2026-10-19T09:00:00.123456789+05:30"
-      ]
+      "type": "datetime"
     },
     "manifest_property": "emitted_at"
   },
   "fabric.manifest.endpoint_set_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "manifest_property": "endpoint_set_sha256"
   },
@@ -961,15 +802,6 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
         "source": "vocabulary:capture_input"
       },
       "max_items": 2,
-      "examples": [
-        [
-          "wire",
-          "records"
-        ],
-        [
-          "wire"
-        ]
-      ],
       "min_items": 1,
       "unique": true
     },
@@ -978,10 +810,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.key_id": {
     "check": {
       "type": "string",
-      "pattern": "^kid-[0-9a-f]{8}$",
-      "examples": [
-        "kid-1a2b3c4d"
-      ]
+      "pattern": "^kid-[0-9a-f]{8}$"
     },
     "manifest_property": "key_id"
   },
@@ -1056,10 +885,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.previous_manifest_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "manifest_property": "previous_manifest_sha256"
   },
@@ -1088,10 +914,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.role_table_version": {
     "check": {
       "type": "string",
-      "pattern": "^fabric\\.content-role-table/v[0-9]+@[0-9]+$",
-      "examples": [
-        "fabric.content-role-table/v1@3"
-      ]
+      "pattern": "^fabric\\.content-role-table/v[0-9]+@[0-9]+$"
     },
     "manifest_property": "role_table_version"
   },
@@ -1111,10 +934,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.runtime.version": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9A-Za-z.+-]{1,64}$",
-      "examples": [
-        "3.12.13"
-      ]
+      "pattern": "^[0-9A-Za-z.+-]{1,64}$"
     },
     "manifest_property": "runtime/version"
   },
@@ -1161,10 +981,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.manifest.spool_key_id": {
     "check": {
       "type": "string",
-      "pattern": "^kid-[0-9a-f]{8}$",
-      "examples": [
-        "kid-5e6f7a8b"
-      ]
+      "pattern": "^kid-[0-9a-f]{8}$"
     },
     "manifest_property": "spool_key_id"
   },
@@ -1199,13 +1016,6 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
         "source": "schema:uncaptured_classes"
       },
       "max_items": 64,
-      "examples": [
-        [
-          "requests",
-          "grpc"
-        ],
-        []
-      ],
       "unique": true
     },
     "manifest_property": "uncaptured_classes"
@@ -1225,19 +1035,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
         "pattern": "^(?<epoch>0|[1-9][0-9]{0,18})$",
         "int64_groups": [
           "epoch"
-        ],
-        "examples": [
-          "4611686018427387905"
         ]
       },
-      "max_items": 64,
-      "examples": [
-        [
-          "4611686018427387905",
-          "17"
-        ],
-        []
-      ]
+      "max_items": 64
     },
     "manifest_property": "unsealed_prior_epochs"
   },
@@ -1307,20 +1107,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.mcp.protocol_version": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
-      "examples": [
-        "2025-06-18"
-      ]
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
     }
   },
   "fabric.mcp.server_version": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
-      "examples": [
-        "1.4.2",
-        "2025.06.0"
-      ]
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
     }
   },
   "fabric.memory.op": {
@@ -1339,19 +1132,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.memory.store_id": {
     "check": {
       "type": "string",
-      "pattern": "^mst-[0-9a-f]{32}$",
-      "examples": [
-        "mst-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^mst-[0-9a-f]{32}$"
     }
   },
   "fabric.network.host_id": {
     "check": {
       "type": "string",
-      "pattern": "^hst-[0-9a-f]{32}$",
-      "examples": [
-        "hst-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^hst-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -1392,10 +1179,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.outcome.target_id": {
     "check": {
       "type": "string",
-      "pattern": "^tgt-[0-9a-f]{32}$",
-      "examples": [
-        "tgt-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^tgt-[0-9a-f]{32}$"
     }
   },
   "fabric.process.exit_code": {
@@ -1432,10 +1216,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.process.pid_ns": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9]{1,20}$",
-      "examples": [
-        "4026531836"
-      ]
+      "pattern": "^[0-9]{1,20}$"
     },
     "placement": [
       "record"
@@ -1473,19 +1254,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.remote.target_id": {
     "check": {
       "type": "string",
-      "pattern": "^hst-[0-9a-f]{32}$",
-      "examples": [
-        "hst-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^hst-[0-9a-f]{32}$"
     }
   },
   "fabric.run.agent_policy_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -1497,11 +1272,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "support-agent-policy",
-        "lbl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     },
     "placement": [
       "record"
@@ -1537,17 +1308,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^br-[0-9a-f]{32}$",
-        "examples": [
-          "br-9f86d081884c7d659a2feaa0c55ad015"
-        ]
+        "pattern": "^br-[0-9a-f]{32}$"
       },
-      "max_items": 64,
-      "examples": [
-        [
-          "br-0a1b2c3d4e5f60718293a4b5c6d7e8f9"
-        ]
-      ]
+      "max_items": 64
     },
     "placement": [
       "run_start"
@@ -1558,17 +1321,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^seg-[0-9a-f]{32}$",
-        "examples": [
-          "seg-9f86d081884c7d659a2feaa0c55ad015"
-        ]
+        "pattern": "^seg-[0-9a-f]{32}$"
       },
-      "max_items": 64,
-      "examples": [
-        [
-          "seg-4f1c2e3d5a6b7c8d9e0f1a2b3c4d5e6f"
-        ]
-      ]
+      "max_items": 64
     },
     "placement": [
       "run_start"
@@ -1595,17 +1350,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^r-[0-9a-f]{32}$",
-        "examples": [
-          "r-9f86d081884c7d659a2feaa0c55ad015"
-        ]
+        "pattern": "^r-[0-9a-f]{32}$"
       },
-      "max_items": 16,
-      "examples": [
-        [
-          "r-93347307304ecb0a9bb1b51ae90ac326"
-        ]
-      ]
+      "max_items": 16
     },
     "placement": [
       "run_start"
@@ -1640,10 +1387,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.run.parent_id": {
     "check": {
       "type": "string",
-      "pattern": "^r-[0-9a-f]{32}$",
-      "examples": [
-        "r-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^r-[0-9a-f]{32}$"
     },
     "placement": [
       "run_start"
@@ -1670,21 +1414,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
         "capture_labels": {
           "group": "source",
           "pseudonymous_pattern": "^s-[0-9a-f]{32}$"
-        },
-        "examples": [
-          "none",
-          "seg-4f1c2e3d5a6b7c8d9e0f1a2b3c4d5e6f/s-c5aedfd8a3ee415e277e335bf1517ff4/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
-        ]
+        }
       },
       "max_items": 64,
-      "examples": [
-        [
-          "none"
-        ],
-        [
-          "seg-4f1c2e3d5a6b7c8d9e0f1a2b3c4d5e6f/s-c5aedfd8a3ee415e277e335bf1517ff4/4611686018427387905/41/sha256:abababababababababababababababababababababababababababababababab"
-        ]
-      ],
       "min_items": 1
     },
     "placement": [
@@ -1703,10 +1435,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.run.resumed_from": {
     "check": {
       "type": "string",
-      "pattern": "^r-[0-9a-f]{32}$",
-      "examples": [
-        "r-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^r-[0-9a-f]{32}$"
     },
     "placement": [
       "run_start"
@@ -1729,10 +1458,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.run.segment_id": {
     "check": {
       "type": "string",
-      "pattern": "^seg-[0-9a-f]{32}$",
-      "examples": [
-        "seg-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^seg-[0-9a-f]{32}$"
     },
     "placement": [
       "exchange",
@@ -1794,19 +1520,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.run.trigger.ref": {
     "check": {
       "type": "string",
-      "pattern": "^trg-[0-9a-f]{32}$",
-      "examples": [
-        "trg-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^trg-[0-9a-f]{32}$"
     }
   },
   "fabric.sandbox.created_id": {
     "check": {
       "type": "string",
-      "pattern": "^sbx-[0-9a-f]{32}$",
-      "examples": [
-        "sbx-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^sbx-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -1820,17 +1540,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^br-[0-9a-f]{32}$",
-        "examples": [
-          "br-9f86d081884c7d659a2feaa0c55ad015"
-        ]
+        "pattern": "^br-[0-9a-f]{32}$"
       },
-      "max_items": 64,
-      "examples": [
-        [
-          "br-0a1b2c3d4e5f60718293a4b5c6d7e8f9"
-        ]
-      ]
+      "max_items": 64
     },
     "placement": [
       "segment_seal"
@@ -1848,10 +1560,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.segment.manifest_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "placement": [
       "segment_seal"
@@ -1860,10 +1569,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.segment.seal_digest": {
     "check": {
       "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$",
-      "examples": [
-        "sha256:3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "placement": [
       "segment_seal"
@@ -1903,10 +1609,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.argv_sha256": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -1918,10 +1621,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.audit_serial": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9]{1,20}$",
-      "examples": [
-        "18446744073709551615"
-      ]
+      "pattern": "^[0-9]{1,20}$"
     },
     "placement": [
       "record"
@@ -1945,10 +1645,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.cgroup_id": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9]{1,20}$",
-      "examples": [
-        "9123"
-      ]
+      "pattern": "^[0-9]{1,20}$"
     },
     "placement": [
       "record"
@@ -2003,10 +1700,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.exe_sha256": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -2059,10 +1753,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.path_sha256": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -2117,10 +1808,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.pid_ns": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9]{1,20}$",
-      "examples": [
-        "4026531836"
-      ]
+      "pattern": "^[0-9]{1,20}$"
     },
     "placement": [
       "record"
@@ -2132,10 +1820,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.pod_id": {
     "check": {
       "type": "string",
-      "pattern": "^sbx-[0-9a-f]{32}$",
-      "examples": [
-        "sbx-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^sbx-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -2392,11 +2077,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.step.parent_id": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-      "examples": [
-        "ctl-7f3a",
-        "approval:42"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "placement": [
       "record"
@@ -2435,10 +2116,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.turn_id": {
     "check": {
       "type": "string",
-      "pattern": "^turn-[0-9a-f]{32}$",
-      "examples": [
-        "turn-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^turn-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -2487,21 +2165,13 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "plan",
-        "act",
-        "lbl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      }
     }
   },
   "fabric.event_id": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-      ]
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "placement": [
       "exchange",
@@ -2550,11 +2220,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^s-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "s-c5aedfd8a3ee415e277e335bf1517ff4",
-        "billing-agent.prod"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2573,21 +2239,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-        "examples": [
-          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-        ]
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       },
       "max_items": 8,
-      "examples": [
-        [
-          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-        ],
-        [
-          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
-          "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
-        ]
-      ],
       "min_items": 1,
       "unique": true
     },
@@ -2615,12 +2269,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.wire.endpoint_id": {
     "check": {
       "type": "string",
-      "pattern": "^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$",
-      "examples": [
-        "openai.default",
-        "anthropic.default",
-        "lbl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^(?:[a-z][a-z0-9_]{0,31}\\.default|lbl-[0-9a-f]{32})$"
     },
     "placement": [
       "exchange"
@@ -2629,10 +2278,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.wire.provider_request_id": {
     "check": {
       "type": "string",
-      "pattern": "^p-[0-9a-f]{32}$",
-      "examples": [
-        "p-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^p-[0-9a-f]{32}$"
     },
     "placement": [
       "exchange"
@@ -2675,12 +2321,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       },
       "identity_mode": {
         "clear": "existing"
-      },
-      "examples": [
-        "r-93347307304ecb0a9bb1b51ae90ac326",
-        "trace:4bf92f3577b34da6a3ce929d0e0e4736",
-        "source:s-c5aedfd8a3ee415e277e335bf1517ff4:4611686018427387905"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2693,10 +2334,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.run.scope_id": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-      ]
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
     },
     "placement": [
       "exchange",
@@ -2709,11 +2347,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.step.id": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-      "examples": [
-        "op-7f3a",
-        "a-1b2c3d4e5f60718293a4b5c6d7e8f901"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "placement": [
       "record"
@@ -2722,11 +2356,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.step.attempt_id": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-      "examples": [
-        "op-7f3a",
-        "a-1b2c3d4e5f60718293a4b5c6d7e8f901"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "placement": [
       "record"
@@ -2738,11 +2368,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "lbl-9f86d081884c7d659a2feaa0c55ad015",
-        "support-agent"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2755,11 +2381,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "lbl-9f86d081884c7d659a2feaa0c55ad015",
-        "support-agent"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2772,11 +2394,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "lbl-9f86d081884c7d659a2feaa0c55ad015",
-        "support-agent"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2789,11 +2407,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "lbl-9f86d081884c7d659a2feaa0c55ad015",
-        "support-agent"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2806,11 +2420,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
       "capture_labels": {
         "pseudonymous_pattern": "^lbl-[0-9a-f]{32}$"
-      },
-      "examples": [
-        "lbl-9f86d081884c7d659a2feaa0c55ad015",
-        "support-agent"
-      ]
+      }
     },
     "placement": [
       "exchange",
@@ -2820,11 +2430,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.tenant_id": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
-      "examples": [
-        "tenant-a",
-        "acme.prod"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
     "placement": [
       "record"
@@ -2875,18 +2481,9 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(?:caused_by|depends_on|result_of|emits|consumes|continues|retries|fallback_of|hedges|delegates|resumes|gates|resolves|compensates|delivers|derived_from|part_of|corroborated_by|same_as)/(?:attempt|step|event|run|provider_item|external)/(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:r|p|seg|lbl|g|br|sess|usr|act|conv|turn|trg|dsp|agt|tgt|hst|sbx|mcps|rpc|dbn|txn|mst|mkey|p|ckp|eff|out|ctl|axn|prf|grt|crd|ext|src|pth|net)-[0-9a-f]{32})$",
-        "examples": [
-          "resolves/external/ctl-00000000000000000000000000000000",
-          "gates/attempt/7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-        ]
+        "pattern": "^(?:caused_by|depends_on|result_of|emits|consumes|continues|retries|fallback_of|hedges|delegates|resumes|gates|resolves|compensates|delivers|derived_from|part_of|corroborated_by|same_as)/(?:attempt|step|event|run|provider_item|external)/(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|run:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:r|p|seg|lbl|g|br|sess|usr|act|conv|turn|trg|dsp|agt|tgt|hst|sbx|mcps|rpc|dbn|txn|mst|mkey|p|ckp|eff|out|ctl|axn|prf|grt|crd|ext|src|pth|net)-[0-9a-f]{32})$"
       },
-      "max_items": 16,
-      "examples": [
-        [
-          "resolves/external/ctl-00000000000000000000000000000000"
-        ]
-      ]
+      "max_items": 16
     },
     "placement": [
       "record"
@@ -2895,11 +2492,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.step.update_of": {
     "check": {
       "type": "string",
-      "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{32})$",
-      "examples": [
-        "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
-        "ctl-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^(?:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:out|eff|ckp|dsp|ctl)-[0-9a-f]{32})$"
     },
     "placement": [
       "record"
@@ -2946,12 +2539,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.control.engine.name": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
-      "examples": [
-        "kernel",
-        "azure-openai-prod",
-        "fs-write"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
     },
     "placement": [
       "record"
@@ -2960,11 +2548,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.control.engine.version": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
-      "examples": [
-        "1.4.0",
-        "2025.06.0"
-      ]
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
     },
     "placement": [
       "record"
@@ -2993,10 +2577,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.control.gated_tool_call_id": {
     "check": {
       "type": "string",
-      "pattern": "^p-[0-9a-f]{32}$",
-      "examples": [
-        "p-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^p-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3014,12 +2595,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.control.reason_code": {
     "check": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
-      "examples": [
-        "errno.eacces",
-        "exception.permissionerror",
-        "violence"
-      ]
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
     },
     "placement": [
       "record"
@@ -3043,10 +2619,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.control.grant_id": {
     "check": {
       "type": "string",
-      "pattern": "^grt-[0-9a-f]{32}$",
-      "examples": [
-        "grt-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^grt-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3073,22 +2646,10 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
-        "examples": [
-          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-        ]
+        "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       },
       "max_items": 8,
-      "unique": true,
-      "examples": [
-        [
-          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31"
-        ],
-        [
-          "7d444840-9dc0-4a1f-9c1e-2b8a6f0d5e31",
-          "0b8e1c52-1f0a-4d7e-8f3b-5c9a2e7d1a01"
-        ]
-      ]
+      "unique": true
     },
     "placement": [
       "record"
@@ -3132,10 +2693,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.grant.id": {
     "check": {
       "type": "string",
-      "pattern": "^grt-[0-9a-f]{32}$",
-      "examples": [
-        "grt-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^grt-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3161,10 +2719,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.grant.previous_id": {
     "check": {
       "type": "string",
-      "pattern": "^grt-[0-9a-f]{32}$",
-      "examples": [
-        "grt-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^grt-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3190,11 +2745,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.grant.permission_mode": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$",
-      "examples": [
-        "ask_on_write",
-        "acceptEdits"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$"
     },
     "placement": [
       "record"
@@ -3389,11 +2940,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.event_name": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
-      "examples": [
-        "PreToolUse",
-        "before_shell"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
     },
     "placement": [
       "record"
@@ -3411,10 +2958,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.gated_tool_call_id": {
     "check": {
       "type": "string",
-      "pattern": "^p-[0-9a-f]{32}$",
-      "examples": [
-        "p-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^p-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3423,10 +2967,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.extension_id": {
     "check": {
       "type": "string",
-      "pattern": "^ext-[0-9a-f]{32}$",
-      "examples": [
-        "ext-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^ext-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3435,12 +2976,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.reason_code": {
     "check": {
       "type": "string",
-      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$",
-      "examples": [
-        "errno.eacces",
-        "exception.permissionerror",
-        "violence"
-      ]
+      "pattern": "^[a-z0-9][a-z0-9._:-]{0,63}$"
     },
     "placement": [
       "record"
@@ -3482,10 +3018,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.program_label": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
-      "examples": [
-        "pre-shell-check"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
     },
     "placement": [
       "record"
@@ -3494,11 +3027,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.name": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
-      "examples": [
-        "pre-shell-check",
-        "pii-scrub"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
     },
     "placement": [
       "record"
@@ -3532,10 +3061,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.input_hash": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -3544,10 +3070,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.hook.output_hash": {
     "capture_check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -3556,10 +3079,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.extension.id": {
     "check": {
       "type": "string",
-      "pattern": "^ext-[0-9a-f]{32}$",
-      "examples": [
-        "ext-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^ext-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3586,11 +3106,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.extension.name": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$",
-      "examples": [
-        "repo-tools",
-        "@acme/skills"
-      ]
+      "pattern": "^[A-Za-z0-9@][A-Za-z0-9._:/@-]{0,127}$"
     },
     "placement": [
       "record"
@@ -3599,11 +3115,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.extension.version": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$",
-      "examples": [
-        "1.4.0",
-        "2025.06.0"
-      ]
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}$"
     },
     "placement": [
       "record"
@@ -3631,10 +3143,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.extension.source_ref": {
     "check": {
       "type": "string",
-      "pattern": "^src-[0-9a-f]{32}$",
-      "examples": [
-        "src-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^src-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3643,10 +3152,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.extension.manifest_hash": {
     "check": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "examples": [
-        "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f"
-      ]
+      "pattern": "^[0-9a-f]{64}$"
     },
     "placement": [
       "record"
@@ -3793,10 +3299,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.mcp.server_ref": {
     "check": {
       "type": "string",
-      "pattern": "^src-[0-9a-f]{32}$",
-      "examples": [
-        "src-9f86d081884c7d659a2feaa0c55ad015"
-      ]
+      "pattern": "^src-[0-9a-f]{32}$"
     },
     "placement": [
       "record"
@@ -3830,11 +3333,7 @@ export const TELEMETRY_KEYS: Readonly<Record<string, TelemetryKeyRow>> = {
   "fabric.sensor.watch_label": {
     "check": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$",
-      "examples": [
-        "agent-acl",
-        "skills-dir"
-      ]
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
     },
     "placement": [
       "record"

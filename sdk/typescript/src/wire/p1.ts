@@ -271,7 +271,9 @@ const PATTERNS = new Map<string, RegExp>();
 function compiled(pattern: string): RegExp {
   let re = PATTERNS.get(pattern);
   if (re === undefined) {
-    // Python's `re.fullmatch`, by code point (`u`).
+    // Python's `re.fullmatch`, by code point (`u`). Every pattern comes from the generated
+    // telemetry-key registry, never from captured input.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     re = new RegExp(`^(?:${pattern})$`, "u");
     PATTERNS.set(pattern, re);
   }
@@ -500,9 +502,16 @@ function manifestKeyRows(rows: Readonly<Record<string, TelemetryKeyRow>>): [stri
 function getPath(document: unknown, path: string): unknown {
   let node: unknown = document;
   for (const part of path.split("/")) {
-    if (node === null || typeof node !== "object" || Array.isArray(node) || !(part in node)) {
+    if (
+      node === null ||
+      typeof node !== "object" ||
+      Array.isArray(node) ||
+      !Object.hasOwn(node, part)
+    ) {
       return undefined;
     }
+    // Read-only walk over own properties; `path` is a registry manifest property.
+    // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
     node = (node as Record<string, unknown>)[part];
   }
   return node;
@@ -564,7 +573,10 @@ export function spanToManifest(
     const parts = prop.split("/");
     let node = manifest;
     for (const part of parts.slice(0, -1)) {
+      // `parts` is a registry manifest property, never a span attribute name, so no
+      // prototype key can reach this walk.
       node[part] ??= {};
+      // nosemgrep: javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop.prototype-pollution-loop
       node = node[part] as Record<string, unknown>;
     }
     node[parts[parts.length - 1]!] = value;

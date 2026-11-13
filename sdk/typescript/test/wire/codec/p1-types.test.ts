@@ -76,7 +76,7 @@ describe("P1 vocabularies equal Python's _capture_types.py", () => {
       expect(JSON.stringify((P1 as Record<string, unknown>)[name]), name).toBe(value(name));
     }
     for (const name of ["UUID4_RE", "SEGMENT_ID_RE", "BRANCH_ID_RE"]) {
-      expect((P1 as Record<string, RegExp>)[name]!.source, name).toBe(
+      expect((P1 as unknown as Record<string, RegExp>)[name]!.source, name).toBe(
         /re\.compile\(r"(.*)"\)/.exec(value(name))![1],
       );
     }

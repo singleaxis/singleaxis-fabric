@@ -157,7 +157,6 @@ export type KeyCheck =
       readonly pattern: string;
       readonly int64_groups?: readonly string[];
       readonly capture_labels?: { readonly group?: string; readonly pseudonymous_pattern: string };
-      readonly examples?: readonly string[];
     }
   | {
       readonly type: "array";
@@ -170,8 +169,6 @@ export type KeyCheck =
 /** The part of a check every shape may carry. */
 export interface KeyCheckCommon {
   readonly identity_mode?: { readonly clear?: string };
-  /** Documentation only; no check reads it. */
-  readonly examples?: readonly unknown[];
 }
 
 /** One telemetry key row, as the generated table carries it. */
