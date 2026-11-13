@@ -327,7 +327,7 @@ def test_up_provider_is_the_one_flag_of_the_local_path(project: Path) -> None:
     `up`, not a fourth command: `up --provider URL` is `init --provider URL`, then up."""
     docker = FakeDocker()
     url = "http://models.internal.example:8000/v1"
-    report, lines = _up_once(docker, "--provider", url)
+    report, _lines = _up_once(docker, "--provider", url)
     assert report.exit_code == 0
     document = yaml.safe_load((project / "fabric.yaml").read_text("utf-8"))
     assert document["providers"]["custom"] == [{"url": url}]

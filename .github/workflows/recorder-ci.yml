@@ -294,6 +294,44 @@ jobs:
         with:
           sarif_file: trivy-fabric-cli.sarif
 
+  ttfr-laptop-python:
+    # Spec 058 §3.3, G1: the Get started page for Python, executed as written in a fresh
+    # python:3.12 container (Docker reachable, nothing else), cold image cache, against a
+    # fixture model on a host in no endpoint table. Budget 300 s; ttfr.json is kept.
+    name: TTFR laptop Python (${{ matrix.path }}, ${{ matrix.agent }} agent)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        path: [laptop-python, laptop-python-provider]
+        agent: [openai, httpx]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Build the wheel under test
+        working-directory: sdk/python
+        run: |
+          ../../scripts/ci/install-python-locked.sh --only-group ci
+          python -m build --wheel --no-isolation
+      - name: Time to first record
+        run: >-
+          python3 scripts/ttfr/ttfr.py --mode container
+          --path "${{ matrix.path }}" --agent "${{ matrix.agent }}"
+          --wheel-dir sdk/python/dist --work "${RUNNER_TEMP}/f058-ttfr"
+          --out ttfr.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ttfr-${{ matrix.path }}-${{ matrix.agent }}
+          path: |
+            ttfr.json
+            ${{ runner.temp }}/f058-ttfr/steps.json
+          if-no-files-found: warn
+          retention-days: 30
+
   fabricctl:
     name: Recorder CLI
     runs-on: ubuntu-latest
