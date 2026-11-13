@@ -15,6 +15,26 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **Node.js capture groundwork: settings, endpoint matching and run ids
+  (spec 055, unit 055-t2).** Still no Node.js capture; this is the shared
+  core it will run on. The TypeScript SDK now reads every Python capture
+  setting under the same name and with the same rules, including the
+  `*_FILE` variants for keys, `FABRIC_WIRE_ID_KEY_FILE`,
+  `FABRIC_WIRE_STATUS_FILE`, `FABRIC_WIRE_BUILTIN_ENDPOINTS` and the
+  `FABRIC_OTLP_*` variables (which win over `OTEL_EXPORTER_OTLP_*`), so the
+  environment file `fabric init` writes will configure a Node agent
+  unchanged. A malformed setting is reported with the same diagnostics id
+  Python gives it, its fix, and the variable's name, never its value; a
+  shared fixture generated from `python -m fabric.wire status` checks this
+  for 75 environments. The built-in model endpoints come from the same table
+  as Python's, and TypeScript matches requests exactly as Python does. Digests,
+  resume tokens and run ids are computed byte for byte as Python computes
+  them. A new vector file, `spool-bytes-v1.json`, pins the exact bytes the
+  Python spool, ledger and registration writers produce, and the contract
+  validator re-reads every byte. One difference: a Node agent whose OTLP
+  setting selects `grpc` is told to use OTLP/HTTP (`FABRIC_OTLP_ENDPOINT`),
+  since the Node.js sender speaks only OTLP/HTTP. Capture contract 1.11.0.
+
 - **Contracts for recording Node.js model calls (spec 055, unit 055-t1).**
   No Node.js capture code ships yet; this sets down what it must do. The
   coverage registry now describes the two TypeScript capture points: global
