@@ -211,7 +211,7 @@ describe("new-key parity: what the decision line emits on registered keys", () =
 // ----------------------------------------------------------------- R9 inventory
 
 const SITE =
-  /String\(|JSON\.stringify\(|(?:^|[^\w"'.])[A-Za-z_]\w*\.(?:message|stack)\b|inspect\(|\$\{/;
+  /String\(|\.toString\(|JSON\.stringify\(|(?:^|[^\w"'.])[A-Za-z_]\w*\.(?:message|stack)\b|inspect\(|\$\{/;
 
 describe("R9 inventory: automatic stringification in the explicit producers", () => {
   const inventory = JSON.parse(

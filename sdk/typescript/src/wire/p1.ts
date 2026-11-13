@@ -88,6 +88,10 @@ function isFloat(value: unknown): boolean {
   return value instanceof PyFloat || (typeof value === "number" && !Number.isInteger(value));
 }
 
+function plainNumber(value: unknown): number {
+  return value instanceof PyFloat ? value.value : (value as number);
+}
+
 function plain(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(plain);
@@ -284,11 +288,9 @@ function fullmatch(pattern: string, value: string): RegExpExecArray | null {
   return compiled(pattern).exec(value);
 }
 
+/** An exact integer: a `bigint`, or a `number` that is a safe integer (never a rounded one). */
 function isIntValue(value: unknown): value is number | bigint {
-  return (
-    typeof value === "bigint" ||
-    (typeof value === "number" && Number.isInteger(value) && !isFloat(value))
-  );
+  return typeof value === "bigint" || (typeof value === "number" && Number.isSafeInteger(value));
 }
 
 const RFC3339 =
@@ -339,7 +341,10 @@ export function checkValue(
       return typeof value === "string" && check.values.includes(value);
     case "const": {
       const want = check.value;
-      if (typeof want === "number") return isIntValue(value) && BigInt(value) === BigInt(want);
+      if (typeof want === "number" && Number.isInteger(want)) {
+        return isIntValue(value) && BigInt(value) === BigInt(want);
+      }
+      if (typeof want === "number") return isFloat(value) && Number(plainNumber(value)) === want;
       return typeof value === typeof want && value === want;
     }
     case "bool":

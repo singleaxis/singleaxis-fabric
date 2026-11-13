@@ -263,11 +263,38 @@ describe("pseudonym-v2 and run-id-pseudonym-v1", () => {
     }
     expect(nullable(got)).toBe(c.pseudonym);
   });
+  it.each(cases(doc.distinct.map((pair: string[]) => ({ name: pair.join(" / "), pair }))))(
+    "distinct: %s",
+    (_name, c: any) => {
+      const byName = new Map<string, any>(doc.cases.map((x: any) => [x.name, x]));
+      const [a, b] = c.pair.map((name: string) => byName.get(name));
+      expect(a?.pseudonym, c.pair[0]).toMatch(/^[a-z]+-[0-9a-f]+$/);
+      expect(b?.pseudonym, c.pair[1]).toMatch(/^[a-z]+-[0-9a-f]+$/);
+      expect(a.pseudonym).not.toBe(b.pseudonym);
+    },
+  );
   it.each(cases(doc.key_ids, "key_id"))("key id %s", (_id, c: any) => {
     expect(keyId(c.key)).toBe(c.key_id);
   });
   const v1 = contract("contracts/capture/v1/fixtures/run-ids/run-id-pseudonym-v1.json");
   it.each(cases(v1.cases, "name"))("v1 run id: %s", (_name, c: any) => {
     expect(labelPseudonym("r", c.run_id, c.key ?? undefined)).toBe(c.pseudonym);
+  });
+});
+
+describe("key checks never accept a rounded integer or throw on a float const", () => {
+  it("an int check refuses a number above 2^53 (a float64 rounded it); a bigint passes", () => {
+    const check = { type: "int", min: 0 } as const;
+    expect(checkValue(check, 2 ** 53 + 2)).toBe(false);
+    expect(checkValue(check, 2n ** 53n + 1n)).toBe(true);
+    expect(checkValue(check, 41)).toBe(true);
+    expect(checkValue(check, 1.5)).toBe(false);
+  });
+  it("a const check of a float compares floats, never throws", () => {
+    const check = { type: "const", value: 1.5 } as const;
+    expect(() => checkValue(check, 1)).not.toThrow();
+    expect(checkValue(check, 1)).toBe(false);
+    expect(checkValue(check, 1.5)).toBe(true);
+    expect(checkValue({ type: "const", value: 2 }, 2n)).toBe(true);
   });
 });

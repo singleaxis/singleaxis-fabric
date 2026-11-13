@@ -42,8 +42,9 @@ const DEFAULT_PORTS: Readonly<Record<string, number>> = { https: 443, http: 80 }
 
 /** The wire API of a request path (no query string) for `dialect`, if recognized. */
 export function apiForPath(dialect: string, path: string): WireApi | undefined {
-  const rows = (SUFFIXES as Record<string, readonly (readonly [string, WireApi])[]>)[dialect];
-  return rows?.find(([suffix]) => path.endsWith(suffix))?.[1];
+  if (!Object.hasOwn(SUFFIXES, dialect)) return undefined; // never a prototype key
+  const rows = SUFFIXES[dialect as Dialect];
+  return rows.find(([suffix]) => path.endsWith(suffix))?.[1];
 }
 
 interface Entry {

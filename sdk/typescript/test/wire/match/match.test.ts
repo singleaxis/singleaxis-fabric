@@ -178,3 +178,12 @@ describe("matching properties", () => {
     for (const m of BUILTIN_ENDPOINTS.table) expect(m.schemes).toEqual(["https"]);
   });
 });
+
+describe("apiForPath", () => {
+  it("knows only the two dialects; a prototype key is no dialect", () => {
+    expect(apiForPath("openai", "/v1/chat/completions")).toBe("openai.chat_completions");
+    expect(apiForPath("anthropic", "/v1/messages")).toBe("anthropic.messages");
+    for (const dialect of ["toString", "__proto__", "constructor", "hasOwnProperty", "gemini"])
+      expect(apiForPath(dialect, "/v1/messages"), dialect).toBeUndefined();
+  });
+});
