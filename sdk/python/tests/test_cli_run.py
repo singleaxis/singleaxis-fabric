@@ -275,6 +275,12 @@ def test_a_mistyped_run_flag_still_runs_the_agent(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(os, "execvpe", lambda f, a, e: seen.append((f, list(a), dict(e))))
     assert cli.main(["run", "--bogus", "--", "true", "x"]) == 0
     assert seen == [("true", ["true", "x"], dict(os.environ))]
+    # A flag placed before `run` is mistyped too: the agent still runs.
+    assert cli.main(["--quiet", "run", "--", "true", "y"]) == 0
+    assert seen[-1] == ("true", ["true", "y"], dict(os.environ))
+    # A `run` that is only one of the agent's own words is not `fabric run`.
+    cli.main(["show", "--bogus", "--", "run"])
+    assert len(seen) == 2  # noqa: PLR2004 - nothing launched
 
 
 @pytest.mark.parametrize(

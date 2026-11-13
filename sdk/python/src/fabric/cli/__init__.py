@@ -155,7 +155,9 @@ def main(argv: Sequence[str] | None = None) -> int:  # noqa: PLR0911 - one retur
     args = list(sys.argv[1:] if argv is None else argv)
     parser = build_parser()
     command_argv: list[str] | None = None
-    if args[:1] == ["run"] and "--" in args:  # everything after the first -- is the agent's
+    # Everything after the first -- of `fabric [flags] run ...` is the agent's: split it off
+    # before parsing, so a mistyped flag (even one placed before `run`) never stops it.
+    if "--" in args and "run" in args[: args.index("--")]:
         split = args.index("--")
         args, command_argv = args[:split], args[split + 1 :]
     as_json = "--json" in args
