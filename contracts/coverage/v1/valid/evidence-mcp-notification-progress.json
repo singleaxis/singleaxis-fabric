@@ -1,0 +1,21 @@
+{
+  "schema_version": "fabric.record-evidence-fixture/v1",
+  "identity_mode": "pseudonymous",
+  "capture_point": "mcp.client",
+  "document": {
+    "schema_version": "fabric.record-evidence/v1",
+    "evidence_type": "fabric.mcp.correlation/v1",
+    "items": [
+      {
+        "transport": "stdio",
+        "connection_index": 0,
+        "representation": "exact_bytes",
+        "session_ref": "mcps-5a1c5a1c5a1c5a1c5a1c5a1c5a1c5a1c",
+        "direction": "server_to_client",
+        "message_kind": "notification",
+        "related_rpc_ref": "rpc-c3d2c3d2c3d2c3d2c3d2c3d2c3d2c3d2",
+        "correlation": "not_applicable"
+      }
+    ]
+  }
+}

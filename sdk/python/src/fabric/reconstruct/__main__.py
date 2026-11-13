@@ -334,11 +334,24 @@ def _evaluation_options(parser: argparse.ArgumentParser) -> None:
         default=[],
         choices=DERIVE_CHOICES,
         metavar="RULE",
-        help="apply a spec 057 wire derivation rule to the stored model-call bytes "
-        "(repeatable): wire.offered_grant (the tools each request offered, F12), "
-        "wire.safety_map (provider safety signals), wire.tool_result_flag (structured "
-        "tool-result error flags, F14), or wire for all three. Off by default: without it "
+        help="apply a spec 057 derivation rule to stored bytes (repeatable): "
+        "wire.offered_grant (the tools each request offered, F12), wire.safety_map "
+        "(provider safety signals), wire.tool_result_flag (structured tool-result error "
+        "flags, F14), or wire for all three; mcp.jsonrpc reads the MCP messages of "
+        "http.nonmodel and mcp.client records (servers, tools and annotations, inventory "
+        "changes F11, tool calls and isError F14, elicitations). Off by default: without it "
         "every run is reported as before",
+    )
+    parser.add_argument(
+        "--mcp-host",
+        action="append",
+        dest="mcp_hosts",
+        default=[],
+        metavar="HOST",
+        help="an MCP server host the agent reaches over Streamable HTTP (repeatable; spelled "
+        "as in FABRIC_WIRE_HTTP_HOSTS): applies mcp.jsonrpc, and a request to it whose "
+        "network.* bodies were not retained makes the controls chain "
+        "partial(body_not_retained). Needs the id key (the hook records the host's hst- id)",
     )
     parser.add_argument(
         "--tool-result-markers",
@@ -823,7 +836,11 @@ def _action_reader(
         classification=classification,
         policy_digest=digest,
         id_key=key,
-        derivation=Derivation.build(args.derive, _markers_file(args.tool_result_markers)),
+        derivation=Derivation.build(
+            args.derive,
+            _markers_file(args.tool_result_markers),
+            _mcp_hosts(args.mcp_hosts, key),
+        ),
     )
 
 
@@ -862,6 +879,31 @@ def _capture_policy(path: str | None) -> tuple[_classify.Classification | None, 
             "hook_programs) to the policy, or drop the option"
         )
     return classification, policy.digest
+
+
+def _mcp_hosts(values: Sequence[str], key: bytes | None) -> tuple[str, ...]:
+    """``--mcp-host`` values, each checked as a FABRIC_WIRE_HTTP_HOSTS entry. The hook
+    records a host only as its keyed ``hst-`` id, so without the id key no listed host
+    could be matched and a missing body would go unreported: refused, as the host options
+    are."""
+    from fabric.hooks._config import parse_host  # noqa: PLC0415 - pure parsing
+
+    if values and key is None:
+        raise ReconstructInputError(
+            "--mcp-host needs the id key (the --id-key-env variable): the HTTP hook records "
+            "a host only as its keyed hst- id, so an MCP host cannot be matched without it"
+        )
+    out = []
+    for value in values:
+        try:
+            parse_host(value)
+        except ValueError:
+            raise ReconstructInputError(
+                "--mcp-host takes a host or host:port as FABRIC_WIRE_HTTP_HOSTS spells it "
+                "(no scheme other than http://, no path, no wildcard); fix the value"
+            ) from None
+        out.append(value)
+    return tuple(out)
 
 
 def _note_capture_policy(args: argparse.Namespace, reader: ActionReader) -> None:
@@ -1271,7 +1313,9 @@ def _summary_lines(view: Mapping[str, Any], why: str, *, no_model: bool) -> list
 
 # Spec 057 §6.2: the security context rows. The view states what was recorded and the
 # closed facts of §6.3; it never says whether a call was right.
-_SECURITY_ROWS = frozenset({"grant", "extension", "control", "hook", "no_effect"})
+_SECURITY_ROWS = frozenset({"grant", "extension", "control", "hook", "no_effect", "mcp_call"})
+_HINT_WORDS = (("destructive", "destructive"), ("read_only", "read-only"),
+               ("open_world", "open-world"), ("idempotent", "idempotent"))  # fmt: skip
 _GRANT_COUNT_WORDS = {
     "tools_allow": "allow", "tools_deny": "deny", "tools_ask": "ask", "tools_offered": "tools",
     "tools_listed": "tools", "mcp_servers": "mcp", "fs_rules": "fs", "net_rules": "net",
@@ -1366,12 +1410,25 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
         parts = ["ext   ", row["extension_kind"], _short(row["id"]) if "id" in row else "-"]
         parts += [str(row[k]) for k in ("name", "version") if k in row]
         parts.append(f"via {row['observed_via']}")
+        if "source_ref" in row:  # E14/E21: the launch command or URL, keyed
+            parts.append(_short(row["source_ref"]))
         if "tools" in row:
-            parts.append(f"{row['tools']} tools")
+            hints = row.get("annotations") or {}  # E20: the server's assertion
+            shown = [f"{hints[k]} {w}" for k, w in _HINT_WORDS if hints.get(k)]
+            parts.append(f"{row['tools']} tools" + (f" ({', '.join(shown)})" if shown else ""))
         parts.append(f"signature {row['signature_status']}")
         if row.get("changed"):
             parts.append("(manifest changed)")
         return "  ".join(parts) + f"  ({row['provenance']})"
+    if kind == "mcp_call":  # spec 057 WP7-7/8: an MCP tools/call or inventory change
+        parts = [f"mcp        {row['method']}"]
+        if "tool" in row:
+            parts.append(str(row["tool"]))
+        parts.append({"tool_error": "isError (F14)", "protocol_error": "protocol error"}
+                     .get(row["outcome"], row["outcome"]))  # fmt: skip
+        parts.append(f"session {_short(str(row['session']))}")
+        tail = _link_tail(row)
+        return "  ".join(parts) + (f"   {tail}" if tail else "")
     if kind == "no_effect":
         refs = ",".join(f"#{n}" for n in row.get("refs", ()))
         return f"  no effect observed for {row['call']} ({row['reason']}: {refs})"
@@ -1382,6 +1439,8 @@ def _security_text(row: Mapping[str, Any]) -> str:  # noqa: PLR0912, PLR0915 - o
         parts = [f"control    {what}"]
         parts += [str(row[k]) for k in ("signal", "engine", "reason_code", "error_class")
                   if k in row]  # fmt: skip
+        if row.get("decided_by") in ("human", "provider", "service"):
+            parts.append(f"({row['decided_by']})")
         if "latency_ms" in row:
             parts.append(_ms(row["latency_ms"]))
         if row.get("mode") not in (None, "unknown"):
