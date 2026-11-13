@@ -83,15 +83,18 @@ def spawn_failed(capture: ExecCapture, command: str, **error: str) -> str:
     return uid
 
 
-def killed(capture: ExecCapture, command: str, *, pid: int, signal: int) -> str:
+def killed(capture: ExecCapture, command: str, *, pid: int, signal: int,
+           pid_ns: str | None = None) -> str:  # fmt: skip
     """A child that a signal killed: the start record, then an end record with the signal
-    (N35: a negative return code is the signal, never an exit code)."""
+    (N35: a negative return code is the signal, never an exit code). ``pid_ns``: the agent
+    runs in that pid namespace, so ``pid`` is the namespace's number."""
     uid = capture.new_id()
     argv = json.dumps({"form": "shell", "command": {"t": "str", "v": command}}).encode()
+    ns = {} if pid_ns is None else {"fabric.process.pid_ns": pid_ns}
     capture._exec_record(uid, {"fabric.step.lifecycle_state": "running",
                                "fabric.process.pid": pid,
                                "fabric.process.parent_pid": AGENT_PID,
-                               "fabric.execution.host_id": HOST},
+                               "fabric.execution.host_id": HOST, **ns},
                          [("terminal.argv", "application/json", argv)])  # fmt: skip
     capture.rows[-1]["attributes"].pop("fabric.step.status", None)
     capture._exec_record(uid, {"fabric.step.lifecycle_state": "completed",
@@ -100,7 +103,8 @@ def killed(capture: ExecCapture, command: str, *, pid: int, signal: int) -> str:
     return uid
 
 
-def three_calls(capture: ExecCapture, *, third: str = "sigsys") -> dict[str, str]:
+def three_calls(capture: ExecCapture, *, third: str = "sigsys",
+                pid_ns: str | None = None) -> dict[str, str]:  # fmt: skip
     """Three tool calls, one after the other: ``write_file`` (the agent's own open is
     refused), ``fetch_url`` (its connect is refused) and ``run_shell`` (its child is
     killed by SIGSYS, or its spawn is refused). Only the third has an in-process record."""
@@ -115,7 +119,8 @@ def three_calls(capture: ExecCapture, *, third: str = "sigsys") -> dict[str, str
         capture.exchange(chat_request(history), chat_response(
             calls(call(call_id, tool)), f"chatcmpl-{n}", "tool_calls"))  # fmt: skip
         if tool == "run_shell" and third == "sigsys":
-            ids["shell"] = killed(capture, "./tool --probe", pid=KILLED_PID, signal=31)
+            ids["shell"] = killed(capture, "./tool --probe", pid=KILLED_PID, signal=31,
+                                  pid_ns=pid_ns)  # fmt: skip
         elif tool == "run_shell" and third == "sigkill":
             ids["shell"] = killed(capture, "./tool --probe", pid=KILLED_PID, signal=9)
         elif tool == "run_shell" and third != "none":
@@ -137,9 +142,13 @@ class Joiner:
     windows the agent process makes a refused syscall and a merely failed one; the third
     call's child exits by signal. ``extra`` adds events at an offset into a call's window."""
 
-    def __init__(self, *, exit_signal: int | None = 31, exec_errno: str | None = None) -> None:
+    def __init__(self, *, exit_signal: int | None = 31, exec_errno: str | None = None,
+                 pid_ns: str | None = None) -> None:  # fmt: skip
         self.exit_signal = exit_signal
         self.exec_errno = exec_errno
+        # the killed child in a container's pid namespace: the sensor's pid is the init
+        # namespace's, its ns_pid the number the in-process hook recorded
+        self.pid_ns = pid_ns
         self.evidence = HostEvidence()
 
     def __call__(self, inp: Mapping[str, Any]) -> Any:
@@ -164,8 +173,13 @@ class Joiner:
         ]  # fmt: skip
         if self.exit_signal is not None:
             event_id = EXIT_SIGSYS if self.exit_signal == _os_access.SIGSYS else EXIT_SIGKILL
+            ns: dict[str, Any] = (
+                {}
+                if self.pid_ns is None
+                else {"pid": KILLED_PID + 70_000, "ns_pid": KILLED_PID, "pid_ns": self.pid_ns}
+            )
             events.append(HostEvent(event_id, "host.ebpf", "exit", child_start + 2_000,
-                                    pid=KILLED_PID, ppid=AGENT_PID,
+                                    **{"pid": KILLED_PID, "ppid": AGENT_PID, **ns},
                                     signal=self.exit_signal))  # fmt: skip
         if self.exec_errno is not None:
             events.append(HostEvent(EXEC_DENIED, "host.ebpf", "exec", child_start + 1_000,
@@ -193,9 +207,10 @@ class EventsJoiner:
 
 
 def _read(tmp_path: Path, *, third: str = "sigsys", joiner: Any = None,
-          host: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:  # fmt: skip
+          host: bool = True, pid_ns: str | None = None,
+          ) -> tuple[dict[str, Any], dict[str, Any]]:  # fmt: skip
     capture = ExecCapture(tmp_path)
-    three_calls(capture, third=third)
+    three_calls(capture, third=third, pid_ns=pid_ns)
     reader = ActionReader(host_joiner=(joiner or Joiner()) if host else None, keep_runs=True)
     report, _ = project(capture, actions=reader)
     (kept,) = reader.runs
@@ -232,6 +247,16 @@ def test_eacces_on_open_eperm_on_connect_and_a_sigsys_kill_are_os_access_rows(
     ]
     assert run["security_context"]["control_links"] == {"process_anchor": 3}
     assert run["chains"]["controls"] == {"verdict": "complete"}
+
+
+def test_a_sigsys_kill_in_a_containers_pid_namespace_is_one_row(tmp_path: Path) -> None:
+    # The hook records the child's pid in the agent's namespace; the sensor's exit record
+    # carries the init-namespace pid and that number as ns_pid. Still one refusal.
+    ns = "4026532999"
+    _, rows = _read(tmp_path, joiner=Joiner(pid_ns=ns), pid_ns=ns)
+    kills = [r for r in _refusals(rows) if r["reason_code"] == "signal.sigsys"]
+    (kill,) = kills  # one row, not the hook's and the sensor's
+    assert "via" not in kill and kill["host_events"] == 1
 
 
 def test_enoent_econnrefused_a_nonzero_exit_and_sigkill_are_never_rows(tmp_path: Path) -> None:

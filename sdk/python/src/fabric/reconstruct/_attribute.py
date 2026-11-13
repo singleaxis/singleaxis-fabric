@@ -923,20 +923,38 @@ def _linked_attempts(result: Attribution) -> dict[str, tuple[str, str]]:
     return attempt_of
 
 
+def _same_process(effect: Mapping[str, Any], event: Any) -> bool:
+    """Whether a host event names the in-process effect's child: the init-namespace pid,
+    or, when both carry the pid namespace, the pid in that namespace (the exec hook
+    records the pid the agent sees, which inside a container is the namespace's)."""
+    pid = effect.get("pid")
+    if pid is None:
+        return False
+    if event.pid == pid:
+        return True
+    pid_ns = effect.get("pid_ns")
+    return pid_ns is not None and event.pid_ns == pid_ns and event.ns_pid == pid
+
+
 def _same_refusal(
     event: Any, reason: str,
     in_process: Sequence[tuple[dict[str, Any], Mapping[str, Any]]], margin: int,
+    linked: str | None = None,
 ) -> dict[str, Any] | None:  # fmt: skip
     """Spec 057 WP7-12: the in-process refusal row a refused host event is the same fact
-    as, else ``None``: the exit of the killed child's pid with the same signal, or a failed
-    ``execve`` inside the refused spawn's bracket (the hook may name only the class)."""
+    as, else ``None``: the exit of the killed child with the same signal (the effect the
+    056 join linked it to, or the same process by pid), or a failed ``execve`` inside the
+    refused spawn's bracket (the hook may name only the class)."""
     for row, effect in in_process:
+        if event.event_class == "exit" and row["reason_code"] == reason and linked is not None \
+                and row.get("own_attempt") == linked:  # fmt: skip
+            return row
         start = int(effect["start_ns"]) - margin
         last = effect.get("end_ns", effect.get("exit_observed_ns", effect["start_ns"]))
         if not start <= event.time_ns <= int(last) + margin:
             continue
         if event.event_class == "exit":
-            if row["reason_code"] == reason and effect.get("pid") == event.pid:
+            if row["reason_code"] == reason and _same_process(effect, event):
                 return row
         elif (
             event.event_class == "exec"
@@ -1297,12 +1315,13 @@ class ActionReader:
             if found is None or rule is None or rule in outside:
                 continue
             reason, syscall = found
-            same = _same_refusal(event, reason, in_process, margin)
+            linked = attempt_of.get(event.event_id)
+            same = _same_refusal(event, reason, in_process, margin,
+                                 linked[0] if linked is not None else None)  # fmt: skip
             if same is not None:
                 same["host_events"] = same.get("host_events", 0) + 1
                 same["reason_code"] = reason  # the exact errno, when the hook had only the class
                 continue
-            linked = attempt_of.get(event.event_id)
             if linked is not None:
                 calls, confidence = effect_calls(linked[0], effects.get(linked[0]))
                 if linked[1] != "certain":
