@@ -877,7 +877,7 @@ function redactionTokenFrom(path: string): string {
     if (error instanceof Error && error.message.includes("is not readable")) {
       return fail(`${name} is not readable`, "FW-019");
     }
-    let ownerOnly = false;
+    let ownerOnly: boolean;
     try {
       // The open with O_NOFOLLOW succeeded, so `path` is no symlink and stat is fstat.
       const info = statSync(path);
