@@ -100,11 +100,19 @@ def pinned_fabric_images() -> list[str]:
 
 
 def evict_images(images: Sequence[str]) -> list[str]:
-    """Remove the pinned Fabric images from the Docker cache (cold start, §3.1)."""
+    """Remove the pinned Fabric images from the Docker cache (cold start, §3.1); returns
+    the ones that were cached. ``docker image rm -f`` exits 0 for an absent image too, so
+    presence is asked first, and an image that stays cached stops the run."""
     removed = []
     for image in images:
-        if _sh(["docker", "image", "rm", "-f", image], check=False).returncode == 0:
-            removed.append(image)
+        if _sh(["docker", "image", "inspect", image], check=False).returncode != 0:
+            continue  # not cached: already cold
+        _sh(["docker", "image", "rm", "-f", image], check=False)
+        if _sh(["docker", "image", "inspect", image], check=False).returncode == 0:
+            raise TtfrError(
+                f"{image} is still cached (in use by a container?): not a cold start"
+            )
+        removed.append(image)
     return removed
 
 

@@ -214,3 +214,30 @@ def test_a_refused_page_is_named_in_ttfr_json(tmp_path: Path) -> None:
         subprocess.CompletedProcess(["x"], 1, "", "Traceback: boom"),
     )
     assert "without a report" in crashed["error"] and "boom" in crashed["error"]
+
+
+def test_only_cached_images_are_reported_evicted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``docker image rm -f`` exits 0 for an image that is not there: ttfr.json lists only
+    images that were cached, and an image that cannot be removed stops the run."""
+    cached = {"a"}
+
+    def fake(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        image = argv[-1]
+        if argv[1:3] == ["image", "rm"]:
+            cached.discard(image)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(argv, 0 if image in cached else 1, "", "")
+
+    monkeypatch.setattr(ttfr, "_sh", fake)
+    assert ttfr.evict_images(["a", "b"]) == ["a"]
+    cached.add("stuck")
+    monkeypatch.setattr(
+        ttfr, "_sh",
+        lambda argv, **_: subprocess.CompletedProcess(
+            argv, 0 if argv[1:3] == ["image", "inspect"] else 1, "", ""
+        ),
+    )  # fmt: skip
+    with pytest.raises(ttfr.TtfrError, match="not a cold start"):
+        ttfr.evict_images(["stuck"])

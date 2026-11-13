@@ -268,13 +268,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     docs_root = options.docs_root or next(
         (p for p in options.page.resolve().parents if p.name == "docs"), None
     )
+
     def refuse(why: str, code: int) -> int:
         # The caller (the TTFR harness) reads --json: a refused page is a report too,
         # so the reason reaches ttfr.json instead of a missing file.
         if options.json and options.path:
             refused = {"page": str(options.page), "path": options.path, "counts": {},
                        "steps": [], "ok": False, "error": why}  # fmt: skip
-            options.json.write_text(json.dumps(refused, indent=2) + "\n", encoding="utf-8")
+            options.json.write_text(
+                json.dumps(refused, indent=2) + "\n", encoding="utf-8"
+            )
         print(f"docs-as-tests: {why}", file=sys.stderr)
         return code
 

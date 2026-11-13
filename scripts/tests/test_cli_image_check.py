@@ -166,4 +166,6 @@ def test_every_ignored_vulnerability_expires() -> None:
     assert entries
     for entry in entries:
         assert len(entry) == 2 and entry[0].startswith("CVE-"), entry
-        assert entry[1].startswith("exp:2026-") or entry[1].startswith("exp:2027-"), entry
+        assert entry[1].startswith("exp:2026-") or entry[1].startswith("exp:2027-"), (
+            entry
+        )
