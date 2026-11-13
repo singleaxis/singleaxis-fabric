@@ -222,6 +222,29 @@ def test_no_capture_flag_and_a_bad_label(tmp_path: Path, env: dict[str, str]) ->
     assert execvpe.calls[0][2]["FABRIC_RUN_ID"].startswith("run-")
 
 
+def test_no_capture_keeps_the_agent_out_of_the_sensor_scope(
+    tmp_path: Path, env: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """--no-capture means nothing records the agent: the sensor scopes the agent cgroup,
+    so run must not join it (with capture on, the same state is joined)."""
+    project = make_project(tmp_path, env)
+    state = project / ".fabric" / "state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "up.json").write_text(json.dumps({"sensor": "running"}))
+    joined: list[str] = []
+
+    def join(proj: Any, **_: Any) -> tuple[str, None]:
+        joined.append(proj.name)
+        return "scoped", None
+
+    monkeypatch.setattr(_run, "join_agent_cgroup", join)
+    _launch(project, env, [str(PY), "a.py"], "--no-capture")
+    (record,) = _runstate.load_runs(project / ".fabric")
+    assert joined == [] and record.sensor == "off" and record.capture == "off"
+    _launch(project, env, [str(PY), "a.py"])
+    assert len(joined) == 1 and _runstate.load_runs(project / ".fabric")[0].sensor == "scoped"
+
+
 def test_any_internal_error_is_fail_open(
     tmp_path: Path, env: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:

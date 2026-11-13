@@ -473,7 +473,7 @@ def _say(findings: Sequence[Finding], stream: IO[str], quiet: bool) -> None:
                 continue
             stream.write(f"fabric run: {printable(finding.line())}\n")
         stream.flush()
-    except (OSError, ValueError):
+    except Exception:  # noqa: BLE001 - called outside launch's guard: a message never stops the agent (I3)
         return
 
 
@@ -651,7 +651,11 @@ def _prepare(
     findings.extend(Finding("FC-009", f"{name} kept from this shell") for name in kept)
     if capture and (env.get("FABRIC_WIRE_AUTOLOAD") or "").strip().lower() not in ("1", "true"):
         capture = False  # this shell turned the autoload off (kept, §6.2): say so, not "on"
-    if sys.platform.startswith("linux") or _up_state(project).get("sensor") == "running":
+    # --no-capture means nothing records this agent: not the SDK, and not the host sensor,
+    # which scopes exactly the processes in the agent cgroup.
+    if not options.no_capture and (
+        sys.platform.startswith("linux") or _up_state(project).get("sensor") == "running"
+    ):
         record.sensor, joined = join_agent_cgroup(project)
         if joined is not None:
             findings.append(joined)
