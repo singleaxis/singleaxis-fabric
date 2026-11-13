@@ -15,6 +15,21 @@ it never makes, applies, waits for or returns one.
 
 ### Added
 
+- **SC-RA-1, the acceptance run for security context from model calls and MCP
+  (spec 057 §10.2).** `qualification/security-context/run_sc_ra1.py` runs
+  plain hand-written agents with no Fabric code in them (tool loops on OpenAI
+  Chat Completions, streamed and not, and Anthropic Messages, and an MCP client
+  talking to fixture MCP servers over Streamable HTTP and stdio) with capture
+  off and on, and checks what `python -m fabric.reconstruct` reports against a
+  ground truth the harness keeps itself: one record per event and none extra,
+  grant ids equal to the harness's own keyed digests, identical agent outputs
+  with capture off and on, the latency budgets, and privacy canaries (a system
+  prompt marker, a secret MCP root, an elicitation marker) never in telemetry,
+  the sealed spool or the reader's output. The replay mode answers from real
+  recorded model responses and runs in CI on macOS and Linux
+  (`.github/workflows/security-context.yml`); the live mode needs the model
+  endpoint's key and is run by hand.
+
 - **MCP servers as security context (spec 057 P1, second part).** For an MCP
   server reached over Streamable HTTP, the request and response bodies the
   non-model HTTP hook already records are now read as MCP by

@@ -1,0 +1,100 @@
+name: Security context (SC-RA-1)
+
+# Spec 057 §10.2 SC-RA-1, the P1 real-agent acceptance run for security context
+# recorded from the LLM wire and MCP (qualification/security-context). Not one of
+# the release-required workflows.
+#
+# - replay: plain hand-written tool loops (OpenAI Chat Completions, streamed and
+#   not, and Anthropic Messages) and an MCP client talking to fixture MCP servers
+#   over Streamable HTTP and stdio, each run as its own process with capture off
+#   and on (autoload, production profile, sealed spool, exec, MCP and non-model
+#   HTTP hooks), delivered to a loopback sink and read by python -m
+#   fabric.reconstruct. Every model response is replayed byte for byte from
+#   sc_ra1/cassette.json (real model responses; the provider-safety bodies are
+#   the contract fixtures' documented shapes). Checks: one record per
+#   ground-truth event and none extra, grant ids equal to the harness's own
+#   keyed digests, capture on/off identity, privacy canaries, and the B4
+#   passivity gates of every capture point the run uses.
+# - The live mode needs the model endpoint's key and is run by hand
+#   (run_sc_ra1.py --mode live); it is not run here.
+#
+# Passive by construction: the hooks only observe; nothing here evaluates,
+# blocks or alters the agent.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/python/**"
+      - "contracts/**"
+      - "qualification/security-context/**"
+      - "qualification/action-record/ar1/sink.py"
+      - "qualification/action-record/ar1/node.py"
+      - ".github/workflows/security-context.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "sdk/python/**"
+      - "contracts/**"
+      - "qualification/security-context/**"
+      - "qualification/action-record/ar1/sink.py"
+      - "qualification/action-record/ar1/node.py"
+      - ".github/workflows/security-context.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: security-context-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  replay:
+    name: SC-RA-1 replay (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: ./.github/actions/setup-uv
+      - name: Install the SDK and the harness dependencies
+        # sdk/python/uv.lock with pip --require-hashes; the dev group carries the
+        # harness tools and the pinned MCP library the agent's MCP client uses.
+        run: |
+          scripts/ci/install-python-locked.sh --extra otlp --group dev --group ci
+          python -m pip install --no-deps --no-build-isolation -e sdk/python
+      - name: Lint and type-check the harness
+        working-directory: qualification/security-context
+        env:
+          MYPYPATH: ../action-record # the AR-1 sink the harness delivers to
+        run: |
+          ruff check .
+          ruff format --check .
+          mypy --strict --config-file ../../sdk/python/pyproject.toml sc_ra1 run_sc_ra1.py tests
+      - name: Harness unit tests
+        # The end-to-end test is the run_sc_ra1.py run of the next step; deselect it
+        # by node id.
+        run: >-
+          python -m pytest qualification/security-context/tests -q -p no:cacheprovider
+          --deselect qualification/security-context/tests/test_sc_ra1_replay.py::test_sc_ra1_replay
+      - name: SC-RA-1 replay
+        run: |
+          python qualification/security-context/run_sc_ra1.py --mode replay \
+            --out "${RUNNER_TEMP}/sc-ra1"
+      - name: Upload the SC-RA-1 record
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sc-ra1-${{ matrix.os }}
+          path: ${{ runner.temp }}/sc-ra1
+          if-no-files-found: ignore
+          retention-days: 14
