@@ -59,6 +59,8 @@ func sourceConfig(cfg *Config, idKey, stateKey []byte) hostrecords.Config {
 		StateDir:    cfg.StateDir,
 		Digests:     cfg.Digests == "permitted",
 		Classes:     cfg.eventClasses(),
+		// spec 057 §6.4: the manifest's host.ebpf.syscall_result row
+		SyscallResults: cfg.SyscallResults,
 	}
 }
 
@@ -196,7 +198,7 @@ func productionLoop(ctx context.Context, cfg *Config, rt eventSource, prod *prod
 		if err := declareClock(e.TsNs); err != nil {
 			return err
 		}
-		ev, ok := hostEvent(e)
+		ev, ok := hostEvent(e, cfg.watch)
 		if !ok {
 			return nil
 		}
